@@ -1,0 +1,16 @@
+version: '2'
+sql:
+  - engine: 'postgresql'
+    queries: 'postgres/queries/read/*.sql'
+    schema: 'postgres/migrations'
+    gen:
+      go:
+        sql_package: 'pgx/v5'
+        out: 'internal/gen/repo/dbread'
+  - engine: 'postgresql'
+    queries: 'postgres/queries/write/*.sql'
+    schema: 'postgres/migrations'
+    gen:
+      go:
+        sql_package: 'pgx/v5'
+        out: 'internal/gen/repo/dbwrite'
