@@ -7,10 +7,12 @@ package dbread
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getCustomerByEmail = `-- name: GetCustomerByEmail :one
-select display_name, email, id, picture_uri, create_time, update_time
+select id, display_name, email, password_hash, picture_uri, create_time, update_time
 from customers
 where email = $1
 `
@@ -19,9 +21,10 @@ func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (Custome
 	row := q.db.QueryRow(ctx, getCustomerByEmail, email)
 	var i Customer
 	err := row.Scan(
+		&i.ID,
 		&i.DisplayName,
 		&i.Email,
-		&i.ID,
+		&i.PasswordHash,
 		&i.PictureUri,
 		&i.CreateTime,
 		&i.UpdateTime,
@@ -29,8 +32,41 @@ func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (Custome
 	return i, err
 }
 
+const getCustomerByEmailWithPassword = `-- name: GetCustomerByEmailWithPassword :one
+select id, display_name, email, password_hash, picture_uri, create_time, update_time, password_hash
+from customers
+where email = $1
+`
+
+type GetCustomerByEmailWithPasswordRow struct {
+	ID             string
+	DisplayName    pgtype.Text
+	Email          string
+	PasswordHash   string
+	PictureUri     pgtype.Text
+	CreateTime     pgtype.Timestamptz
+	UpdateTime     pgtype.Timestamptz
+	PasswordHash_2 string
+}
+
+func (q *Queries) GetCustomerByEmailWithPassword(ctx context.Context, email string) (GetCustomerByEmailWithPasswordRow, error) {
+	row := q.db.QueryRow(ctx, getCustomerByEmailWithPassword, email)
+	var i GetCustomerByEmailWithPasswordRow
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.Email,
+		&i.PasswordHash,
+		&i.PictureUri,
+		&i.CreateTime,
+		&i.UpdateTime,
+		&i.PasswordHash_2,
+	)
+	return i, err
+}
+
 const getCustomerByID = `-- name: GetCustomerByID :one
-select display_name, email, id, picture_uri, create_time, update_time
+select id, display_name, email, password_hash, picture_uri, create_time, update_time
 from customers
 where id = $1
 `
@@ -39,9 +75,10 @@ func (q *Queries) GetCustomerByID(ctx context.Context, id string) (Customer, err
 	row := q.db.QueryRow(ctx, getCustomerByID, id)
 	var i Customer
 	err := row.Scan(
+		&i.ID,
 		&i.DisplayName,
 		&i.Email,
-		&i.ID,
+		&i.PasswordHash,
 		&i.PictureUri,
 		&i.CreateTime,
 		&i.UpdateTime,

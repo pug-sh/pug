@@ -7,22 +7,61 @@ package dbwrite
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createCustomer = `-- name: CreateCustomer :one
+insert into customers (id, display_name, email, password_hash, picture_uri)
+values ($1, $2, $3, $4, $5)
+returning id, display_name, email, password_hash, picture_uri, create_time, update_time
+`
+
+type CreateCustomerParams struct {
+	ID           string
+	DisplayName  pgtype.Text
+	Email        string
+	PasswordHash string
+	PictureUri   pgtype.Text
+}
+
+func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) (Customer, error) {
+	row := q.db.QueryRow(ctx, createCustomer,
+		arg.ID,
+		arg.DisplayName,
+		arg.Email,
+		arg.PasswordHash,
+		arg.PictureUri,
+	)
+	var i Customer
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.Email,
+		&i.PasswordHash,
+		&i.PictureUri,
+		&i.CreateTime,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const upsertCustomer = `-- name: UpsertCustomer :one
-insert into customers (display_name, email, id, picture_uri)
-values ($1, $2, $3, $4) on conflict (email) do
+insert into customers (display_name, email, id, picture_uri, password_hash)
+values ($1, $2, $3, $4, $5) on conflict (email) do
 update -- do not update id
 set display_name = excluded.display_name,
-  picture_uri = excluded.picture_uri
-returning display_name, email, id, picture_uri, create_time, update_time
+  picture_uri = excluded.picture_uri,
+  password_hash = excluded.password_hash
+returning id, display_name, email, password_hash, picture_uri, create_time, update_time
 `
 
 type UpsertCustomerParams struct {
-	DisplayName string
-	Email       string
-	ID          string
-	PictureUri  string
+	DisplayName  pgtype.Text
+	Email        string
+	ID           string
+	PictureUri   pgtype.Text
+	PasswordHash string
 }
 
 func (q *Queries) UpsertCustomer(ctx context.Context, arg UpsertCustomerParams) (Customer, error) {
@@ -31,12 +70,14 @@ func (q *Queries) UpsertCustomer(ctx context.Context, arg UpsertCustomerParams) 
 		arg.Email,
 		arg.ID,
 		arg.PictureUri,
+		arg.PasswordHash,
 	)
 	var i Customer
 	err := row.Scan(
+		&i.ID,
 		&i.DisplayName,
 		&i.Email,
-		&i.ID,
+		&i.PasswordHash,
 		&i.PictureUri,
 		&i.CreateTime,
 		&i.UpdateTime,
