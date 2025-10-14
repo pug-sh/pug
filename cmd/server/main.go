@@ -42,7 +42,7 @@ func main() {
 		// Add any interceptors if needed
 		// connect.WithInterceptors(yourInterceptor),
 	)
-	
+
 	// Create a handler that combines auth and reflection
 	handler := http.NewServeMux()
 	handler.Handle(authPath, authHandler)
