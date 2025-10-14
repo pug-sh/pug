@@ -1,0 +1,19 @@
+edition = "2023";
+package auth.v1;
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1;authv1";
+
+// web facing
+service AuthService {
+  rpc SignIn(SignInRequest) returns (SignInResponse) {}
+}
+
+message SignInRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message SignInResponse {
+  string token = 1;
+}
