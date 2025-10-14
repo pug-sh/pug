@@ -33,12 +33,15 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// AuthServiceSignUpProcedure is the fully-qualified name of the AuthService's SignUp RPC.
+	AuthServiceSignUpProcedure = "/auth.v1.AuthService/SignUp"
 	// AuthServiceSignInProcedure is the fully-qualified name of the AuthService's SignIn RPC.
 	AuthServiceSignInProcedure = "/auth.v1.AuthService/SignIn"
 )
 
 // AuthServiceClient is a client for the auth.v1.AuthService service.
 type AuthServiceClient interface {
+	SignUp(context.Context, *connect.Request[v1.SignUpRequest]) (*connect.Response[v1.SignUpResponse], error)
 	SignIn(context.Context, *connect.Request[v1.SignInRequest]) (*connect.Response[v1.SignInResponse], error)
 }
 
@@ -53,6 +56,12 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 	baseURL = strings.TrimRight(baseURL, "/")
 	authServiceMethods := v1.File_auth_v1_auth_proto.Services().ByName("AuthService").Methods()
 	return &authServiceClient{
+		signUp: connect.NewClient[v1.SignUpRequest, v1.SignUpResponse](
+			httpClient,
+			baseURL+AuthServiceSignUpProcedure,
+			connect.WithSchema(authServiceMethods.ByName("SignUp")),
+			connect.WithClientOptions(opts...),
+		),
 		signIn: connect.NewClient[v1.SignInRequest, v1.SignInResponse](
 			httpClient,
 			baseURL+AuthServiceSignInProcedure,
@@ -64,7 +73,13 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // authServiceClient implements AuthServiceClient.
 type authServiceClient struct {
+	signUp *connect.Client[v1.SignUpRequest, v1.SignUpResponse]
 	signIn *connect.Client[v1.SignInRequest, v1.SignInResponse]
+}
+
+// SignUp calls auth.v1.AuthService.SignUp.
+func (c *authServiceClient) SignUp(ctx context.Context, req *connect.Request[v1.SignUpRequest]) (*connect.Response[v1.SignUpResponse], error) {
+	return c.signUp.CallUnary(ctx, req)
 }
 
 // SignIn calls auth.v1.AuthService.SignIn.
@@ -74,6 +89,7 @@ func (c *authServiceClient) SignIn(ctx context.Context, req *connect.Request[v1.
 
 // AuthServiceHandler is an implementation of the auth.v1.AuthService service.
 type AuthServiceHandler interface {
+	SignUp(context.Context, *connect.Request[v1.SignUpRequest]) (*connect.Response[v1.SignUpResponse], error)
 	SignIn(context.Context, *connect.Request[v1.SignInRequest]) (*connect.Response[v1.SignInResponse], error)
 }
 
@@ -84,6 +100,12 @@ type AuthServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	authServiceMethods := v1.File_auth_v1_auth_proto.Services().ByName("AuthService").Methods()
+	authServiceSignUpHandler := connect.NewUnaryHandler(
+		AuthServiceSignUpProcedure,
+		svc.SignUp,
+		connect.WithSchema(authServiceMethods.ByName("SignUp")),
+		connect.WithHandlerOptions(opts...),
+	)
 	authServiceSignInHandler := connect.NewUnaryHandler(
 		AuthServiceSignInProcedure,
 		svc.SignIn,
@@ -92,6 +114,8 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 	)
 	return "/auth.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case AuthServiceSignUpProcedure:
+			authServiceSignUpHandler.ServeHTTP(w, r)
 		case AuthServiceSignInProcedure:
 			authServiceSignInHandler.ServeHTTP(w, r)
 		default:
@@ -102,6 +126,10 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 
 // UnimplementedAuthServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedAuthServiceHandler struct{}
+
+func (UnimplementedAuthServiceHandler) SignUp(context.Context, *connect.Request[v1.SignUpRequest]) (*connect.Response[v1.SignUpResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("auth.v1.AuthService.SignUp is not implemented"))
+}
 
 func (UnimplementedAuthServiceHandler) SignIn(context.Context, *connect.Request[v1.SignInRequest]) (*connect.Response[v1.SignInResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("auth.v1.AuthService.SignIn is not implemented"))

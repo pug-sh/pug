@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"log/slog"
 
+	"github.com/exaring/otelpgx"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -12,20 +14,43 @@ type DB struct {
 	Pool *pgxpool.Pool
 }
 
-// NewFromConfig initiates DB connection from config and returns it
-func NewFromConfig(ctx context.Context, cfg *Config) (*DB, error) {
-	pgxConfig, err := pgxpool.ParseConfig(cfg.ConnectionString())
-
+func createPool(ctx context.Context, addr string) (*pgxpool.Pool, error) {
+	dbPoolConfig, err := pgxpool.ParseConfig(addr)
 	if err != nil {
+		logger := logger.FromContext(ctx)
+		logger.Error("unable to parse DBPostgresAddr", slog.Any("error", err), slog.String("DBPostgresAddr", addr))
 		return nil, err
 	}
 
-	pool, err := pgxpool.NewWithConfig(ctx, pgxConfig)
+	dbPoolConfig.ConnConfig.Tracer = otelpgx.NewTracer()
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), dbPoolConfig)
+	if err != nil {
+		logger := logger.FromContext(ctx)
+		logger.Error("Unable to create connection pool", slog.Any("error", err), slog.String("DBPostgresAddr", addr))
+		return nil, err
+	}
+	return pool, nil
+}
+
+// NewFromConfig initiates DB connection from config and returns it
+func NewFromConfig(ctx context.Context, cfg *Config) (*DB, error) {
+	pool, err := createPool(ctx, cfg.ConnectionString())
 	if err != nil {
 		return nil, err
 	}
 
 	return &DB{Pool: pool}, nil
+}
+
+// NewReaderPool creates and returns a new PostgreSQL connection pool for read operations
+func NewReaderPool(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) {
+	return createPool(ctx, cfg.ConnectionString())
+}
+
+// NewWriterPool creates and returns a new PostgreSQL connection pool for write operations
+func NewWriterPool(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) {
+	return createPool(ctx, cfg.ConnectionString())
 }
 
 // Close closes opened DB connection pool

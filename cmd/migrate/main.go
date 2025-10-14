@@ -58,13 +58,13 @@ func main() {
 	flag.Parse()
 
 	migrations := &migrate.FileMigrationSource{
-		Dir: "psotgres/migrations",
+		Dir: "postgres/migrations",
 	}
 
 	deps, err := newDependencies(ctx)
 
 	if err != nil {
-		logger.Log.Error("error while intitializing dependencies", slog.Any("err", err))
+		logger.Log.Error("error while initializing dependencies", slog.Any("err", err))
 		os.Exit(1)
 	}
 
