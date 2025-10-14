@@ -1,0 +1,9 @@
+version: v2
+clean: true
+plugins:
+  # TypeScript plugin 
+  - local: protoc-gen-es
+    out: clients/typescript
+    opt: 
+      - target=ts
+      - import_extension=js

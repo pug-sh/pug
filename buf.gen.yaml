@@ -1,9 +1,17 @@
 version: v2
 clean: true
 plugins:
+  # Go plugins (existing)
   - local: protoc-gen-go
     out: internal/gen/proto
     opt: paths=source_relative
   - local: protoc-gen-connect-go
     out: internal/gen/proto
     opt: paths=source_relative
+
+  # TypeScript plugin
+  - local: protoc-gen-es
+    out: clients/typescript
+    opt:
+      - target=ts
+      - import_extension=js
