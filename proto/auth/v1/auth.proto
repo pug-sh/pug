@@ -6,24 +6,24 @@ option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1;aut
 
 // web facing
 service AuthService {
-  rpc SignUp(SignUpRequest) returns (SignUpResponse) {}
-  rpc SignIn(SignInRequest) returns (SignInResponse) {}
+  rpc SignUpWithEmail(SignUpWithEmailRequest) returns (SignUpWithEmailResponse) {}
+  rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
 }
 
-message SignUpRequest {
+message SignUpWithEmailRequest {
   string email = 1;
   string password = 2;
 }
 
-message SignUpResponse {
+message SignUpWithEmailResponse {
   string token = 1;
 }
 
-message SignInRequest {
+message SignInWithEmailRequest {
   string email = 1;
   string password = 2;
 }
 
-message SignInResponse {
+message SignInWithEmailResponse {
   string token = 1;
 }

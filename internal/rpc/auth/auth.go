@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	connect "connectrpc.com/connect"
+	"connectrpc.com/connect"
 	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
@@ -21,13 +21,11 @@ type queries struct {
 	write *dbwrite.Queries
 }
 
-// Server implements the AuthService handler
 type Server struct {
 	db     *queries
 	jwtKey []byte
 }
 
-// NewServer creates a new auth server with HMAC JWT authentication
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Server {
 	return &Server{
 		db:     &queries{read: dbread.New(pgRO), write: dbwrite.New(pgW)},
@@ -35,23 +33,34 @@ func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Server {
 	}
 }
 
-// SignUp implements the SignUp method of AuthService
-func (s *Server) SignUp(ctx context.Context, req *connect.Request[authv1.SignUpRequest]) (*connect.Response[authv1.SignUpResponse], error) {
+func (s *Server) SignUpWithEmail(ctx context.Context, req *connect.Request[authv1.SignUpWithEmailRequest]) (*connect.Response[authv1.SignUpWithEmailResponse], error) {
 	email := req.Msg.GetEmail()
 	password := req.Msg.GetPassword()
 
-	// Validate input
 	if email == "" || password == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("email and password are required"))
 	}
 
+	return s.signUpWithEmail(ctx, email, password)
+}
+
+func (s *Server) SignInWithEmail(ctx context.Context, req *connect.Request[authv1.SignInWithEmailRequest]) (*connect.Response[authv1.SignInWithEmailResponse], error) {
+	email := req.Msg.GetEmail()
+	password := req.Msg.GetPassword()
+
+	if email == "" || password == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("email and password are required"))
+	}
+
+	return s.signInWithEmail(ctx, email, password)
+}
+
+func (s *Server) signUpWithEmail(ctx context.Context, email, password string) (*connect.Response[authv1.SignUpWithEmailResponse], error) {
 	_, err := s.db.read.GetCustomerByEmail(ctx, email)
 	if err == nil {
-		// Customer already exists
 		return nil, connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("customer with this email already exists"))
 	}
 
-	// Hash the password
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to hash password"))
@@ -71,62 +80,46 @@ func (s *Server) SignUp(ctx context.Context, req *connect.Request[authv1.SignUpR
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to create customer"))
 	}
 
-	// Generate JWT token
 	token, err := s.generateJWT(customer.Email)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate token"))
 	}
 
-	response := &authv1.SignUpResponse{
+	response := &authv1.SignUpWithEmailResponse{
 		Token: token,
 	}
 
 	return connect.NewResponse(response), nil
 }
 
-// SignIn implements the SignIn method of AuthService
-func (s *Server) SignIn(ctx context.Context, req *connect.Request[authv1.SignInRequest]) (*connect.Response[authv1.SignInResponse], error) {
-	email := req.Msg.GetEmail()
-	password := req.Msg.GetPassword()
-
-	// Validate input
-	if email == "" || password == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("email and password are required"))
-	}
-
-	// Retrieve customer from database with password hash
+func (s *Server) signInWithEmail(ctx context.Context, email, password string) (*connect.Response[authv1.SignInWithEmailResponse], error) {
 	customer, err := s.db.read.GetCustomerByEmailWithPassword(ctx, email)
 	if err != nil {
-		// Customer not found
 		return nil, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("invalid credentials"))
 	}
 
-	// Verify the password
 	err = bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte(password))
 	if err != nil {
-		// Password doesn't match
 		return nil, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("invalid credentials"))
 	}
 
-	// Generate JWT token
 	token, err := s.generateJWT(customer.Email)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate token"))
 	}
 
-	response := &authv1.SignInResponse{
+	response := &authv1.SignInWithEmailResponse{
 		Token: token,
 	}
 
 	return connect.NewResponse(response), nil
 }
 
-// generateJWT creates a new JWT token for the given email
 func (s *Server) generateJWT(email string) (string, error) {
 	claims := jwt.MapClaims{
 		"email": email,
-		"exp":   time.Now().Add(time.Hour * 24).Unix(), // Token expires in 24 hours
-		"iat":   time.Now().Unix(),                     // Issued at
+		"exp":   time.Now().Add(time.Hour * 24).Unix(),
+		"iat":   time.Now().Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
