@@ -1,13 +1,13 @@
 const stringStorage = {
   getItem: (key: string) => {
-    return localStorage.getItem(key) || "";
+    return localStorage.getItem(key) || ''
   },
   setItem: (key: string, value: string) => {
-    localStorage.setItem(key, value);
+    localStorage.setItem(key, value)
   },
   removeItem: (key: string) => {
-    localStorage.removeItem(key);
+    localStorage.removeItem(key)
   },
-};
+}
 
-export { stringStorage };
+export { stringStorage }

@@ -1,65 +1,65 @@
-import { Button } from "@/components/ui/button";
+import { useForm } from '@tanstack/react-form'
+import { useState } from 'react'
+import { Link } from 'wouter'
+import * as z from 'zod'
+import AuthLayout from './layout'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from '@/components/ui/card'
 import {
   Field,
   FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
-import AuthLayout from "./layout";
+} from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Spinner } from '@/components/ui/spinner'
 
-import { useForm } from "@tanstack/react-form";
-import * as z from "zod";
-import { Link } from "wouter";
-import { authService } from "@/lib/rpc";
-import { useState } from "react";
+import { authService } from '@/lib/rpc'
 
 const formSchema = z.object({
   email: z.email(),
   password: z
     .string()
-    .min(6, "Password must be at least 6 characters.")
-    .max(30, "Password must be at most 30 characters."),
-});
+    .min(6, 'Password must be at least 6 characters.')
+    .max(30, 'Password must be at most 30 characters.'),
+})
 
 function SignupForm() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const form = useForm({
     defaultValues: {
-      email: "",
-      password: "",
+      email: '',
+      password: '',
     },
     validators: {
       onSubmit: formSchema,
     },
     onSubmit: async ({ value }) => {
-      setIsLoading(true);
-      setFormError(null);
+      setIsLoading(true)
+      setFormError(null)
       try {
         await authService.signUpWithEmail({
           email: value.email,
           password: value.password
-        });
+        })
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "An error occurred during signup";
-        setFormError(errorMessage);
-        console.error("Signup error:", error);
+        const errorMessage = error instanceof Error ? error.message : 'An error occurred during signup'
+        setFormError(errorMessage)
+        console.error('Signup error:', error)
       } finally {
-        setIsLoading(false);
+        setIsLoading(false)
       }
     },
-  });
+  })
 
   return (
     <AuthLayout>
@@ -73,8 +73,8 @@ function SignupForm() {
         <CardContent>
           <form
             onSubmit={(e) => {
-              e.preventDefault();
-              form.handleSubmit();
+              e.preventDefault()
+              form.handleSubmit()
             }}
           >
             {formError && (
@@ -87,7 +87,7 @@ function SignupForm() {
                 name="email"
                 children={(field) => {
                   const isInvalid =
-                    field.state.meta.isTouched && !field.state.meta.isValid;
+                    field.state.meta.isTouched && !field.state.meta.isValid
 
                   return (
                     <Field data-invalid={isInvalid}>
@@ -107,14 +107,14 @@ function SignupForm() {
                         <FieldError errors={field.state.meta.errors} />
                       )}
                     </Field>
-                  );
+                  )
                 }}
               />
               <form.Field
                 name="password"
                 children={(field) => {
                   const isInvalid =
-                    field.state.meta.isTouched && !field.state.meta.isValid;
+                    field.state.meta.isTouched && !field.state.meta.isValid
 
                   return (
                     <Field data-invalid={isInvalid}>
@@ -133,7 +133,7 @@ function SignupForm() {
                         <FieldError errors={field.state.meta.errors} />
                       )}
                     </Field>
-                  );
+                  )
                 }}
               />
               <FieldGroup>
@@ -145,7 +145,7 @@ function SignupForm() {
                         Creating...
                       </>
                     ) : (
-                      "Create Account"
+                      'Create Account'
                     )}
                   </Button>
                   <FieldDescription className="px-6 text-center">
@@ -158,7 +158,7 @@ function SignupForm() {
         </CardContent>
       </Card>
     </AuthLayout>
-  );
+  )
 }
 
-export default SignupForm;
+export default SignupForm

@@ -1,67 +1,67 @@
-import { Button } from "@/components/ui/button";
+import { useForm } from '@tanstack/react-form'
+import { useState } from 'react'
+import { Link } from 'wouter'
+import * as z from 'zod'
+import AuthLayout from './layout'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from '@/components/ui/card'
 import {
   Field,
   FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import AuthLayout from "./layout";
-import { Link } from "wouter";
-import * as z from "zod";
-import { useState } from "react";
-import { useForm } from "@tanstack/react-form";
-import { authService } from "@/lib/rpc";
-import { Spinner } from "@/components/ui/spinner";
+} from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Spinner } from '@/components/ui/spinner'
+import { authService } from '@/lib/rpc'
 
 const formSchema = z.object({
   email: z.email(),
   password: z
     .string()
-    .min(6, "Password must be at least 6 characters.")
-    .max(30, "Password must be at most 30 characters."),
-});
+    .min(6, 'Password must be at least 6 characters.')
+    .max(30, 'Password must be at most 30 characters.'),
+})
 
 function SigninForm() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const form = useForm({
     defaultValues: {
-      email: "",
-      password: "",
+      email: '',
+      password: '',
     },
     validators: {
       onSubmit: formSchema,
     },
     onSubmit: async ({ value }) => {
-      setIsLoading(true);
-      setFormError(null);
+      setIsLoading(true)
+      setFormError(null)
       try {
         await authService.signUpWithEmail({
           email: value.email,
           password: value.password,
-        });
+        })
       } catch (error) {
         const errorMessage =
           error instanceof Error
             ? error.message
-            : "An error occurred during signin";
-        setFormError(errorMessage);
-        console.error("Signin error:", error);
+            : 'An error occurred during signin'
+        setFormError(errorMessage)
+        console.error('Signin error:', error)
       } finally {
-        setIsLoading(false);
+        setIsLoading(false)
       }
     },
-  });
+  })
 
   return (
     <AuthLayout>
@@ -75,8 +75,8 @@ function SigninForm() {
         <CardContent>
           <form
             onSubmit={(e) => {
-              e.preventDefault();
-              form.handleSubmit();
+              e.preventDefault()
+              form.handleSubmit()
             }}
           >
             {formError && (
@@ -89,7 +89,7 @@ function SigninForm() {
                 name="email"
                 children={(field) => {
                   const isInvalid =
-                    field.state.meta.isTouched && !field.state.meta.isValid;
+                    field.state.meta.isTouched && !field.state.meta.isValid
 
                   return (
                     <Field data-invalid={isInvalid}>
@@ -109,14 +109,14 @@ function SigninForm() {
                         <FieldError errors={field.state.meta.errors} />
                       )}
                     </Field>
-                  );
+                  )
                 }}
               />
               <form.Field
                 name="password"
                 children={(field) => {
                   const isInvalid =
-                    field.state.meta.isTouched && !field.state.meta.isValid;
+                    field.state.meta.isTouched && !field.state.meta.isValid
 
                   return (
                     <Field data-invalid={isInvalid}>
@@ -135,7 +135,7 @@ function SigninForm() {
                         <FieldError errors={field.state.meta.errors} />
                       )}
                     </Field>
-                  );
+                  )
                 }}
               />
               <Field>
@@ -146,7 +146,7 @@ function SigninForm() {
                         Signing in...
                       </>
                     ) : (
-                      "Sign in"
+                      'Sign in'
                     )}
                   </Button>
                 <FieldDescription className="text-center">
@@ -158,7 +158,7 @@ function SigninForm() {
         </CardContent>
       </Card>
     </AuthLayout>
-  );
+  )
 }
 
-export default SigninForm;
+export default SigninForm

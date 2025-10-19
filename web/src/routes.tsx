@@ -1,6 +1,6 @@
 import { Route } from 'wouter'
-import SignupForm from '@/pages/auth/signup'
 import SigninForm from '@/pages/auth/signin'
+import SignupForm from '@/pages/auth/signup'
 
 const Router = () => (
   <>

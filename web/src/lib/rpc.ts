@@ -1,8 +1,8 @@
-import { createClient } from "@connectrpc/connect";
-import { createConnectTransport } from "@connectrpc/connect-web";
-import { AuthService } from '@buf/pushpa_cotton.bufbuild_es/auth/v1/auth_pb';
+import { AuthService } from '@buf/pushpa_cotton.bufbuild_es/auth/v1/auth_pb'
+import { createClient } from '@connectrpc/connect'
+import { createConnectTransport } from '@connectrpc/connect-web'
 
-const apiBaseUrl = "http://localhost:8000";
+const apiBaseUrl = 'http://localhost:8000'
 
 // const authInterceptor: Interceptor = (next) => async (req) => {
 //   const token = localStorage.getItem("token");
@@ -21,7 +21,7 @@ const apiBaseUrl = "http://localhost:8000";
 const transportWithoutAuth = createConnectTransport({
   useBinaryFormat: true,
   baseUrl: apiBaseUrl,
-});
+})
 
 
-export const authService = createClient(AuthService, transportWithoutAuth);
+export const authService = createClient(AuthService, transportWithoutAuth)
