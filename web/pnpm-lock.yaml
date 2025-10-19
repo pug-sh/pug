@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@buf/pushpa_cotton.bufbuild_es':
+        specifier: 2.9.0-20251019185719-da4599ee645b.1
+        version: 2.9.0-20251019185719-da4599ee645b.1(@bufbuild/protobuf@2.9.0)
       '@connectrpc/connect':
         specifier: ^2.1.0
         version: 2.1.0(@bufbuild/protobuf@2.9.0)
@@ -104,6 +107,11 @@ importers:
         version: 7.1.10(@types/node@24.8.1)(jiti@2.6.1)(lightningcss@1.30.1)
 
 packages:
+
+  '@buf/pushpa_cotton.bufbuild_es@2.9.0-20251019185719-da4599ee645b.1':
+    resolution: {tarball: https://buf.build/gen/npm/v1/@buf/pushpa_cotton.bufbuild_es/-/pushpa_cotton.bufbuild_es-2.9.0-20251019185719-da4599ee645b.1.tgz}
+    peerDependencies:
+      '@bufbuild/protobuf': ^2.9.0
 
   '@bufbuild/protobuf@2.9.0':
     resolution: {integrity: sha512-rnJenoStJ8nvmt9Gzye8nkYd6V22xUAnu4086ER7h1zJ508vStko4pMvDeQ446ilDTFpV5wnoc5YS7XvMwwMqA==}
@@ -1459,6 +1467,10 @@ packages:
     resolution: {integrity: sha512-JInaHOamG8pt5+Ey8kGmdcAcg3OL9reK8ltczgHTAwNhMys/6ThXHityHxVV2p3fkw/c+MAvBHFVYHFZDmjMCQ==}
 
 snapshots:
+
+  '@buf/pushpa_cotton.bufbuild_es@2.9.0-20251019185719-da4599ee645b.1(@bufbuild/protobuf@2.9.0)':
+    dependencies:
+      '@bufbuild/protobuf': 2.9.0
 
   '@bufbuild/protobuf@2.9.0': {}
 

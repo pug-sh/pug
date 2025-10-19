@@ -19,6 +19,7 @@ import AuthLayout from "./layout";
 import { useForm } from "@tanstack/react-form";
 import * as z from "zod";
 import { Link } from "wouter";
+import { authService } from "@/lib/rpc";
 
 const formSchema = z.object({
   email: z.email(),
@@ -38,6 +39,10 @@ function SignupForm() {
       onSubmit: formSchema,
     },
     onSubmit: async ({ value }) => {
+      await authService.signUpWithEmail({
+        email: value.email,
+        password: value.password
+      })
       console.log(value)
     },
   });

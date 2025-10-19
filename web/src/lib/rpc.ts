@@ -1,6 +1,6 @@
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { AuthService } from "../../../clients/typescript/auth/v1/auth_pb.ts";
+import { AuthService } from '@buf/pushpa_cotton.bufbuild_es/auth/v1/auth_pb';
 
 const apiBaseUrl = "http://localhost:8000";
 
