@@ -14,12 +14,14 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import AuthLayout from "./layout";
 
 import { useForm } from "@tanstack/react-form";
 import * as z from "zod";
 import { Link } from "wouter";
 import { authService } from "@/lib/rpc";
+import { useState } from "react";
 
 const formSchema = z.object({
   email: z.email(),
@@ -30,6 +32,9 @@ const formSchema = z.object({
 });
 
 function SignupForm() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
   const form = useForm({
     defaultValues: {
       email: "",
@@ -39,11 +44,20 @@ function SignupForm() {
       onSubmit: formSchema,
     },
     onSubmit: async ({ value }) => {
-      await authService.signUpWithEmail({
-        email: value.email,
-        password: value.password
-      })
-      console.log(value)
+      setIsLoading(true);
+      setFormError(null);
+      try {
+        await authService.signUpWithEmail({
+          email: value.email,
+          password: value.password
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "An error occurred during signup";
+        setFormError(errorMessage);
+        console.error("Signup error:", error);
+      } finally {
+        setIsLoading(false);
+      }
     },
   });
 
@@ -63,6 +77,11 @@ function SignupForm() {
               form.handleSubmit();
             }}
           >
+            {formError && (
+              <div className="mb-4 text-sm text-destructive font-normal">
+                {formError}
+              </div>
+            )}
             <FieldGroup>
               <form.Field
                 name="email"
@@ -119,7 +138,16 @@ function SignupForm() {
               />
               <FieldGroup>
                 <Field>
-                  <Button type="submit">Create Account</Button>
+                  <Button type="submit" disabled={isLoading}>
+                    {isLoading ? (
+                      <>
+                        <Spinner className="mr-2 h-4 w-4" />
+                        Creating...
+                      </>
+                    ) : (
+                      "Create Account"
+                    )}
+                  </Button>
                   <FieldDescription className="px-6 text-center">
                     Already have an account? <Link to="/signin">Sign in</Link>
                   </FieldDescription>
