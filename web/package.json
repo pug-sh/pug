@@ -16,6 +16,8 @@
     "@tanstack/react-form": "^1.23.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jotai": "^2.15.0",
+    "jwt-decode": "^4.0.0",
     "lucide-react": "^0.546.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
