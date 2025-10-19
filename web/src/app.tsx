@@ -1,9 +1,8 @@
-import { SignupForm } from "./pages/auth/signup"
-import SigninForm from "./pages/auth/signin"
+import Router from "./routes"
 
 function App() {
   return (
-    <SigninForm />
+    <Router />
   )
 }
 

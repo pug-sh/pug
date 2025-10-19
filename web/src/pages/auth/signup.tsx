@@ -9,16 +9,42 @@ import {
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import AuthLayout from "./layout";
 
-export function SignupForm({ ...props }: React.ComponentProps<typeof Card>) {
+import { useForm } from "@tanstack/react-form";
+import * as z from "zod";
+import { Link } from "wouter";
+
+const formSchema = z.object({
+  email: z.email(),
+  password: z
+    .string()
+    .min(6, "Password must be at least 6 characters.")
+    .max(30, "Password must be at most 30 characters."),
+});
+
+function SignupForm() {
+  const form = useForm({
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+    validators: {
+      onSubmit: formSchema,
+    },
+    onSubmit: async ({ value }) => {
+      console.log(value)
+    },
+  });
+
   return (
     <AuthLayout>
-      <Card {...props}>
+      <Card>
         <CardHeader>
           <CardTitle>Create an account</CardTitle>
           <CardDescription>
@@ -26,26 +52,71 @@ export function SignupForm({ ...props }: React.ComponentProps<typeof Card>) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              form.handleSubmit();
+            }}
+          >
             <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="m@example.com"
-                  required
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="password">Password</FieldLabel>
-                <Input id="password" type="password" required />
-              </Field>
+              <form.Field
+                name="email"
+                children={(field) => {
+                  const isInvalid =
+                    field.state.meta.isTouched && !field.state.meta.isValid;
+
+                  return (
+                    <Field data-invalid={isInvalid}>
+                      <FieldLabel htmlFor={field.name}>Email</FieldLabel>
+                      <Input
+                        id={field.name}
+                        name={field.name}
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        aria-invalid={isInvalid}
+                        type="email"
+                        placeholder="m@example.com"
+                        autoComplete="off"
+                      />
+                      {isInvalid && (
+                        <FieldError errors={field.state.meta.errors} />
+                      )}
+                    </Field>
+                  );
+                }}
+              />
+              <form.Field
+                name="password"
+                children={(field) => {
+                  const isInvalid =
+                    field.state.meta.isTouched && !field.state.meta.isValid;
+
+                  return (
+                    <Field data-invalid={isInvalid}>
+                      <FieldLabel htmlFor={field.name}>Password</FieldLabel>
+                      <Input
+                        id={field.name}
+                        name={field.name}
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        aria-invalid={isInvalid}
+                        type="password"
+                        autoComplete="off"
+                      />
+                      {isInvalid && (
+                        <FieldError errors={field.state.meta.errors} />
+                      )}
+                    </Field>
+                  );
+                }}
+              />
               <FieldGroup>
                 <Field>
                   <Button type="submit">Create Account</Button>
                   <FieldDescription className="px-6 text-center">
-                    Already have an account? <a href="#">Sign in</a>
+                    Already have an account? <Link to="/signin">Sign in</Link>
                   </FieldDescription>
                 </Field>
               </FieldGroup>
@@ -56,3 +127,5 @@ export function SignupForm({ ...props }: React.ComponentProps<typeof Card>) {
     </AuthLayout>
   );
 }
+
+export default SignupForm;
