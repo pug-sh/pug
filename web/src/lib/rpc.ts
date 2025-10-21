@@ -2,7 +2,7 @@ import { AuthService } from '@buf/pushpa_cotton.bufbuild_es/auth/v1/auth_pb'
 import { createClient } from '@connectrpc/connect'
 import { createConnectTransport } from '@connectrpc/connect-web'
 
-const apiBaseUrl = 'http://localhost:8000'
+const apiBaseUrl = 'http://localhost:8081'
 
 // const authInterceptor: Interceptor = (next) => async (req) => {
 //   const token = localStorage.getItem("token");

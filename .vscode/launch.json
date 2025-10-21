@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Server",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/server",
+      "env": {
+        "GO_ENV": "development"
+      },
+      "envFile": ["${workspaceFolder}/.env"]
+    },
+    {
+      "name": "Run Migrations (Up)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/migrate",
+      "args": ["-direction", "up"],
+      "env": {
+        "GO_ENV": "development"
+      },
+      "envFile": ["${workspaceFolder}/.env"]
+    },
+    {
+      "name": "Run Migrations (Down)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/migrate",
+      "args": ["-direction", "down"],
+      "env": {
+        "GO_ENV": "development"
+      },
+      "envFile": ["${workspaceFolder}/.env"]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "go.useLanguageServer": true,
+  "go.toolsManagement.autoUpdate": true,
+  "[go]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "always"
+    }
+  },
+  "go.testFlags": ["-v"],
+  "go.buildFlags": [],
+  "go.lintFlags": [],
+  "go.vetFlags": []
+}
