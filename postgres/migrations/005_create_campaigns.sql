@@ -1,4 +1,4 @@
--- Write your migrate up statements here
+-- +migrate Up
 create table campaigns (
     create_time timestamptz not null default now(),
     end_time timestamptz,
@@ -17,7 +17,6 @@ update on campaigns for each row execute procedure moddatetime(update_time);
 create index idx_campaigns_project_id on campaigns (project_id);
 create index idx_campaigns_scheduled_time on campaigns (scheduled_time);
 create index idx_campaigns_status on campaigns (status);
----- create above / drop below ----
--- Write your migrate down statements here. If this migration is irreversible
--- Then delete the separator line above.
+
+-- +migrate Down
 drop table campaigns;

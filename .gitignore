@@ -1,2 +1,3 @@
 # Clients folder
 clients/
+.env

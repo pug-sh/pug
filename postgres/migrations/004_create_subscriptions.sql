@@ -1,3 +1,4 @@
+-- +migrate Up
 -- Create updated subscriptions table with user association
 create table subscriptions (
   create_time timestamptz not null default now(),
@@ -19,8 +20,7 @@ create index idx_subscriptions_user_id on subscriptions (user_id);
 create index idx_subscriptions_project_user on subscriptions (project_id, user_id);
 create index idx_subscriptions_project_user_status on subscriptions (project_id, user_id, status);
 
----- create above / drop below ----
--- Write your migrate down statements here
+-- +migrate Down
 drop index if exists idx_subscriptions_project_status_platform;
 drop index if exists idx_subscriptions_user_id;
 drop index if exists idx_subscriptions_project_user;

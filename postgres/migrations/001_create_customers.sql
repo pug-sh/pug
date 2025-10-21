@@ -1,4 +1,4 @@
--- Write your migrate up statements here
+-- +migrate Up
 create extension if not exists moddatetime;
 -- use xid for id
 create table customers (
@@ -12,7 +12,8 @@ create table customers (
 );
 create trigger update_timestamp before
 update on customers for each row execute procedure moddatetime(update_time);
----- create above / drop below ----
+
+-- +migrate Down
 drop trigger if exists update_timestamp on customers;
 drop table customers;
 drop extension if exists moddatetime;
