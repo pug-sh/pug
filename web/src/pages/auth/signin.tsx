@@ -1,9 +1,11 @@
+import { ConnectError } from '@connectrpc/connect'
 import { useForm } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
 import { useState } from 'react'
 import { Link } from 'wouter'
 import * as z from 'zod'
 import AuthLayout from './layout'
+import { loginAtom } from '@/atoms/auth'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -22,8 +24,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { authService } from '@/lib/rpc'
-import { ConnectError } from '@connectrpc/connect'
-import { loginAtom } from '@/atoms/auth'
 
 const formSchema = z.object({
   email: z.email(),
