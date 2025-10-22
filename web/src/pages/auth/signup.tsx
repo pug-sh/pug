@@ -1,4 +1,5 @@
 import { useForm } from '@tanstack/react-form'
+import { useAtom } from 'jotai'
 import { useState } from 'react'
 import { Link } from 'wouter'
 import * as z from 'zod'
@@ -23,6 +24,7 @@ import { Spinner } from '@/components/ui/spinner'
 
 import { authService } from '@/lib/rpc'
 import { ConnectError } from '@connectrpc/connect'
+import { loginAtom } from '@/atoms/auth'
 
 const formSchema = z.object({
   email: z.email(),
@@ -35,6 +37,7 @@ const formSchema = z.object({
 function SignupForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [, login] = useAtom(loginAtom)
 
   const form = useForm({
     defaultValues: {
@@ -48,10 +51,11 @@ function SignupForm() {
       setIsLoading(true)
       setFormError(null)
       try {
-        await authService.signUpWithEmail({
+        const response = await authService.signUpWithEmail({
           email: value.email,
           password: value.password
         })
+        login(response.token)
       } catch (error) {
         if (error instanceof ConnectError) {
           setFormError(error.rawMessage)
