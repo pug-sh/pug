@@ -2,10 +2,10 @@ import { ConnectError } from '@connectrpc/connect'
 import { useForm } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
 import { useState } from 'react'
-import { Link } from 'wouter'
+import { Link, Redirect } from 'wouter'
 import * as z from 'zod'
 import AuthLayout from './layout'
-import { loginAtom } from '@/atoms/auth'
+import { isLoggedInAtom, loginAtom } from '@/atoms/auth'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -37,6 +37,7 @@ function SigninForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [, login] = useAtom(loginAtom)
+  const [isLoggedIn] = useAtom(isLoggedInAtom)
 
   const form = useForm({
     defaultValues: {
@@ -72,6 +73,10 @@ function SigninForm() {
       }
     },
   })
+
+  if(isLoggedIn) {
+    return <Redirect to='/' />
+  }
 
   return (
     <AuthLayout>
