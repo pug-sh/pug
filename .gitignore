@@ -1,3 +1,4 @@
 # Clients folder
 clients/
 .env
+__debug*

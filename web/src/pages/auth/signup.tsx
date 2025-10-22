@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 
 import { authService } from '@/lib/rpc'
+import { ConnectError } from '@connectrpc/connect'
 
 const formSchema = z.object({
   email: z.email(),
@@ -52,6 +53,11 @@ function SignupForm() {
           password: value.password
         })
       } catch (error) {
+        if (error instanceof ConnectError) {
+          setFormError(error.rawMessage)
+          return
+        }
+
         const errorMessage = error instanceof Error ? error.message : 'An error occurred during signup'
         setFormError(errorMessage)
         console.error('Signup error:', error)

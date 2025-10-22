@@ -10,7 +10,8 @@
       "env": {
         "GO_ENV": "development"
       },
-      "envFile": ["${workspaceFolder}/.env"]
+      "envFile": ["${workspaceFolder}/.env"],
+      "cwd": "${workspaceFolder}"
     },
     {
       "name": "Run Migrations (Up)",
@@ -22,7 +23,8 @@
       "env": {
         "GO_ENV": "development"
       },
-      "envFile": ["${workspaceFolder}/.env"]
+      "envFile": ["${workspaceFolder}/.env"],
+      "cwd": "${workspaceFolder}"
     },
     {
       "name": "Run Migrations (Down)",
@@ -34,7 +36,8 @@
       "env": {
         "GO_ENV": "development"
       },
-      "envFile": ["${workspaceFolder}/.env"]
+      "envFile": ["${workspaceFolder}/.env"],
+      "cwd": "${workspaceFolder}"
     }
   ]
 }
