@@ -62,7 +62,7 @@ gen-ts: lint
 
 .PHONY: build
 build:
-	go build -o bin/cotton ./cmd/cotton
+	go build -o bin/cotton main.go
 
 .PHONY: test
 test:
