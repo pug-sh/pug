@@ -80,7 +80,7 @@ func (s *Server) signUpWithEmail(ctx context.Context, email, password string) (*
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to create customer"))
 	}
 
-	token, err := s.generateJWT(customer.Email)
+	token, err := generateJWT(customer.Email, s.jwtKey)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate token"))
 	}
@@ -103,7 +103,7 @@ func (s *Server) signInWithEmail(ctx context.Context, email, password string) (*
 		return nil, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("invalid credentials"))
 	}
 
-	token, err := s.generateJWT(customer.Email)
+	token, err := generateJWT(customer.Email, s.jwtKey)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate token"))
 	}
@@ -115,7 +115,7 @@ func (s *Server) signInWithEmail(ctx context.Context, email, password string) (*
 	return connect.NewResponse(response), nil
 }
 
-func (s *Server) generateJWT(email string) (string, error) {
+func generateJWT(email string, jwtKey []byte) (string, error) {
 	claims := jwt.MapClaims{
 		"email": email,
 		"exp":   time.Now().Add(time.Hour * 24).Unix(),
@@ -123,7 +123,7 @@ func (s *Server) generateJWT(email string) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(s.jwtKey)
+	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
 		return "", err
 	}
