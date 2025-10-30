@@ -59,3 +59,7 @@ rpc: lint
 .PHONY: gen-ts
 gen-ts: lint
 	buf generate
+
+.PHONY: test
+test:
+	go test ./...

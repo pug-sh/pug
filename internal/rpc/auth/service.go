@@ -5,7 +5,6 @@ import (
 	"time"
 
 	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/golang-jwt/jwt/v5"
@@ -14,25 +13,20 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type queries struct {
-	read  *dbread.Queries
-	write *dbwrite.Queries
-}
-
 type Service struct {
-	db     *queries
+	repo   Repo
 	jwtKey []byte
 }
 
 func newService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
 	return &Service{
-		db:     &queries{read: dbread.New(pgRO), write: dbwrite.New(pgW)},
+		repo:   NewRepo(pgRO, pgW),
 		jwtKey: jwtKey,
 	}
 }
 
 func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (*authv1.SignUpWithEmailResponse, error) {
-	_, err := s.db.read.GetCustomerByEmail(ctx, email)
+	_, err := s.repo.GetCustomerByEmail(ctx, email)
 	if err == nil {
 		return nil, ErrUserAlreadyExists
 	}
@@ -51,7 +45,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		PasswordHash: string(passwordHash),
 	}
 
-	customer, err := s.db.write.CreateCustomer(ctx, arg)
+	customer, err := s.repo.CreateCustomer(ctx, arg)
 	if err != nil {
 		return nil, ErrCustomerCreation
 	}
@@ -69,7 +63,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 }
 
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (*authv1.SignInWithEmailResponse, error) {
-	customer, err := s.db.read.GetCustomerByEmailWithPassword(ctx, email)
+	customer, err := s.repo.GetCustomerByEmailWithPassword(ctx, email)
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}
