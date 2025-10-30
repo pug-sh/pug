@@ -63,3 +63,7 @@ gen-ts: lint
 .PHONY: test
 test:
 	go test ./...
+
+.PHONY: pulsar-init
+pulsar-init:
+	go run cmd/pulsar-init/main.go

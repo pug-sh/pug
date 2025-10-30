@@ -58,7 +58,7 @@ func main() {
 	flag.Parse()
 
 	migrations := &migrate.FileMigrationSource{
-		Dir: "postgres/migrations",
+		Dir: "schema/postgres/migrations",
 	}
 
 	deps, err := newDependencies(ctx)

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/fivebitsio/cotton/pkg/postgres"
+	"github.com/fivebitsio/cotton/pkg/pulsar"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sethvargo/go-envconfig"
 )
@@ -11,6 +12,7 @@ import (
 type dependencies struct {
 	pgRo   *pgxpool.Pool
 	pgW    *pgxpool.Pool
+	pulsar *pulsar.Client
 	jwtKey []byte
 }
 
@@ -30,11 +32,17 @@ func newDependencies(ctx context.Context) (*dependencies, error) {
 		return nil, err
 	}
 
+	pulsarClient, err := pulsar.NewClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	jwtKey := []byte("your-jwt-secret-key-here")
 
 	return &dependencies{
 		pgRo:   pgRo,
 		pgW:    pgW,
+		pulsar: pulsarClient,
 		jwtKey: jwtKey,
 	}, nil
 }
@@ -42,4 +50,7 @@ func newDependencies(ctx context.Context) (*dependencies, error) {
 func (deps *dependencies) Close(ctx context.Context) {
 	deps.pgRo.Close()
 	deps.pgW.Close()
+	if deps.pulsar != nil {
+		deps.pulsar.Close()
+	}
 }
