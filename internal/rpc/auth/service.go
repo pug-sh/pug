@@ -36,9 +36,8 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return nil, err
 	}
 
-	customerID := xid.New().String()
 	arg := dbwrite.CreateCustomerParams{
-		ID:           customerID,
+		ID:           xid.New().String(),
 		Email:        email,
 		DisplayName:  postgres.StringToText(""),
 		PictureUri:   postgres.StringToText(""),
@@ -48,6 +47,18 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	customer, err := s.repo.CreateCustomer(ctx, arg)
 	if err != nil {
 		return nil, ErrCustomerCreation
+	}
+
+	projectParams := dbwrite.CreateProjectParams{
+		ApiKey:      xid.New().String(),
+		CustomerID:  customer.ID,
+		ID:          xid.New().String(),
+		DisplayName: "default",
+	}
+
+	_, err = s.repo.CreateProject(ctx, projectParams)
+	if err != nil {
+		return nil, err
 	}
 
 	token, err := s.generateJWT(customer.Email)

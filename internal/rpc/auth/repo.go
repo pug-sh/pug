@@ -13,6 +13,7 @@ type Repo interface {
 	GetCustomerByEmailWithPassword(ctx context.Context, email string) (dbread.GetCustomerByEmailWithPasswordRow, error)
 	GetCustomerByID(ctx context.Context, id string) (dbread.Customer, error)
 	CreateCustomer(ctx context.Context, arg dbwrite.CreateCustomerParams) (dbwrite.Customer, error)
+	CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error)
 }
 
 type repoImpl struct {
@@ -41,4 +42,8 @@ func (r *repoImpl) GetCustomerByID(ctx context.Context, id string) (dbread.Custo
 
 func (r *repoImpl) CreateCustomer(ctx context.Context, arg dbwrite.CreateCustomerParams) (dbwrite.Customer, error) {
 	return r.write.CreateCustomer(ctx, arg)
+}
+
+func (r *repoImpl) CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error) {
+	return r.write.CreateProject(ctx, arg)
 }
