@@ -60,10 +60,10 @@ rpc: lint
 gen-ts: lint
 	buf generate
 
+.PHONY: build
+build:
+	go build -o bin/cotton ./cmd/cotton
+
 .PHONY: test
 test:
 	go test ./...
-
-.PHONY: pulsar-init
-pulsar-init:
-	go run cmd/pulsar-init/main.go
