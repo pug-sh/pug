@@ -11,7 +11,7 @@ import (
 type dependencies struct {
 	pgRo   *pgxpool.Pool
 	pgW    *pgxpool.Pool
-	jwtKey []byte // For HMAC JWT signing
+	jwtKey []byte
 }
 
 func newDependencies(ctx context.Context) (*dependencies, error) {
@@ -30,8 +30,7 @@ func newDependencies(ctx context.Context) (*dependencies, error) {
 		return nil, err
 	}
 
-	// Get JWT key from environment - in a real app you'd have another config for this
-	jwtKey := []byte("your-jwt-secret-key-here") // Should come from environment/config
+	jwtKey := []byte("your-jwt-secret-key-here")
 
 	return &dependencies{
 		pgRo:   pgRo,
