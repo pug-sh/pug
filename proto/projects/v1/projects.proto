@@ -1,0 +1,65 @@
+edition = "2023";
+package projects.v1;
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1;projectsv1";
+
+service ProjectsService {
+  rpc Get(GetRequest) returns (GetResponse) {}
+  rpc BatchGet(BatchGetRequest) returns (BatchGetResponse) {}
+  rpc Create(CreateRequest) returns (CreateResponse) {}
+  rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+  rpc UpdateDisplayName(UpdateDisplayNameRequest) returns (UpdateDisplayNameResponse) {}
+  rpc UpdateFCMServiceJSON(UpdateFCMServiceJSONRequest) returns (UpdateFCMServiceJSONResponse) {}
+}
+
+message GetRequest {
+  string id = 1;
+}
+
+message GetResponse {
+  Project project = 1;
+}
+
+message BatchGetRequest {}
+
+message BatchGetResponse {
+  repeated Project projects = 1;
+}
+
+message Project {
+  string api_key = 1;
+  string customer_id = 2;
+  string display_name = 3;
+  string id = 4;
+}
+
+message CreateRequest {
+  string display_name = 1;
+}
+
+message CreateResponse {
+  Project project = 1;
+}
+
+message DeleteRequest {
+  string id = 1;
+}
+
+message DeleteResponse {}
+
+message UpdateDisplayNameRequest {
+  string display_name = 1;
+  string id = 2;
+}
+
+message UpdateDisplayNameResponse {
+  Project project = 1;
+}
+
+message UpdateFCMServiceJSONRequest {
+  string fcm_service_json = 1;
+  string id = 2;
+}
+
+message UpdateFCMServiceJSONResponse {}
