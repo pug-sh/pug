@@ -1,0 +1,46 @@
+services:
+  pulsar:
+    image: apachepulsar/pulsar:3.2.1
+    restart: always
+    command: bin/pulsar standalone --wipe-data
+    volumes:
+      - pulsar-data:/pulsar/data
+    ports:
+      - "6650:6650"
+      - "8080:8080"
+    healthcheck:
+      test: ['CMD', 'bin/pulsar-admin', 'brokers', 'healthcheck']
+      interval: 30s
+      timeout: 10s
+      retries: 20
+    networks:
+      - pulsar-net
+    environment:
+      PULSAR_MEM: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=1g"
+      PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled: "false"
+      PULSAR_PREFIX_allowAutoTopicCreationType: "partitioned"
+      PULSAR_PREFIX_defaultNumPartitions: "1"
+
+  dekaf:
+    image: visortelle/dekaf:1.0.0
+    restart: always
+    environment:
+      DEKAF_PULSAR_WEB_URL: "http://pulsar:8080"
+      DEKAF_PULSAR_BROKER_URL: "pulsar://pulsar:6650"
+    volumes:
+      - dekaf-library:/dekaf/data/library
+    ports:
+      - "8090:8090"
+    networks:
+      - pulsar-net
+    depends_on:
+      pulsar:
+        condition: service_healthy
+
+volumes:
+  pulsar-data:
+  dekaf-library:
+
+networks:
+  pulsar-net:
+    driver: bridge
