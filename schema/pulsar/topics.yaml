@@ -1,40 +1,14 @@
 topics:
-  - name: "user-events"
+  - name: "subscriptions"
     type: "persistent"
-    partitions: 4
+    partitions: 1
     properties:
-      description: "Events related to user actions"
-    retention:
-      timeInMinutes: 10080
-      sizeInMB: 10000
-
-  - name: "order-events"
-    type: "persistent"
-    partitions: 2
-    properties:
-      description: "Events related to order processing"
+      description: "Events related to subscription management"
     retention:
       timeInMinutes: 43200
-      sizeInMB: 20000
-
-  - name: "notification-events"
-    type: "persistent"
-    partitions: 2
-    properties:
-      description: "Notification events"
-    retention:
-      timeInMinutes: 1440
-      sizeInMB: 5000
+      sizeInMB: 10000
 
 subscriptions:
-  - name: "user-events-processor"
-    topic: "user-events"
-    type: "shared"
-
-  - name: "order-events-processor"
-    topic: "order-events"
-    type: "shared"
-    
-  - name: "notification-service"
-    topic: "notification-events"
+  - name: "subscription-processor"
+    topic: "subscriptions"
     type: "shared"

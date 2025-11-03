@@ -81,6 +81,7 @@ require (
 )
 
 require (
+	connectrpc.com/authn v0.2.0
 	github.com/go-gorp/gorp/v3 v3.1.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

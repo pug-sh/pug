@@ -59,34 +59,27 @@ message UpdateTokenResponse {}
    for async subscription operations
 */
 
-message SubscriptionUpsertMessage {
-  string id = 1;
-  map<string, google.protobuf.Any> metadata = 2;
-  string platform = 3;
-  string token = 4;
-  string project_id = 5;
+enum SubscriptionOperationType {
+  SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED = 0;
+  SUBSCRIPTION_OPERATION_TYPE_UPSERT = 1;
+  SUBSCRIPTION_OPERATION_TYPE_UPDATE_HEARTBEAT = 2;
+  SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA = 3;
+  SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS = 4;
+  SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN = 5;
+  SUBSCRIPTION_OPERATION_TYPE_USER_LINK = 6;
 }
 
-message SubscriptionUpdateHeartbeatMessage {
-  string id = 1;
-  string project_id = 2;
-}
-
-message SubscriptionUpdateMetadataMessage {
-  string id = 1;
-  map<string, google.protobuf.Any> metadata = 2;
-  string project_id = 3;
-}
-
-message SubscriptionUpdateStatusMessage {
-  string id = 1;
-  string status = 2;
-}
-
-message SubscriptionUpdateTokenMessage {
-  string id = 1;
-  string token = 2;
-  string project_id = 3;
+message SubscriptionOperationMessage {
+  SubscriptionOperationType operation_type = 1;
+  string id = 2;
+  map<string, google.protobuf.Any> metadata = 3;
+  string platform = 4;
+  string token = 5;
+  string status = 6;
+  string project_id = 7;
+  string external_id = 8;
+  map<string, google.protobuf.Any> user_metadata = 9;
+  string subscription_id = 10; // For user linking operations
 }
 
 // SDK support methods
@@ -119,10 +112,4 @@ message SetUserExternalIDResponse {
   bool subscription_was_linked = 4; // true if subscription was successfully linked to user
 }
 
-// Message for async subscription-user linking operations
-message SubscriptionUserLinkMessage {
-  string subscription_id = 1;
-  string external_id = 2;
-  map<string, google.protobuf.Any> user_metadata = 3;
-  string project_id = 4;
-}
+

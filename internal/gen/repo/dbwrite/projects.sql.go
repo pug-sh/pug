@@ -45,3 +45,88 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 	)
 	return i, err
 }
+
+const deleteProject = `-- name: DeleteProject :one
+delete from projects
+where customer_id = $1
+    and id = $2
+returning api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+`
+
+type DeleteProjectParams struct {
+	CustomerID string
+	ID         string
+}
+
+func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, deleteProject, arg.CustomerID, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ApiKey,
+		&i.CustomerID,
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const updateFCMServiceJSON = `-- name: UpdateFCMServiceJSON :one
+update projects
+set fcm_service_json = $1
+where customer_id = $2
+    and id = $3
+returning api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+`
+
+type UpdateFCMServiceJSONParams struct {
+	FcmServiceJson pgtype.Text
+	CustomerID     string
+	ID             string
+}
+
+func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMServiceJSONParams) (Project, error) {
+	row := q.db.QueryRow(ctx, updateFCMServiceJSON, arg.FcmServiceJson, arg.CustomerID, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ApiKey,
+		&i.CustomerID,
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const updateProjectDisplayName = `-- name: UpdateProjectDisplayName :one
+update projects
+set display_name = $1
+where customer_id = $2
+    and id = $3
+returning api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+`
+
+type UpdateProjectDisplayNameParams struct {
+	DisplayName string
+	CustomerID  string
+	ID          string
+}
+
+func (q *Queries) UpdateProjectDisplayName(ctx context.Context, arg UpdateProjectDisplayNameParams) (Project, error) {
+	row := q.db.QueryRow(ctx, updateProjectDisplayName, arg.DisplayName, arg.CustomerID, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ApiKey,
+		&i.CustomerID,
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
