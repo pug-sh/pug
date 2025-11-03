@@ -1,0 +1,128 @@
+edition = "2023";
+package subscriptions.v1;
+
+import "google/protobuf/any.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1;subscriptionsv1";
+
+service SubscriptionsService {
+  rpc Upsert(UpsertRequest) returns (UpsertResponse) {}
+  rpc UpdateHeartbeat(UpdateHeartbeatRequest) returns (UpdateHeartbeatResponse) {}
+  rpc UpdateMetadata(UpdateMetadataRequest) returns (UpdateMetadataResponse) {}
+  rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse) {}
+  rpc UpdateToken(UpdateTokenRequest) returns (UpdateTokenResponse) {}
+  
+  // SDK support methods
+  rpc RegisterSubscription(RegisterSubscriptionRequest) returns (RegisterSubscriptionResponse) {}
+  rpc SetUserExternalID(SetUserExternalIDRequest) returns (SetUserExternalIDResponse) {}
+}
+
+// include token in header
+message UpsertRequest {
+  string id = 1;
+  map<string, google.protobuf.Any> metadata = 2;
+  string platform = 3;
+  string token = 4;
+}
+
+message UpsertResponse {}
+
+// include token in header
+message UpdateHeartbeatRequest {
+  string id = 1;
+}
+message UpdateHeartbeatResponse {}
+
+// include token in header
+message UpdateMetadataRequest {
+  string id = 1;
+  map<string, google.protobuf.Any> metadata = 2;
+}
+message UpdateMetadataResponse {}
+
+// include token in header
+message UpdateStatusRequest {
+  string id = 1;
+  string status = 2;
+}
+message UpdateStatusResponse {}
+
+// include token in header
+message UpdateTokenRequest {
+  string id = 1;
+  string token = 2;
+}
+message UpdateTokenResponse {}
+
+/*
+   for async subscription operations
+*/
+
+message SubscriptionUpsertMessage {
+  string id = 1;
+  map<string, google.protobuf.Any> metadata = 2;
+  string platform = 3;
+  string token = 4;
+  string project_id = 5;
+}
+
+message SubscriptionUpdateHeartbeatMessage {
+  string id = 1;
+  string project_id = 2;
+}
+
+message SubscriptionUpdateMetadataMessage {
+  string id = 1;
+  map<string, google.protobuf.Any> metadata = 2;
+  string project_id = 3;
+}
+
+message SubscriptionUpdateStatusMessage {
+  string id = 1;
+  string status = 2;
+}
+
+message SubscriptionUpdateTokenMessage {
+  string id = 1;
+  string token = 2;
+  string project_id = 3;
+}
+
+// SDK support methods
+
+// Register subscription - called when Pushpa.init("api_key") is called
+message RegisterSubscriptionRequest {
+  string subscription_id = 1;
+  string platform = 2;
+  string token = 3;
+  map<string, google.protobuf.Any> metadata = 4;
+}
+
+message RegisterSubscriptionResponse {
+  string subscription_id = 1;
+  bool success = 2;
+}
+
+// Set user external ID - called when Pushpa.setExternalId("something") is called
+// This will create the user if it doesn't exist and link the subscription to that user
+message SetUserExternalIDRequest {
+  string subscription_id = 1;
+  string external_id = 2;
+  map<string, google.protobuf.Any> user_metadata = 3; // Optional metadata for user creation
+}
+
+message SetUserExternalIDResponse {
+  string user_id = 1;
+  string external_id = 2;
+  bool user_was_created = 3; // true if user was just created
+  bool subscription_was_linked = 4; // true if subscription was successfully linked to user
+}
+
+// Message for async subscription-user linking operations
+message SubscriptionUserLinkMessage {
+  string subscription_id = 1;
+  string external_id = 2;
+  map<string, google.protobuf.Any> user_metadata = 3;
+  string project_id = 4;
+}
