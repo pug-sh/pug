@@ -6,7 +6,7 @@ topics:
       description: "Events related to subscription management"
     retention:
       timeInMinutes: 43200
-      sizeInMB: 10000
+      sizeInMB: 50000
 
 subscriptions:
   - name: "subscription-processor"
