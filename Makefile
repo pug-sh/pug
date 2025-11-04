@@ -67,3 +67,11 @@ build:
 .PHONY: test
 test:
 	go test ./...
+
+.PHONY: db-shell
+db-shell:
+	docker compose -f infra/dev/docker-compose.yaml exec postgres psql -U postgres -d cotton
+
+.PHONY: run-infra
+run-infra:
+	docker compose -f infra/dev/docker-compose.yaml up -d

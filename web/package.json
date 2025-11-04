@@ -11,7 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@buf/pushpa_cotton.bufbuild_es": "2.9.0-20251019185719-da4599ee645b.1",
+    "@buf/pushpa_cotton.bufbuild_es": "2.10.0-20251104144232-f7ca32369fce.1",
     "@connectrpc/connect": "^2.1.0",
     "@connectrpc/connect-web": "^2.1.0",
     "@radix-ui/react-label": "^2.1.7",

@@ -1,4 +1,23 @@
 services:
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-cotton}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    networks:
+      - cotton-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-cotton}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   pulsar:
     image: apachepulsar/pulsar:3.2.1
     restart: always
@@ -14,7 +33,7 @@ services:
       timeout: 10s
       retries: 20
     networks:
-      - pulsar-net
+      - cotton-net
     environment:
       PULSAR_MEM: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=1g"
       PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled: "false"
@@ -32,15 +51,16 @@ services:
     ports:
       - "8090:8090"
     networks:
-      - pulsar-net
+      - cotton-net
     depends_on:
       pulsar:
         condition: service_healthy
 
 volumes:
+  postgres-data:
   pulsar-data:
   dekaf-library:
 
 networks:
-  pulsar-net:
+  cotton-net:
     driver: bridge
