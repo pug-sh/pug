@@ -20,9 +20,9 @@ func StartConsumer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, p
 		ConsumerOptions: pulsar.ConsumerOptions{
 			Topic:            "persistent://public/default/subscriptions",
 			SubscriptionName: "subscriptions-processor",
-			Type:             pulsar.Exclusive, // or pulsar.Shared depending on your needs
+			Type:             pulsar.Shared,
 		},
-		Concurrency:       2,
+		Concurrency:       100,
 		ProcessingTimeout: 30 * time.Second,
 	}
 
