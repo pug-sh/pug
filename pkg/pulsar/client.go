@@ -11,9 +11,9 @@ import (
 
 // Config holds the Pulsar client configuration
 type Config struct {
-	URL      string `env:"PULSAR_URL,default=pulsar://localhost:6650"`
-	Token    string `env:"PULSAR_TOKEN"`
-	Tenant   string `env:"PULSAR_TENANT,default=public"`
+	URL       string `env:"PULSAR_URL,default=pulsar://localhost:6650"`
+	Token     string `env:"PULSAR_TOKEN"`
+	Tenant    string `env:"PULSAR_TENANT,default=public"`
 	Namespace string `env:"PULSAR_NAMESPACE,default=default"`
 }
 
@@ -76,7 +76,7 @@ func (c *Client) Close() {
 // CreateProducer creates a new Pulsar producer for the specified topic
 func (c *Client) CreateProducer(topicName string) (*Producer, error) {
 	fullTopicName := fmt.Sprintf("persistent://%s/%s/%s", c.config.Tenant, c.config.Namespace, topicName)
-	
+
 	producer, err := c.client.CreateProducer(pulsar.ProducerOptions{
 		Topic: fullTopicName,
 	})
@@ -93,21 +93,21 @@ func (c *Client) CreateProducer(topicName string) (*Producer, error) {
 // CreateConsumer creates a new Pulsar consumer for the specified topic and subscription
 func (c *Client) CreateConsumer(topicName, subscriptionName string, opts ...ConsumerOption) (*Consumer, error) {
 	fullTopicName := fmt.Sprintf("persistent://%s/%s/%s", c.config.Tenant, c.config.Namespace, topicName)
-	
+
 	options := &ConsumerOptions{
 		Type: pulsar.Shared,
 	}
 	for _, opt := range opts {
 		opt(options)
 	}
-	
+
 	consumer, err := c.client.Subscribe(pulsar.ConsumerOptions{
 		Topic:            fullTopicName,
 		SubscriptionName: subscriptionName,
 		Type:             options.Type,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create consumer for topic %s with subscription %s: %w", 
+		return nil, fmt.Errorf("failed to create consumer for topic %s with subscription %s: %w",
 			fullTopicName, subscriptionName, err)
 	}
 
@@ -141,6 +141,11 @@ func (c *Consumer) Ack(msg pulsar.Message) {
 // AckID acknowledges a message by ID
 func (c *Consumer) AckID(msgID pulsar.MessageID) {
 	c.consumer.AckID(msgID)
+}
+
+// Nack negatively acknowledges a message, triggering redelivery
+func (c *Consumer) Nack(msg pulsar.Message) {
+	c.consumer.Nack(msg)
 }
 
 // Close closes the consumer

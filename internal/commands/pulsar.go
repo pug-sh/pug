@@ -26,11 +26,11 @@ type pulsarConfig struct {
 }
 
 type TopicConfig struct {
-	Name         string            `yaml:"name"`
-	Type         string            `yaml:"type"`
-	Partitions   *int              `yaml:"partitions,omitempty"`
-	Properties   map[string]string `yaml:"properties,omitempty"`
-	Retention    *RetentionConfig  `yaml:"retention,omitempty"`
+	Name       string            `yaml:"name"`
+	Type       string            `yaml:"type"`
+	Partitions *int              `yaml:"partitions,omitempty"`
+	Properties map[string]string `yaml:"properties,omitempty"`
+	Retention  *RetentionConfig  `yaml:"retention,omitempty"`
 }
 
 type RetentionConfig struct {
@@ -194,10 +194,10 @@ func (p *PulsarInitializer) createNamespace() error {
 			slog.Info("Created namespace successfully", slog.String("namespace", namespace))
 		}
 	} else {
-			slog.Info("Namespace already exists", slog.String("namespace", namespace))
-		}
+		slog.Info("Namespace already exists", slog.String("namespace", namespace))
+	}
 
-		return nil
+	return nil
 }
 
 func (p *PulsarInitializer) createTopics(topics []TopicConfig) error {
