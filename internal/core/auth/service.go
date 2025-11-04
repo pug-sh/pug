@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/fivebitsio/cotton/internal/core/projects"
 	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/pkg/postgres"
@@ -21,14 +22,16 @@ var (
 )
 
 type Service struct {
-	repo   Repo
-	jwtKey []byte
+	repo            Repo
+	projectsService *projects.Service
+	jwtKey          []byte
 }
 
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
 	return &Service{
-		repo:   NewRepo(pgRO, pgW),
-		jwtKey: jwtKey,
+		repo:            NewRepo(pgRO, pgW),
+		projectsService: projects.NewService(pgRO, pgW),
+		jwtKey:          jwtKey,
 	}
 }
 
@@ -56,14 +59,15 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return nil, ErrCustomerCreation
 	}
 
+	// Create a default project for the new customer
 	projectParams := dbwrite.CreateProjectParams{
+		ID:          xid.New().String(),
 		ApiKey:      xid.New().String(),
 		CustomerID:  customer.ID,
-		ID:          xid.New().String(),
 		DisplayName: "default",
 	}
 
-	_, err = s.repo.CreateProject(ctx, projectParams)
+	_, err = s.projectsService.CreateProject(ctx, projectParams)
 	if err != nil {
 		return nil, err
 	}
