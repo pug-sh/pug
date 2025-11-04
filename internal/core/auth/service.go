@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1"
@@ -13,12 +14,18 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var (
+	ErrUserAlreadyExists  = errors.New("user with this email already exists")
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrCustomerCreation   = errors.New("failed to create customer")
+)
+
 type Service struct {
 	repo   Repo
 	jwtKey []byte
 }
 
-func newService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
 	return &Service{
 		repo:   NewRepo(pgRO, pgW),
 		jwtKey: jwtKey,

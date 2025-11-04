@@ -12,7 +12,7 @@ type Service struct {
 	repo Repo
 }
 
-func newService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
 	return &Service{
 		repo: NewRepo(pgRO, pgW),
 	}

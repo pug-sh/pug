@@ -6,6 +6,7 @@ import (
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	"github.com/fivebitsio/cotton/internal/core/projects"
 	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
@@ -15,11 +16,11 @@ import (
 )
 
 type server struct {
-	service *Service
+	service *projects.Service
 }
 
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *server {
-	service := newService(pgRO, pgW)
+	service := projects.NewService(pgRO, pgW)
 
 	return &server{
 		service: service,

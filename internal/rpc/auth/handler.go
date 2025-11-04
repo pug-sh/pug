@@ -5,16 +5,17 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
+	"github.com/fivebitsio/cotton/internal/core/auth"
 	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type server struct {
-	service *Service
+	service *auth.Service
 }
 
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *server {
-	service := newService(pgRO, pgW, jwtKey)
+	service := auth.NewService(pgRO, pgW, jwtKey)
 
 	return &server{
 		service: service,
@@ -63,11 +64,11 @@ func (s *server) SignInWithEmail(ctx context.Context, req *connect.Request[authv
 
 func mapErrorToConnectError(err error) *connect.Error {
 	switch {
-	case errors.Is(err, ErrUserAlreadyExists):
+	case errors.Is(err, auth.ErrUserAlreadyExists):
 		return connect.NewError(connect.CodeAlreadyExists, err)
-	case errors.Is(err, ErrInvalidCredentials):
+	case errors.Is(err, auth.ErrInvalidCredentials):
 		return connect.NewError(connect.CodeUnauthenticated, err)
-	case errors.Is(err, ErrCustomerCreation):
+	case errors.Is(err, auth.ErrCustomerCreation):
 		return connect.NewError(connect.CodeInternal, err)
 	default:
 		return connect.NewError(connect.CodeInternal, err)
