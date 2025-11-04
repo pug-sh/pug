@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	connectcors "connectrpc.com/cors"
 	"connectrpc.com/grpcreflect"
@@ -111,10 +112,30 @@ var ServerCmd = &cobra.Command{
 
 		h2cHandler := h2c.NewHandler(handlerWithCORS, &http2.Server{})
 
-		logger.Log.Info("Starting server", slog.String("addr", ":8081"))
-		if err := http.ListenAndServe(":8081", h2cHandler); err != nil {
-			logger.Log.Error("failed to serve", slog.Any("err", err))
-			os.Exit(1)
+		server := &http.Server{
+			Addr:    ":8081",
+			Handler: h2cHandler,
+		}
+
+		go func() {
+			logger.Log.Info("Starting server", slog.String("addr", ":8081"))
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Log.Error("failed to serve", slog.Any("err", err))
+				os.Exit(1)
+			}
+		}()
+
+		<-ctx.Done()
+		logger.Log.Info("Shutting down server...")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Log.Error("server shutdown failed", slog.Any("err", err))
+			server.Close()
+		} else {
+			logger.Log.Info("Server exited properly")
 		}
 	},
 }
