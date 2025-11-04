@@ -16,6 +16,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(commands.ServerCmd)
+	rootCmd.AddCommand(commands.ConsumerCmd)
 
 	postgresCmd := &cobra.Command{
 		Use:   "postgres",
