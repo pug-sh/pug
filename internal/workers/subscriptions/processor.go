@@ -12,17 +12,17 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type Consumer struct {
+type Worker struct {
 	subscriptionService *subscriptions.Service
 }
 
-func NewConsumer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Consumer {
-	return &Consumer{
+func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
+	return &Worker{
 		subscriptionService: subscriptions.NewService(pgRO, pgW),
 	}
 }
 
-func (c *Consumer) ProcessMessage(ctx context.Context, data []byte) error {
+func (c *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	msg := &subscriptionsv1.SubscriptionOperationMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.Error("failed to unmarshal subscription operation message", slog.Any("err", err))
@@ -48,7 +48,7 @@ func (c *Consumer) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 }
 
-func (c *Consumer) handleUpsert(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
+func (c *Worker) handleUpsert(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
 	_, err := c.subscriptionService.GetSubscription(ctx, msg.GetId(), msg.GetProjectId())
 	if err != nil {
 		metadataJSON, _ := json.Marshal(msg.GetMetadata())
@@ -99,7 +99,7 @@ func (c *Consumer) handleUpsert(ctx context.Context, msg *subscriptionsv1.Subscr
 	return nil
 }
 
-func (c *Consumer) handleUpdateHeartbeat(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
+func (c *Worker) handleUpdateHeartbeat(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
 	_, err := c.subscriptionService.UpdateSubscriptionHeartbeat(ctx, msg.GetId(), msg.GetProjectId())
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to update heartbeat", slog.Any("err", err))
@@ -108,7 +108,7 @@ func (c *Consumer) handleUpdateHeartbeat(ctx context.Context, msg *subscriptions
 	return nil
 }
 
-func (c *Consumer) handleUpdateMetadata(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
+func (c *Worker) handleUpdateMetadata(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
 	metadataJSON, _ := json.Marshal(msg.GetMetadata())
 	_, err := c.subscriptionService.UpdateSubscriptionMetadata(ctx, msg.GetId(), msg.GetProjectId(), metadataJSON)
 	if err != nil {
@@ -118,7 +118,7 @@ func (c *Consumer) handleUpdateMetadata(ctx context.Context, msg *subscriptionsv
 	return nil
 }
 
-func (c *Consumer) handleUpdateStatus(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
+func (c *Worker) handleUpdateStatus(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
 	_, err := c.subscriptionService.UpdateSubscriptionStatus(ctx, msg.GetId(), msg.GetProjectId(), msg.GetStatus())
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to update status", slog.Any("err", err))
@@ -127,7 +127,7 @@ func (c *Consumer) handleUpdateStatus(ctx context.Context, msg *subscriptionsv1.
 	return nil
 }
 
-func (c *Consumer) handleUpdateToken(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
+func (c *Worker) handleUpdateToken(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
 	_, err := c.subscriptionService.UpdateSubscriptionToken(ctx, msg.GetId(), msg.GetProjectId(), msg.GetToken())
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to update token", slog.Any("err", err))
@@ -136,7 +136,7 @@ func (c *Consumer) handleUpdateToken(ctx context.Context, msg *subscriptionsv1.S
 	return nil
 }
 
-func (c *Consumer) handleUserLink(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
+func (c *Worker) handleUserLink(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
 	_, err := c.subscriptionService.LinkSubscriptionToUser(ctx, msg.GetId(), msg.GetProjectId(), msg.GetExternalId())
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to link subscription to user", slog.Any("err", err))

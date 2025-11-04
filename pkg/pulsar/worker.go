@@ -13,7 +13,7 @@ type MessageProcessor func(context.Context, pulsar.Message) error
 
 type WorkerConfig struct {
 	ClientOptions     pulsar.ClientOptions
-	ConsumerOptions   pulsar.ConsumerOptions
+	WorkerOptions     pulsar.ConsumerOptions
 	DeadLetterTopic   string
 	Concurrency       int
 	ProcessingTimeout time.Duration
@@ -53,11 +53,11 @@ func NewWorker(config WorkerConfig, processor MessageProcessor) (Worker, error) 
 }
 
 func (w *pulsarWorker) Start(ctx context.Context, client *Client) error {
-	consumer, err := client.CreateConsumer(w.config.ConsumerOptions.Topic, w.config.ConsumerOptions.SubscriptionName, WithType(w.config.ConsumerOptions.Type))
+	worker, err := client.CreateConsumer(w.config.WorkerOptions.Topic, w.config.WorkerOptions.SubscriptionName, WithType(w.config.WorkerOptions.Type))
 	if err != nil {
 		return fmt.Errorf("failed to create Pulsar consumer: %w", err)
 	}
-	w.consumer = consumer
+	w.consumer = worker
 
 	for i := 0; i < w.config.Concurrency; i++ {
 		w.wg.Add(1)

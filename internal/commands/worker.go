@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/fivebitsio/cotton/internal/consumers/subscriptions"
+	"github.com/fivebitsio/cotton/internal/workers/subscriptions"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/fivebitsio/cotton/pkg/pulsar"
@@ -17,13 +17,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type consumerDeps struct {
+type workerDeps struct {
 	pgRo   *pgxpool.Pool
 	pgW    *pgxpool.Pool
 	pulsar *pulsar.Client
 }
 
-func newConsumerDeps(ctx context.Context) (*consumerDeps, error) {
+func newWorkerDeps(ctx context.Context) (*workerDeps, error) {
 	var cfg postgres.Config
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return nil, err
@@ -44,14 +44,14 @@ func newConsumerDeps(ctx context.Context) (*consumerDeps, error) {
 		return nil, err
 	}
 
-	return &consumerDeps{
+	return &workerDeps{
 		pgRo:   pgRo,
 		pgW:    pgW,
 		pulsar: pulsarClient,
 	}, nil
 }
 
-func (deps *consumerDeps) Close(ctx context.Context) {
+func (deps *workerDeps) Close(ctx context.Context) {
 	deps.pgRo.Close()
 	deps.pgW.Close()
 	if deps.pulsar != nil {
@@ -59,18 +59,18 @@ func (deps *consumerDeps) Close(ctx context.Context) {
 	}
 }
 
-// ConsumerCmd represents the consumer command
-var ConsumerCmd = &cobra.Command{
-	Use:   "consumer",
-	Short: "Consumer related commands",
-	Long:  `Commands for managing message consumers.`,
+// WorkerCmd represents the worker command
+var WorkerCmd = &cobra.Command{
+	Use:   "worker",
+	Short: "Worker related commands",
+	Long:  `Commands for managing message workers.`,
 }
 
-// SubscriptionConsumerCmd represents the subscription consumer command
-var SubscriptionConsumerCmd = &cobra.Command{
+// SubscriptionWorkerCmd represents the subscription worker command
+var SubscriptionWorkerCmd = &cobra.Command{
 	Use:   "subscription",
-	Short: "Start the subscription consumer",
-	Long:  `Start the subscription consumer that processes subscription operation messages from Pulsar.`,
+	Short: "Start the subscription worker",
+	Long:  `Start the subscription worker that processes subscription operation messages from Pulsar.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
@@ -80,22 +80,22 @@ var SubscriptionConsumerCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		deps, err := newConsumerDeps(ctx)
+		deps, err := newWorkerDeps(ctx)
 		if err != nil {
-			logger.Log.Error("error while initializing consumer dependencies", slog.Any("err", err))
+			logger.Log.Error("error while initializing worker dependencies", slog.Any("err", err))
 			os.Exit(1)
 		}
 		defer deps.Close(ctx)
 
-		logger.Log.Info("Starting subscription consumer...")
+		logger.Log.Info("Starting subscription worker...")
 
-		if err := subscriptions.StartConsumer(ctx, deps.pgRo, deps.pgW, deps.pulsar); err != nil {
-			logger.Log.Error("error starting subscription consumer", slog.Any("err", err))
+		if err := subscriptions.StartWorker(ctx, deps.pgRo, deps.pgW, deps.pulsar); err != nil {
+			logger.Log.Error("error starting subscription worker", slog.Any("err", err))
 			os.Exit(1)
 		}
 	},
 }
 
 func init() {
-	ConsumerCmd.AddCommand(SubscriptionConsumerCmd)
+	WorkerCmd.AddCommand(SubscriptionWorkerCmd)
 }
