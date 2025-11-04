@@ -115,7 +115,7 @@ function SignupForm() {
                         onChange={(e) => field.handleChange(e.target.value)}
                         aria-invalid={isInvalid}
                         type="email"
-                        placeholder="m@example.com"
+                        placeholder="me@mycompany.com"
                         autoComplete="off"
                       />
                       {isInvalid && (
