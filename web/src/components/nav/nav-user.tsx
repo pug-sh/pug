@@ -27,6 +27,8 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import { useSetAtom } from "jotai"
+import { logoutAtom } from "@/atoms/auth"
 
 export function NavUser({
   user,
@@ -38,6 +40,8 @@ export function NavUser({
   }
 }) {
   const { isMobile } = useSidebar()
+
+  const logout = useSetAtom(logoutAtom)
 
   return (
     <SidebarMenu>
@@ -101,7 +105,7 @@ export function NavUser({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
-              <LogOut />
+              <LogOut onClick={logout} />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>

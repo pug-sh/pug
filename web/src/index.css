@@ -188,3 +188,10 @@
     letter-spacing: var(--tracking-normal);
   }
 }
+
+@layer base {
+  button:not([disabled]),
+  [role="button"]:not([disabled]) {
+    cursor: pointer;
+  }
+}
