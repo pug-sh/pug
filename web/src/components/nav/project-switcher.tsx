@@ -9,7 +9,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -63,7 +62,7 @@ export function ProjectSwitcher({
             <DropdownMenuLabel className="text-muted-foreground text-xs">
               Projects
             </DropdownMenuLabel>
-            {projects.map((project, index) => (
+            {projects.map((project) => (
               <DropdownMenuItem
                 key={project.name}
                 onClick={() => setActiveProject(project)}
@@ -73,7 +72,6 @@ export function ProjectSwitcher({
                   <project.logo className="size-3.5 shrink-0" />
                 </div>
                 {project.name}
-                <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
