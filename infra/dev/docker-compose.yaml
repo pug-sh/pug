@@ -66,10 +66,31 @@ services:
       pulsar:
         condition: service_healthy
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.3
+    restart: always
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-cotton}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-default}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+      - "${CLICKHOUSE_TCP_PORT:-9009}:9009"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - cotton-net
+
 volumes:
   postgres-data:
   pulsar-data:
   dekaf-library:
+  clickhouse-data:
 
 networks:
   cotton-net:
