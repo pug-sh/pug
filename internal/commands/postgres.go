@@ -19,13 +19,11 @@ import (
 )
 
 type migrateDeps struct {
-	DB        *postgres.DB
 	Migration *migrate.Migrate
 }
 
 func (deps *migrateDeps) Close(ctx context.Context) error {
 	deps.Migration.Close()
-	deps.DB.Close(ctx)
 	return nil
 }
 
@@ -37,13 +35,11 @@ func newMigrateDeps(ctx context.Context) (*migrateDeps, error) {
 		os.Exit(1)
 	}
 
-	db, err := postgres.NewFromConfig(ctx, &databaseConfig)
-
+	wd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
 
-	wd, _ := os.Getwd()
 	absPath := filepath.Join(wd, "schema", "postgres", "migrations")
 
 	absPath, err = filepath.Abs(absPath)
@@ -60,7 +56,6 @@ func newMigrateDeps(ctx context.Context) (*migrateDeps, error) {
 	}
 
 	return &migrateDeps{
-		DB:        db,
 		Migration: migration,
 	}, nil
 }
