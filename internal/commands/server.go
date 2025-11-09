@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"connectrpc.com/authn"
+	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
@@ -95,13 +96,20 @@ var ServerCmd = &cobra.Command{
 		}
 
 		defer deps.Close(ctx)
+		queriesRo := dbread.New(deps.pgRo)
 
 		authServer := auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
-		authPath, authHandler := authv1connect.NewAuthServiceHandler(authServer)
+		authPath, authHandler := authv1connect.NewAuthServiceHandler(
+			authServer,
+			connect.WithInterceptors(interceptors.ErrorInterceptor()),
+		)
 
 		projectsServer := projects.NewServer(deps.pgRo, deps.pgW)
-		projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(projectsServer)
-		queriesRo := dbread.New(deps.pgRo)
+		projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
+			projectsServer,
+			connect.WithInterceptors(interceptors.ErrorInterceptor()),
+		)
+
 		projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
 
 		handler := http.NewServeMux()
