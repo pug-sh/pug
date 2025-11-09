@@ -32,8 +32,16 @@ func init() {
 	}
 	pulsarCmd.AddCommand(commands.PulsarMigrateCmd)
 
+	clickhouseCmd := &cobra.Command{
+		Use:   "clickhouse",
+		Short: "ClickHouse related commands",
+		Long:  `Commands for managing ClickHouse database.`,
+	}
+	clickhouseCmd.AddCommand(commands.ClickhouseMigrateCmd)
+
 	rootCmd.AddCommand(postgresCmd)
 	rootCmd.AddCommand(pulsarCmd)
+	rootCmd.AddCommand(clickhouseCmd)
 }
 
 func main() {
