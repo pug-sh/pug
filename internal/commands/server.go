@@ -96,24 +96,21 @@ var ServerCmd = &cobra.Command{
 		defer deps.Close(ctx)
 
 		authServer := auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
-		projectsServer := projects.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
+		authPath, authHandler := authv1connect.NewAuthServiceHandler(authServer)
 
-		authPath, authHandler := authv1connect.NewAuthServiceHandler(
-			authServer,
-			// connect.WithInterceptors(yourInterceptor),
-		)
-
-		projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-			projectsServer,
-		)
-
+		projectsServer := projects.NewServer(deps.pgRo, deps.pgW)
+		projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(projectsServer)
 		projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey)).Wrap(projectsHandler)
 
 		handler := http.NewServeMux()
 		handler.Handle(authPath, authHandler)
 		handler.Handle(projectsPath, projectsHandler)
 
-		services := []string{authv1connect.AuthServiceName, projectsv1connect.ProjectsServiceName}
+		services := []string{
+			authv1connect.AuthServiceName,
+			projectsv1connect.ProjectsServiceName,
+		}
+
 		reflector := grpcreflect.NewStaticReflector(services...)
 		handler.Handle(grpcreflect.NewHandlerV1(reflector))
 		handler.Handle(grpcreflect.NewHandlerV1Alpha(reflector))

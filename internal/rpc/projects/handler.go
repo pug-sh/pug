@@ -19,7 +19,7 @@ type server struct {
 	service *projects.Service
 }
 
-func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *server {
+func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *server {
 	service := projects.NewService(pgRO, pgW)
 
 	return &server{
