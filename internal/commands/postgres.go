@@ -46,6 +46,11 @@ func newMigrateDeps(ctx context.Context) (*migrateDeps, error) {
 	wd, _ := os.Getwd()
 	absPath := filepath.Join(wd, "schema", "postgres", "migrations")
 
+	absPath, err = filepath.Abs(absPath)
+	if err != nil {
+		return nil, err
+	}
+
 	migration, err := migrate.New(
 		"file://"+absPath,
 		databaseConfig.ConnectionString(),

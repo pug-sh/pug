@@ -1,4 +1,3 @@
--- +migrate Up
 create extension if not exists moddatetime;
 -- use xid for id
 create table customers (
@@ -10,10 +9,4 @@ create table customers (
   create_time timestamptz not null default now(),
   update_time timestamptz not null default now()
 );
-create trigger update_timestamp before
-update on customers for each row execute procedure moddatetime(update_time);
-
--- +migrate Down
-drop trigger if exists update_timestamp on customers;
-drop table customers;
-drop extension if exists moddatetime;
+create trigger update_timestamp before update on customers for each row execute procedure moddatetime(update_time);
