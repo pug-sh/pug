@@ -4,14 +4,18 @@ import (
 	"net/http"
 
 	connectcors "connectrpc.com/cors"
+	"github.com/fivebitsio/cotton/pkg/constant"
 	"github.com/rs/cors"
 )
 
 func WithCORS(connectHandler http.Handler) http.Handler {
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   append(connectcors.AllowedMethods(), http.MethodOptions),
-		AllowedHeaders:   connectcors.AllowedHeaders(),
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: append(connectcors.AllowedMethods(), http.MethodOptions),
+		AllowedHeaders: append(
+			connectcors.AllowedHeaders(),
+			constant.HeaderAuthorization,
+		),
 		ExposedHeaders:   connectcors.ExposedHeaders(),
 		AllowCredentials: true,
 		MaxAge:           7200,

@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
@@ -35,23 +34,13 @@ func (s *server) Get(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	project, err := interceptors.GetProjectFromContext(ctx)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	if project.ID != req.Msg.Id {
-		return nil, connect.NewError(connect.CodePermissionDenied, authn.Errorf("project ID does not match authenticated project"))
-	}
-
-	projectData, err := s.service.GetProjectById(ctx, req.Msg.Id)
+	project, err := s.service.GetProjectById(ctx, req.Msg.Id)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed reading from db", slog.Any("error", err), slog.String("projectId", project.ID), slog.String("id", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	return connect.NewResponse(&projectsv1.GetResponse{Project: roToRPCMsg(projectData)}), nil
+	return connect.NewResponse(&projectsv1.GetResponse{Project: roToRPCMsg(project)}), nil
 }
 
 // BatchGet returns all projects for the authenticated customer.
@@ -63,14 +52,14 @@ func (s *server) BatchGet(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	customer, err := interceptors.GetCustomerFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	projectsData, err := s.service.GetProjectsByCustomerId(ctx, project.CustomerID)
+	projectsData, err := s.service.GetProjectsByCustomerId(ctx, customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading from db", slog.Any("error", err), slog.String("customerId", project.CustomerID))
+		slog.ErrorContext(ctx, "failed reading from db", slog.Any("error", err), slog.String("customerId", customer.ID))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -91,17 +80,18 @@ func (s *server) Create(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	customer, err := interceptors.GetCustomerFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
 	wParams := dbwrite.CreateProjectParams{
 		ApiKey:      xid.New().String(),
-		CustomerID:  project.CustomerID,
+		CustomerID:  customer.ID,
 		DisplayName: req.Msg.DisplayName,
 		ID:          xid.New().String(),
 	}
+
 	projectData, err := s.service.CreateProject(ctx, wParams)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed writing to db", slog.Any("error", err), slog.Any("params", wParams))
@@ -121,18 +111,18 @@ func (s *server) Delete(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	customer, err := interceptors.GetCustomerFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
 	wParams := dbwrite.DeleteProjectParams{
-		CustomerID: project.CustomerID,
+		CustomerID: customer.ID,
 		ID:         req.Msg.Id,
 	}
 
 	if err := s.service.DeleteProject(ctx, wParams); err != nil {
-		slog.ErrorContext(ctx, "failed deleting project", slog.Any("error", err), slog.String("customerId", project.CustomerID), slog.String("id", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed deleting project", slog.Any("error", err), slog.String("customerId", customer.ID), slog.String("id", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -148,12 +138,12 @@ func (s *server) UpdateDisplayName(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	customer, err := interceptors.GetCustomerFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	wParams := dbwrite.UpdateProjectDisplayNameParams{CustomerID: project.CustomerID, DisplayName: req.Msg.DisplayName, ID: req.Msg.Id}
+	wParams := dbwrite.UpdateProjectDisplayNameParams{CustomerID: customer.ID, DisplayName: req.Msg.DisplayName, ID: req.Msg.Id}
 	projectData, err := s.service.UpdateProjectDisplayName(ctx, wParams)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed writing to db", slog.Any("error", err), slog.Any("params", wParams))
@@ -172,12 +162,12 @@ func (s *server) UpdateFCMServiceJSON(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	customer, err := interceptors.GetCustomerFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	wParams := dbwrite.UpdateFCMServiceJSONParams{CustomerID: project.CustomerID, FcmServiceJson: postgres.StringToText(req.Msg.FcmServiceJson), ID: req.Msg.Id}
+	wParams := dbwrite.UpdateFCMServiceJSONParams{CustomerID: customer.ID, FcmServiceJson: postgres.StringToText(req.Msg.FcmServiceJson), ID: req.Msg.Id}
 	if _, err := s.service.UpdateFCMServiceJSON(ctx, wParams); err != nil {
 		slog.ErrorContext(ctx, "failed writing to db", slog.Any("err", err), slog.Any("params", wParams))
 		return nil, connect.NewError(connect.CodeInternal, err)

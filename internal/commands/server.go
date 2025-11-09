@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/grpcreflect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/rpc/auth"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
 	"github.com/fivebitsio/cotton/internal/rpc/projects"
@@ -100,7 +101,8 @@ var ServerCmd = &cobra.Command{
 
 		projectsServer := projects.NewServer(deps.pgRo, deps.pgW)
 		projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(projectsServer)
-		projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey)).Wrap(projectsHandler)
+		queriesRo := dbread.New(deps.pgRo)
+		projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
 
 		handler := http.NewServeMux()
 		handler.Handle(authPath, authHandler)

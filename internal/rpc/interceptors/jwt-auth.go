@@ -5,10 +5,11 @@ import (
 	"net/http"
 
 	"connectrpc.com/authn"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func JwtAuth(jwtKey []byte) authn.AuthFunc {
+func JwtAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		authHeader := req.Header.Get("Authorization")
 		if authHeader == "" {
@@ -44,6 +45,26 @@ func JwtAuth(jwtKey []byte) authn.AuthFunc {
 			return nil, authn.Errorf("invalid claims format")
 		}
 
-		return claims, nil
+		email, ok := claims["email"].(string)
+		if !ok {
+			return nil, authn.Errorf("email claim not found or not a string")
+		}
+
+		customer, err := queries.GetCustomerByEmail(ctx, email)
+		if err != nil {
+			return nil, authn.Errorf("failed to get customer by email: %v", err)
+		}
+
+		return customer, nil
 	}
+}
+
+func GetCustomerFromContext(ctx context.Context) (dbread.Customer, error) {
+	customerCtx := authn.GetInfo(ctx)
+
+	if customer, ok := customerCtx.(dbread.Customer); ok {
+		return customer, nil
+	}
+
+	return dbread.Customer{}, authn.Errorf("context value is not a Customer type: %T", customerCtx)
 }
