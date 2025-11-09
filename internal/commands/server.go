@@ -98,16 +98,20 @@ var ServerCmd = &cobra.Command{
 		defer deps.Close(ctx)
 		queriesRo := dbread.New(deps.pgRo)
 
+		commonHandlerOptions := func() connect.HandlerOption {
+			return connect.WithInterceptors(interceptors.ErrorInterceptor())
+		}
+
 		authServer := auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
 		authPath, authHandler := authv1connect.NewAuthServiceHandler(
 			authServer,
-			connect.WithInterceptors(interceptors.ErrorInterceptor()),
+			commonHandlerOptions(),
 		)
 
 		projectsServer := projects.NewServer(deps.pgRo, deps.pgW)
 		projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
 			projectsServer,
-			connect.WithInterceptors(interceptors.ErrorInterceptor()),
+			commonHandlerOptions(),
 		)
 
 		projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
