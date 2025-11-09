@@ -8,7 +8,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// JwtAuth returns an authn.AuthFunc that authenticates requests using a JWT token from the Authorization header.
 func JwtAuth(jwtKey []byte) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		authHeader := req.Header.Get("Authorization")
@@ -27,7 +26,6 @@ func JwtAuth(jwtKey []byte) authn.AuthFunc {
 		}
 
 		token, err := jwt.Parse(jwtToken, func(token *jwt.Token) (interface{}, error) {
-			// Validate the signing method
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, authn.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}

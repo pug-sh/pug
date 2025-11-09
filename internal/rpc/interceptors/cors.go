@@ -7,14 +7,13 @@ import (
 	"github.com/rs/cors"
 )
 
-// WithCORS wraps the given HTTP handler with CORS middleware.
 func WithCORS(connectHandler http.Handler) http.Handler {
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"https://*.garib.dev", "https://localhost:5173", "http://localhost:5173"},
-		AllowCredentials: true,
-		AllowedMethods:   connectcors.AllowedMethods(),
-		AllowedHeaders:   []string{"*"}, // not working with connectcors.AllowedHeaders() and AllowCredentials set to true
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   append(connectcors.AllowedMethods(), http.MethodOptions),
+		AllowedHeaders:   connectcors.AllowedHeaders(),
 		ExposedHeaders:   connectcors.ExposedHeaders(),
+		AllowCredentials: true,
 		MaxAge:           7200,
 	})
 	return c.Handler(connectHandler)

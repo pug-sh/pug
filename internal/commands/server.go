@@ -9,16 +9,18 @@ import (
 	"syscall"
 	"time"
 
-	connectcors "connectrpc.com/cors"
+	"connectrpc.com/authn"
 	"connectrpc.com/grpcreflect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/rpc/auth"
+	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
+	"github.com/fivebitsio/cotton/internal/rpc/projects"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/fivebitsio/cotton/pkg/pulsar"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
-	"github.com/rs/cors"
 	"github.com/sethvargo/go-envconfig"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/http2"
@@ -94,21 +96,29 @@ var ServerCmd = &cobra.Command{
 		defer deps.Close(ctx)
 
 		authServer := auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
+		projectsServer := projects.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
 
 		authPath, authHandler := authv1connect.NewAuthServiceHandler(
 			authServer,
 			// connect.WithInterceptors(yourInterceptor),
 		)
 
+		projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
+			projectsServer,
+		)
+
+		projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey)).Wrap(projectsHandler)
+
 		handler := http.NewServeMux()
 		handler.Handle(authPath, authHandler)
+		handler.Handle(projectsPath, projectsHandler)
 
-		services := []string{authv1connect.AuthServiceName}
+		services := []string{authv1connect.AuthServiceName, projectsv1connect.ProjectsServiceName}
 		reflector := grpcreflect.NewStaticReflector(services...)
 		handler.Handle(grpcreflect.NewHandlerV1(reflector))
 		handler.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
 
-		handlerWithCORS := withCORS(handler)
+		handlerWithCORS := interceptors.WithCORS(handler)
 
 		h2cHandler := h2c.NewHandler(handlerWithCORS, &http2.Server{})
 
@@ -138,16 +148,4 @@ var ServerCmd = &cobra.Command{
 			logger.Log.Info("Server exited properly")
 		}
 	},
-}
-
-func withCORS(connectHandler http.Handler) http.Handler {
-	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   append(connectcors.AllowedMethods(), http.MethodOptions),
-		AllowedHeaders:   connectcors.AllowedHeaders(),
-		ExposedHeaders:   connectcors.ExposedHeaders(),
-		AllowCredentials: false,
-		MaxAge:           7200,
-	})
-	return c.Handler(connectHandler)
 }

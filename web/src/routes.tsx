@@ -4,6 +4,7 @@ import SigninForm from '@/pages/auth/signin'
 import SignupForm from '@/pages/auth/signup'
 import Dashboard from '@/pages/dashboard'
 import Projects from '@/pages/projects'
+import NewProject from '@/pages/projects/new'
 import Settings from '@/pages/settings'
 import Account from '@/pages/account'
 
@@ -14,6 +15,7 @@ const Router = () => (
     <AuthProtected>
       <Route path='/' component={Dashboard} />
       <Route path='/projects' component={Projects} />
+      <Route path='/projects/new' component={NewProject} />
       <Route path='/settings' component={Settings} />
       <Route path='/account' component={Account} />
     </AuthProtected>

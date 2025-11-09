@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@buf/pushpa_cotton.bufbuild_es": "2.10.0-20251104144232-f7ca32369fce.1",
+    "@bufbuild/protobuf": "^2.10.0",
     "@connectrpc/connect": "^2.1.0",
     "@connectrpc/connect-web": "^2.1.0",
     "@radix-ui/react-avatar": "^1.1.11",
@@ -23,6 +24,7 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-form": "^1.23.7",
+    "@tanstack/zod-form-adapter": "^0.42.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "jotai": "^2.15.0",

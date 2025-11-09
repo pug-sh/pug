@@ -1,27 +1,31 @@
 import { AuthService } from '@buf/pushpa_cotton.bufbuild_es/auth/v1/auth_pb'
-import { createClient } from '@connectrpc/connect'
+import { ProjectsService } from '@buf/pushpa_cotton.bufbuild_es/projects/v1/projects_pb'
+import { createClient, type Interceptor } from '@connectrpc/connect'
 import { createConnectTransport } from '@connectrpc/connect-web'
 
 const apiBaseUrl = 'http://localhost:8081'
 
-// const authInterceptor: Interceptor = (next) => async (req) => {
-//   const token = localStorage.getItem("token");
-//   if (token) {
-//     req.header.set("Authorization", `Bearer ${token}`);
-//   }
+const authInterceptor: Interceptor = (next) => {
+  return async (req) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      req.header.set("Authorization", `Bearer ${token}`);
+    }
 
-//   return await next(req);
-// };
+    return await next(req);
+  };
+};
 
-// const transport = createConnectTransport({
-//   baseUrl: apiBaseUrl,
-//   interceptors: [authInterceptor],
-// });
+const transport = createConnectTransport({
+  useBinaryFormat: true,
+  baseUrl: apiBaseUrl,
+  interceptors: [authInterceptor],
+});
 
 const transportWithoutAuth = createConnectTransport({
   useBinaryFormat: true,
   baseUrl: apiBaseUrl,
 })
 
-
 export const authService = createClient(AuthService, transportWithoutAuth)
+export const projectsService = createClient(ProjectsService, transport)
