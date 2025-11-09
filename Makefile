@@ -72,6 +72,14 @@ test:
 psql:
 	docker compose -f infra/dev/docker-compose.yaml exec postgres psql -U postgres -d cotton
 
-.PHONY: infra
-infra:
+.PHONY: infra infra-up infra-up-fg infra-down
+infra: infra-up
+
+infra-up:
 	docker compose -f infra/dev/docker-compose.yaml up -d
+
+infra-up-fg:
+	docker compose -f infra/dev/docker-compose.yaml up
+
+infra-down:
+	docker compose -f infra/dev/docker-compose.yaml down

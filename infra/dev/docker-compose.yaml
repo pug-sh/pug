@@ -21,24 +21,34 @@ services:
   pulsar:
     image: apachepulsar/pulsar:3.2.1
     restart: always
-    command: bin/pulsar standalone --wipe-data
+    command: >
+      bash -c "
+        bin/apply-config-from-env.py conf/standalone.conf &&
+        bin/pulsar standalone --no-functions-worker --wipe-data
+      "
     volumes:
       - pulsar-data:/pulsar/data
     ports:
       - "6650:6650"
       - "8080:8080"
     healthcheck:
-      test: ['CMD', 'bin/pulsar-admin', 'brokers', 'healthcheck']
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/metrics/"]
+      interval: 10s
+      timeout: 5s
       retries: 20
     networks:
       - cotton-net
     environment:
       PULSAR_MEM: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=1g"
+      advertisedAddress: pulsar
       PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled: "false"
       PULSAR_PREFIX_allowAutoTopicCreationType: "partitioned"
       PULSAR_PREFIX_defaultNumPartitions: "1"
+      PULSAR_PREFIX_managedLedgerDefaultEnsembleSize: "1"
+      PULSAR_PREFIX_managedLedgerDefaultWriteQuorum: "1"
+      PULSAR_PREFIX_managedLedgerDefaultAckQuorum: "1"
+      PULSAR_PREFIX_managedLedgerMaxWriteQuorum: "1"
+      PULSAR_PREFIX_managedLedgerMaxAckQuorum: "1"
 
   dekaf:
     image: visortelle/dekaf:1.0.0
