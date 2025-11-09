@@ -12,6 +12,8 @@ type Config struct {
 	Port              string `env:"DB_PORT,required"`
 	Password          string `env:"DB_PASSWORD,required"`
 	ConnectionTimeout int    `env:"DB_CONNECTION_TIMEOUT,required"`
+	// SSLMode defines the SSL connection mode. Valid values are: disable, allow, prefer, require, verify-ca, verify-full
+	SSLMode string `env:"DB_SSL_MODE"`
 }
 
 func (c *Config) DatabaseConfig() *Config {
@@ -42,6 +44,13 @@ func (c *Config) ConnectionString() string {
 	if v := c.ConnectionTimeout; v > 0 {
 		q.Add("connect_timeout", strconv.Itoa(v))
 	}
+
+	sslMode := "disable"
+	if c.SSLMode != "" {
+		sslMode = c.SSLMode
+	}
+	q.Add("sslmode", sslMode)
+
 	u.RawQuery = q.Encode()
 
 	return u.String()

@@ -5,22 +5,26 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/postgres"
-	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/joho/godotenv"
-	migrate "github.com/rubenv/sql-migrate"
 	"github.com/sethvargo/go-envconfig"
 	"github.com/spf13/cobra"
 )
 
 type migrateDeps struct {
-	DB *postgres.DB
+	DB        *postgres.DB
+	Migration *migrate.Migrate
 }
 
 func (deps *migrateDeps) Close(ctx context.Context) error {
+	deps.Migration.Close()
 	deps.DB.Close(ctx)
 	return nil
 }
@@ -39,12 +43,23 @@ func newMigrateDeps(ctx context.Context) (*migrateDeps, error) {
 		return nil, err
 	}
 
+	wd, _ := os.Getwd()
+	absPath := filepath.Join(wd, "schema", "postgres", "migrations")
+
+	migration, err := migrate.New(
+		"file://"+absPath,
+		databaseConfig.ConnectionString(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return &migrateDeps{
-		DB: db,
+		DB:        db,
+		Migration: migration,
 	}, nil
 }
 
-// MigrateCmd represents the postgres migrate command
 var MigrateCmd = &cobra.Command{
 	Use:   "migrate",
 	Short: "Run database migrations for postgres",
@@ -60,10 +75,6 @@ var MigrateCmd = &cobra.Command{
 		direction, _ := cmd.Flags().GetString("direction")
 		numOfMigrations, _ := cmd.Flags().GetInt("num")
 
-		migrations := &migrate.FileMigrationSource{
-			Dir: "schema/postgres/migrations",
-		}
-
 		deps, err := newMigrateDeps(ctx)
 
 		if err != nil {
@@ -78,43 +89,54 @@ var MigrateCmd = &cobra.Command{
 
 		switch direction {
 		case "up":
-			appliedMigrations, err := migrate.ExecMax(
-				stdlib.OpenDBFromPool(deps.DB.Pool),
-				"postgres",
-				migrations,
-				migrate.Up,
-				numOfMigrations,
-			)
-
-			if err != nil {
-				logger.Log.Error(
-					"Error while applying migrations",
-					slog.Any("err", err))
+			if err := runMigrationsUp(deps.Migration, numOfMigrations); err != nil {
+				logger.Log.Error("Error while applying migrations", slog.Any("err", err))
+				os.Exit(1)
 			}
-
-			logger.Log.Info("applied migrations", slog.Int("appliedMigrations", appliedMigrations))
-
 		case "down":
-			appliedMigrations, err := migrate.ExecMax(
-				stdlib.OpenDBFromPool(deps.DB.Pool),
-				"postgres",
-				migrations,
-				migrate.Down,
-				numOfMigrations,
-			)
-
-			if err != nil {
-				logger.Log.Error(
-					"Error while applying migrations",
-					slog.Any("err", err))
+			if err := runMigrationsDown(deps.Migration, numOfMigrations); err != nil {
+				logger.Log.Error("Error while rolling back migrations", slog.Any("err", err))
+				os.Exit(1)
 			}
-
-			logger.Log.Info("applied migrations", slog.Int("appliedMigrations", appliedMigrations))
 		}
 	},
 }
 
+func runMigrationsUp(migration *migrate.Migrate, num int) error {
+	if num == 0 {
+		if err := migration.Up(); err != nil && err != migrate.ErrNoChange {
+			return err
+		}
+		logger.Log.Info("applied all migrations")
+		return nil
+	}
+
+	if err := migration.Steps(num); err != nil && err != migrate.ErrNoChange {
+		return err
+	}
+
+	logger.Log.Info("applied migrations", slog.Int("appliedMigrations", num))
+	return nil
+}
+
+func runMigrationsDown(migration *migrate.Migrate, num int) error {
+	if num == 0 {
+		if err := migration.Down(); err != nil && err != migrate.ErrNoChange {
+			return err
+		}
+		logger.Log.Info("rolled back all migrations")
+		return nil
+	}
+
+	if err := migration.Steps(-num); err != nil && err != migrate.ErrNoChange {
+		return err
+	}
+
+	logger.Log.Info("rolled back migrations", slog.Int("rolledBackMigrations", num))
+	return nil
+}
+
 func init() {
-	MigrateCmd.Flags().StringP("direction", "d", "up", "can be any of 'up' or 'down'")
+	MigrateCmd.Flags().StringP("direction", "d", "up", "can be any of 'up' or 'down' (default: up)")
 	MigrateCmd.Flags().IntP("num", "n", 0, "number of migrations to apply")
 }
