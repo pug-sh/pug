@@ -1,12 +1,19 @@
 create table subscriptions (
-  id char(20) primary key,
-  customer_id char(20) not null references customers(id) on delete cascade,
-  stripe_customer_id varchar(255) unique,
-  stripe_subscription_id varchar(255) unique,
-  stripe_price_id varchar(255),
   create_time timestamptz not null default now(),
+  id text primary key,
+  last_heartbeat_time timestamptz not null default now(),
+  metadata jsonb,
+  platform text not null check (platform in ('android', 'ios', 'web')),
+  project_id char(20) not null references projects(id) on delete cascade,
+  status text not null default 'active' check (status in ('active', 'inactive')),
+  token text not null,
+  updater text not null default 'system' check (updater in ('system', 'user')),
   update_time timestamptz not null default now(),
-  valid_from timestamptz not null,
-  valid_to timestamptz
+  user_id char(20) references users(id) on delete set null
 );
-create trigger update_timestamp before update on subscriptions for each row execute procedure moddatetime(update_time);
+create trigger update_timestamp before
+update on subscriptions for each row execute procedure moddatetime(update_time);
+create index idx_subscriptions_project_status_platform on subscriptions (project_id, status, platform);
+create index idx_subscriptions_user_id on subscriptions (user_id);
+create index idx_subscriptions_project_user on subscriptions (project_id, user_id);
+create index idx_subscriptions_project_user_status on subscriptions (project_id, user_id, status);

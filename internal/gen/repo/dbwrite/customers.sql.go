@@ -7,22 +7,20 @@ package dbwrite
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createCustomer = `-- name: CreateCustomer :one
 insert into customers (id, display_name, email, password_hash, picture_uri)
 values ($1, $2, $3, $4, $5)
-returning id, display_name, email, password_hash, picture_uri, create_time, update_time
+returning display_name, email, id, password_hash, picture_uri, create_time, update_time
 `
 
 type CreateCustomerParams struct {
 	ID           string
-	DisplayName  pgtype.Text
+	DisplayName  string
 	Email        string
 	PasswordHash string
-	PictureUri   pgtype.Text
+	PictureUri   string
 }
 
 func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) (Customer, error) {
@@ -35,9 +33,9 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 	)
 	var i Customer
 	err := row.Scan(
-		&i.ID,
 		&i.DisplayName,
 		&i.Email,
+		&i.ID,
 		&i.PasswordHash,
 		&i.PictureUri,
 		&i.CreateTime,
@@ -53,14 +51,14 @@ update -- do not update id
 set display_name = excluded.display_name,
   picture_uri = excluded.picture_uri,
   password_hash = excluded.password_hash
-returning id, display_name, email, password_hash, picture_uri, create_time, update_time
+returning display_name, email, id, password_hash, picture_uri, create_time, update_time
 `
 
 type UpsertCustomerParams struct {
-	DisplayName  pgtype.Text
+	DisplayName  string
 	Email        string
 	ID           string
-	PictureUri   pgtype.Text
+	PictureUri   string
 	PasswordHash string
 }
 
@@ -74,9 +72,9 @@ func (q *Queries) UpsertCustomer(ctx context.Context, arg UpsertCustomerParams) 
 	)
 	var i Customer
 	err := row.Scan(
-		&i.ID,
 		&i.DisplayName,
 		&i.Email,
+		&i.ID,
 		&i.PasswordHash,
 		&i.PictureUri,
 		&i.CreateTime,

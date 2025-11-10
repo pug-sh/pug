@@ -13,9 +13,9 @@ import (
 
 const createSubscription = `-- name: CreateSubscription :one
 INSERT INTO subscriptions (
-    id, project_id, token, platform, metadata, status
+    id, project_id, token, platform, metadata, status, updater, user_id
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4, $5, $6, $7, $8
 ) RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
 `
 
@@ -26,6 +26,8 @@ type CreateSubscriptionParams struct {
 	Platform  string
 	Metadata  []byte
 	Status    string
+	Updater   string
+	UserID    pgtype.Text
 }
 
 func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (Subscription, error) {
@@ -36,6 +38,8 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 		arg.Platform,
 		arg.Metadata,
 		arg.Status,
+		arg.Updater,
+		arg.UserID,
 	)
 	var i Subscription
 	err := row.Scan(
@@ -281,6 +285,38 @@ type UpdateSubscriptionTokenParams struct {
 
 func (q *Queries) UpdateSubscriptionToken(ctx context.Context, arg UpdateSubscriptionTokenParams) (Subscription, error) {
 	row := q.db.QueryRow(ctx, updateSubscriptionToken, arg.Token, arg.ID, arg.ProjectID)
+	var i Subscription
+	err := row.Scan(
+		&i.CreateTime,
+		&i.ID,
+		&i.LastHeartbeatTime,
+		&i.Metadata,
+		&i.Platform,
+		&i.ProjectID,
+		&i.Status,
+		&i.Token,
+		&i.Updater,
+		&i.UpdateTime,
+		&i.UserID,
+	)
+	return i, err
+}
+
+const updateSubscriptionUpdater = `-- name: UpdateSubscriptionUpdater :one
+UPDATE subscriptions
+SET updater = $1, update_time = now()
+WHERE id = $2 AND project_id = $3
+RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
+`
+
+type UpdateSubscriptionUpdaterParams struct {
+	Updater   string
+	ID        string
+	ProjectID string
+}
+
+func (q *Queries) UpdateSubscriptionUpdater(ctx context.Context, arg UpdateSubscriptionUpdaterParams) (Subscription, error) {
+	row := q.db.QueryRow(ctx, updateSubscriptionUpdater, arg.Updater, arg.ID, arg.ProjectID)
 	var i Subscription
 	err := row.Scan(
 		&i.CreateTime,

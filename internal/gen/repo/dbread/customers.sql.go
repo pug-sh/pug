@@ -12,7 +12,7 @@ import (
 )
 
 const getCustomerByEmail = `-- name: GetCustomerByEmail :one
-select id, display_name, email, password_hash, picture_uri, create_time, update_time
+select display_name, email, id, password_hash, picture_uri, create_time, update_time
 from customers
 where email = $1
 `
@@ -21,9 +21,9 @@ func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (Custome
 	row := q.db.QueryRow(ctx, getCustomerByEmail, email)
 	var i Customer
 	err := row.Scan(
-		&i.ID,
 		&i.DisplayName,
 		&i.Email,
+		&i.ID,
 		&i.PasswordHash,
 		&i.PictureUri,
 		&i.CreateTime,
@@ -33,17 +33,17 @@ func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (Custome
 }
 
 const getCustomerByEmailWithPassword = `-- name: GetCustomerByEmailWithPassword :one
-select id, display_name, email, password_hash, picture_uri, create_time, update_time, password_hash
+select display_name, email, id, password_hash, picture_uri, create_time, update_time, password_hash
 from customers
 where email = $1
 `
 
 type GetCustomerByEmailWithPasswordRow struct {
-	ID             string
-	DisplayName    pgtype.Text
+	DisplayName    string
 	Email          string
+	ID             string
 	PasswordHash   string
-	PictureUri     pgtype.Text
+	PictureUri     string
 	CreateTime     pgtype.Timestamptz
 	UpdateTime     pgtype.Timestamptz
 	PasswordHash_2 string
@@ -53,9 +53,9 @@ func (q *Queries) GetCustomerByEmailWithPassword(ctx context.Context, email stri
 	row := q.db.QueryRow(ctx, getCustomerByEmailWithPassword, email)
 	var i GetCustomerByEmailWithPasswordRow
 	err := row.Scan(
-		&i.ID,
 		&i.DisplayName,
 		&i.Email,
+		&i.ID,
 		&i.PasswordHash,
 		&i.PictureUri,
 		&i.CreateTime,
@@ -66,7 +66,7 @@ func (q *Queries) GetCustomerByEmailWithPassword(ctx context.Context, email stri
 }
 
 const getCustomerByID = `-- name: GetCustomerByID :one
-select id, display_name, email, password_hash, picture_uri, create_time, update_time
+select display_name, email, id, password_hash, picture_uri, create_time, update_time
 from customers
 where id = $1
 `
@@ -75,9 +75,9 @@ func (q *Queries) GetCustomerByID(ctx context.Context, id string) (Customer, err
 	row := q.db.QueryRow(ctx, getCustomerByID, id)
 	var i Customer
 	err := row.Scan(
-		&i.ID,
 		&i.DisplayName,
 		&i.Email,
+		&i.ID,
 		&i.PasswordHash,
 		&i.PictureUri,
 		&i.CreateTime,

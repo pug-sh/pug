@@ -21,11 +21,11 @@ type Campaign struct {
 }
 
 type Customer struct {
-	ID           string
-	DisplayName  pgtype.Text
+	DisplayName  string
 	Email        string
+	ID           string
 	PasswordHash string
-	PictureUri   pgtype.Text
+	PictureUri   string
 	CreateTime   pgtype.Timestamptz
 	UpdateTime   pgtype.Timestamptz
 }

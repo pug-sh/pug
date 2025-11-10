@@ -8,7 +8,6 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
@@ -49,8 +48,8 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	arg := dbwrite.CreateCustomerParams{
 		ID:           xid.New().String(),
 		Email:        email,
-		DisplayName:  postgres.StringToText(""),
-		PictureUri:   postgres.StringToText(""),
+		DisplayName:  "",
+		PictureUri:   "",
 		PasswordHash: string(passwordHash),
 	}
 

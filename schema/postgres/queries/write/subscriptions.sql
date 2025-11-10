@@ -1,8 +1,8 @@
 -- name: CreateSubscription :one
 INSERT INTO subscriptions (
-    id, project_id, token, platform, metadata, status
+    id, project_id, token, platform, metadata, status, updater, user_id
 ) VALUES (
-    @id, @project_id, @token, @platform, @metadata, @status
+    @id, @project_id, @token, @platform, @metadata, @status, @updater, @user_id
 ) RETURNING *;
 
 -- name: GetSubscription :one
@@ -37,12 +37,6 @@ SET platform = @platform, update_time = now()
 WHERE id = @id AND project_id = @project_id
 RETURNING *;
 
--- name: UpdateSubscriptionHeartbeat :one
-UPDATE subscriptions
-SET last_heartbeat_time = now(), update_time = now()
-WHERE id = @id AND project_id = @project_id
-RETURNING *;
-
 -- name: LinkSubscriptionToUser :one
 UPDATE subscriptions
 SET user_id = @user_id, update_time = now()
@@ -52,5 +46,17 @@ RETURNING *;
 -- name: UpdateSubscriptionUserId :one
 UPDATE subscriptions
 SET user_id = @user_id, update_time = now()
+WHERE id = @id AND project_id = @project_id
+RETURNING *;
+
+-- name: UpdateSubscriptionUpdater :one
+UPDATE subscriptions
+SET updater = @updater, update_time = now()
+WHERE id = @id AND project_id = @project_id
+RETURNING *;
+
+-- name: UpdateSubscriptionHeartbeat :one
+UPDATE subscriptions
+SET last_heartbeat_time = now(), update_time = now()
 WHERE id = @id AND project_id = @project_id
 RETURNING *;
