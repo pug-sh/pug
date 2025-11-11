@@ -33,18 +33,16 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// JourneysServiceGetProcedure is the fully-qualified name of the JourneysService's Get RPC.
-	JourneysServiceGetProcedure = "/journeys.v1.JourneysService/Get"
-	// JourneysServiceListProcedure is the fully-qualified name of the JourneysService's List RPC.
-	JourneysServiceListProcedure = "/journeys.v1.JourneysService/List"
+	// JourneysServiceGetByProjectIDProcedure is the fully-qualified name of the JourneysService's
+	// GetByProjectID RPC.
+	JourneysServiceGetByProjectIDProcedure = "/journeys.v1.JourneysService/GetByProjectID"
 	// JourneysServiceCreateProcedure is the fully-qualified name of the JourneysService's Create RPC.
 	JourneysServiceCreateProcedure = "/journeys.v1.JourneysService/Create"
 )
 
 // JourneysServiceClient is a client for the journeys.v1.JourneysService service.
 type JourneysServiceClient interface {
-	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
-	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
+	GetByProjectID(context.Context, *connect.Request[v1.GetByProjectIDRequest]) (*connect.Response[v1.GetByProjectIDResponse], error)
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 }
 
@@ -59,16 +57,10 @@ func NewJourneysServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 	baseURL = strings.TrimRight(baseURL, "/")
 	journeysServiceMethods := v1.File_journeys_v1_journeys_proto.Services().ByName("JourneysService").Methods()
 	return &journeysServiceClient{
-		get: connect.NewClient[v1.GetRequest, v1.GetResponse](
+		getByProjectID: connect.NewClient[v1.GetByProjectIDRequest, v1.GetByProjectIDResponse](
 			httpClient,
-			baseURL+JourneysServiceGetProcedure,
-			connect.WithSchema(journeysServiceMethods.ByName("Get")),
-			connect.WithClientOptions(opts...),
-		),
-		list: connect.NewClient[v1.ListRequest, v1.ListResponse](
-			httpClient,
-			baseURL+JourneysServiceListProcedure,
-			connect.WithSchema(journeysServiceMethods.ByName("List")),
+			baseURL+JourneysServiceGetByProjectIDProcedure,
+			connect.WithSchema(journeysServiceMethods.ByName("GetByProjectID")),
 			connect.WithClientOptions(opts...),
 		),
 		create: connect.NewClient[v1.CreateRequest, v1.CreateResponse](
@@ -82,19 +74,13 @@ func NewJourneysServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // journeysServiceClient implements JourneysServiceClient.
 type journeysServiceClient struct {
-	get    *connect.Client[v1.GetRequest, v1.GetResponse]
-	list   *connect.Client[v1.ListRequest, v1.ListResponse]
-	create *connect.Client[v1.CreateRequest, v1.CreateResponse]
+	getByProjectID *connect.Client[v1.GetByProjectIDRequest, v1.GetByProjectIDResponse]
+	create         *connect.Client[v1.CreateRequest, v1.CreateResponse]
 }
 
-// Get calls journeys.v1.JourneysService.Get.
-func (c *journeysServiceClient) Get(ctx context.Context, req *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
-	return c.get.CallUnary(ctx, req)
-}
-
-// List calls journeys.v1.JourneysService.List.
-func (c *journeysServiceClient) List(ctx context.Context, req *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
-	return c.list.CallUnary(ctx, req)
+// GetByProjectID calls journeys.v1.JourneysService.GetByProjectID.
+func (c *journeysServiceClient) GetByProjectID(ctx context.Context, req *connect.Request[v1.GetByProjectIDRequest]) (*connect.Response[v1.GetByProjectIDResponse], error) {
+	return c.getByProjectID.CallUnary(ctx, req)
 }
 
 // Create calls journeys.v1.JourneysService.Create.
@@ -104,8 +90,7 @@ func (c *journeysServiceClient) Create(ctx context.Context, req *connect.Request
 
 // JourneysServiceHandler is an implementation of the journeys.v1.JourneysService service.
 type JourneysServiceHandler interface {
-	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
-	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
+	GetByProjectID(context.Context, *connect.Request[v1.GetByProjectIDRequest]) (*connect.Response[v1.GetByProjectIDResponse], error)
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 }
 
@@ -116,16 +101,10 @@ type JourneysServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewJourneysServiceHandler(svc JourneysServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	journeysServiceMethods := v1.File_journeys_v1_journeys_proto.Services().ByName("JourneysService").Methods()
-	journeysServiceGetHandler := connect.NewUnaryHandler(
-		JourneysServiceGetProcedure,
-		svc.Get,
-		connect.WithSchema(journeysServiceMethods.ByName("Get")),
-		connect.WithHandlerOptions(opts...),
-	)
-	journeysServiceListHandler := connect.NewUnaryHandler(
-		JourneysServiceListProcedure,
-		svc.List,
-		connect.WithSchema(journeysServiceMethods.ByName("List")),
+	journeysServiceGetByProjectIDHandler := connect.NewUnaryHandler(
+		JourneysServiceGetByProjectIDProcedure,
+		svc.GetByProjectID,
+		connect.WithSchema(journeysServiceMethods.ByName("GetByProjectID")),
 		connect.WithHandlerOptions(opts...),
 	)
 	journeysServiceCreateHandler := connect.NewUnaryHandler(
@@ -136,10 +115,8 @@ func NewJourneysServiceHandler(svc JourneysServiceHandler, opts ...connect.Handl
 	)
 	return "/journeys.v1.JourneysService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case JourneysServiceGetProcedure:
-			journeysServiceGetHandler.ServeHTTP(w, r)
-		case JourneysServiceListProcedure:
-			journeysServiceListHandler.ServeHTTP(w, r)
+		case JourneysServiceGetByProjectIDProcedure:
+			journeysServiceGetByProjectIDHandler.ServeHTTP(w, r)
 		case JourneysServiceCreateProcedure:
 			journeysServiceCreateHandler.ServeHTTP(w, r)
 		default:
@@ -151,12 +128,8 @@ func NewJourneysServiceHandler(svc JourneysServiceHandler, opts ...connect.Handl
 // UnimplementedJourneysServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedJourneysServiceHandler struct{}
 
-func (UnimplementedJourneysServiceHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("journeys.v1.JourneysService.Get is not implemented"))
-}
-
-func (UnimplementedJourneysServiceHandler) List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("journeys.v1.JourneysService.List is not implemented"))
+func (UnimplementedJourneysServiceHandler) GetByProjectID(context.Context, *connect.Request[v1.GetByProjectIDRequest]) (*connect.Response[v1.GetByProjectIDResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("journeys.v1.JourneysService.GetByProjectID is not implemented"))
 }
 
 func (UnimplementedJourneysServiceHandler) Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error) {

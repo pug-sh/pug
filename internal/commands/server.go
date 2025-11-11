@@ -13,10 +13,12 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/journeys/v1/journeysv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/rpc/auth"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
+	"github.com/fivebitsio/cotton/internal/rpc/journeys"
 	"github.com/fivebitsio/cotton/internal/rpc/projects"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/postgres"
@@ -113,16 +115,24 @@ var ServerCmd = &cobra.Command{
 			projectsServer,
 			commonHandlerOptions(),
 		)
-
 		projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
+
+		journeysServer := journeys.NewServer(deps.pgRo, deps.pgW)
+		journeysPath, journeysHandler := journeysv1connect.NewJourneysServiceHandler(
+			journeysServer,
+			commonHandlerOptions(),
+		)
+		journeysHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(journeysHandler)
 
 		handler := http.NewServeMux()
 		handler.Handle(authPath, authHandler)
 		handler.Handle(projectsPath, projectsHandler)
+		handler.Handle(journeysPath, journeysHandler)
 
 		services := []string{
 			authv1connect.AuthServiceName,
 			projectsv1connect.ProjectsServiceName,
+			journeysv1connect.JourneysServiceName,
 		}
 
 		reflector := grpcreflect.NewStaticReflector(services...)

@@ -250,27 +250,27 @@ func (x *Journey) GetUpdateTime() *timestamppb.Timestamp {
 	return nil
 }
 
-type GetRequest struct {
+type GetByProjectIDRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetRequest) Reset() {
-	*x = GetRequest{}
+func (x *GetByProjectIDRequest) Reset() {
+	*x = GetByProjectIDRequest{}
 	mi := &file_journeys_v1_journeys_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetRequest) String() string {
+func (x *GetByProjectIDRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetRequest) ProtoMessage() {}
+func (*GetByProjectIDRequest) ProtoMessage() {}
 
-func (x *GetRequest) ProtoReflect() protoreflect.Message {
+func (x *GetByProjectIDRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_journeys_v1_journeys_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -282,144 +282,40 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
-func (*GetRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetByProjectIDRequest.ProtoReflect.Descriptor instead.
+func (*GetByProjectIDRequest) Descriptor() ([]byte, []int) {
 	return file_journeys_v1_journeys_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *GetRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type GetResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Journey       *Journey               `protobuf:"bytes,1,opt,name=journey" json:"journey,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetResponse) Reset() {
-	*x = GetResponse{}
-	mi := &file_journeys_v1_journeys_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetResponse) ProtoMessage() {}
-
-func (x *GetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_journeys_v1_journeys_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
-func (*GetResponse) Descriptor() ([]byte, []int) {
-	return file_journeys_v1_journeys_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *GetResponse) GetJourney() *Journey {
-	if x != nil {
-		return x.Journey
-	}
-	return nil
-}
-
-type ListRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
-	PageToken     int32                  `protobuf:"varint,3,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListRequest) Reset() {
-	*x = ListRequest{}
-	mi := &file_journeys_v1_journeys_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListRequest) ProtoMessage() {}
-
-func (x *ListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_journeys_v1_journeys_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
-func (*ListRequest) Descriptor() ([]byte, []int) {
-	return file_journeys_v1_journeys_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ListRequest) GetProjectId() string {
+func (x *GetByProjectIDRequest) GetProjectId() string {
 	if x != nil {
 		return x.ProjectId
 	}
 	return ""
 }
 
-func (x *ListRequest) GetPageSize() int32 {
-	if x != nil {
-		return x.PageSize
-	}
-	return 0
-}
-
-func (x *ListRequest) GetPageToken() int32 {
-	if x != nil {
-		return x.PageToken
-	}
-	return 0
-}
-
-type ListResponse struct {
+type GetByProjectIDResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Journeys      []*Journey             `protobuf:"bytes,1,rep,name=journeys" json:"journeys,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ListResponse) Reset() {
-	*x = ListResponse{}
-	mi := &file_journeys_v1_journeys_proto_msgTypes[4]
+func (x *GetByProjectIDResponse) Reset() {
+	*x = GetByProjectIDResponse{}
+	mi := &file_journeys_v1_journeys_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListResponse) String() string {
+func (x *GetByProjectIDResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListResponse) ProtoMessage() {}
+func (*GetByProjectIDResponse) ProtoMessage() {}
 
-func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_journeys_v1_journeys_proto_msgTypes[4]
+func (x *GetByProjectIDResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_journeys_v1_journeys_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -430,12 +326,12 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
-func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_journeys_v1_journeys_proto_rawDescGZIP(), []int{4}
+// Deprecated: Use GetByProjectIDResponse.ProtoReflect.Descriptor instead.
+func (*GetByProjectIDResponse) Descriptor() ([]byte, []int) {
+	return file_journeys_v1_journeys_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ListResponse) GetJourneys() []*Journey {
+func (x *GetByProjectIDResponse) GetJourneys() []*Journey {
 	if x != nil {
 		return x.Journeys
 	}
@@ -458,7 +354,7 @@ type CreateRequest struct {
 
 func (x *CreateRequest) Reset() {
 	*x = CreateRequest{}
-	mi := &file_journeys_v1_journeys_proto_msgTypes[5]
+	mi := &file_journeys_v1_journeys_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -470,7 +366,7 @@ func (x *CreateRequest) String() string {
 func (*CreateRequest) ProtoMessage() {}
 
 func (x *CreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_journeys_v1_journeys_proto_msgTypes[5]
+	mi := &file_journeys_v1_journeys_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -483,7 +379,7 @@ func (x *CreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRequest.ProtoReflect.Descriptor instead.
 func (*CreateRequest) Descriptor() ([]byte, []int) {
-	return file_journeys_v1_journeys_proto_rawDescGZIP(), []int{5}
+	return file_journeys_v1_journeys_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CreateRequest) GetProjectId() string {
@@ -551,7 +447,7 @@ type CreateResponse struct {
 
 func (x *CreateResponse) Reset() {
 	*x = CreateResponse{}
-	mi := &file_journeys_v1_journeys_proto_msgTypes[6]
+	mi := &file_journeys_v1_journeys_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -563,7 +459,7 @@ func (x *CreateResponse) String() string {
 func (*CreateResponse) ProtoMessage() {}
 
 func (x *CreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_journeys_v1_journeys_proto_msgTypes[6]
+	mi := &file_journeys_v1_journeys_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -576,7 +472,7 @@ func (x *CreateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateResponse.ProtoReflect.Descriptor instead.
 func (*CreateResponse) Descriptor() ([]byte, []int) {
-	return file_journeys_v1_journeys_proto_rawDescGZIP(), []int{6}
+	return file_journeys_v1_journeys_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CreateResponse) GetJourney() *Journey {
@@ -608,19 +504,11 @@ const file_journeys_v1_journeys_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12;\n" +
 	"\vupdate_time\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\"\x1c\n" +
+	"updateTime\"6\n" +
+	"\x15GetByProjectIDRequest\x12\x1d\n" +
 	"\n" +
-	"GetRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"=\n" +
-	"\vGetResponse\x12.\n" +
-	"\ajourney\x18\x01 \x01(\v2\x14.journeys.v1.JourneyR\ajourney\"h\n" +
-	"\vListRequest\x12\x1d\n" +
-	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1b\n" +
-	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
-	"\n" +
-	"page_token\x18\x03 \x01(\x05R\tpageToken\"@\n" +
-	"\fListResponse\x120\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\"J\n" +
+	"\x16GetByProjectIDResponse\x120\n" +
 	"\bjourneys\x18\x01 \x03(\v2\x14.journeys.v1.JourneyR\bjourneys\"\xcf\x02\n" +
 	"\rCreateRequest\x12\x1d\n" +
 	"\n" +
@@ -645,10 +533,9 @@ const file_journeys_v1_journeys_proto_rawDesc = "" +
 	"\tEntryType\x12\x1a\n" +
 	"\x16ENTRY_TYPE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12ENTRY_TYPE_SEGMENT\x10\x01\x12\x14\n" +
-	"\x10ENTRY_TYPE_EVENT\x10\x022\xd1\x01\n" +
-	"\x0fJourneysService\x12:\n" +
-	"\x03Get\x12\x17.journeys.v1.GetRequest\x1a\x18.journeys.v1.GetResponse\"\x00\x12=\n" +
-	"\x04List\x12\x18.journeys.v1.ListRequest\x1a\x19.journeys.v1.ListResponse\"\x00\x12C\n" +
+	"\x10ENTRY_TYPE_EVENT\x10\x022\xb3\x01\n" +
+	"\x0fJourneysService\x12[\n" +
+	"\x0eGetByProjectID\x12\".journeys.v1.GetByProjectIDRequest\x1a#.journeys.v1.GetByProjectIDResponse\"\x00\x12C\n" +
 	"\x06Create\x12\x1a.journeys.v1.CreateRequest\x1a\x1b.journeys.v1.CreateResponse\"\x00BMZFgithub.com/fivebitsio/cotton/internal/gen/proto/journeys/v1;journeysv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
@@ -664,44 +551,39 @@ func file_journeys_v1_journeys_proto_rawDescGZIP() []byte {
 }
 
 var file_journeys_v1_journeys_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_journeys_v1_journeys_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_journeys_v1_journeys_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_journeys_v1_journeys_proto_goTypes = []any{
-	(State)(0),                    // 0: journeys.v1.State
-	(EntryType)(0),                // 1: journeys.v1.EntryType
-	(*Journey)(nil),               // 2: journeys.v1.Journey
-	(*GetRequest)(nil),            // 3: journeys.v1.GetRequest
-	(*GetResponse)(nil),           // 4: journeys.v1.GetResponse
-	(*ListRequest)(nil),           // 5: journeys.v1.ListRequest
-	(*ListResponse)(nil),          // 6: journeys.v1.ListResponse
-	(*CreateRequest)(nil),         // 7: journeys.v1.CreateRequest
-	(*CreateResponse)(nil),        // 8: journeys.v1.CreateResponse
-	(*timestamppb.Timestamp)(nil), // 9: google.protobuf.Timestamp
+	(State)(0),                     // 0: journeys.v1.State
+	(EntryType)(0),                 // 1: journeys.v1.EntryType
+	(*Journey)(nil),                // 2: journeys.v1.Journey
+	(*GetByProjectIDRequest)(nil),  // 3: journeys.v1.GetByProjectIDRequest
+	(*GetByProjectIDResponse)(nil), // 4: journeys.v1.GetByProjectIDResponse
+	(*CreateRequest)(nil),          // 5: journeys.v1.CreateRequest
+	(*CreateResponse)(nil),         // 6: journeys.v1.CreateResponse
+	(*timestamppb.Timestamp)(nil),  // 7: google.protobuf.Timestamp
 }
 var file_journeys_v1_journeys_proto_depIdxs = []int32{
 	0,  // 0: journeys.v1.Journey.state:type_name -> journeys.v1.State
 	1,  // 1: journeys.v1.Journey.entry_type:type_name -> journeys.v1.EntryType
-	9,  // 2: journeys.v1.Journey.start_time:type_name -> google.protobuf.Timestamp
-	9,  // 3: journeys.v1.Journey.end_time:type_name -> google.protobuf.Timestamp
-	9,  // 4: journeys.v1.Journey.create_time:type_name -> google.protobuf.Timestamp
-	9,  // 5: journeys.v1.Journey.update_time:type_name -> google.protobuf.Timestamp
-	2,  // 6: journeys.v1.GetResponse.journey:type_name -> journeys.v1.Journey
-	2,  // 7: journeys.v1.ListResponse.journeys:type_name -> journeys.v1.Journey
-	0,  // 8: journeys.v1.CreateRequest.state:type_name -> journeys.v1.State
-	1,  // 9: journeys.v1.CreateRequest.entry_type:type_name -> journeys.v1.EntryType
-	9,  // 10: journeys.v1.CreateRequest.start_time:type_name -> google.protobuf.Timestamp
-	9,  // 11: journeys.v1.CreateRequest.end_time:type_name -> google.protobuf.Timestamp
-	2,  // 12: journeys.v1.CreateResponse.journey:type_name -> journeys.v1.Journey
-	3,  // 13: journeys.v1.JourneysService.Get:input_type -> journeys.v1.GetRequest
-	5,  // 14: journeys.v1.JourneysService.List:input_type -> journeys.v1.ListRequest
-	7,  // 15: journeys.v1.JourneysService.Create:input_type -> journeys.v1.CreateRequest
-	4,  // 16: journeys.v1.JourneysService.Get:output_type -> journeys.v1.GetResponse
-	6,  // 17: journeys.v1.JourneysService.List:output_type -> journeys.v1.ListResponse
-	8,  // 18: journeys.v1.JourneysService.Create:output_type -> journeys.v1.CreateResponse
-	16, // [16:19] is the sub-list for method output_type
-	13, // [13:16] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	7,  // 2: journeys.v1.Journey.start_time:type_name -> google.protobuf.Timestamp
+	7,  // 3: journeys.v1.Journey.end_time:type_name -> google.protobuf.Timestamp
+	7,  // 4: journeys.v1.Journey.create_time:type_name -> google.protobuf.Timestamp
+	7,  // 5: journeys.v1.Journey.update_time:type_name -> google.protobuf.Timestamp
+	2,  // 6: journeys.v1.GetByProjectIDResponse.journeys:type_name -> journeys.v1.Journey
+	0,  // 7: journeys.v1.CreateRequest.state:type_name -> journeys.v1.State
+	1,  // 8: journeys.v1.CreateRequest.entry_type:type_name -> journeys.v1.EntryType
+	7,  // 9: journeys.v1.CreateRequest.start_time:type_name -> google.protobuf.Timestamp
+	7,  // 10: journeys.v1.CreateRequest.end_time:type_name -> google.protobuf.Timestamp
+	2,  // 11: journeys.v1.CreateResponse.journey:type_name -> journeys.v1.Journey
+	3,  // 12: journeys.v1.JourneysService.GetByProjectID:input_type -> journeys.v1.GetByProjectIDRequest
+	5,  // 13: journeys.v1.JourneysService.Create:input_type -> journeys.v1.CreateRequest
+	4,  // 14: journeys.v1.JourneysService.GetByProjectID:output_type -> journeys.v1.GetByProjectIDResponse
+	6,  // 15: journeys.v1.JourneysService.Create:output_type -> journeys.v1.CreateResponse
+	14, // [14:16] is the sub-list for method output_type
+	12, // [12:14] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_journeys_v1_journeys_proto_init() }
@@ -715,7 +597,7 @@ func file_journeys_v1_journeys_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_journeys_v1_journeys_proto_rawDesc), len(file_journeys_v1_journeys_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   7,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

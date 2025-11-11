@@ -7,8 +7,7 @@ option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/journeys/v1
 import "google/protobuf/timestamp.proto";
 
 service JourneysService {
-  rpc Get(GetRequest) returns (GetResponse) {}
-  rpc List(ListRequest) returns (ListResponse) {}
+  rpc GetByProjectID(GetByProjectIDRequest) returns (GetByProjectIDResponse) {}
   rpc Create(CreateRequest) returns (CreateResponse) {}
 }
 
@@ -40,21 +39,11 @@ enum EntryType {
   ENTRY_TYPE_EVENT = 2;
 }
 
-message GetRequest {
-  string id = 1;
-}
-
-message GetResponse {
-  Journey journey = 1;
-}
-
-message ListRequest {
+message GetByProjectIDRequest {
   string project_id = 1;
-  int32 page_size = 2;
-  int32 page_token = 3;
 }
 
-message ListResponse {
+message GetByProjectIDResponse {
   repeated Journey journeys = 1;
 }
 
