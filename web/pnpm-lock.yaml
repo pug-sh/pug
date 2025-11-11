@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@buf/pushpa_cotton.bufbuild_es':
-        specifier: 2.10.0-20251104144232-f7ca32369fce.1
-        version: 2.10.0-20251104144232-f7ca32369fce.1(@bufbuild/protobuf@2.10.0)
+        specifier: 2.10.0-20251111140143-7e8a8612d2b2.1
+        version: 2.10.0-20251111140143-7e8a8612d2b2.1(@bufbuild/protobuf@2.10.0)
       '@bufbuild/protobuf':
         specifier: ^2.10.0
         version: 2.10.0
@@ -268,8 +268,8 @@ packages:
     resolution: {integrity: sha512-qQ5m48eI/MFLQ5PxQj4PFaprjyCTLI37ElWMmNs0K8Lk3dVeOdNpB3ks8jc7yM5CDmVC73eMVk/trk3fgmrUpA==}
     engines: {node: '>=6.9.0'}
 
-  '@buf/pushpa_cotton.bufbuild_es@2.10.0-20251104144232-f7ca32369fce.1':
-    resolution: {tarball: https://buf.build/gen/npm/v1/@buf/pushpa_cotton.bufbuild_es/-/pushpa_cotton.bufbuild_es-2.10.0-20251104144232-f7ca32369fce.1.tgz}
+  '@buf/pushpa_cotton.bufbuild_es@2.10.0-20251111140143-7e8a8612d2b2.1':
+    resolution: {tarball: https://buf.build/gen/npm/v1/@buf/pushpa_cotton.bufbuild_es/-/pushpa_cotton.bufbuild_es-2.10.0-20251111140143-7e8a8612d2b2.1.tgz}
     peerDependencies:
       '@bufbuild/protobuf': ^2.10.0
 
@@ -3593,7 +3593,7 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@buf/pushpa_cotton.bufbuild_es@2.10.0-20251104144232-f7ca32369fce.1(@bufbuild/protobuf@2.10.0)':
+  '@buf/pushpa_cotton.bufbuild_es@2.10.0-20251111140143-7e8a8612d2b2.1(@bufbuild/protobuf@2.10.0)':
     dependencies:
       '@bufbuild/protobuf': 2.10.0
 

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
+import { journeysService } from '@/lib/rpc'
 
 const formSchema = z.object({
   name: z
@@ -17,11 +18,12 @@ const formSchema = z.object({
 })
 
 interface JourneyFormProps {
+  projectId: string;
   onClose: () => void;
   onSubmitSuccess: () => void;
 }
 
-function JourneyForm({ onClose, onSubmitSuccess }: JourneyFormProps) {
+function JourneyForm({ projectId, onClose, onSubmitSuccess }: JourneyFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -36,10 +38,15 @@ function JourneyForm({ onClose, onSubmitSuccess }: JourneyFormProps) {
     onSubmit: async ({ value }) => {
       setIsSubmitting(true)
       setFormError(null)
-      try {
-        // TODO: Implement actual journey creation logic
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        alert(`Journey "${value.name}" created successfully!`)
+      try {        
+        await journeysService.create({
+          projectId: projectId,
+          name: value.name,
+          description: value.description,
+          state: 2, // STATE_DRAFT (2)
+          entryType: 1, // ENTRY_TYPE_SEGMENT (1) - default
+          config: new Uint8Array(), // Empty JSON config for now
+        })
         onSubmitSuccess()
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'An error occurred creating journey'

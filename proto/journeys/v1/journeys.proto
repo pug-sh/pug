@@ -1,0 +1,74 @@
+edition = "2023";
+package journeys.v1;
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/journeys/v1;journeysv1";
+
+import "google/protobuf/timestamp.proto";
+
+service JourneysService {
+  rpc Get(GetRequest) returns (GetResponse) {}
+  rpc List(ListRequest) returns (ListResponse) {}
+  rpc Create(CreateRequest) returns (CreateResponse) {}
+}
+
+message Journey {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string description = 4;
+  State state = 5;
+  EntryType entry_type = 6;
+  bytes config = 7;
+  google.protobuf.Timestamp start_time = 8;
+  google.protobuf.Timestamp end_time = 9;
+  google.protobuf.Timestamp create_time = 10;
+  google.protobuf.Timestamp update_time = 11;
+}
+
+enum State {
+  STATE_UNSPECIFIED = 0;
+  STATE_ACTIVE = 1;
+  STATE_DRAFT = 2;
+  STATE_PAUSED = 3;
+  STATE_ARCHIVED = 4;
+}
+
+enum EntryType {
+  ENTRY_TYPE_UNSPECIFIED = 0;
+  ENTRY_TYPE_SEGMENT = 1;
+  ENTRY_TYPE_EVENT = 2;
+}
+
+message GetRequest {
+  string id = 1;
+}
+
+message GetResponse {
+  Journey journey = 1;
+}
+
+message ListRequest {
+  string project_id = 1;
+  int32 page_size = 2;
+  int32 page_token = 3;
+}
+
+message ListResponse {
+  repeated Journey journeys = 1;
+}
+
+message CreateRequest {
+  string project_id = 1;
+  string name = 2;
+  string description = 3;
+  State state = 4;
+  EntryType entry_type = 5;
+  bytes config = 6;
+  google.protobuf.Timestamp start_time = 7;
+  google.protobuf.Timestamp end_time = 8;
+}
+
+message CreateResponse {
+  Journey journey = 1;
+}

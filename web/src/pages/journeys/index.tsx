@@ -1,16 +1,50 @@
+import { type Journey } from '@buf/pushpa_cotton.bufbuild_es/journeys/v1/journeys_pb'
 import { Plus } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import JourneyForm from './new'
 import { AppSidebar } from '@/components/nav/app-sidebar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
+import { journeysService } from '@/lib/rpc'
 
 function Journeys() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [journeys, setJourneys] = useState<Journey[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchJourneys = async () => {
+      try {
+        setLoading(true)
+        const request = {}
+        const response = await journeysService.list(request)
+        setJourneys(response.journeys)
+      } catch (error) {
+        console.error('Error fetching journeys:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchJourneys()
+  }, [])
 
   const handleFormSubmitSuccess = () => {
     setIsDialogOpen(false)
+    const fetchJourneys = async () => {
+      try {
+        setLoading(true)
+        const request = {}
+        const response = await journeysService.list(request)
+        setJourneys(response.journeys)
+      } catch (error) {
+        console.error('Error fetching journeys:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchJourneys()
   }
 
   return (
@@ -34,6 +68,7 @@ function Journeys() {
               <DialogTitle>New Journey</DialogTitle>
             </DialogHeader>
             <JourneyForm
+              projectId=''
               onClose={() => setIsDialogOpen(false)}
               onSubmitSuccess={handleFormSubmitSuccess}
             />
@@ -42,22 +77,28 @@ function Journeys() {
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
           <div className="max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold mb-4">Your Journeys</h2>
-            <p className="text-muted-foreground mb-6">Track and manage your journeys here.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="border rounded-lg p-4 bg-card">
-                <h3 className="font-semibold">Journey 1</h3>
-                <p className="text-muted-foreground text-sm">Description of journey 1</p>
+            {loading ? (
+              <div className="text-center py-8">
+                <p>Loading journeys...</p>
               </div>
-              <div className="border rounded-lg p-4 bg-card">
-                <h3 className="font-semibold">Journey 2</h3>
-                <p className="text-muted-foreground text-sm">Description of journey 2</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {journeys.map((journey) => (
+                  <div key={journey.id} className="border rounded-lg p-4 bg-card">
+                    <h3 className="font-semibold">{journey.name}</h3>
+                    <p className="text-muted-foreground text-sm">{journey.description}</p>
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Status: {journey.state}
+                    </div>
+                  </div>
+                ))}
+                {journeys.length === 0 && (
+                  <div className="col-span-full text-center py-8 text-muted-foreground">
+                    No journeys found. Create your first journey to get started.
+                  </div>
+                )}
               </div>
-              <div className="border rounded-lg p-4 bg-card">
-                <h3 className="font-semibold">Journey 3</h3>
-                <p className="text-muted-foreground text-sm">Description of journey 3</p>
-              </div>
-            </div>
+            )}
           </div>
         </main>
       </SidebarInset>
