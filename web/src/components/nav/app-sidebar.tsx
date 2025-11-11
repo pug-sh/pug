@@ -1,10 +1,8 @@
 'use client'
 
 import {
-  AudioWaveform,
   BookOpen,
   Bot,
-  Command,
   Frame,
   GalleryVerticalEnd,
   Map,
@@ -13,6 +11,8 @@ import {
   SquareTerminal,
 } from 'lucide-react'
 import * as React from 'react'
+import { useAtom } from 'jotai'
+import { batchGetAtom } from '@/atoms/projects'
 
 import { NavMain } from '@/components/nav/nav-main'
 import { NavProjects } from '@/components/nav/nav-projects'
@@ -26,147 +26,135 @@ import {
   SidebarRail,
 } from '@/components/ui/sidebar'
 
-const data = {
-  user: {
-    name: 'shadcn',
-    email: 'm@example.com',
-    avatar: '/avatars/shadcn.jpg',
-  },
-  projects: [
-    {
-      name: 'Acme Inc',
-      logo: GalleryVerticalEnd,
-      plan: 'Enterprise',
-    },
-    {
-      name: 'Acme Corp.',
-      logo: AudioWaveform,
-      plan: 'Startup',
-    },
-    {
-      name: 'Evil Corp.',
-      logo: Command,
-      plan: 'Free',
-    },
-  ],
-  navMain: [
-    {
-      title: 'Playground',
-      url: '#',
-      icon: SquareTerminal,
-      isActive: true,
-      items: [
-        {
-          title: 'History',
-          url: '#',
-        },
-        {
-          title: 'Starred',
-          url: '#',
-        },
-        {
-          title: 'Settings',
-          url: '#',
-        },
-      ],
-    },
-    {
-      title: 'Models',
-      url: '#',
-      icon: Bot,
-      items: [
-        {
-          title: 'Genesis',
-          url: '#',
-        },
-        {
-          title: 'Explorer',
-          url: '#',
-        },
-        {
-          title: 'Quantum',
-          url: '#',
-        },
-      ],
-    },
-    {
-      title: 'Documentation',
-      url: '#',
-      icon: BookOpen,
-      items: [
-        {
-          title: 'Introduction',
-          url: '#',
-        },
-        {
-          title: 'Get Started',
-          url: '#',
-        },
-        {
-          title: 'Tutorials',
-          url: '#',
-        },
-        {
-          title: 'Changelog',
-          url: '#',
-        },
-      ],
-    },
-    {
-      title: 'Settings',
-      url: '#',
-      icon: Settings2,
-      items: [
-        {
-          title: 'General',
-          url: '#',
-        },
-        {
-          title: 'Team',
-          url: '#',
-        },
-        {
-          title: 'Billing',
-          url: '#',
-        },
-        {
-          title: 'Limits',
-          url: '#',
-        },
-      ],
-    },
-  ],
-  projectss: [
-    {
-      name: 'Design Engineering',
-      url: '#',
-      icon: Frame,
-    },
-    {
-      name: 'Sales & Marketing',
-      url: '#',
-      icon: PieChart,
-    },
-    {
-      name: 'Travel',
-      url: '#',
-      icon: Map,
-    },
-  ],
-}
-
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const [projects] = useAtom(batchGetAtom)
+
+  // Convert projects to the format expected by ProjectSwitcher
+  const projectSwitcherProjects = React.useMemo(() => {
+    return projects.map(project => ({
+      name: project.displayName,
+      logo: GalleryVerticalEnd, // Default icon for all projects
+      plan: 'Enterprise', // Placeholder - would need to come from project data if available in the API
+    }))
+  }, [projects])
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <ProjectSwitcher projects={data.projects} />
+        <ProjectSwitcher projects={projectSwitcherProjects} />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
-        <NavProjects projects={data.projectss} />
+        <NavMain items={[
+          {
+            title: 'Playground',
+            url: '#',
+            icon: SquareTerminal,
+            isActive: true,
+            items: [
+              {
+                title: 'History',
+                url: '#',
+              },
+              {
+                title: 'Starred',
+                url: '#',
+              },
+              {
+                title: 'Settings',
+                url: '#',
+              },
+            ],
+          },
+          {
+            title: 'Models',
+            url: '#',
+            icon: Bot,
+            items: [
+              {
+                title: 'Genesis',
+                url: '#',
+              },
+              {
+                title: 'Explorer',
+                url: '#',
+              },
+              {
+                title: 'Quantum',
+                url: '#',
+              },
+            ],
+          },
+          {
+            title: 'Documentation',
+            url: '#',
+            icon: BookOpen,
+            items: [
+              {
+                title: 'Introduction',
+                url: '#',
+              },
+              {
+                title: 'Get Started',
+                url: '#',
+              },
+              {
+                title: 'Tutorials',
+                url: '#',
+              },
+              {
+                title: 'Changelog',
+                url: '#',
+              },
+            ],
+          },
+          {
+            title: 'Settings',
+            url: '#',
+            icon: Settings2,
+            items: [
+              {
+                title: 'General',
+                url: '#',
+              },
+              {
+                title: 'Team',
+                url: '#',
+              },
+              {
+                title: 'Billing',
+                url: '#',
+              },
+              {
+                title: 'Limits',
+                url: '#',
+              },
+            ],
+          },
+        ]} />
+        <NavProjects projects={[
+          {
+            name: 'Design Engineering',
+            url: '#',
+            icon: Frame,
+          },
+          {
+            name: 'Sales & Marketing',
+            url: '#',
+            icon: PieChart,
+          },
+          {
+            name: 'Travel',
+            url: '#',
+            icon: Map,
+          },
+        ]} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={{
+          name: 'shadcn',
+          email: 'm@example.com',
+          avatar: '/avatars/shadcn.jpg',
+        }} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

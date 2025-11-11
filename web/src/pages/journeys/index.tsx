@@ -1,23 +1,26 @@
 import { type Journey } from '@buf/pushpa_cotton.bufbuild_es/journeys/v1/journeys_pb'
 import { Plus } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { useAtom } from 'jotai'
 import JourneyForm from './new'
 import { AppSidebar } from '@/components/nav/app-sidebar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { journeysService } from '@/lib/rpc'
+import { selectedProjectAtom } from '@/atoms/projects'
 
 function Journeys() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [journeys, setJourneys] = useState<Journey[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedProjectId] = useAtom(selectedProjectAtom)
 
   useEffect(() => {
     const fetchJourneys = async () => {
       try {
         setLoading(true)
-        const request = {}
+        const request = { projectId: selectedProjectId }
         const response = await journeysService.list(request)
         setJourneys(response.journeys)
       } catch (error) {
@@ -28,14 +31,14 @@ function Journeys() {
     }
 
     fetchJourneys()
-  }, [])
+  }, [selectedProjectId])
 
   const handleFormSubmitSuccess = () => {
     setIsDialogOpen(false)
     const fetchJourneys = async () => {
       try {
         setLoading(true)
-        const request = {}
+        const request = { projectId: selectedProjectId }
         const response = await journeysService.list(request)
         setJourneys(response.journeys)
       } catch (error) {
@@ -45,6 +48,19 @@ function Journeys() {
       }
     }
     fetchJourneys()
+  }
+
+  // Helper function to convert state enum to readable string
+  const getStateString = (state: number | undefined) => {
+    if (state === undefined) return 'Unknown'
+    const stateEnum: Record<number, string> = {
+      0: 'Unspecified',
+      1: 'Active',
+      2: 'Draft',
+      3: 'Paused',
+      4: 'Archived'
+    }
+    return stateEnum[state] || 'Unknown'
   }
 
   return (
@@ -68,7 +84,7 @@ function Journeys() {
               <DialogTitle>New Journey</DialogTitle>
             </DialogHeader>
             <JourneyForm
-              projectId=''
+              projectId={selectedProjectId}
               onClose={() => setIsDialogOpen(false)}
               onSubmitSuccess={handleFormSubmitSuccess}
             />
@@ -88,7 +104,7 @@ function Journeys() {
                     <h3 className="font-semibold">{journey.name}</h3>
                     <p className="text-muted-foreground text-sm">{journey.description}</p>
                     <div className="mt-2 text-xs text-muted-foreground">
-                      Status: {journey.state}
+                      Status: {getStateString(journey.state)}
                     </div>
                   </div>
                 ))}
