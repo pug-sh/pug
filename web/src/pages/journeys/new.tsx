@@ -4,7 +4,6 @@ import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 
 const formSchema = z.object({
@@ -57,7 +56,6 @@ function JourneyForm({ onClose, onSubmitSuccess }: JourneyFormProps) {
         e.preventDefault()
         form.handleSubmit()
       }}
-      className="space-y-6"
     >
       {formError && (
         <div className="mb-4 text-sm text-destructive font-normal">
@@ -73,9 +71,7 @@ function JourneyForm({ onClose, onSubmitSuccess }: JourneyFormProps) {
 
             return (
               <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>
-                  <Label htmlFor={field.name}>Journey Name</Label>
-                </FieldLabel>
+                <FieldLabel htmlFor={field.name}>Name</FieldLabel>
                 <Input
                   id={field.name}
                   name={field.name}
@@ -100,10 +96,8 @@ function JourneyForm({ onClose, onSubmitSuccess }: JourneyFormProps) {
               field.state.meta.isTouched && !field.state.meta.isValid
 
             return (
-              <Field data-invalid={isInvalid} className="mt-4">
-                <FieldLabel htmlFor={field.name}>
-                  <Label htmlFor={field.name}>Description</Label>
-                </FieldLabel>
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Description</FieldLabel>
                 <Input
                   id={field.name}
                   name={field.name}

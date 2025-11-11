@@ -33,12 +33,10 @@ function Journeys() {
             <DialogHeader>
               <DialogTitle>New Journey</DialogTitle>
             </DialogHeader>
-            <div className="py-4">
-              <JourneyForm 
-                onClose={() => setIsDialogOpen(false)} 
-                onSubmitSuccess={handleFormSubmitSuccess} 
-              />
-            </div>
+            <JourneyForm
+              onClose={() => setIsDialogOpen(false)}
+              onSubmitSuccess={handleFormSubmitSuccess}
+            />
           </DialogContent>
         </Dialog>
 
