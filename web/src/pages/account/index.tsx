@@ -1,5 +1,5 @@
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/nav/app-sidebar";
+import { AppSidebar } from '@/components/nav/app-sidebar'
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 
 function Account() {
   return (
@@ -33,7 +33,7 @@ function Account() {
         </main>
       </SidebarInset>
     </SidebarProvider>
-  );
+  )
 }
 
 export default Account

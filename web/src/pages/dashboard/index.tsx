@@ -1,5 +1,5 @@
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/nav/app-sidebar";
+import { AppSidebar } from '@/components/nav/app-sidebar'
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 
 function Dashboard() {
   return (
@@ -19,7 +19,7 @@ function Dashboard() {
         </main>
       </SidebarInset>
     </SidebarProvider>
-  );
+  )
 }
 
 export default Dashboard

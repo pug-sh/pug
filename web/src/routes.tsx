@@ -1,12 +1,13 @@
 import { Route } from 'wouter'
 import AuthProtected from './components/hocs/auth-protected'
+import Account from '@/pages/account'
 import SigninForm from '@/pages/auth/signin'
 import SignupForm from '@/pages/auth/signup'
 import Dashboard from '@/pages/dashboard'
+import Journeys from '@/pages/journeys'
 import Projects from '@/pages/projects'
 import NewProject from '@/pages/projects/new'
 import Settings from '@/pages/settings'
-import Account from '@/pages/account'
 
 const Router = () => (
   <>
@@ -18,6 +19,7 @@ const Router = () => (
       <Route path='/projects/new' component={NewProject} />
       <Route path='/settings' component={Settings} />
       <Route path='/account' component={Account} />
+      <Route path='/journeys' component={Journeys} />
     </AuthProtected>
   </>
 )

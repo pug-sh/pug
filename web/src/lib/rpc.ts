@@ -7,20 +7,20 @@ const apiBaseUrl = 'http://localhost:8081'
 
 const authInterceptor: Interceptor = (next) => {
   return async (req) => {
-    const token = localStorage.getItem("token");
+    const token = localStorage.getItem('token')
     if (token) {
-      req.header.set("Authorization", `Bearer ${token}`);
+      req.header.set('Authorization', `Bearer ${token}`)
     }
 
-    return await next(req);
-  };
-};
+    return await next(req)
+  }
+}
 
 const transport = createConnectTransport({
   useBinaryFormat: true,
   baseUrl: apiBaseUrl,
   interceptors: [authInterceptor],
-});
+})
 
 const transportWithoutAuth = createConnectTransport({
   useBinaryFormat: true,

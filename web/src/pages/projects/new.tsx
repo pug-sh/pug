@@ -1,34 +1,34 @@
-import { ConnectError } from '@connectrpc/connect';
-import { useForm } from '@tanstack/react-form';
-import { useState } from 'react';
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/nav/app-sidebar";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CreateRequestSchema, type CreateRequest } from '@buf/pushpa_cotton.bufbuild_es/projects/v1/projects_pb'
+import { create } from '@bufbuild/protobuf'
+import { ConnectError } from '@connectrpc/connect'
+import { useForm } from '@tanstack/react-form'
+import { useState } from 'react'
+import * as z from 'zod'
+import { AppSidebar } from '@/components/nav/app-sidebar'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
-} from '@/components/ui/field';
-import * as z from 'zod';
-import { Spinner } from '@/components/ui/spinner';
-import { projectsService } from '@/lib/rpc';
-import { CreateRequestSchema, type CreateRequest } from '@buf/pushpa_cotton.bufbuild_es/projects/v1/projects_pb';
-import { create } from '@bufbuild/protobuf';
+} from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
+import { Spinner } from '@/components/ui/spinner'
+import { projectsService } from '@/lib/rpc'
 
 const formSchema = z.object({
   name: z
     .string()
     .min(2, 'Project name must be at least 2 characters.')
     .max(100, 'Project name must not exceed 100 characters.'),
-});
+})
 
 function NewProject() {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const form = useForm({
     defaultValues: {
@@ -38,33 +38,33 @@ function NewProject() {
       onSubmit: formSchema,
     },
     onSubmit: async ({ value }) => {
-      console.log("Form submitted with value:", value);
-      setIsSubmitting(true);
-      setFormError(null);
+      console.log('Form submitted with value:', value)
+      setIsSubmitting(true)
+      setFormError(null)
       try {
         const request: CreateRequest = create(CreateRequestSchema, {
           displayName: value.name
-        });
+        })
         
-        console.log("Sending request:", request);
-        await projectsService.create(request);
+        console.log('Sending request:', request)
+        await projectsService.create(request)
         
         // Show success message
-        alert(`Project "${request.displayName}" created successfully!`);
+        alert(`Project "${request.displayName}" created successfully!`)
       } catch (error) {
         if (error instanceof ConnectError) {
-          setFormError(error.rawMessage);
-          return;
+          setFormError(error.rawMessage)
+          return
         }
 
-        const errorMessage = error instanceof Error ? error.message : 'An error occurred creating project';
-        setFormError(errorMessage);
-        console.error('Create project error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'An error occurred creating project'
+        setFormError(errorMessage)
+        console.error('Create project error:', error)
       } finally {
-        setIsSubmitting(false);
+        setIsSubmitting(false)
       }
     },
-  });
+  })
 
   return (
     <SidebarProvider>
@@ -86,8 +86,8 @@ function NewProject() {
               <CardContent>
                 <form
                   onSubmit={(e) => {
-                    e.preventDefault();
-                    form.handleSubmit();
+                    e.preventDefault()
+                    form.handleSubmit()
                   }}
                   className="space-y-6"
                 >
@@ -101,7 +101,7 @@ function NewProject() {
                       name="name"
                       children={(field) => {
                         const isInvalid =
-                          field.state.meta.isTouched && !field.state.meta.isValid;
+                          field.state.meta.isTouched && !field.state.meta.isValid
 
                         return (
                           <Field data-invalid={isInvalid}>
@@ -123,7 +123,7 @@ function NewProject() {
                               <FieldError errors={field.state.meta.errors} />
                             )}
                           </Field>
-                        );
+                        )
                       }}
                     />
                   </FieldGroup>
@@ -157,7 +157,7 @@ function NewProject() {
         </main>
       </SidebarInset>
     </SidebarProvider>
-  );
+  )
 }
 
-export default NewProject;
+export default NewProject
