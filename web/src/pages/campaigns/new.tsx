@@ -20,6 +20,7 @@ import {
   FieldLabel,
 } from '@/components/ui/field'
 import { AppSidebar } from '@/components/nav/app-sidebar'
+import MobilePreview from '@/components/mobile-preview'
 
 const formSchema = z.object({
   name: z
@@ -101,8 +102,9 @@ export default function NewCampaign() {
           </div>
         </header>
         <div className="container mx-auto py-6">
-          <div className="max-w-2xl mx-auto">
-            <Card>
+          <div className="flex flex-col lg:flex-row lg:space-x-8">
+            <div className="max-w-2xl mx-auto w-full lg:w-1/2">
+              <Card>
               <CardHeader>
                 <CardTitle>Create New Campaign</CardTitle>
                 <CardDescription>
@@ -225,6 +227,12 @@ export default function NewCampaign() {
                 </form>
               </CardContent>
             </Card>
+          </div>
+
+            {/* Mobile Preview side by side with the card */}
+            <div className="mt-8 lg:mt-0 lg:ml-8 flex justify-center">
+              <MobilePreview />
+            </div>
           </div>
         </div>
       </SidebarInset>
