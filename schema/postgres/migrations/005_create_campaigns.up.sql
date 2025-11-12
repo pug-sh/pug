@@ -2,6 +2,7 @@ create table campaigns (
     create_time timestamptz not null default now(),
     end_time timestamptz,
     id char(20) primary key,
+    name varchar(150) not null,
     notification_data jsonb not null,
     project_id char(20) not null references projects(id) on delete cascade,
     scheduled_time timestamptz not null default now(),

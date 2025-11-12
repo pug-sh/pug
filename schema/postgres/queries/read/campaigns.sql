@@ -13,3 +13,6 @@ WHERE status = @status;
 -- name: GetScheduledCampaigns :many
 SELECT * FROM campaigns
 WHERE scheduled_time <= now() AND status = 'scheduled';
+
+-- name: GetCampaignById :one
+SELECT * FROM campaigns where id = @id;

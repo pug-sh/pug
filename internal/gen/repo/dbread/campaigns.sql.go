@@ -10,7 +10,7 @@ import (
 )
 
 const getCampaignByID = `-- name: GetCampaignByID :one
-SELECT create_time, end_time, id, notification_data, project_id, scheduled_time, start_time, status, update_time FROM campaigns
+SELECT create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time FROM campaigns
 WHERE id = $1
 `
 
@@ -21,6 +21,29 @@ func (q *Queries) GetCampaignByID(ctx context.Context, id string) (Campaign, err
 		&i.CreateTime,
 		&i.EndTime,
 		&i.ID,
+		&i.Name,
+		&i.NotificationData,
+		&i.ProjectID,
+		&i.ScheduledTime,
+		&i.StartTime,
+		&i.Status,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const getCampaignById = `-- name: GetCampaignById :one
+SELECT create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time FROM campaigns where id = $1
+`
+
+func (q *Queries) GetCampaignById(ctx context.Context, id string) (Campaign, error) {
+	row := q.db.QueryRow(ctx, getCampaignById, id)
+	var i Campaign
+	err := row.Scan(
+		&i.CreateTime,
+		&i.EndTime,
+		&i.ID,
+		&i.Name,
 		&i.NotificationData,
 		&i.ProjectID,
 		&i.ScheduledTime,
@@ -32,7 +55,7 @@ func (q *Queries) GetCampaignByID(ctx context.Context, id string) (Campaign, err
 }
 
 const getCampaignsByProjectID = `-- name: GetCampaignsByProjectID :many
-SELECT create_time, end_time, id, notification_data, project_id, scheduled_time, start_time, status, update_time FROM campaigns
+SELECT create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time FROM campaigns
 WHERE project_id = $1
 `
 
@@ -49,6 +72,7 @@ func (q *Queries) GetCampaignsByProjectID(ctx context.Context, projectID string)
 			&i.CreateTime,
 			&i.EndTime,
 			&i.ID,
+			&i.Name,
 			&i.NotificationData,
 			&i.ProjectID,
 			&i.ScheduledTime,
@@ -67,7 +91,7 @@ func (q *Queries) GetCampaignsByProjectID(ctx context.Context, projectID string)
 }
 
 const getCampaignsByStatus = `-- name: GetCampaignsByStatus :many
-SELECT create_time, end_time, id, notification_data, project_id, scheduled_time, start_time, status, update_time FROM campaigns
+SELECT create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time FROM campaigns
 WHERE status = $1
 `
 
@@ -84,6 +108,7 @@ func (q *Queries) GetCampaignsByStatus(ctx context.Context, status string) ([]Ca
 			&i.CreateTime,
 			&i.EndTime,
 			&i.ID,
+			&i.Name,
 			&i.NotificationData,
 			&i.ProjectID,
 			&i.ScheduledTime,
@@ -102,7 +127,7 @@ func (q *Queries) GetCampaignsByStatus(ctx context.Context, status string) ([]Ca
 }
 
 const getScheduledCampaigns = `-- name: GetScheduledCampaigns :many
-SELECT create_time, end_time, id, notification_data, project_id, scheduled_time, start_time, status, update_time FROM campaigns
+SELECT create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time FROM campaigns
 WHERE scheduled_time <= now() AND status = 'scheduled'
 `
 
@@ -119,6 +144,7 @@ func (q *Queries) GetScheduledCampaigns(ctx context.Context) ([]Campaign, error)
 			&i.CreateTime,
 			&i.EndTime,
 			&i.ID,
+			&i.Name,
 			&i.NotificationData,
 			&i.ProjectID,
 			&i.ScheduledTime,

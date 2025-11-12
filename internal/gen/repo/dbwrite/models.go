@@ -12,6 +12,7 @@ type Campaign struct {
 	CreateTime       pgtype.Timestamptz
 	EndTime          pgtype.Timestamptz
 	ID               string
+	Name             string
 	NotificationData []byte
 	ProjectID        string
 	ScheduledTime    pgtype.Timestamptz

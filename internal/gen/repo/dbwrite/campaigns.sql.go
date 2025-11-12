@@ -12,13 +12,14 @@ import (
 )
 
 const createCampaign = `-- name: CreateCampaign :one
-INSERT INTO campaigns (id, project_id, notification_data, scheduled_time, status)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING create_time, end_time, id, notification_data, project_id, scheduled_time, start_time, status, update_time
+INSERT INTO campaigns (id, name, project_id, notification_data, scheduled_time, status)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type CreateCampaignParams struct {
 	ID               string
+	Name             string
 	ProjectID        string
 	NotificationData []byte
 	ScheduledTime    pgtype.Timestamptz
@@ -28,6 +29,7 @@ type CreateCampaignParams struct {
 func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) (Campaign, error) {
 	row := q.db.QueryRow(ctx, createCampaign,
 		arg.ID,
+		arg.Name,
 		arg.ProjectID,
 		arg.NotificationData,
 		arg.ScheduledTime,
@@ -38,6 +40,7 @@ func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) 
 		&i.CreateTime,
 		&i.EndTime,
 		&i.ID,
+		&i.Name,
 		&i.NotificationData,
 		&i.ProjectID,
 		&i.ScheduledTime,
@@ -50,25 +53,32 @@ func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) 
 
 const deleteCampaign = `-- name: DeleteCampaign :exec
 DELETE FROM campaigns
-WHERE id = $1
+WHERE id = $1 AND project_id = $2
 `
 
-func (q *Queries) DeleteCampaign(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteCampaign, id)
+type DeleteCampaignParams struct {
+	ID        string
+	ProjectID string
+}
+
+func (q *Queries) DeleteCampaign(ctx context.Context, arg DeleteCampaignParams) error {
+	_, err := q.db.Exec(ctx, deleteCampaign, arg.ID, arg.ProjectID)
 	return err
 }
 
 const updateCampaign = `-- name: UpdateCampaign :one
 UPDATE campaigns
-SET notification_data = $1, 
-    scheduled_time = $2,
-    status = $3,
+SET name = $1,
+    notification_data = $2, 
+    scheduled_time = $3,
+    status = $4,
     update_time = now()
-WHERE id = $4
-RETURNING create_time, end_time, id, notification_data, project_id, scheduled_time, start_time, status, update_time
+WHERE id = $5
+RETURNING create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type UpdateCampaignParams struct {
+	Name             string
 	NotificationData []byte
 	ScheduledTime    pgtype.Timestamptz
 	Status           string
@@ -77,6 +87,7 @@ type UpdateCampaignParams struct {
 
 func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) (Campaign, error) {
 	row := q.db.QueryRow(ctx, updateCampaign,
+		arg.Name,
 		arg.NotificationData,
 		arg.ScheduledTime,
 		arg.Status,
@@ -87,6 +98,7 @@ func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) 
 		&i.CreateTime,
 		&i.EndTime,
 		&i.ID,
+		&i.Name,
 		&i.NotificationData,
 		&i.ProjectID,
 		&i.ScheduledTime,
@@ -101,7 +113,7 @@ const updateCampaignEndTime = `-- name: UpdateCampaignEndTime :one
 UPDATE campaigns
 SET end_time = $1, update_time = now()
 WHERE id = $2
-RETURNING create_time, end_time, id, notification_data, project_id, scheduled_time, start_time, status, update_time
+RETURNING create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type UpdateCampaignEndTimeParams struct {
@@ -116,6 +128,7 @@ func (q *Queries) UpdateCampaignEndTime(ctx context.Context, arg UpdateCampaignE
 		&i.CreateTime,
 		&i.EndTime,
 		&i.ID,
+		&i.Name,
 		&i.NotificationData,
 		&i.ProjectID,
 		&i.ScheduledTime,
@@ -130,7 +143,7 @@ const updateCampaignStartTime = `-- name: UpdateCampaignStartTime :one
 UPDATE campaigns
 SET start_time = $1, update_time = now()
 WHERE id = $2
-RETURNING create_time, end_time, id, notification_data, project_id, scheduled_time, start_time, status, update_time
+RETURNING create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type UpdateCampaignStartTimeParams struct {
@@ -145,6 +158,7 @@ func (q *Queries) UpdateCampaignStartTime(ctx context.Context, arg UpdateCampaig
 		&i.CreateTime,
 		&i.EndTime,
 		&i.ID,
+		&i.Name,
 		&i.NotificationData,
 		&i.ProjectID,
 		&i.ScheduledTime,
@@ -159,7 +173,7 @@ const updateCampaignStatus = `-- name: UpdateCampaignStatus :one
 UPDATE campaigns
 SET status = $1, update_time = now()
 WHERE id = $2
-RETURNING create_time, end_time, id, notification_data, project_id, scheduled_time, start_time, status, update_time
+RETURNING create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type UpdateCampaignStatusParams struct {
@@ -174,6 +188,7 @@ func (q *Queries) UpdateCampaignStatus(ctx context.Context, arg UpdateCampaignSt
 		&i.CreateTime,
 		&i.EndTime,
 		&i.ID,
+		&i.Name,
 		&i.NotificationData,
 		&i.ProjectID,
 		&i.ScheduledTime,

@@ -1,11 +1,12 @@
 -- name: CreateCampaign :one
-INSERT INTO campaigns (id, project_id, notification_data, scheduled_time, status)
-VALUES (@id, @project_id, @notification_data, @scheduled_time, @status)
+INSERT INTO campaigns (id, name, project_id, notification_data, scheduled_time, status)
+VALUES (@id, @name, @project_id, @notification_data, @scheduled_time, @status)
 RETURNING *;
 
 -- name: UpdateCampaign :one
 UPDATE campaigns
-SET notification_data = @notification_data, 
+SET name = @name,
+    notification_data = @notification_data, 
     scheduled_time = @scheduled_time,
     status = @status,
     update_time = now()
@@ -32,4 +33,4 @@ RETURNING *;
 
 -- name: DeleteCampaign :exec
 DELETE FROM campaigns
-WHERE id = @id;
+WHERE id = @id AND project_id = @project_id;

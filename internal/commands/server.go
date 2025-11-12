@@ -124,6 +124,8 @@ var ServerCmd = &cobra.Command{
 		)
 		journeysHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(journeysHandler)
 
+		journeysHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(journeysHandler)
+
 		handler := http.NewServeMux()
 		handler.Handle(authPath, authHandler)
 		handler.Handle(projectsPath, projectsHandler)
