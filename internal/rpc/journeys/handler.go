@@ -28,9 +28,14 @@ func (s *server) Create(ctx context.Context, req *connect.Request[journeysv1.Cre
 		Description: postgres.StringToText(req.Msg.Description),
 		State:       req.Msg.State.String(),
 		EntryType:   req.Msg.EntryType.String(),
-		Config:      req.Msg.Config,
-		StartTime:   postgres.TimestampToTimestamptz(req.Msg.StartTime),
-		EndTime:     postgres.TimestampToTimestamptz(req.Msg.EndTime),
+		Config: func() []byte {
+			if len(req.Msg.Config) == 0 {
+				return []byte("{}")
+			}
+			return req.Msg.Config
+		}(),
+		StartTime: postgres.TimestampToTimestamptz(req.Msg.StartTime),
+		EndTime:   postgres.TimestampToTimestamptz(req.Msg.EndTime),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed creating journey", slog.Any("error", err), slog.String("projectId", req.Msg.ProjectId), slog.String("journeyName", req.Msg.Name))
