@@ -9,6 +9,7 @@ import Projects from '@/pages/projects'
 import NewProject from '@/pages/projects/new'
 import Settings from '@/pages/settings'
 import Campaigns from '@/pages/campaigns'
+import NewCampaign from '@/pages/campaigns/new'
 
 const Router = () => (
   <>
@@ -22,6 +23,7 @@ const Router = () => (
       <Route path='/account' component={Account} />
       <Route path='/journeys' component={Journeys} />
       <Route path='/campaigns' component={Campaigns} />
+      <Route path='/campaigns/new' component={NewCampaign} />
     </AuthProtected>
   </>
 )
