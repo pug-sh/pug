@@ -1,6 +1,7 @@
 import { AuthService } from '@buf/pushpa_cotton.bufbuild_es/auth/v1/auth_pb'
 import { JourneysService } from '@buf/pushpa_cotton.bufbuild_es/journeys/v1/journeys_pb'
 import { ProjectsService } from '@buf/pushpa_cotton.bufbuild_es/projects/v1/projects_pb'
+import { CampaignService } from '@buf/pushpa_cotton.bufbuild_es/campaigns/v1/campaigns_pb'
 import { createClient, type Interceptor } from '@connectrpc/connect'
 import { createConnectTransport } from '@connectrpc/connect-web'
 
@@ -31,3 +32,4 @@ const transportWithoutAuth = createConnectTransport({
 export const authService = createClient(AuthService, transportWithoutAuth)
 export const projectsService = createClient(ProjectsService, transport)
 export const journeysService = createClient(JourneysService, transport)
+export const campaignsService = createClient(CampaignService, transport)

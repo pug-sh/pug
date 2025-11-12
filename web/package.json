@@ -11,7 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@buf/pushpa_cotton.bufbuild_es": "2.10.0-20251111140143-7e8a8612d2b2.1",
+    "@buf/pushpa_cotton.bufbuild_es": "2.10.0-20251112121924-f9c4a45f0cdb.1",
     "@bufbuild/protobuf": "^2.10.0",
     "@connectrpc/connect": "^2.1.0",
     "@connectrpc/connect-web": "^2.1.0",
