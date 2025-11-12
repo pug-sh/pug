@@ -4,8 +4,9 @@
   width: 404px;
   position: relative;
   display: inline-block;
-  transform: scale(0.7);
-  transform-origin: center bottom;
+  transform: scale(1);
+  transform-origin: center top;
+  margin-top: 0;
 }
 
 .device-google-pixel-6-pro .device-frame {

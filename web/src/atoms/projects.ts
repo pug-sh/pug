@@ -1,7 +1,7 @@
 import { atom } from 'jotai'
-import { projectsService } from '@/lib/rpc'
 import { atomWithStorage } from 'jotai/utils'
 import { stringStorage } from './utils'
+import { projectsService } from '@/lib/rpc'
 
 export const selectedProjectAtom = atomWithStorage('selectedProject', '', stringStorage, { getOnInit: true })
 

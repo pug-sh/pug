@@ -1,17 +1,17 @@
 'use client'
 
+import { useAtom } from 'jotai'
 import {
   GalleryVerticalEnd,
   Map,
   PieChart,
 } from 'lucide-react'
 import * as React from 'react'
-import { useAtom } from 'jotai'
 import { useLocation } from 'wouter'
 import { batchGetAtom } from '@/atoms/projects'
 
-import { ProjectSwitcher } from '@/components/nav/project-switcher'
 import { NavUser } from '@/components/nav/nav-user'
+import { ProjectSwitcher } from '@/components/nav/project-switcher'
 import {
   Sidebar,
   SidebarContent,

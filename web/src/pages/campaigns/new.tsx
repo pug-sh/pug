@@ -2,16 +2,14 @@ import { CreateRequestSchema } from '@buf/pushpa_cotton.bufbuild_es/campaigns/v1
 import { create } from '@bufbuild/protobuf'
 import { ConnectError } from '@connectrpc/connect'
 import { useForm } from '@tanstack/react-form'
-import { z } from 'zod'
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { selectedProjectAtom } from '@/atoms/projects'
 import { useAtom } from 'jotai'
-import { campaignsService } from '@/lib/rpc'
-import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
+import { useState } from 'react'
+import { z } from 'zod'
+import { selectedProjectAtom } from '@/atoms/projects'
+import MobilePreview from '@/components/mobile-preview'
+import { AppSidebar } from '@/components/nav/app-sidebar'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Field,
   FieldDescription,
@@ -19,8 +17,10 @@ import {
   FieldGroup,
   FieldLabel,
 } from '@/components/ui/field'
-import { AppSidebar } from '@/components/nav/app-sidebar'
-import MobilePreview from '@/components/mobile-preview'
+import { Input } from '@/components/ui/input'
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
+import { Textarea } from '@/components/ui/textarea'
+import { campaignsService } from '@/lib/rpc'
 
 const formSchema = z.object({
   name: z
@@ -35,11 +35,7 @@ const formSchema = z.object({
     .string()
     .min(1, 'Body is required')
     .max(500, 'Body must be less than 500 characters'),
-  scheduledDate: z
-    .date()
-    .min(new Date(), 'Scheduled date must be today or in the future')
-    .default(new Date()),
-});
+})
 
 export default function NewCampaign() {
   const [selectedProjectId] = useAtom(selectedProjectAtom)
@@ -64,11 +60,13 @@ export default function NewCampaign() {
         const notificationObject: any = {
           title: value.title,
           body: value.body,
-        };
+        }
 
         const request = create(CreateRequestSchema, {
           name: value.name,
-          notificationData: new TextEncoder().encode(JSON.stringify(notificationObject)),
+          notificationData: new TextEncoder().encode(
+            JSON.stringify(notificationObject)
+          ),
           projectId: selectedProjectId,
         })
 
@@ -81,7 +79,9 @@ export default function NewCampaign() {
           return
         }
 
-        const errorMessage = error instanceof Error ? error.message : 'An error occurred creating campaign'
+        const errorMessage = error instanceof Error
+          ? error.message
+          : 'An error occurred creating campaign'
         setFormError(errorMessage)
         console.error('Failed to create campaign')
         console.error('Error creating campaign:', error)
@@ -102,136 +102,174 @@ export default function NewCampaign() {
           </div>
         </header>
         <div className="container mx-auto py-6">
-          <div className="flex flex-col lg:flex-row lg:space-x-8">
-            <div className="max-w-2xl mx-auto w-full lg:w-1/2">
+          <div className="flex flex-col items-center lg:flex-row lg:items-start lg:justify-center lg:space-x-6">
+            <div className="w-full lg:w-1/2">
               <Card>
-              <CardHeader>
-                <CardTitle>Create New Campaign</CardTitle>
-                <CardDescription>
-                  Create a new campaign to reach your users
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    form.handleSubmit()
-                  }}
-                  className="space-y-6"
-                >
-                  {formError && (
-                    <div className="mb-4 text-sm text-destructive font-normal">
-                      {formError}
-                    </div>
-                  )}
+                <CardHeader>
+                  <CardTitle>Create New Campaign</CardTitle>
+                  <CardDescription>
+                    Create a new campaign to reach your users
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      form.handleSubmit()
+                    }}
+                    className="space-y-6"
+                  >
+                    {formError && (
+                      <div className="mb-4 text-sm text-destructive font-normal">
+                        {formError}
+                      </div>
+                    )}
 
-                  <FieldGroup>
-                    <form.Field
-                      name="name"
-                      children={(field) => {
-                        const isInvalid =
-                          field.state.meta.isTouched && !field.state.meta.isValid
+                    <FieldGroup>
+                      <form.Field
+                        name="name"
+                        children={(field) => {
+                          const isInvalid =
+                            field.state.meta.isTouched && !field.state.meta.isValid
 
-                        return (
-                          <Field data-invalid={isInvalid}>
-                            <FieldLabel htmlFor={field.name}>Campaign Name</FieldLabel>
-                            <Input
-                              id={field.name}
-                              name={field.name}
-                              value={field.state.value}
-                              onBlur={field.handleBlur}
-                              onChange={(e) => field.handleChange(e.target.value)}
-                              aria-invalid={isInvalid}
-                              placeholder="Enter campaign name"
-                            />
-                            {isInvalid && (
-                              <FieldError errors={field.state.meta.errors} />
-                            )}
-                            <FieldDescription>
-                              A descriptive name for your campaign
-                            </FieldDescription>
-                          </Field>
-                        )
-                      }}
-                    />
+                          return (
+                            <Field data-invalid={isInvalid}>
+                              <FieldLabel htmlFor={field.name}>Campaign Name</FieldLabel>
+                              <Input
+                                id={field.name}
+                                name={field.name}
+                                value={field.state.value}
+                                onBlur={field.handleBlur}
+                                onChange={(e) => field.handleChange(e.target.value)}
+                                aria-invalid={isInvalid}
+                                placeholder="Enter campaign name"
+                              />
+                              {isInvalid && (
+                                <FieldError errors={field.state.meta.errors} />
+                              )}
+                              <FieldDescription>
+                                A descriptive name for your campaign
+                              </FieldDescription>
+                            </Field>
+                          )
+                        }}
+                      />
 
-                    <form.Field
-                      name="title"
-                      children={(field) => {
-                        const isInvalid =
-                          field.state.meta.isTouched && !field.state.meta.isValid
+                      <form.Field
+                        name="title"
+                        children={(field) => {
+                          const isInvalid =
+                            field.state.meta.isTouched && !field.state.meta.isValid
 
-                        return (
-                          <Field data-invalid={isInvalid}>
-                            <FieldLabel htmlFor={field.name}>Title</FieldLabel>
-                            <Input
-                              id={field.name}
-                              name={field.name}
-                              value={field.state.value}
-                              onBlur={field.handleBlur}
-                              onChange={(e) => field.handleChange(e.target.value)}
-                              aria-invalid={isInvalid}
-                              placeholder="Notification title"
-                            />
-                            {isInvalid && (
-                              <FieldError errors={field.state.meta.errors} />
-                            )}
-                            <FieldDescription>
-                              The title of the notification
-                            </FieldDescription>
-                          </Field>
-                        )
-                      }}
-                    />
+                          return (
+                            <Field data-invalid={isInvalid}>
+                              <FieldLabel htmlFor={field.name}>Title</FieldLabel>
+                              <Input
+                                id={field.name}
+                                name={field.name}
+                                value={field.state.value}
+                                onBlur={field.handleBlur}
+                                onChange={(e) => field.handleChange(e.target.value)}
+                                aria-invalid={isInvalid}
+                                placeholder="Notification title"
+                              />
+                              {isInvalid && (
+                                <FieldError errors={field.state.meta.errors} />
+                              )}
+                              <FieldDescription>
+                                The title of the notification
+                              </FieldDescription>
+                            </Field>
+                          )
+                        }}
+                      />
 
-                    <form.Field
-                      name="body"
-                      children={(field) => {
-                        const isInvalid =
-                          field.state.meta.isTouched && !field.state.meta.isValid
+                      <form.Field
+                        name="body"
+                        children={(field) => {
+                          const isInvalid =
+                            field.state.meta.isTouched && !field.state.meta.isValid
 
-                        return (
-                          <Field data-invalid={isInvalid}>
-                            <FieldLabel htmlFor={field.name}>Body</FieldLabel>
-                            <Textarea
-                              id={field.name}
-                              name={field.name}
-                              value={field.state.value}
-                              onBlur={field.handleBlur}
-                              onChange={(e) => field.handleChange(e.target.value)}
-                              aria-invalid={isInvalid}
-                              placeholder="Enter notification body"
-                              rows={3}
-                            />
-                            {isInvalid && (
-                              <FieldError errors={field.state.meta.errors} />
-                            )}
-                            <FieldDescription>
-                              The main body content
-                            </FieldDescription>
-                          </Field>
-                        )
-                      }}
-                    />
+                          return (
+                            <Field data-invalid={isInvalid}>
+                              <FieldLabel htmlFor={field.name}>Body</FieldLabel>
+                              <Textarea
+                                id={field.name}
+                                name={field.name}
+                                value={field.state.value}
+                                onBlur={field.handleBlur}
+                                onChange={(e) => field.handleChange(e.target.value)}
+                                aria-invalid={isInvalid}
+                                placeholder="Enter notification body"
+                                rows={3}
+                              />
+                              {isInvalid && (
+                                <FieldError errors={field.state.meta.errors} />
+                              )}
+                              <FieldDescription>
+                                The main body content
+                              </FieldDescription>
+                            </Field>
+                          )
+                        }}
+                      />
 
-                    <FieldGroup className="flex justify-end space-x-4 pt-4">
-                      <Button
-                        type="submit"
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting ? 'Creating...' : 'Create Campaign'}
-                      </Button>
+                      <FieldGroup className="flex justify-end space-x-4 pt-4">
+                        <Button
+                          type="submit"
+                          disabled={isSubmitting}
+                        >
+                          {isSubmitting ? 'Creating...' : 'Create Campaign'}
+                        </Button>
+                      </FieldGroup>
                     </FieldGroup>
-                  </FieldGroup>
-                </form>
-              </CardContent>
-            </Card>
-          </div>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
 
             {/* Mobile Preview side by side with the card */}
-            <div className="mt-8 lg:mt-0 lg:ml-8 flex justify-center">
-              <MobilePreview />
+            <div className="mt-6 lg:mt-0">
+              <MobilePreview
+                initialNotifications={[
+                  {
+                    id: 1,
+                    appName: 'MyApp',
+                    appIcon: 'M',
+                    iconBg: '#4285f4',
+                    title: 'New Message from John',
+                    text: 'Hey! Are you coming to the meeting at 3 PM? Let me know if you need the link.',
+                    time: 'now',
+                    actions: ['Reply', 'Mark Read'],
+                    type: 'standard',
+                  },
+                  {
+                    id: 2,
+                    appName: 'Promotions',
+                    appIcon: 'P',
+                    iconBg: '#ff6b6b',
+                    title: 'Special Offer Inside',
+                    text: 'Get 20% off your next purchase with code WELCOME20',
+                    time: '5m ago',
+                    type: 'compact',
+                  },
+                  {
+                    id: 3,
+                    appName: 'Updates',
+                    appIcon: 'U',
+                    iconBg: '#4ecdc4',
+                    title: 'New Features Available',
+                    text: 'Check out our latest features that will enhance your experience.',
+                    time: '10m ago',
+                    expandedContent: 'New Dashboard: Improved analytics view\n' +
+                      'Enhanced Security: Two-factor authentication\n' +
+                      'Better Performance: 30% faster loading times',
+                    type: 'expanded',
+                  }
+                ]}
+                showControls={false}
+              />
             </div>
           </div>
         </div>

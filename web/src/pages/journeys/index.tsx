@@ -1,14 +1,14 @@
 import { type Journey } from '@buf/pushpa_cotton.bufbuild_es/journeys/v1/journeys_pb'
+import { useAtom } from 'jotai'
 import { Plus } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import { useAtom } from 'jotai'
 import JourneyForm from './new'
+import { selectedProjectAtom } from '@/atoms/projects'
 import { AppSidebar } from '@/components/nav/app-sidebar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { journeysService } from '@/lib/rpc'
-import { selectedProjectAtom } from '@/atoms/projects'
 
 function Journeys() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)

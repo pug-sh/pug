@@ -1,11 +1,11 @@
 import { useForm } from '@tanstack/react-form'
 import { useState } from 'react'
 import { z } from 'zod'
+import MobilePreview from '@/components/mobile-preview'
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
-import MobilePreview from '@/components/mobile-preview'
 import { journeysService } from '@/lib/rpc'
 
 const formSchema = z.object({

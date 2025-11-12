@@ -3,13 +3,13 @@ import AuthProtected from './components/hocs/auth-protected'
 import Account from '@/pages/account'
 import SigninForm from '@/pages/auth/signin'
 import SignupForm from '@/pages/auth/signup'
+import Campaigns from '@/pages/campaigns'
+import NewCampaign from '@/pages/campaigns/new'
 import Dashboard from '@/pages/dashboard'
 import Journeys from '@/pages/journeys'
 import Projects from '@/pages/projects'
 import NewProject from '@/pages/projects/new'
 import Settings from '@/pages/settings'
-import Campaigns from '@/pages/campaigns'
-import NewCampaign from '@/pages/campaigns/new'
 
 const Router = () => (
   <>
