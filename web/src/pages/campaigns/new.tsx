@@ -20,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { Textarea } from '@/components/ui/textarea'
+import { Calendar } from '@/components/ui/calendar'
 import { campaignsService } from '@/lib/rpc'
 
 const formSchema = z.object({
@@ -35,9 +36,10 @@ const formSchema = z.object({
     .string()
     .min(1, 'Body is required')
     .max(500, 'Body must be less than 500 characters'),
+  scheduledTime: z.string().min(1, 'Scheduled time is required'),
 })
 
-export default function NewCampaign() {
+function NewCampaign() {
   const [selectedProjectId] = useAtom(selectedProjectAtom)
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -45,12 +47,14 @@ export default function NewCampaign() {
 
   const [titleValue, setTitleValue] = useState('')
   const [bodyValue, setBodyValue] = useState('')
+  const [scheduledDate, setScheduledDate] = useState<Date | undefined>(undefined)
 
   const form = useForm({
     defaultValues: {
       name: '',
       title: '',
       body: '',
+      scheduledTime: '',
     },
     validators: {
       onSubmit: formSchema,
@@ -59,11 +63,27 @@ export default function NewCampaign() {
       setIsSubmitting(true)
       setFormError(null)
 
+      if (!value.scheduledTime) {
+        setFormError('Please select a date for the scheduled time.')
+        setIsSubmitting(false)
+        return
+      }
+      
+
       try {
         const notificationObject: { title: string; body: string } = {
           title: value.title,
           body: value.body,
         }
+
+        const dateObject = new Date(value.scheduledTime + "T10:00:00");
+        const combinedDateTime = dateObject;
+        combinedDateTime.setHours(10, 0, 0, 0);
+        
+        const scheduledTimeProto = { 
+          seconds: BigInt(Math.floor(combinedDateTime.getTime() / 1000)), 
+          nanos: 0 
+        };
 
         const request = create(CreateRequestSchema, {
           name: value.name,
@@ -71,14 +91,17 @@ export default function NewCampaign() {
             JSON.stringify(notificationObject)
           ),
           projectId: selectedProjectId,
+          scheduledTime: scheduledTimeProto,
         })
 
         await campaignsService.create(request)
         console.log('Campaign created successfully!')
 
         form.reset()
+        form.setFieldValue('scheduledTime', '')
         setTitleValue('')
         setBodyValue('')
+        setScheduledDate(undefined)
       } catch (error) {
         if (error instanceof ConnectError) {
           setFormError(error.rawMessage)
@@ -123,143 +146,195 @@ export default function NewCampaign() {
           </div>
         </header>
         <div className="container mx-auto py-6">
-          <div className="flex flex-col items-center lg:flex-row lg:items-start lg:justify-center lg:space-x-6">
-            <div className="w-full lg:w-1/2">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
+              {/* Campaign Details Card */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Create New Campaign</CardTitle>
+                  <CardTitle>Campaign Details</CardTitle>
                   <CardDescription>
-                    Create a new campaign to reach your users
+                    Basic information about your campaign
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      form.handleSubmit()
+                  <form.Field
+                    name="name"
+                    children={(field) => {
+                      const isInvalid =
+                        field.state.meta.isTouched && !field.state.meta.isValid
+
+                      return (
+                        <Field data-invalid={isInvalid}>
+                          <FieldLabel htmlFor={field.name}>Campaign Name</FieldLabel>
+                          <Input
+                            id={field.name}
+                            name={field.name}
+                            value={field.state.value}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            aria-invalid={isInvalid}
+                            placeholder="Enter campaign name"
+                          />
+                          {isInvalid && (
+                            <FieldError errors={field.state.meta.errors} />
+                          )}
+                          <FieldDescription>
+                            A descriptive name for your campaign
+                          </FieldDescription>
+                        </Field>
+                      )
                     }}
-                    className="space-y-6"
-                  >
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Notification Content Card */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Notification Content</CardTitle>
+                  <CardDescription>
+                    Title and body of your notification
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FieldGroup className="space-y-4">
+                    <form.Field
+                      name="title"
+                      children={(field) => {
+                        const isInvalid =
+                          field.state.meta.isTouched && !field.state.meta.isValid
+
+                        return (
+                          <Field data-invalid={isInvalid}>
+                            <FieldLabel htmlFor={field.name}>Title</FieldLabel>
+                            <Input
+                              id={field.name}
+                              name={field.name}
+                              value={field.state.value}
+                              onBlur={field.handleBlur}
+                              onChange={(e) => {
+                                field.handleChange(e.target.value)
+                                setTitleValue(e.target.value)
+                              }}
+                              aria-invalid={isInvalid}
+                              placeholder="Notification title"
+                            />
+                            {isInvalid && (
+                              <FieldError errors={field.state.meta.errors} />
+                            )}
+                            <FieldDescription>
+                              The title of the notification
+                            </FieldDescription>
+                          </Field>
+                        )
+                      }}
+                    />
+
+                    <form.Field
+                      name="body"
+                      children={(field) => {
+                        const isInvalid =
+                          field.state.meta.isTouched && !field.state.meta.isValid
+
+                        return (
+                          <Field data-invalid={isInvalid}>
+                            <FieldLabel htmlFor={field.name}>Body</FieldLabel>
+                            <Textarea
+                              id={field.name}
+                              name={field.name}
+                              value={field.state.value}
+                              onBlur={field.handleBlur}
+                              onChange={(e) => {
+                                field.handleChange(e.target.value)
+                                setBodyValue(e.target.value)
+                              }}
+                              aria-invalid={isInvalid}
+                              placeholder="Enter notification body"
+                              rows={3}
+                            />
+                            {isInvalid && (
+                              <FieldError errors={field.state.meta.errors} />
+                            )}
+                            <FieldDescription>
+                              The main body content
+                            </FieldDescription>
+                          </Field>
+                        )
+                      }}
+                    />
+                  </FieldGroup>
+                </CardContent>
+              </Card>
+
+              {/* Scheduled Time and Submit Card */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Scheduled Time & Submit</CardTitle>
+                  <CardDescription>
+                    Set when to send and create your campaign
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    <div>
+                      <FieldLabel>Select Date</FieldLabel>
+                      <Calendar
+                        mode="single"
+                        selected={scheduledDate}
+                        onSelect={(date) => {
+                          setScheduledDate(date);
+                          if (date) {
+                            form.setFieldValue('scheduledTime', date.toISOString().split('T')[0]); // Format as YYYY-MM-DD
+                          } else {
+                            form.setFieldValue('scheduledTime', '');
+                          }
+                        }}
+                        className="p-0 mt-2 w-full"
+                        disabled={{ before: new Date() }}
+                      />
+                    </div>
+                    
                     {formError && (
                       <div className="mb-4 text-sm text-destructive font-normal">
                         {formError}
                       </div>
                     )}
-
-                    <FieldGroup>
-                      <form.Field
-                        name="name"
-                        children={(field) => {
-                          const isInvalid =
-                            field.state.meta.isTouched && !field.state.meta.isValid
-
-                          return (
-                            <Field data-invalid={isInvalid}>
-                              <FieldLabel htmlFor={field.name}>Campaign Name</FieldLabel>
-                              <Input
-                                id={field.name}
-                                name={field.name}
-                                value={field.state.value}
-                                onBlur={field.handleBlur}
-                                onChange={(e) => field.handleChange(e.target.value)}
-                                aria-invalid={isInvalid}
-                                placeholder="Enter campaign name"
-                              />
-                              {isInvalid && (
-                                <FieldError errors={field.state.meta.errors} />
-                              )}
-                              <FieldDescription>
-                                A descriptive name for your campaign
-                              </FieldDescription>
-                            </Field>
-                          )
+                    
+                    <div className="pt-4 flex justify-end">
+                      <Button
+                        type="submit"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          form.handleSubmit()
                         }}
-                      />
-
-                      <form.Field
-                        name="title"
-                        children={(field) => {
-                          const isInvalid =
-                            field.state.meta.isTouched && !field.state.meta.isValid
-
-                          return (
-                            <Field data-invalid={isInvalid}>
-                              <FieldLabel htmlFor={field.name}>Title</FieldLabel>
-                              <Input
-                                id={field.name}
-                                name={field.name}
-                                value={field.state.value}
-                                onBlur={field.handleBlur}
-                                onChange={(e) => {
-                                  field.handleChange(e.target.value)
-                                  setTitleValue(e.target.value)
-                                }}
-                                aria-invalid={isInvalid}
-                                placeholder="Notification title"
-                              />
-                              {isInvalid && (
-                                <FieldError errors={field.state.meta.errors} />
-                              )}
-                              <FieldDescription>
-                                The title of the notification
-                              </FieldDescription>
-                            </Field>
-                          )
-                        }}
-                      />
-
-                      <form.Field
-                        name="body"
-                        children={(field) => {
-                          const isInvalid =
-                            field.state.meta.isTouched && !field.state.meta.isValid
-
-                          return (
-                            <Field data-invalid={isInvalid}>
-                              <FieldLabel htmlFor={field.name}>Body</FieldLabel>
-                              <Textarea
-                                id={field.name}
-                                name={field.name}
-                                value={field.state.value}
-                                onBlur={field.handleBlur}
-                                onChange={(e) => {
-                                  field.handleChange(e.target.value)
-                                  setBodyValue(e.target.value)
-                                }}
-                                aria-invalid={isInvalid}
-                                placeholder="Enter notification body"
-                                rows={3}
-                              />
-                              {isInvalid && (
-                                <FieldError errors={field.state.meta.errors} />
-                              )}
-                              <FieldDescription>
-                                The main body content
-                              </FieldDescription>
-                            </Field>
-                          )
-                        }}
-                      />
-
-                      <FieldGroup className="flex justify-end space-x-4 pt-4">
-                        <Button
-                          type="submit"
-                          disabled={isSubmitting}
-                        >
-                          {isSubmitting ? 'Creating...' : 'Create Campaign'}
-                        </Button>
-                      </FieldGroup>
-                    </FieldGroup>
-                  </form>
+                        disabled={isSubmitting}
+                      >
+                        {isSubmitting ? 'Creating...' : 'Create Campaign'}
+                      </Button>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
-
-            <div className="mt-6 lg:mt-0">
-              <MobilePreview
-                notifications={previewNotifications}
-              />
+            
+            {/* Mobile Preview Card - Right side */}
+            <div className="lg:col-span-1">
+              <div className="sticky top-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Preview</CardTitle>
+                    <CardDescription>
+                      How your notification will appear
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex justify-center p-4">
+                    <MobilePreview
+                      notifications={previewNotifications}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </div>
         </div>
@@ -267,3 +342,5 @@ export default function NewCampaign() {
     </SidebarProvider>
   )
 }
+
+export default NewCampaign
