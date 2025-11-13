@@ -57,7 +57,7 @@ func (s *server) Create(ctx context.Context, req *connect.Request[campaignsv1.Cr
 		ProjectID:        req.Msg.ProjectId,
 		NotificationData: req.Msg.NotificationData,
 		ScheduledTime:    postgres.TimestampToTimestamptz(req.Msg.ScheduledTime),
-		Status:           "scheduled", // Default to scheduled status
+		Status:           "scheduled",
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed creating campaign", slog.Any("error", err), slog.String("projectId", req.Msg.ProjectId), slog.String("campaignName", req.Msg.Name))
