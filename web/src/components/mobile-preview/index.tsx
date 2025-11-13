@@ -13,6 +13,43 @@ export interface Notification {
   expandedContent?: string;
 }
 
+/*
+  {
+    id: 1,
+    appName: 'MyApp',
+    appIcon: 'M',
+    iconBg: '#4285f4',
+    title: titleValue || 'Notification Title',
+    text: bodyValue || 'Notification body will appear here',
+    time: 'now',
+    actions: ['Reply', 'Mark Read'],
+    type: 'standard' as const,
+  },
+  {
+    id: 2,
+    appName: 'Promotions',
+    appIcon: 'P',
+    iconBg: '#ff6b6b',
+    title: titleValue || 'Special Offer Inside',
+    text: bodyValue || 'Get 20% off your next purchase with code WELCOME20',
+    time: '5m ago',
+    type: 'compact' as const,
+  },
+  {
+    id: 3,
+    appName: 'Updates',
+    appIcon: 'U',
+    iconBg: '#4ecdc4',
+    title: titleValue || 'New Features Available',
+    text: bodyValue || 'Check out our latest features that will enhance your experience.',
+    time: '10m ago',
+    expandedContent: 'New Dashboard: Improved analytics view\n' +
+      'Enhanced Security: Two-factor authentication\n' +
+      'Better Performance: 30% faster loading times',
+    type: 'expanded' as const,
+  }
+*/
+
 interface MobilePreviewProps {
   notifications?: Notification[];
 }

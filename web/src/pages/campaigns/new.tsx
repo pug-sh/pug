@@ -3,7 +3,7 @@ import { create } from '@bufbuild/protobuf'
 import { ConnectError } from '@connectrpc/connect'
 import { useForm } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { z } from 'zod'
 import { selectedProjectAtom } from '@/atoms/projects'
 import MobilePreview from '@/components/mobile-preview'
@@ -43,6 +43,9 @@ export default function NewCampaign() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
+  const [titleValue, setTitleValue] = useState('')
+  const [bodyValue, setBodyValue] = useState('')
+
   const form = useForm({
     defaultValues: {
       name: '',
@@ -72,6 +75,10 @@ export default function NewCampaign() {
 
         await campaignsService.create(request)
         console.log('Campaign created successfully!')
+
+        form.reset()
+        setTitleValue('')
+        setBodyValue('')
       } catch (error) {
         if (error instanceof ConnectError) {
           setFormError(error.rawMessage)
@@ -90,6 +97,20 @@ export default function NewCampaign() {
       }
     },
   })
+
+  const previewNotifications = useMemo(() => [
+    {
+      id: 1,
+      appName: 'MyApp',
+      appIcon: 'M',
+      iconBg: '#4285f4',
+      title: titleValue || 'Notification Title',
+      text: bodyValue || 'Notification body will appear here',
+      time: 'now',
+      actions: ['Reply', 'Mark Read'],
+      type: 'standard' as const,
+    }
+  ], [titleValue, bodyValue])
 
   return (
     <SidebarProvider>
@@ -170,7 +191,10 @@ export default function NewCampaign() {
                                 name={field.name}
                                 value={field.state.value}
                                 onBlur={field.handleBlur}
-                                onChange={(e) => field.handleChange(e.target.value)}
+                                onChange={(e) => {
+                                  field.handleChange(e.target.value)
+                                  setTitleValue(e.target.value)
+                                }}
                                 aria-invalid={isInvalid}
                                 placeholder="Notification title"
                               />
@@ -199,7 +223,10 @@ export default function NewCampaign() {
                                 name={field.name}
                                 value={field.state.value}
                                 onBlur={field.handleBlur}
-                                onChange={(e) => field.handleChange(e.target.value)}
+                                onChange={(e) => {
+                                  field.handleChange(e.target.value)
+                                  setBodyValue(e.target.value)
+                                }}
                                 aria-invalid={isInvalid}
                                 placeholder="Enter notification body"
                                 rows={3}
@@ -232,42 +259,7 @@ export default function NewCampaign() {
             {/* Mobile Preview side by side with the card */}
             <div className="mt-6 lg:mt-0">
               <MobilePreview
-                notifications={[
-                  {
-                    id: 1,
-                    appName: 'MyApp',
-                    appIcon: 'M',
-                    iconBg: '#4285f4',
-                    title: 'New Message from John',
-                    text: 'Hey! Are you coming to the meeting at 3 PM? Let me know if you need the link.',
-                    time: 'now',
-                    actions: ['Reply', 'Mark Read'],
-                    type: 'standard',
-                  },
-                  {
-                    id: 2,
-                    appName: 'Promotions',
-                    appIcon: 'P',
-                    iconBg: '#ff6b6b',
-                    title: 'Special Offer Inside',
-                    text: 'Get 20% off your next purchase with code WELCOME20',
-                    time: '5m ago',
-                    type: 'compact',
-                  },
-                  {
-                    id: 3,
-                    appName: 'Updates',
-                    appIcon: 'U',
-                    iconBg: '#4ecdc4',
-                    title: 'New Features Available',
-                    text: 'Check out our latest features that will enhance your experience.',
-                    time: '10m ago',
-                    expandedContent: 'New Dashboard: Improved analytics view\n' +
-                      'Enhanced Security: Two-factor authentication\n' +
-                      'Better Performance: 30% faster loading times',
-                    type: 'expanded',
-                  }
-                ]}
+                notifications={previewNotifications}
               />
             </div>
           </div>
