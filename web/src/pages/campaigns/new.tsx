@@ -57,7 +57,7 @@ export default function NewCampaign() {
       setFormError(null)
 
       try {
-        const notificationObject: any = {
+        const notificationObject: { title: string; body: string } = {
           title: value.title,
           body: value.body,
         }
@@ -232,7 +232,7 @@ export default function NewCampaign() {
             {/* Mobile Preview side by side with the card */}
             <div className="mt-6 lg:mt-0">
               <MobilePreview
-                initialNotifications={[
+                notifications={[
                   {
                     id: 1,
                     appName: 'MyApp',
@@ -268,7 +268,6 @@ export default function NewCampaign() {
                     type: 'expanded',
                   }
                 ]}
-                showControls={false}
               />
             </div>
           </div>

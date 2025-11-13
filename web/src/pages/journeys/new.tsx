@@ -1,7 +1,6 @@
 import { useForm } from '@tanstack/react-form'
 import { useState } from 'react'
 import { z } from 'zod'
-import MobilePreview from '@/components/mobile-preview'
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -151,11 +150,6 @@ function JourneyForm({ projectId, onClose, onSubmitSuccess }: JourneyFormProps) 
             </Button>
           </div>
         </form>
-      </div>
-
-      {/* Mobile Preview side by side with the form */}
-      <div className="mt-8 lg:mt-0 lg:ml-8 flex justify-center">
-        <MobilePreview />
       </div>
     </div>
   )

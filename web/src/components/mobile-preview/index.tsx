@@ -1,7 +1,6 @@
-import { useState } from 'react'
 import './style.css'
 
-interface Notification {
+export interface Notification {
   id: number;
   appName: string;
   appIcon: string;
@@ -15,108 +14,26 @@ interface Notification {
 }
 
 interface MobilePreviewProps {
-  initialNotifications?: Notification[];
-  showControls?: boolean;
+  notifications?: Notification[];
 }
 
-const MobilePreview: React.FC<MobilePreviewProps> = ({ 
-  initialNotifications = [], 
-  showControls = true 
+const MobilePreview: React.FC<MobilePreviewProps> = ({
+  notifications = [],
 }) => {
-  const [notifications, setNotifications] = useState<Notification[]>(
-    initialNotifications.length > 0 
-      ? initialNotifications 
-      : [
-        {
-          id: 1,
-          appName: 'MyApp',
-          appIcon: 'M',
-          iconBg: '#4285f4',
-          title: 'New Message from John',
-          text: 'Hey! Are you coming to the meeting at 3 PM? ' +
-                'Let me know if you need the link.',
-          time: 'now',
-          actions: ['Reply', 'Mark Read'],
-          type: 'standard',
-        },
-        {
-          id: 2,
-          appName: 'Email',
-          appIcon: 'Envelope',
-          iconBg: '#34a853',
-          title: 'Meeting Reminder',
-          text: 'Your meeting starts in 15 minutes',
-          time: '5m ago',
-          type: 'compact',
-        },
-        {
-          id: 3,
-          appName: 'Notifications',
-          appIcon: 'Bell',
-          iconBg: '#ea4335',
-          title: 'Order Shipped',
-          text: 'Your package is on the way!',
-          time: '10m ago',
-          expandedContent:
-            'Tracking: 1Z999AA10123456784\nEstimated delivery: ' +
-            'Tomorrow by 8 PM',
-          type: 'expanded',
-        },
-      ]
-  )
 
-  const [notificationCount, setNotificationCount] = useState(
-    initialNotifications.length > 0 ? initialNotifications.length : 3
-  )
-
-  const addNotification = () => {
-    const randomColor =
-      '#' +
-      Math.floor(Math.random() * 16777215)
-        .toString(16)
-        .padStart(6, '0')
-    const newNotification: Notification = {
-      id: Date.now(),
-      appName: 'Demo App',
-      appIcon: 'Sparkles',
-      iconBg: randomColor,
-      title: `Test Notification ${notificationCount + 1}`,
-      text: 'This is a dynamically added notification to test the UI.',
-      time: 'just now',
-      type: 'standard',
-    }
-
-    setNotifications([newNotification, ...notifications])
-    setNotificationCount((prev) => prev + 1)
-  }
-
-  const clearNotifications = () => {
-    setNotifications([])
-    setNotificationCount(0)
+  function getCurrentTime() {
+    const now = new Date()
+    return now.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      hour12: false
+    })
   }
 
   return (
     <>
       {/* Background */}
       <div className="w-full bg-background flex flex-col items-center">
-        {/* Controls */}
-        {showControls && (
-          <div className="mb-2 space-x-4">
-            <button
-              onClick={addNotification}
-              className="bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium shadow hover:shadow-md transition-all duration-200"
-            >
-              Add Notification
-            </button>
-            <button
-              onClick={clearNotifications}
-              className="bg-destructive text-destructive-foreground px-4 py-2 rounded-lg font-medium shadow hover:shadow-md transition-all duration-200"
-            >
-              Clear All
-            </button>
-          </div>
-        )}
-
         {/* Device Mockup */}
         <div className="device-google-pixel-6-pro">
           <div className="device-frame">
@@ -128,10 +45,9 @@ const MobilePreview: React.FC<MobilePreviewProps> = ({
               <div className="screen-content">
                 {/* Status Bar */}
                 <div className="status-bar">
-                  <div className="time">10:42</div>
+                  <div className="time">{getCurrentTime()}</div>
                   <div className="battery">
-                    <span>95%</span>
-                    <span>📶</span>
+                    <span>80%</span>
                     <span>📶</span>
                   </div>
                 </div>
