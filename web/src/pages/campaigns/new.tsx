@@ -256,7 +256,6 @@ export default function NewCampaign() {
               </Card>
             </div>
 
-            {/* Mobile Preview side by side with the card */}
             <div className="mt-6 lg:mt-0">
               <MobilePreview
                 notifications={previewNotifications}
