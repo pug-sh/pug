@@ -83,6 +83,25 @@ func (s *server) Delete(ctx context.Context, req *connect.Request[campaignsv1.De
 	return resp, nil
 }
 
+func (s *server) Update(ctx context.Context, req *connect.Request[campaignsv1.UpdateRequest]) (*connect.Response[campaignsv1.UpdateResponse], error) {
+	campaign, err := s.service.UpdateCampaign(ctx, dbwrite.UpdateCampaignParams{
+		ID:               req.Msg.Id,
+		Name:             req.Msg.Name,
+		NotificationData: req.Msg.NotificationData,
+		ScheduledTime:    postgres.TimestampToTimestamptz(req.Msg.ScheduledTime),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed updating campaign", slog.Any("error", err), slog.String("campaignId", req.Msg.Id))
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	resp := connect.NewResponse(&campaignsv1.UpdateResponse{
+		Campaign: wToRPCMsg(campaign),
+	})
+
+	return resp, nil
+}
+
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *server {
 	service := campaigns.NewService(pgRO, pgW)
 

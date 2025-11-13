@@ -13,10 +13,12 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/journeys/v1/journeysv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/rpc/auth"
+	"github.com/fivebitsio/cotton/internal/rpc/campaigns"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
 	"github.com/fivebitsio/cotton/internal/rpc/journeys"
 	"github.com/fivebitsio/cotton/internal/rpc/projects"
@@ -126,15 +128,24 @@ var ServerCmd = &cobra.Command{
 
 		journeysHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(journeysHandler)
 
+		campaignsServer := campaigns.NewServer(deps.pgRo, deps.pgW)
+		campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
+			campaignsServer,
+			commonHandlerOptions(),
+		)
+		campaignsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(campaignsHandler)
+
 		handler := http.NewServeMux()
 		handler.Handle(authPath, authHandler)
 		handler.Handle(projectsPath, projectsHandler)
 		handler.Handle(journeysPath, journeysHandler)
+		handler.Handle(campaignsPath, campaignsHandler)
 
 		services := []string{
 			authv1connect.AuthServiceName,
 			projectsv1connect.ProjectsServiceName,
 			journeysv1connect.JourneysServiceName,
+			campaignsv1connect.CampaignServiceName,
 		}
 
 		reflector := grpcreflect.NewStaticReflector(services...)

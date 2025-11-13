@@ -36,3 +36,7 @@ func (s *Service) DeleteCampaign(ctx context.Context, id string, projectID strin
 		ProjectID: projectID,
 	})
 }
+
+func (s *Service) UpdateCampaign(ctx context.Context, arg dbwrite.UpdateCampaignParams) (dbwrite.Campaign, error) {
+	return s.repo.UpdateCampaign(ctx, arg)
+}
