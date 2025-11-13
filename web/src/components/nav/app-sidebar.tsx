@@ -7,7 +7,7 @@ import {
   PieChart,
 } from 'lucide-react'
 import * as React from 'react'
-import { useLocation } from 'wouter'
+import { useLocation, Link } from 'wouter'
 import { batchGetAtom } from '@/atoms/projects'
 
 import { NavUser } from '@/components/nav/nav-user'
@@ -28,17 +28,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [projects] = useAtom(batchGetAtom)
   const [location] = useLocation()
 
-  // Convert projects to the format expected by ProjectSwitcher
   const projectSwitcherProjects = React.useMemo(() => {
     return projects.map(project => ({
       name: project.displayName,
-      logo: GalleryVerticalEnd, // Default icon for all projects
-      plan: 'Enterprise', // Placeholder - would need to come from project data if available in the API
+      logo: GalleryVerticalEnd,
+      plan: 'Enterprise'
     }))
   }, [projects])
 
-  // Helper function to check if a route is active
-  const isActive = (route: string) => location === route
+  const isActive = (route: string) => location.startsWith(route)
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -50,26 +48,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={isActive('/campaigns')}>
-                <a href="/campaigns">
+                <Link to="/campaigns">
                   <PieChart />
                   <span>Campaigns</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={isActive('/journeys')}>
-                <a href="/journeys">
+                <Link to="/journeys">
                   <Map />
                   <span>Journeys</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={isActive('/projects')}>
-                <a href="/projects">
+                <Link to="/projects">
                   <GalleryVerticalEnd />
                   <span>Projects</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

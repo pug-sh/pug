@@ -21,7 +21,7 @@ function Journeys() {
       try {
         setLoading(true)
         const request = { projectId: selectedProjectId }
-        const response = await journeysService.list(request)
+        const response = await journeysService.getByProjectID(request)
         setJourneys(response.journeys)
       } catch (error) {
         console.error('Error fetching journeys:', error)
@@ -39,7 +39,7 @@ function Journeys() {
       try {
         setLoading(true)
         const request = { projectId: selectedProjectId }
-        const response = await journeysService.list(request)
+        const response = await journeysService.getByProjectID(request)
         setJourneys(response.journeys)
       } catch (error) {
         console.error('Error fetching journeys:', error)
@@ -50,7 +50,6 @@ function Journeys() {
     fetchJourneys()
   }
 
-  // Helper function to convert state enum to readable string
   const getStateString = (state: number | undefined) => {
     if (state === undefined) return 'Unknown'
     const stateEnum: Record<number, string> = {

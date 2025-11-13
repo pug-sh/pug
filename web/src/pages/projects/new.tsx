@@ -49,7 +49,6 @@ function NewProject() {
         console.log('Sending request:', request)
         await projectsService.create(request)
         
-        // Show success message
         alert(`Project "${request.displayName}" created successfully!`)
       } catch (error) {
         if (error instanceof ConnectError) {
