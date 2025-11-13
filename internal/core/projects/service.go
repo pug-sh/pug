@@ -39,6 +39,14 @@ func (s *Service) GetProjectsByCustomerId(ctx context.Context, customerID string
 	return s.repo.GetProjectsByCustomerId(ctx, customerID)
 }
 
+// ProjectExistsForCustomer checks if a project exists for a given customer
+func (s *Service) ProjectExistsForCustomer(ctx context.Context, projectID string, customerID string) (bool, error) {
+	return s.repo.ProjectExistsForCustomer(ctx, dbread.ProjectExistsForCustomerParams{
+		ID:         projectID,
+		CustomerID: customerID,
+	})
+}
+
 // UpdateProjectDisplayName updates the display name of a project
 func (s *Service) UpdateProjectDisplayName(ctx context.Context, arg dbwrite.UpdateProjectDisplayNameParams) (dbwrite.Project, error) {
 	return s.repo.UpdateProjectDisplayName(ctx, arg)

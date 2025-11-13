@@ -6,8 +6,10 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/core/campaigns"
+	"github.com/fivebitsio/cotton/internal/core/projects"
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
@@ -51,6 +53,18 @@ func (s *server) BatchGet(ctx context.Context, req *connect.Request[campaignsv1.
 }
 
 func (s *server) Create(ctx context.Context, req *connect.Request[campaignsv1.CreateRequest]) (*connect.Response[campaignsv1.CreateResponse], error) {
+	customer, err := interceptors.GetCustomerFromContext(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get customer from context", slog.Any("error", err))
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	exists, err := s.service.ProjectExistsForCustomer(ctx, req.Msg.ProjectId, customer.ID)
+	if !exists || err != nil {
+		slog.ErrorContext(ctx, "failed to verify project ownership", slog.Any("error", err), slog.String("projectId", req.Msg.ProjectId), slog.String("customerId", customer.ID))
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
 	campaign, err := s.service.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
 		ID:               xid.New().String(),
 		Name:             req.Msg.Name,
@@ -103,7 +117,8 @@ func (s *server) Update(ctx context.Context, req *connect.Request[campaignsv1.Up
 }
 
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *server {
-	service := campaigns.NewService(pgRO, pgW)
+	projectsSvc := projects.NewService(pgRO, pgW)
+	service := campaigns.NewService(pgRO, pgW, projectsSvc)
 
 	return &server{
 		service: service,

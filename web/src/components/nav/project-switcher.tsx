@@ -2,6 +2,8 @@
 
 import { ChevronsUpDown, Plus } from 'lucide-react'
 import * as React from 'react'
+import { useAtom } from 'jotai'
+import { selectedProjectAtom } from '@/atoms/projects'
 
 import {
   DropdownMenu,
@@ -22,16 +24,38 @@ export function ProjectSwitcher({
   projects,
 }: {
   projects: {
+    id: string
     name: string
     logo: React.ElementType
     plan: string
   }[]
 }) {
   const { isMobile } = useSidebar()
-  const [activeProject, setActiveProject] = React.useState(projects[0])
+  const [selectedProjectId, setSelectedProjectId] = useAtom(selectedProjectAtom)
+  
+  const [activeProject, setActiveProject] = React.useState(() => {
+    if (projects.length > 0) {
+      let project = projects.find(p => p.id === selectedProjectId)
+      
+      if (!project && !selectedProjectId && projects[0]) {
+        project = projects[0]
+        setSelectedProjectId(project.id)
+      } else if (!project) {
+        project = projects[0]
+      }
+      
+      return project
+    }
+    return null
+  })
 
   if (!activeProject) {
     return null
+  }
+
+  const handleProjectSelect = (projectId: string) => {
+    setActiveProject(projects.find(p => p.id === projectId) || projects[0])
+    setSelectedProjectId(projectId)
   }
 
   return (
@@ -67,8 +91,8 @@ export function ProjectSwitcher({
             </DropdownMenuLabel>
             {projects.map((project) => (
               <DropdownMenuItem
-                key={project.name}
-                onClick={() => setActiveProject(project)}
+                key={project.id}
+                onClick={() => handleProjectSelect(project.id)}
                 className="gap-2 p-2"
               >
                 <div className="flex size-6 items-center justify-center rounded-md border">

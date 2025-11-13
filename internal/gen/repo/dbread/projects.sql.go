@@ -84,3 +84,23 @@ func (q *Queries) GetProjectsByCustomerId(ctx context.Context, customerID string
 	}
 	return items, nil
 }
+
+const projectExistsForCustomer = `-- name: ProjectExistsForCustomer :one
+select exists(
+  select 1
+  from projects
+  where id = $1 and customer_id = $2
+)
+`
+
+type ProjectExistsForCustomerParams struct {
+	ID         string
+	CustomerID string
+}
+
+func (q *Queries) ProjectExistsForCustomer(ctx context.Context, arg ProjectExistsForCustomerParams) (bool, error) {
+	row := q.db.QueryRow(ctx, projectExistsForCustomer, arg.ID, arg.CustomerID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}

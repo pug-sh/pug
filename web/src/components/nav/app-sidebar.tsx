@@ -30,6 +30,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const projectSwitcherProjects = React.useMemo(() => {
     return projects.map(project => ({
+      id: project.id,
       name: project.displayName,
       logo: GalleryVerticalEnd,
       plan: 'Enterprise'

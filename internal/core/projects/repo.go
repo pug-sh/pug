@@ -11,6 +11,7 @@ import (
 type Repo interface {
 	CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error)
 	GetProjectById(ctx context.Context, id string) (dbread.Project, error)
+	ProjectExistsForCustomer(ctx context.Context, arg dbread.ProjectExistsForCustomerParams) (bool, error)
 	GetProjectsByCustomerId(ctx context.Context, customerID string) ([]dbread.Project, error)
 	DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) (dbwrite.Project, error)
 	UpdateProjectDisplayName(ctx context.Context, arg dbwrite.UpdateProjectDisplayNameParams) (dbwrite.Project, error)
@@ -39,6 +40,10 @@ func (r *repoImpl) GetProjectById(ctx context.Context, id string) (dbread.Projec
 
 func (r *repoImpl) GetProjectsByCustomerId(ctx context.Context, customerID string) ([]dbread.Project, error) {
 	return r.read.GetProjectsByCustomerId(ctx, customerID)
+}
+
+func (r *repoImpl) ProjectExistsForCustomer(ctx context.Context, arg dbread.ProjectExistsForCustomerParams) (bool, error) {
+	return r.read.ProjectExistsForCustomer(ctx, arg)
 }
 
 func (r *repoImpl) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) (dbwrite.Project, error) {
