@@ -10,6 +10,7 @@ import MobilePreview from '@/components/mobile-preview'
 import { AppSidebar } from '@/components/nav/app-sidebar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { DateTimePicker } from '@/components/ui/date-time-picker'
 import {
   Field,
   FieldDescription,
@@ -18,30 +19,27 @@ import {
   FieldLabel,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { Textarea } from '@/components/ui/textarea'
-import { DateTimePicker } from '@/components/ui/date-time-picker'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { campaignsService } from '@/lib/rpc'
 
-const formSchema = z
-  .object({
-    name: z
-      .string()
-      .min(1, 'Campaign name is required')
-      .max(150, 'Campaign name must be less than 150 characters'),
-    title: z
-      .string()
-      .min(1, 'Title is required')
-      .max(100, 'Title must be less than 100 characters'),
-    body: z
-      .string()
-      .min(1, 'Body is required')
-      .max(500, 'Body must be less than 500 characters'),
-    scheduleType: z.enum(['now', 'scheduled']),
-    scheduledTime: z.string().optional(),
-  })
-;
+const formSchema = z.object({
+  name: z
+    .string()
+    .min(1, 'Campaign name is required')
+    .max(150, 'Campaign name must be less than 150 characters'),
+  title: z
+    .string()
+    .min(1, 'Title is required')
+    .max(100, 'Title must be less than 100 characters'),
+  body: z
+    .string()
+    .min(1, 'Body is required')
+    .max(500, 'Body must be less than 500 characters'),
+  scheduleType: z.enum(['now', 'scheduled']),
+  scheduledTime: z.string().optional(),
+})
 
 function NewCampaign() {
   const [selectedProjectId] = useAtom(selectedProjectAtom)
@@ -52,22 +50,23 @@ function NewCampaign() {
   const [titleValue, setTitleValue] = useState('')
   const [bodyValue, setBodyValue] = useState('')
   const [scheduledDate, setScheduledDate] = useState<Date | undefined>(undefined)
-  const [scheduledTime, setScheduledTime] = useState('10:00') // Default to 10:00 AM
+  const [scheduledTime, setScheduledTime] = useState('')
 
   const form = useForm({
     defaultValues: {
       name: '',
       title: '',
       body: '',
-      scheduleType: 'now' as const,
+      scheduleType: 'now',
       scheduledTime: '',
     },
-    validators: {
-      onSubmit: formSchema,
-    },
     onSubmit: async ({ value }) => {
-      setIsSubmitting(true)
-      setFormError(null)
+      const result = formSchema.safeParse(value)
+      if (!result.success) {
+        setFormError(result.error.issues.map(issue => issue.message).join(', '))
+        setIsSubmitting(false)
+        return
+      }
 
       try {
         const notificationObject: { title: string; body: string } = {
@@ -75,23 +74,23 @@ function NewCampaign() {
           body: value.body,
         }
 
-        let scheduledTimeProto = undefined;
+        let scheduledTimeProto = undefined
         if (value.scheduleType === 'scheduled') {
           if (!value.scheduledTime) {
-            setFormError('Please select a date and time for the scheduled campaign.');
+            setFormError('Please select a date and time for the scheduled campaign.')
             setIsSubmitting(false)
             return
           }
-          const combinedDateTime = new Date(value.scheduledTime);
+          const combinedDateTime = new Date(value.scheduledTime)
           if (isNaN(combinedDateTime.getTime())) {
-            setFormError('Invalid date and time format.');
+            setFormError('Invalid date and time format.')
             setIsSubmitting(false)
             return
           }
           scheduledTimeProto = {
             seconds: BigInt(Math.floor(combinedDateTime.getTime() / 1000)),
             nanos: 0
-          };
+          }
         }
 
         const request = create(CreateRequestSchema, {
@@ -310,27 +309,26 @@ function NewCampaign() {
                             <DateTimePicker
                               date={scheduledDate}
                               setDate={(date) => {
-                                setScheduledDate(date);
-                                // Update form field with combined datetime when date changes
+                                setScheduledDate(date)
                                 if (date && scheduledTime) {
-                                  const [hours, minutes] = scheduledTime.split(':').map(Number);
-                                  const combinedDateTime = new Date(date);
-                                  combinedDateTime.setHours(hours, minutes, 0, 0);
-                                  form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
+                                  const [hours, minutes] = scheduledTime.split(':').map(Number)
+                                  const combinedDateTime = new Date(date)
+                                  combinedDateTime.setHours(hours, minutes, 0, 0)
+                                  form.setFieldValue('scheduledTime', combinedDateTime.toISOString())
                                 } else {
-                                  form.setFieldValue('scheduledTime', '');
+                                  form.setFieldValue('scheduledTime', '')
                                 }
                               }}
                               time={scheduledTime}
                               setTime={(time) => {
-                                setScheduledTime(time);
+                                setScheduledTime(time)
                                 if (scheduledDate && time) {
-                                  const [hours, minutes] = time.split(':').map(Number);
-                                  const combinedDateTime = new Date(scheduledDate);
-                                  combinedDateTime.setHours(hours, minutes, 0, 0);
-                                  form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
+                                  const [hours, minutes] = time.split(':').map(Number)
+                                  const combinedDateTime = new Date(scheduledDate)
+                                  combinedDateTime.setHours(hours, minutes, 0, 0)
+                                  form.setFieldValue('scheduledTime', combinedDateTime.toISOString())
                                 } else {
-                                  form.setFieldValue('scheduledTime', '');
+                                  form.setFieldValue('scheduledTime', '')
                                 }
                               }}
                               dateLabel="Date"
@@ -385,7 +383,6 @@ function NewCampaign() {
               </div>
             </div>
 
-            {/* Mobile Preview Card - Right side */}
             <div className="lg:col-span-8 lg:col-start-15">
               <Card>
                 <CardHeader>

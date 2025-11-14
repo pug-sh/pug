@@ -1,8 +1,8 @@
 'use client'
 
+import { useAtom } from 'jotai'
 import { ChevronsUpDown, Plus } from 'lucide-react'
 import * as React from 'react'
-import { useAtom } from 'jotai'
 import { selectedProjectAtom } from '@/atoms/projects'
 
 import {
