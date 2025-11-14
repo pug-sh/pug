@@ -20,7 +20,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { Textarea } from '@/components/ui/textarea'
-import { Calendar } from '@/components/ui/calendar'
+import { DateTimePicker } from '@/components/ui/date-time-picker'
 import { campaignsService } from '@/lib/rpc'
 
 const formSchema = z.object({
@@ -48,6 +48,7 @@ function NewCampaign() {
   const [titleValue, setTitleValue] = useState('')
   const [bodyValue, setBodyValue] = useState('')
   const [scheduledDate, setScheduledDate] = useState<Date | undefined>(undefined)
+  const [scheduledTime, setScheduledTime] = useState('10:00') // Default to 10:00 AM
 
   const form = useForm({
     defaultValues: {
@@ -76,9 +77,7 @@ function NewCampaign() {
           body: value.body,
         }
 
-        const dateObject = new Date(value.scheduledTime + "T10:00:00");
-        const combinedDateTime = dateObject;
-        combinedDateTime.setHours(10, 0, 0, 0);
+        const combinedDateTime = new Date(value.scheduledTime);
         
         const scheduledTimeProto = { 
           seconds: BigInt(Math.floor(combinedDateTime.getTime() / 1000)), 
@@ -98,10 +97,6 @@ function NewCampaign() {
         console.log('Campaign created successfully!')
 
         form.reset()
-        form.setFieldValue('scheduledTime', '')
-        setTitleValue('')
-        setBodyValue('')
-        setScheduledDate(undefined)
       } catch (error) {
         if (error instanceof ConnectError) {
           setFormError(error.rawMessage)
@@ -146,8 +141,8 @@ function NewCampaign() {
           </div>
         </header>
         <div className="container mx-auto py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-24 gap-4">
+            <div className="lg:col-span-11 lg:col-start-3 space-y-2"> {/* Form takes 11 columns starting from column 3, leaving 2 columns gap on left */}
               {/* Campaign Details Card */}
               <Card>
                 <CardHeader>
@@ -276,51 +271,63 @@ function NewCampaign() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
-                    <div>
-                      <FieldLabel>Select Date</FieldLabel>
-                      <Calendar
-                        mode="single"
-                        selected={scheduledDate}
-                        onSelect={(date) => {
-                          setScheduledDate(date);
-                          if (date) {
-                            form.setFieldValue('scheduledTime', date.toISOString().split('T')[0]); // Format as YYYY-MM-DD
-                          } else {
-                            form.setFieldValue('scheduledTime', '');
-                          }
-                        }}
-                        className="p-0 mt-2 w-full"
-                        disabled={{ before: new Date() }}
-                      />
-                    </div>
-                    
+                    <DateTimePicker
+                    date={scheduledDate}
+                    setDate={(date) => {
+                      setScheduledDate(date);
+                      // Update form field with combined datetime when date changes
+                      if (date && scheduledTime) {
+                        const [hours, minutes] = scheduledTime.split(':').map(Number);
+                        const combinedDateTime = new Date(date);
+                        combinedDateTime.setHours(hours, minutes, 0, 0);
+                        form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
+                      } else {
+                        form.setFieldValue('scheduledTime', '');
+                      }
+                    }}
+                    time={scheduledTime}
+                    setTime={(time) => {
+                      setScheduledTime(time);
+                      if (scheduledDate && time) {
+                        const [hours, minutes] = time.split(':').map(Number);
+                        const combinedDateTime = new Date(scheduledDate);
+                        combinedDateTime.setHours(hours, minutes, 0, 0);
+                        form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
+                      } else {
+                        form.setFieldValue('scheduledTime', '');
+                      }
+                    }}
+                    dateLabel="Date"
+                    timeLabel="Time"
+                  />
+
                     {formError && (
                       <div className="mb-4 text-sm text-destructive font-normal">
                         {formError}
                       </div>
                     )}
-                    
-                    <div className="pt-4 flex justify-end">
-                      <Button
-                        type="submit"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          form.handleSubmit()
-                        }}
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting ? 'Creating...' : 'Create Campaign'}
-                      </Button>
-                    </div>
                   </div>
                 </CardContent>
               </Card>
+
+              <div className="pt-4 flex justify-end">
+                <Button
+                  type="submit"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    form.handleSubmit()
+                  }}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'Creating...' : 'Create Campaign'}
+                </Button>
+              </div>
             </div>
             
             {/* Mobile Preview Card - Right side */}
-            <div className="lg:col-span-1">
-              <div className="sticky top-6">
+            <div className="lg:col-span-8 lg:col-start-15"> {/* Takes 8 columns and starts from column 15 */}
+              <div className="sticky top-4">
                 <Card>
                   <CardHeader>
                     <CardTitle>Preview</CardTitle>
@@ -328,7 +335,7 @@ function NewCampaign() {
                       How your notification will appear
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="flex justify-center p-4">
+                  <CardContent className="flex justify-center p-2">
                     <MobilePreview
                       notifications={previewNotifications}
                     />
