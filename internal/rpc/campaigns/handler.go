@@ -13,6 +13,7 @@ import (
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type server struct {
@@ -65,12 +66,19 @@ func (s *server) Create(ctx context.Context, req *connect.Request[campaignsv1.Cr
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
 
+	var scheduledTimeParam *timestamppb.Timestamp
+	if req.Msg.ScheduledTime == nil {
+		scheduledTimeParam = timestamppb.Now()
+	} else {
+		scheduledTimeParam = req.Msg.ScheduledTime
+	}
+
 	campaign, err := s.service.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
 		ID:               xid.New().String(),
 		Name:             req.Msg.Name,
 		ProjectID:        req.Msg.ProjectId,
 		NotificationData: req.Msg.NotificationData,
-		ScheduledTime:    postgres.TimestampToTimestamptz(req.Msg.ScheduledTime),
+		ScheduledTime:    postgres.TimestampToTimestamptz(scheduledTimeParam),
 		Status:           "scheduled",
 	})
 	if err != nil {
@@ -98,11 +106,18 @@ func (s *server) Delete(ctx context.Context, req *connect.Request[campaignsv1.De
 }
 
 func (s *server) Update(ctx context.Context, req *connect.Request[campaignsv1.UpdateRequest]) (*connect.Response[campaignsv1.UpdateResponse], error) {
+	var scheduledTimeParam *timestamppb.Timestamp
+	if req.Msg.ScheduledTime == nil {
+		scheduledTimeParam = timestamppb.Now()
+	} else {
+		scheduledTimeParam = req.Msg.ScheduledTime
+	}
+
 	campaign, err := s.service.UpdateCampaign(ctx, dbwrite.UpdateCampaignParams{
 		ID:               req.Msg.Id,
 		Name:             req.Msg.Name,
 		NotificationData: req.Msg.NotificationData,
-		ScheduledTime:    postgres.TimestampToTimestamptz(req.Msg.ScheduledTime),
+		ScheduledTime:    postgres.TimestampToTimestamptz(scheduledTimeParam),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed updating campaign", slog.Any("error", err), slog.String("campaignId", req.Msg.Id))

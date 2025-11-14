@@ -21,23 +21,27 @@ import { Input } from '@/components/ui/input'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { Textarea } from '@/components/ui/textarea'
 import { DateTimePicker } from '@/components/ui/date-time-picker'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { campaignsService } from '@/lib/rpc'
 
-const formSchema = z.object({
-  name: z
-    .string()
-    .min(1, 'Campaign name is required')
-    .max(150, 'Campaign name must be less than 150 characters'),
-  title: z
-    .string()
-    .min(1, 'Title is required')
-    .max(100, 'Title must be less than 100 characters'),
-  body: z
-    .string()
-    .min(1, 'Body is required')
-    .max(500, 'Body must be less than 500 characters'),
-  scheduledTime: z.string().min(1, 'Scheduled time is required'),
-})
+const formSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1, 'Campaign name is required')
+      .max(150, 'Campaign name must be less than 150 characters'),
+    title: z
+      .string()
+      .min(1, 'Title is required')
+      .max(100, 'Title must be less than 100 characters'),
+    body: z
+      .string()
+      .min(1, 'Body is required')
+      .max(500, 'Body must be less than 500 characters'),
+    scheduleType: z.enum(['now', 'scheduled']),
+    scheduledTime: z.string().optional(),
+  })
+;
 
 function NewCampaign() {
   const [selectedProjectId] = useAtom(selectedProjectAtom)
@@ -55,6 +59,7 @@ function NewCampaign() {
       name: '',
       title: '',
       body: '',
+      scheduleType: 'now' as const,
       scheduledTime: '',
     },
     validators: {
@@ -64,25 +69,30 @@ function NewCampaign() {
       setIsSubmitting(true)
       setFormError(null)
 
-      if (!value.scheduledTime) {
-        setFormError('Please select a date for the scheduled time.')
-        setIsSubmitting(false)
-        return
-      }
-
-
       try {
         const notificationObject: { title: string; body: string } = {
           title: value.title,
           body: value.body,
         }
 
-        const combinedDateTime = new Date(value.scheduledTime);
-
-        const scheduledTimeProto = {
-          seconds: BigInt(Math.floor(combinedDateTime.getTime() / 1000)),
-          nanos: 0
-        };
+        let scheduledTimeProto = undefined;
+        if (value.scheduleType === 'scheduled') {
+          if (!value.scheduledTime) {
+            setFormError('Please select a date and time for the scheduled campaign.');
+            setIsSubmitting(false)
+            return
+          }
+          const combinedDateTime = new Date(value.scheduledTime);
+          if (isNaN(combinedDateTime.getTime())) {
+            setFormError('Invalid date and time format.');
+            setIsSubmitting(false)
+            return
+          }
+          scheduledTimeProto = {
+            seconds: BigInt(Math.floor(combinedDateTime.getTime() / 1000)),
+            nanos: 0
+          };
+        }
 
         const request = create(CreateRequestSchema, {
           name: value.name,
@@ -269,34 +279,86 @@ function NewCampaign() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
-                    <DateTimePicker
-                      date={scheduledDate}
-                      setDate={(date) => {
-                        setScheduledDate(date);
-                        // Update form field with combined datetime when date changes
-                        if (date && scheduledTime) {
-                          const [hours, minutes] = scheduledTime.split(':').map(Number);
-                          const combinedDateTime = new Date(date);
-                          combinedDateTime.setHours(hours, minutes, 0, 0);
-                          form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
-                        } else {
-                          form.setFieldValue('scheduledTime', '');
-                        }
-                      }}
-                      time={scheduledTime}
-                      setTime={(time) => {
-                        setScheduledTime(time);
-                        if (scheduledDate && time) {
-                          const [hours, minutes] = time.split(':').map(Number);
-                          const combinedDateTime = new Date(scheduledDate);
-                          combinedDateTime.setHours(hours, minutes, 0, 0);
-                          form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
-                        } else {
-                          form.setFieldValue('scheduledTime', '');
-                        }
-                      }}
-                      dateLabel="Date"
-                      timeLabel="Time"
+                    <form.Field
+                      name="scheduleType"
+                      children={(field) => (
+                        <FieldGroup>
+                          <FieldLabel>Schedule Type</FieldLabel>
+                          <RadioGroup
+                            value={field.state.value}
+                            onValueChange={field.handleChange}
+                            className="flex space-x-4 mt-2"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="now" id="send-now" />
+                              <label htmlFor="send-now">Send now</label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="scheduled" id="schedule-later" />
+                              <label htmlFor="schedule-later">Schedule for later</label>
+                            </div>
+                          </RadioGroup>
+                        </FieldGroup>
+                      )}
+                    />
+
+                    <form.Field
+                      name="scheduleType"
+                      children={(scheduleTypeField) => (
+                        <>
+                          {scheduleTypeField.state.value === 'scheduled' && (
+                            <DateTimePicker
+                              date={scheduledDate}
+                              setDate={(date) => {
+                                setScheduledDate(date);
+                                // Update form field with combined datetime when date changes
+                                if (date && scheduledTime) {
+                                  const [hours, minutes] = scheduledTime.split(':').map(Number);
+                                  const combinedDateTime = new Date(date);
+                                  combinedDateTime.setHours(hours, minutes, 0, 0);
+                                  form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
+                                } else {
+                                  form.setFieldValue('scheduledTime', '');
+                                }
+                              }}
+                              time={scheduledTime}
+                              setTime={(time) => {
+                                setScheduledTime(time);
+                                if (scheduledDate && time) {
+                                  const [hours, minutes] = time.split(':').map(Number);
+                                  const combinedDateTime = new Date(scheduledDate);
+                                  combinedDateTime.setHours(hours, minutes, 0, 0);
+                                  form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
+                                } else {
+                                  form.setFieldValue('scheduledTime', '');
+                                }
+                              }}
+                              dateLabel="Date"
+                              timeLabel="Time"
+                            />
+                          )}
+                        </>
+                      )}
+                    />
+
+                    <form.Field
+                      name="scheduleType"
+                      children={(scheduleTypeField) => (
+                        <>
+                          {scheduleTypeField.state.value === 'scheduled' && (
+                            <form.Field
+                              name="scheduledTime"
+                              children={(field) => (
+                                <div className="mt-2">
+                                  {field.state.meta.errors.length > 0 && (
+                                    <FieldError errors={field.state.meta.errors} />
+                                  )}
+                                </div>
+                              )}
+                            />
+                          )}
+                        </>
+                      )}
                     />
 
                     {formError && (
