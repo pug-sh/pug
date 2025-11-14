@@ -69,7 +69,7 @@ function NewCampaign() {
         setIsSubmitting(false)
         return
       }
-      
+
 
       try {
         const notificationObject: { title: string; body: string } = {
@@ -78,10 +78,10 @@ function NewCampaign() {
         }
 
         const combinedDateTime = new Date(value.scheduledTime);
-        
-        const scheduledTimeProto = { 
-          seconds: BigInt(Math.floor(combinedDateTime.getTime() / 1000)), 
-          nanos: 0 
+
+        const scheduledTimeProto = {
+          seconds: BigInt(Math.floor(combinedDateTime.getTime() / 1000)),
+          nanos: 0
         };
 
         const request = create(CreateRequestSchema, {
@@ -142,8 +142,7 @@ function NewCampaign() {
         </header>
         <div className="container mx-auto py-6">
           <div className="grid grid-cols-1 lg:grid-cols-24 gap-4">
-            <div className="lg:col-span-11 lg:col-start-3 space-y-2"> {/* Form takes 11 columns starting from column 3, leaving 2 columns gap on left */}
-              {/* Campaign Details Card */}
+            <div className="lg:col-span-11 lg:col-start-3 space-y-2">
               <Card>
                 <CardHeader>
                   <CardTitle>Campaign Details</CardTitle>
@@ -183,7 +182,6 @@ function NewCampaign() {
                 </CardContent>
               </Card>
 
-              {/* Notification Content Card */}
               <Card>
                 <CardHeader>
                   <CardTitle>Notification Content</CardTitle>
@@ -272,34 +270,34 @@ function NewCampaign() {
                 <CardContent>
                   <div className="space-y-6">
                     <DateTimePicker
-                    date={scheduledDate}
-                    setDate={(date) => {
-                      setScheduledDate(date);
-                      // Update form field with combined datetime when date changes
-                      if (date && scheduledTime) {
-                        const [hours, minutes] = scheduledTime.split(':').map(Number);
-                        const combinedDateTime = new Date(date);
-                        combinedDateTime.setHours(hours, minutes, 0, 0);
-                        form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
-                      } else {
-                        form.setFieldValue('scheduledTime', '');
-                      }
-                    }}
-                    time={scheduledTime}
-                    setTime={(time) => {
-                      setScheduledTime(time);
-                      if (scheduledDate && time) {
-                        const [hours, minutes] = time.split(':').map(Number);
-                        const combinedDateTime = new Date(scheduledDate);
-                        combinedDateTime.setHours(hours, minutes, 0, 0);
-                        form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
-                      } else {
-                        form.setFieldValue('scheduledTime', '');
-                      }
-                    }}
-                    dateLabel="Date"
-                    timeLabel="Time"
-                  />
+                      date={scheduledDate}
+                      setDate={(date) => {
+                        setScheduledDate(date);
+                        // Update form field with combined datetime when date changes
+                        if (date && scheduledTime) {
+                          const [hours, minutes] = scheduledTime.split(':').map(Number);
+                          const combinedDateTime = new Date(date);
+                          combinedDateTime.setHours(hours, minutes, 0, 0);
+                          form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
+                        } else {
+                          form.setFieldValue('scheduledTime', '');
+                        }
+                      }}
+                      time={scheduledTime}
+                      setTime={(time) => {
+                        setScheduledTime(time);
+                        if (scheduledDate && time) {
+                          const [hours, minutes] = time.split(':').map(Number);
+                          const combinedDateTime = new Date(scheduledDate);
+                          combinedDateTime.setHours(hours, minutes, 0, 0);
+                          form.setFieldValue('scheduledTime', combinedDateTime.toISOString());
+                        } else {
+                          form.setFieldValue('scheduledTime', '');
+                        }
+                      }}
+                      dateLabel="Date"
+                      timeLabel="Time"
+                    />
 
                     {formError && (
                       <div className="mb-4 text-sm text-destructive font-normal">
@@ -324,24 +322,22 @@ function NewCampaign() {
                 </Button>
               </div>
             </div>
-            
+
             {/* Mobile Preview Card - Right side */}
-            <div className="lg:col-span-8 lg:col-start-15"> {/* Takes 8 columns and starts from column 15 */}
-              <div className="sticky top-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Preview</CardTitle>
-                    <CardDescription>
-                      How your notification will appear
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex justify-center p-2">
-                    <MobilePreview
-                      notifications={previewNotifications}
-                    />
-                  </CardContent>
-                </Card>
-              </div>
+            <div className="lg:col-span-8 lg:col-start-15">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Preview</CardTitle>
+                  <CardDescription>
+                    How your notification will appear
+                  </CardDescription>
+                </CardHeader>
+                <div className="flex justify-center p-0">
+                  <MobilePreview
+                    notifications={previewNotifications}
+                  />
+                </div>
+              </Card>
             </div>
           </div>
         </div>
