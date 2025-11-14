@@ -11,13 +11,15 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
 	"github.com/fivebitsio/cotton/pkg/postgres"
+	pulsarclient "github.com/fivebitsio/cotton/pkg/pulsar"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type server struct {
-	service *campaigns.Service
+	service  *campaigns.Service
+	producer *pulsarclient.Producer
 }
 
 func (s *server) Get(ctx context.Context, req *connect.Request[campaignsv1.GetRequest]) (*connect.Response[campaignsv1.GetResponse], error) {
@@ -131,11 +133,12 @@ func (s *server) Update(ctx context.Context, req *connect.Request[campaignsv1.Up
 	return resp, nil
 }
 
-func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *server {
+func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, producer *pulsarclient.Producer) *server {
 	projectsSvc := projects.NewService(pgRO, pgW)
-	service := campaigns.NewService(pgRO, pgW, projectsSvc)
+	service := campaigns.NewService(pgRO, pgW, projectsSvc, producer)
 
 	return &server{
-		service: service,
+		service:  service,
+		producer: producer,
 	}
 }

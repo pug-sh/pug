@@ -7,8 +7,19 @@ topics:
     retention:
       timeInMinutes: 43200
       sizeInMB: 50000
+  - name: "campaigns"
+    type: "persistent"
+    partitions: 1
+    properties:
+      description: "Campaign events for scheduled execution"
+    retention:
+      timeInMinutes: 43200
+      sizeInMB: 50000
 
 subscriptions:
   - name: "subscription-processor"
     topic: "subscriptions"
+    type: "shared"
+  - name: "campaign-processor"
+    topic: "campaigns"
     type: "shared"

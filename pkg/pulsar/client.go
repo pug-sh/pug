@@ -23,6 +23,13 @@ type Client struct {
 	config *Config
 }
 
+// Message represents a Pulsar message with properties and delivery options
+type Message struct {
+	Payload    []byte
+	Properties map[string]string
+	DeliverAt  *time.Time
+}
+
 // Producer wraps the Pulsar producer functionality
 type Producer struct {
 	producer pulsar.Producer
@@ -118,14 +125,39 @@ func (c *Client) CreateConsumer(topicName, subscriptionName string, opts ...Cons
 }
 
 // Send sends a message to the producer topic
-func (p *Producer) Send(ctx context.Context, msg *pulsar.ProducerMessage) error {
-	_, err := p.producer.Send(ctx, msg)
+func (p *Producer) Send(ctx context.Context, msg *Message) error {
+	pulsarMsg := &pulsar.ProducerMessage{
+		Payload:    msg.Payload,
+		Properties: msg.Properties,
+	}
+
+	if msg.DeliverAt != nil {
+		pulsarMsg.DeliverAt = *msg.DeliverAt
+	}
+
+	_, err := p.producer.Send(ctx, pulsarMsg)
 	return err
 }
 
 // SendAsync sends a message asynchronously to the producer topic
-func (p *Producer) SendAsync(ctx context.Context, msg *pulsar.ProducerMessage, callback func(pulsar.MessageID, *pulsar.ProducerMessage, error)) {
-	p.producer.SendAsync(ctx, msg, callback)
+func (p *Producer) SendAsync(ctx context.Context, msg *Message, callback func(pulsar.MessageID, *pulsar.ProducerMessage, error)) {
+	pulsarMsg := &pulsar.ProducerMessage{
+		Payload:    msg.Payload,
+		Properties: msg.Properties,
+	}
+
+	if msg.DeliverAt != nil {
+		pulsarMsg.DeliverAt = *msg.DeliverAt
+	}
+
+	p.producer.SendAsync(ctx, pulsarMsg, callback)
+}
+
+// Close closes the producer
+func (p *Producer) Close() {
+	if p.producer != nil {
+		p.producer.Close()
+	}
 }
 
 // Chan returns the consumer's message channel

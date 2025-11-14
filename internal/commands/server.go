@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -34,10 +35,11 @@ import (
 )
 
 type serverDeps struct {
-	pgRo   *pgxpool.Pool
-	pgW    *pgxpool.Pool
-	pulsar *pulsar.Client
-	jwtKey []byte
+	pgRo              *pgxpool.Pool
+	pgW               *pgxpool.Pool
+	pulsar            *pulsar.Client
+	campaignsProducer *pulsar.Producer
+	jwtKey            []byte
 }
 
 func newServerDeps(ctx context.Context) (*serverDeps, error) {
@@ -63,23 +65,30 @@ func newServerDeps(ctx context.Context) (*serverDeps, error) {
 
 	jwtKey := []byte("your-jwt-secret-key-here")
 
+	campaignsProducer, err := pulsarClient.CreateProducer("campaigns")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create campaigns pulsar producer: %w", err)
+	}
+
 	return &serverDeps{
-		pgRo:   pgRo,
-		pgW:    pgW,
-		pulsar: pulsarClient,
-		jwtKey: jwtKey,
+		pgRo:              pgRo,
+		pgW:               pgW,
+		campaignsProducer: campaignsProducer,
+		jwtKey:            jwtKey,
 	}, nil
 }
 
 func (deps *serverDeps) Close(ctx context.Context) {
 	deps.pgRo.Close()
 	deps.pgW.Close()
+	if deps.campaignsProducer != nil {
+		deps.campaignsProducer.Close()
+	}
 	if deps.pulsar != nil {
 		deps.pulsar.Close()
 	}
 }
 
-// ServerCmd represents the server command
 var ServerCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Start the Cotton server",
@@ -128,7 +137,7 @@ var ServerCmd = &cobra.Command{
 
 		journeysHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(journeysHandler)
 
-		campaignsServer := campaigns.NewServer(deps.pgRo, deps.pgW)
+		campaignsServer := campaigns.NewServer(deps.pgRo, deps.pgW, deps.campaignsProducer)
 		campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
 			campaignsServer,
 			commonHandlerOptions(),

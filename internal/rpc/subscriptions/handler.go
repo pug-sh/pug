@@ -6,7 +6,6 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
-	"github.com/apache/pulsar-client-go/pulsar"
 
 	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
@@ -49,8 +48,10 @@ func (s *Server) Upsert(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsar.ProducerMessage{
-		Payload: data,
+	pulsarMsg := &pulsarclient.Message{
+		Payload:    data,
+		Properties: nil,
+		DeliverAt:  nil,
 	}
 
 	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
@@ -87,8 +88,10 @@ func (s *Server) UpdateHeartbeat(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsar.ProducerMessage{
-		Payload: data,
+	pulsarMsg := &pulsarclient.Message{
+		Payload:    data,
+		Properties: nil,
+		DeliverAt:  nil,
 	}
 
 	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
@@ -126,8 +129,10 @@ func (s *Server) UpdateMetadata(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsar.ProducerMessage{
-		Payload: data,
+	pulsarMsg := &pulsarclient.Message{
+		Payload:    data,
+		Properties: nil,
+		DeliverAt:  nil,
 	}
 
 	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
@@ -165,8 +170,10 @@ func (s *Server) UpdateStatus(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsar.ProducerMessage{
-		Payload: data,
+	pulsarMsg := &pulsarclient.Message{
+		Payload:    data,
+		Properties: nil,
+		DeliverAt:  nil,
 	}
 
 	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
@@ -204,8 +211,10 @@ func (s *Server) UpdateToken(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsar.ProducerMessage{
-		Payload: data,
+	pulsarMsg := &pulsarclient.Message{
+		Payload:    data,
+		Properties: nil,
+		DeliverAt:  nil,
 	}
 
 	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
@@ -246,8 +255,10 @@ func (s *Server) RegisterSubscription(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsar.ProducerMessage{
-		Payload: data,
+	pulsarMsg := &pulsarclient.Message{
+		Payload:    data,
+		Properties: nil,
+		DeliverAt:  nil,
 	}
 
 	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
@@ -290,8 +301,10 @@ func (s *Server) SetUserExternalID(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsar.ProducerMessage{
-		Payload: data,
+	pulsarMsg := &pulsarclient.Message{
+		Payload:    data,
+		Properties: nil,
+		DeliverAt:  nil,
 	}
 
 	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
