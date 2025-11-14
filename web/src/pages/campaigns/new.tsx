@@ -268,10 +268,9 @@ function NewCampaign() {
                 </CardContent>
               </Card>
 
-              {/* Scheduled Time and Submit Card */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Scheduled Time & Submit</CardTitle>
+                  <CardTitle>Scheduled Time</CardTitle>
                   <CardDescription>
                     Set when to send and create your campaign
                   </CardDescription>
