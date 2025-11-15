@@ -40,7 +40,8 @@ services:
       - cotton-net
     environment:
       PULSAR_MEM: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=1g"
-      advertisedAddress: pulsar
+      PULSAR_STANDALONE_USE_ZOOKEEPER: "1"
+      advertisedAddress: 127.0.0.1
       PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled: "false"
       PULSAR_PREFIX_allowAutoTopicCreationType: "partitioned"
       PULSAR_PREFIX_defaultNumPartitions: "1"
