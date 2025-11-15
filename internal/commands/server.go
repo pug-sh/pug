@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
@@ -78,6 +77,78 @@ func newServerDeps(ctx context.Context) (*serverDeps, error) {
 	}, nil
 }
 
+// StartServer starts the Cotton HTTP/gRPC server with the given dependencies
+func StartServer(ctx context.Context, deps *serverDeps) error {
+	queriesRo := dbread.New(deps.pgRo)
+
+	commonHandlerOptions := func() connect.HandlerOption {
+		return connect.WithInterceptors(interceptors.ErrorInterceptor())
+	}
+
+	authServer := auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
+	authPath, authHandler := authv1connect.NewAuthServiceHandler(
+		authServer,
+		commonHandlerOptions(),
+	)
+
+	projectsServer := projects.NewServer(deps.pgRo, deps.pgW)
+	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
+		projectsServer,
+		commonHandlerOptions(),
+	)
+	projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
+
+	journeysServer := journeys.NewServer(deps.pgRo, deps.pgW)
+	journeysPath, journeysHandler := journeysv1connect.NewJourneysServiceHandler(
+		journeysServer,
+		commonHandlerOptions(),
+	)
+	journeysHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(journeysHandler)
+
+	journeysHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(journeysHandler)
+
+	campaignsServer := campaigns.NewServer(deps.pgRo, deps.pgW, deps.campaignsProducer)
+	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
+		campaignsServer,
+		commonHandlerOptions(),
+	)
+	campaignsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(campaignsHandler)
+
+	handler := http.NewServeMux()
+	handler.Handle(authPath, authHandler)
+	handler.Handle(projectsPath, projectsHandler)
+	handler.Handle(journeysPath, journeysHandler)
+	handler.Handle(campaignsPath, campaignsHandler)
+
+	services := []string{
+		authv1connect.AuthServiceName,
+		projectsv1connect.ProjectsServiceName,
+		journeysv1connect.JourneysServiceName,
+		campaignsv1connect.CampaignServiceName,
+	}
+
+	reflector := grpcreflect.NewStaticReflector(services...)
+	handler.Handle(grpcreflect.NewHandlerV1(reflector))
+	handler.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
+
+	handlerWithCORS := interceptors.WithCORS(handler)
+
+	h2cHandler := h2c.NewHandler(handlerWithCORS, &http2.Server{})
+
+	server := &http.Server{
+		Addr:    ":8081",
+		Handler: h2cHandler,
+	}
+
+	logger.Log.Info("Starting server", slog.String("addr", ":8081"))
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Log.Error("failed to serve", slog.Any("err", err))
+		return err
+	}
+
+	return nil
+}
+
 func (deps *serverDeps) Close(ctx context.Context) {
 	deps.pgRo.Close()
 	deps.pgW.Close()
@@ -109,86 +180,13 @@ var ServerCmd = &cobra.Command{
 		}
 
 		defer deps.Close(ctx)
-		queriesRo := dbread.New(deps.pgRo)
 
-		commonHandlerOptions := func() connect.HandlerOption {
-			return connect.WithInterceptors(interceptors.ErrorInterceptor())
-		}
-
-		authServer := auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
-		authPath, authHandler := authv1connect.NewAuthServiceHandler(
-			authServer,
-			commonHandlerOptions(),
-		)
-
-		projectsServer := projects.NewServer(deps.pgRo, deps.pgW)
-		projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-			projectsServer,
-			commonHandlerOptions(),
-		)
-		projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
-
-		journeysServer := journeys.NewServer(deps.pgRo, deps.pgW)
-		journeysPath, journeysHandler := journeysv1connect.NewJourneysServiceHandler(
-			journeysServer,
-			commonHandlerOptions(),
-		)
-		journeysHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(journeysHandler)
-
-		journeysHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(journeysHandler)
-
-		campaignsServer := campaigns.NewServer(deps.pgRo, deps.pgW, deps.campaignsProducer)
-		campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
-			campaignsServer,
-			commonHandlerOptions(),
-		)
-		campaignsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(campaignsHandler)
-
-		handler := http.NewServeMux()
-		handler.Handle(authPath, authHandler)
-		handler.Handle(projectsPath, projectsHandler)
-		handler.Handle(journeysPath, journeysHandler)
-		handler.Handle(campaignsPath, campaignsHandler)
-
-		services := []string{
-			authv1connect.AuthServiceName,
-			projectsv1connect.ProjectsServiceName,
-			journeysv1connect.JourneysServiceName,
-			campaignsv1connect.CampaignServiceName,
-		}
-
-		reflector := grpcreflect.NewStaticReflector(services...)
-		handler.Handle(grpcreflect.NewHandlerV1(reflector))
-		handler.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
-
-		handlerWithCORS := interceptors.WithCORS(handler)
-
-		h2cHandler := h2c.NewHandler(handlerWithCORS, &http2.Server{})
-
-		server := &http.Server{
-			Addr:    ":8081",
-			Handler: h2cHandler,
-		}
-
+		serverErrChan := make(chan error, 1)
 		go func() {
-			logger.Log.Info("Starting server", slog.String("addr", ":8081"))
-			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.Log.Error("failed to serve", slog.Any("err", err))
-				os.Exit(1)
-			}
+			serverErrChan <- StartServer(ctx, deps)
 		}()
 
 		<-ctx.Done()
 		logger.Log.Info("Shutting down server...")
-
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			logger.Log.Error("server shutdown failed", slog.Any("err", err))
-			server.Close()
-		} else {
-			logger.Log.Info("Server exited properly")
-		}
 	},
 }

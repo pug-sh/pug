@@ -51,6 +51,12 @@ func newWorkerDeps(ctx context.Context) (*workerDeps, error) {
 	}, nil
 }
 
+func StartSubscriptionWorker(ctx context.Context, deps *workerDeps) error {
+	logger.Log.Info("Starting subscription worker...")
+
+	return subscriptions.StartWorker(ctx, deps.pgRo, deps.pgW, deps.pulsar)
+}
+
 func (deps *workerDeps) Close(ctx context.Context) {
 	deps.pgRo.Close()
 	deps.pgW.Close()
@@ -59,14 +65,12 @@ func (deps *workerDeps) Close(ctx context.Context) {
 	}
 }
 
-// WorkerCmd represents the worker command
 var WorkerCmd = &cobra.Command{
 	Use:   "worker",
 	Short: "Worker related commands",
 	Long:  `Commands for managing message workers.`,
 }
 
-// SubscriptionWorkerCmd represents the subscription worker command
 var SubscriptionWorkerCmd = &cobra.Command{
 	Use:   "subscription",
 	Short: "Start the subscription worker",
@@ -87,9 +91,7 @@ var SubscriptionWorkerCmd = &cobra.Command{
 		}
 		defer deps.Close(ctx)
 
-		logger.Log.Info("Starting subscription worker...")
-
-		if err := subscriptions.StartWorker(ctx, deps.pgRo, deps.pgW, deps.pulsar); err != nil {
+		if err := StartSubscriptionWorker(ctx, deps); err != nil {
 			logger.Log.Error("error starting subscription worker", slog.Any("err", err))
 			os.Exit(1)
 		}
