@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'wouter'
 import { AppSidebar } from '@/components/nav/app-sidebar'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
 import { projectsService } from '@/lib/rpc'
@@ -69,10 +69,8 @@ function Projects() {
                     <Card className="hover:shadow-md transition-shadow">
                       <CardHeader>
                         <CardTitle className="text-lg">{project.displayName}</CardTitle>
+                        <p className="text-sm text-muted-foreground">ID: {project.id}</p>
                       </CardHeader>
-                      <CardContent>
-                        <p className="text-sm text-muted-foreground break-all">API Key: {project.apiKey}</p>
-                      </CardContent>
                     </Card>
                   </Link>
                 ))}
