@@ -8,7 +8,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/tshoka-studio/polotifications/internal/proto/gen/users/v1"
+	v1 "github.com/fivebitsio/cotton/internal/gen/proto/users/v1"
 	http "net/http"
 	strings "strings"
 )

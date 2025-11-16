@@ -3,6 +3,7 @@ import { create } from '@bufbuild/protobuf'
 import { ConnectError } from '@connectrpc/connect'
 import { useForm } from '@tanstack/react-form'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import * as z from 'zod'
 import { AppSidebar } from '@/components/nav/app-sidebar'
 import { Button } from '@/components/ui/button'
@@ -49,7 +50,7 @@ function NewProject() {
         console.log('Sending request:', request)
         await projectsService.create(request)
         
-        alert(`Project "${request.displayName}" created successfully!`)
+        toast.success(`Project "${request.displayName}" created successfully!`)
       } catch (error) {
         if (error instanceof ConnectError) {
           setFormError(error.rawMessage)

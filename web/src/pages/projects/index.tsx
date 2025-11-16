@@ -38,7 +38,7 @@ function Projects() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <header className="flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6 lg:px-8">
+        <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6 lg:px-8">
           <SidebarTrigger />
           <div className="flex-1 flex justify-between items-center">
             <h1 className="text-xl font-semibold">Projects</h1>

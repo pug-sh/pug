@@ -5,7 +5,7 @@ import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
 
 option features.field_presence = IMPLICIT;
-option go_package = "github.com/tshoka-studio/polotifications/internal/proto/gen/users/v1;usersv1";
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/users/v1;usersv1";
 
 service UsersService {
   rpc Create(CreateRequest) returns (CreateResponse) {}

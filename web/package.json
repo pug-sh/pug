@@ -33,9 +33,11 @@
     "jotai": "^2.15.0",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.546.0",
+    "next-themes": "^0.4.6",
     "react": "^19.1.1",
     "react-day-picker": "^9.11.1",
     "react-dom": "^19.1.1",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "wouter": "^3.7.1",
     "zod": "^4.1.12"

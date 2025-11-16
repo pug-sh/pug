@@ -1,15 +1,28 @@
 import {
   type Project,
-  UpdateDisplayNameRequestSchema,
-  UpdateFCMServiceJSONRequestSchema
+  UpdateDisplayNameRequestSchema
 } from '@buf/pushpa_cotton.bufbuild_es/projects/v1/projects_pb'
 import { create } from '@bufbuild/protobuf'
 import { ConnectError } from '@connectrpc/connect'
+import { useForm } from '@tanstack/react-form'
+import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { useParams } from 'wouter'
+import * as z from 'zod'
+import ApplePushNotifications from './apple-push-notifications'
+import EmailServices from './email-services'
+import FirebaseIntegration from './firebase'
+import Mailchimp from './mailchimp'
+import Vapid from './vapid'
 import { AppSidebar } from '@/components/nav/app-sidebar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+} from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
@@ -22,21 +35,63 @@ function ProjectDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editingName, setEditingName] = useState(false)
-  const [nameValue, setNameValue] = useState('')
-  const [fcmJson, setFcmJson] = useState('')
   const [updating, setUpdating] = useState(false)
+
+  const formSchema = z.object({
+    displayName: z
+      .string()
+      .min(2, 'Project name must be at least 2 characters.')
+      .max(150, 'Project name must not exceed 150 characters.'),
+  })
+
+  const form = useForm({
+    defaultValues: {
+      displayName: '',
+    },
+    validators: {
+      onSubmit: formSchema,
+    },
+    onSubmit: async ({ value }) => {
+      if (!project) return
+
+      try {
+        setUpdating(true)
+        const request = create(UpdateDisplayNameRequestSchema, {
+          displayName: value.displayName,
+          id: project.id
+        })
+
+        const response = await projectsService.updateDisplayName(request)
+        if (response.project) {
+          setProject(response.project)
+        }
+        setEditingName(false)
+      } catch (err) {
+        if (err instanceof ConnectError) {
+          setError(err.rawMessage)
+        } else {
+          setError(err instanceof Error ? err.message : 'An error occurred while updating project name')
+        }
+      } finally {
+        setUpdating(false)
+      }
+    },
+  })
+
 
   useEffect(() => {
     const fetchProject = async () => {
       if (!id) return
-      
+
       try {
         setLoading(true)
         const response = await projectsService.get({ id })
         if (response.project) {
           setProject(response.project)
-          setNameValue(response.project.displayName)
-          setFcmJson(response.project.fcmServiceJson || '')
+          if (!editingName) {
+            form.reset()
+            form.setFieldValue('displayName', response.project.displayName)
+          }
         } else {
           setError('Project not found')
         }
@@ -52,73 +107,30 @@ function ProjectDetail() {
     }
 
     fetchProject()
-  }, [id])
-
-  const handleNameChange = async () => {
-    if (!project || nameValue === project.displayName) {
-      setEditingName(false)
-      return
-    }
-
-    try {
-      setUpdating(true)
-      const request = create(UpdateDisplayNameRequestSchema, {
-        displayName: nameValue,
-        id: project.id
-      })
-
-      const response = await projectsService.updateDisplayName(request)
-      if (response.project) {
-        setProject(response.project)
-      }
-      setEditingName(false)
-    } catch (err) {
-      if (err instanceof ConnectError) {
-        setError(err.rawMessage)
-      } else {
-        setError(err instanceof Error ? err.message : 'An error occurred while updating project name')
-      }
-    } finally {
-      setUpdating(false)
-    }
-  }
+  }, [id, editingName, form])
 
   const handleCopyApiKey = () => {
     if (project) {
       navigator.clipboard.writeText(project.apiKey)
-      alert('API Key copied to clipboard!')
+      toast.success('API Key copied to clipboard!')
     }
   }
 
-  const handleUpdateFCMJson = async () => {
-    if (!project) return
-
-    try {
-      setUpdating(true)
-      const request = create(UpdateFCMServiceJSONRequestSchema, {
-        fcmServiceJson: fcmJson,
-        id: project.id
-      })
-
-      await projectsService.updateFCMServiceJSON(request)
-      alert('FCM service JSON updated successfully!')
-    } catch (err) {
-      if (err instanceof ConnectError) {
-        setError(err.rawMessage)
-      } else {
-        setError(err instanceof Error ? err.message : 'An error occurred while updating FCM service JSON')
-      }
-    } finally {
-      setUpdating(false)
+  const handleCopyId = () => {
+    if (project) {
+      navigator.clipboard.writeText(project.id)
+      toast.success('Project ID copied to clipboard!')
     }
   }
+
 
   if (loading) {
     return (
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
-          <header className="flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6 lg:px-8">
+          <header className="sticky top-0 z-10 flex h-16 items-center gap-4
+                             border-b bg-background px-4 sm:px-6 lg:px-8">
             <SidebarTrigger />
             <div className="flex-1">
               <h1 className="text-xl font-semibold">Project Details</h1>
@@ -139,7 +151,8 @@ function ProjectDetail() {
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
-          <header className="flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6 lg:px-8">
+          <header className="sticky top-0 z-10 flex h-16 items-center gap-4
+                             border-b bg-background px-4 sm:px-6 lg:px-8">
             <SidebarTrigger />
             <div className="flex-1">
               <h1 className="text-xl font-semibold">Project Details</h1>
@@ -164,7 +177,8 @@ function ProjectDetail() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <header className="flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6 lg:px-8">
+        <header className="sticky top-0 z-10 flex h-16 items-center gap-4
+                           border-b bg-background px-4 sm:px-6 lg:px-8">
           <SidebarTrigger />
           <div className="flex-1">
             <h1 className="text-xl font-semibold">Project Details</h1>
@@ -180,92 +194,104 @@ function ProjectDetail() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {editingName ? (
-                  <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
-                    <Input
-                      value={nameValue}
-                      onChange={(e) => setNameValue(e.target.value)}
-                      className="flex-1"
-                      placeholder="Project name"
-                    />
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      form.handleSubmit()
+                    }}
+                    className="flex flex-col sm:flex-row gap-2 items-start sm:items-center"
+                  >
+                    <FieldGroup>
+                      <form.Field
+                        name="displayName"
+                        children={(field) => {
+                          const isInvalid =
+                            field.state.meta.isTouched && !field.state.meta.isValid
+
+                          return (
+                            <Field data-invalid={isInvalid}>
+                              <Input
+                                id={field.name}
+                                name={field.name}
+                                value={field.state.value}
+                                onBlur={field.handleBlur}
+                                onChange={(e) => field.handleChange(e.target.value)}
+                                className="flex-1"
+                                placeholder="Project name"
+                                aria-invalid={isInvalid}
+                              />
+                              {isInvalid && (
+                                <FieldError errors={field.state.meta.errors} />
+                              )}
+                            </Field>
+                          )
+                        }}
+                      />
+                    </FieldGroup>
                     <div className="flex gap-2">
-                      <Button onClick={handleNameChange} disabled={updating}>
+                      <Button type="submit" disabled={updating}>
                         {updating ? 'Saving...' : 'Save'}
                       </Button>
                       <Button
                         variant="outline"
                         onClick={() => {
                           setEditingName(false)
-                          setNameValue(project?.displayName || '')
+                          form.reset()
                         }}
                         disabled={updating}
                       >
                         Cancel
                       </Button>
                     </div>
-                  </div>
+                  </form>
                 ) : (
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <h2 className="text-xl font-bold">{project?.displayName}</h2>
-                    <Button onClick={() => setEditingName(true)}>Edit Name</Button>
+                    <Button
+                      onClick={() => {
+                        if (project) {
+                          form.setFieldValue('displayName', project.displayName)
+                          setEditingName(true)
+                        }
+                      }}
+                    >
+                      Edit Name
+                    </Button>
                   </div>
                 )}
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label>Project ID</Label>
-                    <div className="text-sm p-2 bg-muted rounded mt-1 break-all">
-                      {project?.id}
+                    <Label className="mb-2">Project ID</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={project?.id || ''}
+                        disabled
+                        className="font-mono text-xs"
+                      />
+                      <Button variant="outline" size="icon" onClick={() => handleCopyId()} title="Copy Project ID">
+                        <Copy className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
-                  
+
                   <div>
-                    <Label>API Key</Label>
+                    <Label className="mb-2">API Key</Label>
                     <div className="flex gap-2">
                       <Input
                         value={project?.apiKey || ''}
-                        readOnly
+                        disabled
                         className="font-mono text-xs"
                       />
-                      <Button variant="outline" onClick={handleCopyApiKey}>
-                        Copy
+                      <Button variant="outline" size="icon" onClick={handleCopyApiKey} title="Copy API Key">
+                        <Copy className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
-
-            {/* Firebase Integration Card */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Firebase Integration</CardTitle>
-                <CardDescription>
-                  Configure your Firebase service account JSON to enable push notifications
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="fcmJson">Firebase Service Account JSON</Label>
-                    <textarea
-                      id="fcmJson"
-                      value={fcmJson}
-                      onChange={(e) => setFcmJson(e.target.value)}
-                      rows={8}
-                      className="w-full p-3 border rounded-md font-mono text-sm"
-                      placeholder="Paste your Firebase service account JSON here..."
-                    />
-                  </div>
-                  <div className="flex justify-end">
-                    <Button onClick={handleUpdateFCMJson} disabled={updating}>
-                      {updating ? 'Saving...' : 'Update Firebase Config'}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Future Integrations - Apple Push Notifications, VAPID, etc. */}
+            {/* Additional Integrations - Apple Push Notifications, VAPID, etc. */}
             <Card>
               <CardHeader>
                 <CardTitle>Additional Integrations</CardTitle>
@@ -275,48 +301,15 @@ function ProjectDetail() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Card className="p-4">
-                    <CardTitle className="text-lg">Apple Push Notifications</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Configure your Apple Push Notification service credentials
-                    </p>
-                    <Button variant="outline" className="mt-4" disabled>
-                      Configure
-                    </Button>
-                  </Card>
-                  
-                  <Card className="p-4">
-                    <CardTitle className="text-lg">Web Push (VAPID)</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Set up VAPID keys for web push notifications
-                    </p>
-                    <Button variant="outline" className="mt-4" disabled>
-                      Configure
-                    </Button>
-                  </Card>
-                  
-                  <Card className="p-4">
-                    <CardTitle className="text-lg">Email - Mailchimp</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Connect your Mailchimp account for email campaigns
-                    </p>
-                    <Button variant="outline" className="mt-4" disabled>
-                      Configure
-                    </Button>
-                  </Card>
-                  
-                  <Card className="p-4">
-                    <CardTitle className="text-lg">Other Email Services</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Connect other email services like SendGrid, Amazon SES, etc.
-                    </p>
-                    <Button variant="outline" className="mt-4" disabled>
-                      Configure
-                    </Button>
-                  </Card>
+                  <ApplePushNotifications project={project} />
+                  <Vapid project={project} />
+                  <FirebaseIntegration project={project} />
+                  <Mailchimp project={project} />
+                  <EmailServices project={project} />
                 </div>
               </CardContent>
             </Card>
+
           </div>
         </main>
       </SidebarInset>

@@ -996,7 +996,7 @@ const file_users_v1_users_proto_rawDesc = "" +
 	"\x06Delete\x12\x17.users.v1.DeleteRequest\x1a\x18.users.v1.DeleteResponse\"\x00\x12p\n" +
 	"\x17CreateOrGetByExternalId\x12(.users.v1.CreateOrGetByExternalIdRequest\x1a).users.v1.CreateOrGetByExternalIdResponse\"\x00\x12m\n" +
 	"\x16LinkUserToSubscription\x12'.users.v1.LinkUserToSubscriptionRequest\x1a(.users.v1.LinkUserToSubscriptionResponse\"\x00\x12j\n" +
-	"\x15GetUserBySubscription\x12&.users.v1.GetUserBySubscriptionRequest\x1a'.users.v1.GetUserBySubscriptionResponse\"\x00BSZLgithub.com/tshoka-studio/polotifications/internal/proto/gen/users/v1;usersv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x15GetUserBySubscription\x12&.users.v1.GetUserBySubscriptionRequest\x1a'.users.v1.GetUserBySubscriptionResponse\"\x00BGZ@github.com/fivebitsio/cotton/internal/gen/proto/users/v1;usersv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_users_v1_users_proto_rawDescOnce sync.Once
