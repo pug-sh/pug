@@ -32,6 +32,7 @@ message Project {
   string customer_id = 2;
   string display_name = 3;
   string id = 4;
+  string fcm_service_json = 5;
 }
 
 message CreateRequest {

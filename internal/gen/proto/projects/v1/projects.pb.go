@@ -190,13 +190,14 @@ func (x *BatchGetResponse) GetProjects() []*Project {
 }
 
 type Project struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApiKey        string                 `protobuf:"bytes,1,opt,name=api_key,json=apiKey" json:"api_key,omitempty"`
-	CustomerId    string                 `protobuf:"bytes,2,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	Id            string                 `protobuf:"bytes,4,opt,name=id" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ApiKey         string                 `protobuf:"bytes,1,opt,name=api_key,json=apiKey" json:"api_key,omitempty"`
+	CustomerId     string                 `protobuf:"bytes,2,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
+	DisplayName    string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	Id             string                 `protobuf:"bytes,4,opt,name=id" json:"id,omitempty"`
+	FcmServiceJson string                 `protobuf:"bytes,5,opt,name=fcm_service_json,json=fcmServiceJson" json:"fcm_service_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Project) Reset() {
@@ -253,6 +254,13 @@ func (x *Project) GetDisplayName() string {
 func (x *Project) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *Project) GetFcmServiceJson() string {
+	if x != nil {
+		return x.FcmServiceJson
 	}
 	return ""
 }
@@ -621,13 +629,14 @@ const file_projects_v1_projects_proto_rawDesc = "" +
 	"\aproject\x18\x01 \x01(\v2\x14.projects.v1.ProjectR\aproject\"\x11\n" +
 	"\x0fBatchGetRequest\"D\n" +
 	"\x10BatchGetResponse\x120\n" +
-	"\bprojects\x18\x01 \x03(\v2\x14.projects.v1.ProjectR\bprojects\"v\n" +
+	"\bprojects\x18\x01 \x03(\v2\x14.projects.v1.ProjectR\bprojects\"\xa0\x01\n" +
 	"\aProject\x12\x17\n" +
 	"\aapi_key\x18\x01 \x01(\tR\x06apiKey\x12\x1f\n" +
 	"\vcustomer_id\x18\x02 \x01(\tR\n" +
 	"customerId\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x0e\n" +
-	"\x02id\x18\x04 \x01(\tR\x02id\"2\n" +
+	"\x02id\x18\x04 \x01(\tR\x02id\x12(\n" +
+	"\x10fcm_service_json\x18\x05 \x01(\tR\x0efcmServiceJson\"2\n" +
 	"\rCreateRequest\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\"@\n" +
 	"\x0eCreateResponse\x12.\n" +

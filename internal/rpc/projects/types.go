@@ -8,18 +8,20 @@ import (
 
 func roToRPCMsg(p dbread.Project) *projectsv1.Project {
 	return &projectsv1.Project{
-		ApiKey:      p.ApiKey,
-		CustomerId:  p.CustomerID,
-		DisplayName: p.DisplayName,
-		Id:          p.ID,
+		ApiKey:         p.ApiKey,
+		CustomerId:     p.CustomerID,
+		DisplayName:    p.DisplayName,
+		Id:             p.ID,
+		FcmServiceJson: p.FcmServiceJson.String,
 	}
 }
 
 func wToRPCMsg(p dbwrite.Project) *projectsv1.Project {
 	return &projectsv1.Project{
-		ApiKey:      p.ApiKey,
-		CustomerId:  p.CustomerID,
-		DisplayName: p.DisplayName,
-		Id:          p.ID,
+		ApiKey:         p.ApiKey,
+		CustomerId:     p.CustomerID,
+		DisplayName:    p.DisplayName,
+		Id:             p.ID,
+		FcmServiceJson: p.FcmServiceJson.String,
 	}
 }

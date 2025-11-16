@@ -8,6 +8,7 @@ import NewCampaign from '@/pages/campaigns/new'
 import Dashboard from '@/pages/dashboard'
 import Journeys from '@/pages/journeys'
 import Projects from '@/pages/projects'
+import ProjectDetail from '@/pages/projects/detail'
 import NewProject from '@/pages/projects/new'
 import Settings from '@/pages/settings'
 
@@ -19,6 +20,7 @@ const Router = () => (
       <Route path='/' component={Dashboard} />
       <Route path='/projects' component={Projects} />
       <Route path='/projects/new' component={NewProject} />
+      <Route path='/projects/:id' component={ProjectDetail} />
       <Route path='/settings' component={Settings} />
       <Route path='/account' component={Account} />
       <Route path='/journeys' component={Journeys} />
