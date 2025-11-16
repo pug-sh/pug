@@ -12,9 +12,9 @@ import (
 )
 
 const createCampaign = `-- name: CreateCampaign :one
-INSERT INTO campaigns (id, name, project_id, notification_data, scheduled_time, status)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
+insert into campaigns (id, name, project_id, notification_data, scheduled_time, status)
+values ($1, $2, $3, $4, $5, $6)
+returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type CreateCampaignParams struct {
@@ -52,8 +52,8 @@ func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) 
 }
 
 const deleteCampaign = `-- name: DeleteCampaign :exec
-DELETE FROM campaigns
-WHERE id = $1 AND project_id = $2
+delete from campaigns
+where id = $1 and project_id = $2
 `
 
 type DeleteCampaignParams struct {
@@ -67,14 +67,14 @@ func (q *Queries) DeleteCampaign(ctx context.Context, arg DeleteCampaignParams) 
 }
 
 const updateCampaign = `-- name: UpdateCampaign :one
-UPDATE campaigns
-SET name = $1,
+update campaigns
+set name = $1,
     notification_data = $2, 
     scheduled_time = $3,
     status = $4,
     update_time = now()
-WHERE id = $5
-RETURNING create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
+where id = $5
+returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type UpdateCampaignParams struct {
@@ -110,10 +110,10 @@ func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) 
 }
 
 const updateCampaignEndTime = `-- name: UpdateCampaignEndTime :one
-UPDATE campaigns
-SET end_time = $1, update_time = now()
-WHERE id = $2
-RETURNING create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
+update campaigns
+set end_time = $1, update_time = now()
+where id = $2
+returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type UpdateCampaignEndTimeParams struct {
@@ -140,10 +140,10 @@ func (q *Queries) UpdateCampaignEndTime(ctx context.Context, arg UpdateCampaignE
 }
 
 const updateCampaignStartTime = `-- name: UpdateCampaignStartTime :one
-UPDATE campaigns
-SET start_time = $1, update_time = now()
-WHERE id = $2
-RETURNING create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
+update campaigns
+set start_time = $1, update_time = now()
+where id = $2
+returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type UpdateCampaignStartTimeParams struct {
@@ -170,10 +170,10 @@ func (q *Queries) UpdateCampaignStartTime(ctx context.Context, arg UpdateCampaig
 }
 
 const updateCampaignStatus = `-- name: UpdateCampaignStatus :one
-UPDATE campaigns
-SET status = $1, update_time = now()
-WHERE id = $2
-RETURNING create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
+update campaigns
+set status = $1, update_time = now()
+where id = $2
+returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type UpdateCampaignStatusParams struct {

@@ -10,9 +10,9 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, project_id, external_id, metadata)
-VALUES ($1, $2, $3, $4)
-RETURNING create_time, external_id, id, metadata, project_id, update_time
+insert into users (id, project_id, external_id, metadata)
+values ($1, $2, $3, $4)
+returning create_time, external_id, id, metadata, project_id, update_time
 `
 
 type CreateUserParams struct {
@@ -42,8 +42,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const deleteUser = `-- name: DeleteUser :exec
-DELETE FROM users
-WHERE id = $1
+delete from users
+where id = $1
 `
 
 func (q *Queries) DeleteUser(ctx context.Context, id string) error {
@@ -52,10 +52,10 @@ func (q *Queries) DeleteUser(ctx context.Context, id string) error {
 }
 
 const updateUserMetadata = `-- name: UpdateUserMetadata :one
-UPDATE users
-SET metadata = $1, update_time = now()
-WHERE id = $2
-RETURNING create_time, external_id, id, metadata, project_id, update_time
+update users
+set metadata = $1, update_time = now()
+where id = $2
+returning create_time, external_id, id, metadata, project_id, update_time
 `
 
 type UpdateUserMetadataParams struct {

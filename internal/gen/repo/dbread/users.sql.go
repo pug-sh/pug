@@ -10,8 +10,8 @@ import (
 )
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT create_time, external_id, id, metadata, project_id, update_time FROM users
-WHERE id = $1
+select create_time, external_id, id, metadata, project_id, update_time from users
+where id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
@@ -29,8 +29,8 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
 }
 
 const getUserByProjectAndExternalID = `-- name: GetUserByProjectAndExternalID :one
-SELECT create_time, external_id, id, metadata, project_id, update_time FROM users
-WHERE project_id = $1 AND external_id = $2
+select create_time, external_id, id, metadata, project_id, update_time from users
+where project_id = $1 and external_id = $2 limit 1
 `
 
 type GetUserByProjectAndExternalIDParams struct {
@@ -52,9 +52,29 @@ func (q *Queries) GetUserByProjectAndExternalID(ctx context.Context, arg GetUser
 	return i, err
 }
 
+const getUserBySubscriptionID = `-- name: GetUserBySubscriptionID :one
+select u.create_time, u.external_id, u.id, u.metadata, u.project_id, u.update_time from users u
+join subscriptions s on s.user_id = u.id
+where s.id = $1
+`
+
+func (q *Queries) GetUserBySubscriptionID(ctx context.Context, subscriptionID string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserBySubscriptionID, subscriptionID)
+	var i User
+	err := row.Scan(
+		&i.CreateTime,
+		&i.ExternalID,
+		&i.ID,
+		&i.Metadata,
+		&i.ProjectID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const getUsersByProjectID = `-- name: GetUsersByProjectID :many
-SELECT create_time, external_id, id, metadata, project_id, update_time FROM users
-WHERE project_id = $1
+select create_time, external_id, id, metadata, project_id, update_time from users
+where project_id = $1
 `
 
 func (q *Queries) GetUsersByProjectID(ctx context.Context, projectID string) ([]User, error) {

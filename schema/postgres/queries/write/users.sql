@@ -1,14 +1,14 @@
 -- name: CreateUser :one
-INSERT INTO users (id, project_id, external_id, metadata)
-VALUES (@id, @project_id, @external_id, @metadata)
-RETURNING *;
+insert into users (id, project_id, external_id, metadata)
+values (@id, @project_id, @external_id, @metadata)
+returning *;
 
 -- name: UpdateUserMetadata :one
-UPDATE users
-SET metadata = @metadata, update_time = now()
-WHERE id = @id
-RETURNING *;
+update users
+set metadata = @metadata, update_time = now()
+where id = @id
+returning *;
 
 -- name: DeleteUser :exec
-DELETE FROM users
-WHERE id = @id;
+delete from users
+where id = @id;

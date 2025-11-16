@@ -12,8 +12,8 @@ import (
 )
 
 const getActiveSubscriptionsByProject = `-- name: GetActiveSubscriptionsByProject :many
-SELECT create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id FROM subscriptions
-WHERE project_id = $1 AND status = 'active'
+select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id from subscriptions
+where project_id = $1 and status = 'active'
 `
 
 func (q *Queries) GetActiveSubscriptionsByProject(ctx context.Context, projectID string) ([]Subscription, error) {
@@ -49,8 +49,8 @@ func (q *Queries) GetActiveSubscriptionsByProject(ctx context.Context, projectID
 }
 
 const getSubscription = `-- name: GetSubscription :one
-SELECT create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id FROM subscriptions
-WHERE id = $1 AND project_id = $2
+select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id from subscriptions
+where id = $1 and project_id = $2
 `
 
 type GetSubscriptionParams struct {
@@ -78,8 +78,8 @@ func (q *Queries) GetSubscription(ctx context.Context, arg GetSubscriptionParams
 }
 
 const getSubscriptionByToken = `-- name: GetSubscriptionByToken :one
-SELECT create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id FROM subscriptions
-WHERE token = $1
+select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id from subscriptions
+where token = $1
 `
 
 func (q *Queries) GetSubscriptionByToken(ctx context.Context, token string) (Subscription, error) {
@@ -102,8 +102,8 @@ func (q *Queries) GetSubscriptionByToken(ctx context.Context, token string) (Sub
 }
 
 const getSubscriptionsByProject = `-- name: GetSubscriptionsByProject :many
-SELECT create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id FROM subscriptions
-WHERE project_id = $1
+select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id from subscriptions
+where project_id = $1
 `
 
 func (q *Queries) GetSubscriptionsByProject(ctx context.Context, projectID string) ([]Subscription, error) {
@@ -139,8 +139,8 @@ func (q *Queries) GetSubscriptionsByProject(ctx context.Context, projectID strin
 }
 
 const getSubscriptionsByUser = `-- name: GetSubscriptionsByUser :many
-SELECT create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id FROM subscriptions
-WHERE user_id = $1
+select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id from subscriptions
+where user_id = $1
 `
 
 func (q *Queries) GetSubscriptionsByUser(ctx context.Context, userID pgtype.Text) ([]Subscription, error) {

@@ -1,11 +1,16 @@
 -- name: GetUserByID :one
-SELECT * FROM users
-WHERE id = @id;
+select * from users
+where id = @id;
 
 -- name: GetUserByProjectAndExternalID :one
-SELECT * FROM users
-WHERE project_id = @project_id AND external_id = @external_id;
+select * from users
+where project_id = @project_id and external_id = @external_id limit 1;
 
 -- name: GetUsersByProjectID :many
-SELECT * FROM users
-WHERE project_id = @project_id;
+select * from users
+where project_id = @project_id;
+
+-- name: GetUserBySubscriptionID :one
+select u.* from users u
+join subscriptions s on s.user_id = u.id
+where s.id = @subscription_id;

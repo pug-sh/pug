@@ -1,19 +1,19 @@
 -- name: GetSubscription :one
-SELECT * FROM subscriptions
-WHERE id = @id AND project_id = @project_id;
+select * from subscriptions
+where id = @id and project_id = @project_id;
 
 -- name: GetSubscriptionByToken :one
-SELECT * FROM subscriptions
-WHERE token = @token;
+select * from subscriptions
+where token = @token;
 
 -- name: GetSubscriptionsByProject :many
-SELECT * FROM subscriptions
-WHERE project_id = @project_id;
+select * from subscriptions
+where project_id = @project_id;
 
 -- name: GetSubscriptionsByUser :many
-SELECT * FROM subscriptions
-WHERE user_id = @user_id;
+select * from subscriptions
+where user_id = @user_id;
 
 -- name: GetActiveSubscriptionsByProject :many
-SELECT * FROM subscriptions
-WHERE project_id = @project_id AND status = 'active';
+select * from subscriptions
+where project_id = @project_id and status = 'active';

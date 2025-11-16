@@ -10,6 +10,7 @@ import (
 )
 
 const getProjectByApiKey = `-- name: GetProjectByApiKey :one
+
 select api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
 from projects
 where api_key = $1
@@ -86,6 +87,7 @@ func (q *Queries) GetProjectsByCustomerId(ctx context.Context, customerID string
 }
 
 const projectExistsForCustomer = `-- name: ProjectExistsForCustomer :one
+
 select exists(
   select 1
   from projects

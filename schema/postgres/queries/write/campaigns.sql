@@ -1,36 +1,36 @@
 -- name: CreateCampaign :one
-INSERT INTO campaigns (id, name, project_id, notification_data, scheduled_time, status)
-VALUES (@id, @name, @project_id, @notification_data, @scheduled_time, @status)
-RETURNING *;
+insert into campaigns (id, name, project_id, notification_data, scheduled_time, status)
+values (@id, @name, @project_id, @notification_data, @scheduled_time, @status)
+returning *;
 
 -- name: UpdateCampaign :one
-UPDATE campaigns
-SET name = @name,
+update campaigns
+set name = @name,
     notification_data = @notification_data, 
     scheduled_time = @scheduled_time,
     status = @status,
     update_time = now()
-WHERE id = @id
-RETURNING *;
+where id = @id
+returning *;
 
 -- name: UpdateCampaignStatus :one
-UPDATE campaigns
-SET status = @status, update_time = now()
-WHERE id = @id
-RETURNING *;
+update campaigns
+set status = @status, update_time = now()
+where id = @id
+returning *;
 
 -- name: UpdateCampaignStartTime :one
-UPDATE campaigns
-SET start_time = @start_time, update_time = now()
-WHERE id = @id
-RETURNING *;
+update campaigns
+set start_time = @start_time, update_time = now()
+where id = @id
+returning *;
 
 -- name: UpdateCampaignEndTime :one
-UPDATE campaigns
-SET end_time = @end_time, update_time = now()
-WHERE id = @id
-RETURNING *;
+update campaigns
+set end_time = @end_time, update_time = now()
+where id = @id
+returning *;
 
 -- name: DeleteCampaign :exec
-DELETE FROM campaigns
-WHERE id = @id AND project_id = @project_id;
+delete from campaigns
+where id = @id and project_id = @project_id;

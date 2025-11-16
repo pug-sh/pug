@@ -1,18 +1,18 @@
 -- name: GetCampaignByID :one
-SELECT * FROM campaigns
-WHERE id = @id;
+select * from campaigns
+where id = @id;
 
 -- name: GetCampaignsByProjectID :many
-SELECT * FROM campaigns
-WHERE project_id = @project_id;
+select * from campaigns
+where project_id = @project_id;
 
 -- name: GetCampaignsByStatus :many
-SELECT * FROM campaigns
-WHERE status = @status;
+select * from campaigns
+where status = @status;
 
 -- name: GetScheduledCampaigns :many
-SELECT * FROM campaigns
-WHERE scheduled_time <= now() AND status = 'scheduled';
+select * from campaigns
+where scheduled_time <= now() and status = 'scheduled';
 
 -- name: GetCampaignById :one
-SELECT * FROM campaigns where id = @id;
+select * from campaigns where id = @id;

@@ -12,11 +12,11 @@ import (
 )
 
 const createSubscription = `-- name: CreateSubscription :one
-INSERT INTO subscriptions (
+insert into subscriptions (
     id, project_id, token, platform, metadata, status, updater, user_id
-) VALUES (
+) values (
     $1, $2, $3, $4, $5, $6, $7, $8
-) RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
+) returning create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
 `
 
 type CreateSubscriptionParams struct {
@@ -59,8 +59,8 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 }
 
 const getSubscription = `-- name: GetSubscription :one
-SELECT create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id FROM subscriptions
-WHERE id = $1 AND project_id = $2
+select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id from subscriptions
+where id = $1 and project_id = $2
 `
 
 type GetSubscriptionParams struct {
@@ -88,8 +88,8 @@ func (q *Queries) GetSubscription(ctx context.Context, arg GetSubscriptionParams
 }
 
 const getSubscriptionByToken = `-- name: GetSubscriptionByToken :one
-SELECT create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id FROM subscriptions
-WHERE token = $1
+select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id from subscriptions
+where token = $1
 `
 
 func (q *Queries) GetSubscriptionByToken(ctx context.Context, token string) (Subscription, error) {
@@ -112,10 +112,10 @@ func (q *Queries) GetSubscriptionByToken(ctx context.Context, token string) (Sub
 }
 
 const linkSubscriptionToUser = `-- name: LinkSubscriptionToUser :one
-UPDATE subscriptions
-SET user_id = $1, update_time = now()
-WHERE id = $2 AND project_id = $3
-RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
+update subscriptions
+set user_id = $1, update_time = now()
+where id = $2 and project_id = $3
+returning create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
 `
 
 type LinkSubscriptionToUserParams struct {
@@ -144,10 +144,10 @@ func (q *Queries) LinkSubscriptionToUser(ctx context.Context, arg LinkSubscripti
 }
 
 const updateSubscriptionHeartbeat = `-- name: UpdateSubscriptionHeartbeat :one
-UPDATE subscriptions
-SET last_heartbeat_time = now(), update_time = now()
-WHERE id = $1 AND project_id = $2
-RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
+update subscriptions
+set last_heartbeat_time = now(), update_time = now()
+where id = $1 and project_id = $2
+returning create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
 `
 
 type UpdateSubscriptionHeartbeatParams struct {
@@ -175,10 +175,10 @@ func (q *Queries) UpdateSubscriptionHeartbeat(ctx context.Context, arg UpdateSub
 }
 
 const updateSubscriptionMetadata = `-- name: UpdateSubscriptionMetadata :one
-UPDATE subscriptions
-SET metadata = $1, update_time = now()
-WHERE id = $2 AND project_id = $3
-RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
+update subscriptions
+set metadata = $1, update_time = now()
+where id = $2 and project_id = $3
+returning create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
 `
 
 type UpdateSubscriptionMetadataParams struct {
@@ -207,10 +207,10 @@ func (q *Queries) UpdateSubscriptionMetadata(ctx context.Context, arg UpdateSubs
 }
 
 const updateSubscriptionPlatform = `-- name: UpdateSubscriptionPlatform :one
-UPDATE subscriptions
-SET platform = $1, update_time = now()
-WHERE id = $2 AND project_id = $3
-RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
+update subscriptions
+set platform = $1, update_time = now()
+where id = $2 and project_id = $3
+returning create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
 `
 
 type UpdateSubscriptionPlatformParams struct {
@@ -239,10 +239,10 @@ func (q *Queries) UpdateSubscriptionPlatform(ctx context.Context, arg UpdateSubs
 }
 
 const updateSubscriptionStatus = `-- name: UpdateSubscriptionStatus :one
-UPDATE subscriptions
-SET status = $1, update_time = now()
-WHERE id = $2 AND project_id = $3
-RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
+update subscriptions
+set status = $1, update_time = now()
+where id = $2 and project_id = $3
+returning create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
 `
 
 type UpdateSubscriptionStatusParams struct {
@@ -271,10 +271,10 @@ func (q *Queries) UpdateSubscriptionStatus(ctx context.Context, arg UpdateSubscr
 }
 
 const updateSubscriptionToken = `-- name: UpdateSubscriptionToken :one
-UPDATE subscriptions
-SET token = $1, update_time = now()
-WHERE id = $2 AND project_id = $3
-RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
+update subscriptions
+set token = $1, update_time = now()
+where id = $2 and project_id = $3
+returning create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
 `
 
 type UpdateSubscriptionTokenParams struct {
@@ -303,10 +303,10 @@ func (q *Queries) UpdateSubscriptionToken(ctx context.Context, arg UpdateSubscri
 }
 
 const updateSubscriptionUpdater = `-- name: UpdateSubscriptionUpdater :one
-UPDATE subscriptions
-SET updater = $1, update_time = now()
-WHERE id = $2 AND project_id = $3
-RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
+update subscriptions
+set updater = $1, update_time = now()
+where id = $2 and project_id = $3
+returning create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
 `
 
 type UpdateSubscriptionUpdaterParams struct {
@@ -335,10 +335,10 @@ func (q *Queries) UpdateSubscriptionUpdater(ctx context.Context, arg UpdateSubsc
 }
 
 const updateSubscriptionUserId = `-- name: UpdateSubscriptionUserId :one
-UPDATE subscriptions
-SET user_id = $1, update_time = now()
-WHERE id = $2 AND project_id = $3
-RETURNING create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
+update subscriptions
+set user_id = $1, update_time = now()
+where id = $2 and project_id = $3
+returning create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, user_id
 `
 
 type UpdateSubscriptionUserIdParams struct {

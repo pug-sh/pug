@@ -1,62 +1,62 @@
 -- name: CreateSubscription :one
-INSERT INTO subscriptions (
+insert into subscriptions (
     id, project_id, token, platform, metadata, status, updater, user_id
-) VALUES (
+) values (
     @id, @project_id, @token, @platform, @metadata, @status, @updater, @user_id
-) RETURNING *;
+) returning *;
 
 -- name: GetSubscription :one
-SELECT * FROM subscriptions
-WHERE id = @id AND project_id = @project_id;
+select * from subscriptions
+where id = @id and project_id = @project_id;
 
 -- name: GetSubscriptionByToken :one
-SELECT * FROM subscriptions
-WHERE token = @token;
+select * from subscriptions
+where token = @token;
 
 -- name: UpdateSubscriptionToken :one
-UPDATE subscriptions
-SET token = @token, update_time = now()
-WHERE id = @id AND project_id = @project_id
-RETURNING *;
+update subscriptions
+set token = @token, update_time = now()
+where id = @id and project_id = @project_id
+returning *;
 
 -- name: UpdateSubscriptionStatus :one
-UPDATE subscriptions
-SET status = @status, update_time = now()
-WHERE id = @id AND project_id = @project_id
-RETURNING *;
+update subscriptions
+set status = @status, update_time = now()
+where id = @id and project_id = @project_id
+returning *;
 
 -- name: UpdateSubscriptionMetadata :one
-UPDATE subscriptions
-SET metadata = @metadata, update_time = now()
-WHERE id = @id AND project_id = @project_id
-RETURNING *;
+update subscriptions
+set metadata = @metadata, update_time = now()
+where id = @id and project_id = @project_id
+returning *;
 
 -- name: UpdateSubscriptionPlatform :one
-UPDATE subscriptions
-SET platform = @platform, update_time = now()
-WHERE id = @id AND project_id = @project_id
-RETURNING *;
+update subscriptions
+set platform = @platform, update_time = now()
+where id = @id and project_id = @project_id
+returning *;
 
 -- name: LinkSubscriptionToUser :one
-UPDATE subscriptions
-SET user_id = @user_id, update_time = now()
-WHERE id = @id AND project_id = @project_id
-RETURNING *;
+update subscriptions
+set user_id = @user_id, update_time = now()
+where id = @id and project_id = @project_id
+returning *;
 
 -- name: UpdateSubscriptionUserId :one
-UPDATE subscriptions
-SET user_id = @user_id, update_time = now()
-WHERE id = @id AND project_id = @project_id
-RETURNING *;
+update subscriptions
+set user_id = @user_id, update_time = now()
+where id = @id and project_id = @project_id
+returning *;
 
 -- name: UpdateSubscriptionUpdater :one
-UPDATE subscriptions
-SET updater = @updater, update_time = now()
-WHERE id = @id AND project_id = @project_id
-RETURNING *;
+update subscriptions
+set updater = @updater, update_time = now()
+where id = @id and project_id = @project_id
+returning *;
 
 -- name: UpdateSubscriptionHeartbeat :one
-UPDATE subscriptions
-SET last_heartbeat_time = now(), update_time = now()
-WHERE id = @id AND project_id = @project_id
-RETURNING *;
+update subscriptions
+set last_heartbeat_time = now(), update_time = now()
+where id = @id and project_id = @project_id
+returning *;
