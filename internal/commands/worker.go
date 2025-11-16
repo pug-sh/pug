@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/fivebitsio/cotton/internal/workers/campaigns"
 	"github.com/fivebitsio/cotton/internal/workers/subscriptions"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/postgres"
@@ -49,6 +50,12 @@ func newWorkerDeps(ctx context.Context) (*workerDeps, error) {
 		pgW:    pgW,
 		pulsar: pulsarClient,
 	}, nil
+}
+
+func StartCampaignWorker(ctx context.Context, deps *workerDeps) error {
+	logger.Log.Info("Starting campaign worker...")
+
+	return campaigns.StartWorker(ctx, deps.pgRo, deps.pgW, deps.pulsar)
 }
 
 func StartSubscriptionWorker(ctx context.Context, deps *workerDeps) error {

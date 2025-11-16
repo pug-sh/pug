@@ -3,6 +3,7 @@ package subscriptions
 import (
 	"context"
 
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -90,4 +91,8 @@ func (s *Service) LinkSubscriptionToUser(ctx context.Context, id, projectID, use
 		ProjectID: projectID,
 	}
 	return s.repo.LinkSubscriptionToUser(ctx, params)
+}
+
+func (s *Service) GetSubscriptionsByProject(ctx context.Context, projectID string) ([]dbread.Subscription, error) {
+	return s.repo.GetSubscriptionsByProject(ctx, projectID)
 }

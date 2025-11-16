@@ -11,6 +11,7 @@ import (
 type Repo interface {
 	CreateSubscription(ctx context.Context, arg dbwrite.CreateSubscriptionParams) (dbwrite.Subscription, error)
 	GetSubscription(ctx context.Context, arg dbwrite.GetSubscriptionParams) (dbwrite.Subscription, error)
+	GetSubscriptionsByProject(ctx context.Context, projectID string) ([]dbread.Subscription, error)
 	UpdateSubscriptionHeartbeat(ctx context.Context, arg dbwrite.UpdateSubscriptionHeartbeatParams) (dbwrite.Subscription, error)
 	UpdateSubscriptionMetadata(ctx context.Context, arg dbwrite.UpdateSubscriptionMetadataParams) (dbwrite.Subscription, error)
 	UpdateSubscriptionPlatform(ctx context.Context, arg dbwrite.UpdateSubscriptionPlatformParams) (dbwrite.Subscription, error)
@@ -38,6 +39,10 @@ func (r *RepoImpl) CreateSubscription(ctx context.Context, arg dbwrite.CreateSub
 
 func (r *RepoImpl) GetSubscription(ctx context.Context, arg dbwrite.GetSubscriptionParams) (dbwrite.Subscription, error) {
 	return r.write.GetSubscription(ctx, arg)
+}
+
+func (r *RepoImpl) GetSubscriptionsByProject(ctx context.Context, projectID string) ([]dbread.Subscription, error) {
+	return r.read.GetSubscriptionsByProject(ctx, projectID)
 }
 
 func (r *RepoImpl) UpdateSubscriptionHeartbeat(ctx context.Context, arg dbwrite.UpdateSubscriptionHeartbeatParams) (dbwrite.Subscription, error) {

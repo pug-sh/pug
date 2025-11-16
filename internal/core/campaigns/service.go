@@ -50,6 +50,10 @@ func (s *Service) GetCampaignsByProjectID(ctx context.Context, projectID string)
 	return s.repo.GetCampaignsByProjectID(ctx, projectID)
 }
 
+func (s *Service) GetScheduledCampaigns(ctx context.Context) ([]dbread.Campaign, error) {
+	return s.repo.GetScheduledCampaigns(ctx)
+}
+
 func (s *Service) DeleteCampaign(ctx context.Context, id string, projectID string) error {
 	return s.repo.DeleteCampaign(ctx, dbwrite.DeleteCampaignParams{
 		ID:        id,

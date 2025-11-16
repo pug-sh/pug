@@ -12,6 +12,7 @@ type Repo interface {
 	CreateCampaign(ctx context.Context, arg dbwrite.CreateCampaignParams) (dbwrite.Campaign, error)
 	GetCampaignById(ctx context.Context, id string) (dbread.Campaign, error)
 	GetCampaignsByProjectID(ctx context.Context, projectID string) ([]dbread.Campaign, error)
+	GetScheduledCampaigns(ctx context.Context) ([]dbread.Campaign, error)
 	DeleteCampaign(ctx context.Context, arg dbwrite.DeleteCampaignParams) error
 	UpdateCampaign(ctx context.Context, arg dbwrite.UpdateCampaignParams) (dbwrite.Campaign, error)
 	UpdateCampaignStatus(ctx context.Context, arg dbwrite.UpdateCampaignStatusParams) (dbwrite.Campaign, error)
@@ -41,6 +42,10 @@ func (r *repoImpl) GetCampaignById(ctx context.Context, id string) (dbread.Campa
 
 func (r *repoImpl) GetCampaignsByProjectID(ctx context.Context, projectID string) ([]dbread.Campaign, error) {
 	return r.read.GetCampaignsByProjectID(ctx, projectID)
+}
+
+func (r *repoImpl) GetScheduledCampaigns(ctx context.Context) ([]dbread.Campaign, error) {
+	return r.read.GetScheduledCampaigns(ctx)
 }
 
 func (r *repoImpl) DeleteCampaign(ctx context.Context, arg dbwrite.DeleteCampaignParams) error {

@@ -38,9 +38,12 @@ var DevCmd = &cobra.Command{
 		}
 		defer workerDeps.Close(ctx)
 
-		workerErrChan := make(chan error, 1)
+		workerErrChan := make(chan error, 2)
 		go func() {
 			workerErrChan <- StartSubscriptionWorker(ctx, workerDeps)
+		}()
+		go func() {
+			workerErrChan <- StartCampaignWorker(ctx, workerDeps)
 		}()
 
 		serverErrChan := make(chan error, 1)
