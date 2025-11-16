@@ -10,11 +10,11 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useParams } from 'wouter'
 import * as z from 'zod'
-import ApplePushNotifications from './apple-push-notifications'
-import EmailServices from './email-services'
-import FirebaseIntegration from './firebase'
-import Mailchimp from './mailchimp'
-import Vapid from './vapid'
+import ApplePushNotifications from '../apple-push-notifications'
+import EmailServices from '../email-services'
+import FirebaseIntegration from '../firebase'
+import Mailchimp from '../mailchimp'
+import Vapid from '../vapid'
 import { AppSidebar } from '@/components/nav/app-sidebar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -303,7 +303,7 @@ function ProjectDetail() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FirebaseIntegration
                     project={project}
-                    onProjectUpdate={(updatedProject) => setProject(updatedProject)}
+                    onProjectUpdate={(updatedProject: Project) => setProject(updatedProject)}
                   />
                   <ApplePushNotifications project={project} />
                   <Vapid project={project} />
