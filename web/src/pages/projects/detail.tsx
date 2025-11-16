@@ -303,7 +303,10 @@ function ProjectDetail() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <ApplePushNotifications project={project} />
                   <Vapid project={project} />
-                  <FirebaseIntegration project={project} />
+                  <FirebaseIntegration
+                    project={project}
+                    onProjectUpdate={(updatedProject) => setProject(updatedProject)}
+                  />
                   <Mailchimp project={project} />
                   <EmailServices project={project} />
                 </div>
