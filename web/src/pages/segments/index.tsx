@@ -5,12 +5,12 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { segmentsService } from '@/lib/rpc'
 import { useAtom } from 'jotai'
-import { getActiveProjectAtom } from '@/atoms/projects'
-import { Segment } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segments_pb'
+import { getSelectedProjectAtom } from '@/atoms/projects'
+import type { Segment } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segments_pb'
 import { Link } from 'wouter'
 
 export default function Segments() {
-  const [activeProject] = useAtom(getActiveProjectAtom)
+  const [activeProject] = useAtom(getSelectedProjectAtom)
   const [segments, setSegments] = useState<Segment[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -116,7 +116,7 @@ export default function Segments() {
                 
                 <div className="flex items-center text-sm text-muted-foreground">
                   <Filter className="mr-2 h-4 w-4" />
-                  <span>Conditions: {segment.filter?.conditions?.length || 0}</span>
+                  <span>Conditions: {segment.filter?.parts?.length || 0}</span>
                 </div>
                 
                 <div className="mt-4 pt-4 border-t">

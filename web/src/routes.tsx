@@ -12,6 +12,7 @@ import NewProject from '@/pages/projects/new'
 import Settings from '@/pages/settings'
 import Segments from '@/pages/segments'
 import CreateSegment from '@/pages/segments/create'
+import EditSegment from '@/pages/segments/edit'
 
 const Router = () => (
   <>

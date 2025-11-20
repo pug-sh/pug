@@ -1,15 +1,17 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'wouter'
+import { useLocation } from 'wouter'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { segmentsService } from '@/lib/rpc'
-import { Condition, FilterPart, SegmentFilter } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segments_pb'
+import type { SegmentFilter } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segments_pb'
+import { create } from '@bufbuild/protobuf'
+import { ConditionSchema, FilterPartSchema, SegmentFilterSchema } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segments_pb'
 import { useAtom } from 'jotai'
-import { getActiveProjectAtom } from '@/atoms/projects'
-import { Trash2, Plus, Minus } from 'lucide-react'
+import { getSelectedProjectAtom } from '@/atoms/projects'
+import { Plus, Minus } from 'lucide-react'
 
 interface ConditionUI {
   id: string
@@ -36,8 +38,8 @@ function generateId() {
 }
 
 export default function CreateSegment() {
-  const navigate = useNavigate()
-  const [activeProject] = useAtom(getActiveProjectAtom)
+  const [, navigate] = useLocation()
+  const [activeProject] = useAtom(getSelectedProjectAtom)
   const [state, setState] = useState<SegmentFormState>({
     name: '',
     description: '',
@@ -198,7 +200,7 @@ export default function CreateSegment() {
         </div>
 
         <div className="space-y-3">
-          {group.parts.map((part, index) => {
+          {group.parts.map((part, _index) => {
             if ('isNested' in part) {
               // It's a sub-group
               return (
@@ -369,23 +371,23 @@ export default function CreateSegment() {
       if ('isNested' in part && part.isNested) {
         // It's a sub-group
         const subFilter = convertToPB(part as FilterGroupUI)
-        const filterPart = new FilterPart()
-        filterPart.subFilter = subFilter
+        const filterPart = create(FilterPartSchema)
+        filterPart.part = { case: 'subFilter', value: subFilter }
         return filterPart
       } else {
         // It's a condition
-        const condition = new Condition({
+        const condition = create(ConditionSchema, {
           field: (part as ConditionUI).field,
           operator: (part as ConditionUI).operator,
           value: (part as ConditionUI).value
         })
-        const filterPart = new FilterPart()
-        filterPart.condition = condition
+        const filterPart = create(FilterPartSchema)
+        filterPart.part = { case: 'condition', value: condition }
         return filterPart
       }
     })
 
-    return new SegmentFilter({
+    return create(SegmentFilterSchema, {
       parts: parts,
       logicalOperator: group.logicalOperator
     })

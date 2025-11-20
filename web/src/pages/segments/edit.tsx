@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'wouter'
+import { useLocation, useParams } from 'wouter'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { segmentsService } from '@/lib/rpc'
-import { Condition, FilterPart, SegmentFilter as SegmentFilterPB } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segments_pb'
-import { Trash2, Plus, Minus } from 'lucide-react'
+import type { Condition, SegmentFilter } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segments_pb'
+import { create } from '@bufbuild/protobuf'
+import { ConditionSchema, FilterPartSchema, SegmentFilterSchema } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segments_pb'
+import { Plus, Minus } from 'lucide-react'
 
 interface ConditionUI {
   id: string
@@ -35,19 +37,22 @@ function generateId() {
 }
 
 // Helper function to convert protobuf SegmentFilter to UI structure
-function pbToUI(filter: SegmentFilterPB): FilterGroupUI {
+function pbToUI(filter: SegmentFilter): FilterGroupUI {
   const parts = filter.parts?.map(part => {
-    if (part.condition) {
+    // Handle the oneof field properly by checking if condition is set
+    if (part.part.case === 'condition' && part.part.value) {
       // It's a condition
+      const condition = part.part.value as Condition;
       return {
         id: generateId(),
-        field: part.condition.field,
-        operator: part.condition.operator,
-        value: part.condition.value
+        field: condition.field,
+        operator: condition.operator,
+        value: condition.value
       } as ConditionUI
-    } else if (part.subFilter) {
+    } else if (part.part.case === 'subFilter' && part.part.value) {
       // It's a sub-filter
-      return pbToUI(part.subFilter) // Recursive call for nested structure
+      const subFilter = part.part.value as SegmentFilter;
+      return pbToUI(subFilter) // Recursive call for nested structure
     }
     return null
   }).filter(Boolean) as (ConditionUI | FilterGroupUI)[]
@@ -61,35 +66,35 @@ function pbToUI(filter: SegmentFilterPB): FilterGroupUI {
 }
 
 // Helper function to convert UI structure to protobuf
-function uiToPB(group: FilterGroupUI): SegmentFilterPB {
+function uiToPB(group: FilterGroupUI): SegmentFilter {
   const parts = group.parts.map(part => {
     if ('isNested' in part && part.isNested) {
       // It's a sub-group
       const subFilter = uiToPB(part as FilterGroupUI)
-      const filterPart = new FilterPart()
-      filterPart.subFilter = subFilter
+      const filterPart = create(FilterPartSchema)
+      filterPart.part = { case: 'subFilter', value: subFilter }
       return filterPart
     } else {
       // It's a condition
-      const condition = new Condition({
+      const condition = create(ConditionSchema, {
         field: (part as ConditionUI).field,
         operator: (part as ConditionUI).operator,
         value: (part as ConditionUI).value
       })
-      const filterPart = new FilterPart()
-      filterPart.condition = condition
+      const filterPart = create(FilterPartSchema)
+      filterPart.part = { case: 'condition', value: condition }
       return filterPart
     }
   })
 
-  return new SegmentFilterPB({
+  return create(SegmentFilterSchema, {
     parts: parts,
     logicalOperator: group.logicalOperator
   })
 }
 
 export default function EditSegment() {
-  const navigate = useNavigate()
+  const [, navigate] = useLocation()
   const { id } = useParams<{ id: string }>()
   const [state, setState] = useState<SegmentFormState>({
     name: '',
@@ -284,7 +289,7 @@ export default function EditSegment() {
         </div>
 
         <div className="space-y-3">
-          {group.parts.map((part, index) => {
+          {group.parts.map((part, _index) => {
             if ('isNested' in part) {
               // It's a sub-group
               return (
