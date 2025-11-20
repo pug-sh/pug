@@ -87,11 +87,59 @@ services:
     networks:
       - cotton-net
 
+  flink-jobmanager:
+    image: apache/flink:1.18.1-scala_2.12
+    restart: always
+    expose:
+      - "8081"
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        rest.port: 8081
+        taskmanager.numberOfTaskSlots: 4
+        env.java.opts: -Xms512m -Xmx1024m
+    volumes:
+      - flink-data:/tmp/flink
+    networks:
+      - cotton-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  flink-taskmanager:
+    image: apache/flink:1.18.1-scala_2.12
+    restart: always
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        env.java.opts: -Xms512m -Xmx1024m
+    volumes:
+      - flink-data:/tmp/flink
+    networks:
+      - cotton-net
+    depends_on:
+      - flink-jobmanager
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo 'getTaskManagers' | nc flink-jobmanager 8081"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
   pulsar-data:
   dekaf-library:
   clickhouse-data:
+  flink-data:
 
 networks:
   cotton-net:
