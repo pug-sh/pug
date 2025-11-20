@@ -9,10 +9,42 @@ import (
 	"context"
 )
 
+const addUserToSegment = `-- name: AddUserToSegment :one
+update users
+set segments = COALESCE((
+    SELECT jsonb_agg(value)
+    FROM (
+        SELECT DISTINCT jsonb_array_elements_text(segments || $1::jsonb) AS value
+    ) t
+), '[]'::jsonb), update_time = now()
+WHERE id = $2
+returning create_time, external_id, id, metadata, project_id, segments, update_time
+`
+
+type AddUserToSegmentParams struct {
+	Segment []byte
+	ID      string
+}
+
+func (q *Queries) AddUserToSegment(ctx context.Context, arg AddUserToSegmentParams) (User, error) {
+	row := q.db.QueryRow(ctx, addUserToSegment, arg.Segment, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.CreateTime,
+		&i.ExternalID,
+		&i.ID,
+		&i.Metadata,
+		&i.ProjectID,
+		&i.Segments,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
-insert into users (id, project_id, external_id, metadata)
-values ($1, $2, $3, $4)
-returning create_time, external_id, id, metadata, project_id, update_time
+insert into users (id, project_id, external_id, metadata, segments)
+values ($1, $2, $3, $4, '[]'::jsonb)
+returning create_time, external_id, id, metadata, project_id, segments, update_time
 `
 
 type CreateUserParams struct {
@@ -36,6 +68,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.ID,
 		&i.Metadata,
 		&i.ProjectID,
+		&i.Segments,
 		&i.UpdateTime,
 	)
 	return i, err
@@ -51,11 +84,42 @@ func (q *Queries) DeleteUser(ctx context.Context, id string) error {
 	return err
 }
 
+const removeUserFromSegment = `-- name: RemoveUserFromSegment :one
+update users
+set segments = (
+    SELECT jsonb_agg(value)
+    FROM jsonb_array_elements(segments) as value
+    WHERE value::text != $1::text
+), update_time = now()
+where id = $2
+returning create_time, external_id, id, metadata, project_id, segments, update_time
+`
+
+type RemoveUserFromSegmentParams struct {
+	Segment string
+	ID      string
+}
+
+func (q *Queries) RemoveUserFromSegment(ctx context.Context, arg RemoveUserFromSegmentParams) (User, error) {
+	row := q.db.QueryRow(ctx, removeUserFromSegment, arg.Segment, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.CreateTime,
+		&i.ExternalID,
+		&i.ID,
+		&i.Metadata,
+		&i.ProjectID,
+		&i.Segments,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const updateUserMetadata = `-- name: UpdateUserMetadata :one
 update users
 set metadata = $1, update_time = now()
 where id = $2
-returning create_time, external_id, id, metadata, project_id, update_time
+returning create_time, external_id, id, metadata, project_id, segments, update_time
 `
 
 type UpdateUserMetadataParams struct {
@@ -72,6 +136,34 @@ func (q *Queries) UpdateUserMetadata(ctx context.Context, arg UpdateUserMetadata
 		&i.ID,
 		&i.Metadata,
 		&i.ProjectID,
+		&i.Segments,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const updateUserSegments = `-- name: UpdateUserSegments :one
+update users
+set segments = $1, update_time = now()
+where id = $2
+returning create_time, external_id, id, metadata, project_id, segments, update_time
+`
+
+type UpdateUserSegmentsParams struct {
+	Segments []byte
+	ID       string
+}
+
+func (q *Queries) UpdateUserSegments(ctx context.Context, arg UpdateUserSegmentsParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserSegments, arg.Segments, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.CreateTime,
+		&i.ExternalID,
+		&i.ID,
+		&i.Metadata,
+		&i.ProjectID,
+		&i.Segments,
 		&i.UpdateTime,
 	)
 	return i, err

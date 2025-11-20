@@ -7,29 +7,42 @@ package dbread
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getUserByID = `-- name: GetUserByID :one
-select create_time, external_id, id, metadata, project_id, update_time from users
+select id, create_time, external_id, metadata, project_id, segments, update_time from users
 where id = $1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
+type GetUserByIDRow struct {
+	ID         string
+	CreateTime pgtype.Timestamptz
+	ExternalID string
+	Metadata   []byte
+	ProjectID  string
+	Segments   []byte
+	UpdateTime pgtype.Timestamptz
+}
+
+func (q *Queries) GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i User
+	var i GetUserByIDRow
 	err := row.Scan(
+		&i.ID,
 		&i.CreateTime,
 		&i.ExternalID,
-		&i.ID,
 		&i.Metadata,
 		&i.ProjectID,
+		&i.Segments,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getUserByProjectAndExternalID = `-- name: GetUserByProjectAndExternalID :one
-select create_time, external_id, id, metadata, project_id, update_time from users
+select id, create_time, external_id, metadata, project_id, segments, update_time from users
 where project_id = $1 and external_id = $2 limit 1
 `
 
@@ -38,60 +51,179 @@ type GetUserByProjectAndExternalIDParams struct {
 	ExternalID string
 }
 
-func (q *Queries) GetUserByProjectAndExternalID(ctx context.Context, arg GetUserByProjectAndExternalIDParams) (User, error) {
+type GetUserByProjectAndExternalIDRow struct {
+	ID         string
+	CreateTime pgtype.Timestamptz
+	ExternalID string
+	Metadata   []byte
+	ProjectID  string
+	Segments   []byte
+	UpdateTime pgtype.Timestamptz
+}
+
+func (q *Queries) GetUserByProjectAndExternalID(ctx context.Context, arg GetUserByProjectAndExternalIDParams) (GetUserByProjectAndExternalIDRow, error) {
 	row := q.db.QueryRow(ctx, getUserByProjectAndExternalID, arg.ProjectID, arg.ExternalID)
-	var i User
+	var i GetUserByProjectAndExternalIDRow
 	err := row.Scan(
+		&i.ID,
 		&i.CreateTime,
 		&i.ExternalID,
-		&i.ID,
 		&i.Metadata,
 		&i.ProjectID,
+		&i.Segments,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getUserBySubscriptionID = `-- name: GetUserBySubscriptionID :one
-select u.create_time, u.external_id, u.id, u.metadata, u.project_id, u.update_time from users u
+select u.id, u.create_time, u.external_id, u.metadata, u.project_id, u.segments, u.update_time from users u
 join subscriptions s on s.user_id = u.id
 where s.id = $1
 `
 
-func (q *Queries) GetUserBySubscriptionID(ctx context.Context, subscriptionID string) (User, error) {
+type GetUserBySubscriptionIDRow struct {
+	ID         string
+	CreateTime pgtype.Timestamptz
+	ExternalID string
+	Metadata   []byte
+	ProjectID  string
+	Segments   []byte
+	UpdateTime pgtype.Timestamptz
+}
+
+func (q *Queries) GetUserBySubscriptionID(ctx context.Context, subscriptionID string) (GetUserBySubscriptionIDRow, error) {
 	row := q.db.QueryRow(ctx, getUserBySubscriptionID, subscriptionID)
-	var i User
+	var i GetUserBySubscriptionIDRow
 	err := row.Scan(
+		&i.ID,
 		&i.CreateTime,
 		&i.ExternalID,
-		&i.ID,
 		&i.Metadata,
 		&i.ProjectID,
+		&i.Segments,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getUsersByProjectID = `-- name: GetUsersByProjectID :many
-select create_time, external_id, id, metadata, project_id, update_time from users
+select id, create_time, external_id, metadata, project_id, segments, update_time from users
 where project_id = $1
 `
 
-func (q *Queries) GetUsersByProjectID(ctx context.Context, projectID string) ([]User, error) {
+type GetUsersByProjectIDRow struct {
+	ID         string
+	CreateTime pgtype.Timestamptz
+	ExternalID string
+	Metadata   []byte
+	ProjectID  string
+	Segments   []byte
+	UpdateTime pgtype.Timestamptz
+}
+
+func (q *Queries) GetUsersByProjectID(ctx context.Context, projectID string) ([]GetUsersByProjectIDRow, error) {
 	rows, err := q.db.Query(ctx, getUsersByProjectID, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []User
+	var items []GetUsersByProjectIDRow
 	for rows.Next() {
-		var i User
+		var i GetUsersByProjectIDRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.CreateTime,
 			&i.ExternalID,
-			&i.ID,
 			&i.Metadata,
 			&i.ProjectID,
+			&i.Segments,
+			&i.UpdateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUsersBySegment = `-- name: GetUsersBySegment :many
+select id, create_time, external_id, metadata, project_id, segments, update_time from users
+where segments ? $1::text
+`
+
+type GetUsersBySegmentRow struct {
+	ID         string
+	CreateTime pgtype.Timestamptz
+	ExternalID string
+	Metadata   []byte
+	ProjectID  string
+	Segments   []byte
+	UpdateTime pgtype.Timestamptz
+}
+
+func (q *Queries) GetUsersBySegment(ctx context.Context, segment string) ([]GetUsersBySegmentRow, error) {
+	rows, err := q.db.Query(ctx, getUsersBySegment, segment)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUsersBySegmentRow
+	for rows.Next() {
+		var i GetUsersBySegmentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreateTime,
+			&i.ExternalID,
+			&i.Metadata,
+			&i.ProjectID,
+			&i.Segments,
+			&i.UpdateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUsersBySegments = `-- name: GetUsersBySegments :many
+select id, create_time, external_id, metadata, project_id, segments, update_time from users
+where segments ?| $1::text[]
+`
+
+type GetUsersBySegmentsRow struct {
+	ID         string
+	CreateTime pgtype.Timestamptz
+	ExternalID string
+	Metadata   []byte
+	ProjectID  string
+	Segments   []byte
+	UpdateTime pgtype.Timestamptz
+}
+
+func (q *Queries) GetUsersBySegments(ctx context.Context, segments []string) ([]GetUsersBySegmentsRow, error) {
+	rows, err := q.db.Query(ctx, getUsersBySegments, segments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUsersBySegmentsRow
+	for rows.Next() {
+		var i GetUsersBySegmentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreateTime,
+			&i.ExternalID,
+			&i.Metadata,
+			&i.ProjectID,
+			&i.Segments,
 			&i.UpdateTime,
 		); err != nil {
 			return nil, err

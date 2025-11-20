@@ -61,5 +61,6 @@ type User struct {
 	ID         string
 	Metadata   []byte
 	ProjectID  string
+	Segments   []byte
 	UpdateTime pgtype.Timestamptz
 }
