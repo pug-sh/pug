@@ -3,7 +3,6 @@
 import { useAtom } from 'jotai'
 import {
   GalleryVerticalEnd,
-  Map,
   PieChart,
 } from 'lucide-react'
 import * as React from 'react'
@@ -52,14 +51,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <Link to="/campaigns">
                   <PieChart />
                   <span>Campaigns</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={isActive('/journeys')}>
-                <Link to="/journeys">
-                  <Map />
-                  <span>Journeys</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

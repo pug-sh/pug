@@ -31,63 +31,6 @@ type Customer struct {
 	UpdateTime   pgtype.Timestamptz
 }
 
-type Journey struct {
-	ID          string
-	ProjectID   string
-	Name        string
-	Description pgtype.Text
-	State       string
-	EntryType   string
-	Config      []byte
-	StartTime   pgtype.Timestamptz
-	EndTime     pgtype.Timestamptz
-	CreateTime  pgtype.Timestamptz
-	UpdateTime  pgtype.Timestamptz
-}
-
-type JourneyExecution struct {
-	ID           string
-	JourneyID    string
-	UserID       string
-	State        string
-	EntryTime    pgtype.Timestamptz
-	ExitTime     pgtype.Timestamptz
-	EntryTrigger string
-	CreateTime   pgtype.Timestamptz
-	UpdateTime   pgtype.Timestamptz
-}
-
-type JourneyOperation struct {
-	ID                 string
-	JourneyExecutionID string
-	StepID             string
-	OperationID        string
-	Result             []byte
-	CreateTime         pgtype.Timestamptz
-}
-
-type JourneyStep struct {
-	ID         string
-	JourneyID  string
-	StepID     string
-	StepType   string
-	Config     []byte
-	NextStepID pgtype.Text
-	CreateTime pgtype.Timestamptz
-	UpdateTime pgtype.Timestamptz
-}
-
-type JourneyUserStep struct {
-	ID                 string
-	JourneyExecutionID string
-	StepID             string
-	State              string
-	ExecutedTime       pgtype.Timestamptz
-	AttemptCount       int32
-	CreateTime         pgtype.Timestamptz
-	UpdateTime         pgtype.Timestamptz
-}
-
 type Project struct {
 	ApiKey         string
 	CustomerID     string

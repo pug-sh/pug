@@ -6,7 +6,6 @@ import SignupForm from '@/pages/auth/signup'
 import Campaigns from '@/pages/campaigns'
 import NewCampaign from '@/pages/campaigns/new'
 import Dashboard from '@/pages/dashboard'
-import Journeys from '@/pages/journeys'
 import Projects from '@/pages/projects'
 import ProjectDetail from '@/pages/projects/detail'
 import NewProject from '@/pages/projects/new'
@@ -23,7 +22,6 @@ const Router = () => (
       <Route path='/projects/:id' component={ProjectDetail} />
       <Route path='/settings' component={Settings} />
       <Route path='/account' component={Account} />
-      <Route path='/journeys' component={Journeys} />
       <Route path='/campaigns' component={Campaigns} />
       <Route path='/campaigns/new' component={NewCampaign} />
     </AuthProtected>
