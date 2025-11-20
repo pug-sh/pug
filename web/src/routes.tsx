@@ -10,6 +10,8 @@ import Projects from '@/pages/projects'
 import ProjectDetail from '@/pages/projects/detail'
 import NewProject from '@/pages/projects/new'
 import Settings from '@/pages/settings'
+import Segments from '@/pages/segments'
+import CreateSegment from '@/pages/segments/create'
 
 const Router = () => (
   <>
@@ -24,6 +26,9 @@ const Router = () => (
       <Route path='/account' component={Account} />
       <Route path='/campaigns' component={Campaigns} />
       <Route path='/campaigns/new' component={NewCampaign} />
+      <Route path='/segments' component={Segments} />
+      <Route path='/segments/new' component={CreateSegment} />
+      <Route path='/segments/:id/edit' component={EditSegment} />
     </AuthProtected>
   </>
 )

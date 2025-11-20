@@ -4,6 +4,7 @@ import { useAtom } from 'jotai'
 import {
   GalleryVerticalEnd,
   PieChart,
+  Target,
 } from 'lucide-react'
 import * as React from 'react'
 import { useLocation, Link } from 'wouter'
@@ -51,6 +52,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <Link to="/campaigns">
                   <PieChart />
                   <span>Campaigns</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={isActive('/segments')}>
+                <Link to="/segments">
+                  <Target />
+                  <span>Segments</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

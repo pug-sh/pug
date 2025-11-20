@@ -15,11 +15,14 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/segments/v1/segmentsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/rpc/auth"
 	"github.com/fivebitsio/cotton/internal/rpc/campaigns"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
 	"github.com/fivebitsio/cotton/internal/rpc/projects"
+	"github.com/fivebitsio/cotton/internal/rpc/segments"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/fivebitsio/cotton/pkg/pulsar"
@@ -104,15 +107,25 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	)
 	campaignsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(campaignsHandler)
 
+	segmentsServer := segments.NewServer(queriesRo, dbwrite.New(deps.pgW))
+	segmentsHandlerObj := segments.NewHandler(segmentsServer.Service())
+	segmentsPath, segmentsHandler := segmentsv1connect.NewSegmentsServiceHandler(
+		segmentsHandlerObj,
+		commonHandlerOptions(),
+	)
+	segmentsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(segmentsHandler)
+
 	handler := http.NewServeMux()
 	handler.Handle(authPath, authHandler)
 	handler.Handle(projectsPath, projectsHandler)
 	handler.Handle(campaignsPath, campaignsHandler)
+	handler.Handle(segmentsPath, segmentsHandler)
 
 	services := []string{
 		authv1connect.AuthServiceName,
 		projectsv1connect.ProjectsServiceName,
 		campaignsv1connect.CampaignServiceName,
+		segmentsv1connect.SegmentsServiceName,
 	}
 
 	reflector := grpcreflect.NewStaticReflector(services...)

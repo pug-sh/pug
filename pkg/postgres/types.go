@@ -18,6 +18,11 @@ func StringToText(s string) pgtype.Text {
 	return pgtype.Text{String: s, Valid: true}
 }
 
+// NullString creates a pgtype.Text that can be null
+func NullString(s string) pgtype.Text {
+	return pgtype.Text{String: s, Valid: s != ""}
+}
+
 // TimestampToTimestamptz converts a protobuf timestamp to a pgtype.Timestamptz
 func TimestampToTimestamptz(ts *timestamppb.Timestamp) pgtype.Timestamptz {
 	if ts == nil {

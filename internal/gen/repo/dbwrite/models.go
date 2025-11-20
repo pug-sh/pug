@@ -41,6 +41,17 @@ type Project struct {
 	UpdateTime     pgtype.Timestamptz
 }
 
+type Segment struct {
+	ID          string
+	ProjectID   string
+	Name        string
+	Description pgtype.Text
+	Filter      []byte
+	IsActive    bool
+	CreateTime  pgtype.Timestamptz
+	UpdateTime  pgtype.Timestamptz
+}
+
 type Subscription struct {
 	CreateTime        pgtype.Timestamptz
 	ID                string

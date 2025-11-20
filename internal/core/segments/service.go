@@ -1,0 +1,347 @@
+package segments
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/fivebitsio/cotton/internal/gen/proto/segments/v1"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/fivebitsio/cotton/pkg/postgres"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/rs/xid"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// Use pgtype to avoid "imported but not used" error (used in generated code)
+var _ = pgtype.Text{}
+
+type Service struct {
+	dbWrite *dbwrite.Queries
+	dbRead  *dbread.Queries
+}
+
+func NewService(dbWrite *dbwrite.Queries, dbRead *dbread.Queries) *Service {
+	return &Service{
+		dbWrite: dbWrite,
+		dbRead:  dbRead,
+	}
+}
+
+func (s *Service) CreateSegment(ctx context.Context, projectID, name, description string, filter *segmentsv1.SegmentFilter) (*segmentsv1.Segment, error) {
+	if name == "" {
+		return nil, errors.New("segment name is required")
+	}
+
+	id := xid.New().String()
+
+	// Marshal the filter to JSON
+	filterJSON, err := json.Marshal(filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal filter: %w", err)
+	}
+
+	segment, err := s.dbWrite.CreateSegment(ctx, dbwrite.CreateSegmentParams{
+		ID:          id,
+		ProjectID:   projectID,
+		Name:        name,
+		Description: postgres.NullString(description),
+		Filter:      filterJSON,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create segment: %w", err)
+	}
+
+	return &segmentsv1.Segment{
+		Id:          segment.ID,
+		ProjectId:   segment.ProjectID,
+		Name:        segment.Name,
+		Description: segment.Description.String,
+		Filter:      unmarshalSegmentFilter(segment.Filter),
+		IsActive:    segment.IsActive,
+		CreateTime:  timestamppb.New(segment.CreateTime.Time),
+		UpdateTime:  timestamppb.New(segment.UpdateTime.Time),
+	}, nil
+}
+
+func (s *Service) GetSegment(ctx context.Context, segmentID string) (*segmentsv1.Segment, error) {
+	segment, err := s.dbRead.GetSegment(ctx, segmentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get segment: %w", err)
+	}
+
+	return &segmentsv1.Segment{
+		Id:          segment.ID,
+		ProjectId:   segment.ProjectID,
+		Name:        segment.Name,
+		Description: segment.Description.String,
+		Filter:      unmarshalSegmentFilter(segment.Filter),
+		IsActive:    segment.IsActive,
+		CreateTime:  timestamppb.New(segment.CreateTime.Time),
+		UpdateTime:  timestamppb.New(segment.UpdateTime.Time),
+	}, nil
+}
+
+func (s *Service) ListSegments(ctx context.Context, projectID string, limit, offset int32) ([]*segmentsv1.Segment, int32, error) {
+	segments, err := s.dbRead.GetSegmentsByProject(ctx, dbread.GetSegmentsByProjectParams{
+		ProjectID: projectID,
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list segments: %w", err)
+	}
+
+	count, err := s.dbRead.GetSegmentCountByProject(ctx, projectID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get segment count: %w", err)
+	}
+
+	result := make([]*segmentsv1.Segment, len(segments))
+	for i, seg := range segments {
+		result[i] = &segmentsv1.Segment{
+			Id:          seg.ID,
+			ProjectId:   seg.ProjectID,
+			Name:        seg.Name,
+			Description: seg.Description.String,
+			Filter:      unmarshalSegmentFilter(seg.Filter),
+			IsActive:    seg.IsActive,
+			CreateTime:  timestamppb.New(seg.CreateTime.Time),
+			UpdateTime:  timestamppb.New(seg.UpdateTime.Time),
+		}
+	}
+
+	return result, int32(count), nil
+}
+
+func (s *Service) UpdateSegment(ctx context.Context, segmentID, name, description string, filter *segmentsv1.SegmentFilter, isActive bool) (*segmentsv1.Segment, error) {
+	// For now, we'll use a workaround where if a field should not be updated,
+	// the calling code would need to pass the existing value.
+	// In a real implementation, we would ideally have more granular update methods
+	// or use a different approach for partial updates.
+
+	// Marshal the filter to JSON
+	var filterJSON []byte
+	if filter != nil {
+		var err error
+		filterJSON, err = json.Marshal(filter)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal filter: %w", err)
+		}
+	} else {
+		// If filter is nil, we'll pass an empty slice
+		filterJSON = []byte{}
+	}
+
+	// The calling code should ensure that non-updated fields contain their current values
+	// The SQL COALESCE will then keep the current value if a NULL is passed
+	segment, err := s.dbWrite.UpdateSegment(ctx, dbwrite.UpdateSegmentParams{
+		ID:          segmentID,
+		Name:        name,
+		Description: postgres.NullString(description),
+		Filter:      filterJSON,
+		IsActive:    isActive,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update segment: %w", err)
+	}
+
+	return &segmentsv1.Segment{
+		Id:          segment.ID,
+		ProjectId:   segment.ProjectID,
+		Name:        segment.Name,
+		Description: segment.Description.String,
+		Filter:      unmarshalSegmentFilter(segment.Filter),
+		IsActive:    segment.IsActive,
+		CreateTime:  timestamppb.New(segment.CreateTime.Time),
+		UpdateTime:  timestamppb.New(segment.UpdateTime.Time),
+	}, nil
+}
+
+func (s *Service) DeleteSegment(ctx context.Context, segmentID string) error {
+	err := s.dbWrite.DeleteSegment(ctx, segmentID)
+	if err != nil {
+		return fmt.Errorf("failed to delete segment: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) GetActiveSegments(ctx context.Context, projectID string) ([]*segmentsv1.Segment, error) {
+	segments, err := s.dbRead.GetActiveSegments(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active segments: %w", err)
+	}
+
+	result := make([]*segmentsv1.Segment, len(segments))
+	for i, seg := range segments {
+		result[i] = &segmentsv1.Segment{
+			Id:          seg.ID,
+			ProjectId:   seg.ProjectID,
+			Name:        seg.Name,
+			Description: seg.Description.String,
+			Filter:      unmarshalSegmentFilter(seg.Filter),
+			IsActive:    seg.IsActive,
+			CreateTime:  timestamppb.New(seg.CreateTime.Time),
+			UpdateTime:  timestamppb.New(seg.UpdateTime.Time),
+		}
+	}
+
+	return result, nil
+}
+
+func (s *Service) EvaluateSegment(ctx context.Context, segmentID, userExternalID string) (bool, error) {
+	// Get the segment definition
+	segment, err := s.dbRead.GetSegment(ctx, segmentID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get segment: %w", err)
+	}
+
+	// Get the user
+	user, err := s.dbRead.GetUserByProjectAndExternalID(ctx, dbread.GetUserByProjectAndExternalIDParams{
+		ExternalID: userExternalID,
+		ProjectID:  segment.ProjectID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Unmarshal user metadata
+	var userMetadata map[string]interface{}
+	if err := json.Unmarshal(user.Metadata, &userMetadata); err != nil {
+		return false, fmt.Errorf("failed to unmarshal user metadata: %w", err)
+	}
+
+	// Unmarshal the segment filter
+	segmentFilter := unmarshalSegmentFilter(segment.Filter)
+
+	// Evaluate the segment conditions against the user's metadata
+	matches := s.evaluateConditions(segmentFilter, userMetadata)
+	return matches, nil
+}
+
+// evaluateConditions evaluates if a user's metadata matches the segment filter
+func (s *Service) evaluateConditions(filter *segmentsv1.SegmentFilter, metadata map[string]interface{}) bool {
+	if len(filter.Parts) == 0 {
+		return true // No parts, matches by default
+	}
+
+	results := make([]bool, len(filter.Parts))
+	for i, part := range filter.Parts {
+		results[i] = s.evaluateFilterPart(part, metadata)
+	}
+
+	// Apply logical operator
+	if filter.LogicalOperator == "OR" {
+		for _, result := range results {
+			if result {
+				return true
+			}
+		}
+		return false
+	} else { // Default to AND
+		for _, result := range results {
+			if !result {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+// evaluateFilterPart evaluates a single filter part (either a sub-filter or a condition)
+func (s *Service) evaluateFilterPart(filterPart *segmentsv1.FilterPart, metadata map[string]interface{}) bool {
+	switch part := filterPart.Part.(type) {
+	case *segmentsv1.FilterPart_SubFilter:
+		return s.evaluateConditions(part.SubFilter, metadata) // Recursively evaluate nested filter
+	case *segmentsv1.FilterPart_Condition:
+		return s.evaluateCondition(part.Condition, metadata) // Evaluate simple condition
+	default:
+		return false // Should not happen
+	}
+}
+
+// evaluateCondition checks if a single condition is satisfied by user metadata
+func (s *Service) evaluateCondition(condition *segmentsv1.Condition, metadata map[string]interface{}) bool {
+	fieldValue, exists := metadata[condition.Field]
+	if !exists {
+		return false
+	}
+
+	switch condition.Operator {
+	case "EQUALS":
+		return fmt.Sprintf("%v", fieldValue) == condition.Value
+	case "NOT_EQUALS":
+		return fmt.Sprintf("%v", fieldValue) != condition.Value
+	case "CONTAINS":
+		// For string contains check
+		fieldStr := fmt.Sprintf("%v", fieldValue)
+		return containsString(fieldStr, condition.Value)
+	case "NOT_CONTAINS":
+		// For string does not contain check
+		fieldStr := fmt.Sprintf("%v", fieldValue)
+		return !containsString(fieldStr, condition.Value)
+	case "GREATER_THAN":
+		// For numeric comparison
+		return compareNumeric(fieldValue, condition.Value, func(a, b float64) bool { return a > b })
+	case "LESS_THAN":
+		// For numeric comparison
+		return compareNumeric(fieldValue, condition.Value, func(a, b float64) bool { return a < b })
+	}
+
+	return false
+}
+
+// Helper function to check if a string contains a substring
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || strings.Contains(s, substr))
+}
+
+// Helper function to compare numeric values
+func compareNumeric(a, b interface{}, compareFunc func(float64, float64) bool) bool {
+	aFloat, aOk := toFloat64(a)
+	bFloat, bOk := toFloat64(b)
+
+	if !aOk || !bOk {
+		return false
+	}
+
+	return compareFunc(aFloat, bFloat)
+}
+
+// Helper function to convert interface{} to float64
+func toFloat64(val interface{}) (float64, bool) {
+	switch v := val.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case string:
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return 0, false
+		}
+		return f, true
+	default:
+		return 0, false
+	}
+}
+
+// Helper function to unmarshal segment filter from JSON
+func unmarshalSegmentFilter(data []byte) *segmentsv1.SegmentFilter {
+	var filter segmentsv1.SegmentFilter
+	if err := json.Unmarshal(data, &filter); err != nil {
+		// Return an empty filter if unmarshaling fails
+		return &segmentsv1.SegmentFilter{}
+	}
+	return &filter
+}
