@@ -10,6 +10,7 @@ import type { Condition, SegmentFilter } from '@buf/pushpa_cotton.bufbuild_es/se
 import { create } from '@bufbuild/protobuf'
 import { ConditionSchema, FilterPartSchema, SegmentFilterSchema } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segments_pb'
 import { Plus, Minus } from 'lucide-react'
+import { Field, useForm } from '@tanstack/react-form'
 
 interface ConditionUI {
   id: string
@@ -25,12 +26,6 @@ interface FilterGroupUI {
   isNested: boolean
 }
 
-interface SegmentFormState {
-  name: string
-  description: string
-  rootGroup: FilterGroupUI
-  isActive: boolean
-}
 
 function generateId() {
   return Math.random().toString(36).substring(2, 9)
@@ -96,16 +91,39 @@ function uiToPB(group: FilterGroupUI): SegmentFilter {
 export default function EditSegment() {
   const [, navigate] = useLocation()
   const { id } = useParams<{ id: string }>()
-  const [state, setState] = useState<SegmentFormState>({
-    name: '',
-    description: '',
-    isActive: true,
-    rootGroup: {
-      id: generateId(),
-      parts: [],
-      logicalOperator: 'AND',
-      isNested: false
-    }
+
+  // Initialize the state for complex nested structure
+  const [rootGroup, setRootGroup] = useState<FilterGroupUI>({
+    id: generateId(),
+    parts: [],
+    logicalOperator: 'AND',
+    isNested: false
+  })
+  const [isActive, setIsActive] = useState(true);
+
+  // Use TanStack Form for simple fields
+  const form = useForm({
+    defaultValues: {
+      name: '',
+      description: ''
+    },
+    onSubmit: async ({ value }) => {
+      try {
+        const pbFilter = uiToPB(rootGroup)
+
+        await segmentsService.updateSegment({
+          segmentId: id,
+          name: value.name,
+          description: value.description,
+          filter: pbFilter,
+          isActive: isActive
+        })
+
+        navigate('/segments')
+      } catch (error) {
+        console.error('Error updating segment:', error)
+      }
+    },
   })
   const [loading, setLoading] = useState(true)
 
@@ -122,17 +140,18 @@ export default function EditSegment() {
       const segment = response.segment
 
       if (segment) {
-        setState({
-          name: segment.name,
-          description: segment.description,
-          isActive: segment.isActive,
-          rootGroup: segment.filter ? pbToUI(segment.filter) : {
-            id: generateId(),
-            parts: [],
-            logicalOperator: 'AND',
-            isNested: false
-          }
-        })
+        // Update the form values using TanStack Form
+        form.setFieldValue('name', segment.name);
+        form.setFieldValue('description', segment.description);
+
+        // Update the local state
+        setIsActive(segment.isActive);
+        setRootGroup(segment.filter ? pbToUI(segment.filter) : {
+          id: generateId(),
+          parts: [],
+          logicalOperator: 'AND',
+          isNested: false
+        });
       }
     } catch (error) {
       console.error('Error fetching segment:', error)
@@ -142,105 +161,86 @@ export default function EditSegment() {
   }
 
   const addConditionToGroup = (groupId: string, condition: ConditionUI) => {
-    setState(prev => {
-      const updateGroup = (group: FilterGroupUI): FilterGroupUI => {
-        if (group.id === groupId) {
-          return {
-            ...group,
-            parts: [...group.parts, condition]
-          }
-        }
-
+    const updateGroup = (group: FilterGroupUI): FilterGroupUI => {
+      if (group.id === groupId) {
         return {
           ...group,
-          parts: group.parts.map(part =>
-            'isNested' in part ? updateGroup(part as FilterGroupUI) : part
-          )
+          parts: [...group.parts, condition]
         }
       }
 
       return {
-        ...prev,
-        rootGroup: updateGroup(prev.rootGroup)
+        ...group,
+        parts: group.parts.map(part =>
+          'isNested' in part ? updateGroup(part as FilterGroupUI) : part
+        )
       }
-    })
+    }
+
+    setRootGroup(prev => updateGroup(prev))
   }
 
   const addSubGroupToGroup = (groupId: string, subGroup: FilterGroupUI) => {
-    setState(prev => {
-      const updateGroup = (group: FilterGroupUI): FilterGroupUI => {
-        if (group.id === groupId) {
-          return {
-            ...group,
-            parts: [...group.parts, subGroup]
-          }
-        }
-
+    const updateGroup = (group: FilterGroupUI): FilterGroupUI => {
+      if (group.id === groupId) {
         return {
           ...group,
-          parts: group.parts.map(part =>
-            'isNested' in part ? updateGroup(part as FilterGroupUI) : part
-          )
+          parts: [...group.parts, subGroup]
         }
       }
 
       return {
-        ...prev,
-        rootGroup: updateGroup(prev.rootGroup)
+        ...group,
+        parts: group.parts.map(part =>
+          'isNested' in part ? updateGroup(part as FilterGroupUI) : part
+        )
       }
-    })
+    }
+
+    setRootGroup(prev => updateGroup(prev))
   }
 
   const removePartFromGroup = (groupId: string, partId: string) => {
-    setState(prev => {
-      const updateGroup = (group: FilterGroupUI): FilterGroupUI => {
-        if (group.id === groupId) {
-          return {
-            ...group,
-            parts: group.parts.filter(part =>
-              ('id' in part && part.id !== partId)
-            )
-          }
-        }
-
+    const updateGroup = (group: FilterGroupUI): FilterGroupUI => {
+      if (group.id === groupId) {
         return {
           ...group,
-          parts: group.parts.map(part =>
-            'isNested' in part ? updateGroup(part as FilterGroupUI) : part
+          parts: group.parts.filter(part =>
+            ('id' in part && part.id !== partId) ||
+            ('field' in part && part.field !== partId)
           )
         }
       }
 
       return {
-        ...prev,
-        rootGroup: updateGroup(prev.rootGroup)
+        ...group,
+        parts: group.parts.map(part =>
+          'isNested' in part ? updateGroup(part as FilterGroupUI) : part
+        )
       }
-    })
+    }
+
+    setRootGroup(prev => updateGroup(prev))
   }
 
   const updateGroupOperator = (groupId: string, operator: 'AND' | 'OR') => {
-    setState(prev => {
-      const updateGroup = (group: FilterGroupUI): FilterGroupUI => {
-        if (group.id === groupId) {
-          return {
-            ...group,
-            logicalOperator: operator
-          }
-        }
-
+    const updateGroup = (group: FilterGroupUI): FilterGroupUI => {
+      if (group.id === groupId) {
         return {
           ...group,
-          parts: group.parts.map(part =>
-            'isNested' in part ? updateGroup(part as FilterGroupUI) : part
-          )
+          logicalOperator: operator
         }
       }
 
       return {
-        ...prev,
-        rootGroup: updateGroup(prev.rootGroup)
+        ...group,
+        parts: group.parts.map(part =>
+          'isNested' in part ? updateGroup(part as FilterGroupUI) : part
+        )
       }
-    })
+    }
+
+    setRootGroup(prev => updateGroup(prev))
   }
 
   const addNewCondition = (groupId: string) => {
@@ -319,61 +319,51 @@ export default function EditSegment() {
                     placeholder="Field (e.g. gender)"
                     value={condition.field}
                     onChange={(e) => {
-                      setState(prev => {
-                        const updateGroup = (g: FilterGroupUI): FilterGroupUI => {
-                          if (g.id === group.id) {
-                            const updatedParts = g.parts.map(p => {
-                              if ('id' in p && p.id === condition.id) {
-                                return { ...p, field: e.target.value }
-                              }
-                              return p
-                            })
-                            return { ...g, parts: updatedParts }
-                          }
-
-                          return {
-                            ...g,
-                            parts: g.parts.map(p =>
-                              'isNested' in p ? updateGroup(p as FilterGroupUI) : p
-                            )
-                          }
+                      const updateGroup = (g: FilterGroupUI): FilterGroupUI => {
+                        if (g.id === group.id) {
+                          const updatedParts = g.parts.map(p => {
+                            if ('id' in p && p.id === condition.id) {
+                              return { ...p, field: e.target.value }
+                            }
+                            return p
+                          })
+                          return { ...g, parts: updatedParts }
                         }
 
                         return {
-                          ...prev,
-                          rootGroup: updateGroup(prev.rootGroup)
+                          ...g,
+                          parts: g.parts.map(p =>
+                            'isNested' in p ? updateGroup(p as FilterGroupUI) : p
+                          )
                         }
-                      })
+                      }
+
+                      setRootGroup(prev => updateGroup(prev))
                     }}
                   />
                   <select
                     value={condition.operator}
                     onChange={(e) => {
-                      setState(prev => {
-                        const updateGroup = (g: FilterGroupUI): FilterGroupUI => {
-                          if (g.id === group.id) {
-                            const updatedParts = g.parts.map(p => {
-                              if ('id' in p && p.id === condition.id) {
-                                return { ...p, operator: e.target.value }
-                              }
-                              return p
-                            })
-                            return { ...g, parts: updatedParts }
-                          }
-
-                          return {
-                            ...g,
-                            parts: g.parts.map(p =>
-                              'isNested' in p ? updateGroup(p as FilterGroupUI) : p
-                            )
-                          }
+                      const updateGroup = (g: FilterGroupUI): FilterGroupUI => {
+                        if (g.id === group.id) {
+                          const updatedParts = g.parts.map(p => {
+                            if ('id' in p && p.id === condition.id) {
+                              return { ...p, operator: e.target.value }
+                            }
+                            return p
+                          })
+                          return { ...g, parts: updatedParts }
                         }
 
                         return {
-                          ...prev,
-                          rootGroup: updateGroup(prev.rootGroup)
+                          ...g,
+                          parts: g.parts.map(p =>
+                            'isNested' in p ? updateGroup(p as FilterGroupUI) : p
+                          )
                         }
-                      })
+                      }
+
+                      setRootGroup(prev => updateGroup(prev))
                     }}
                     className="border rounded px-2 py-2"
                   >
@@ -388,31 +378,26 @@ export default function EditSegment() {
                     placeholder="Value"
                     value={condition.value}
                     onChange={(e) => {
-                      setState(prev => {
-                        const updateGroup = (g: FilterGroupUI): FilterGroupUI => {
-                          if (g.id === group.id) {
-                            const updatedParts = g.parts.map(p => {
-                              if ('id' in p && p.id === condition.id) {
-                                return { ...p, value: e.target.value }
-                              }
-                              return p
-                            })
-                            return { ...g, parts: updatedParts }
-                          }
-
-                          return {
-                            ...g,
-                            parts: g.parts.map(p =>
-                              'isNested' in p ? updateGroup(p as FilterGroupUI) : p
-                            )
-                          }
+                      const updateGroup = (g: FilterGroupUI): FilterGroupUI => {
+                        if (g.id === group.id) {
+                          const updatedParts = g.parts.map(p => {
+                            if ('id' in p && p.id === condition.id) {
+                              return { ...p, value: e.target.value }
+                            }
+                            return p
+                          })
+                          return { ...g, parts: updatedParts }
                         }
 
                         return {
-                          ...prev,
-                          rootGroup: updateGroup(prev.rootGroup)
+                          ...g,
+                          parts: g.parts.map(p =>
+                            'isNested' in p ? updateGroup(p as FilterGroupUI) : p
+                          )
                         }
-                      })
+                      }
+
+                      setRootGroup(prev => updateGroup(prev))
                     }}
                   />
                   <Button
@@ -455,26 +440,6 @@ export default function EditSegment() {
     )
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    try {
-      const pbFilter = uiToPB(state.rootGroup)
-
-      await segmentsService.updateSegment({
-        segmentId: id,
-        name: state.name,
-        description: state.description,
-        filter: pbFilter,
-        isActive: state.isActive
-      })
-
-      navigate('/segments')
-    } catch (error) {
-      console.error('Error updating segment:', error)
-    }
-  }
-
   if (loading) {
     return (
       <div className="container mx-auto py-10 flex justify-center items-center">
@@ -498,39 +463,61 @@ export default function EditSegment() {
             <CardTitle>Segment Details</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="name">Segment Name</Label>
-                <Input
-                  id="name"
-                  placeholder="Enter segment name"
-                  value={state.name}
-                  onChange={(e) => setState({...state, name: e.target.value})}
-                  required
-                />
-              </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                form.handleSubmit();
+              }}
+              className="space-y-6"
+            >
+              <Field
+                name="name"
+                form={form}
+                children={(field) => (
+                  <div className="space-y-2">
+                    <Label htmlFor={field.name}>Segment Name</Label>
+                    <Input
+                      id={field.name}
+                      placeholder="Enter segment name"
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      required
+                    />
+                    {field.state.meta.errors && field.state.meta.errors.length > 0 && (
+                      <div className="text-destructive text-sm">{field.state.meta.errors[0]}</div>
+                    )}
+                  </div>
+                )}
+              />
 
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Enter segment description (optional)"
-                  value={state.description}
-                  onChange={(e) => setState({...state, description: e.target.value})}
-                />
-              </div>
+              <Field
+                name="description"
+                form={form}
+                children={(field) => (
+                  <div className="space-y-2">
+                    <Label htmlFor={field.name}>Description</Label>
+                    <Textarea
+                      id={field.name}
+                      placeholder="Enter segment description (optional)"
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                    />
+                  </div>
+                )}
+              />
 
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">Conditions</h3>
-                {renderGroup(state.rootGroup)}
+                {renderGroup(rootGroup)}
               </div>
 
               <div className="flex items-center space-x-2 pt-4">
                 <input
                   type="checkbox"
                   id="isActive"
-                  checked={state.isActive}
-                  onChange={(e) => setState({...state, isActive: e.target.checked})}
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.target.checked)}
                   className="h-4 w-4"
                 />
                 <Label htmlFor="isActive">Active</Label>
