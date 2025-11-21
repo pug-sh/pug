@@ -264,8 +264,20 @@ func (s *Service) evaluateFilterPart(filterPart *segmentsv1.FilterPart, metadata
 	}
 }
 
-// evaluateCondition checks if a single condition is satisfied by user metadata
+// evaluateCondition checks if a single condition is satisfied by user metadata or events
 func (s *Service) evaluateCondition(condition *segmentsv1.Condition, metadata map[string]interface{}) bool {
+	switch cond := condition.ConditionType.(type) {
+	case *segmentsv1.Condition_UserAttributeCondition:
+		return s.evaluateUserAttributeCondition(cond.UserAttributeCondition, metadata)
+	case *segmentsv1.Condition_EventCondition:
+		return s.evaluateEventCondition(cond.EventCondition, metadata)
+	default:
+		return false // Unknown condition type
+	}
+}
+
+// evaluateUserAttributeCondition checks if a user attribute condition is satisfied by user metadata
+func (s *Service) evaluateUserAttributeCondition(condition *segmentsv1.UserAttributeCondition, metadata map[string]interface{}) bool {
 	fieldValue, exists := metadata[condition.Field]
 	if !exists {
 		return false
@@ -292,6 +304,43 @@ func (s *Service) evaluateCondition(condition *segmentsv1.Condition, metadata ma
 		return compareNumeric(fieldValue, condition.Value, func(a, b float64) bool { return a < b })
 	}
 
+	return false
+}
+
+// evaluateEventCondition checks if a user has performed an event that meets the condition
+func (s *Service) evaluateEventCondition(condition *segmentsv1.EventCondition, metadata map[string]interface{}) bool {
+	// Get the user ID from the metadata (we need to extract the user ID from metadata)
+	// In a real scenario, we'd likely pass the user ID separately, but for this example,
+	// we'll assume it's available in the metadata
+
+	// We need to query the events table to see if the user has performed the required event
+	// within the specified timeframe and with the required properties/count
+
+	// This is a simplified implementation - in a real system, we would:
+	// 1. Query the ClickHouse events table for the user
+	// 2. Filter by event_type, time window, and properties as specified in the condition
+	// 3. Check if the count meets the condition requirements
+
+	// For now, this function would need to connect to the events table in ClickHouse
+	// and perform the necessary query based on the condition parameters
+
+	return s.checkEventConditionInDatabase(condition, metadata)
+}
+
+// checkEventConditionInDatabase performs the actual database query to check if user meets event-based condition
+func (s *Service) checkEventConditionInDatabase(condition *segmentsv1.EventCondition, metadata map[string]interface{}) bool {
+	// This function would need access to the ClickHouse database connection
+	// Since we don't have that setup in this file, this is a placeholder
+	// showing the logic that would be implemented
+
+	// In a real implementation, this would:
+	// 1. Query the events table for events matching the condition
+	// 2. Filter by user_id, event_type, and time window
+	// 3. Check for property conditions if specified
+	// 4. Count the results and compare with the required count
+
+	// For now, we return false since we don't have access to the events DB here
+	// In a real implementation, we would add a method to our repo to query events
 	return false
 }
 

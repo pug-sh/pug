@@ -5,7 +5,7 @@ import { SegmentsService } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segm
 import { createClient, type Interceptor } from '@connectrpc/connect'
 import { createConnectTransport } from '@connectrpc/connect-web'
 
-const apiBaseUrl = 'http://localhost:8081'
+const apiBaseUrl = 'http://localhost:3000'
 
 const authInterceptor: Interceptor = (next) => {
   return async (req) => {

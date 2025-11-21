@@ -10,26 +10,17 @@ import type { Condition, SegmentFilter } from '@buf/pushpa_cotton.bufbuild_es/se
 import { create } from '@bufbuild/protobuf'
 import { ConditionSchema, FilterPartSchema, SegmentFilterSchema } from '@buf/pushpa_cotton.bufbuild_es/segments/v1/segments_pb'
 import { Plus, Minus } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import type { ConditionUI, FilterGroupUI } from '@/pages/segments/segments'
 import { Field, useForm } from '@tanstack/react-form'
+import { generateId } from '@/lib/segments'
 
-interface ConditionUI {
-  id: string
-  field: string
-  operator: string
-  value: string
-}
-
-interface FilterGroupUI {
-  id: string
-  parts: (ConditionUI | FilterGroupUI)[]
-  logicalOperator: 'AND' | 'OR'
-  isNested: boolean
-}
-
-
-function generateId() {
-  return Math.random().toString(36).substring(2, 9)
-}
 
 // Helper function to convert protobuf SegmentFilter to UI structure
 function pbToUI(filter: SegmentFilter): FilterGroupUI {
@@ -206,8 +197,7 @@ export default function EditSegment() {
         return {
           ...group,
           parts: group.parts.filter(part =>
-            ('id' in part && part.id !== partId) ||
-            ('field' in part && part.field !== partId)
+            ('id' in part && part.id !== partId)
           )
         }
       }
@@ -277,14 +267,18 @@ export default function EditSegment() {
           </h3>
           <div className="flex items-center space-x-2">
             <span className="text-sm text-muted-foreground">Operator:</span>
-            <select
+            <Select
               value={group.logicalOperator}
-              onChange={(e) => updateGroupOperator(group.id, e.target.value as 'AND' | 'OR')}
-              className="border rounded px-2 py-1 text-sm"
+              onValueChange={(value) => updateGroupOperator(group.id, value as 'AND' | 'OR')}
             >
-              <option value="AND">AND</option>
-              <option value="OR">OR</option>
-            </select>
+              <SelectTrigger className="w-[80px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="AND">AND</SelectItem>
+                <SelectItem value="OR">OR</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -341,14 +335,14 @@ export default function EditSegment() {
                       setRootGroup(prev => updateGroup(prev))
                     }}
                   />
-                  <select
+                  <Select
                     value={condition.operator}
-                    onChange={(e) => {
+                    onValueChange={(value) => {
                       const updateGroup = (g: FilterGroupUI): FilterGroupUI => {
                         if (g.id === group.id) {
                           const updatedParts = g.parts.map(p => {
                             if ('id' in p && p.id === condition.id) {
-                              return { ...p, operator: e.target.value }
+                              return { ...p, operator: value }
                             }
                             return p
                           })
@@ -365,15 +359,19 @@ export default function EditSegment() {
 
                       setRootGroup(prev => updateGroup(prev))
                     }}
-                    className="border rounded px-2 py-2"
                   >
-                    <option value="EQUALS">equals</option>
-                    <option value="NOT_EQUALS">not equals</option>
-                    <option value="CONTAINS">contains</option>
-                    <option value="NOT_CONTAINS">does not contain</option>
-                    <option value="GREATER_THAN">greater than</option>
-                    <option value="LESS_THAN">less than</option>
-                  </select>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="EQUALS">equals</SelectItem>
+                      <SelectItem value="NOT_EQUALS">not equals</SelectItem>
+                      <SelectItem value="CONTAINS">contains</SelectItem>
+                      <SelectItem value="NOT_CONTAINS">does not contain</SelectItem>
+                      <SelectItem value="GREATER_THAN">greater than</SelectItem>
+                      <SelectItem value="LESS_THAN">less than</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Input
                     placeholder="Value"
                     value={condition.value}

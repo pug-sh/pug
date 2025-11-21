@@ -256,7 +256,8 @@ func (*FilterPart_SubFilter) isFilterPart_Part() {}
 
 func (*FilterPart_Condition) isFilterPart_Part() {}
 
-type Condition struct {
+// User attribute condition
+type UserAttributeCondition struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Field         string                 `protobuf:"bytes,1,opt,name=field" json:"field,omitempty"`
 	Operator      string                 `protobuf:"bytes,2,opt,name=operator" json:"operator,omitempty"` // "EQUALS", "NOT_EQUALS", "GREATER_THAN", "LESS_THAN", "CONTAINS", "NOT_CONTAINS", "IN_LAST_X_DAYS", etc.
@@ -265,9 +266,208 @@ type Condition struct {
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *UserAttributeCondition) Reset() {
+	*x = UserAttributeCondition{}
+	mi := &file_segments_v1_segments_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserAttributeCondition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserAttributeCondition) ProtoMessage() {}
+
+func (x *UserAttributeCondition) ProtoReflect() protoreflect.Message {
+	mi := &file_segments_v1_segments_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserAttributeCondition.ProtoReflect.Descriptor instead.
+func (*UserAttributeCondition) Descriptor() ([]byte, []int) {
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *UserAttributeCondition) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *UserAttributeCondition) GetOperator() string {
+	if x != nil {
+		return x.Operator
+	}
+	return ""
+}
+
+func (x *UserAttributeCondition) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+// Event-based condition
+type EventCondition struct {
+	state             protoimpl.MessageState  `protogen:"open.v1"`
+	EventType         string                  `protobuf:"bytes,1,opt,name=event_type,json=eventType" json:"event_type,omitempty"`                         // Type of event (e.g., "purchase", "page_view", etc.)
+	Operator          string                  `protobuf:"bytes,2,opt,name=operator" json:"operator,omitempty"`                                            // "WITHIN_LAST_X_DAYS", "COUNT_GT", "COUNT_LT", "COUNT_EQ", "HAS_PROPERTY", etc.
+	TimeWindowDays    int32                   `protobuf:"varint,3,opt,name=time_window_days,json=timeWindowDays" json:"time_window_days,omitempty"`       // Time window in days (e.g., 7 for last 7 days)
+	Count             int32                   `protobuf:"varint,4,opt,name=count" json:"count,omitempty"`                                                 // Required count for count-based operators
+	PropertyCondition *EventPropertyCondition `protobuf:"bytes,5,opt,name=property_condition,json=propertyCondition" json:"property_condition,omitempty"` // Property-based conditions
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *EventCondition) Reset() {
+	*x = EventCondition{}
+	mi := &file_segments_v1_segments_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EventCondition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventCondition) ProtoMessage() {}
+
+func (x *EventCondition) ProtoReflect() protoreflect.Message {
+	mi := &file_segments_v1_segments_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EventCondition.ProtoReflect.Descriptor instead.
+func (*EventCondition) Descriptor() ([]byte, []int) {
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *EventCondition) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *EventCondition) GetOperator() string {
+	if x != nil {
+		return x.Operator
+	}
+	return ""
+}
+
+func (x *EventCondition) GetTimeWindowDays() int32 {
+	if x != nil {
+		return x.TimeWindowDays
+	}
+	return 0
+}
+
+func (x *EventCondition) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *EventCondition) GetPropertyCondition() *EventPropertyCondition {
+	if x != nil {
+		return x.PropertyCondition
+	}
+	return nil
+}
+
+type EventPropertyCondition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PropertyName  string                 `protobuf:"bytes,1,opt,name=property_name,json=propertyName" json:"property_name,omitempty"`    // Name of the property to check
+	Operator      string                 `protobuf:"bytes,2,opt,name=operator" json:"operator,omitempty"`                                // "EQUALS", "NOT_EQUALS", "GREATER_THAN", "LESS_THAN", "CONTAINS", etc.
+	PropertyValue string                 `protobuf:"bytes,3,opt,name=property_value,json=propertyValue" json:"property_value,omitempty"` // Value to compare against
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EventPropertyCondition) Reset() {
+	*x = EventPropertyCondition{}
+	mi := &file_segments_v1_segments_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EventPropertyCondition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventPropertyCondition) ProtoMessage() {}
+
+func (x *EventPropertyCondition) ProtoReflect() protoreflect.Message {
+	mi := &file_segments_v1_segments_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EventPropertyCondition.ProtoReflect.Descriptor instead.
+func (*EventPropertyCondition) Descriptor() ([]byte, []int) {
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *EventPropertyCondition) GetPropertyName() string {
+	if x != nil {
+		return x.PropertyName
+	}
+	return ""
+}
+
+func (x *EventPropertyCondition) GetOperator() string {
+	if x != nil {
+		return x.Operator
+	}
+	return ""
+}
+
+func (x *EventPropertyCondition) GetPropertyValue() string {
+	if x != nil {
+		return x.PropertyValue
+	}
+	return ""
+}
+
+type Condition struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to ConditionType:
+	//
+	//	*Condition_UserAttributeCondition
+	//	*Condition_EventCondition
+	ConditionType isCondition_ConditionType `protobuf_oneof:"condition_type"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
 func (x *Condition) Reset() {
 	*x = Condition{}
-	mi := &file_segments_v1_segments_proto_msgTypes[3]
+	mi := &file_segments_v1_segments_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -279,7 +479,7 @@ func (x *Condition) String() string {
 func (*Condition) ProtoMessage() {}
 
 func (x *Condition) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[3]
+	mi := &file_segments_v1_segments_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -292,29 +492,49 @@ func (x *Condition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Condition.ProtoReflect.Descriptor instead.
 func (*Condition) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{3}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *Condition) GetField() string {
+func (x *Condition) GetConditionType() isCondition_ConditionType {
 	if x != nil {
-		return x.Field
+		return x.ConditionType
 	}
-	return ""
+	return nil
 }
 
-func (x *Condition) GetOperator() string {
+func (x *Condition) GetUserAttributeCondition() *UserAttributeCondition {
 	if x != nil {
-		return x.Operator
+		if x, ok := x.ConditionType.(*Condition_UserAttributeCondition); ok {
+			return x.UserAttributeCondition
+		}
 	}
-	return ""
+	return nil
 }
 
-func (x *Condition) GetValue() string {
+func (x *Condition) GetEventCondition() *EventCondition {
 	if x != nil {
-		return x.Value
+		if x, ok := x.ConditionType.(*Condition_EventCondition); ok {
+			return x.EventCondition
+		}
 	}
-	return ""
+	return nil
 }
+
+type isCondition_ConditionType interface {
+	isCondition_ConditionType()
+}
+
+type Condition_UserAttributeCondition struct {
+	UserAttributeCondition *UserAttributeCondition `protobuf:"bytes,4,opt,name=user_attribute_condition,json=userAttributeCondition,oneof"` // For user attribute conditions
+}
+
+type Condition_EventCondition struct {
+	EventCondition *EventCondition `protobuf:"bytes,5,opt,name=event_condition,json=eventCondition,oneof"` // For event-based conditions
+}
+
+func (*Condition_UserAttributeCondition) isCondition_ConditionType() {}
+
+func (*Condition_EventCondition) isCondition_ConditionType() {}
 
 // Create segment
 type CreateSegmentRequest struct {
@@ -329,7 +549,7 @@ type CreateSegmentRequest struct {
 
 func (x *CreateSegmentRequest) Reset() {
 	*x = CreateSegmentRequest{}
-	mi := &file_segments_v1_segments_proto_msgTypes[4]
+	mi := &file_segments_v1_segments_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -341,7 +561,7 @@ func (x *CreateSegmentRequest) String() string {
 func (*CreateSegmentRequest) ProtoMessage() {}
 
 func (x *CreateSegmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[4]
+	mi := &file_segments_v1_segments_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -354,7 +574,7 @@ func (x *CreateSegmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSegmentRequest.ProtoReflect.Descriptor instead.
 func (*CreateSegmentRequest) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{4}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreateSegmentRequest) GetProjectId() string {
@@ -394,7 +614,7 @@ type CreateSegmentResponse struct {
 
 func (x *CreateSegmentResponse) Reset() {
 	*x = CreateSegmentResponse{}
-	mi := &file_segments_v1_segments_proto_msgTypes[5]
+	mi := &file_segments_v1_segments_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -406,7 +626,7 @@ func (x *CreateSegmentResponse) String() string {
 func (*CreateSegmentResponse) ProtoMessage() {}
 
 func (x *CreateSegmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[5]
+	mi := &file_segments_v1_segments_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -419,7 +639,7 @@ func (x *CreateSegmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSegmentResponse.ProtoReflect.Descriptor instead.
 func (*CreateSegmentResponse) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{5}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CreateSegmentResponse) GetSegment() *Segment {
@@ -439,7 +659,7 @@ type GetSegmentRequest struct {
 
 func (x *GetSegmentRequest) Reset() {
 	*x = GetSegmentRequest{}
-	mi := &file_segments_v1_segments_proto_msgTypes[6]
+	mi := &file_segments_v1_segments_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -451,7 +671,7 @@ func (x *GetSegmentRequest) String() string {
 func (*GetSegmentRequest) ProtoMessage() {}
 
 func (x *GetSegmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[6]
+	mi := &file_segments_v1_segments_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -464,7 +684,7 @@ func (x *GetSegmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSegmentRequest.ProtoReflect.Descriptor instead.
 func (*GetSegmentRequest) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{6}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetSegmentRequest) GetSegmentId() string {
@@ -483,7 +703,7 @@ type GetSegmentResponse struct {
 
 func (x *GetSegmentResponse) Reset() {
 	*x = GetSegmentResponse{}
-	mi := &file_segments_v1_segments_proto_msgTypes[7]
+	mi := &file_segments_v1_segments_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -495,7 +715,7 @@ func (x *GetSegmentResponse) String() string {
 func (*GetSegmentResponse) ProtoMessage() {}
 
 func (x *GetSegmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[7]
+	mi := &file_segments_v1_segments_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -508,7 +728,7 @@ func (x *GetSegmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSegmentResponse.ProtoReflect.Descriptor instead.
 func (*GetSegmentResponse) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{7}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetSegmentResponse) GetSegment() *Segment {
@@ -530,7 +750,7 @@ type ListSegmentsRequest struct {
 
 func (x *ListSegmentsRequest) Reset() {
 	*x = ListSegmentsRequest{}
-	mi := &file_segments_v1_segments_proto_msgTypes[8]
+	mi := &file_segments_v1_segments_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -542,7 +762,7 @@ func (x *ListSegmentsRequest) String() string {
 func (*ListSegmentsRequest) ProtoMessage() {}
 
 func (x *ListSegmentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[8]
+	mi := &file_segments_v1_segments_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -555,7 +775,7 @@ func (x *ListSegmentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSegmentsRequest.ProtoReflect.Descriptor instead.
 func (*ListSegmentsRequest) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{8}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListSegmentsRequest) GetProjectId() string {
@@ -589,7 +809,7 @@ type ListSegmentsResponse struct {
 
 func (x *ListSegmentsResponse) Reset() {
 	*x = ListSegmentsResponse{}
-	mi := &file_segments_v1_segments_proto_msgTypes[9]
+	mi := &file_segments_v1_segments_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -601,7 +821,7 @@ func (x *ListSegmentsResponse) String() string {
 func (*ListSegmentsResponse) ProtoMessage() {}
 
 func (x *ListSegmentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[9]
+	mi := &file_segments_v1_segments_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -614,7 +834,7 @@ func (x *ListSegmentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSegmentsResponse.ProtoReflect.Descriptor instead.
 func (*ListSegmentsResponse) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{9}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListSegmentsResponse) GetSegments() []*Segment {
@@ -645,7 +865,7 @@ type UpdateSegmentRequest struct {
 
 func (x *UpdateSegmentRequest) Reset() {
 	*x = UpdateSegmentRequest{}
-	mi := &file_segments_v1_segments_proto_msgTypes[10]
+	mi := &file_segments_v1_segments_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -657,7 +877,7 @@ func (x *UpdateSegmentRequest) String() string {
 func (*UpdateSegmentRequest) ProtoMessage() {}
 
 func (x *UpdateSegmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[10]
+	mi := &file_segments_v1_segments_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -670,7 +890,7 @@ func (x *UpdateSegmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSegmentRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSegmentRequest) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{10}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UpdateSegmentRequest) GetSegmentId() string {
@@ -717,7 +937,7 @@ type UpdateSegmentResponse struct {
 
 func (x *UpdateSegmentResponse) Reset() {
 	*x = UpdateSegmentResponse{}
-	mi := &file_segments_v1_segments_proto_msgTypes[11]
+	mi := &file_segments_v1_segments_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -729,7 +949,7 @@ func (x *UpdateSegmentResponse) String() string {
 func (*UpdateSegmentResponse) ProtoMessage() {}
 
 func (x *UpdateSegmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[11]
+	mi := &file_segments_v1_segments_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -742,7 +962,7 @@ func (x *UpdateSegmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSegmentResponse.ProtoReflect.Descriptor instead.
 func (*UpdateSegmentResponse) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{11}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UpdateSegmentResponse) GetSegment() *Segment {
@@ -762,7 +982,7 @@ type DeleteSegmentRequest struct {
 
 func (x *DeleteSegmentRequest) Reset() {
 	*x = DeleteSegmentRequest{}
-	mi := &file_segments_v1_segments_proto_msgTypes[12]
+	mi := &file_segments_v1_segments_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -774,7 +994,7 @@ func (x *DeleteSegmentRequest) String() string {
 func (*DeleteSegmentRequest) ProtoMessage() {}
 
 func (x *DeleteSegmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[12]
+	mi := &file_segments_v1_segments_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -787,7 +1007,7 @@ func (x *DeleteSegmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSegmentRequest.ProtoReflect.Descriptor instead.
 func (*DeleteSegmentRequest) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{12}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DeleteSegmentRequest) GetSegmentId() string {
@@ -806,7 +1026,7 @@ type DeleteSegmentResponse struct {
 
 func (x *DeleteSegmentResponse) Reset() {
 	*x = DeleteSegmentResponse{}
-	mi := &file_segments_v1_segments_proto_msgTypes[13]
+	mi := &file_segments_v1_segments_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -818,7 +1038,7 @@ func (x *DeleteSegmentResponse) String() string {
 func (*DeleteSegmentResponse) ProtoMessage() {}
 
 func (x *DeleteSegmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[13]
+	mi := &file_segments_v1_segments_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -831,7 +1051,7 @@ func (x *DeleteSegmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSegmentResponse.ProtoReflect.Descriptor instead.
 func (*DeleteSegmentResponse) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{13}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DeleteSegmentResponse) GetSuccess() bool {
@@ -852,7 +1072,7 @@ type EvaluateSegmentRequest struct {
 
 func (x *EvaluateSegmentRequest) Reset() {
 	*x = EvaluateSegmentRequest{}
-	mi := &file_segments_v1_segments_proto_msgTypes[14]
+	mi := &file_segments_v1_segments_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -864,7 +1084,7 @@ func (x *EvaluateSegmentRequest) String() string {
 func (*EvaluateSegmentRequest) ProtoMessage() {}
 
 func (x *EvaluateSegmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[14]
+	mi := &file_segments_v1_segments_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -877,7 +1097,7 @@ func (x *EvaluateSegmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluateSegmentRequest.ProtoReflect.Descriptor instead.
 func (*EvaluateSegmentRequest) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{14}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *EvaluateSegmentRequest) GetSegmentId() string {
@@ -903,7 +1123,7 @@ type EvaluateSegmentResponse struct {
 
 func (x *EvaluateSegmentResponse) Reset() {
 	*x = EvaluateSegmentResponse{}
-	mi := &file_segments_v1_segments_proto_msgTypes[15]
+	mi := &file_segments_v1_segments_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -915,7 +1135,7 @@ func (x *EvaluateSegmentResponse) String() string {
 func (*EvaluateSegmentResponse) ProtoMessage() {}
 
 func (x *EvaluateSegmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_segments_v1_segments_proto_msgTypes[15]
+	mi := &file_segments_v1_segments_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -928,7 +1148,7 @@ func (x *EvaluateSegmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluateSegmentResponse.ProtoReflect.Descriptor instead.
 func (*EvaluateSegmentResponse) Descriptor() ([]byte, []int) {
-	return file_segments_v1_segments_proto_rawDescGZIP(), []int{15}
+	return file_segments_v1_segments_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *EvaluateSegmentResponse) GetMatches() bool {
@@ -963,11 +1183,26 @@ const file_segments_v1_segments_proto_rawDesc = "" +
 	"\n" +
 	"sub_filter\x18\x01 \x01(\v2\x1a.segments.v1.SegmentFilterH\x00R\tsubFilter\x126\n" +
 	"\tcondition\x18\x02 \x01(\v2\x16.segments.v1.ConditionH\x00R\tconditionB\x06\n" +
-	"\x04part\"S\n" +
-	"\tCondition\x12\x14\n" +
+	"\x04part\"`\n" +
+	"\x16UserAttributeCondition\x12\x14\n" +
 	"\x05field\x18\x01 \x01(\tR\x05field\x12\x1a\n" +
 	"\boperator\x18\x02 \x01(\tR\boperator\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value\"\x9f\x01\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value\"\xdf\x01\n" +
+	"\x0eEventCondition\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x01 \x01(\tR\teventType\x12\x1a\n" +
+	"\boperator\x18\x02 \x01(\tR\boperator\x12(\n" +
+	"\x10time_window_days\x18\x03 \x01(\x05R\x0etimeWindowDays\x12\x14\n" +
+	"\x05count\x18\x04 \x01(\x05R\x05count\x12R\n" +
+	"\x12property_condition\x18\x05 \x01(\v2#.segments.v1.EventPropertyConditionR\x11propertyCondition\"\x80\x01\n" +
+	"\x16EventPropertyCondition\x12#\n" +
+	"\rproperty_name\x18\x01 \x01(\tR\fpropertyName\x12\x1a\n" +
+	"\boperator\x18\x02 \x01(\tR\boperator\x12%\n" +
+	"\x0eproperty_value\x18\x03 \x01(\tR\rpropertyValue\"\xc6\x01\n" +
+	"\tCondition\x12_\n" +
+	"\x18user_attribute_condition\x18\x04 \x01(\v2#.segments.v1.UserAttributeConditionH\x00R\x16userAttributeCondition\x12F\n" +
+	"\x0fevent_condition\x18\x05 \x01(\v2\x1b.segments.v1.EventConditionH\x00R\x0eeventConditionB\x10\n" +
+	"\x0econdition_type\"\x9f\x01\n" +
 	"\x14CreateSegmentRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
@@ -1031,56 +1266,62 @@ func file_segments_v1_segments_proto_rawDescGZIP() []byte {
 	return file_segments_v1_segments_proto_rawDescData
 }
 
-var file_segments_v1_segments_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_segments_v1_segments_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_segments_v1_segments_proto_goTypes = []any{
 	(*Segment)(nil),                 // 0: segments.v1.Segment
 	(*SegmentFilter)(nil),           // 1: segments.v1.SegmentFilter
 	(*FilterPart)(nil),              // 2: segments.v1.FilterPart
-	(*Condition)(nil),               // 3: segments.v1.Condition
-	(*CreateSegmentRequest)(nil),    // 4: segments.v1.CreateSegmentRequest
-	(*CreateSegmentResponse)(nil),   // 5: segments.v1.CreateSegmentResponse
-	(*GetSegmentRequest)(nil),       // 6: segments.v1.GetSegmentRequest
-	(*GetSegmentResponse)(nil),      // 7: segments.v1.GetSegmentResponse
-	(*ListSegmentsRequest)(nil),     // 8: segments.v1.ListSegmentsRequest
-	(*ListSegmentsResponse)(nil),    // 9: segments.v1.ListSegmentsResponse
-	(*UpdateSegmentRequest)(nil),    // 10: segments.v1.UpdateSegmentRequest
-	(*UpdateSegmentResponse)(nil),   // 11: segments.v1.UpdateSegmentResponse
-	(*DeleteSegmentRequest)(nil),    // 12: segments.v1.DeleteSegmentRequest
-	(*DeleteSegmentResponse)(nil),   // 13: segments.v1.DeleteSegmentResponse
-	(*EvaluateSegmentRequest)(nil),  // 14: segments.v1.EvaluateSegmentRequest
-	(*EvaluateSegmentResponse)(nil), // 15: segments.v1.EvaluateSegmentResponse
-	(*timestamppb.Timestamp)(nil),   // 16: google.protobuf.Timestamp
+	(*UserAttributeCondition)(nil),  // 3: segments.v1.UserAttributeCondition
+	(*EventCondition)(nil),          // 4: segments.v1.EventCondition
+	(*EventPropertyCondition)(nil),  // 5: segments.v1.EventPropertyCondition
+	(*Condition)(nil),               // 6: segments.v1.Condition
+	(*CreateSegmentRequest)(nil),    // 7: segments.v1.CreateSegmentRequest
+	(*CreateSegmentResponse)(nil),   // 8: segments.v1.CreateSegmentResponse
+	(*GetSegmentRequest)(nil),       // 9: segments.v1.GetSegmentRequest
+	(*GetSegmentResponse)(nil),      // 10: segments.v1.GetSegmentResponse
+	(*ListSegmentsRequest)(nil),     // 11: segments.v1.ListSegmentsRequest
+	(*ListSegmentsResponse)(nil),    // 12: segments.v1.ListSegmentsResponse
+	(*UpdateSegmentRequest)(nil),    // 13: segments.v1.UpdateSegmentRequest
+	(*UpdateSegmentResponse)(nil),   // 14: segments.v1.UpdateSegmentResponse
+	(*DeleteSegmentRequest)(nil),    // 15: segments.v1.DeleteSegmentRequest
+	(*DeleteSegmentResponse)(nil),   // 16: segments.v1.DeleteSegmentResponse
+	(*EvaluateSegmentRequest)(nil),  // 17: segments.v1.EvaluateSegmentRequest
+	(*EvaluateSegmentResponse)(nil), // 18: segments.v1.EvaluateSegmentResponse
+	(*timestamppb.Timestamp)(nil),   // 19: google.protobuf.Timestamp
 }
 var file_segments_v1_segments_proto_depIdxs = []int32{
 	1,  // 0: segments.v1.Segment.filter:type_name -> segments.v1.SegmentFilter
-	16, // 1: segments.v1.Segment.create_time:type_name -> google.protobuf.Timestamp
-	16, // 2: segments.v1.Segment.update_time:type_name -> google.protobuf.Timestamp
+	19, // 1: segments.v1.Segment.create_time:type_name -> google.protobuf.Timestamp
+	19, // 2: segments.v1.Segment.update_time:type_name -> google.protobuf.Timestamp
 	2,  // 3: segments.v1.SegmentFilter.parts:type_name -> segments.v1.FilterPart
 	1,  // 4: segments.v1.FilterPart.sub_filter:type_name -> segments.v1.SegmentFilter
-	3,  // 5: segments.v1.FilterPart.condition:type_name -> segments.v1.Condition
-	1,  // 6: segments.v1.CreateSegmentRequest.filter:type_name -> segments.v1.SegmentFilter
-	0,  // 7: segments.v1.CreateSegmentResponse.segment:type_name -> segments.v1.Segment
-	0,  // 8: segments.v1.GetSegmentResponse.segment:type_name -> segments.v1.Segment
-	0,  // 9: segments.v1.ListSegmentsResponse.segments:type_name -> segments.v1.Segment
-	1,  // 10: segments.v1.UpdateSegmentRequest.filter:type_name -> segments.v1.SegmentFilter
-	0,  // 11: segments.v1.UpdateSegmentResponse.segment:type_name -> segments.v1.Segment
-	4,  // 12: segments.v1.SegmentsService.CreateSegment:input_type -> segments.v1.CreateSegmentRequest
-	6,  // 13: segments.v1.SegmentsService.GetSegment:input_type -> segments.v1.GetSegmentRequest
-	8,  // 14: segments.v1.SegmentsService.ListSegments:input_type -> segments.v1.ListSegmentsRequest
-	10, // 15: segments.v1.SegmentsService.UpdateSegment:input_type -> segments.v1.UpdateSegmentRequest
-	12, // 16: segments.v1.SegmentsService.DeleteSegment:input_type -> segments.v1.DeleteSegmentRequest
-	14, // 17: segments.v1.SegmentsService.EvaluateSegment:input_type -> segments.v1.EvaluateSegmentRequest
-	5,  // 18: segments.v1.SegmentsService.CreateSegment:output_type -> segments.v1.CreateSegmentResponse
-	7,  // 19: segments.v1.SegmentsService.GetSegment:output_type -> segments.v1.GetSegmentResponse
-	9,  // 20: segments.v1.SegmentsService.ListSegments:output_type -> segments.v1.ListSegmentsResponse
-	11, // 21: segments.v1.SegmentsService.UpdateSegment:output_type -> segments.v1.UpdateSegmentResponse
-	13, // 22: segments.v1.SegmentsService.DeleteSegment:output_type -> segments.v1.DeleteSegmentResponse
-	15, // 23: segments.v1.SegmentsService.EvaluateSegment:output_type -> segments.v1.EvaluateSegmentResponse
-	18, // [18:24] is the sub-list for method output_type
-	12, // [12:18] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	6,  // 5: segments.v1.FilterPart.condition:type_name -> segments.v1.Condition
+	5,  // 6: segments.v1.EventCondition.property_condition:type_name -> segments.v1.EventPropertyCondition
+	3,  // 7: segments.v1.Condition.user_attribute_condition:type_name -> segments.v1.UserAttributeCondition
+	4,  // 8: segments.v1.Condition.event_condition:type_name -> segments.v1.EventCondition
+	1,  // 9: segments.v1.CreateSegmentRequest.filter:type_name -> segments.v1.SegmentFilter
+	0,  // 10: segments.v1.CreateSegmentResponse.segment:type_name -> segments.v1.Segment
+	0,  // 11: segments.v1.GetSegmentResponse.segment:type_name -> segments.v1.Segment
+	0,  // 12: segments.v1.ListSegmentsResponse.segments:type_name -> segments.v1.Segment
+	1,  // 13: segments.v1.UpdateSegmentRequest.filter:type_name -> segments.v1.SegmentFilter
+	0,  // 14: segments.v1.UpdateSegmentResponse.segment:type_name -> segments.v1.Segment
+	7,  // 15: segments.v1.SegmentsService.CreateSegment:input_type -> segments.v1.CreateSegmentRequest
+	9,  // 16: segments.v1.SegmentsService.GetSegment:input_type -> segments.v1.GetSegmentRequest
+	11, // 17: segments.v1.SegmentsService.ListSegments:input_type -> segments.v1.ListSegmentsRequest
+	13, // 18: segments.v1.SegmentsService.UpdateSegment:input_type -> segments.v1.UpdateSegmentRequest
+	15, // 19: segments.v1.SegmentsService.DeleteSegment:input_type -> segments.v1.DeleteSegmentRequest
+	17, // 20: segments.v1.SegmentsService.EvaluateSegment:input_type -> segments.v1.EvaluateSegmentRequest
+	8,  // 21: segments.v1.SegmentsService.CreateSegment:output_type -> segments.v1.CreateSegmentResponse
+	10, // 22: segments.v1.SegmentsService.GetSegment:output_type -> segments.v1.GetSegmentResponse
+	12, // 23: segments.v1.SegmentsService.ListSegments:output_type -> segments.v1.ListSegmentsResponse
+	14, // 24: segments.v1.SegmentsService.UpdateSegment:output_type -> segments.v1.UpdateSegmentResponse
+	16, // 25: segments.v1.SegmentsService.DeleteSegment:output_type -> segments.v1.DeleteSegmentResponse
+	18, // 26: segments.v1.SegmentsService.EvaluateSegment:output_type -> segments.v1.EvaluateSegmentResponse
+	21, // [21:27] is the sub-list for method output_type
+	15, // [15:21] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_segments_v1_segments_proto_init() }
@@ -1092,13 +1333,17 @@ func file_segments_v1_segments_proto_init() {
 		(*FilterPart_SubFilter)(nil),
 		(*FilterPart_Condition)(nil),
 	}
+	file_segments_v1_segments_proto_msgTypes[6].OneofWrappers = []any{
+		(*Condition_UserAttributeCondition)(nil),
+		(*Condition_EventCondition)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_segments_v1_segments_proto_rawDesc), len(file_segments_v1_segments_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

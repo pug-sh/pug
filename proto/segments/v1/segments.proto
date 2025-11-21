@@ -38,10 +38,33 @@ message FilterPart {
   }
 }
 
-message Condition {
+// User attribute condition
+message UserAttributeCondition {
   string field = 1;
   string operator = 2; // "EQUALS", "NOT_EQUALS", "GREATER_THAN", "LESS_THAN", "CONTAINS", "NOT_CONTAINS", "IN_LAST_X_DAYS", etc.
   string value = 3;
+}
+
+// Event-based condition
+message EventCondition {
+  string event_type = 1;        // Type of event (e.g., "purchase", "page_view", etc.)
+  string operator = 2;          // "WITHIN_LAST_X_DAYS", "COUNT_GT", "COUNT_LT", "COUNT_EQ", "HAS_PROPERTY", etc.
+  int32 time_window_days = 3;   // Time window in days (e.g., 7 for last 7 days)
+  int32 count = 4;              // Required count for count-based operators
+  EventPropertyCondition property_condition = 5; // Property-based conditions
+}
+
+message EventPropertyCondition {
+  string property_name = 1;     // Name of the property to check
+  string operator = 2;          // "EQUALS", "NOT_EQUALS", "GREATER_THAN", "LESS_THAN", "CONTAINS", etc.
+  string property_value = 3;    // Value to compare against
+}
+
+message Condition {
+  oneof condition_type {
+    UserAttributeCondition user_attribute_condition = 4; // For user attribute conditions
+    EventCondition event_condition = 5;                  // For event-based conditions
+  }
 }
 
 // Create segment

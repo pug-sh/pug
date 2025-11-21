@@ -136,12 +136,18 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 
 	h2cHandler := h2c.NewHandler(handlerWithCORS, &http2.Server{})
 
+	port := os.Getenv("SERVER_PORT")
+	if port == "" {
+		port = "3000" // Default port
+	}
+	addr := ":" + port
+
 	server := &http.Server{
-		Addr:    ":8081",
+		Addr:    addr,
 		Handler: h2cHandler,
 	}
 
-	logger.Log.Info("Starting server", slog.String("addr", ":8081"))
+	logger.Log.Info("Starting server", slog.String("addr", addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Log.Error("failed to serve", slog.Any("err", err))
 		return err
