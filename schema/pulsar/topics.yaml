@@ -15,6 +15,14 @@ topics:
     retention:
       timeInMinutes: 43200
       sizeInMB: 50000
+  - name: "deliveries"
+    type: "persistent"
+    partitions: 1
+    properties:
+      description: "Delivery events for notifications"
+    retention:
+      timeInMinutes: 43200
+      sizeInMB: 50000
 
 subscriptions:
   - name: "subscription-processor"

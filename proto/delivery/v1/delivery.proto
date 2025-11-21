@@ -7,9 +7,6 @@ option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1
 // Service definition for delivery tracking
 service DeliveryService {
   rpc RecordEvent(RecordEventRequest) returns (RecordEventResponse);
-  rpc GetDeliveryEventAnalyticsHourly(GetDeliveryEventAnalyticsHourlyRequest) returns (GetDeliveryEventAnalyticsHourlyResponse);
-  rpc GetDeliveryEventAnalyticsDaily(GetDeliveryEventAnalyticsDailyRequest) returns (GetDeliveryEventAnalyticsDailyResponse);
-  rpc GetDeliveryEventAnalyticsMonthly(GetDeliveryEventAnalyticsMonthlyRequest) returns (GetDeliveryEventAnalyticsMonthlyResponse);
 }
 
 // Structure of a single delivery event
@@ -18,36 +15,6 @@ message DeliveryEvent {
   EventType event_type = 2;
   Platform platform = 3;
   uint64 event_count = 4;
-}
-
-message GetDeliveryEventAnalyticsHourlyRequest {
-  string campaign_id = 1;
-  repeated EventType event_types = 2;
-  repeated Platform platforms = 3;
-}
-
-message GetDeliveryEventAnalyticsHourlyResponse {
-  repeated DeliveryEvent events = 1;
-}
-
-message GetDeliveryEventAnalyticsDailyRequest {
-  string campaign_id = 1;
-  repeated EventType event_types = 2;
-  repeated Platform platforms = 3;
-}
-
-message GetDeliveryEventAnalyticsDailyResponse {
-  repeated DeliveryEvent events = 1;
-}
-
-message GetDeliveryEventAnalyticsMonthlyRequest {
-  string campaign_id = 1;
-  repeated EventType event_types = 2;
-  repeated Platform platforms = 3;
-}
-
-message GetDeliveryEventAnalyticsMonthlyResponse {
-  repeated DeliveryEvent events = 1;
 }
 
 // Platform enum for subscription types

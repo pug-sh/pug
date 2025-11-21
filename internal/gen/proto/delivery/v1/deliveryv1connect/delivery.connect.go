@@ -36,23 +36,11 @@ const (
 	// DeliveryServiceRecordEventProcedure is the fully-qualified name of the DeliveryService's
 	// RecordEvent RPC.
 	DeliveryServiceRecordEventProcedure = "/delivery.v1.DeliveryService/RecordEvent"
-	// DeliveryServiceGetDeliveryEventAnalyticsHourlyProcedure is the fully-qualified name of the
-	// DeliveryService's GetDeliveryEventAnalyticsHourly RPC.
-	DeliveryServiceGetDeliveryEventAnalyticsHourlyProcedure = "/delivery.v1.DeliveryService/GetDeliveryEventAnalyticsHourly"
-	// DeliveryServiceGetDeliveryEventAnalyticsDailyProcedure is the fully-qualified name of the
-	// DeliveryService's GetDeliveryEventAnalyticsDaily RPC.
-	DeliveryServiceGetDeliveryEventAnalyticsDailyProcedure = "/delivery.v1.DeliveryService/GetDeliveryEventAnalyticsDaily"
-	// DeliveryServiceGetDeliveryEventAnalyticsMonthlyProcedure is the fully-qualified name of the
-	// DeliveryService's GetDeliveryEventAnalyticsMonthly RPC.
-	DeliveryServiceGetDeliveryEventAnalyticsMonthlyProcedure = "/delivery.v1.DeliveryService/GetDeliveryEventAnalyticsMonthly"
 )
 
 // DeliveryServiceClient is a client for the delivery.v1.DeliveryService service.
 type DeliveryServiceClient interface {
 	RecordEvent(context.Context, *connect.Request[v1.RecordEventRequest]) (*connect.Response[v1.RecordEventResponse], error)
-	GetDeliveryEventAnalyticsHourly(context.Context, *connect.Request[v1.GetDeliveryEventAnalyticsHourlyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsHourlyResponse], error)
-	GetDeliveryEventAnalyticsDaily(context.Context, *connect.Request[v1.GetDeliveryEventAnalyticsDailyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsDailyResponse], error)
-	GetDeliveryEventAnalyticsMonthly(context.Context, *connect.Request[v1.GetDeliveryEventAnalyticsMonthlyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsMonthlyResponse], error)
 }
 
 // NewDeliveryServiceClient constructs a client for the delivery.v1.DeliveryService service. By
@@ -72,33 +60,12 @@ func NewDeliveryServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(deliveryServiceMethods.ByName("RecordEvent")),
 			connect.WithClientOptions(opts...),
 		),
-		getDeliveryEventAnalyticsHourly: connect.NewClient[v1.GetDeliveryEventAnalyticsHourlyRequest, v1.GetDeliveryEventAnalyticsHourlyResponse](
-			httpClient,
-			baseURL+DeliveryServiceGetDeliveryEventAnalyticsHourlyProcedure,
-			connect.WithSchema(deliveryServiceMethods.ByName("GetDeliveryEventAnalyticsHourly")),
-			connect.WithClientOptions(opts...),
-		),
-		getDeliveryEventAnalyticsDaily: connect.NewClient[v1.GetDeliveryEventAnalyticsDailyRequest, v1.GetDeliveryEventAnalyticsDailyResponse](
-			httpClient,
-			baseURL+DeliveryServiceGetDeliveryEventAnalyticsDailyProcedure,
-			connect.WithSchema(deliveryServiceMethods.ByName("GetDeliveryEventAnalyticsDaily")),
-			connect.WithClientOptions(opts...),
-		),
-		getDeliveryEventAnalyticsMonthly: connect.NewClient[v1.GetDeliveryEventAnalyticsMonthlyRequest, v1.GetDeliveryEventAnalyticsMonthlyResponse](
-			httpClient,
-			baseURL+DeliveryServiceGetDeliveryEventAnalyticsMonthlyProcedure,
-			connect.WithSchema(deliveryServiceMethods.ByName("GetDeliveryEventAnalyticsMonthly")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // deliveryServiceClient implements DeliveryServiceClient.
 type deliveryServiceClient struct {
-	recordEvent                      *connect.Client[v1.RecordEventRequest, v1.RecordEventResponse]
-	getDeliveryEventAnalyticsHourly  *connect.Client[v1.GetDeliveryEventAnalyticsHourlyRequest, v1.GetDeliveryEventAnalyticsHourlyResponse]
-	getDeliveryEventAnalyticsDaily   *connect.Client[v1.GetDeliveryEventAnalyticsDailyRequest, v1.GetDeliveryEventAnalyticsDailyResponse]
-	getDeliveryEventAnalyticsMonthly *connect.Client[v1.GetDeliveryEventAnalyticsMonthlyRequest, v1.GetDeliveryEventAnalyticsMonthlyResponse]
+	recordEvent *connect.Client[v1.RecordEventRequest, v1.RecordEventResponse]
 }
 
 // RecordEvent calls delivery.v1.DeliveryService.RecordEvent.
@@ -106,29 +73,9 @@ func (c *deliveryServiceClient) RecordEvent(ctx context.Context, req *connect.Re
 	return c.recordEvent.CallUnary(ctx, req)
 }
 
-// GetDeliveryEventAnalyticsHourly calls
-// delivery.v1.DeliveryService.GetDeliveryEventAnalyticsHourly.
-func (c *deliveryServiceClient) GetDeliveryEventAnalyticsHourly(ctx context.Context, req *connect.Request[v1.GetDeliveryEventAnalyticsHourlyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsHourlyResponse], error) {
-	return c.getDeliveryEventAnalyticsHourly.CallUnary(ctx, req)
-}
-
-// GetDeliveryEventAnalyticsDaily calls delivery.v1.DeliveryService.GetDeliveryEventAnalyticsDaily.
-func (c *deliveryServiceClient) GetDeliveryEventAnalyticsDaily(ctx context.Context, req *connect.Request[v1.GetDeliveryEventAnalyticsDailyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsDailyResponse], error) {
-	return c.getDeliveryEventAnalyticsDaily.CallUnary(ctx, req)
-}
-
-// GetDeliveryEventAnalyticsMonthly calls
-// delivery.v1.DeliveryService.GetDeliveryEventAnalyticsMonthly.
-func (c *deliveryServiceClient) GetDeliveryEventAnalyticsMonthly(ctx context.Context, req *connect.Request[v1.GetDeliveryEventAnalyticsMonthlyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsMonthlyResponse], error) {
-	return c.getDeliveryEventAnalyticsMonthly.CallUnary(ctx, req)
-}
-
 // DeliveryServiceHandler is an implementation of the delivery.v1.DeliveryService service.
 type DeliveryServiceHandler interface {
 	RecordEvent(context.Context, *connect.Request[v1.RecordEventRequest]) (*connect.Response[v1.RecordEventResponse], error)
-	GetDeliveryEventAnalyticsHourly(context.Context, *connect.Request[v1.GetDeliveryEventAnalyticsHourlyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsHourlyResponse], error)
-	GetDeliveryEventAnalyticsDaily(context.Context, *connect.Request[v1.GetDeliveryEventAnalyticsDailyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsDailyResponse], error)
-	GetDeliveryEventAnalyticsMonthly(context.Context, *connect.Request[v1.GetDeliveryEventAnalyticsMonthlyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsMonthlyResponse], error)
 }
 
 // NewDeliveryServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -144,34 +91,10 @@ func NewDeliveryServiceHandler(svc DeliveryServiceHandler, opts ...connect.Handl
 		connect.WithSchema(deliveryServiceMethods.ByName("RecordEvent")),
 		connect.WithHandlerOptions(opts...),
 	)
-	deliveryServiceGetDeliveryEventAnalyticsHourlyHandler := connect.NewUnaryHandler(
-		DeliveryServiceGetDeliveryEventAnalyticsHourlyProcedure,
-		svc.GetDeliveryEventAnalyticsHourly,
-		connect.WithSchema(deliveryServiceMethods.ByName("GetDeliveryEventAnalyticsHourly")),
-		connect.WithHandlerOptions(opts...),
-	)
-	deliveryServiceGetDeliveryEventAnalyticsDailyHandler := connect.NewUnaryHandler(
-		DeliveryServiceGetDeliveryEventAnalyticsDailyProcedure,
-		svc.GetDeliveryEventAnalyticsDaily,
-		connect.WithSchema(deliveryServiceMethods.ByName("GetDeliveryEventAnalyticsDaily")),
-		connect.WithHandlerOptions(opts...),
-	)
-	deliveryServiceGetDeliveryEventAnalyticsMonthlyHandler := connect.NewUnaryHandler(
-		DeliveryServiceGetDeliveryEventAnalyticsMonthlyProcedure,
-		svc.GetDeliveryEventAnalyticsMonthly,
-		connect.WithSchema(deliveryServiceMethods.ByName("GetDeliveryEventAnalyticsMonthly")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/delivery.v1.DeliveryService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DeliveryServiceRecordEventProcedure:
 			deliveryServiceRecordEventHandler.ServeHTTP(w, r)
-		case DeliveryServiceGetDeliveryEventAnalyticsHourlyProcedure:
-			deliveryServiceGetDeliveryEventAnalyticsHourlyHandler.ServeHTTP(w, r)
-		case DeliveryServiceGetDeliveryEventAnalyticsDailyProcedure:
-			deliveryServiceGetDeliveryEventAnalyticsDailyHandler.ServeHTTP(w, r)
-		case DeliveryServiceGetDeliveryEventAnalyticsMonthlyProcedure:
-			deliveryServiceGetDeliveryEventAnalyticsMonthlyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -183,16 +106,4 @@ type UnimplementedDeliveryServiceHandler struct{}
 
 func (UnimplementedDeliveryServiceHandler) RecordEvent(context.Context, *connect.Request[v1.RecordEventRequest]) (*connect.Response[v1.RecordEventResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delivery.v1.DeliveryService.RecordEvent is not implemented"))
-}
-
-func (UnimplementedDeliveryServiceHandler) GetDeliveryEventAnalyticsHourly(context.Context, *connect.Request[v1.GetDeliveryEventAnalyticsHourlyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsHourlyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delivery.v1.DeliveryService.GetDeliveryEventAnalyticsHourly is not implemented"))
-}
-
-func (UnimplementedDeliveryServiceHandler) GetDeliveryEventAnalyticsDaily(context.Context, *connect.Request[v1.GetDeliveryEventAnalyticsDailyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsDailyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delivery.v1.DeliveryService.GetDeliveryEventAnalyticsDaily is not implemented"))
-}
-
-func (UnimplementedDeliveryServiceHandler) GetDeliveryEventAnalyticsMonthly(context.Context, *connect.Request[v1.GetDeliveryEventAnalyticsMonthlyRequest]) (*connect.Response[v1.GetDeliveryEventAnalyticsMonthlyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delivery.v1.DeliveryService.GetDeliveryEventAnalyticsMonthly is not implemented"))
 }

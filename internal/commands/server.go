@@ -14,12 +14,14 @@ import (
 	"connectrpc.com/grpcreflect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/segments/v1/segmentsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/rpc/auth"
 	"github.com/fivebitsio/cotton/internal/rpc/campaigns"
+	"github.com/fivebitsio/cotton/internal/rpc/delivery"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
 	"github.com/fivebitsio/cotton/internal/rpc/projects"
 	"github.com/fivebitsio/cotton/internal/rpc/segments"
@@ -35,11 +37,12 @@ import (
 )
 
 type serverDeps struct {
-	pgRo              *pgxpool.Pool
-	pgW               *pgxpool.Pool
-	pulsar            *pulsar.Client
-	campaignsProducer *pulsar.Producer
-	jwtKey            []byte
+	pgRo               *pgxpool.Pool
+	pgW                *pgxpool.Pool
+	pulsar             *pulsar.Client
+	campaignsProducer  *pulsar.Producer
+	deliveriesProducer *pulsar.Producer
+	jwtKey             []byte
 }
 
 func newServerDeps(ctx context.Context) (*serverDeps, error) {
@@ -70,11 +73,18 @@ func newServerDeps(ctx context.Context) (*serverDeps, error) {
 		return nil, fmt.Errorf("failed to create campaigns pulsar producer: %w", err)
 	}
 
+	deliveriesProducer, err := pulsarClient.CreateProducer("deliveries")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create deliveries pulsar producer: %w", err)
+	}
+
 	return &serverDeps{
-		pgRo:              pgRo,
-		pgW:               pgW,
-		campaignsProducer: campaignsProducer,
-		jwtKey:            jwtKey,
+		pgRo:               pgRo,
+		pgW:                pgW,
+		pulsar:             pulsarClient,
+		campaignsProducer:  campaignsProducer,
+		deliveriesProducer: deliveriesProducer,
+		jwtKey:             jwtKey,
 	}, nil
 }
 
@@ -99,7 +109,6 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	)
 	projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
 
-
 	campaignsServer := campaigns.NewServer(deps.pgRo, deps.pgW, deps.campaignsProducer)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
 		campaignsServer,
@@ -115,17 +124,26 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	)
 	segmentsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(segmentsHandler)
 
+	deliveryServer := delivery.NewServer(deps.deliveriesProducer)
+	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
+		deliveryServer,
+		commonHandlerOptions(),
+	)
+	deliveryHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(deliveryHandler)
+
 	handler := http.NewServeMux()
 	handler.Handle(authPath, authHandler)
 	handler.Handle(projectsPath, projectsHandler)
 	handler.Handle(campaignsPath, campaignsHandler)
 	handler.Handle(segmentsPath, segmentsHandler)
+	handler.Handle(deliveryPath, deliveryHandler)
 
 	services := []string{
 		authv1connect.AuthServiceName,
 		projectsv1connect.ProjectsServiceName,
 		campaignsv1connect.CampaignServiceName,
 		segmentsv1connect.SegmentsServiceName,
+		deliveryv1connect.DeliveryServiceName,
 	}
 
 	reflector := grpcreflect.NewStaticReflector(services...)
@@ -161,6 +179,9 @@ func (deps *serverDeps) Close(ctx context.Context) {
 	deps.pgW.Close()
 	if deps.campaignsProducer != nil {
 		deps.campaignsProducer.Close()
+	}
+	if deps.deliveriesProducer != nil {
+		deps.deliveriesProducer.Close()
 	}
 	if deps.pulsar != nil {
 		deps.pulsar.Close()
