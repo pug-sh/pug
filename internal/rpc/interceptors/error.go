@@ -3,6 +3,7 @@ package interceptors
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"connectrpc.com/connect"
 )
@@ -13,7 +14,9 @@ func ErrorInterceptor() connect.UnaryInterceptorFunc {
 			resp, err := next(ctx, req)
 
 			if connectErr, ok := err.(*connect.Error); ok && connectErr.Code() == connect.CodeInternal {
-				// TODO: log the error
+				slog.ErrorContext(ctx, "internal error",
+					slog.String("procedure", req.Spec().Procedure),
+					slog.Any("error", connectErr.Unwrap()))
 				return resp, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 
