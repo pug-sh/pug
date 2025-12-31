@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
@@ -15,9 +16,10 @@ import (
 )
 
 type FCMService struct {
-	pgRO        *pgxpool.Pool
-	pgW         *pgxpool.Pool
-	projectsSvc *projects.Service
+	pgRO           *pgxpool.Pool
+	pgW            *pgxpool.Pool
+	projectsSvc    *projects.Service
+	messagingCache sync.Map
 }
 
 func NewFCMService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.Service) *FCMService {
@@ -26,6 +28,28 @@ func NewFCMService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.
 		pgW:         pgW,
 		projectsSvc: projectsSvc,
 	}
+}
+
+func (f *FCMService) getMessagingClient(ctx context.Context, projectID, fcmServiceJSON string) (*messaging.Client, error) {
+	if cached, ok := f.messagingCache.Load(projectID); ok {
+		return cached.(*messaging.Client), nil
+	}
+
+	opt := option.WithCredentialsJSON([]byte(fcmServiceJSON))
+	app, err := firebase.NewApp(ctx, nil, opt)
+	if err != nil {
+		return nil, fmt.Errorf("error initializing Firebase app: %w", err)
+	}
+
+	client, err := app.Messaging(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting Firebase Messaging client: %w", err)
+	}
+
+	f.messagingCache.Store(projectID, client)
+	slog.Info("Firebase messaging client cached", slog.String("project_id", projectID))
+
+	return client, nil
 }
 
 // SendNotification sends a push notification to a device token via FCM
@@ -59,17 +83,10 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 		body = "You have a new notification"
 	}
 
-	// Initialize the Firebase app with credentials from project's FCM configuration
-	opt := option.WithCredentialsJSON([]byte(project.FcmServiceJson.String))
-	app, err := firebase.NewApp(ctx, nil, opt)
+	// Get or create cached messaging client for this project
+	client, err := f.getMessagingClient(ctx, campaign.ProjectID, project.FcmServiceJson.String)
 	if err != nil {
-		return fmt.Errorf("error initializing Firebase app: %w", err)
-	}
-
-	// Get the messaging client
-	client, err := app.Messaging(ctx)
-	if err != nil {
-		return fmt.Errorf("error getting Firebase Messaging client: %w", err)
+		return err
 	}
 
 	// Create the FCM message
