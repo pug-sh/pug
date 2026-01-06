@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/fivebitsio/cotton/internal/core/projects"
@@ -55,7 +56,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 
 	customer, err := s.repo.CreateCustomer(ctx, arg)
 	if err != nil {
-		return nil, ErrCustomerCreation
+		return nil, fmt.Errorf("%w: %w", ErrCustomerCreation, err)
 	}
 
 	// Create a default project for the new customer
@@ -68,7 +69,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 
 	_, err = s.projectsService.CreateProject(ctx, projectParams)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create default project for customer: %w", err)
 	}
 
 	token, err := s.generateJWT(customer.Email)
@@ -86,7 +87,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (*authv1.SignInWithEmailResponse, error) {
 	customer, err := s.repo.GetCustomerByEmailWithPassword(ctx, email)
 	if err != nil {
-		return nil, ErrInvalidCredentials
+		return nil, fmt.Errorf("%w: %w", ErrInvalidCredentials, err)
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte(password))
