@@ -141,7 +141,7 @@ func (p *PulsarInitializer) Initialize() error {
 
 func (p *PulsarInitializer) readConfig() (*TopicSubscriptionConfig, error) {
 	if _, err := os.Stat(p.config.TopicsConfig); os.IsNotExist(err) {
-		panic(fmt.Sprintf("Config file does not exist: %s", p.config.TopicsConfig))
+		return nil, fmt.Errorf("config file does not exist: %s", p.config.TopicsConfig)
 	}
 
 	data, err := os.ReadFile(p.config.TopicsConfig)

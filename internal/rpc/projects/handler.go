@@ -36,7 +36,7 @@ func (s *server) Get(
 	}
 	project, err := s.service.GetProjectById(ctx, req.Msg.Id)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading from db", slog.Any("error", err), slog.String("projectId", project.ID), slog.String("id", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed reading from db", slog.Any("error", err), slog.String("id", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
