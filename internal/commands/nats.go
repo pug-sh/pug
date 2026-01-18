@@ -153,10 +153,10 @@ func (n *NATSInitializer) createConsumers(consumers []nats.ConsumerConfig) error
 			slog.String("stream", consumerConfig.StreamName))
 
 		cfg := jetstream.ConsumerConfig{
-			Name:        consumerConfig.DurableName,
-			Durable:     consumerConfig.DurableName,
-			AckPolicy:   jetstream.AckExplicitPolicy, // Using AckExplicit as AckPolicy
-			MaxDeliver:  consumerConfig.MaxDeliver,
+			Name:       consumerConfig.DurableName,
+			Durable:    consumerConfig.DurableName,
+			AckPolicy:  jetstream.AckExplicitPolicy, // Using AckExplicit as AckPolicy
+			MaxDeliver: consumerConfig.MaxDeliver,
 		}
 
 		// Set deliver policy based on configuration

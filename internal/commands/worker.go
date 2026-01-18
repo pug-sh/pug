@@ -19,9 +19,9 @@ import (
 )
 
 type workerDeps struct {
-	pgRo  *pgxpool.Pool
-	pgW   *pgxpool.Pool
-	nats  *nats.NATSClient
+	pgRo *pgxpool.Pool
+	pgW  *pgxpool.Pool
+	nats *nats.NATSClient
 }
 
 func newWorkerDeps(ctx context.Context) (*workerDeps, error) {
@@ -46,9 +46,9 @@ func newWorkerDeps(ctx context.Context) (*workerDeps, error) {
 	}
 
 	return &workerDeps{
-		pgRo:  pgRo,
-		pgW:   pgW,
-		nats:  natsClient,
+		pgRo: pgRo,
+		pgW:  pgW,
+		nats: natsClient,
 	}, nil
 }
 

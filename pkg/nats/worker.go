@@ -12,13 +12,13 @@ import (
 type MessageProcessor func(context.Context, jetstream.Msg) error
 
 type WorkerConfig struct {
-	StreamName          string
-	ConsumerName        string
-	DurableName         string
-	Concurrency         int
-	ProcessingTimeout   time.Duration
-	MaxDeliver          int
-	AckWait             time.Duration
+	StreamName        string
+	ConsumerName      string
+	DurableName       string
+	Concurrency       int
+	ProcessingTimeout time.Duration
+	MaxDeliver        int
+	AckWait           time.Duration
 }
 
 type Worker interface {

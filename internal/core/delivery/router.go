@@ -11,10 +11,10 @@ import (
 )
 
 type Router struct {
-	pgRO         *pgxpool.Pool
-	pgW          *pgxpool.Pool
-	projectsSvc  *projects.Service
-	fcmService   *FCMService
+	pgRO        *pgxpool.Pool
+	pgW         *pgxpool.Pool
+	projectsSvc *projects.Service
+	fcmService  *FCMService
 	// apnService   *APNService  // Placeholder for future APN service
 	// emailService *EmailService // Placeholder for future email service
 }

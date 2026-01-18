@@ -25,16 +25,16 @@ type Config struct {
 }
 
 type StreamConfig struct {
-	Name           string            `yaml:"name"`
-	Subjects       []string          `yaml:"subjects"`
-	Description    string            `yaml:"description"`
-	RetentionPolicy string           `yaml:"retention_policy"`
-	MaxConsumers   int               `yaml:"max_consumers"`
-	MaxMsgs        int64             `yaml:"max_msgs"`
-	MaxBytes       int64             `yaml:"max_bytes"`
-	MaxAge         time.Duration     `yaml:"max_age"`
-	Storage        string            `yaml:"storage"`
-	NumReplicas    int               `yaml:"num_replicas"`
+	Name            string        `yaml:"name"`
+	Subjects        []string      `yaml:"subjects"`
+	Description     string        `yaml:"description"`
+	RetentionPolicy string        `yaml:"retention_policy"`
+	MaxConsumers    int           `yaml:"max_consumers"`
+	MaxMsgs         int64         `yaml:"max_msgs"`
+	MaxBytes        int64         `yaml:"max_bytes"`
+	MaxAge          time.Duration `yaml:"max_age"`
+	Storage         string        `yaml:"storage"`
+	NumReplicas     int           `yaml:"num_replicas"`
 }
 
 type ConsumerConfig struct {
@@ -118,7 +118,7 @@ func (nc *NATSClient) ReadStreamConfig() ([]StreamConfig, error) {
 	var config struct {
 		Streams []StreamConfig `yaml:"streams"`
 	}
-	
+
 	ext := strings.ToLower(filepath.Ext(nc.config.StreamsConfig))
 	if ext == ".yaml" || ext == ".yml" {
 		if err := yaml.Unmarshal(data, &config); err != nil {
