@@ -45,7 +45,7 @@ install-all-deps: install-go-deps
 	
 .PHONY: sqlc
 sqlc:
-	rm -rf internal/repo/gen
+	rm -rf internal/gen/repo
 	sqlc generate
 
 .PHONY: lint
