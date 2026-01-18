@@ -8,42 +8,34 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Repo interface {
-	GetCustomerByEmail(ctx context.Context, email string) (dbread.Customer, error)
-	GetCustomerByEmailWithPassword(ctx context.Context, email string) (dbread.GetCustomerByEmailWithPasswordRow, error)
-	GetCustomerByID(ctx context.Context, id string) (dbread.Customer, error)
-	CreateCustomer(ctx context.Context, arg dbwrite.CreateCustomerParams) (dbwrite.Customer, error)
-	CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error)
-}
-
-type repoImpl struct {
+type repo struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
 }
 
-func NewRepo(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) Repo {
-	return &repoImpl{
+func newRepo(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *repo {
+	return &repo{
 		read:  dbread.New(pgRO),
 		write: dbwrite.New(pgW),
 	}
 }
 
-func (r *repoImpl) GetCustomerByEmail(ctx context.Context, email string) (dbread.Customer, error) {
+func (r *repo) GetCustomerByEmail(ctx context.Context, email string) (dbread.Customer, error) {
 	return r.read.GetCustomerByEmail(ctx, email)
 }
 
-func (r *repoImpl) GetCustomerByEmailWithPassword(ctx context.Context, email string) (dbread.GetCustomerByEmailWithPasswordRow, error) {
+func (r *repo) GetCustomerByEmailWithPassword(ctx context.Context, email string) (dbread.GetCustomerByEmailWithPasswordRow, error) {
 	return r.read.GetCustomerByEmailWithPassword(ctx, email)
 }
 
-func (r *repoImpl) GetCustomerByID(ctx context.Context, id string) (dbread.Customer, error) {
+func (r *repo) GetCustomerByID(ctx context.Context, id string) (dbread.Customer, error) {
 	return r.read.GetCustomerByID(ctx, id)
 }
 
-func (r *repoImpl) CreateCustomer(ctx context.Context, arg dbwrite.CreateCustomerParams) (dbwrite.Customer, error) {
+func (r *repo) CreateCustomer(ctx context.Context, arg dbwrite.CreateCustomerParams) (dbwrite.Customer, error) {
 	return r.write.CreateCustomer(ctx, arg)
 }
 
-func (r *repoImpl) CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error) {
+func (r *repo) CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error) {
 	return r.write.CreateProject(ctx, arg)
 }

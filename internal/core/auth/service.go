@@ -22,14 +22,14 @@ var (
 )
 
 type Service struct {
-	repo            Repo
+	repo            *repo
 	projectsService *projects.Service
 	jwtKey          []byte
 }
 
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
 	return &Service{
-		repo:            NewRepo(pgRO, pgW),
+		repo:            newRepo(pgRO, pgW),
 		projectsService: projects.NewService(pgRO, pgW),
 		jwtKey:          jwtKey,
 	}

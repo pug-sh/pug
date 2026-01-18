@@ -15,14 +15,14 @@ import (
 )
 
 type Service struct {
-	repo        Repo
+	repo        *repo
 	projectsSvc *projects.Service
 	producer    jetstream.JetStream
 }
 
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.Service, producer jetstream.JetStream) *Service {
 	return &Service{
-		repo:        NewRepo(pgRO, pgW),
+		repo:        newRepo(pgRO, pgW),
 		projectsSvc: projectsSvc,
 		producer:    producer,
 	}

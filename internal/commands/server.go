@@ -15,15 +15,12 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/segments/v1/segmentsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/rpc/auth"
 	"github.com/fivebitsio/cotton/internal/rpc/campaigns"
 	"github.com/fivebitsio/cotton/internal/rpc/delivery"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
 	"github.com/fivebitsio/cotton/internal/rpc/projects"
-	"github.com/fivebitsio/cotton/internal/rpc/segments"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/fivebitsio/cotton/pkg/postgres"
@@ -108,14 +105,6 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	)
 	campaignsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(campaignsHandler)
 
-	segmentsServer := segments.NewServer(queriesRo, dbwrite.New(deps.pgW))
-	segmentsHandlerObj := segments.NewHandler(segmentsServer.Service())
-	segmentsPath, segmentsHandler := segmentsv1connect.NewSegmentsServiceHandler(
-		segmentsHandlerObj,
-		commonHandlerOptions(),
-	)
-	segmentsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(segmentsHandler)
-
 	deliveryServer := delivery.NewServer(deps.deliveriesProducer)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
 		deliveryServer,
@@ -127,14 +116,12 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	handler.Handle(authPath, authHandler)
 	handler.Handle(projectsPath, projectsHandler)
 	handler.Handle(campaignsPath, campaignsHandler)
-	handler.Handle(segmentsPath, segmentsHandler)
 	handler.Handle(deliveryPath, deliveryHandler)
 
 	services := []string{
 		authv1connect.AuthServiceName,
 		projectsv1connect.ProjectsServiceName,
 		campaignsv1connect.CampaignServiceName,
-		segmentsv1connect.SegmentsServiceName,
 		deliveryv1connect.DeliveryServiceName,
 	}
 

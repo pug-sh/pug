@@ -8,52 +8,42 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Repo interface {
-	CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error)
-	GetProjectById(ctx context.Context, id string) (dbread.Project, error)
-	ProjectExistsForCustomer(ctx context.Context, arg dbread.ProjectExistsForCustomerParams) (bool, error)
-	GetProjectsByCustomerId(ctx context.Context, customerID string) ([]dbread.Project, error)
-	DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) (dbwrite.Project, error)
-	UpdateProjectDisplayName(ctx context.Context, arg dbwrite.UpdateProjectDisplayNameParams) (dbwrite.Project, error)
-	UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFCMServiceJSONParams) (dbwrite.Project, error)
-}
-
-type repoImpl struct {
+type repo struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
 }
 
-func NewRepo(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) Repo {
-	return &repoImpl{
+func newRepo(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *repo {
+	return &repo{
 		read:  dbread.New(pgRO),
 		write: dbwrite.New(pgW),
 	}
 }
 
-func (r *repoImpl) CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error) {
+func (r *repo) CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error) {
 	return r.write.CreateProject(ctx, arg)
 }
 
-func (r *repoImpl) GetProjectById(ctx context.Context, id string) (dbread.Project, error) {
+func (r *repo) GetProjectById(ctx context.Context, id string) (dbread.Project, error) {
 	return r.read.GetProjectById(ctx, id)
 }
 
-func (r *repoImpl) GetProjectsByCustomerId(ctx context.Context, customerID string) ([]dbread.Project, error) {
+func (r *repo) GetProjectsByCustomerId(ctx context.Context, customerID string) ([]dbread.Project, error) {
 	return r.read.GetProjectsByCustomerId(ctx, customerID)
 }
 
-func (r *repoImpl) ProjectExistsForCustomer(ctx context.Context, arg dbread.ProjectExistsForCustomerParams) (bool, error) {
+func (r *repo) ProjectExistsForCustomer(ctx context.Context, arg dbread.ProjectExistsForCustomerParams) (bool, error) {
 	return r.read.ProjectExistsForCustomer(ctx, arg)
 }
 
-func (r *repoImpl) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) (dbwrite.Project, error) {
+func (r *repo) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) (dbwrite.Project, error) {
 	return r.write.DeleteProject(ctx, arg)
 }
 
-func (r *repoImpl) UpdateProjectDisplayName(ctx context.Context, arg dbwrite.UpdateProjectDisplayNameParams) (dbwrite.Project, error) {
+func (r *repo) UpdateProjectDisplayName(ctx context.Context, arg dbwrite.UpdateProjectDisplayNameParams) (dbwrite.Project, error) {
 	return r.write.UpdateProjectDisplayName(ctx, arg)
 }
 
-func (r *repoImpl) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFCMServiceJSONParams) (dbwrite.Project, error) {
+func (r *repo) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFCMServiceJSONParams) (dbwrite.Project, error) {
 	return r.write.UpdateFCMServiceJSON(ctx, arg)
 }

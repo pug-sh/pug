@@ -7,32 +7,20 @@ package dbread
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getUserByID = `-- name: GetUserByID :one
-select id, create_time, external_id, properties, custom_properties, project_id, update_time from users
+select create_time, external_id, id, properties, custom_properties, project_id, update_time from users
 where id = $1
 `
 
-type GetUserByIDRow struct {
-	ID               string
-	CreateTime       pgtype.Timestamptz
-	ExternalID       string
-	Properties       []byte
-	CustomProperties []byte
-	ProjectID        string
-	UpdateTime       pgtype.Timestamptz
-}
-
-func (q *Queries) GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error) {
+func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i GetUserByIDRow
+	var i User
 	err := row.Scan(
-		&i.ID,
 		&i.CreateTime,
 		&i.ExternalID,
+		&i.ID,
 		&i.Properties,
 		&i.CustomProperties,
 		&i.ProjectID,
@@ -42,7 +30,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (GetUserByIDRow, e
 }
 
 const getUserByProjectAndExternalID = `-- name: GetUserByProjectAndExternalID :one
-select id, create_time, external_id, properties, custom_properties, project_id, update_time from users
+select create_time, external_id, id, properties, custom_properties, project_id, update_time from users
 where project_id = $1 and external_id = $2 limit 1
 `
 
@@ -51,54 +39,13 @@ type GetUserByProjectAndExternalIDParams struct {
 	ExternalID string
 }
 
-type GetUserByProjectAndExternalIDRow struct {
-	ID               string
-	CreateTime       pgtype.Timestamptz
-	ExternalID       string
-	Properties       []byte
-	CustomProperties []byte
-	ProjectID        string
-	UpdateTime       pgtype.Timestamptz
-}
-
-func (q *Queries) GetUserByProjectAndExternalID(ctx context.Context, arg GetUserByProjectAndExternalIDParams) (GetUserByProjectAndExternalIDRow, error) {
+func (q *Queries) GetUserByProjectAndExternalID(ctx context.Context, arg GetUserByProjectAndExternalIDParams) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByProjectAndExternalID, arg.ProjectID, arg.ExternalID)
-	var i GetUserByProjectAndExternalIDRow
+	var i User
 	err := row.Scan(
-		&i.ID,
 		&i.CreateTime,
 		&i.ExternalID,
-		&i.Properties,
-		&i.CustomProperties,
-		&i.ProjectID,
-		&i.UpdateTime,
-	)
-	return i, err
-}
-
-const getUserBySubscriptionID = `-- name: GetUserBySubscriptionID :one
-select u.id, u.create_time, u.external_id, u.properties, u.custom_properties, u.project_id, u.update_time from users u
-join subscriptions s on s.user_id = u.id
-where s.id = $1
-`
-
-type GetUserBySubscriptionIDRow struct {
-	ID               string
-	CreateTime       pgtype.Timestamptz
-	ExternalID       string
-	Properties       []byte
-	CustomProperties []byte
-	ProjectID        string
-	UpdateTime       pgtype.Timestamptz
-}
-
-func (q *Queries) GetUserBySubscriptionID(ctx context.Context, subscriptionID string) (GetUserBySubscriptionIDRow, error) {
-	row := q.db.QueryRow(ctx, getUserBySubscriptionID, subscriptionID)
-	var i GetUserBySubscriptionIDRow
-	err := row.Scan(
 		&i.ID,
-		&i.CreateTime,
-		&i.ExternalID,
 		&i.Properties,
 		&i.CustomProperties,
 		&i.ProjectID,
@@ -108,33 +55,23 @@ func (q *Queries) GetUserBySubscriptionID(ctx context.Context, subscriptionID st
 }
 
 const getUsersByProjectID = `-- name: GetUsersByProjectID :many
-select id, create_time, external_id, properties, custom_properties, project_id, update_time from users
+select create_time, external_id, id, properties, custom_properties, project_id, update_time from users
 where project_id = $1
 `
 
-type GetUsersByProjectIDRow struct {
-	ID               string
-	CreateTime       pgtype.Timestamptz
-	ExternalID       string
-	Properties       []byte
-	CustomProperties []byte
-	ProjectID        string
-	UpdateTime       pgtype.Timestamptz
-}
-
-func (q *Queries) GetUsersByProjectID(ctx context.Context, projectID string) ([]GetUsersByProjectIDRow, error) {
+func (q *Queries) GetUsersByProjectID(ctx context.Context, projectID string) ([]User, error) {
 	rows, err := q.db.Query(ctx, getUsersByProjectID, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetUsersByProjectIDRow
+	var items []User
 	for rows.Next() {
-		var i GetUsersByProjectIDRow
+		var i User
 		if err := rows.Scan(
-			&i.ID,
 			&i.CreateTime,
 			&i.ExternalID,
+			&i.ID,
 			&i.Properties,
 			&i.CustomProperties,
 			&i.ProjectID,

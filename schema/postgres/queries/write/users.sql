@@ -15,6 +15,6 @@ set custom_properties = @custom_properties, update_time = now()
 where id = @id
 returning *;
 
--- name: DeleteUser :exec
+-- name: DeleteUserByID :exec
 delete from users
 where id = @id;
