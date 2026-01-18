@@ -67,11 +67,11 @@ type Subscription struct {
 }
 
 type User struct {
-	CreateTime pgtype.Timestamptz
-	ExternalID string
-	ID         string
-	Metadata   []byte
-	ProjectID  string
-	Segments   []byte
-	UpdateTime pgtype.Timestamptz
+	CreateTime       pgtype.Timestamptz
+	ExternalID       string
+	ID               string
+	Properties       []byte
+	CustomProperties []byte
+	ProjectID        string
+	UpdateTime       pgtype.Timestamptz
 }
