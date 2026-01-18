@@ -33,41 +33,34 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// UsersServiceCreateProcedure is the fully-qualified name of the UsersService's Create RPC.
-	UsersServiceCreateProcedure = "/users.v1.UsersService/Create"
+	// UsersServiceGetProcedure is the fully-qualified name of the UsersService's Get RPC.
+	UsersServiceGetProcedure = "/users.v1.UsersService/Get"
 	// UsersServiceGetByExternalIdProcedure is the fully-qualified name of the UsersService's
 	// GetByExternalId RPC.
 	UsersServiceGetByExternalIdProcedure = "/users.v1.UsersService/GetByExternalId"
-	// UsersServiceListByProjectProcedure is the fully-qualified name of the UsersService's
-	// ListByProject RPC.
-	UsersServiceListByProjectProcedure = "/users.v1.UsersService/ListByProject"
-	// UsersServiceUpdateMetadataProcedure is the fully-qualified name of the UsersService's
-	// UpdateMetadata RPC.
-	UsersServiceUpdateMetadataProcedure = "/users.v1.UsersService/UpdateMetadata"
+	// UsersServiceListProcedure is the fully-qualified name of the UsersService's List RPC.
+	UsersServiceListProcedure = "/users.v1.UsersService/List"
+	// UsersServiceCreateProcedure is the fully-qualified name of the UsersService's Create RPC.
+	UsersServiceCreateProcedure = "/users.v1.UsersService/Create"
+	// UsersServiceUpdatePropertiesProcedure is the fully-qualified name of the UsersService's
+	// UpdateProperties RPC.
+	UsersServiceUpdatePropertiesProcedure = "/users.v1.UsersService/UpdateProperties"
+	// UsersServiceUpdateCustomPropertiesProcedure is the fully-qualified name of the UsersService's
+	// UpdateCustomProperties RPC.
+	UsersServiceUpdateCustomPropertiesProcedure = "/users.v1.UsersService/UpdateCustomProperties"
 	// UsersServiceDeleteProcedure is the fully-qualified name of the UsersService's Delete RPC.
 	UsersServiceDeleteProcedure = "/users.v1.UsersService/Delete"
-	// UsersServiceCreateOrGetByExternalIdProcedure is the fully-qualified name of the UsersService's
-	// CreateOrGetByExternalId RPC.
-	UsersServiceCreateOrGetByExternalIdProcedure = "/users.v1.UsersService/CreateOrGetByExternalId"
-	// UsersServiceLinkUserToSubscriptionProcedure is the fully-qualified name of the UsersService's
-	// LinkUserToSubscription RPC.
-	UsersServiceLinkUserToSubscriptionProcedure = "/users.v1.UsersService/LinkUserToSubscription"
-	// UsersServiceGetUserBySubscriptionProcedure is the fully-qualified name of the UsersService's
-	// GetUserBySubscription RPC.
-	UsersServiceGetUserBySubscriptionProcedure = "/users.v1.UsersService/GetUserBySubscription"
 )
 
 // UsersServiceClient is a client for the users.v1.UsersService service.
 type UsersServiceClient interface {
-	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
+	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
-	ListByProject(context.Context, *connect.Request[v1.ListByProjectRequest]) (*connect.Response[v1.ListByProjectResponse], error)
-	UpdateMetadata(context.Context, *connect.Request[v1.UpdateMetadataRequest]) (*connect.Response[v1.UpdateMetadataResponse], error)
+	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
+	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
+	UpdateProperties(context.Context, *connect.Request[v1.UpdatePropertiesRequest]) (*connect.Response[v1.UpdatePropertiesResponse], error)
+	UpdateCustomProperties(context.Context, *connect.Request[v1.UpdateCustomPropertiesRequest]) (*connect.Response[v1.UpdateCustomPropertiesResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
-	// SDK support methods
-	CreateOrGetByExternalId(context.Context, *connect.Request[v1.CreateOrGetByExternalIdRequest]) (*connect.Response[v1.CreateOrGetByExternalIdResponse], error)
-	LinkUserToSubscription(context.Context, *connect.Request[v1.LinkUserToSubscriptionRequest]) (*connect.Response[v1.LinkUserToSubscriptionResponse], error)
-	GetUserBySubscription(context.Context, *connect.Request[v1.GetUserBySubscriptionRequest]) (*connect.Response[v1.GetUserBySubscriptionResponse], error)
 }
 
 // NewUsersServiceClient constructs a client for the users.v1.UsersService service. By default, it
@@ -81,10 +74,10 @@ func NewUsersServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 	baseURL = strings.TrimRight(baseURL, "/")
 	usersServiceMethods := v1.File_users_v1_users_proto.Services().ByName("UsersService").Methods()
 	return &usersServiceClient{
-		create: connect.NewClient[v1.CreateRequest, v1.CreateResponse](
+		get: connect.NewClient[v1.GetRequest, v1.GetResponse](
 			httpClient,
-			baseURL+UsersServiceCreateProcedure,
-			connect.WithSchema(usersServiceMethods.ByName("Create")),
+			baseURL+UsersServiceGetProcedure,
+			connect.WithSchema(usersServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
 		getByExternalId: connect.NewClient[v1.GetByExternalIdRequest, v1.GetByExternalIdResponse](
@@ -93,16 +86,28 @@ func NewUsersServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(usersServiceMethods.ByName("GetByExternalId")),
 			connect.WithClientOptions(opts...),
 		),
-		listByProject: connect.NewClient[v1.ListByProjectRequest, v1.ListByProjectResponse](
+		list: connect.NewClient[v1.ListRequest, v1.ListResponse](
 			httpClient,
-			baseURL+UsersServiceListByProjectProcedure,
-			connect.WithSchema(usersServiceMethods.ByName("ListByProject")),
+			baseURL+UsersServiceListProcedure,
+			connect.WithSchema(usersServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
-		updateMetadata: connect.NewClient[v1.UpdateMetadataRequest, v1.UpdateMetadataResponse](
+		create: connect.NewClient[v1.CreateRequest, v1.CreateResponse](
 			httpClient,
-			baseURL+UsersServiceUpdateMetadataProcedure,
-			connect.WithSchema(usersServiceMethods.ByName("UpdateMetadata")),
+			baseURL+UsersServiceCreateProcedure,
+			connect.WithSchema(usersServiceMethods.ByName("Create")),
+			connect.WithClientOptions(opts...),
+		),
+		updateProperties: connect.NewClient[v1.UpdatePropertiesRequest, v1.UpdatePropertiesResponse](
+			httpClient,
+			baseURL+UsersServiceUpdatePropertiesProcedure,
+			connect.WithSchema(usersServiceMethods.ByName("UpdateProperties")),
+			connect.WithClientOptions(opts...),
+		),
+		updateCustomProperties: connect.NewClient[v1.UpdateCustomPropertiesRequest, v1.UpdateCustomPropertiesResponse](
+			httpClient,
+			baseURL+UsersServiceUpdateCustomPropertiesProcedure,
+			connect.WithSchema(usersServiceMethods.ByName("UpdateCustomProperties")),
 			connect.WithClientOptions(opts...),
 		),
 		delete: connect.NewClient[v1.DeleteRequest, v1.DeleteResponse](
@@ -111,42 +116,23 @@ func NewUsersServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(usersServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
-		createOrGetByExternalId: connect.NewClient[v1.CreateOrGetByExternalIdRequest, v1.CreateOrGetByExternalIdResponse](
-			httpClient,
-			baseURL+UsersServiceCreateOrGetByExternalIdProcedure,
-			connect.WithSchema(usersServiceMethods.ByName("CreateOrGetByExternalId")),
-			connect.WithClientOptions(opts...),
-		),
-		linkUserToSubscription: connect.NewClient[v1.LinkUserToSubscriptionRequest, v1.LinkUserToSubscriptionResponse](
-			httpClient,
-			baseURL+UsersServiceLinkUserToSubscriptionProcedure,
-			connect.WithSchema(usersServiceMethods.ByName("LinkUserToSubscription")),
-			connect.WithClientOptions(opts...),
-		),
-		getUserBySubscription: connect.NewClient[v1.GetUserBySubscriptionRequest, v1.GetUserBySubscriptionResponse](
-			httpClient,
-			baseURL+UsersServiceGetUserBySubscriptionProcedure,
-			connect.WithSchema(usersServiceMethods.ByName("GetUserBySubscription")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // usersServiceClient implements UsersServiceClient.
 type usersServiceClient struct {
-	create                  *connect.Client[v1.CreateRequest, v1.CreateResponse]
-	getByExternalId         *connect.Client[v1.GetByExternalIdRequest, v1.GetByExternalIdResponse]
-	listByProject           *connect.Client[v1.ListByProjectRequest, v1.ListByProjectResponse]
-	updateMetadata          *connect.Client[v1.UpdateMetadataRequest, v1.UpdateMetadataResponse]
-	delete                  *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
-	createOrGetByExternalId *connect.Client[v1.CreateOrGetByExternalIdRequest, v1.CreateOrGetByExternalIdResponse]
-	linkUserToSubscription  *connect.Client[v1.LinkUserToSubscriptionRequest, v1.LinkUserToSubscriptionResponse]
-	getUserBySubscription   *connect.Client[v1.GetUserBySubscriptionRequest, v1.GetUserBySubscriptionResponse]
+	get                    *connect.Client[v1.GetRequest, v1.GetResponse]
+	getByExternalId        *connect.Client[v1.GetByExternalIdRequest, v1.GetByExternalIdResponse]
+	list                   *connect.Client[v1.ListRequest, v1.ListResponse]
+	create                 *connect.Client[v1.CreateRequest, v1.CreateResponse]
+	updateProperties       *connect.Client[v1.UpdatePropertiesRequest, v1.UpdatePropertiesResponse]
+	updateCustomProperties *connect.Client[v1.UpdateCustomPropertiesRequest, v1.UpdateCustomPropertiesResponse]
+	delete                 *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
 }
 
-// Create calls users.v1.UsersService.Create.
-func (c *usersServiceClient) Create(ctx context.Context, req *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error) {
-	return c.create.CallUnary(ctx, req)
+// Get calls users.v1.UsersService.Get.
+func (c *usersServiceClient) Get(ctx context.Context, req *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
+	return c.get.CallUnary(ctx, req)
 }
 
 // GetByExternalId calls users.v1.UsersService.GetByExternalId.
@@ -154,14 +140,24 @@ func (c *usersServiceClient) GetByExternalId(ctx context.Context, req *connect.R
 	return c.getByExternalId.CallUnary(ctx, req)
 }
 
-// ListByProject calls users.v1.UsersService.ListByProject.
-func (c *usersServiceClient) ListByProject(ctx context.Context, req *connect.Request[v1.ListByProjectRequest]) (*connect.Response[v1.ListByProjectResponse], error) {
-	return c.listByProject.CallUnary(ctx, req)
+// List calls users.v1.UsersService.List.
+func (c *usersServiceClient) List(ctx context.Context, req *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
+	return c.list.CallUnary(ctx, req)
 }
 
-// UpdateMetadata calls users.v1.UsersService.UpdateMetadata.
-func (c *usersServiceClient) UpdateMetadata(ctx context.Context, req *connect.Request[v1.UpdateMetadataRequest]) (*connect.Response[v1.UpdateMetadataResponse], error) {
-	return c.updateMetadata.CallUnary(ctx, req)
+// Create calls users.v1.UsersService.Create.
+func (c *usersServiceClient) Create(ctx context.Context, req *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error) {
+	return c.create.CallUnary(ctx, req)
+}
+
+// UpdateProperties calls users.v1.UsersService.UpdateProperties.
+func (c *usersServiceClient) UpdateProperties(ctx context.Context, req *connect.Request[v1.UpdatePropertiesRequest]) (*connect.Response[v1.UpdatePropertiesResponse], error) {
+	return c.updateProperties.CallUnary(ctx, req)
+}
+
+// UpdateCustomProperties calls users.v1.UsersService.UpdateCustomProperties.
+func (c *usersServiceClient) UpdateCustomProperties(ctx context.Context, req *connect.Request[v1.UpdateCustomPropertiesRequest]) (*connect.Response[v1.UpdateCustomPropertiesResponse], error) {
+	return c.updateCustomProperties.CallUnary(ctx, req)
 }
 
 // Delete calls users.v1.UsersService.Delete.
@@ -169,32 +165,15 @@ func (c *usersServiceClient) Delete(ctx context.Context, req *connect.Request[v1
 	return c.delete.CallUnary(ctx, req)
 }
 
-// CreateOrGetByExternalId calls users.v1.UsersService.CreateOrGetByExternalId.
-func (c *usersServiceClient) CreateOrGetByExternalId(ctx context.Context, req *connect.Request[v1.CreateOrGetByExternalIdRequest]) (*connect.Response[v1.CreateOrGetByExternalIdResponse], error) {
-	return c.createOrGetByExternalId.CallUnary(ctx, req)
-}
-
-// LinkUserToSubscription calls users.v1.UsersService.LinkUserToSubscription.
-func (c *usersServiceClient) LinkUserToSubscription(ctx context.Context, req *connect.Request[v1.LinkUserToSubscriptionRequest]) (*connect.Response[v1.LinkUserToSubscriptionResponse], error) {
-	return c.linkUserToSubscription.CallUnary(ctx, req)
-}
-
-// GetUserBySubscription calls users.v1.UsersService.GetUserBySubscription.
-func (c *usersServiceClient) GetUserBySubscription(ctx context.Context, req *connect.Request[v1.GetUserBySubscriptionRequest]) (*connect.Response[v1.GetUserBySubscriptionResponse], error) {
-	return c.getUserBySubscription.CallUnary(ctx, req)
-}
-
 // UsersServiceHandler is an implementation of the users.v1.UsersService service.
 type UsersServiceHandler interface {
-	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
+	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
-	ListByProject(context.Context, *connect.Request[v1.ListByProjectRequest]) (*connect.Response[v1.ListByProjectResponse], error)
-	UpdateMetadata(context.Context, *connect.Request[v1.UpdateMetadataRequest]) (*connect.Response[v1.UpdateMetadataResponse], error)
+	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
+	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
+	UpdateProperties(context.Context, *connect.Request[v1.UpdatePropertiesRequest]) (*connect.Response[v1.UpdatePropertiesResponse], error)
+	UpdateCustomProperties(context.Context, *connect.Request[v1.UpdateCustomPropertiesRequest]) (*connect.Response[v1.UpdateCustomPropertiesResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
-	// SDK support methods
-	CreateOrGetByExternalId(context.Context, *connect.Request[v1.CreateOrGetByExternalIdRequest]) (*connect.Response[v1.CreateOrGetByExternalIdResponse], error)
-	LinkUserToSubscription(context.Context, *connect.Request[v1.LinkUserToSubscriptionRequest]) (*connect.Response[v1.LinkUserToSubscriptionResponse], error)
-	GetUserBySubscription(context.Context, *connect.Request[v1.GetUserBySubscriptionRequest]) (*connect.Response[v1.GetUserBySubscriptionResponse], error)
 }
 
 // NewUsersServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -204,10 +183,10 @@ type UsersServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewUsersServiceHandler(svc UsersServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	usersServiceMethods := v1.File_users_v1_users_proto.Services().ByName("UsersService").Methods()
-	usersServiceCreateHandler := connect.NewUnaryHandler(
-		UsersServiceCreateProcedure,
-		svc.Create,
-		connect.WithSchema(usersServiceMethods.ByName("Create")),
+	usersServiceGetHandler := connect.NewUnaryHandler(
+		UsersServiceGetProcedure,
+		svc.Get,
+		connect.WithSchema(usersServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
 	usersServiceGetByExternalIdHandler := connect.NewUnaryHandler(
@@ -216,16 +195,28 @@ func NewUsersServiceHandler(svc UsersServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(usersServiceMethods.ByName("GetByExternalId")),
 		connect.WithHandlerOptions(opts...),
 	)
-	usersServiceListByProjectHandler := connect.NewUnaryHandler(
-		UsersServiceListByProjectProcedure,
-		svc.ListByProject,
-		connect.WithSchema(usersServiceMethods.ByName("ListByProject")),
+	usersServiceListHandler := connect.NewUnaryHandler(
+		UsersServiceListProcedure,
+		svc.List,
+		connect.WithSchema(usersServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
-	usersServiceUpdateMetadataHandler := connect.NewUnaryHandler(
-		UsersServiceUpdateMetadataProcedure,
-		svc.UpdateMetadata,
-		connect.WithSchema(usersServiceMethods.ByName("UpdateMetadata")),
+	usersServiceCreateHandler := connect.NewUnaryHandler(
+		UsersServiceCreateProcedure,
+		svc.Create,
+		connect.WithSchema(usersServiceMethods.ByName("Create")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usersServiceUpdatePropertiesHandler := connect.NewUnaryHandler(
+		UsersServiceUpdatePropertiesProcedure,
+		svc.UpdateProperties,
+		connect.WithSchema(usersServiceMethods.ByName("UpdateProperties")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usersServiceUpdateCustomPropertiesHandler := connect.NewUnaryHandler(
+		UsersServiceUpdateCustomPropertiesProcedure,
+		svc.UpdateCustomProperties,
+		connect.WithSchema(usersServiceMethods.ByName("UpdateCustomProperties")),
 		connect.WithHandlerOptions(opts...),
 	)
 	usersServiceDeleteHandler := connect.NewUnaryHandler(
@@ -234,42 +225,22 @@ func NewUsersServiceHandler(svc UsersServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(usersServiceMethods.ByName("Delete")),
 		connect.WithHandlerOptions(opts...),
 	)
-	usersServiceCreateOrGetByExternalIdHandler := connect.NewUnaryHandler(
-		UsersServiceCreateOrGetByExternalIdProcedure,
-		svc.CreateOrGetByExternalId,
-		connect.WithSchema(usersServiceMethods.ByName("CreateOrGetByExternalId")),
-		connect.WithHandlerOptions(opts...),
-	)
-	usersServiceLinkUserToSubscriptionHandler := connect.NewUnaryHandler(
-		UsersServiceLinkUserToSubscriptionProcedure,
-		svc.LinkUserToSubscription,
-		connect.WithSchema(usersServiceMethods.ByName("LinkUserToSubscription")),
-		connect.WithHandlerOptions(opts...),
-	)
-	usersServiceGetUserBySubscriptionHandler := connect.NewUnaryHandler(
-		UsersServiceGetUserBySubscriptionProcedure,
-		svc.GetUserBySubscription,
-		connect.WithSchema(usersServiceMethods.ByName("GetUserBySubscription")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/users.v1.UsersService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case UsersServiceCreateProcedure:
-			usersServiceCreateHandler.ServeHTTP(w, r)
+		case UsersServiceGetProcedure:
+			usersServiceGetHandler.ServeHTTP(w, r)
 		case UsersServiceGetByExternalIdProcedure:
 			usersServiceGetByExternalIdHandler.ServeHTTP(w, r)
-		case UsersServiceListByProjectProcedure:
-			usersServiceListByProjectHandler.ServeHTTP(w, r)
-		case UsersServiceUpdateMetadataProcedure:
-			usersServiceUpdateMetadataHandler.ServeHTTP(w, r)
+		case UsersServiceListProcedure:
+			usersServiceListHandler.ServeHTTP(w, r)
+		case UsersServiceCreateProcedure:
+			usersServiceCreateHandler.ServeHTTP(w, r)
+		case UsersServiceUpdatePropertiesProcedure:
+			usersServiceUpdatePropertiesHandler.ServeHTTP(w, r)
+		case UsersServiceUpdateCustomPropertiesProcedure:
+			usersServiceUpdateCustomPropertiesHandler.ServeHTTP(w, r)
 		case UsersServiceDeleteProcedure:
 			usersServiceDeleteHandler.ServeHTTP(w, r)
-		case UsersServiceCreateOrGetByExternalIdProcedure:
-			usersServiceCreateOrGetByExternalIdHandler.ServeHTTP(w, r)
-		case UsersServiceLinkUserToSubscriptionProcedure:
-			usersServiceLinkUserToSubscriptionHandler.ServeHTTP(w, r)
-		case UsersServiceGetUserBySubscriptionProcedure:
-			usersServiceGetUserBySubscriptionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -279,34 +250,30 @@ func NewUsersServiceHandler(svc UsersServiceHandler, opts ...connect.HandlerOpti
 // UnimplementedUsersServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedUsersServiceHandler struct{}
 
-func (UnimplementedUsersServiceHandler) Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.Create is not implemented"))
+func (UnimplementedUsersServiceHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.Get is not implemented"))
 }
 
 func (UnimplementedUsersServiceHandler) GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.GetByExternalId is not implemented"))
 }
 
-func (UnimplementedUsersServiceHandler) ListByProject(context.Context, *connect.Request[v1.ListByProjectRequest]) (*connect.Response[v1.ListByProjectResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.ListByProject is not implemented"))
+func (UnimplementedUsersServiceHandler) List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.List is not implemented"))
 }
 
-func (UnimplementedUsersServiceHandler) UpdateMetadata(context.Context, *connect.Request[v1.UpdateMetadataRequest]) (*connect.Response[v1.UpdateMetadataResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.UpdateMetadata is not implemented"))
+func (UnimplementedUsersServiceHandler) Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.Create is not implemented"))
+}
+
+func (UnimplementedUsersServiceHandler) UpdateProperties(context.Context, *connect.Request[v1.UpdatePropertiesRequest]) (*connect.Response[v1.UpdatePropertiesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.UpdateProperties is not implemented"))
+}
+
+func (UnimplementedUsersServiceHandler) UpdateCustomProperties(context.Context, *connect.Request[v1.UpdateCustomPropertiesRequest]) (*connect.Response[v1.UpdateCustomPropertiesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.UpdateCustomProperties is not implemented"))
 }
 
 func (UnimplementedUsersServiceHandler) Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.Delete is not implemented"))
-}
-
-func (UnimplementedUsersServiceHandler) CreateOrGetByExternalId(context.Context, *connect.Request[v1.CreateOrGetByExternalIdRequest]) (*connect.Response[v1.CreateOrGetByExternalIdResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.CreateOrGetByExternalId is not implemented"))
-}
-
-func (UnimplementedUsersServiceHandler) LinkUserToSubscription(context.Context, *connect.Request[v1.LinkUserToSubscriptionRequest]) (*connect.Response[v1.LinkUserToSubscriptionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.LinkUserToSubscription is not implemented"))
-}
-
-func (UnimplementedUsersServiceHandler) GetUserBySubscription(context.Context, *connect.Request[v1.GetUserBySubscriptionRequest]) (*connect.Response[v1.GetUserBySubscriptionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("users.v1.UsersService.GetUserBySubscription is not implemented"))
 }

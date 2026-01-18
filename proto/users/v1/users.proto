@@ -1,114 +1,88 @@
 edition = "2023";
 package users.v1;
 
-import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/users/v1;usersv1";
 
 service UsersService {
-  rpc Create(CreateRequest) returns (CreateResponse) {}
+  rpc Get(GetRequest) returns (GetResponse) {}
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
-  rpc ListByProject(ListByProjectRequest) returns (ListByProjectResponse) {}
-  rpc UpdateMetadata(UpdateMetadataRequest) returns (UpdateMetadataResponse) {}
+  rpc List(ListRequest) returns (ListResponse) {}
+  rpc Create(CreateRequest) returns (CreateResponse) {}
+  rpc UpdateProperties(UpdatePropertiesRequest) returns (UpdatePropertiesResponse) {}
+  rpc UpdateCustomProperties(UpdateCustomPropertiesRequest) returns (UpdateCustomPropertiesResponse) {}
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
-  
-  // SDK support methods
-  rpc CreateOrGetByExternalId(CreateOrGetByExternalIdRequest) returns (CreateOrGetByExternalIdResponse) {}
-  rpc LinkUserToSubscription(LinkUserToSubscriptionRequest) returns (LinkUserToSubscriptionResponse) {}
-  rpc GetUserBySubscription(GetUserBySubscriptionRequest) returns (GetUserBySubscriptionResponse) {}
 }
 
 message User {
   string id = 1;
   string external_id = 2;
   string project_id = 3;
-  map<string, google.protobuf.Any> metadata = 4;
-  google.protobuf.Timestamp create_time = 5;
-  google.protobuf.Timestamp update_time = 6;
+  google.protobuf.Struct properties = 4;
+  google.protobuf.Struct custom_properties = 5;
+  google.protobuf.Timestamp create_time = 6;
+  google.protobuf.Timestamp update_time = 7;
 }
 
-// Create user
-message CreateRequest {
-  string external_id = 1;
-  map<string, google.protobuf.Any> metadata = 2;
+message GetRequest {
+  string id = 1;
 }
 
-message CreateResponse {
+message GetResponse {
   User user = 1;
 }
 
-// Get user by external ID
 message GetByExternalIdRequest {
   string external_id = 1;
+  string project_id = 2;
 }
 
 message GetByExternalIdResponse {
   User user = 1;
 }
 
-// List users by project
-message ListByProjectRequest {
-  int32 limit = 1;
-  int32 offset = 2;
+message ListRequest {
+  string project_id = 1;
 }
 
-message ListByProjectResponse {
+message ListResponse {
   repeated User users = 1;
-  int32 total_count = 2;
 }
 
-// Update user metadata
-message UpdateMetadataRequest {
+message CreateRequest {
   string external_id = 1;
-  map<string, google.protobuf.Any> metadata = 2;
+  string project_id = 2;
+  google.protobuf.Struct properties = 3;
+  google.protobuf.Struct custom_properties = 4;
 }
 
-message UpdateMetadataResponse {
+message CreateResponse {
   User user = 1;
 }
 
-// Delete user
+message UpdatePropertiesRequest {
+  string id = 1;
+  google.protobuf.Struct properties = 2;
+}
+
+message UpdatePropertiesResponse {
+  User user = 1;
+}
+
+message UpdateCustomPropertiesRequest {
+  string id = 1;
+  google.protobuf.Struct custom_properties = 2;
+}
+
+message UpdateCustomPropertiesResponse {
+  User user = 1;
+}
+
 message DeleteRequest {
-  string external_id = 1;
+  string id = 1;
 }
 
-message DeleteResponse {
-  bool success = 1;
-}
-
-// SDK support methods
-
-// Create user if not exists, or get existing user by external_id
-message CreateOrGetByExternalIdRequest {
-  string external_id = 1;
-  map<string, google.protobuf.Any> metadata = 2;
-}
-
-message CreateOrGetByExternalIdResponse {
-  User user = 1;
-  bool was_created = 2;
-}
-
-message LinkUserToSubscriptionRequest {
-  string external_id = 1;
-  string subscription_id = 2;
-  map<string, google.protobuf.Any> user_metadata = 3;
-}
-
-message LinkUserToSubscriptionResponse {
-  User user = 1;
-  bool user_was_created = 2;
-  bool subscription_was_linked = 3;
-}
-
-// Get user associated with a subscription
-message GetUserBySubscriptionRequest {
-  string subscription_id = 1;
-}
-
-message GetUserBySubscriptionResponse {
-  User user = 1;
-  bool has_user = 2;
-}
+message DeleteResponse {}

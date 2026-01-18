@@ -9,7 +9,7 @@ package usersv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	anypb "google.golang.org/protobuf/types/known/anypb"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -24,15 +24,16 @@ const (
 )
 
 type User struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	ExternalId    string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	Metadata      map[string]*anypb.Any  `protobuf:"bytes,4,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
-	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	ExternalId       string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ProjectId        string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	Properties       *structpb.Struct       `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
+	CustomProperties *structpb.Struct       `protobuf:"bytes,5,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
+	CreateTime       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
+	UpdateTime       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *User) Reset() {
@@ -86,9 +87,16 @@ func (x *User) GetProjectId() string {
 	return ""
 }
 
-func (x *User) GetMetadata() map[string]*anypb.Any {
+func (x *User) GetProperties() *structpb.Struct {
 	if x != nil {
-		return x.Metadata
+		return x.Properties
+	}
+	return nil
+}
+
+func (x *User) GetCustomProperties() *structpb.Struct {
+	if x != nil {
+		return x.CustomProperties
 	}
 	return nil
 }
@@ -107,29 +115,27 @@ func (x *User) GetUpdateTime() *timestamppb.Timestamp {
 	return nil
 }
 
-// Create user
-type CreateRequest struct {
+type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	Metadata      map[string]*anypb.Any  `protobuf:"bytes,2,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CreateRequest) Reset() {
-	*x = CreateRequest{}
+func (x *GetRequest) Reset() {
+	*x = GetRequest{}
 	mi := &file_users_v1_users_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CreateRequest) String() string {
+func (x *GetRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CreateRequest) ProtoMessage() {}
+func (*GetRequest) ProtoMessage() {}
 
-func (x *CreateRequest) ProtoReflect() protoreflect.Message {
+func (x *GetRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_users_v1_users_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -141,46 +147,39 @@ func (x *CreateRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CreateRequest.ProtoReflect.Descriptor instead.
-func (*CreateRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
+func (*GetRequest) Descriptor() ([]byte, []int) {
 	return file_users_v1_users_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *CreateRequest) GetExternalId() string {
+func (x *GetRequest) GetId() string {
 	if x != nil {
-		return x.ExternalId
+		return x.Id
 	}
 	return ""
 }
 
-func (x *CreateRequest) GetMetadata() map[string]*anypb.Any {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
-type CreateResponse struct {
+type GetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	User          *User                  `protobuf:"bytes,1,opt,name=user" json:"user,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CreateResponse) Reset() {
-	*x = CreateResponse{}
+func (x *GetResponse) Reset() {
+	*x = GetResponse{}
 	mi := &file_users_v1_users_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CreateResponse) String() string {
+func (x *GetResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CreateResponse) ProtoMessage() {}
+func (*GetResponse) ProtoMessage() {}
 
-func (x *CreateResponse) ProtoReflect() protoreflect.Message {
+func (x *GetResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_users_v1_users_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -192,22 +191,22 @@ func (x *CreateResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CreateResponse.ProtoReflect.Descriptor instead.
-func (*CreateResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
+func (*GetResponse) Descriptor() ([]byte, []int) {
 	return file_users_v1_users_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *CreateResponse) GetUser() *User {
+func (x *GetResponse) GetUser() *User {
 	if x != nil {
 		return x.User
 	}
 	return nil
 }
 
-// Get user by external ID
 type GetByExternalIdRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -245,6 +244,13 @@ func (*GetByExternalIdRequest) Descriptor() ([]byte, []int) {
 func (x *GetByExternalIdRequest) GetExternalId() string {
 	if x != nil {
 		return x.ExternalId
+	}
+	return ""
+}
+
+func (x *GetByExternalIdRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
 	}
 	return ""
 }
@@ -293,29 +299,27 @@ func (x *GetByExternalIdResponse) GetUser() *User {
 	return nil
 }
 
-// List users by project
-type ListByProjectRequest struct {
+type ListRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Limit         int32                  `protobuf:"varint,1,opt,name=limit" json:"limit,omitempty"`
-	Offset        int32                  `protobuf:"varint,2,opt,name=offset" json:"offset,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ListByProjectRequest) Reset() {
-	*x = ListByProjectRequest{}
+func (x *ListRequest) Reset() {
+	*x = ListRequest{}
 	mi := &file_users_v1_users_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListByProjectRequest) String() string {
+func (x *ListRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListByProjectRequest) ProtoMessage() {}
+func (*ListRequest) ProtoMessage() {}
 
-func (x *ListByProjectRequest) ProtoReflect() protoreflect.Message {
+func (x *ListRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_users_v1_users_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -327,47 +331,39 @@ func (x *ListByProjectRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListByProjectRequest.ProtoReflect.Descriptor instead.
-func (*ListByProjectRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
+func (*ListRequest) Descriptor() ([]byte, []int) {
 	return file_users_v1_users_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ListByProjectRequest) GetLimit() int32 {
+func (x *ListRequest) GetProjectId() string {
 	if x != nil {
-		return x.Limit
+		return x.ProjectId
 	}
-	return 0
+	return ""
 }
 
-func (x *ListByProjectRequest) GetOffset() int32 {
-	if x != nil {
-		return x.Offset
-	}
-	return 0
-}
-
-type ListByProjectResponse struct {
+type ListResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Users         []*User                `protobuf:"bytes,1,rep,name=users" json:"users,omitempty"`
-	TotalCount    int32                  `protobuf:"varint,2,opt,name=total_count,json=totalCount" json:"total_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ListByProjectResponse) Reset() {
-	*x = ListByProjectResponse{}
+func (x *ListResponse) Reset() {
+	*x = ListResponse{}
 	mi := &file_users_v1_users_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListByProjectResponse) String() string {
+func (x *ListResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListByProjectResponse) ProtoMessage() {}
+func (*ListResponse) ProtoMessage() {}
 
-func (x *ListByProjectResponse) ProtoReflect() protoreflect.Message {
+func (x *ListResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_users_v1_users_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -379,48 +375,42 @@ func (x *ListByProjectResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListByProjectResponse.ProtoReflect.Descriptor instead.
-func (*ListByProjectResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
+func (*ListResponse) Descriptor() ([]byte, []int) {
 	return file_users_v1_users_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *ListByProjectResponse) GetUsers() []*User {
+func (x *ListResponse) GetUsers() []*User {
 	if x != nil {
 		return x.Users
 	}
 	return nil
 }
 
-func (x *ListByProjectResponse) GetTotalCount() int32 {
-	if x != nil {
-		return x.TotalCount
-	}
-	return 0
+type CreateRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ExternalId       string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ProjectId        string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	Properties       *structpb.Struct       `protobuf:"bytes,3,opt,name=properties" json:"properties,omitempty"`
+	CustomProperties *structpb.Struct       `protobuf:"bytes,4,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
-// Update user metadata
-type UpdateMetadataRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	Metadata      map[string]*anypb.Any  `protobuf:"bytes,2,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateMetadataRequest) Reset() {
-	*x = UpdateMetadataRequest{}
+func (x *CreateRequest) Reset() {
+	*x = CreateRequest{}
 	mi := &file_users_v1_users_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateMetadataRequest) String() string {
+func (x *CreateRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateMetadataRequest) ProtoMessage() {}
+func (*CreateRequest) ProtoMessage() {}
 
-func (x *UpdateMetadataRequest) ProtoReflect() protoreflect.Message {
+func (x *CreateRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_users_v1_users_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -432,46 +422,60 @@ func (x *UpdateMetadataRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateMetadataRequest.ProtoReflect.Descriptor instead.
-func (*UpdateMetadataRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use CreateRequest.ProtoReflect.Descriptor instead.
+func (*CreateRequest) Descriptor() ([]byte, []int) {
 	return file_users_v1_users_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *UpdateMetadataRequest) GetExternalId() string {
+func (x *CreateRequest) GetExternalId() string {
 	if x != nil {
 		return x.ExternalId
 	}
 	return ""
 }
 
-func (x *UpdateMetadataRequest) GetMetadata() map[string]*anypb.Any {
+func (x *CreateRequest) GetProjectId() string {
 	if x != nil {
-		return x.Metadata
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *CreateRequest) GetProperties() *structpb.Struct {
+	if x != nil {
+		return x.Properties
 	}
 	return nil
 }
 
-type UpdateMetadataResponse struct {
+func (x *CreateRequest) GetCustomProperties() *structpb.Struct {
+	if x != nil {
+		return x.CustomProperties
+	}
+	return nil
+}
+
+type CreateResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	User          *User                  `protobuf:"bytes,1,opt,name=user" json:"user,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateMetadataResponse) Reset() {
-	*x = UpdateMetadataResponse{}
+func (x *CreateResponse) Reset() {
+	*x = CreateResponse{}
 	mi := &file_users_v1_users_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateMetadataResponse) String() string {
+func (x *CreateResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateMetadataResponse) ProtoMessage() {}
+func (*CreateResponse) ProtoMessage() {}
 
-func (x *UpdateMetadataResponse) ProtoReflect() protoreflect.Message {
+func (x *CreateResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_users_v1_users_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -483,29 +487,220 @@ func (x *UpdateMetadataResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateMetadataResponse.ProtoReflect.Descriptor instead.
-func (*UpdateMetadataResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use CreateResponse.ProtoReflect.Descriptor instead.
+func (*CreateResponse) Descriptor() ([]byte, []int) {
 	return file_users_v1_users_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *UpdateMetadataResponse) GetUser() *User {
+func (x *CreateResponse) GetUser() *User {
 	if x != nil {
 		return x.User
 	}
 	return nil
 }
 
-// Delete user
+type UpdatePropertiesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Properties    *structpb.Struct       `protobuf:"bytes,2,opt,name=properties" json:"properties,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdatePropertiesRequest) Reset() {
+	*x = UpdatePropertiesRequest{}
+	mi := &file_users_v1_users_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdatePropertiesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdatePropertiesRequest) ProtoMessage() {}
+
+func (x *UpdatePropertiesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_users_v1_users_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdatePropertiesRequest.ProtoReflect.Descriptor instead.
+func (*UpdatePropertiesRequest) Descriptor() ([]byte, []int) {
+	return file_users_v1_users_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *UpdatePropertiesRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdatePropertiesRequest) GetProperties() *structpb.Struct {
+	if x != nil {
+		return x.Properties
+	}
+	return nil
+}
+
+type UpdatePropertiesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	User          *User                  `protobuf:"bytes,1,opt,name=user" json:"user,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdatePropertiesResponse) Reset() {
+	*x = UpdatePropertiesResponse{}
+	mi := &file_users_v1_users_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdatePropertiesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdatePropertiesResponse) ProtoMessage() {}
+
+func (x *UpdatePropertiesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_users_v1_users_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdatePropertiesResponse.ProtoReflect.Descriptor instead.
+func (*UpdatePropertiesResponse) Descriptor() ([]byte, []int) {
+	return file_users_v1_users_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *UpdatePropertiesResponse) GetUser() *User {
+	if x != nil {
+		return x.User
+	}
+	return nil
+}
+
+type UpdateCustomPropertiesRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	CustomProperties *structpb.Struct       `protobuf:"bytes,2,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UpdateCustomPropertiesRequest) Reset() {
+	*x = UpdateCustomPropertiesRequest{}
+	mi := &file_users_v1_users_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateCustomPropertiesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateCustomPropertiesRequest) ProtoMessage() {}
+
+func (x *UpdateCustomPropertiesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_users_v1_users_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateCustomPropertiesRequest.ProtoReflect.Descriptor instead.
+func (*UpdateCustomPropertiesRequest) Descriptor() ([]byte, []int) {
+	return file_users_v1_users_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UpdateCustomPropertiesRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdateCustomPropertiesRequest) GetCustomProperties() *structpb.Struct {
+	if x != nil {
+		return x.CustomProperties
+	}
+	return nil
+}
+
+type UpdateCustomPropertiesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	User          *User                  `protobuf:"bytes,1,opt,name=user" json:"user,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateCustomPropertiesResponse) Reset() {
+	*x = UpdateCustomPropertiesResponse{}
+	mi := &file_users_v1_users_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateCustomPropertiesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateCustomPropertiesResponse) ProtoMessage() {}
+
+func (x *UpdateCustomPropertiesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_users_v1_users_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateCustomPropertiesResponse.ProtoReflect.Descriptor instead.
+func (*UpdateCustomPropertiesResponse) Descriptor() ([]byte, []int) {
+	return file_users_v1_users_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *UpdateCustomPropertiesResponse) GetUser() *User {
+	if x != nil {
+		return x.User
+	}
+	return nil
+}
+
 type DeleteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeleteRequest) Reset() {
 	*x = DeleteRequest{}
-	mi := &file_users_v1_users_proto_msgTypes[9]
+	mi := &file_users_v1_users_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -517,7 +712,7 @@ func (x *DeleteRequest) String() string {
 func (*DeleteRequest) ProtoMessage() {}
 
 func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_users_v1_users_proto_msgTypes[9]
+	mi := &file_users_v1_users_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -530,26 +725,25 @@ func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRequest.ProtoReflect.Descriptor instead.
 func (*DeleteRequest) Descriptor() ([]byte, []int) {
-	return file_users_v1_users_proto_rawDescGZIP(), []int{9}
+	return file_users_v1_users_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *DeleteRequest) GetExternalId() string {
+func (x *DeleteRequest) GetId() string {
 	if x != nil {
-		return x.ExternalId
+		return x.Id
 	}
 	return ""
 }
 
 type DeleteResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success" json:"success,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeleteResponse) Reset() {
 	*x = DeleteResponse{}
-	mi := &file_users_v1_users_proto_msgTypes[10]
+	mi := &file_users_v1_users_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -561,7 +755,7 @@ func (x *DeleteResponse) String() string {
 func (*DeleteResponse) ProtoMessage() {}
 
 func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_users_v1_users_proto_msgTypes[10]
+	mi := &file_users_v1_users_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -574,429 +768,79 @@ func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
 func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return file_users_v1_users_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *DeleteResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
-}
-
-// Create user if not exists, or get existing user by external_id
-type CreateOrGetByExternalIdRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	Metadata      map[string]*anypb.Any  `protobuf:"bytes,2,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateOrGetByExternalIdRequest) Reset() {
-	*x = CreateOrGetByExternalIdRequest{}
-	mi := &file_users_v1_users_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateOrGetByExternalIdRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateOrGetByExternalIdRequest) ProtoMessage() {}
-
-func (x *CreateOrGetByExternalIdRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_users_v1_users_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateOrGetByExternalIdRequest.ProtoReflect.Descriptor instead.
-func (*CreateOrGetByExternalIdRequest) Descriptor() ([]byte, []int) {
-	return file_users_v1_users_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *CreateOrGetByExternalIdRequest) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
-	}
-	return ""
-}
-
-func (x *CreateOrGetByExternalIdRequest) GetMetadata() map[string]*anypb.Any {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
-type CreateOrGetByExternalIdResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	User          *User                  `protobuf:"bytes,1,opt,name=user" json:"user,omitempty"`
-	WasCreated    bool                   `protobuf:"varint,2,opt,name=was_created,json=wasCreated" json:"was_created,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateOrGetByExternalIdResponse) Reset() {
-	*x = CreateOrGetByExternalIdResponse{}
-	mi := &file_users_v1_users_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateOrGetByExternalIdResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateOrGetByExternalIdResponse) ProtoMessage() {}
-
-func (x *CreateOrGetByExternalIdResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_users_v1_users_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateOrGetByExternalIdResponse.ProtoReflect.Descriptor instead.
-func (*CreateOrGetByExternalIdResponse) Descriptor() ([]byte, []int) {
-	return file_users_v1_users_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *CreateOrGetByExternalIdResponse) GetUser() *User {
-	if x != nil {
-		return x.User
-	}
-	return nil
-}
-
-func (x *CreateOrGetByExternalIdResponse) GetWasCreated() bool {
-	if x != nil {
-		return x.WasCreated
-	}
-	return false
-}
-
-type LinkUserToSubscriptionRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId     string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	SubscriptionId string                 `protobuf:"bytes,2,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
-	UserMetadata   map[string]*anypb.Any  `protobuf:"bytes,3,rep,name=user_metadata,json=userMetadata" json:"user_metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *LinkUserToSubscriptionRequest) Reset() {
-	*x = LinkUserToSubscriptionRequest{}
-	mi := &file_users_v1_users_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LinkUserToSubscriptionRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LinkUserToSubscriptionRequest) ProtoMessage() {}
-
-func (x *LinkUserToSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_users_v1_users_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LinkUserToSubscriptionRequest.ProtoReflect.Descriptor instead.
-func (*LinkUserToSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_users_v1_users_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *LinkUserToSubscriptionRequest) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
-	}
-	return ""
-}
-
-func (x *LinkUserToSubscriptionRequest) GetSubscriptionId() string {
-	if x != nil {
-		return x.SubscriptionId
-	}
-	return ""
-}
-
-func (x *LinkUserToSubscriptionRequest) GetUserMetadata() map[string]*anypb.Any {
-	if x != nil {
-		return x.UserMetadata
-	}
-	return nil
-}
-
-type LinkUserToSubscriptionResponse struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	User                  *User                  `protobuf:"bytes,1,opt,name=user" json:"user,omitempty"`
-	UserWasCreated        bool                   `protobuf:"varint,2,opt,name=user_was_created,json=userWasCreated" json:"user_was_created,omitempty"`
-	SubscriptionWasLinked bool                   `protobuf:"varint,3,opt,name=subscription_was_linked,json=subscriptionWasLinked" json:"subscription_was_linked,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
-}
-
-func (x *LinkUserToSubscriptionResponse) Reset() {
-	*x = LinkUserToSubscriptionResponse{}
-	mi := &file_users_v1_users_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LinkUserToSubscriptionResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LinkUserToSubscriptionResponse) ProtoMessage() {}
-
-func (x *LinkUserToSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_users_v1_users_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LinkUserToSubscriptionResponse.ProtoReflect.Descriptor instead.
-func (*LinkUserToSubscriptionResponse) Descriptor() ([]byte, []int) {
 	return file_users_v1_users_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *LinkUserToSubscriptionResponse) GetUser() *User {
-	if x != nil {
-		return x.User
-	}
-	return nil
-}
-
-func (x *LinkUserToSubscriptionResponse) GetUserWasCreated() bool {
-	if x != nil {
-		return x.UserWasCreated
-	}
-	return false
-}
-
-func (x *LinkUserToSubscriptionResponse) GetSubscriptionWasLinked() bool {
-	if x != nil {
-		return x.SubscriptionWasLinked
-	}
-	return false
-}
-
-// Get user associated with a subscription
-type GetUserBySubscriptionRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *GetUserBySubscriptionRequest) Reset() {
-	*x = GetUserBySubscriptionRequest{}
-	mi := &file_users_v1_users_proto_msgTypes[15]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetUserBySubscriptionRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetUserBySubscriptionRequest) ProtoMessage() {}
-
-func (x *GetUserBySubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_users_v1_users_proto_msgTypes[15]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetUserBySubscriptionRequest.ProtoReflect.Descriptor instead.
-func (*GetUserBySubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_users_v1_users_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *GetUserBySubscriptionRequest) GetSubscriptionId() string {
-	if x != nil {
-		return x.SubscriptionId
-	}
-	return ""
-}
-
-type GetUserBySubscriptionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	User          *User                  `protobuf:"bytes,1,opt,name=user" json:"user,omitempty"`
-	HasUser       bool                   `protobuf:"varint,2,opt,name=has_user,json=hasUser" json:"has_user,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetUserBySubscriptionResponse) Reset() {
-	*x = GetUserBySubscriptionResponse{}
-	mi := &file_users_v1_users_proto_msgTypes[16]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetUserBySubscriptionResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetUserBySubscriptionResponse) ProtoMessage() {}
-
-func (x *GetUserBySubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_users_v1_users_proto_msgTypes[16]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetUserBySubscriptionResponse.ProtoReflect.Descriptor instead.
-func (*GetUserBySubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_users_v1_users_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *GetUserBySubscriptionResponse) GetUser() *User {
-	if x != nil {
-		return x.User
-	}
-	return nil
-}
-
-func (x *GetUserBySubscriptionResponse) GetHasUser() bool {
-	if x != nil {
-		return x.HasUser
-	}
-	return false
 }
 
 var File_users_v1_users_proto protoreflect.FileDescriptor
 
 const file_users_v1_users_proto_rawDesc = "" +
 	"\n" +
-	"\x14users/v1/users.proto\x12\busers.v1\x1a\x19google/protobuf/any.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdd\x02\n" +
+	"\x14users/v1/users.proto\x12\busers.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcf\x02\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vexternal_id\x18\x02 \x01(\tR\n" +
 	"externalId\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x03 \x01(\tR\tprojectId\x128\n" +
-	"\bmetadata\x18\x04 \x03(\v2\x1c.users.v1.User.MetadataEntryR\bmetadata\x12;\n" +
-	"\vcreate_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId\x127\n" +
+	"\n" +
+	"properties\x18\x04 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"properties\x12D\n" +
+	"\x11custom_properties\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12;\n" +
+	"\vcreate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12;\n" +
-	"\vupdate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\x1aQ\n" +
-	"\rMetadataEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\xc6\x01\n" +
-	"\rCreateRequest\x12\x1f\n" +
-	"\vexternal_id\x18\x01 \x01(\tR\n" +
-	"externalId\x12A\n" +
-	"\bmetadata\x18\x02 \x03(\v2%.users.v1.CreateRequest.MetadataEntryR\bmetadata\x1aQ\n" +
-	"\rMetadataEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"4\n" +
-	"\x0eCreateResponse\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"9\n" +
+	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"updateTime\"\x1c\n" +
+	"\n" +
+	"GetRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"1\n" +
+	"\vGetResponse\x12\"\n" +
+	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"X\n" +
 	"\x16GetByExternalIdRequest\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +
-	"externalId\"=\n" +
+	"externalId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\"=\n" +
 	"\x17GetByExternalIdResponse\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"D\n" +
-	"\x14ListByProjectRequest\x12\x14\n" +
-	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x02 \x01(\x05R\x06offset\"^\n" +
-	"\x15ListByProjectResponse\x12$\n" +
-	"\x05users\x18\x01 \x03(\v2\x0e.users.v1.UserR\x05users\x12\x1f\n" +
-	"\vtotal_count\x18\x02 \x01(\x05R\n" +
-	"totalCount\"\xd6\x01\n" +
-	"\x15UpdateMetadataRequest\x12\x1f\n" +
+	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\",\n" +
+	"\vListRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\"4\n" +
+	"\fListResponse\x12$\n" +
+	"\x05users\x18\x01 \x03(\v2\x0e.users.v1.UserR\x05users\"\xce\x01\n" +
+	"\rCreateRequest\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +
-	"externalId\x12I\n" +
-	"\bmetadata\x18\x02 \x03(\v2-.users.v1.UpdateMetadataRequest.MetadataEntryR\bmetadata\x1aQ\n" +
-	"\rMetadataEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"<\n" +
-	"\x16UpdateMetadataResponse\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"0\n" +
-	"\rDeleteRequest\x12\x1f\n" +
-	"\vexternal_id\x18\x01 \x01(\tR\n" +
-	"externalId\"*\n" +
-	"\x0eDeleteResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xe8\x01\n" +
-	"\x1eCreateOrGetByExternalIdRequest\x12\x1f\n" +
-	"\vexternal_id\x18\x01 \x01(\tR\n" +
-	"externalId\x12R\n" +
-	"\bmetadata\x18\x02 \x03(\v26.users.v1.CreateOrGetByExternalIdRequest.MetadataEntryR\bmetadata\x1aQ\n" +
-	"\rMetadataEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"f\n" +
-	"\x1fCreateOrGetByExternalIdResponse\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\x12\x1f\n" +
-	"\vwas_created\x18\x02 \x01(\bR\n" +
-	"wasCreated\"\xa0\x02\n" +
-	"\x1dLinkUserToSubscriptionRequest\x12\x1f\n" +
-	"\vexternal_id\x18\x01 \x01(\tR\n" +
-	"externalId\x12'\n" +
-	"\x0fsubscription_id\x18\x02 \x01(\tR\x0esubscriptionId\x12^\n" +
-	"\ruser_metadata\x18\x03 \x03(\v29.users.v1.LinkUserToSubscriptionRequest.UserMetadataEntryR\fuserMetadata\x1aU\n" +
-	"\x11UserMetadataEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\xa6\x01\n" +
-	"\x1eLinkUserToSubscriptionResponse\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\x12(\n" +
-	"\x10user_was_created\x18\x02 \x01(\bR\x0euserWasCreated\x126\n" +
-	"\x17subscription_was_linked\x18\x03 \x01(\bR\x15subscriptionWasLinked\"G\n" +
-	"\x1cGetUserBySubscriptionRequest\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\"^\n" +
-	"\x1dGetUserBySubscriptionResponse\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\x12\x19\n" +
-	"\bhas_user\x18\x02 \x01(\bR\ahasUser2\xde\x05\n" +
-	"\fUsersService\x12=\n" +
-	"\x06Create\x12\x17.users.v1.CreateRequest\x1a\x18.users.v1.CreateResponse\"\x00\x12X\n" +
-	"\x0fGetByExternalId\x12 .users.v1.GetByExternalIdRequest\x1a!.users.v1.GetByExternalIdResponse\"\x00\x12R\n" +
-	"\rListByProject\x12\x1e.users.v1.ListByProjectRequest\x1a\x1f.users.v1.ListByProjectResponse\"\x00\x12U\n" +
-	"\x0eUpdateMetadata\x12\x1f.users.v1.UpdateMetadataRequest\x1a .users.v1.UpdateMetadataResponse\"\x00\x12=\n" +
-	"\x06Delete\x12\x17.users.v1.DeleteRequest\x1a\x18.users.v1.DeleteResponse\"\x00\x12p\n" +
-	"\x17CreateOrGetByExternalId\x12(.users.v1.CreateOrGetByExternalIdRequest\x1a).users.v1.CreateOrGetByExternalIdResponse\"\x00\x12m\n" +
-	"\x16LinkUserToSubscription\x12'.users.v1.LinkUserToSubscriptionRequest\x1a(.users.v1.LinkUserToSubscriptionResponse\"\x00\x12j\n" +
-	"\x15GetUserBySubscription\x12&.users.v1.GetUserBySubscriptionRequest\x1a'.users.v1.GetUserBySubscriptionResponse\"\x00BGZ@github.com/fivebitsio/cotton/internal/gen/proto/users/v1;usersv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"externalId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x127\n" +
+	"\n" +
+	"properties\x18\x03 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"properties\x12D\n" +
+	"\x11custom_properties\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\"4\n" +
+	"\x0eCreateResponse\x12\"\n" +
+	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"b\n" +
+	"\x17UpdatePropertiesRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x127\n" +
+	"\n" +
+	"properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"properties\">\n" +
+	"\x18UpdatePropertiesResponse\x12\"\n" +
+	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"u\n" +
+	"\x1dUpdateCustomPropertiesRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12D\n" +
+	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\"D\n" +
+	"\x1eUpdateCustomPropertiesResponse\x12\"\n" +
+	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"\x1f\n" +
+	"\rDeleteRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x10\n" +
+	"\x0eDeleteResponse2\xa1\x04\n" +
+	"\fUsersService\x124\n" +
+	"\x03Get\x12\x14.users.v1.GetRequest\x1a\x15.users.v1.GetResponse\"\x00\x12X\n" +
+	"\x0fGetByExternalId\x12 .users.v1.GetByExternalIdRequest\x1a!.users.v1.GetByExternalIdResponse\"\x00\x127\n" +
+	"\x04List\x12\x15.users.v1.ListRequest\x1a\x16.users.v1.ListResponse\"\x00\x12=\n" +
+	"\x06Create\x12\x17.users.v1.CreateRequest\x1a\x18.users.v1.CreateResponse\"\x00\x12[\n" +
+	"\x10UpdateProperties\x12!.users.v1.UpdatePropertiesRequest\x1a\".users.v1.UpdatePropertiesResponse\"\x00\x12m\n" +
+	"\x16UpdateCustomProperties\x12'.users.v1.UpdateCustomPropertiesRequest\x1a(.users.v1.UpdateCustomPropertiesResponse\"\x00\x12=\n" +
+	"\x06Delete\x12\x17.users.v1.DeleteRequest\x1a\x18.users.v1.DeleteResponse\"\x00BGZ@github.com/fivebitsio/cotton/internal/gen/proto/users/v1;usersv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_users_v1_users_proto_rawDescOnce sync.Once
@@ -1010,74 +854,60 @@ func file_users_v1_users_proto_rawDescGZIP() []byte {
 	return file_users_v1_users_proto_rawDescData
 }
 
-var file_users_v1_users_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_users_v1_users_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_users_v1_users_proto_goTypes = []any{
-	(*User)(nil),                            // 0: users.v1.User
-	(*CreateRequest)(nil),                   // 1: users.v1.CreateRequest
-	(*CreateResponse)(nil),                  // 2: users.v1.CreateResponse
-	(*GetByExternalIdRequest)(nil),          // 3: users.v1.GetByExternalIdRequest
-	(*GetByExternalIdResponse)(nil),         // 4: users.v1.GetByExternalIdResponse
-	(*ListByProjectRequest)(nil),            // 5: users.v1.ListByProjectRequest
-	(*ListByProjectResponse)(nil),           // 6: users.v1.ListByProjectResponse
-	(*UpdateMetadataRequest)(nil),           // 7: users.v1.UpdateMetadataRequest
-	(*UpdateMetadataResponse)(nil),          // 8: users.v1.UpdateMetadataResponse
-	(*DeleteRequest)(nil),                   // 9: users.v1.DeleteRequest
-	(*DeleteResponse)(nil),                  // 10: users.v1.DeleteResponse
-	(*CreateOrGetByExternalIdRequest)(nil),  // 11: users.v1.CreateOrGetByExternalIdRequest
-	(*CreateOrGetByExternalIdResponse)(nil), // 12: users.v1.CreateOrGetByExternalIdResponse
-	(*LinkUserToSubscriptionRequest)(nil),   // 13: users.v1.LinkUserToSubscriptionRequest
-	(*LinkUserToSubscriptionResponse)(nil),  // 14: users.v1.LinkUserToSubscriptionResponse
-	(*GetUserBySubscriptionRequest)(nil),    // 15: users.v1.GetUserBySubscriptionRequest
-	(*GetUserBySubscriptionResponse)(nil),   // 16: users.v1.GetUserBySubscriptionResponse
-	nil,                                     // 17: users.v1.User.MetadataEntry
-	nil,                                     // 18: users.v1.CreateRequest.MetadataEntry
-	nil,                                     // 19: users.v1.UpdateMetadataRequest.MetadataEntry
-	nil,                                     // 20: users.v1.CreateOrGetByExternalIdRequest.MetadataEntry
-	nil,                                     // 21: users.v1.LinkUserToSubscriptionRequest.UserMetadataEntry
-	(*timestamppb.Timestamp)(nil),           // 22: google.protobuf.Timestamp
-	(*anypb.Any)(nil),                       // 23: google.protobuf.Any
+	(*User)(nil),                           // 0: users.v1.User
+	(*GetRequest)(nil),                     // 1: users.v1.GetRequest
+	(*GetResponse)(nil),                    // 2: users.v1.GetResponse
+	(*GetByExternalIdRequest)(nil),         // 3: users.v1.GetByExternalIdRequest
+	(*GetByExternalIdResponse)(nil),        // 4: users.v1.GetByExternalIdResponse
+	(*ListRequest)(nil),                    // 5: users.v1.ListRequest
+	(*ListResponse)(nil),                   // 6: users.v1.ListResponse
+	(*CreateRequest)(nil),                  // 7: users.v1.CreateRequest
+	(*CreateResponse)(nil),                 // 8: users.v1.CreateResponse
+	(*UpdatePropertiesRequest)(nil),        // 9: users.v1.UpdatePropertiesRequest
+	(*UpdatePropertiesResponse)(nil),       // 10: users.v1.UpdatePropertiesResponse
+	(*UpdateCustomPropertiesRequest)(nil),  // 11: users.v1.UpdateCustomPropertiesRequest
+	(*UpdateCustomPropertiesResponse)(nil), // 12: users.v1.UpdateCustomPropertiesResponse
+	(*DeleteRequest)(nil),                  // 13: users.v1.DeleteRequest
+	(*DeleteResponse)(nil),                 // 14: users.v1.DeleteResponse
+	(*structpb.Struct)(nil),                // 15: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),          // 16: google.protobuf.Timestamp
 }
 var file_users_v1_users_proto_depIdxs = []int32{
-	17, // 0: users.v1.User.metadata:type_name -> users.v1.User.MetadataEntry
-	22, // 1: users.v1.User.create_time:type_name -> google.protobuf.Timestamp
-	22, // 2: users.v1.User.update_time:type_name -> google.protobuf.Timestamp
-	18, // 3: users.v1.CreateRequest.metadata:type_name -> users.v1.CreateRequest.MetadataEntry
-	0,  // 4: users.v1.CreateResponse.user:type_name -> users.v1.User
+	15, // 0: users.v1.User.properties:type_name -> google.protobuf.Struct
+	15, // 1: users.v1.User.custom_properties:type_name -> google.protobuf.Struct
+	16, // 2: users.v1.User.create_time:type_name -> google.protobuf.Timestamp
+	16, // 3: users.v1.User.update_time:type_name -> google.protobuf.Timestamp
+	0,  // 4: users.v1.GetResponse.user:type_name -> users.v1.User
 	0,  // 5: users.v1.GetByExternalIdResponse.user:type_name -> users.v1.User
-	0,  // 6: users.v1.ListByProjectResponse.users:type_name -> users.v1.User
-	19, // 7: users.v1.UpdateMetadataRequest.metadata:type_name -> users.v1.UpdateMetadataRequest.MetadataEntry
-	0,  // 8: users.v1.UpdateMetadataResponse.user:type_name -> users.v1.User
-	20, // 9: users.v1.CreateOrGetByExternalIdRequest.metadata:type_name -> users.v1.CreateOrGetByExternalIdRequest.MetadataEntry
-	0,  // 10: users.v1.CreateOrGetByExternalIdResponse.user:type_name -> users.v1.User
-	21, // 11: users.v1.LinkUserToSubscriptionRequest.user_metadata:type_name -> users.v1.LinkUserToSubscriptionRequest.UserMetadataEntry
-	0,  // 12: users.v1.LinkUserToSubscriptionResponse.user:type_name -> users.v1.User
-	0,  // 13: users.v1.GetUserBySubscriptionResponse.user:type_name -> users.v1.User
-	23, // 14: users.v1.User.MetadataEntry.value:type_name -> google.protobuf.Any
-	23, // 15: users.v1.CreateRequest.MetadataEntry.value:type_name -> google.protobuf.Any
-	23, // 16: users.v1.UpdateMetadataRequest.MetadataEntry.value:type_name -> google.protobuf.Any
-	23, // 17: users.v1.CreateOrGetByExternalIdRequest.MetadataEntry.value:type_name -> google.protobuf.Any
-	23, // 18: users.v1.LinkUserToSubscriptionRequest.UserMetadataEntry.value:type_name -> google.protobuf.Any
-	1,  // 19: users.v1.UsersService.Create:input_type -> users.v1.CreateRequest
-	3,  // 20: users.v1.UsersService.GetByExternalId:input_type -> users.v1.GetByExternalIdRequest
-	5,  // 21: users.v1.UsersService.ListByProject:input_type -> users.v1.ListByProjectRequest
-	7,  // 22: users.v1.UsersService.UpdateMetadata:input_type -> users.v1.UpdateMetadataRequest
-	9,  // 23: users.v1.UsersService.Delete:input_type -> users.v1.DeleteRequest
-	11, // 24: users.v1.UsersService.CreateOrGetByExternalId:input_type -> users.v1.CreateOrGetByExternalIdRequest
-	13, // 25: users.v1.UsersService.LinkUserToSubscription:input_type -> users.v1.LinkUserToSubscriptionRequest
-	15, // 26: users.v1.UsersService.GetUserBySubscription:input_type -> users.v1.GetUserBySubscriptionRequest
-	2,  // 27: users.v1.UsersService.Create:output_type -> users.v1.CreateResponse
-	4,  // 28: users.v1.UsersService.GetByExternalId:output_type -> users.v1.GetByExternalIdResponse
-	6,  // 29: users.v1.UsersService.ListByProject:output_type -> users.v1.ListByProjectResponse
-	8,  // 30: users.v1.UsersService.UpdateMetadata:output_type -> users.v1.UpdateMetadataResponse
-	10, // 31: users.v1.UsersService.Delete:output_type -> users.v1.DeleteResponse
-	12, // 32: users.v1.UsersService.CreateOrGetByExternalId:output_type -> users.v1.CreateOrGetByExternalIdResponse
-	14, // 33: users.v1.UsersService.LinkUserToSubscription:output_type -> users.v1.LinkUserToSubscriptionResponse
-	16, // 34: users.v1.UsersService.GetUserBySubscription:output_type -> users.v1.GetUserBySubscriptionResponse
-	27, // [27:35] is the sub-list for method output_type
-	19, // [19:27] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	0,  // 6: users.v1.ListResponse.users:type_name -> users.v1.User
+	15, // 7: users.v1.CreateRequest.properties:type_name -> google.protobuf.Struct
+	15, // 8: users.v1.CreateRequest.custom_properties:type_name -> google.protobuf.Struct
+	0,  // 9: users.v1.CreateResponse.user:type_name -> users.v1.User
+	15, // 10: users.v1.UpdatePropertiesRequest.properties:type_name -> google.protobuf.Struct
+	0,  // 11: users.v1.UpdatePropertiesResponse.user:type_name -> users.v1.User
+	15, // 12: users.v1.UpdateCustomPropertiesRequest.custom_properties:type_name -> google.protobuf.Struct
+	0,  // 13: users.v1.UpdateCustomPropertiesResponse.user:type_name -> users.v1.User
+	1,  // 14: users.v1.UsersService.Get:input_type -> users.v1.GetRequest
+	3,  // 15: users.v1.UsersService.GetByExternalId:input_type -> users.v1.GetByExternalIdRequest
+	5,  // 16: users.v1.UsersService.List:input_type -> users.v1.ListRequest
+	7,  // 17: users.v1.UsersService.Create:input_type -> users.v1.CreateRequest
+	9,  // 18: users.v1.UsersService.UpdateProperties:input_type -> users.v1.UpdatePropertiesRequest
+	11, // 19: users.v1.UsersService.UpdateCustomProperties:input_type -> users.v1.UpdateCustomPropertiesRequest
+	13, // 20: users.v1.UsersService.Delete:input_type -> users.v1.DeleteRequest
+	2,  // 21: users.v1.UsersService.Get:output_type -> users.v1.GetResponse
+	4,  // 22: users.v1.UsersService.GetByExternalId:output_type -> users.v1.GetByExternalIdResponse
+	6,  // 23: users.v1.UsersService.List:output_type -> users.v1.ListResponse
+	8,  // 24: users.v1.UsersService.Create:output_type -> users.v1.CreateResponse
+	10, // 25: users.v1.UsersService.UpdateProperties:output_type -> users.v1.UpdatePropertiesResponse
+	12, // 26: users.v1.UsersService.UpdateCustomProperties:output_type -> users.v1.UpdateCustomPropertiesResponse
+	14, // 27: users.v1.UsersService.Delete:output_type -> users.v1.DeleteResponse
+	21, // [21:28] is the sub-list for method output_type
+	14, // [14:21] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_users_v1_users_proto_init() }
@@ -1091,7 +921,7 @@ func file_users_v1_users_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_users_v1_users_proto_rawDesc), len(file_users_v1_users_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

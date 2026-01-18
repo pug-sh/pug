@@ -11,16 +11,19 @@ import (
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
+	"github.com/fivebitsio/cotton/internal/core/users"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/users/v1/usersv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/rpc/auth"
 	"github.com/fivebitsio/cotton/internal/rpc/campaigns"
 	"github.com/fivebitsio/cotton/internal/rpc/delivery"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
 	"github.com/fivebitsio/cotton/internal/rpc/projects"
+	usersrpc "github.com/fivebitsio/cotton/internal/rpc/users"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/fivebitsio/cotton/pkg/postgres"
@@ -98,6 +101,7 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	)
 	projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
 
+	// ... existing code ...
 	campaignsServer := campaigns.NewServer(deps.pgRo, deps.pgW, deps.campaignsProducer)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
 		campaignsServer,
@@ -112,17 +116,26 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	)
 	deliveryHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(deliveryHandler)
 
+	usersServer := users.NewService(deps.pgRo, deps.pgW)
+	usersHandlerObj := usersrpc.NewHandler(usersServer)
+	usersPath, usersHandler := usersv1connect.NewUsersServiceHandler(
+		usersHandlerObj,
+		commonHandlerOptions(),
+	)
+
 	handler := http.NewServeMux()
 	handler.Handle(authPath, authHandler)
 	handler.Handle(projectsPath, projectsHandler)
 	handler.Handle(campaignsPath, campaignsHandler)
 	handler.Handle(deliveryPath, deliveryHandler)
+	handler.Handle(usersPath, usersHandler)
 
 	services := []string{
 		authv1connect.AuthServiceName,
 		projectsv1connect.ProjectsServiceName,
 		campaignsv1connect.CampaignServiceName,
 		deliveryv1connect.DeliveryServiceName,
+		usersv1connect.UsersServiceName,
 	}
 
 	reflector := grpcreflect.NewStaticReflector(services...)
