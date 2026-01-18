@@ -1,1 +1,1 @@
-drop table if exists segments;
+drop table segments;
