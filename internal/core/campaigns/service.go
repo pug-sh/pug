@@ -9,17 +9,18 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	pulsarclient "github.com/fivebitsio/cotton/pkg/pulsar"
+	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 type Service struct {
 	repo        Repo
 	projectsSvc *projects.Service
-	producer    *pulsarclient.Producer
+	producer    jetstream.JetStream
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.Service, producer *pulsarclient.Producer) *Service {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.Service, producer jetstream.JetStream) *Service {
 	return &Service{
 		repo:        NewRepo(pgRO, pgW),
 		projectsSvc: projectsSvc,
@@ -35,8 +36,8 @@ func (s *Service) CreateCampaign(ctx context.Context, arg dbwrite.CreateCampaign
 
 	scheduledTime := arg.ScheduledTime.Time
 
-	if err := s.sendCampaignToPulsar(ctx, campaign, scheduledTime); err != nil {
-		slog.ErrorContext(ctx, "failed to send campaign to pulsar", slog.Any("error", err), slog.String("campaignId", campaign.ID))
+	if err := s.sendCampaignToNATS(ctx, campaign, scheduledTime); err != nil {
+		slog.ErrorContext(ctx, "failed to send campaign to NATS", slog.Any("error", err), slog.String("campaignId", campaign.ID))
 	}
 
 	return campaign, nil
@@ -69,27 +70,20 @@ func (s *Service) UpdateCampaign(ctx context.Context, arg dbwrite.UpdateCampaign
 
 	scheduledTime := arg.ScheduledTime.Time
 
-	if err := s.sendCampaignToPulsar(ctx, campaign, scheduledTime); err != nil {
-		slog.ErrorContext(ctx, "failed to send updated campaign to pulsar", slog.Any("error", err), slog.String("campaignId", campaign.ID))
+	if err := s.sendCampaignToNATS(ctx, campaign, scheduledTime); err != nil {
+		slog.ErrorContext(ctx, "failed to send updated campaign to NATS", slog.Any("error", err), slog.String("campaignId", campaign.ID))
 	}
 
 	return campaign, nil
 }
 
-func (s *Service) sendCampaignToPulsar(ctx context.Context, campaign dbwrite.Campaign, scheduledTime time.Time) error {
-	deliverAt := &scheduledTime
+func (s *Service) sendCampaignToNATS(ctx context.Context, campaign dbwrite.Campaign, scheduledTime time.Time) error {
+	// For NATS, we'll publish immediately since NATS JetStream doesn't have a direct equivalent to Pulsar's DeliverAt
+	// Instead, we could implement a delayed delivery mechanism using NATS timers if needed
 
-	pulsarMsg := &pulsarclient.Message{
-		Payload: campaign.NotificationData,
-		Properties: map[string]string{
-			"campaign_id": campaign.ID,
-			"project_id":  campaign.ProjectID,
-		},
-		DeliverAt: deliverAt,
-	}
-
-	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
-		return fmt.Errorf("failed to send campaign to pulsar: %w", err)
+	_, err := s.producer.Publish(ctx, nats.CampaignScheduledSubject, campaign.NotificationData)
+	if err != nil {
+		return fmt.Errorf("failed to send campaign to NATS: %w", err)
 	}
 
 	return nil

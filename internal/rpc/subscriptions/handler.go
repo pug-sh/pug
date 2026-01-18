@@ -2,21 +2,20 @@ package subscriptions
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"connectrpc.com/connect"
 
 	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
-	pulsarclient "github.com/fivebitsio/cotton/pkg/pulsar"
+	"github.com/fivebitsio/cotton/pkg/nats"
+	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 )
 
 // Server implements the Subscriptions service
 type Server struct {
-	pc       *pulsarclient.Client
-	producer *pulsarclient.Producer
+	producer jetstream.JetStream
 }
 
 // Upsert adds or updates a subscription asynchronously
@@ -48,14 +47,10 @@ func (s *Server) Upsert(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsarclient.Message{
-		Payload:    data,
-		Properties: nil,
-		DeliverAt:  nil,
-	}
-
-	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to Pulsar", slog.Any("err", err))
+	// Publish to NATS JetStream
+	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -88,14 +83,10 @@ func (s *Server) UpdateHeartbeat(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsarclient.Message{
-		Payload:    data,
-		Properties: nil,
-		DeliverAt:  nil,
-	}
-
-	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to Pulsar", slog.Any("err", err))
+	// Publish to NATS JetStream
+	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -129,14 +120,10 @@ func (s *Server) UpdateMetadata(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsarclient.Message{
-		Payload:    data,
-		Properties: nil,
-		DeliverAt:  nil,
-	}
-
-	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to Pulsar", slog.Any("err", err))
+	// Publish to NATS JetStream
+	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -170,14 +157,10 @@ func (s *Server) UpdateStatus(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsarclient.Message{
-		Payload:    data,
-		Properties: nil,
-		DeliverAt:  nil,
-	}
-
-	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to Pulsar", slog.Any("err", err))
+	// Publish to NATS JetStream
+	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -211,14 +194,10 @@ func (s *Server) UpdateToken(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsarclient.Message{
-		Payload:    data,
-		Properties: nil,
-		DeliverAt:  nil,
-	}
-
-	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to Pulsar", slog.Any("err", err))
+	// Publish to NATS JetStream
+	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -255,14 +234,10 @@ func (s *Server) RegisterSubscription(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsarclient.Message{
-		Payload:    data,
-		Properties: nil,
-		DeliverAt:  nil,
-	}
-
-	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to Pulsar", slog.Any("err", err))
+	// Publish to NATS JetStream
+	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -301,14 +276,10 @@ func (s *Server) SetUserExternalID(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsarclient.Message{
-		Payload:    data,
-		Properties: nil,
-		DeliverAt:  nil,
-	}
-
-	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to Pulsar", slog.Any("err", err))
+	// Publish to NATS JetStream
+	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -323,14 +294,8 @@ func (s *Server) SetUserExternalID(
 }
 
 // NewServer creates a new Subscription service server
-func NewServer(pc *pulsarclient.Client) (*Server, error) {
-	producer, err := pc.CreateProducer("subscriptions")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Pulsar producer for subscriptions topic: %w", err)
-	}
-
+func NewServer(js jetstream.JetStream) (*Server, error) {
 	return &Server{
-		pc:       pc,
-		producer: producer,
+		producer: js,
 	}, nil
 }

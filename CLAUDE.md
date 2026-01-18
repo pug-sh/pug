@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cotton is a push notification platform built with Go (backend), React/TypeScript (frontend), and uses PostgreSQL, ClickHouse, and Apache Pulsar for data storage and messaging.
+Cotton is a push notification platform built with Go (backend), React/TypeScript (frontend), and uses PostgreSQL, ClickHouse, and NATS for data storage and messaging.
 
 ## Build & Run Commands
 
@@ -15,15 +15,15 @@ make build
 # Run tests
 make test
 
-# Start dev infrastructure (PostgreSQL, Pulsar, ClickHouse, Flink)
-make infra-up
+# Start dev infrastructure (PostgreSQL, NATS, ClickHouse)
+make infra
 
 # Stop infrastructure
 make infra-down
 
 # Run database migrations
 ./bin/cotton postgres migrate
-./bin/cotton pulsar migrate
+./bin/cotton nats migrate
 ./bin/cotton clickhouse migrate
 
 # Start development server + workers together
@@ -69,7 +69,7 @@ The backend follows a layered architecture with Connect RPC (HTTP/2):
 - **`internal/commands/`** - CLI entry points using Cobra (server, worker, dev, migrations)
 - **`internal/rpc/`** - RPC handlers that map proto services to business logic
 - **`internal/core/`** - Business logic layer with service and repo per domain (auth, campaigns, delivery, projects, segments, subscriptions)
-- **`internal/workers/`** - Pulsar message consumers (campaigns, subscriptions)
+- **`internal/workers/`** - NATS message consumers (campaigns, subscriptions)
 - **`internal/gen/`** - Generated code (do not edit manually)
   - `proto/` - Generated from .proto files via buf
   - `repo/dbread/`, `repo/dbwrite/` - Generated from SQL via sqlc

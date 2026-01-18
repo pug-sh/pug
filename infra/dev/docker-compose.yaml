@@ -1,13 +1,13 @@
 services:
   postgres:
-    image: postgres:15
+    image: postgres:18
     restart: always
     environment:
       POSTGRES_DB: ${DB_NAME:-cotton}
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     ports:
       - "${DB_PORT:-5432}:5432"
     networks:
@@ -18,54 +18,23 @@ services:
       timeout: 5s
       retries: 5
 
-  pulsar:
-    image: apachepulsar/pulsar:3.2.1
+  nats:
+    image: nats:2.10
     restart: always
-    command: >
-      bash -c "
-        bin/apply-config-from-env.py conf/standalone.conf &&
-        bin/pulsar standalone --no-functions-worker --wipe-data
-      "
+    command: ["--jetstream"]
     volumes:
-      - pulsar-data:/pulsar/data
+      - nats-jetstream-data:/data
     ports:
-      - "6650:6650"
-      - "8080:8080"
+      - "4222:4222"
+      - "6222:6222"
+      - "8222:8222"
+    networks:
+      - cotton-net
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/metrics/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8222/healthz"]
       interval: 10s
       timeout: 5s
-      retries: 20
-    networks:
-      - cotton-net
-    environment:
-      PULSAR_MEM: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=1g"
-      PULSAR_STANDALONE_USE_ZOOKEEPER: "1"
-      advertisedAddress: 127.0.0.1
-      PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled: "false"
-      PULSAR_PREFIX_allowAutoTopicCreationType: "partitioned"
-      PULSAR_PREFIX_defaultNumPartitions: "1"
-      PULSAR_PREFIX_managedLedgerDefaultEnsembleSize: "1"
-      PULSAR_PREFIX_managedLedgerDefaultWriteQuorum: "1"
-      PULSAR_PREFIX_managedLedgerDefaultAckQuorum: "1"
-      PULSAR_PREFIX_managedLedgerMaxWriteQuorum: "1"
-      PULSAR_PREFIX_managedLedgerMaxAckQuorum: "1"
-
-  dekaf:
-    image: visortelle/dekaf:1.0.0
-    restart: always
-    environment:
-      DEKAF_PULSAR_WEB_URL: "http://pulsar:8080"
-      DEKAF_PULSAR_BROKER_URL: "pulsar://pulsar:6650"
-    volumes:
-      - dekaf-library:/dekaf/data/library
-    ports:
-      - "8090:8090"
-    networks:
-      - cotton-net
-    depends_on:
-      pulsar:
-        condition: service_healthy
+      retries: 5
 
   clickhouse:
     image: clickhouse/clickhouse-server:23.3
@@ -87,59 +56,10 @@ services:
     networks:
       - cotton-net
 
-  flink-jobmanager:
-    image: apache/flink:1.18.1-scala_2.12
-    restart: always
-    expose:
-      - "8081"
-    ports:
-      - "8081:8081"
-    command: jobmanager
-    environment:
-      - |
-        FLINK_PROPERTIES=
-        jobmanager.rpc.address: flink-jobmanager
-        rest.port: 8081
-        taskmanager.numberOfTaskSlots: 4
-        env.java.opts: -Xms512m -Xmx1024m
-    volumes:
-      - flink-data:/tmp/flink
-    networks:
-      - cotton-net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8081/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  flink-taskmanager:
-    image: apache/flink:1.18.1-scala_2.12
-    restart: always
-    command: taskmanager
-    environment:
-      - |
-        FLINK_PROPERTIES=
-        jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 4
-        env.java.opts: -Xms512m -Xmx1024m
-    volumes:
-      - flink-data:/tmp/flink
-    networks:
-      - cotton-net
-    depends_on:
-      - flink-jobmanager
-    healthcheck:
-      test: ["CMD", "bash", "-c", "echo 'getTaskManagers' | nc flink-jobmanager 8081"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
 volumes:
   postgres-data:
-  pulsar-data:
-  dekaf-library:
+  nats-jetstream-data:
   clickhouse-data:
-  flink-data:
 
 networks:
   cotton-net:

@@ -1,0 +1,19 @@
+# NATS JetStream Consumers Configuration
+consumers:
+  # Consumer for subscription events
+  - name: "subscription-processor"
+    stream_name: "subscriptions"
+    durable_name: "subscription-processor-durable"
+    deliver_policy: "all"
+    ack_explicit: true
+    max_deliver: -1
+    replay_policy: "instant"
+
+  # Consumer for campaign events
+  - name: "campaign-processor"
+    stream_name: "campaigns"
+    durable_name: "campaign-processor-durable"
+    deliver_policy: "all"
+    ack_explicit: true
+    max_deliver: -1
+    replay_policy: "instant"

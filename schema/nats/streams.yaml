@@ -1,0 +1,37 @@
+# NATS JetStream Streams Configuration
+streams:
+  # Stream for subscription events
+  - name: "subscriptions"
+    subjects: ["subscriptions.>"]
+    description: "Events related to subscription management"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 50000000000  # ~50GB in bytes (equivalent to 50000MB)
+    max_age: 2592000000000000  # 30 days in nanoseconds (equivalent to 43200 minutes)
+    storage: "file"
+    num_replicas: 1
+
+  # Stream for campaign events
+  - name: "campaigns"
+    subjects: ["campaigns.>"]
+    description: "Campaign events for scheduled execution"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 50000000000  # ~50GB in bytes (equivalent to 50000MB)
+    max_age: 2592000000000000  # 30 days in nanoseconds (equivalent to 43200 minutes)
+    storage: "file"
+    num_replicas: 1
+
+  # Stream for delivery events
+  - name: "deliveries"
+    subjects: ["deliveries.>"]
+    description: "Delivery events for notifications"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 50000000000  # ~50GB in bytes (equivalent to 50000MB)
+    max_age: 2592000000000000  # 30 days in nanoseconds (equivalent to 43200 minutes)
+    storage: "file"
+    num_replicas: 1

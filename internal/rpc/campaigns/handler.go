@@ -11,15 +11,15 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
 	"github.com/fivebitsio/cotton/pkg/postgres"
-	pulsarclient "github.com/fivebitsio/cotton/pkg/pulsar"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type server struct {
 	service  *campaigns.Service
-	producer *pulsarclient.Producer
+	producer jetstream.JetStream
 }
 
 func (s *server) Get(ctx context.Context, req *connect.Request[campaignsv1.GetRequest]) (*connect.Response[campaignsv1.GetResponse], error) {
@@ -133,7 +133,7 @@ func (s *server) Update(ctx context.Context, req *connect.Request[campaignsv1.Up
 	return resp, nil
 }
 
-func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, producer *pulsarclient.Producer) *server {
+func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, producer jetstream.JetStream) *server {
 	projectsSvc := projects.NewService(pgRO, pgW)
 	service := campaigns.NewService(pgRO, pgW, projectsSvc, producer)
 

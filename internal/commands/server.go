@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -26,10 +25,11 @@ import (
 	"github.com/fivebitsio/cotton/internal/rpc/projects"
 	"github.com/fivebitsio/cotton/internal/rpc/segments"
 	"github.com/fivebitsio/cotton/pkg/logger"
+	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/fivebitsio/cotton/pkg/postgres"
-	"github.com/fivebitsio/cotton/pkg/pulsar"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/http2"
@@ -39,9 +39,9 @@ import (
 type serverDeps struct {
 	pgRo               *pgxpool.Pool
 	pgW                *pgxpool.Pool
-	pulsar             *pulsar.Client
-	campaignsProducer  *pulsar.Producer
-	deliveriesProducer *pulsar.Producer
+	nats               *nats.NATSClient
+	campaignsProducer  jetstream.JetStream
+	deliveriesProducer jetstream.JetStream
 	jwtKey             []byte
 }
 
@@ -61,29 +61,21 @@ func newServerDeps(ctx context.Context) (*serverDeps, error) {
 		return nil, err
 	}
 
-	pulsarClient, err := pulsar.NewClient(ctx)
+	natsClient, err := nats.New(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	jwtKey := []byte("your-jwt-secret-key-here")
 
-	campaignsProducer, err := pulsarClient.CreateProducer("campaigns")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create campaigns pulsar producer: %w", err)
-	}
-
-	deliveriesProducer, err := pulsarClient.CreateProducer("deliveries")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create deliveries pulsar producer: %w", err)
-	}
+	js := natsClient.GetJetStream()
 
 	return &serverDeps{
 		pgRo:               pgRo,
 		pgW:                pgW,
-		pulsar:             pulsarClient,
-		campaignsProducer:  campaignsProducer,
-		deliveriesProducer: deliveriesProducer,
+		nats:               natsClient,
+		campaignsProducer:  js,
+		deliveriesProducer: js,
 		jwtKey:             jwtKey,
 	}, nil
 }
@@ -177,14 +169,8 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 func (deps *serverDeps) Close(ctx context.Context) {
 	deps.pgRo.Close()
 	deps.pgW.Close()
-	if deps.campaignsProducer != nil {
-		deps.campaignsProducer.Close()
-	}
-	if deps.deliveriesProducer != nil {
-		deps.deliveriesProducer.Close()
-	}
-	if deps.pulsar != nil {
-		deps.pulsar.Close()
+	if deps.nats != nil {
+		deps.nats.Close()
 	}
 }
 

@@ -26,12 +26,12 @@ func init() {
 	}
 	postgresCmd.AddCommand(commands.MigrateCmd)
 
-	pulsarCmd := &cobra.Command{
-		Use:   "pulsar",
-		Short: "Pulsar related commands",
-		Long:  `Commands for managing Pulsar messaging system.`,
+	natsCmd := &cobra.Command{
+		Use:   "nats",
+		Short: "NATS related commands",
+		Long:  `Commands for managing NATS messaging system.`,
 	}
-	pulsarCmd.AddCommand(commands.PulsarMigrateCmd)
+	natsCmd.AddCommand(commands.NATSMigrateCmd)
 
 	clickhouseCmd := &cobra.Command{
 		Use:   "clickhouse",
@@ -41,7 +41,7 @@ func init() {
 	clickhouseCmd.AddCommand(commands.ClickhouseMigrateCmd)
 
 	rootCmd.AddCommand(postgresCmd)
-	rootCmd.AddCommand(pulsarCmd)
+	rootCmd.AddCommand(natsCmd)
 	rootCmd.AddCommand(clickhouseCmd)
 }
 

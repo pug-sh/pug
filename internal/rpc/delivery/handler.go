@@ -3,24 +3,23 @@ package delivery
 import (
 	"context"
 	"log/slog"
-	"time"
 
 	"connectrpc.com/connect"
 
 	deliveryv1 "github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1"
 	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
-	pulsarclient "github.com/fivebitsio/cotton/pkg/pulsar"
+	"github.com/fivebitsio/cotton/pkg/nats"
+	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Server implements the Delivery service
 type Server struct {
-	pc       *pulsarclient.Client
-	producer *pulsarclient.Producer
+	producer jetstream.JetStream
 }
 
-// RecordEvent records a delivery event and writes it to Pulsar
+// RecordEvent records a delivery event and writes it to NATS
 func (s *Server) RecordEvent(
 	ctx context.Context,
 	req *connect.Request[deliveryv1.RecordEventRequest],
@@ -58,22 +57,10 @@ func (s *Server) RecordEvent(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pulsarMsg := &pulsarclient.Message{
-		Payload:    data,
-		Properties: map[string]string{
-			"event_type":        req.Msg.GetEventType().String(),
-			"platform":          req.Msg.GetPlatform().String(),
-			"project_id":        project.ID,
-			"campaign_id":       req.Msg.GetCampaignId(),
-			"subscription_id":   req.Msg.GetSubscriptionId(),
-			"message_id":        req.Msg.GetMessageId(),
-			"timestamp":         time.Now().Format(time.RFC3339),
-		},
-		DeliverAt: nil,
-	}
-
-	if err := s.producer.Send(ctx, pulsarMsg); err != nil {
-		slog.ErrorContext(ctx, "failed to publish delivery event to Pulsar", slog.Any("err", err))
+	// Publish to NATS JetStream
+	_, err = s.producer.Publish(ctx, nats.DeliveryEventsSubject, data)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to publish delivery event to NATS", slog.Any("err", err))
 		return &connect.Response[deliveryv1.RecordEventResponse]{
 			Msg: &deliveryv1.RecordEventResponse{
 				Success:             false,
@@ -96,7 +83,7 @@ func (s *Server) RecordEvent(
 
 
 // NewServer creates a new Delivery service server
-func NewServer(producer *pulsarclient.Producer) *Server {
+func NewServer(producer jetstream.JetStream) *Server {
 	return &Server{
 		producer: producer,
 	}
