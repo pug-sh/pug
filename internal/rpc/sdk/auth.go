@@ -1,4 +1,4 @@
-package interceptors
+package sdk
 
 import (
 	"context"
@@ -11,11 +11,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// APIKeyAuth provides authentication via API key in the Authorization header
-func APIKeyAuth(queries *dbread.Queries) authn.AuthFunc {
+// WithAPIKeyAuth provides authentication via API key in the Authorization header
+func WithAPIKeyAuth(queries *dbread.Queries) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		authHeader := req.Header.Get(constant.HeaderAuthorization)
-
 		if authHeader == "" {
 			return nil, authn.Errorf("authorization header not present")
 		}
@@ -25,14 +24,13 @@ func APIKeyAuth(queries *dbread.Queries) authn.AuthFunc {
 		}
 
 		apiKey := strings.TrimPrefix(authHeader, constant.BearerPrefix)
-
 		if apiKey == "" {
 			return nil, authn.Errorf("API key is empty")
 		}
 
 		project, err := queries.GetProjectByApiKey(ctx, apiKey)
-
 		if err != nil {
+			// todo - remove before prod
 			if err == pgx.ErrNoRows {
 				return nil, authn.Errorf("invalid API key")
 			}

@@ -9,7 +9,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
+	"github.com/fivebitsio/cotton/internal/rpc/dashboard"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
@@ -56,7 +56,7 @@ func (s *server) BatchGet(ctx context.Context, req *connect.Request[campaignsv1.
 }
 
 func (s *server) Create(ctx context.Context, req *connect.Request[campaignsv1.CreateRequest]) (*connect.Response[campaignsv1.CreateResponse], error) {
-	customer, err := interceptors.GetCustomerFromContext(ctx)
+	customer, err := dashboard.GetCustomerFromContext(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get customer from context", slog.Any("error", err))
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)

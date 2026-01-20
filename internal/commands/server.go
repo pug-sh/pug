@@ -17,12 +17,14 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/users/v1/usersv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/rpc/auth"
-	"github.com/fivebitsio/cotton/internal/rpc/campaigns"
-	"github.com/fivebitsio/cotton/internal/rpc/delivery"
-	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
-	"github.com/fivebitsio/cotton/internal/rpc/projects"
-	usersrpc "github.com/fivebitsio/cotton/internal/rpc/users"
+	cottonrpc "github.com/fivebitsio/cotton/internal/rpc"
+	"github.com/fivebitsio/cotton/internal/rpc/dashboard"
+	"github.com/fivebitsio/cotton/internal/rpc/dashboard/campaigns"
+	"github.com/fivebitsio/cotton/internal/rpc/dashboard/projects"
+	"github.com/fivebitsio/cotton/internal/rpc/public/auth"
+	"github.com/fivebitsio/cotton/internal/rpc/sdk"
+	"github.com/fivebitsio/cotton/internal/rpc/sdk/delivery"
+	usersrpc "github.com/fivebitsio/cotton/internal/rpc/sdk/users"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/fivebitsio/cotton/pkg/postgres"
@@ -84,7 +86,7 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	queriesRo := dbread.New(deps.pgRo)
 
 	commonHandlerOptions := func() connect.HandlerOption {
-		return connect.WithInterceptors(interceptors.ErrorInterceptor())
+		return connect.WithInterceptors(cottonrpc.ErrorInterceptor())
 	}
 
 	authServer := auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
@@ -98,22 +100,21 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 		projectsServer,
 		commonHandlerOptions(),
 	)
-	projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
+	projectsHandler = authn.NewMiddleware(dashboard.WithJWTAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
 
-	// ... existing code ...
 	campaignsServer := campaigns.NewServer(deps.pgRo, deps.pgW, deps.campaignsProducer)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
 		campaignsServer,
 		commonHandlerOptions(),
 	)
-	campaignsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(campaignsHandler)
+	campaignsHandler = authn.NewMiddleware(dashboard.WithJWTAuth(deps.jwtKey, queriesRo)).Wrap(campaignsHandler)
 
 	deliveryServer := delivery.NewServer(deps.deliveriesProducer)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
 		deliveryServer,
 		commonHandlerOptions(),
 	)
-	deliveryHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(deliveryHandler)
+	deliveryHandler = authn.NewMiddleware(sdk.WithAPIKeyAuth(queriesRo)).Wrap(deliveryHandler)
 
 	usersHandlerObj := usersrpc.NewHandler(deps.pgRo, deps.pgW)
 	usersPath, usersHandler := usersv1connect.NewUsersServiceHandler(
@@ -140,7 +141,7 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	handler.Handle(grpcreflect.NewHandlerV1(reflector))
 	handler.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
 
-	handlerWithCORS := interceptors.WithCORS(handler)
+	handlerWithCORS := cottonrpc.WithCORS(handler)
 
 	h2cHandler := h2c.NewHandler(handlerWithCORS, &http2.Server{})
 

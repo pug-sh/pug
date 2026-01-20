@@ -1,4 +1,4 @@
-package interceptors
+package rpc
 
 import (
 	"net/http"

@@ -7,7 +7,7 @@ import (
 	"connectrpc.com/connect"
 
 	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
-	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
+	"github.com/fivebitsio/cotton/internal/rpc/sdk"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
@@ -27,7 +27,7 @@ func (s *Server) Upsert(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	project, err := sdk.GetProjectFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -66,7 +66,7 @@ func (s *Server) UpdateHeartbeat(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	project, err := sdk.GetProjectFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -102,7 +102,7 @@ func (s *Server) UpdateMetadata(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	project, err := sdk.GetProjectFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -139,7 +139,7 @@ func (s *Server) UpdateStatus(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	project, err := sdk.GetProjectFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -176,7 +176,7 @@ func (s *Server) UpdateToken(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	project, err := sdk.GetProjectFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -213,7 +213,7 @@ func (s *Server) RegisterSubscription(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	project, err := sdk.GetProjectFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -256,7 +256,7 @@ func (s *Server) SetUserExternalID(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	project, err := sdk.GetProjectFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}

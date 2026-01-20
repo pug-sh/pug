@@ -7,7 +7,7 @@ import (
 	"connectrpc.com/connect"
 
 	deliveryv1 "github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1"
-	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
+	"github.com/fivebitsio/cotton/internal/rpc/sdk"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
@@ -28,7 +28,7 @@ func (s *Server) RecordEvent(
 		return nil, err
 	}
 
-	project, err := interceptors.GetProjectFromContext(ctx)
+	project, err := sdk.GetProjectFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}

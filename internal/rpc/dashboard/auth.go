@@ -1,4 +1,4 @@
-package interceptors
+package dashboard
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func JwtAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
+func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		authHeader := req.Header.Get("Authorization")
 		if authHeader == "" {

@@ -8,7 +8,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
+	"github.com/fivebitsio/cotton/internal/rpc/dashboard"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
@@ -52,7 +52,7 @@ func (s *server) BatchGet(
 		return nil, err
 	}
 
-	customer, err := interceptors.GetCustomerFromContext(ctx)
+	customer, err := dashboard.GetCustomerFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -80,7 +80,7 @@ func (s *server) Create(
 		return nil, err
 	}
 
-	customer, err := interceptors.GetCustomerFromContext(ctx)
+	customer, err := dashboard.GetCustomerFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -111,7 +111,7 @@ func (s *server) Delete(
 		return nil, err
 	}
 
-	customer, err := interceptors.GetCustomerFromContext(ctx)
+	customer, err := dashboard.GetCustomerFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -138,7 +138,7 @@ func (s *server) UpdateDisplayName(
 		return nil, err
 	}
 
-	customer, err := interceptors.GetCustomerFromContext(ctx)
+	customer, err := dashboard.GetCustomerFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -162,7 +162,7 @@ func (s *server) UpdateFCMServiceJSON(
 		return nil, err
 	}
 
-	customer, err := interceptors.GetCustomerFromContext(ctx)
+	customer, err := dashboard.GetCustomerFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
