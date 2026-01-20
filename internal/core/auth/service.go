@@ -17,6 +17,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const (
+	aud = "cotton/dashboard"
+	iss = "cotton/auth"
+)
+
 type Service struct {
 	read            *dbread.Queries
 	write           *dbwrite.Queries
@@ -73,7 +78,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	token, err := s.generateJWT(customer.Email)
+	token, err := s.generateJWT(customer.Email, customer.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate JWT", slog.Any("error", err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -87,7 +92,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 }
 
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (*authv1.SignInWithEmailResponse, error) {
-	customer, err := s.read.GetCustomerByEmailWithPassword(ctx, email)
+	customer, err := s.read.GetCustomerByEmail(ctx, email)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
 	}
@@ -97,7 +102,7 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
 	}
 
-	token, err := s.generateJWT(customer.Email)
+	token, err := s.generateJWT(customer.Email, customer.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate JWT", slog.Any("error", err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -110,14 +115,34 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 	return response, nil
 }
 
-func (s *Service) generateJWT(email string) (string, error) {
-	claims := jwt.MapClaims{
-		"email": email,
-		"exp":   time.Now().Add(time.Hour * 24).Unix(),
-		"iat":   time.Now().Unix(),
+type AdditionalClaims struct {
+	Email string `json:"email"`
+}
+
+type UserClaims struct {
+	jwt.RegisteredClaims
+	AdditionalClaims
+}
+
+func (s *Service) generateJWT(email, id string) (string, error) {
+	// todo - add expiry
+	standardClaims := jwt.RegisteredClaims{
+		Audience: jwt.ClaimStrings{aud},
+		ID:       xid.New().String(),
+		IssuedAt: jwt.NewNumericDate(time.Now()),
+		Issuer:   iss,
+		Subject:  id,
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	// askpolru - why is email even needed here
+	claims := UserClaims{
+		RegisteredClaims: standardClaims,
+		AdditionalClaims: AdditionalClaims{Email: email},
+	}
+
+	// todo - switch to es256
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+
 	tokenString, err := token.SignedString(s.jwtKey)
 	if err != nil {
 		return "", err

@@ -7,8 +7,3 @@ where id = @id;
 select *
 from customers
 where email = @email;
-
--- name: GetCustomerByEmailWithPassword :one
-select *, password_hash
-from customers
-where email = @email;
