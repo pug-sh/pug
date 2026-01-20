@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
+	"connectrpc.com/validate"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
@@ -95,7 +96,7 @@ func newServerDeps(ctx context.Context) (*serverDeps, error) {
 func StartServer(ctx context.Context, deps *serverDeps) error {
 	queriesRo := dbread.New(deps.pgRo)
 
-	handlerOpts := connect.WithInterceptors(cottonrpc.ErrorInterceptor())
+	handlerOpts := connect.WithInterceptors(validate.NewInterceptor(), cottonrpc.ErrorInterceptor())
 
 	// Middleware
 	dashboardMW := authn.NewMiddleware(dashboard.WithJWTAuth(deps.jwtKey, queriesRo))

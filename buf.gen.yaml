@@ -9,9 +9,9 @@ plugins:
     out: internal/gen/proto
     opt: paths=source_relative
 
-  # TypeScript plugin
-  - local: protoc-gen-es
-    out: clients/typescript
-    opt:
-      - target=ts
-      - import_extension=js
+  # TypeScript plugin (requires: pnpm add -D @bufbuild/protoc-gen-es)
+  # - local: protoc-gen-es
+  #   out: clients/typescript
+  #   opt:
+  #     - target=ts
+  #     - import_extension=js
