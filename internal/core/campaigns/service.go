@@ -15,21 +15,23 @@ import (
 )
 
 type Service struct {
-	repo        *repo
+	read        *dbread.Queries
+	write       *dbwrite.Queries
 	projectsSvc *projects.Service
 	producer    jetstream.JetStream
 }
 
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.Service, producer jetstream.JetStream) *Service {
 	return &Service{
-		repo:        newRepo(pgRO, pgW),
+		read:        dbread.New(pgRO),
+		write:       dbwrite.New(pgW),
 		projectsSvc: projectsSvc,
 		producer:    producer,
 	}
 }
 
 func (s *Service) CreateCampaign(ctx context.Context, arg dbwrite.CreateCampaignParams) (dbwrite.Campaign, error) {
-	campaign, err := s.repo.CreateCampaign(ctx, arg)
+	campaign, err := s.write.CreateCampaign(ctx, arg)
 	if err != nil {
 		return campaign, err
 	}
@@ -44,26 +46,26 @@ func (s *Service) CreateCampaign(ctx context.Context, arg dbwrite.CreateCampaign
 }
 
 func (s *Service) GetCampaignById(ctx context.Context, id string) (dbread.Campaign, error) {
-	return s.repo.GetCampaignById(ctx, id)
+	return s.read.GetCampaignById(ctx, id)
 }
 
 func (s *Service) GetCampaignsByProjectID(ctx context.Context, projectID string) ([]dbread.Campaign, error) {
-	return s.repo.GetCampaignsByProjectID(ctx, projectID)
+	return s.read.GetCampaignsByProjectID(ctx, projectID)
 }
 
 func (s *Service) GetScheduledCampaigns(ctx context.Context) ([]dbread.Campaign, error) {
-	return s.repo.GetScheduledCampaigns(ctx)
+	return s.read.GetScheduledCampaigns(ctx)
 }
 
 func (s *Service) DeleteCampaign(ctx context.Context, id string, projectID string) error {
-	return s.repo.DeleteCampaign(ctx, dbwrite.DeleteCampaignParams{
+	return s.write.DeleteCampaign(ctx, dbwrite.DeleteCampaignParams{
 		ID:        id,
 		ProjectID: projectID,
 	})
 }
 
 func (s *Service) UpdateCampaign(ctx context.Context, arg dbwrite.UpdateCampaignParams) (dbwrite.Campaign, error) {
-	campaign, err := s.repo.UpdateCampaign(ctx, arg)
+	campaign, err := s.write.UpdateCampaign(ctx, arg)
 	if err != nil {
 		return campaign, err
 	}

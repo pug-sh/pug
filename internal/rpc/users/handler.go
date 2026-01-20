@@ -5,28 +5,30 @@ import (
 	"encoding/json"
 
 	"connectrpc.com/connect"
-	"github.com/fivebitsio/cotton/internal/core/users"
 	usersv1 "github.com/fivebitsio/cotton/internal/gen/proto/users/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/users/v1/usersv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Handler struct {
 	usersv1connect.UnimplementedUsersServiceHandler
-	svc *users.Service
+	read  *dbread.Queries
+	write *dbwrite.Queries
 }
 
-func NewHandler(svc *users.Service) *Handler {
+func NewHandler(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Handler {
 	return &Handler{
-		svc: svc,
+		read:  dbread.New(pgRO),
+		write: dbwrite.New(pgW),
 	}
 }
 
 func (h *Handler) Get(ctx context.Context, req *connect.Request[usersv1.GetRequest]) (*connect.Response[usersv1.GetResponse], error) {
-	u, err := h.svc.GetUserByID(ctx, req.Msg.Id)
+	u, err := h.read.GetUserByID(ctx, req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +44,7 @@ func (h *Handler) Get(ctx context.Context, req *connect.Request[usersv1.GetReque
 }
 
 func (h *Handler) GetByExternalId(ctx context.Context, req *connect.Request[usersv1.GetByExternalIdRequest]) (*connect.Response[usersv1.GetByExternalIdResponse], error) {
-	u, err := h.svc.GetUserByProjectAndExternalID(ctx, dbread.GetUserByProjectAndExternalIDParams{
+	u, err := h.read.GetUserByProjectAndExternalID(ctx, dbread.GetUserByProjectAndExternalIDParams{
 		ProjectID:  req.Msg.ProjectId,
 		ExternalID: req.Msg.ExternalId,
 	})
@@ -61,7 +63,7 @@ func (h *Handler) GetByExternalId(ctx context.Context, req *connect.Request[user
 }
 
 func (h *Handler) List(ctx context.Context, req *connect.Request[usersv1.ListRequest]) (*connect.Response[usersv1.ListResponse], error) {
-	usersList, err := h.svc.GetUsersByProjectID(ctx, req.Msg.ProjectId)
+	usersList, err := h.read.GetUsersByProjectID(ctx, req.Msg.ProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +101,7 @@ func (h *Handler) Create(ctx context.Context, req *connect.Request[usersv1.Creat
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	u, err := h.svc.CreateUser(ctx, dbwrite.CreateUserParams{
+	u, err := h.write.CreateUser(ctx, dbwrite.CreateUserParams{
 		ExternalID:       req.Msg.ExternalId,
 		ProjectID:        req.Msg.ProjectId,
 		Properties:       propsBytes,
@@ -129,7 +131,7 @@ func (h *Handler) UpdateProperties(ctx context.Context, req *connect.Request[use
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	u, err := h.svc.UpdateUserProperties(ctx, dbwrite.UpdateUserPropertiesParams{
+	u, err := h.write.UpdateUserProperties(ctx, dbwrite.UpdateUserPropertiesParams{
 		ID:         req.Msg.Id,
 		Properties: propsBytes,
 	})
@@ -157,7 +159,7 @@ func (h *Handler) UpdateCustomProperties(ctx context.Context, req *connect.Reque
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	u, err := h.svc.UpdateUserCustomProperties(ctx, dbwrite.UpdateUserCustomPropertiesParams{
+	u, err := h.write.UpdateUserCustomProperties(ctx, dbwrite.UpdateUserCustomPropertiesParams{
 		ID:               req.Msg.Id,
 		CustomProperties: customPropsBytes,
 	})
@@ -176,7 +178,7 @@ func (h *Handler) UpdateCustomProperties(ctx context.Context, req *connect.Reque
 }
 
 func (h *Handler) Delete(ctx context.Context, req *connect.Request[usersv1.DeleteRequest]) (*connect.Response[usersv1.DeleteResponse], error) {
-	err := h.svc.DeleteUserByID(ctx, req.Msg.Id)
+	err := h.write.DeleteUserByID(ctx, req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}

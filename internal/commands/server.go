@@ -11,7 +11,6 @@ import (
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
-	"github.com/fivebitsio/cotton/internal/core/users"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
@@ -116,8 +115,7 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	)
 	deliveryHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(deliveryHandler)
 
-	usersServer := users.NewService(deps.pgRo, deps.pgW)
-	usersHandlerObj := usersrpc.NewHandler(usersServer)
+	usersHandlerObj := usersrpc.NewHandler(deps.pgRo, deps.pgW)
 	usersPath, usersHandler := usersv1connect.NewUsersServiceHandler(
 		usersHandlerObj,
 		commonHandlerOptions(),

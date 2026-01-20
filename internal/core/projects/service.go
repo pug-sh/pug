@@ -9,50 +9,45 @@ import (
 )
 
 type Service struct {
-	repo *repo
+	read  *dbread.Queries
+	write *dbwrite.Queries
 }
 
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
 	return &Service{
-		repo: newRepo(pgRO, pgW),
+		read:  dbread.New(pgRO),
+		write: dbwrite.New(pgW),
 	}
 }
 
-// DeleteProject deletes a project by its ID for the authenticated customer
 func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) error {
-	_, err := s.repo.DeleteProject(ctx, arg)
+	_, err := s.write.DeleteProject(ctx, arg)
 	return err
 }
 
-// CreateProject creates a new project
 func (s *Service) CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error) {
-	return s.repo.CreateProject(ctx, arg)
+	return s.write.CreateProject(ctx, arg)
 }
 
-// GetProjectById retrieves a project by its ID
 func (s *Service) GetProjectById(ctx context.Context, id string) (dbread.Project, error) {
-	return s.repo.GetProjectById(ctx, id)
+	return s.read.GetProjectById(ctx, id)
 }
 
-// GetProjectsByCustomerId retrieves all projects for a customer
 func (s *Service) GetProjectsByCustomerId(ctx context.Context, customerID string) ([]dbread.Project, error) {
-	return s.repo.GetProjectsByCustomerId(ctx, customerID)
+	return s.read.GetProjectsByCustomerId(ctx, customerID)
 }
 
-// ProjectExistsForCustomer checks if a project exists for a given customer
 func (s *Service) ProjectExistsForCustomer(ctx context.Context, projectID string, customerID string) (bool, error) {
-	return s.repo.ProjectExistsForCustomer(ctx, dbread.ProjectExistsForCustomerParams{
+	return s.read.ProjectExistsForCustomer(ctx, dbread.ProjectExistsForCustomerParams{
 		ID:         projectID,
 		CustomerID: customerID,
 	})
 }
 
-// UpdateProjectDisplayName updates the display name of a project
 func (s *Service) UpdateProjectDisplayName(ctx context.Context, arg dbwrite.UpdateProjectDisplayNameParams) (dbwrite.Project, error) {
-	return s.repo.UpdateProjectDisplayName(ctx, arg)
+	return s.write.UpdateProjectDisplayName(ctx, arg)
 }
 
-// UpdateFCMServiceJSON updates the FCM service JSON for a project
 func (s *Service) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFCMServiceJSONParams) (dbwrite.Project, error) {
-	return s.repo.UpdateFCMServiceJSON(ctx, arg)
+	return s.write.UpdateFCMServiceJSON(ctx, arg)
 }
