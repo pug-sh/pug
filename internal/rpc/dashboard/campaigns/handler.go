@@ -22,7 +22,10 @@ type server struct {
 	producer jetstream.JetStream
 }
 
-func (s *server) Get(ctx context.Context, req *connect.Request[campaignsv1.GetRequest]) (*connect.Response[campaignsv1.GetResponse], error) {
+func (s *server) Get(
+	ctx context.Context,
+	req *connect.Request[campaignsv1.GetRequest],
+) (*connect.Response[campaignsv1.GetResponse], error) {
 	campaign, err := s.service.GetCampaignById(ctx, req.Msg.Id)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed getting campaign", slog.Any("error", err), slog.String("campaignId", req.Msg.Id))
@@ -36,7 +39,10 @@ func (s *server) Get(ctx context.Context, req *connect.Request[campaignsv1.GetRe
 	return resp, nil
 }
 
-func (s *server) BatchGet(ctx context.Context, req *connect.Request[campaignsv1.BatchGetRequest]) (*connect.Response[campaignsv1.BatchGetResponse], error) {
+func (s *server) BatchGet(
+	ctx context.Context,
+	req *connect.Request[campaignsv1.BatchGetRequest],
+) (*connect.Response[campaignsv1.BatchGetResponse], error) {
 	campaigns, err := s.service.GetCampaignsByProjectID(ctx, req.Msg.ProjectId)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed getting campaigns by project ID", slog.Any("error", err), slog.String("projectId", req.Msg.ProjectId))
@@ -55,7 +61,10 @@ func (s *server) BatchGet(ctx context.Context, req *connect.Request[campaignsv1.
 	return resp, nil
 }
 
-func (s *server) Create(ctx context.Context, req *connect.Request[campaignsv1.CreateRequest]) (*connect.Response[campaignsv1.CreateResponse], error) {
+func (s *server) Create(
+	ctx context.Context,
+	req *connect.Request[campaignsv1.CreateRequest],
+) (*connect.Response[campaignsv1.CreateResponse], error) {
 	customer, err := dashboard.GetCustomerFromContext(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get customer from context", slog.Any("error", err))
@@ -95,7 +104,10 @@ func (s *server) Create(ctx context.Context, req *connect.Request[campaignsv1.Cr
 	return resp, nil
 }
 
-func (s *server) Delete(ctx context.Context, req *connect.Request[campaignsv1.DeleteRequest]) (*connect.Response[campaignsv1.DeleteResponse], error) {
+func (s *server) Delete(
+	ctx context.Context,
+	req *connect.Request[campaignsv1.DeleteRequest],
+) (*connect.Response[campaignsv1.DeleteResponse], error) {
 	err := s.service.DeleteCampaign(ctx, req.Msg.Id, req.Msg.ProjectId)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed deleting campaign", slog.Any("error", err), slog.String("campaignId", req.Msg.Id))
@@ -107,7 +119,10 @@ func (s *server) Delete(ctx context.Context, req *connect.Request[campaignsv1.De
 	return resp, nil
 }
 
-func (s *server) Update(ctx context.Context, req *connect.Request[campaignsv1.UpdateRequest]) (*connect.Response[campaignsv1.UpdateResponse], error) {
+func (s *server) Update(
+	ctx context.Context,
+	req *connect.Request[campaignsv1.UpdateRequest],
+) (*connect.Response[campaignsv1.UpdateResponse], error) {
 	var scheduledTimeParam *timestamppb.Timestamp
 	if req.Msg.ScheduledTime == nil {
 		scheduledTimeParam = timestamppb.Now()

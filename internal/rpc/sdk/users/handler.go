@@ -27,7 +27,10 @@ func NewHandler(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Handler {
 	}
 }
 
-func (h *Handler) Get(ctx context.Context, req *connect.Request[usersv1.GetRequest]) (*connect.Response[usersv1.GetResponse], error) {
+func (h *Handler) Get(
+	ctx context.Context,
+	req *connect.Request[usersv1.GetRequest],
+) (*connect.Response[usersv1.GetResponse], error) {
 	u, err := h.read.GetUserByID(ctx, req.Msg.Id)
 	if err != nil {
 		return nil, err
@@ -43,7 +46,10 @@ func (h *Handler) Get(ctx context.Context, req *connect.Request[usersv1.GetReque
 	}), nil
 }
 
-func (h *Handler) GetByExternalId(ctx context.Context, req *connect.Request[usersv1.GetByExternalIdRequest]) (*connect.Response[usersv1.GetByExternalIdResponse], error) {
+func (h *Handler) GetByExternalId(
+	ctx context.Context,
+	req *connect.Request[usersv1.GetByExternalIdRequest],
+) (*connect.Response[usersv1.GetByExternalIdResponse], error) {
 	u, err := h.read.GetUserByProjectAndExternalID(ctx, dbread.GetUserByProjectAndExternalIDParams{
 		ProjectID:  req.Msg.ProjectId,
 		ExternalID: req.Msg.ExternalId,
@@ -62,7 +68,10 @@ func (h *Handler) GetByExternalId(ctx context.Context, req *connect.Request[user
 	}), nil
 }
 
-func (h *Handler) List(ctx context.Context, req *connect.Request[usersv1.ListRequest]) (*connect.Response[usersv1.ListResponse], error) {
+func (h *Handler) List(
+	ctx context.Context,
+	req *connect.Request[usersv1.ListRequest],
+) (*connect.Response[usersv1.ListResponse], error) {
 	usersList, err := h.read.GetUsersByProjectID(ctx, req.Msg.ProjectId)
 	if err != nil {
 		return nil, err
@@ -82,7 +91,10 @@ func (h *Handler) List(ctx context.Context, req *connect.Request[usersv1.ListReq
 	}), nil
 }
 
-func (h *Handler) Create(ctx context.Context, req *connect.Request[usersv1.CreateRequest]) (*connect.Response[usersv1.CreateResponse], error) {
+func (h *Handler) Create(
+	ctx context.Context,
+	req *connect.Request[usersv1.CreateRequest],
+) (*connect.Response[usersv1.CreateResponse], error) {
 	props := map[string]any{}
 	if req.Msg.Properties != nil {
 		props = req.Msg.Properties.AsMap()
@@ -121,7 +133,10 @@ func (h *Handler) Create(ctx context.Context, req *connect.Request[usersv1.Creat
 	}), nil
 }
 
-func (h *Handler) UpdateProperties(ctx context.Context, req *connect.Request[usersv1.UpdatePropertiesRequest]) (*connect.Response[usersv1.UpdatePropertiesResponse], error) {
+func (h *Handler) UpdateProperties(
+	ctx context.Context,
+	req *connect.Request[usersv1.UpdatePropertiesRequest],
+) (*connect.Response[usersv1.UpdatePropertiesResponse], error) {
 	var props map[string]any
 	if req.Msg.Properties != nil {
 		props = req.Msg.Properties.AsMap()
@@ -149,7 +164,10 @@ func (h *Handler) UpdateProperties(ctx context.Context, req *connect.Request[use
 	}), nil
 }
 
-func (h *Handler) UpdateCustomProperties(ctx context.Context, req *connect.Request[usersv1.UpdateCustomPropertiesRequest]) (*connect.Response[usersv1.UpdateCustomPropertiesResponse], error) {
+func (h *Handler) UpdateCustomProperties(
+	ctx context.Context,
+	req *connect.Request[usersv1.UpdateCustomPropertiesRequest],
+) (*connect.Response[usersv1.UpdateCustomPropertiesResponse], error) {
 	var customProps map[string]any
 	if req.Msg.CustomProperties != nil {
 		customProps = req.Msg.CustomProperties.AsMap()
@@ -177,7 +195,10 @@ func (h *Handler) UpdateCustomProperties(ctx context.Context, req *connect.Reque
 	}), nil
 }
 
-func (h *Handler) Delete(ctx context.Context, req *connect.Request[usersv1.DeleteRequest]) (*connect.Response[usersv1.DeleteResponse], error) {
+func (h *Handler) Delete(
+	ctx context.Context,
+	req *connect.Request[usersv1.DeleteRequest],
+) (*connect.Response[usersv1.DeleteResponse], error) {
 	err := h.write.DeleteUserByID(ctx, req.Msg.Id)
 	if err != nil {
 		return nil, err

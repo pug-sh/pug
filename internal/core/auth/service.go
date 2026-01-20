@@ -3,9 +3,10 @@ package auth
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -14,12 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
-)
-
-var (
-	ErrUserAlreadyExists  = errors.New("user with this email already exists")
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrCustomerCreation   = errors.New("failed to create customer")
 )
 
 type Service struct {
@@ -41,12 +36,13 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
 func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (*authv1.SignUpWithEmailResponse, error) {
 	_, err := s.read.GetCustomerByEmail(ctx, email)
 	if err == nil {
-		return nil, ErrUserAlreadyExists
+		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("user with this email already exists"))
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, err
+		slog.ErrorContext(ctx, "failed to hash password", slog.Any("error", err))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	arg := dbwrite.CreateCustomerParams{
@@ -59,7 +55,8 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 
 	customer, err := s.write.CreateCustomer(ctx, arg)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCustomerCreation, err)
+		slog.ErrorContext(ctx, "failed to create customer", slog.Any("error", err))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	// Create a default project for the new customer
@@ -72,12 +69,14 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 
 	_, err = s.projectsService.CreateProject(ctx, projectParams)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create default project for customer: %w", err)
+		slog.ErrorContext(ctx, "failed to create default project", slog.Any("error", err))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	token, err := s.generateJWT(customer.Email)
 	if err != nil {
-		return nil, err
+		slog.ErrorContext(ctx, "failed to generate JWT", slog.Any("error", err))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	response := &authv1.SignUpWithEmailResponse{
@@ -90,17 +89,18 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (*authv1.SignInWithEmailResponse, error) {
 	customer, err := s.read.GetCustomerByEmailWithPassword(ctx, email)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidCredentials, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte(password))
 	if err != nil {
-		return nil, ErrInvalidCredentials
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
 	}
 
 	token, err := s.generateJWT(customer.Email)
 	if err != nil {
-		return nil, err
+		slog.ErrorContext(ctx, "failed to generate JWT", slog.Any("error", err))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	response := &authv1.SignInWithEmailResponse{
