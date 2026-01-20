@@ -1,1 +1,2 @@
 go.sum linguist-generated=true
+internal/gen/** linguist-generated=true
