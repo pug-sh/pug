@@ -97,4 +97,4 @@ Located in `web/`. Uses:
 ## Code Style
 
 - **Frontend**: Use pnpm as package manager. Use TanStack Form for forms. Do not modify `web/src/components/ui/` components.
-- **Backend**: Standard Go conventions. Use slog for logging.
+- **Backend**: Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change.

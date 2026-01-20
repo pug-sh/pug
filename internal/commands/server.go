@@ -44,20 +44,34 @@ type serverDeps struct {
 	campaignsProducer  jetstream.JetStream
 	deliveriesProducer jetstream.JetStream
 	jwtKey             []byte
+	port               string
+}
+
+func (deps *serverDeps) Close(ctx context.Context) {
+	deps.pgRo.Close()
+	deps.pgW.Close()
+	if deps.nats != nil {
+		deps.nats.Close()
+	}
 }
 
 func newServerDeps(ctx context.Context) (*serverDeps, error) {
-	var cfg postgres.Config
-	if err := envconfig.Process(ctx, &cfg); err != nil {
+	var serverCfg ServerConfig
+	if err := envconfig.Process(ctx, &serverCfg); err != nil {
 		return nil, err
 	}
 
-	pgRo, err := postgres.NewReaderPool(ctx, &cfg)
+	var pgCfg postgres.Config
+	if err := envconfig.Process(ctx, &pgCfg); err != nil {
+		return nil, err
+	}
+
+	pgRo, err := postgres.NewReaderPool(ctx, &pgCfg)
 	if err != nil {
 		return nil, err
 	}
 
-	pgW, err := postgres.NewWriterPool(ctx, &cfg)
+	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -67,68 +81,52 @@ func newServerDeps(ctx context.Context) (*serverDeps, error) {
 		return nil, err
 	}
 
-	jwtKey := []byte("your-jwt-secret-key-here")
-
-	js := natsClient.GetJetStream()
-
 	return &serverDeps{
 		pgRo:               pgRo,
 		pgW:                pgW,
 		nats:               natsClient,
-		campaignsProducer:  js,
-		deliveriesProducer: js,
-		jwtKey:             jwtKey,
+		campaignsProducer:  natsClient.GetJetStream(),
+		deliveriesProducer: natsClient.GetJetStream(),
+		jwtKey:             []byte(serverCfg.JWTKey),
+		port:               serverCfg.Port,
 	}, nil
 }
 
-// StartServer starts the Cotton HTTP/gRPC server with the given dependencies
 func StartServer(ctx context.Context, deps *serverDeps) error {
 	queriesRo := dbread.New(deps.pgRo)
 
-	commonHandlerOptions := func() connect.HandlerOption {
-		return connect.WithInterceptors(cottonrpc.ErrorInterceptor())
-	}
+	handlerOpts := connect.WithInterceptors(cottonrpc.ErrorInterceptor())
 
-	authServer := auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
+	// Middleware
+	dashboardMW := authn.NewMiddleware(dashboard.WithJWTAuth(deps.jwtKey, queriesRo))
+	sdkMW := authn.NewMiddleware(sdk.WithAPIKeyAuth(queriesRo))
+
+	// Handlers
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
-		authServer,
-		commonHandlerOptions(),
-	)
-
-	projectsServer := projects.NewServer(deps.pgRo, deps.pgW)
+		auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-		projectsServer,
-		commonHandlerOptions(),
-	)
-	projectsHandler = authn.NewMiddleware(dashboard.WithJWTAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
-
-	campaignsServer := campaigns.NewServer(deps.pgRo, deps.pgW, deps.campaignsProducer)
+		projects.NewServer(deps.pgRo, deps.pgW), handlerOpts)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
-		campaignsServer,
-		commonHandlerOptions(),
-	)
-	campaignsHandler = authn.NewMiddleware(dashboard.WithJWTAuth(deps.jwtKey, queriesRo)).Wrap(campaignsHandler)
-
-	deliveryServer := delivery.NewServer(deps.deliveriesProducer)
+		campaigns.NewServer(deps.pgRo, deps.pgW, deps.campaignsProducer), handlerOpts)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
-		deliveryServer,
-		commonHandlerOptions(),
-	)
-	deliveryHandler = authn.NewMiddleware(sdk.WithAPIKeyAuth(queriesRo)).Wrap(deliveryHandler)
-
-	usersHandlerObj := usersrpc.NewHandler(deps.pgRo, deps.pgW)
+		delivery.NewServer(deps.deliveriesProducer), handlerOpts)
 	usersPath, usersHandler := usersv1connect.NewUsersServiceHandler(
-		usersHandlerObj,
-		commonHandlerOptions(),
-	)
+		usersrpc.NewHandler(deps.pgRo, deps.pgW), handlerOpts)
 
-	handler := http.NewServeMux()
-	handler.Handle(authPath, authHandler)
-	handler.Handle(projectsPath, projectsHandler)
-	handler.Handle(campaignsPath, campaignsHandler)
-	handler.Handle(deliveryPath, deliveryHandler)
-	handler.Handle(usersPath, usersHandler)
+	mux := http.NewServeMux()
 
+	// Public (CORS, no auth)
+	mux.Handle(authPath, cottonrpc.WithCORS(authHandler))
+
+	// Dashboard (CORS + JWT auth)
+	mux.Handle(projectsPath, cottonrpc.WithCORS(dashboardMW.Wrap(projectsHandler)))
+	mux.Handle(campaignsPath, cottonrpc.WithCORS(dashboardMW.Wrap(campaignsHandler)))
+
+	// SDK (API key auth, no CORS)
+	mux.Handle(deliveryPath, sdkMW.Wrap(deliveryHandler))
+	mux.Handle(usersPath, sdkMW.Wrap(usersHandler))
+
+	// Reflection
 	services := []string{
 		authv1connect.AuthServiceName,
 		projectsv1connect.ProjectsServiceName,
@@ -136,41 +134,27 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 		deliveryv1connect.DeliveryServiceName,
 		usersv1connect.UsersServiceName,
 	}
-
 	reflector := grpcreflect.NewStaticReflector(services...)
-	handler.Handle(grpcreflect.NewHandlerV1(reflector))
-	handler.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
-
-	handlerWithCORS := cottonrpc.WithCORS(handler)
-
-	h2cHandler := h2c.NewHandler(handlerWithCORS, &http2.Server{})
-
-	port := os.Getenv("SERVER_PORT")
-	if port == "" {
-		port = "3000" // Default port
-	}
-	addr := ":" + port
+	mux.Handle(grpcreflect.NewHandlerV1(reflector))
+	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
 
 	server := &http.Server{
-		Addr:    addr,
-		Handler: h2cHandler,
+		Addr:    ":" + deps.port,
+		Handler: h2c.NewHandler(mux, &http2.Server{}),
 	}
 
-	logger.Log.Info("Starting server", slog.String("addr", addr))
+	go func() {
+		<-ctx.Done()
+		server.Shutdown(context.Background())
+	}()
+
+	logger.Log.Info("Starting server", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Log.Error("failed to serve", slog.Any("err", err))
 		return err
 	}
 
 	return nil
-}
-
-func (deps *serverDeps) Close(ctx context.Context) {
-	deps.pgRo.Close()
-	deps.pgW.Close()
-	if deps.nats != nil {
-		deps.nats.Close()
-	}
 }
 
 var ServerCmd = &cobra.Command{
@@ -194,12 +178,9 @@ var ServerCmd = &cobra.Command{
 
 		defer deps.Close(ctx)
 
-		serverErrChan := make(chan error, 1)
-		go func() {
-			serverErrChan <- StartServer(ctx, deps)
-		}()
-
-		<-ctx.Done()
-		logger.Log.Info("Shutting down server...")
+		if err := StartServer(ctx, deps); err != nil {
+			logger.Log.Error("server error", slog.Any("err", err))
+			os.Exit(1)
+		}
 	},
 }
