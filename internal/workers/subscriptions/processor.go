@@ -9,19 +9,26 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/subscriptions"
 	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/pkg/logger/slogx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 )
 
 type Worker struct {
 	subscriptionService *subscriptions.Service
+	usersRead           *dbread.Queries
+	usersWrite          *dbwrite.Queries
 }
 
 func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 	return &Worker{
 		subscriptionService: subscriptions.NewService(pgRO, pgW),
+		usersRead:           dbread.New(pgRO),
+		usersWrite:          dbwrite.New(pgW),
 	}
 }
 
@@ -142,7 +149,42 @@ func (c *Worker) handleUpdateToken(ctx context.Context, msg *subscriptionsv1.Sub
 }
 
 func (c *Worker) handleUserLink(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
-	if _, err := c.subscriptionService.LinkSubscriptionToUser(ctx, msg.GetId(), msg.GetProjectId(), msg.GetExternalId()); err != nil {
+	projectID := msg.GetProjectId()
+	externalID := msg.GetExternalId()
+	subscriptionID := msg.GetSubscriptionId()
+
+	// Look up user by external_id
+	user, err := c.usersRead.GetUserByProjectAndExternalID(ctx, dbread.GetUserByProjectAndExternalIDParams{
+		ProjectID:  projectID,
+		ExternalID: externalID,
+	})
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "failed to get user", slogx.Error(err))
+			return err
+		}
+		// User not found, create it
+		metadataJSON, marshalErr := json.Marshal(msg.GetUserMetadata())
+		if marshalErr != nil {
+			slog.ErrorContext(ctx, "failed to marshal user metadata", slogx.Error(marshalErr))
+			return marshalErr
+		}
+		newUser, createErr := c.usersWrite.CreateUser(ctx, dbwrite.CreateUserParams{
+			ID:               xid.New().String(),
+			ProjectID:        projectID,
+			ExternalID:       externalID,
+			Properties:       metadataJSON,
+			CustomProperties: []byte("{}"),
+		})
+		if createErr != nil {
+			slog.ErrorContext(ctx, "failed to create user", slogx.Error(createErr))
+			return createErr
+		}
+		user.ID = newUser.ID
+	}
+
+	// Link subscription to user using actual user ID
+	if _, err := c.subscriptionService.LinkSubscriptionToUser(ctx, subscriptionID, projectID, user.ID); err != nil {
 		slog.ErrorContext(ctx, "failed to link subscription to user", slogx.Error(err))
 		return err
 	}
