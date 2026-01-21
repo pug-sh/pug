@@ -125,10 +125,11 @@ type UserClaims struct {
 }
 
 func (s *Service) generateJWT(id string) (string, error) {
+	// todo - reduce expiry time
 	now := time.Now()
 	standardClaims := jwt.RegisteredClaims{
 		Audience:  jwt.ClaimStrings{aud},
-		ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)),
+		ExpiresAt: jwt.NewNumericDate(now.Add(90 * 24 * time.Hour)), // expire in 90 days
 		ID:        xid.New().String(),
 		IssuedAt:  jwt.NewNumericDate(now),
 		Issuer:    iss,

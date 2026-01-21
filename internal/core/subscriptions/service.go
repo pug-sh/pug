@@ -7,7 +7,6 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/xid"
 )
 
 type Service struct {
@@ -22,14 +21,15 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
 	}
 }
 
-func (s *Service) CreateSubscription(ctx context.Context, projectID, token, platform string, metadata []byte, status string) (dbwrite.Subscription, error) {
+func (s *Service) CreateSubscription(ctx context.Context, id, projectID, token, platform string, metadata []byte, status, updater string) (dbwrite.Subscription, error) {
 	params := dbwrite.CreateSubscriptionParams{
-		ID:        xid.New().String(),
+		ID:        id,
 		ProjectID: projectID,
 		Token:     token,
 		Platform:  platform,
 		Metadata:  metadata,
 		Status:    status,
+		Updater:   updater,
 	}
 	return s.write.CreateSubscription(ctx, params)
 }

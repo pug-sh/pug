@@ -3,12 +3,14 @@ package subscriptions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/fivebitsio/cotton/internal/core/subscriptions"
 	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
 	"github.com/fivebitsio/cotton/pkg/logger/slogx"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/proto"
 )
@@ -52,12 +54,17 @@ func (c *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 func (c *Worker) handleUpsert(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
 	_, err := c.subscriptionService.GetSubscription(ctx, msg.GetId(), msg.GetProjectId())
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "failed to get subscription", slogx.Error(err))
+			return err
+		}
+		// Subscription not found, create it
 		metadataJSON, marshalErr := json.Marshal(msg.GetMetadata())
 		if marshalErr != nil {
 			slog.ErrorContext(ctx, "failed to marshal metadata", slogx.Error(marshalErr))
 			return marshalErr
 		}
-		if _, createErr := c.subscriptionService.CreateSubscription(ctx, msg.GetProjectId(), msg.GetToken(), msg.GetPlatform(), metadataJSON, msg.GetStatus()); createErr != nil {
+		if _, createErr := c.subscriptionService.CreateSubscription(ctx, msg.GetId(), msg.GetProjectId(), msg.GetToken(), msg.GetPlatform(), metadataJSON, msg.GetStatus(), "worker"); createErr != nil {
 			slog.ErrorContext(ctx, "failed to create subscription", slogx.Error(createErr))
 			return createErr
 		}
