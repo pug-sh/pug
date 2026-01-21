@@ -80,7 +80,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 		}
 
 		parsedJWT, err := jwt.Parse(token, func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodECDSA); !ok {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, authn.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
 			return jwtKey, nil

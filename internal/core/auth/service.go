@@ -125,17 +125,17 @@ type UserClaims struct {
 }
 
 func (s *Service) generateJWT(id string) (string, error) {
-	// todo - add expiry
+	now := time.Now()
 	standardClaims := jwt.RegisteredClaims{
-		Audience: jwt.ClaimStrings{aud},
-		ID:       xid.New().String(),
-		IssuedAt: jwt.NewNumericDate(time.Now()),
-		Issuer:   iss,
-		Subject:  id,
+		Audience:  jwt.ClaimStrings{aud},
+		ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)),
+		ID:        xid.New().String(),
+		IssuedAt:  jwt.NewNumericDate(now),
+		Issuer:    iss,
+		Subject:   id,
 	}
 
-	// todo - switch to es256
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, standardClaims)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, standardClaims)
 
 	tokenString, err := token.SignedString(s.jwtKey)
 	if err != nil {
