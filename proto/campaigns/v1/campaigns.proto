@@ -1,10 +1,10 @@
 edition = "2023";
 package campaigns.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1;campaignsv1";
-
-import "google/protobuf/timestamp.proto";
 
 service CampaignService {
   rpc Get(GetRequest) returns (GetResponse) {}
@@ -51,6 +51,7 @@ message DeleteResponse {}
 message UpdateRequest {
   string id = 1;
   string name = 2;
+  // askpolru - why byte?
   bytes notification_data = 3;
   google.protobuf.Timestamp scheduled_time = 4;
 }
@@ -63,6 +64,7 @@ message Campaign {
   google.protobuf.Timestamp end_time = 2;
   string id = 3;
   string name = 4;
+  // askpolru - why byte?
   bytes notification_data = 5;
   string project_id = 6;
   google.protobuf.Timestamp scheduled_time = 7;

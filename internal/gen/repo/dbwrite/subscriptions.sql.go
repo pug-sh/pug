@@ -24,7 +24,7 @@ type CreateSubscriptionParams struct {
 	ProjectID string
 	Token     string
 	Platform  string
-	Metadata  []byte
+	Metadata  map[string]any
 	Status    string
 	Updater   string
 	UserID    pgtype.Text
@@ -182,7 +182,7 @@ returning create_time, id, last_heartbeat_time, metadata, platform, project_id, 
 `
 
 type UpdateSubscriptionMetadataParams struct {
-	Metadata  []byte
+	Metadata  map[string]any
 	ID        string
 	ProjectID string
 }

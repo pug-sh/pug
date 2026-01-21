@@ -2,9 +2,9 @@ package subscriptions
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"encoding/json"
 	"log/slog"
 
 	"github.com/fivebitsio/cotton/internal/core/subscriptions"
@@ -30,6 +30,19 @@ func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 		usersRead:           dbread.New(pgRO),
 		usersWrite:          dbwrite.New(pgW),
 	}
+}
+
+// protoMapToAny converts a protobuf map to map[string]any via JSON round-trip
+func protoMapToAny(m any) (map[string]any, error) {
+	data, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (c *Worker) ProcessMessage(ctx context.Context, data []byte) error {
@@ -66,12 +79,12 @@ func (c *Worker) handleUpsert(ctx context.Context, msg *subscriptionsv1.Subscrip
 			return err
 		}
 		// Subscription not found, create it
-		metadataJSON, marshalErr := json.Marshal(msg.GetMetadata())
+		metadata, marshalErr := protoMapToAny(msg.GetMetadata())
 		if marshalErr != nil {
-			slog.ErrorContext(ctx, "failed to marshal metadata", slogx.Error(marshalErr))
+			slog.ErrorContext(ctx, "failed to convert metadata", slogx.Error(marshalErr))
 			return marshalErr
 		}
-		if _, createErr := c.subscriptionService.CreateSubscription(ctx, msg.GetId(), msg.GetProjectId(), msg.GetToken(), msg.GetPlatform(), metadataJSON, msg.GetStatus(), "worker"); createErr != nil {
+		if _, createErr := c.subscriptionService.CreateSubscription(ctx, msg.GetId(), msg.GetProjectId(), msg.GetToken(), msg.GetPlatform(), metadata, msg.GetStatus(), "worker"); createErr != nil {
 			slog.ErrorContext(ctx, "failed to create subscription", slogx.Error(createErr))
 			return createErr
 		}
@@ -98,12 +111,12 @@ func (c *Worker) handleUpsert(ctx context.Context, msg *subscriptionsv1.Subscrip
 		}
 	}
 	if len(msg.GetMetadata()) > 0 {
-		metadataJSON, marshalErr := json.Marshal(msg.GetMetadata())
+		metadata, marshalErr := protoMapToAny(msg.GetMetadata())
 		if marshalErr != nil {
-			slog.ErrorContext(ctx, "failed to marshal metadata", slogx.Error(marshalErr))
+			slog.ErrorContext(ctx, "failed to convert metadata", slogx.Error(marshalErr))
 			return marshalErr
 		}
-		if _, updateErr := c.subscriptionService.UpdateSubscriptionMetadata(ctx, msg.GetId(), msg.GetProjectId(), metadataJSON); updateErr != nil {
+		if _, updateErr := c.subscriptionService.UpdateSubscriptionMetadata(ctx, msg.GetId(), msg.GetProjectId(), metadata); updateErr != nil {
 			slog.ErrorContext(ctx, "failed to update subscription metadata", slogx.Error(updateErr))
 			return updateErr
 		}
@@ -120,12 +133,12 @@ func (c *Worker) handleUpdateHeartbeat(ctx context.Context, msg *subscriptionsv1
 }
 
 func (c *Worker) handleUpdateMetadata(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
-	metadataJSON, err := json.Marshal(msg.GetMetadata())
+	metadata, err := protoMapToAny(msg.GetMetadata())
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal metadata", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to convert metadata", slogx.Error(err))
 		return err
 	}
-	if _, err = c.subscriptionService.UpdateSubscriptionMetadata(ctx, msg.GetId(), msg.GetProjectId(), metadataJSON); err != nil {
+	if _, err = c.subscriptionService.UpdateSubscriptionMetadata(ctx, msg.GetId(), msg.GetProjectId(), metadata); err != nil {
 		slog.ErrorContext(ctx, "failed to update metadata", slogx.Error(err))
 		return err
 	}
@@ -164,17 +177,17 @@ func (c *Worker) handleUserLink(ctx context.Context, msg *subscriptionsv1.Subscr
 			return err
 		}
 		// User not found, create it
-		metadataJSON, marshalErr := json.Marshal(msg.GetUserMetadata())
+		userMetadata, marshalErr := protoMapToAny(msg.GetUserMetadata())
 		if marshalErr != nil {
-			slog.ErrorContext(ctx, "failed to marshal user metadata", slogx.Error(marshalErr))
+			slog.ErrorContext(ctx, "failed to convert user metadata", slogx.Error(marshalErr))
 			return marshalErr
 		}
 		newUser, createErr := c.usersWrite.CreateUser(ctx, dbwrite.CreateUserParams{
 			ID:               xid.New().String(),
 			ProjectID:        projectID,
 			ExternalID:       externalID,
-			Properties:       metadataJSON,
-			CustomProperties: []byte("{}"),
+			Properties:       userMetadata,
+			CustomProperties: map[string]any{},
 		})
 		if createErr != nil {
 			slog.ErrorContext(ctx, "failed to create user", slogx.Error(createErr))

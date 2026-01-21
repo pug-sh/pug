@@ -2,7 +2,6 @@ package users
 
 import (
 	"context"
-	"encoding/json"
 
 	"connectrpc.com/connect"
 	usersv1 "github.com/fivebitsio/cotton/internal/gen/proto/users/v1"
@@ -120,30 +119,12 @@ func (h *Handler) Create(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	props := map[string]any{}
-	if req.Msg.Properties != nil {
-		props = req.Msg.Properties.AsMap()
-	}
-	propsBytes, err := json.Marshal(props)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	customProps := map[string]any{}
-	if req.Msg.CustomProperties != nil {
-		customProps = req.Msg.CustomProperties.AsMap()
-	}
-	customPropsBytes, err := json.Marshal(customProps)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
 	u, err := h.write.CreateUser(ctx, dbwrite.CreateUserParams{
 		ID:               xid.New().String(),
 		ExternalID:       req.Msg.ExternalId,
 		ProjectID:        principal.Project.ID,
-		Properties:       propsBytes,
-		CustomProperties: customPropsBytes,
+		Properties:       req.Msg.Properties.AsMap(),
+		CustomProperties: req.Msg.CustomProperties.AsMap(),
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -168,19 +149,10 @@ func (h *Handler) UpdateProperties(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	var props map[string]any
-	if req.Msg.Properties != nil {
-		props = req.Msg.Properties.AsMap()
-	}
-	propsBytes, err := json.Marshal(props)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
 	u, err := h.write.UpdateUserProperties(ctx, dbwrite.UpdateUserPropertiesParams{
 		ID:         req.Msg.Id,
 		ProjectID:  principal.Project.ID,
-		Properties: propsBytes,
+		Properties: req.Msg.Properties.AsMap(),
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -205,19 +177,10 @@ func (h *Handler) UpdateCustomProperties(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	var customProps map[string]any
-	if req.Msg.CustomProperties != nil {
-		customProps = req.Msg.CustomProperties.AsMap()
-	}
-	customPropsBytes, err := json.Marshal(customProps)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
 	u, err := h.write.UpdateUserCustomProperties(ctx, dbwrite.UpdateUserCustomPropertiesParams{
 		ID:               req.Msg.Id,
 		ProjectID:        principal.Project.ID,
-		CustomProperties: customPropsBytes,
+		CustomProperties: req.Msg.CustomProperties.AsMap(),
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -253,22 +216,18 @@ func (h *Handler) Delete(
 }
 
 func convertUser(u dbread.User) (*usersv1.User, error) {
-	propertiesMap := make(map[string]any)
-	if len(u.Properties) > 0 {
-		if err := json.Unmarshal(u.Properties, &propertiesMap); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
+	propertiesMap := u.Properties
+	if propertiesMap == nil {
+		propertiesMap = make(map[string]any)
 	}
 	properties, err := structpb.NewStruct(propertiesMap)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	customPropertiesMap := make(map[string]any)
-	if len(u.CustomProperties) > 0 {
-		if err := json.Unmarshal(u.CustomProperties, &customPropertiesMap); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
+	customPropertiesMap := u.CustomProperties
+	if customPropertiesMap == nil {
+		customPropertiesMap = make(map[string]any)
 	}
 	customProperties, err := structpb.NewStruct(customPropertiesMap)
 	if err != nil {
@@ -287,26 +246,19 @@ func convertUser(u dbread.User) (*usersv1.User, error) {
 }
 
 func convertWriteUser(u dbwrite.User) (*usersv1.User, error) {
-	// dbwrite.User properties are []byte
-	propertiesMap := make(map[string]any)
-	if len(u.Properties) > 0 {
-		if err := json.Unmarshal(u.Properties, &propertiesMap); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
+	propertiesMap := u.Properties
+	if propertiesMap == nil {
+		propertiesMap = make(map[string]any)
 	}
-
 	properties, err := structpb.NewStruct(propertiesMap)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	customPropertiesMap := make(map[string]any)
-	if len(u.CustomProperties) > 0 {
-		if err := json.Unmarshal(u.CustomProperties, &customPropertiesMap); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
+	customPropertiesMap := u.CustomProperties
+	if customPropertiesMap == nil {
+		customPropertiesMap = make(map[string]any)
 	}
-
 	customProperties, err := structpb.NewStruct(customPropertiesMap)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)

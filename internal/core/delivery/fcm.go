@@ -2,7 +2,6 @@ package delivery
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -67,18 +66,12 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 		return fmt.Errorf("no FCM service configuration for project: %s", campaign.ProjectID)
 	}
 
-	// Parse the notification data from the campaign
-	var notificationData map[string]interface{}
-	if err := json.Unmarshal(campaign.NotificationData, &notificationData); err != nil {
-		return fmt.Errorf("failed to unmarshal notification data: %w", err)
-	}
-
 	// Extract title and body from notification data
-	title, ok := notificationData["title"].(string)
+	title, ok := campaign.NotificationData["title"].(string)
 	if !ok {
 		title = "Notification"
 	}
-	body, ok := notificationData["body"].(string)
+	body, ok := campaign.NotificationData["body"].(string)
 	if !ok {
 		body = "You have a new notification"
 	}

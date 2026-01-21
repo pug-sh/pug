@@ -3,6 +3,7 @@ package campaigns
 import (
 	"context"
 	"fmt"
+	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -91,7 +92,12 @@ func (s *Service) sendCampaignToNATS(ctx context.Context, campaign dbwrite.Campa
 	// For NATS, we'll publish immediately since NATS JetStream doesn't have a direct equivalent to Pulsar's DeliverAt
 	// Instead, we could implement a delayed delivery mechanism using NATS timers if needed
 
-	_, err := s.producer.Publish(ctx, nats.CampaignScheduledSubject, campaign.NotificationData)
+	data, err := json.Marshal(campaign.NotificationData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification data: %w", err)
+	}
+
+	_, err = s.producer.Publish(ctx, nats.CampaignScheduledSubject, data)
 	if err != nil {
 		return fmt.Errorf("failed to send campaign to NATS: %w", err)
 	}

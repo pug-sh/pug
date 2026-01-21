@@ -7,6 +7,14 @@ sql:
       go:
         sql_package: 'pgx/v5'
         out: 'internal/gen/repo/dbread'
+        overrides:
+          - db_type: "jsonb"
+            go_type:
+              type: "map[string]any"
+          - db_type: "jsonb"
+            nullable: true
+            go_type:
+              type: "map[string]any"
   - engine: 'postgresql'
     queries: 'schema/postgres/queries/write/*.sql'
     schema: 'schema/postgres/migrations'
@@ -14,3 +22,11 @@ sql:
       go:
         sql_package: 'pgx/v5'
         out: 'internal/gen/repo/dbwrite'
+        overrides:
+          - db_type: "jsonb"
+            go_type:
+              type: "map[string]any"
+          - db_type: "jsonb"
+            nullable: true
+            go_type:
+              type: "map[string]any"

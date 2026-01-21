@@ -2,6 +2,7 @@ package campaigns
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 
 	"connectrpc.com/connect"
@@ -38,11 +39,14 @@ func (s *server) Get(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	resp := connect.NewResponse(&campaignsv1.GetResponse{
-		Campaign: roToRPCMsg(campaign),
-	})
+	campaignProto, err := roToRPCMsg(campaign)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 
-	return resp, nil
+	return connect.NewResponse(&campaignsv1.GetResponse{
+		Campaign: campaignProto,
+	}), nil
 }
 
 func (s *server) BatchGet(
@@ -64,14 +68,16 @@ func (s *server) BatchGet(
 
 	campaignProtos := make([]*campaignsv1.Campaign, len(campaigns))
 	for i, c := range campaigns {
-		campaignProtos[i] = roToRPCMsg(c)
+		proto, err := roToRPCMsg(c)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		campaignProtos[i] = proto
 	}
 
-	resp := connect.NewResponse(&campaignsv1.BatchGetResponse{
+	return connect.NewResponse(&campaignsv1.BatchGetResponse{
 		Campaigns: campaignProtos,
-	})
-
-	return resp, nil
+	}), nil
 }
 
 func (s *server) Create(
@@ -93,11 +99,16 @@ func (s *server) Create(
 		scheduledTimeParam = req.Msg.ScheduledTime
 	}
 
+	var notificationData map[string]any
+	if err := json.Unmarshal(req.Msg.NotificationData, &notificationData); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
 	campaign, err := s.service.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
 		ID:               xid.New().String(),
 		Name:             req.Msg.Name,
 		ProjectID:        projectID,
-		NotificationData: req.Msg.NotificationData,
+		NotificationData: notificationData,
 		ScheduledTime:    postgres.TimestampToTimestamptz(scheduledTimeParam),
 		Status:           "scheduled",
 	})
@@ -106,11 +117,14 @@ func (s *server) Create(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	resp := connect.NewResponse(&campaignsv1.CreateResponse{
-		Campaign: wToRPCMsg(campaign),
-	})
+	campaignProto, err := wToRPCMsg(campaign)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 
-	return resp, nil
+	return connect.NewResponse(&campaignsv1.CreateResponse{
+		Campaign: campaignProto,
+	}), nil
 }
 
 func (s *server) Delete(
@@ -157,8 +171,13 @@ func (s *server) Update(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
+	campaignProto, err := wToRPCMsg(campaign)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
 	return connect.NewResponse(&campaignsv1.UpdateResponse{
-		Campaign: wToRPCMsg(campaign),
+		Campaign: campaignProto,
 	}), nil
 }
 

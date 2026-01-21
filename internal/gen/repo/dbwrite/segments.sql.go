@@ -24,7 +24,7 @@ type CreateSegmentParams struct {
 	ProjectID   string
 	Name        string
 	Description pgtype.Text
-	Filter      []byte
+	Filter      map[string]any
 }
 
 func (q *Queries) CreateSegment(ctx context.Context, arg CreateSegmentParams) (Segment, error) {
@@ -184,7 +184,7 @@ type UpdateSegmentParams struct {
 	ID          string
 	Name        string
 	Description pgtype.Text
-	Filter      []byte
+	Filter      map[string]any
 	IsActive    bool
 }
 

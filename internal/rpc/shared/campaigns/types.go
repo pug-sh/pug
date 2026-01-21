@@ -1,38 +1,48 @@
 package campaigns
 
 import (
+	"encoding/json"
+
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 )
 
-func wToRPCMsg(campaign dbwrite.Campaign) *campaignsv1.Campaign {
-	return &campaignsv1.Campaign{
-		CreateTime:       postgres.TimestamptzToTimestamp(campaign.CreateTime),
-		EndTime:          postgres.TimestamptzToTimestamp(campaign.EndTime),
-		Id:               campaign.ID,
-		Name:             campaign.Name,
-		NotificationData: campaign.NotificationData,
-		ProjectId:        campaign.ProjectID,
-		ScheduledTime:    postgres.TimestamptzToTimestamp(campaign.ScheduledTime),
-		StartTime:        postgres.TimestamptzToTimestamp(campaign.StartTime),
-		Status:           campaign.Status,
-		UpdateTime:       postgres.TimestamptzToTimestamp(campaign.UpdateTime),
+func wToRPCMsg(c dbwrite.Campaign) (*campaignsv1.Campaign, error) {
+	notificationData, err := json.Marshal(c.NotificationData)
+	if err != nil {
+		return nil, err
 	}
+	return &campaignsv1.Campaign{
+		CreateTime:       postgres.TimestamptzToTimestamp(c.CreateTime),
+		EndTime:          postgres.TimestamptzToTimestamp(c.EndTime),
+		Id:               c.ID,
+		Name:             c.Name,
+		NotificationData: notificationData,
+		ProjectId:        c.ProjectID,
+		ScheduledTime:    postgres.TimestamptzToTimestamp(c.ScheduledTime),
+		StartTime:        postgres.TimestamptzToTimestamp(c.StartTime),
+		Status:           c.Status,
+		UpdateTime:       postgres.TimestamptzToTimestamp(c.UpdateTime),
+	}, nil
 }
 
-func roToRPCMsg(campaign dbread.Campaign) *campaignsv1.Campaign {
-	return &campaignsv1.Campaign{
-		CreateTime:       postgres.TimestamptzToTimestamp(campaign.CreateTime),
-		EndTime:          postgres.TimestamptzToTimestamp(campaign.EndTime),
-		Id:               campaign.ID,
-		Name:             campaign.Name,
-		NotificationData: campaign.NotificationData,
-		ProjectId:        campaign.ProjectID,
-		ScheduledTime:    postgres.TimestamptzToTimestamp(campaign.ScheduledTime),
-		StartTime:        postgres.TimestamptzToTimestamp(campaign.StartTime),
-		Status:           campaign.Status,
-		UpdateTime:       postgres.TimestamptzToTimestamp(campaign.UpdateTime),
+func roToRPCMsg(c dbread.Campaign) (*campaignsv1.Campaign, error) {
+	notificationData, err := json.Marshal(c.NotificationData)
+	if err != nil {
+		return nil, err
 	}
+	return &campaignsv1.Campaign{
+		CreateTime:       postgres.TimestamptzToTimestamp(c.CreateTime),
+		EndTime:          postgres.TimestamptzToTimestamp(c.EndTime),
+		Id:               c.ID,
+		Name:             c.Name,
+		NotificationData: notificationData,
+		ProjectId:        c.ProjectID,
+		ScheduledTime:    postgres.TimestamptzToTimestamp(c.ScheduledTime),
+		StartTime:        postgres.TimestamptzToTimestamp(c.StartTime),
+		Status:           c.Status,
+		UpdateTime:       postgres.TimestamptzToTimestamp(c.UpdateTime),
+	}, nil
 }

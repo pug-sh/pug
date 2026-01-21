@@ -21,7 +21,7 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
 	}
 }
 
-func (s *Service) CreateSubscription(ctx context.Context, id, projectID, token, platform string, metadata []byte, status, updater string) (dbwrite.Subscription, error) {
+func (s *Service) CreateSubscription(ctx context.Context, id, projectID, token, platform string, metadata map[string]any, status, updater string) (dbwrite.Subscription, error) {
 	params := dbwrite.CreateSubscriptionParams{
 		ID:        id,
 		ProjectID: projectID,
@@ -50,7 +50,7 @@ func (s *Service) UpdateSubscriptionHeartbeat(ctx context.Context, id, projectID
 	return s.write.UpdateSubscriptionHeartbeat(ctx, params)
 }
 
-func (s *Service) UpdateSubscriptionMetadata(ctx context.Context, id, projectID string, metadata []byte) (dbwrite.Subscription, error) {
+func (s *Service) UpdateSubscriptionMetadata(ctx context.Context, id, projectID string, metadata map[string]any) (dbwrite.Subscription, error) {
 	params := dbwrite.UpdateSubscriptionMetadataParams{
 		Metadata:  metadata,
 		ID:        id,
