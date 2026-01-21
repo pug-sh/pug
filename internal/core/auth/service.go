@@ -78,7 +78,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	token, err := s.generateJWT(customer.Email, customer.ID)
+	token, err := s.generateJWT(customer.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate JWT", slog.Any("error", err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -102,7 +102,7 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
 	}
 
-	token, err := s.generateJWT(customer.Email, customer.ID)
+	token, err := s.generateJWT(customer.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate JWT", slog.Any("error", err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -124,7 +124,7 @@ type UserClaims struct {
 	AdditionalClaims
 }
 
-func (s *Service) generateJWT(email, id string) (string, error) {
+func (s *Service) generateJWT(id string) (string, error) {
 	// todo - add expiry
 	standardClaims := jwt.RegisteredClaims{
 		Audience: jwt.ClaimStrings{aud},
@@ -134,14 +134,8 @@ func (s *Service) generateJWT(email, id string) (string, error) {
 		Subject:  id,
 	}
 
-	// askpolru - why is email even needed here
-	claims := UserClaims{
-		RegisteredClaims: standardClaims,
-		AdditionalClaims: AdditionalClaims{Email: email},
-	}
-
 	// todo - switch to es256
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, standardClaims)
 
 	tokenString, err := token.SignedString(s.jwtKey)
 	if err != nil {

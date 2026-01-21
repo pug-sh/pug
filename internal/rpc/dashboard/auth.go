@@ -2,10 +2,12 @@ package dashboard
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"connectrpc.com/authn"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/pkg/logger/slogx"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -26,7 +28,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 			return nil, authn.Errorf("Bearer token is empty")
 		}
 
-		token, err := jwt.Parse(jwtToken, func(token *jwt.Token) (interface{}, error) {
+		jwt, err := jwt.Parse(jwtToken, func(token *jwt.Token) (any, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, authn.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
@@ -36,23 +38,21 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 			return nil, authn.Errorf("invalid authorization")
 		}
 
-		if !token.Valid {
+		if !jwt.Valid {
 			return nil, authn.Errorf("invalid authorization")
 		}
 
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			return nil, authn.Errorf("invalid claims format")
-		}
-
-		email, ok := claims["email"].(string)
-		if !ok {
-			return nil, authn.Errorf("email claim not found or not a string")
-		}
-
-		customer, err := queries.GetCustomerByEmail(ctx, email)
+		customerID, err := jwt.Claims.GetSubject()
 		if err != nil {
-			return nil, authn.Errorf("failed to get customer by email: %v", err)
+			slog.ErrorContext(ctx, "unable to get subject", slogx.Error(err))
+			return nil, authn.Errorf("customer claim not found or not a string")
+		}
+
+		customer, err := queries.GetCustomerByID(ctx, customerID)
+		if err != nil {
+			slog.ErrorContext(ctx, "unable to get customer", slogx.Error(err), slog.String("token", jwtToken))
+			// todo - ensure sensistive data is not leaked
+			return nil, err
 		}
 
 		return customer, nil
