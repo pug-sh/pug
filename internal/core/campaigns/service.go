@@ -9,6 +9,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/fivebitsio/cotton/pkg/logger/slogx"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
@@ -39,14 +40,21 @@ func (s *Service) CreateCampaign(ctx context.Context, arg dbwrite.CreateCampaign
 	scheduledTime := arg.ScheduledTime.Time
 
 	if err := s.sendCampaignToNATS(ctx, campaign, scheduledTime); err != nil {
-		slog.ErrorContext(ctx, "failed to send campaign to NATS", slog.Any("error", err), slog.String("campaignId", campaign.ID))
+		slog.ErrorContext(ctx, "failed to send campaign to NATS", slogx.Error(err), slog.String("campaignId", campaign.ID))
 	}
 
 	return campaign, nil
 }
 
-func (s *Service) GetCampaignById(ctx context.Context, id string) (dbread.Campaign, error) {
-	return s.read.GetCampaignById(ctx, id)
+func (s *Service) GetCampaignByID(ctx context.Context, id string) (dbread.Campaign, error) {
+	return s.read.GetCampaignByID(ctx, id)
+}
+
+func (s *Service) GetCampaignByIDAndProjectID(ctx context.Context, id string, projectID string) (dbread.Campaign, error) {
+	return s.read.GetCampaignByIDAndProjectID(ctx, dbread.GetCampaignByIDAndProjectIDParams{
+		ID:        id,
+		ProjectID: projectID,
+	})
 }
 
 func (s *Service) GetCampaignsByProjectID(ctx context.Context, projectID string) ([]dbread.Campaign, error) {
@@ -73,7 +81,7 @@ func (s *Service) UpdateCampaign(ctx context.Context, arg dbwrite.UpdateCampaign
 	scheduledTime := arg.ScheduledTime.Time
 
 	if err := s.sendCampaignToNATS(ctx, campaign, scheduledTime); err != nil {
-		slog.ErrorContext(ctx, "failed to send updated campaign to NATS", slog.Any("error", err), slog.String("campaignId", campaign.ID))
+		slog.ErrorContext(ctx, "failed to send updated campaign to NATS", slogx.Error(err), slog.String("campaignId", campaign.ID))
 	}
 
 	return campaign, nil

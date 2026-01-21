@@ -43,7 +43,7 @@ set user_id = @user_id, update_time = now()
 where id = @id and project_id = @project_id
 returning *;
 
--- name: UpdateSubscriptionUserId :one
+-- name: UpdateSubscriptionUserID :one
 update subscriptions
 set user_id = @user_id, update_time = now()
 where id = @id and project_id = @project_id

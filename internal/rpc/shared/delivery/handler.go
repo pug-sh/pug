@@ -8,6 +8,7 @@ import (
 
 	deliveryv1 "github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1"
 	"github.com/fivebitsio/cotton/internal/rpc"
+	"github.com/fivebitsio/cotton/pkg/logger/slogx"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
@@ -55,14 +56,14 @@ func (s *Server) RecordEvent(
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal delivery event message", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to marshal delivery event message", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	// Publish to NATS JetStream
 	_, err = s.producer.Publish(ctx, nats.DeliveryEventsSubject, data)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to publish delivery event to NATS", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to publish delivery event to NATS", slogx.Error(err))
 		return &connect.Response[deliveryv1.RecordEventResponse]{
 			Msg: &deliveryv1.RecordEventResponse{
 				Success:           false,

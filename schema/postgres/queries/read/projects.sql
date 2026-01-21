@@ -1,9 +1,9 @@
--- name: GetProjectsByCustomerId :many
+-- name: GetProjectsByCustomerID :many
 select *
 from projects
 where customer_id = @customer_id;
 
--- name: GetProjectById :one
+-- name: GetProjectByID :one
 select *
 from projects
 where id = @id;

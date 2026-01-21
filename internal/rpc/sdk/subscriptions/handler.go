@@ -8,6 +8,7 @@ import (
 
 	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
 	"github.com/fivebitsio/cotton/internal/rpc"
+	"github.com/fivebitsio/cotton/pkg/logger/slogx"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
@@ -43,14 +44,14 @@ func (s *Server) Upsert(
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	// Publish to NATS JetStream
 	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -79,14 +80,14 @@ func (s *Server) UpdateHeartbeat(
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	// Publish to NATS JetStream
 	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -116,14 +117,14 @@ func (s *Server) UpdateMetadata(
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	// Publish to NATS JetStream
 	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -153,14 +154,14 @@ func (s *Server) UpdateStatus(
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	// Publish to NATS JetStream
 	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -190,14 +191,14 @@ func (s *Server) UpdateToken(
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	// Publish to NATS JetStream
 	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -230,14 +231,14 @@ func (s *Server) RegisterSubscription(
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	// Publish to NATS JetStream
 	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -272,14 +273,14 @@ func (s *Server) SetUserExternalID(
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to marshal subscription operation message", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	// Publish to NATS JetStream
 	_, err = s.producer.Publish(ctx, nats.SubscriptionOpsSubject, data)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to publish subscription operation to NATS", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 

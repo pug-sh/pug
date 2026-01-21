@@ -29,12 +29,12 @@ func (s *Service) CreateProject(ctx context.Context, arg dbwrite.CreateProjectPa
 	return s.write.CreateProject(ctx, arg)
 }
 
-func (s *Service) GetProjectById(ctx context.Context, id string) (dbread.Project, error) {
-	return s.read.GetProjectById(ctx, id)
+func (s *Service) GetProjectByID(ctx context.Context, id string) (dbread.Project, error) {
+	return s.read.GetProjectByID(ctx, id)
 }
 
-func (s *Service) GetProjectsByCustomerId(ctx context.Context, customerID string) ([]dbread.Project, error) {
-	return s.read.GetProjectsByCustomerId(ctx, customerID)
+func (s *Service) GetProjectsByCustomerID(ctx context.Context, customerID string) ([]dbread.Project, error) {
+	return s.read.GetProjectsByCustomerID(ctx, customerID)
 }
 
 func (s *Service) ProjectExistsForCustomer(ctx context.Context, projectID string, customerID string) (bool, error) {

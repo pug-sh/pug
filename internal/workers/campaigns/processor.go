@@ -8,6 +8,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/delivery"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/core/subscriptions"
+	"github.com/fivebitsio/cotton/pkg/logger/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -31,7 +32,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 
 	scheduledCampaigns, err := w.campaignService.GetScheduledCampaigns(ctx)
 	if err != nil {
-		slog.Error("failed to get scheduled campaigns", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to get scheduled campaigns", slogx.Error(err))
 		return err
 	}
 
@@ -40,9 +41,8 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	for _, campaign := range scheduledCampaigns {
 		subscriptions, err := w.subscriptionService.GetSubscriptionsByProject(ctx, campaign.ProjectID)
 		if err != nil {
-			slog.Error("failed to get subscriptions for project",
-				slog.String("project_id", campaign.ProjectID),
-				slog.Any("err", err))
+			slog.ErrorContext(ctx, "failed to get subscriptions for project",
+				slog.String("project_id", campaign.ProjectID), slogx.Error(err))
 			continue
 		}
 
@@ -55,10 +55,10 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 			// Only send notification to active subscriptions
 			if string(sub.Status) == "active" {
 				if err := w.deliveryService.SendNotification(ctx, campaign, sub); err != nil {
-					slog.Error("Failed to send notification",
+					slog.ErrorContext(ctx, "failed to send notification",
 						slog.String("subscription_id", sub.ID),
 						slog.String("campaign_id", campaign.ID),
-						slog.Any("err", err))
+						slogx.Error(err))
 				}
 			}
 		}

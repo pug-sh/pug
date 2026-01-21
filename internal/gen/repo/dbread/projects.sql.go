@@ -43,6 +43,27 @@ func (q *Queries) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey stri
 	return i, err
 }
 
+const getProjectByID = `-- name: GetProjectByID :one
+select api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+from projects
+where id = $1
+`
+
+func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByID, id)
+	var i Project
+	err := row.Scan(
+		&i.ApiKey,
+		&i.CustomerID,
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const getProjectByIDAndCustomerID = `-- name: GetProjectByIDAndCustomerID :one
 select api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time from projects where id = $1 and customer_id = $2
 `
@@ -67,35 +88,14 @@ func (q *Queries) GetProjectByIDAndCustomerID(ctx context.Context, arg GetProjec
 	return i, err
 }
 
-const getProjectById = `-- name: GetProjectById :one
-select api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
-from projects
-where id = $1
-`
-
-func (q *Queries) GetProjectById(ctx context.Context, id string) (Project, error) {
-	row := q.db.QueryRow(ctx, getProjectById, id)
-	var i Project
-	err := row.Scan(
-		&i.ApiKey,
-		&i.CustomerID,
-		&i.CreateTime,
-		&i.DisplayName,
-		&i.FcmServiceJson,
-		&i.ID,
-		&i.UpdateTime,
-	)
-	return i, err
-}
-
-const getProjectsByCustomerId = `-- name: GetProjectsByCustomerId :many
+const getProjectsByCustomerID = `-- name: GetProjectsByCustomerID :many
 select api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
 from projects
 where customer_id = $1
 `
 
-func (q *Queries) GetProjectsByCustomerId(ctx context.Context, customerID string) ([]Project, error) {
-	rows, err := q.db.Query(ctx, getProjectsByCustomerId, customerID)
+func (q *Queries) GetProjectsByCustomerID(ctx context.Context, customerID string) ([]Project, error) {
+	rows, err := q.db.Query(ctx, getProjectsByCustomerID, customerID)
 	if err != nil {
 		return nil, err
 	}

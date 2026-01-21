@@ -80,6 +80,8 @@ PostgreSQL uses read/write separation:
 - Queries in `schema/postgres/queries/read/` generate to `internal/gen/repo/dbread/`
 - Queries in `schema/postgres/queries/write/` generate to `internal/gen/repo/dbwrite/`
 
+**sqlc naming convention**: Use uppercase `ID` in query names (e.g., `GetCampaignByID`, `GetProjectsByCustomerID`), not `Id`.
+
 ### Proto/RPC
 
 Services defined in `proto/` directory. Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled.

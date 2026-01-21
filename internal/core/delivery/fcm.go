@@ -55,7 +55,7 @@ func (f *FCMService) getMessagingClient(ctx context.Context, projectID, fcmServi
 // SendNotification sends a push notification to a device token via FCM
 func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campaign, subscription dbread.Subscription) error {
 	// Get project details to access FCM service JSON
-	project, err := f.projectsSvc.GetProjectById(ctx, campaign.ProjectID)
+	project, err := f.projectsSvc.GetProjectByID(ctx, campaign.ProjectID)
 	if err != nil {
 		return fmt.Errorf("failed to get project: %w", err)
 	}

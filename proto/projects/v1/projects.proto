@@ -13,9 +13,7 @@ service ProjectsService {
   rpc UpdateFCMServiceJSON(UpdateFCMServiceJSONRequest) returns (UpdateFCMServiceJSONResponse) {}
 }
 
-message GetRequest {
-  string id = 1;
-}
+message GetRequest {}
 
 message GetResponse {
   Project project = 1;

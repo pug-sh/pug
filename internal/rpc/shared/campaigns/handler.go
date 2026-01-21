@@ -10,6 +10,7 @@ import (
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/rpc"
+	"github.com/fivebitsio/cotton/pkg/logger/slogx"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
@@ -31,15 +32,10 @@ func (s *server) Get(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	campaign, err := s.service.GetCampaignById(ctx, req.Msg.Id)
+	campaign, err := s.service.GetCampaignByIDAndProjectID(ctx, req.Msg.Id, principal.Project.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed getting campaign", slog.Any("error", err), slog.String("campaignId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed getting campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	// Verify campaign belongs to the authenticated project
-	if campaign.ProjectID != principal.Project.ID {
-		return nil, connect.NewError(connect.CodeNotFound, nil)
 	}
 
 	resp := connect.NewResponse(&campaignsv1.GetResponse{
@@ -62,7 +58,7 @@ func (s *server) BatchGet(
 
 	campaigns, err := s.service.GetCampaignsByProjectID(ctx, projectID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed getting campaigns by project ID", slog.Any("error", err), slog.String("projectId", projectID))
+		slog.ErrorContext(ctx, "failed getting campaigns by project ID", slogx.Error(err), slog.String("projectId", projectID))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -84,7 +80,7 @@ func (s *server) Create(
 ) (*connect.Response[campaignsv1.CreateResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get principal from context", slog.Any("error", err))
+		slog.ErrorContext(ctx, "failed to get principal from context", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
@@ -106,7 +102,7 @@ func (s *server) Create(
 		Status:           "scheduled",
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed creating campaign", slog.Any("error", err), slog.String("projectId", projectID), slog.String("campaignName", req.Msg.Name))
+		slog.ErrorContext(ctx, "failed creating campaign", slogx.Error(err), slog.String("projectId", projectID), slog.String("campaignName", req.Msg.Name))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -130,7 +126,7 @@ func (s *server) Delete(
 
 	err = s.service.DeleteCampaign(ctx, req.Msg.Id, projectID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed deleting campaign", slog.Any("error", err), slog.String("campaignId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed deleting campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -143,6 +139,17 @@ func (s *server) Update(
 	ctx context.Context,
 	req *connect.Request[campaignsv1.UpdateRequest],
 ) (*connect.Response[campaignsv1.UpdateResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	// Verify campaign exists and belongs to the authenticated project
+	if _, err := s.service.GetCampaignByIDAndProjectID(ctx, req.Msg.Id, principal.Project.ID); err != nil {
+		slog.ErrorContext(ctx, "failed getting campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
 	var scheduledTimeParam *timestamppb.Timestamp
 	if req.Msg.ScheduledTime == nil {
 		scheduledTimeParam = timestamppb.Now()
@@ -157,15 +164,13 @@ func (s *server) Update(
 		ScheduledTime:    postgres.TimestampToTimestamptz(scheduledTimeParam),
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed updating campaign", slog.Any("error", err), slog.String("campaignId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed updating campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	resp := connect.NewResponse(&campaignsv1.UpdateResponse{
+	return connect.NewResponse(&campaignsv1.UpdateResponse{
 		Campaign: wToRPCMsg(campaign),
-	})
-
-	return resp, nil
+	}), nil
 }
 
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, producer jetstream.JetStream) *server {

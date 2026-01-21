@@ -23,7 +23,6 @@ const (
 
 type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -56,13 +55,6 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
 func (*GetRequest) Descriptor() ([]byte, []int) {
 	return file_projects_v1_projects_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *GetRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
 }
 
 type GetResponse struct {
@@ -597,10 +589,9 @@ var File_projects_v1_projects_proto protoreflect.FileDescriptor
 
 const file_projects_v1_projects_proto_rawDesc = "" +
 	"\n" +
-	"\x1aprojects/v1/projects.proto\x12\vprojects.v1\"\x1c\n" +
+	"\x1aprojects/v1/projects.proto\x12\vprojects.v1\"\f\n" +
 	"\n" +
-	"GetRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"=\n" +
+	"GetRequest\"=\n" +
 	"\vGetResponse\x12.\n" +
 	"\aproject\x18\x01 \x01(\v2\x14.projects.v1.ProjectR\aproject\"\x11\n" +
 	"\x0fBatchGetRequest\"D\n" +

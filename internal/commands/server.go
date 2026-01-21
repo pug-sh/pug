@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
@@ -161,7 +162,11 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 
 	go func() {
 		<-ctx.Done()
-		server.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Log.Error("server shutdown error", slog.Any("error", err))
+		}
 	}()
 
 	logger.Log.Info("Starting server", slog.String("addr", server.Addr))
