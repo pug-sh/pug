@@ -206,7 +206,6 @@ func (x *GetResponse) GetUser() *User {
 type GetByExternalIdRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -244,13 +243,6 @@ func (*GetByExternalIdRequest) Descriptor() ([]byte, []int) {
 func (x *GetByExternalIdRequest) GetExternalId() string {
 	if x != nil {
 		return x.ExternalId
-	}
-	return ""
-}
-
-func (x *GetByExternalIdRequest) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
 	}
 	return ""
 }
@@ -301,7 +293,6 @@ func (x *GetByExternalIdResponse) GetUser() *User {
 
 type ListRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -334,13 +325,6 @@ func (x *ListRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
 func (*ListRequest) Descriptor() ([]byte, []int) {
 	return file_users_v1_users_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ListRequest) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
-	}
-	return ""
 }
 
 type ListResponse struct {
@@ -390,9 +374,8 @@ func (x *ListResponse) GetUsers() []*User {
 type CreateRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	ExternalId       string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	ProjectId        string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	Properties       *structpb.Struct       `protobuf:"bytes,3,opt,name=properties" json:"properties,omitempty"`
-	CustomProperties *structpb.Struct       `protobuf:"bytes,4,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
+	Properties       *structpb.Struct       `protobuf:"bytes,2,opt,name=properties" json:"properties,omitempty"`
+	CustomProperties *structpb.Struct       `protobuf:"bytes,3,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -430,13 +413,6 @@ func (*CreateRequest) Descriptor() ([]byte, []int) {
 func (x *CreateRequest) GetExternalId() string {
 	if x != nil {
 		return x.ExternalId
-	}
-	return ""
-}
-
-func (x *CreateRequest) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
 	}
 	return ""
 }
@@ -794,28 +770,22 @@ const file_users_v1_users_proto_rawDesc = "" +
 	"GetRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"1\n" +
 	"\vGetResponse\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"X\n" +
+	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"9\n" +
 	"\x16GetByExternalIdRequest\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +
-	"externalId\x12\x1d\n" +
-	"\n" +
-	"project_id\x18\x02 \x01(\tR\tprojectId\"=\n" +
+	"externalId\"=\n" +
 	"\x17GetByExternalIdResponse\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\",\n" +
-	"\vListRequest\x12\x1d\n" +
-	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\"4\n" +
+	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"\r\n" +
+	"\vListRequest\"4\n" +
 	"\fListResponse\x12$\n" +
-	"\x05users\x18\x01 \x03(\v2\x0e.users.v1.UserR\x05users\"\xce\x01\n" +
+	"\x05users\x18\x01 \x03(\v2\x0e.users.v1.UserR\x05users\"\xaf\x01\n" +
 	"\rCreateRequest\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +
-	"externalId\x12\x1d\n" +
+	"externalId\x127\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tR\tprojectId\x127\n" +
-	"\n" +
-	"properties\x18\x03 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\n" +
 	"properties\x12D\n" +
-	"\x11custom_properties\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\"4\n" +
+	"\x11custom_properties\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\"4\n" +
 	"\x0eCreateResponse\x12\"\n" +
 	"\x04user\x18\x01 \x01(\v2\x0e.users.v1.UserR\x04user\"b\n" +
 	"\x17UpdatePropertiesRequest\x12\x0e\n" +

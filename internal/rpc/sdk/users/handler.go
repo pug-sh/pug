@@ -9,7 +9,9 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/users/v1/usersv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/fivebitsio/cotton/internal/rpc"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/xid"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -31,9 +33,17 @@ func (h *Handler) Get(
 	ctx context.Context,
 	req *connect.Request[usersv1.GetRequest],
 ) (*connect.Response[usersv1.GetResponse], error) {
-	u, err := h.read.GetUserByID(ctx, req.Msg.Id)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, err
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	u, err := h.read.GetUserByIDAndProjectID(ctx, dbread.GetUserByIDAndProjectIDParams{
+		ID:        req.Msg.Id,
+		ProjectID: principal.Project.ID,
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	pbUser, err := convertUser(u)
@@ -50,12 +60,17 @@ func (h *Handler) GetByExternalId(
 	ctx context.Context,
 	req *connect.Request[usersv1.GetByExternalIdRequest],
 ) (*connect.Response[usersv1.GetByExternalIdResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
 	u, err := h.read.GetUserByProjectAndExternalID(ctx, dbread.GetUserByProjectAndExternalIDParams{
-		ProjectID:  req.Msg.ProjectId,
+		ProjectID:  principal.Project.ID,
 		ExternalID: req.Msg.ExternalId,
 	})
 	if err != nil {
-		return nil, err
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	pbUser, err := convertUser(u)
@@ -70,11 +85,16 @@ func (h *Handler) GetByExternalId(
 
 func (h *Handler) List(
 	ctx context.Context,
-	req *connect.Request[usersv1.ListRequest],
+	_ *connect.Request[usersv1.ListRequest],
 ) (*connect.Response[usersv1.ListResponse], error) {
-	usersList, err := h.read.GetUsersByProjectID(ctx, req.Msg.ProjectId)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, err
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	usersList, err := h.read.GetUsersByProjectID(ctx, principal.Project.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	pbUsers := make([]*usersv1.User, len(usersList))
@@ -95,6 +115,11 @@ func (h *Handler) Create(
 	ctx context.Context,
 	req *connect.Request[usersv1.CreateRequest],
 ) (*connect.Response[usersv1.CreateResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
 	props := map[string]any{}
 	if req.Msg.Properties != nil {
 		props = req.Msg.Properties.AsMap()
@@ -114,13 +139,14 @@ func (h *Handler) Create(
 	}
 
 	u, err := h.write.CreateUser(ctx, dbwrite.CreateUserParams{
+		ID:               xid.New().String(),
 		ExternalID:       req.Msg.ExternalId,
-		ProjectID:        req.Msg.ProjectId,
+		ProjectID:        principal.Project.ID,
 		Properties:       propsBytes,
 		CustomProperties: customPropsBytes,
 	})
 	if err != nil {
-		return nil, err
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	pbUser, err := convertWriteUser(u)
@@ -137,6 +163,11 @@ func (h *Handler) UpdateProperties(
 	ctx context.Context,
 	req *connect.Request[usersv1.UpdatePropertiesRequest],
 ) (*connect.Response[usersv1.UpdatePropertiesResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
 	var props map[string]any
 	if req.Msg.Properties != nil {
 		props = req.Msg.Properties.AsMap()
@@ -148,10 +179,11 @@ func (h *Handler) UpdateProperties(
 
 	u, err := h.write.UpdateUserProperties(ctx, dbwrite.UpdateUserPropertiesParams{
 		ID:         req.Msg.Id,
+		ProjectID:  principal.Project.ID,
 		Properties: propsBytes,
 	})
 	if err != nil {
-		return nil, err
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	pbUser, err := convertWriteUser(u)
@@ -168,6 +200,11 @@ func (h *Handler) UpdateCustomProperties(
 	ctx context.Context,
 	req *connect.Request[usersv1.UpdateCustomPropertiesRequest],
 ) (*connect.Response[usersv1.UpdateCustomPropertiesResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
 	var customProps map[string]any
 	if req.Msg.CustomProperties != nil {
 		customProps = req.Msg.CustomProperties.AsMap()
@@ -179,10 +216,11 @@ func (h *Handler) UpdateCustomProperties(
 
 	u, err := h.write.UpdateUserCustomProperties(ctx, dbwrite.UpdateUserCustomPropertiesParams{
 		ID:               req.Msg.Id,
+		ProjectID:        principal.Project.ID,
 		CustomProperties: customPropsBytes,
 	})
 	if err != nil {
-		return nil, err
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	pbUser, err := convertWriteUser(u)
@@ -199,9 +237,16 @@ func (h *Handler) Delete(
 	ctx context.Context,
 	req *connect.Request[usersv1.DeleteRequest],
 ) (*connect.Response[usersv1.DeleteResponse], error) {
-	err := h.write.DeleteUserByID(ctx, req.Msg.Id)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, err
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	if err := h.write.DeleteUserByIDAndProjectID(ctx, dbwrite.DeleteUserByIDAndProjectIDParams{
+		ID:        req.Msg.Id,
+		ProjectID: principal.Project.ID,
+	}); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	return connect.NewResponse(&usersv1.DeleteResponse{}), nil
