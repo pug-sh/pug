@@ -68,21 +68,20 @@ func (q *Queries) DeleteCampaign(ctx context.Context, arg DeleteCampaignParams) 
 
 const updateCampaign = `-- name: UpdateCampaign :one
 update campaigns
-set name = $1,
-    notification_data = $2, 
-    scheduled_time = $3,
-    status = $4,
+set name = COALESCE(NULLIF($1, ''), name),
+    notification_data = COALESCE(NULLIF($2, ''), notification_data),
+    scheduled_time = COALESCE($3, scheduled_time),
     update_time = now()
-where id = $5
+where id = $4 and project_id = $5
 returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
 
 type UpdateCampaignParams struct {
-	Name             string
-	NotificationData []byte
+	Name             interface{}
+	NotificationData interface{}
 	ScheduledTime    pgtype.Timestamptz
-	Status           string
 	ID               string
+	ProjectID        string
 }
 
 func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) (Campaign, error) {
@@ -90,8 +89,8 @@ func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) 
 		arg.Name,
 		arg.NotificationData,
 		arg.ScheduledTime,
-		arg.Status,
 		arg.ID,
+		arg.ProjectID,
 	)
 	var i Campaign
 	err := row.Scan(

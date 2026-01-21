@@ -144,24 +144,13 @@ func (s *server) Update(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	// Verify campaign exists and belongs to the authenticated project
-	if _, err := s.service.GetCampaignByIDAndProjectID(ctx, req.Msg.Id, principal.Project.ID); err != nil {
-		slog.ErrorContext(ctx, "failed getting campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	var scheduledTimeParam *timestamppb.Timestamp
-	if req.Msg.ScheduledTime == nil {
-		scheduledTimeParam = timestamppb.Now()
-	} else {
-		scheduledTimeParam = req.Msg.ScheduledTime
-	}
-
+	// SQL uses COALESCE to preserve existing values for empty/null fields
 	campaign, err := s.service.UpdateCampaign(ctx, dbwrite.UpdateCampaignParams{
 		ID:               req.Msg.Id,
+		ProjectID:        principal.Project.ID,
 		Name:             req.Msg.Name,
 		NotificationData: req.Msg.NotificationData,
-		ScheduledTime:    postgres.TimestampToTimestamptz(scheduledTimeParam),
+		ScheduledTime:    postgres.TimestampToTimestamptz(req.Msg.ScheduledTime),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed updating campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))

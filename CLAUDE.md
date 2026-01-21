@@ -80,7 +80,10 @@ PostgreSQL uses read/write separation:
 - Queries in `schema/postgres/queries/read/` generate to `internal/gen/repo/dbread/`
 - Queries in `schema/postgres/queries/write/` generate to `internal/gen/repo/dbwrite/`
 
-**sqlc naming convention**: Use uppercase `ID` in query names (e.g., `GetCampaignByID`, `GetProjectsByCustomerID`), not `Id`.
+**sqlc conventions**:
+- Query names: PascalCase with uppercase `ID` (e.g., `GetCampaignByID`, `GetProjectsByCustomerID`)
+- SQL syntax and identifiers: lowercase (e.g., `select * from campaigns where project_id = @project_id`)
+- Partial updates: use `coalesce(nullif(@field, ''), field)` to preserve existing values when empty
 
 ### Proto/RPC
 

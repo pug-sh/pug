@@ -5,12 +5,11 @@ returning *;
 
 -- name: UpdateCampaign :one
 update campaigns
-set name = @name,
-    notification_data = @notification_data, 
-    scheduled_time = @scheduled_time,
-    status = @status,
+set name = coalesce(nullif(@name, ''), name),
+    notification_data = coalesce(nullif(@notification_data, ''), notification_data),
+    scheduled_time = coalesce(@scheduled_time, scheduled_time),
     update_time = now()
-where id = @id
+where id = @id and project_id = @project_id
 returning *;
 
 -- name: UpdateCampaignStatus :one
