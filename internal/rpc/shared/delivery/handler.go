@@ -7,7 +7,7 @@ import (
 	"connectrpc.com/connect"
 
 	deliveryv1 "github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1"
-	"github.com/fivebitsio/cotton/internal/rpc/sdk"
+	"github.com/fivebitsio/cotton/internal/rpc"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
@@ -28,10 +28,12 @@ func (s *Server) RecordEvent(
 		return nil, err
 	}
 
-	project, err := sdk.GetProjectFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
+
+	projectID := principal.Project.ID
 
 	// Use the provided timestamp or default to current time
 	eventTimestamp := req.Msg.GetEventTimestamp()
@@ -39,9 +41,9 @@ func (s *Server) RecordEvent(
 		eventTimestamp = timestamppb.Now()
 	}
 
-	// Create delivery event message
-	msg := &deliveryv1.RecordEventRequest{
-		ProjectId:      project.ID,
+	// Create delivery event message for NATS
+	msg := &deliveryv1.DeliveryEventMessage{
+		ProjectId:      projectID,
 		CampaignId:     req.Msg.GetCampaignId(),
 		MessageId:      req.Msg.GetMessageId(),
 		SubscriptionId: req.Msg.GetSubscriptionId(),

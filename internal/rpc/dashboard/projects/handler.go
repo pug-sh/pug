@@ -8,7 +8,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/rpc/dashboard"
+	"github.com/fivebitsio/cotton/internal/rpc"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
@@ -52,14 +52,14 @@ func (s *server) BatchGet(
 		return nil, err
 	}
 
-	customer, err := dashboard.GetCustomerFromContext(ctx)
+	principal, err := rpc.GetPrincipalFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	projectsData, err := s.service.GetProjectsByCustomerId(ctx, customer.ID)
+	projectsData, err := s.service.GetProjectsByCustomerId(ctx, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading from db", slog.Any("error", err), slog.String("customerId", customer.ID))
+		slog.ErrorContext(ctx, "failed reading from db", slog.Any("error", err), slog.String("customerId", principal.Customer.ID))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -80,14 +80,14 @@ func (s *server) Create(
 		return nil, err
 	}
 
-	customer, err := dashboard.GetCustomerFromContext(ctx)
+	principal, err := rpc.GetPrincipalFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
 	wParams := dbwrite.CreateProjectParams{
 		ApiKey:      xid.New().String(),
-		CustomerID:  customer.ID,
+		CustomerID:  principal.Customer.ID,
 		DisplayName: req.Msg.DisplayName,
 		ID:          xid.New().String(),
 	}
@@ -101,35 +101,38 @@ func (s *server) Create(
 	return connect.NewResponse(&projectsv1.CreateResponse{Project: wToRPCMsg(projectData)}), nil
 }
 
-// Delete removes a project for the authenticated customer.
-// todo - this should have a verification step
+// Delete removes the project specified by x-project-id header.
 func (s *server) Delete(
 	ctx context.Context,
-	req *connect.Request[projectsv1.DeleteRequest],
+	_ *connect.Request[projectsv1.DeleteRequest],
 ) (*connect.Response[projectsv1.DeleteResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	customer, err := dashboard.GetCustomerFromContext(ctx)
+	principal, err := rpc.GetPrincipalFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
+	if principal.Project == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+	}
+
 	wParams := dbwrite.DeleteProjectParams{
-		CustomerID: customer.ID,
-		ID:         req.Msg.Id,
+		CustomerID: principal.Customer.ID,
+		ID:         principal.Project.ID,
 	}
 
 	if err := s.service.DeleteProject(ctx, wParams); err != nil {
-		slog.ErrorContext(ctx, "failed deleting project", slog.Any("error", err), slog.String("customerId", customer.ID), slog.String("id", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed deleting project", slog.Any("error", err), slog.String("customerId", principal.Customer.ID), slog.String("id", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	return connect.NewResponse(&projectsv1.DeleteResponse{}), nil
 }
 
-// UpdateDisplayName updates the display name of a project for the authenticated customer.
+// UpdateDisplayName updates the display name of the project specified by x-project-id header.
 func (s *server) UpdateDisplayName(
 	ctx context.Context,
 	req *connect.Request[projectsv1.UpdateDisplayNameRequest],
@@ -138,12 +141,16 @@ func (s *server) UpdateDisplayName(
 		return nil, err
 	}
 
-	customer, err := dashboard.GetCustomerFromContext(ctx)
+	principal, err := rpc.GetPrincipalFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	wParams := dbwrite.UpdateProjectDisplayNameParams{CustomerID: customer.ID, DisplayName: req.Msg.DisplayName, ID: req.Msg.Id}
+	if principal.Project == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+	}
+
+	wParams := dbwrite.UpdateProjectDisplayNameParams{CustomerID: principal.Customer.ID, DisplayName: req.Msg.DisplayName, ID: principal.Project.ID}
 	projectData, err := s.service.UpdateProjectDisplayName(ctx, wParams)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed writing to db", slog.Any("error", err), slog.Any("params", wParams))
@@ -153,7 +160,7 @@ func (s *server) UpdateDisplayName(
 	return connect.NewResponse(&projectsv1.UpdateDisplayNameResponse{Project: wToRPCMsg(projectData)}), nil
 }
 
-// UpdateFCMServiceJSON updates the FCM service JSON for a project.
+// UpdateFCMServiceJSON updates the FCM service JSON for the project specified by x-project-id header.
 func (s *server) UpdateFCMServiceJSON(
 	ctx context.Context,
 	req *connect.Request[projectsv1.UpdateFCMServiceJSONRequest],
@@ -162,12 +169,16 @@ func (s *server) UpdateFCMServiceJSON(
 		return nil, err
 	}
 
-	customer, err := dashboard.GetCustomerFromContext(ctx)
+	principal, err := rpc.GetPrincipalFromContext(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	wParams := dbwrite.UpdateFCMServiceJSONParams{CustomerID: customer.ID, FcmServiceJson: postgres.StringToText(req.Msg.FcmServiceJson), ID: req.Msg.Id}
+	if principal.Project == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+	}
+
+	wParams := dbwrite.UpdateFCMServiceJSONParams{CustomerID: principal.Customer.ID, FcmServiceJson: postgres.StringToText(req.Msg.FcmServiceJson), ID: principal.Project.ID}
 	if _, err := s.service.UpdateFCMServiceJSON(ctx, wParams); err != nil {
 		slog.ErrorContext(ctx, "failed writing to db", slog.Any("err", err), slog.Any("params", wParams))
 		return nil, connect.NewError(connect.CodeInternal, err)

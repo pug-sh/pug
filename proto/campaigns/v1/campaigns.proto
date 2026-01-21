@@ -18,9 +18,7 @@ service CampaignService {
    web facing
 */
 
-message BatchGetRequest {
-  string project_id = 1;
-}
+message BatchGetRequest {}
 
 message BatchGetResponse {
   repeated Campaign campaigns = 1;
@@ -28,7 +26,6 @@ message BatchGetResponse {
 
 message GetRequest {
   string id = 1;
-  string project_id = 2;
 }
 
 message GetResponse {
@@ -36,11 +33,9 @@ message GetResponse {
 }
 
 message CreateRequest {
-  string id = 1;
-  string name = 2;
-  bytes notification_data = 3;
-  string project_id = 4;
-  google.protobuf.Timestamp scheduled_time = 5;
+  string name = 1;
+  bytes notification_data = 2;
+  google.protobuf.Timestamp scheduled_time = 3;
 }
 
 message CreateResponse {
@@ -49,7 +44,6 @@ message CreateResponse {
 
 message DeleteRequest {
   string id = 1;
-  string project_id = 2;
 }
 
 message DeleteResponse {}
@@ -58,8 +52,7 @@ message UpdateRequest {
   string id = 1;
   string name = 2;
   bytes notification_data = 3;
-  string project_id = 4;
-  google.protobuf.Timestamp scheduled_time = 5;
+  google.protobuf.Timestamp scheduled_time = 4;
 }
 message UpdateResponse {
   Campaign campaign = 1;

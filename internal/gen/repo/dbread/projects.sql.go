@@ -9,15 +9,51 @@ import (
 	"context"
 )
 
-const getProjectByApiKey = `-- name: GetProjectByApiKey :one
-
-select api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+const getProjectAndCustomerByApiKey = `-- name: GetProjectAndCustomerByApiKey :one
+select projects.api_key, projects.customer_id, projects.create_time, projects.display_name, projects.fcm_service_json, projects.id, projects.update_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.create_time, customers.update_time
 from projects
-where api_key = $1
+join customers on customers.id = projects.customer_id
+where projects.api_key = $1
 `
 
-func (q *Queries) GetProjectByApiKey(ctx context.Context, apiKey string) (Project, error) {
-	row := q.db.QueryRow(ctx, getProjectByApiKey, apiKey)
+type GetProjectAndCustomerByApiKeyRow struct {
+	Project  Project
+	Customer Customer
+}
+
+func (q *Queries) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey string) (GetProjectAndCustomerByApiKeyRow, error) {
+	row := q.db.QueryRow(ctx, getProjectAndCustomerByApiKey, apiKey)
+	var i GetProjectAndCustomerByApiKeyRow
+	err := row.Scan(
+		&i.Project.ApiKey,
+		&i.Project.CustomerID,
+		&i.Project.CreateTime,
+		&i.Project.DisplayName,
+		&i.Project.FcmServiceJson,
+		&i.Project.ID,
+		&i.Project.UpdateTime,
+		&i.Customer.DisplayName,
+		&i.Customer.Email,
+		&i.Customer.ID,
+		&i.Customer.PasswordHash,
+		&i.Customer.PictureUri,
+		&i.Customer.CreateTime,
+		&i.Customer.UpdateTime,
+	)
+	return i, err
+}
+
+const getProjectByIDAndCustomerID = `-- name: GetProjectByIDAndCustomerID :one
+select api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time from projects where id = $1 and customer_id = $2
+`
+
+type GetProjectByIDAndCustomerIDParams struct {
+	ID         string
+	CustomerID string
+}
+
+func (q *Queries) GetProjectByIDAndCustomerID(ctx context.Context, arg GetProjectByIDAndCustomerIDParams) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByIDAndCustomerID, arg.ID, arg.CustomerID)
 	var i Project
 	err := row.Scan(
 		&i.ApiKey,
@@ -87,7 +123,6 @@ func (q *Queries) GetProjectsByCustomerId(ctx context.Context, customerID string
 }
 
 const projectExistsForCustomer = `-- name: ProjectExistsForCustomer :one
-
 select exists(
   select 1
   from projects

@@ -9,7 +9,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/rpc/dashboard"
+	"github.com/fivebitsio/cotton/internal/rpc"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
@@ -26,10 +26,20 @@ func (s *server) Get(
 	ctx context.Context,
 	req *connect.Request[campaignsv1.GetRequest],
 ) (*connect.Response[campaignsv1.GetResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
 	campaign, err := s.service.GetCampaignById(ctx, req.Msg.Id)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed getting campaign", slog.Any("error", err), slog.String("campaignId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	// Verify campaign belongs to the authenticated project
+	if campaign.ProjectID != principal.Project.ID {
+		return nil, connect.NewError(connect.CodeNotFound, nil)
 	}
 
 	resp := connect.NewResponse(&campaignsv1.GetResponse{
@@ -43,9 +53,16 @@ func (s *server) BatchGet(
 	ctx context.Context,
 	req *connect.Request[campaignsv1.BatchGetRequest],
 ) (*connect.Response[campaignsv1.BatchGetResponse], error) {
-	campaigns, err := s.service.GetCampaignsByProjectID(ctx, req.Msg.ProjectId)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed getting campaigns by project ID", slog.Any("error", err), slog.String("projectId", req.Msg.ProjectId))
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	projectID := principal.Project.ID
+
+	campaigns, err := s.service.GetCampaignsByProjectID(ctx, projectID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed getting campaigns by project ID", slog.Any("error", err), slog.String("projectId", projectID))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -65,17 +82,13 @@ func (s *server) Create(
 	ctx context.Context,
 	req *connect.Request[campaignsv1.CreateRequest],
 ) (*connect.Response[campaignsv1.CreateResponse], error) {
-	customer, err := dashboard.GetCustomerFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get customer from context", slog.Any("error", err))
+		slog.ErrorContext(ctx, "failed to get principal from context", slog.Any("error", err))
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	exists, err := s.service.ProjectExistsForCustomer(ctx, req.Msg.ProjectId, customer.ID)
-	if !exists || err != nil {
-		slog.ErrorContext(ctx, "failed to verify project ownership", slog.Any("error", err), slog.String("projectId", req.Msg.ProjectId), slog.String("customerId", customer.ID))
-		return nil, connect.NewError(connect.CodeNotFound, err)
-	}
+	projectID := principal.Project.ID
 
 	var scheduledTimeParam *timestamppb.Timestamp
 	if req.Msg.ScheduledTime == nil {
@@ -87,13 +100,13 @@ func (s *server) Create(
 	campaign, err := s.service.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
 		ID:               xid.New().String(),
 		Name:             req.Msg.Name,
-		ProjectID:        req.Msg.ProjectId,
+		ProjectID:        projectID,
 		NotificationData: req.Msg.NotificationData,
 		ScheduledTime:    postgres.TimestampToTimestamptz(scheduledTimeParam),
 		Status:           "scheduled",
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed creating campaign", slog.Any("error", err), slog.String("projectId", req.Msg.ProjectId), slog.String("campaignName", req.Msg.Name))
+		slog.ErrorContext(ctx, "failed creating campaign", slog.Any("error", err), slog.String("projectId", projectID), slog.String("campaignName", req.Msg.Name))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -108,7 +121,14 @@ func (s *server) Delete(
 	ctx context.Context,
 	req *connect.Request[campaignsv1.DeleteRequest],
 ) (*connect.Response[campaignsv1.DeleteResponse], error) {
-	err := s.service.DeleteCampaign(ctx, req.Msg.Id, req.Msg.ProjectId)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	projectID := principal.Project.ID
+
+	err = s.service.DeleteCampaign(ctx, req.Msg.Id, projectID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed deleting campaign", slog.Any("error", err), slog.String("campaignId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)

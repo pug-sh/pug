@@ -16,16 +16,16 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1/subscriptionsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/users/v1/usersv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	cottonrpc "github.com/fivebitsio/cotton/internal/rpc"
-	"github.com/fivebitsio/cotton/internal/rpc/dashboard"
-	"github.com/fivebitsio/cotton/internal/rpc/dashboard/campaigns"
 	"github.com/fivebitsio/cotton/internal/rpc/dashboard/projects"
 	"github.com/fivebitsio/cotton/internal/rpc/public/auth"
-	"github.com/fivebitsio/cotton/internal/rpc/sdk"
-	"github.com/fivebitsio/cotton/internal/rpc/sdk/delivery"
+	"github.com/fivebitsio/cotton/internal/rpc/sdk/subscriptions"
 	usersrpc "github.com/fivebitsio/cotton/internal/rpc/sdk/users"
+	"github.com/fivebitsio/cotton/internal/rpc/shared/campaigns"
+	"github.com/fivebitsio/cotton/internal/rpc/shared/delivery"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/fivebitsio/cotton/pkg/postgres"
@@ -99,8 +99,12 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	handlerOpts := connect.WithInterceptors(validate.NewInterceptor(), cottonrpc.ErrorInterceptor())
 
 	// Middleware
-	dashboardMW := authn.NewMiddleware(dashboard.WithJWTAuth(deps.jwtKey, queriesRo))
-	sdkMW := authn.NewMiddleware(sdk.WithAPIKeyAuth(queriesRo))
+	// - Dashboard: JWT auth only (for dashboard-only services)
+	// - SDK: API key auth only (for SDK-only services)
+	// - Shared: Dual auth - accepts either JWT or API key (for services accessible from both)
+	dashboardMW := authn.NewMiddleware(cottonrpc.WithJWTAuth(deps.jwtKey, queriesRo))
+	sdkMW := authn.NewMiddleware(cottonrpc.WithAPIKeyAuth(queriesRo))
+	sharedMW := authn.NewMiddleware(cottonrpc.WithDualAuth(deps.jwtKey, queriesRo))
 
 	// Handlers
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
@@ -114,17 +118,27 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	usersPath, usersHandler := usersv1connect.NewUsersServiceHandler(
 		usersrpc.NewHandler(deps.pgRo, deps.pgW), handlerOpts)
 
+	subscriptionsServer, err := subscriptions.NewServer(deps.nats.GetJetStream())
+	if err != nil {
+		return err
+	}
+	subscriptionsPath, subscriptionsHandler := subscriptionsv1connect.NewSubscriptionsServiceHandler(
+		subscriptionsServer, handlerOpts)
+
 	mux := http.NewServeMux()
 
 	// Public (CORS, no auth)
 	mux.Handle(authPath, cottonrpc.WithCORS(authHandler))
 
-	// Dashboard (CORS + JWT auth)
+	// Dashboard only (CORS + JWT auth)
 	mux.Handle(projectsPath, cottonrpc.WithCORS(dashboardMW.Wrap(projectsHandler)))
-	mux.Handle(campaignsPath, cottonrpc.WithCORS(dashboardMW.Wrap(campaignsHandler)))
 
-	// SDK (API key auth, no CORS)
-	mux.Handle(deliveryPath, sdkMW.Wrap(deliveryHandler))
+	// Shared: Dashboard + SDK (CORS + dual auth)
+	mux.Handle(campaignsPath, cottonrpc.WithCORS(sharedMW.Wrap(campaignsHandler)))
+	mux.Handle(deliveryPath, cottonrpc.WithCORS(sharedMW.Wrap(deliveryHandler)))
+
+	// SDK only (API key auth, no CORS)
+	mux.Handle(subscriptionsPath, sdkMW.Wrap(subscriptionsHandler))
 	mux.Handle(usersPath, sdkMW.Wrap(usersHandler))
 
 	// Reflection
@@ -133,6 +147,7 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 		projectsv1connect.ProjectsServiceName,
 		campaignsv1connect.CampaignServiceName,
 		deliveryv1connect.DeliveryServiceName,
+		subscriptionsv1connect.SubscriptionsServiceName,
 		usersv1connect.UsersServiceName,
 	}
 	reflector := grpcreflect.NewStaticReflector(services...)

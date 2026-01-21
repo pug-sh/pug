@@ -7,7 +7,7 @@ import (
 	"connectrpc.com/connect"
 
 	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
-	"github.com/fivebitsio/cotton/internal/rpc/sdk"
+	"github.com/fivebitsio/cotton/internal/rpc"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
@@ -27,7 +27,7 @@ func (s *Server) Upsert(
 		return nil, err
 	}
 
-	project, err := sdk.GetProjectFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -38,7 +38,7 @@ func (s *Server) Upsert(
 		Metadata:      req.Msg.GetMetadata(),
 		Platform:      req.Msg.GetPlatform(),
 		Token:         req.Msg.GetToken(),
-		ProjectId:     project.ID,
+		ProjectId:     principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
@@ -66,7 +66,7 @@ func (s *Server) UpdateHeartbeat(
 		return nil, err
 	}
 
-	project, err := sdk.GetProjectFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -74,7 +74,7 @@ func (s *Server) UpdateHeartbeat(
 	msg := &subscriptionsv1.SubscriptionOperationMessage{
 		OperationType: subscriptionsv1.SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_HEARTBEAT,
 		Id:            req.Msg.GetId(),
-		ProjectId:     project.ID,
+		ProjectId:     principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
@@ -102,7 +102,7 @@ func (s *Server) UpdateMetadata(
 		return nil, err
 	}
 
-	project, err := sdk.GetProjectFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -111,7 +111,7 @@ func (s *Server) UpdateMetadata(
 		OperationType: subscriptionsv1.SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA,
 		Id:            req.Msg.GetId(),
 		Metadata:      req.Msg.GetMetadata(),
-		ProjectId:     project.ID,
+		ProjectId:     principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
@@ -139,7 +139,7 @@ func (s *Server) UpdateStatus(
 		return nil, err
 	}
 
-	project, err := sdk.GetProjectFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -148,7 +148,7 @@ func (s *Server) UpdateStatus(
 		OperationType: subscriptionsv1.SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS,
 		Id:            req.Msg.GetId(),
 		Status:        req.Msg.GetStatus(),
-		ProjectId:     project.ID,
+		ProjectId:     principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
@@ -176,7 +176,7 @@ func (s *Server) UpdateToken(
 		return nil, err
 	}
 
-	project, err := sdk.GetProjectFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -185,7 +185,7 @@ func (s *Server) UpdateToken(
 		OperationType: subscriptionsv1.SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN,
 		Id:            req.Msg.GetId(),
 		Token:         req.Msg.GetToken(),
-		ProjectId:     project.ID,
+		ProjectId:     principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
@@ -213,7 +213,7 @@ func (s *Server) RegisterSubscription(
 		return nil, err
 	}
 
-	project, err := sdk.GetProjectFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -225,7 +225,7 @@ func (s *Server) RegisterSubscription(
 		Metadata:      req.Msg.GetMetadata(),
 		Platform:      req.Msg.GetPlatform(),
 		Token:         req.Msg.GetToken(),
-		ProjectId:     project.ID,
+		ProjectId:     principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
@@ -256,7 +256,7 @@ func (s *Server) SetUserExternalID(
 		return nil, err
 	}
 
-	project, err := sdk.GetProjectFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -267,7 +267,7 @@ func (s *Server) SetUserExternalID(
 		SubscriptionId: req.Msg.GetSubscriptionId(),
 		ExternalId:     req.Msg.GetExternalId(),
 		UserMetadata:   req.Msg.GetUserMetadata(),
-		ProjectId:      project.ID,
+		ProjectId:      principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
