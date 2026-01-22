@@ -1,6 +1,8 @@
 edition = "2023";
 package delivery.v1;
+
 import "google/protobuf/timestamp.proto";
+
 option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1;deliveryv1";
 
@@ -29,32 +31,31 @@ enum EventType {
   EVENT_TYPE_UNSPECIFIED = 0;
   EVENT_TYPE_SENT = 1;
   EVENT_TYPE_RECEIVED = 2;
-  EVENT_TYPE_FAILED = 3;    // FCM delivery failed
-  EVENT_TYPE_CLICKED = 4;     // User clicked the notification
-  EVENT_TYPE_DISMISSED = 5;   // User dismissed the notification
+  EVENT_TYPE_FAILED = 3; // FCM delivery failed
+  EVENT_TYPE_CLICKED = 4; // User clicked the notification
+  EVENT_TYPE_DISMISSED = 5; // User dismissed the notification
 }
 
 // Request sent by subscription when notification events occur
 message RecordEventRequest {
   // Core identifiers
-  string project_id = 1;        // Project ID from notification payload
-  string campaign_id = 2;        // Campaign ID from notification payload
-  string message_id = 3;        // FCM message ID from notification
-  string subscription_id = 4;          // Subscription identifier
+  string campaign_id = 1;
+  string message_id = 2;
+  string subscription_id = 3;
   // Event information
-  EventType event_type = 5;      // Type of event that occurred
-  Platform platform = 6;        // Subscription platform
+  EventType event_type = 4;
+  Platform platform = 5;
   // Timing (optional - server can use current time if not provided)
-  google.protobuf.Timestamp event_timestamp = 7;
+  google.protobuf.Timestamp event_timestamp = 6;
   // Additional context (optional)
-  map<string, string> metadata = 8;  // Any additional data from subscription
+  map<string, string> metadata = 7;
 }
 
 // Response sent back to subscription
 message RecordEventResponse {
   bool success = 1;
   string message = 2;
-  
+
   bool should_retry = 3;
   int32 retry_after_seconds = 4;
 }
@@ -78,6 +79,18 @@ message BatchMulticastMessage {
 
 message BatchUnicastMessage {}
 
+// Internal message for NATS delivery event processing
+message DeliveryEventMessage {
+  string project_id = 1;
+  string campaign_id = 2;
+  string message_id = 3;
+  string subscription_id = 4;
+  EventType event_type = 5;
+  Platform platform = 6;
+  google.protobuf.Timestamp event_timestamp = 7;
+  map<string, string> metadata = 8;
+}
+
 message BatchDeliveryEvents {
-  repeated RecordEventRequest events = 1;
+  repeated DeliveryEventMessage events = 1;
 }

@@ -80,6 +80,11 @@ PostgreSQL uses read/write separation:
 - Queries in `schema/postgres/queries/read/` generate to `internal/gen/repo/dbread/`
 - Queries in `schema/postgres/queries/write/` generate to `internal/gen/repo/dbwrite/`
 
+**sqlc conventions**:
+- Query names: PascalCase with uppercase `ID` (e.g., `GetCampaignByID`, `GetProjectsByCustomerID`)
+- SQL syntax and identifiers: lowercase (e.g., `select * from campaigns where project_id = @project_id`)
+- Partial updates: use `coalesce(nullif(@field, ''), field)` to preserve existing values when empty
+
 ### Proto/RPC
 
 Services defined in `proto/` directory. Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled.
@@ -97,4 +102,4 @@ Located in `web/`. Uses:
 ## Code Style
 
 - **Frontend**: Use pnpm as package manager. Use TanStack Form for forms. Do not modify `web/src/components/ui/` components.
-- **Backend**: Standard Go conventions. Use slog for logging.
+- **Backend**: Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change.

@@ -1,6 +1,6 @@
--- name: GetUserByID :one
+-- name: GetUserByIDAndProjectID :one
 select * from users
-where id = @id;
+where id = @id and project_id = @project_id;
 
 -- name: GetUserByProjectAndExternalID :one
 select * from users

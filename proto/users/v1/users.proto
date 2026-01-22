@@ -37,16 +37,13 @@ message GetResponse {
 
 message GetByExternalIdRequest {
   string external_id = 1;
-  string project_id = 2;
 }
 
 message GetByExternalIdResponse {
   User user = 1;
 }
 
-message ListRequest {
-  string project_id = 1;
-}
+message ListRequest {}
 
 message ListResponse {
   repeated User users = 1;
@@ -54,9 +51,8 @@ message ListResponse {
 
 message CreateRequest {
   string external_id = 1;
-  string project_id = 2;
-  google.protobuf.Struct properties = 3;
-  google.protobuf.Struct custom_properties = 4;
+  google.protobuf.Struct properties = 2;
+  google.protobuf.Struct custom_properties = 3;
 }
 
 message CreateResponse {

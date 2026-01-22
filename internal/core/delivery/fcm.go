@@ -2,7 +2,6 @@ package delivery
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -55,7 +54,7 @@ func (f *FCMService) getMessagingClient(ctx context.Context, projectID, fcmServi
 // SendNotification sends a push notification to a device token via FCM
 func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campaign, subscription dbread.Subscription) error {
 	// Get project details to access FCM service JSON
-	project, err := f.projectsSvc.GetProjectById(ctx, campaign.ProjectID)
+	project, err := f.projectsSvc.GetProjectByID(ctx, campaign.ProjectID)
 	if err != nil {
 		return fmt.Errorf("failed to get project: %w", err)
 	}
@@ -67,18 +66,12 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 		return fmt.Errorf("no FCM service configuration for project: %s", campaign.ProjectID)
 	}
 
-	// Parse the notification data from the campaign
-	var notificationData map[string]interface{}
-	if err := json.Unmarshal(campaign.NotificationData, &notificationData); err != nil {
-		return fmt.Errorf("failed to unmarshal notification data: %w", err)
-	}
-
 	// Extract title and body from notification data
-	title, ok := notificationData["title"].(string)
+	title, ok := campaign.NotificationData["title"].(string)
 	if !ok {
 		title = "Notification"
 	}
-	body, ok := notificationData["body"].(string)
+	body, ok := campaign.NotificationData["body"].(string)
 	if !ok {
 		body = "You have a new notification"
 	}

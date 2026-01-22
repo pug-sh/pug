@@ -7,8 +7,6 @@ package dbread
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getCustomerByEmail = `-- name: GetCustomerByEmail :one
@@ -28,39 +26,6 @@ func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (Custome
 		&i.PictureUri,
 		&i.CreateTime,
 		&i.UpdateTime,
-	)
-	return i, err
-}
-
-const getCustomerByEmailWithPassword = `-- name: GetCustomerByEmailWithPassword :one
-select display_name, email, id, password_hash, picture_uri, create_time, update_time, password_hash
-from customers
-where email = $1
-`
-
-type GetCustomerByEmailWithPasswordRow struct {
-	DisplayName    string
-	Email          string
-	ID             string
-	PasswordHash   string
-	PictureUri     string
-	CreateTime     pgtype.Timestamptz
-	UpdateTime     pgtype.Timestamptz
-	PasswordHash_2 string
-}
-
-func (q *Queries) GetCustomerByEmailWithPassword(ctx context.Context, email string) (GetCustomerByEmailWithPasswordRow, error) {
-	row := q.db.QueryRow(ctx, getCustomerByEmailWithPassword, email)
-	var i GetCustomerByEmailWithPasswordRow
-	err := row.Scan(
-		&i.DisplayName,
-		&i.Email,
-		&i.ID,
-		&i.PasswordHash,
-		&i.PictureUri,
-		&i.CreateTime,
-		&i.UpdateTime,
-		&i.PasswordHash_2,
 	)
 	return i, err
 }

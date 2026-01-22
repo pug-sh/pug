@@ -13,7 +13,7 @@ type Campaign struct {
 	EndTime          pgtype.Timestamptz
 	ID               string
 	Name             string
-	NotificationData []byte
+	NotificationData map[string]any
 	ProjectID        string
 	ScheduledTime    pgtype.Timestamptz
 	StartTime        pgtype.Timestamptz
@@ -46,7 +46,7 @@ type Segment struct {
 	ProjectID   string
 	Name        string
 	Description pgtype.Text
-	Filter      []byte
+	Filter      map[string]any
 	IsActive    bool
 	CreateTime  pgtype.Timestamptz
 	UpdateTime  pgtype.Timestamptz
@@ -56,7 +56,7 @@ type Subscription struct {
 	CreateTime        pgtype.Timestamptz
 	ID                string
 	LastHeartbeatTime pgtype.Timestamptz
-	Metadata          []byte
+	Metadata          map[string]any
 	Platform          string
 	ProjectID         string
 	Status            string
@@ -70,8 +70,8 @@ type User struct {
 	CreateTime       pgtype.Timestamptz
 	ExternalID       string
 	ID               string
-	Properties       []byte
-	CustomProperties []byte
+	Properties       map[string]any
+	CustomProperties map[string]any
 	ProjectID        string
 	UpdateTime       pgtype.Timestamptz
 }

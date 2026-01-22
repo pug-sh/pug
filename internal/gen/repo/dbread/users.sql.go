@@ -9,13 +9,18 @@ import (
 	"context"
 )
 
-const getUserByID = `-- name: GetUserByID :one
+const getUserByIDAndProjectID = `-- name: GetUserByIDAndProjectID :one
 select create_time, external_id, id, properties, custom_properties, project_id, update_time from users
-where id = $1
+where id = $1 and project_id = $2
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByID, id)
+type GetUserByIDAndProjectIDParams struct {
+	ID        string
+	ProjectID string
+}
+
+func (q *Queries) GetUserByIDAndProjectID(ctx context.Context, arg GetUserByIDAndProjectIDParams) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByIDAndProjectID, arg.ID, arg.ProjectID)
 	var i User
 	err := row.Scan(
 		&i.CreateTime,

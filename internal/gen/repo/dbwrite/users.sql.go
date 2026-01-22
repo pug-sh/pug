@@ -11,7 +11,7 @@ import (
 
 const createUser = `-- name: CreateUser :one
 insert into users (id, project_id, external_id, properties, custom_properties)
-values ($1, $2, $3, $4, $5)
+values ($1, $2, $3, coalesce($4, '{}'), coalesce($5, '{}'))
 returning create_time, external_id, id, properties, custom_properties, project_id, update_time
 `
 
@@ -19,8 +19,8 @@ type CreateUserParams struct {
 	ID               string
 	ProjectID        string
 	ExternalID       string
-	Properties       []byte
-	CustomProperties []byte
+	Properties       interface{}
+	CustomProperties interface{}
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -44,30 +44,36 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
-const deleteUserByID = `-- name: DeleteUserByID :exec
+const deleteUserByIDAndProjectID = `-- name: DeleteUserByIDAndProjectID :exec
 delete from users
-where id = $1
+where id = $1 and project_id = $2
 `
 
-func (q *Queries) DeleteUserByID(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteUserByID, id)
+type DeleteUserByIDAndProjectIDParams struct {
+	ID        string
+	ProjectID string
+}
+
+func (q *Queries) DeleteUserByIDAndProjectID(ctx context.Context, arg DeleteUserByIDAndProjectIDParams) error {
+	_, err := q.db.Exec(ctx, deleteUserByIDAndProjectID, arg.ID, arg.ProjectID)
 	return err
 }
 
 const updateUserCustomProperties = `-- name: UpdateUserCustomProperties :one
 update users
-set custom_properties = $1, update_time = now()
-where id = $2
+set custom_properties = coalesce($1, '{}'), update_time = now()
+where id = $2 and project_id = $3
 returning create_time, external_id, id, properties, custom_properties, project_id, update_time
 `
 
 type UpdateUserCustomPropertiesParams struct {
-	CustomProperties []byte
+	CustomProperties map[string]any
 	ID               string
+	ProjectID        string
 }
 
 func (q *Queries) UpdateUserCustomProperties(ctx context.Context, arg UpdateUserCustomPropertiesParams) (User, error) {
-	row := q.db.QueryRow(ctx, updateUserCustomProperties, arg.CustomProperties, arg.ID)
+	row := q.db.QueryRow(ctx, updateUserCustomProperties, arg.CustomProperties, arg.ID, arg.ProjectID)
 	var i User
 	err := row.Scan(
 		&i.CreateTime,
@@ -83,18 +89,19 @@ func (q *Queries) UpdateUserCustomProperties(ctx context.Context, arg UpdateUser
 
 const updateUserProperties = `-- name: UpdateUserProperties :one
 update users
-set properties = $1, update_time = now()
-where id = $2
+set properties = coalesce($1, '{}'), update_time = now()
+where id = $2 and project_id = $3
 returning create_time, external_id, id, properties, custom_properties, project_id, update_time
 `
 
 type UpdateUserPropertiesParams struct {
-	Properties []byte
+	Properties map[string]any
 	ID         string
+	ProjectID  string
 }
 
 func (q *Queries) UpdateUserProperties(ctx context.Context, arg UpdateUserPropertiesParams) (User, error) {
-	row := q.db.QueryRow(ctx, updateUserProperties, arg.Properties, arg.ID)
+	row := q.db.QueryRow(ctx, updateUserProperties, arg.Properties, arg.ID, arg.ProjectID)
 	var i User
 	err := row.Scan(
 		&i.CreateTime,

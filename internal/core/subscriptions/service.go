@@ -7,29 +7,31 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/xid"
 )
 
 type Service struct {
-	repo *repo
+	read  *dbread.Queries
+	write *dbwrite.Queries
 }
 
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
 	return &Service{
-		repo: newRepo(pgRO, pgW),
+		read:  dbread.New(pgRO),
+		write: dbwrite.New(pgW),
 	}
 }
 
-func (s *Service) CreateSubscription(ctx context.Context, projectID, token, platform string, metadata []byte, status string) (dbwrite.Subscription, error) {
+func (s *Service) CreateSubscription(ctx context.Context, id, projectID, token, platform string, metadata map[string]any, status, updater string) (dbwrite.Subscription, error) {
 	params := dbwrite.CreateSubscriptionParams{
-		ID:        xid.New().String(),
+		ID:        id,
 		ProjectID: projectID,
 		Token:     token,
 		Platform:  platform,
 		Metadata:  metadata,
 		Status:    status,
+		Updater:   updater,
 	}
-	return s.repo.CreateSubscription(ctx, params)
+	return s.write.CreateSubscription(ctx, params)
 }
 
 func (s *Service) GetSubscription(ctx context.Context, id, projectID string) (dbwrite.Subscription, error) {
@@ -37,7 +39,7 @@ func (s *Service) GetSubscription(ctx context.Context, id, projectID string) (db
 		ID:        id,
 		ProjectID: projectID,
 	}
-	return s.repo.GetSubscription(ctx, params)
+	return s.write.GetSubscription(ctx, params)
 }
 
 func (s *Service) UpdateSubscriptionHeartbeat(ctx context.Context, id, projectID string) (dbwrite.Subscription, error) {
@@ -45,16 +47,16 @@ func (s *Service) UpdateSubscriptionHeartbeat(ctx context.Context, id, projectID
 		ID:        id,
 		ProjectID: projectID,
 	}
-	return s.repo.UpdateSubscriptionHeartbeat(ctx, params)
+	return s.write.UpdateSubscriptionHeartbeat(ctx, params)
 }
 
-func (s *Service) UpdateSubscriptionMetadata(ctx context.Context, id, projectID string, metadata []byte) (dbwrite.Subscription, error) {
+func (s *Service) UpdateSubscriptionMetadata(ctx context.Context, id, projectID string, metadata map[string]any) (dbwrite.Subscription, error) {
 	params := dbwrite.UpdateSubscriptionMetadataParams{
 		Metadata:  metadata,
 		ID:        id,
 		ProjectID: projectID,
 	}
-	return s.repo.UpdateSubscriptionMetadata(ctx, params)
+	return s.write.UpdateSubscriptionMetadata(ctx, params)
 }
 
 func (s *Service) UpdateSubscriptionPlatform(ctx context.Context, id, projectID, platform string) (dbwrite.Subscription, error) {
@@ -63,7 +65,7 @@ func (s *Service) UpdateSubscriptionPlatform(ctx context.Context, id, projectID,
 		ID:        id,
 		ProjectID: projectID,
 	}
-	return s.repo.UpdateSubscriptionPlatform(ctx, params)
+	return s.write.UpdateSubscriptionPlatform(ctx, params)
 }
 
 func (s *Service) UpdateSubscriptionStatus(ctx context.Context, id, projectID, status string) (dbwrite.Subscription, error) {
@@ -72,7 +74,7 @@ func (s *Service) UpdateSubscriptionStatus(ctx context.Context, id, projectID, s
 		ID:        id,
 		ProjectID: projectID,
 	}
-	return s.repo.UpdateSubscriptionStatus(ctx, params)
+	return s.write.UpdateSubscriptionStatus(ctx, params)
 }
 
 func (s *Service) UpdateSubscriptionToken(ctx context.Context, id, projectID, token string) (dbwrite.Subscription, error) {
@@ -81,7 +83,7 @@ func (s *Service) UpdateSubscriptionToken(ctx context.Context, id, projectID, to
 		ID:        id,
 		ProjectID: projectID,
 	}
-	return s.repo.UpdateSubscriptionToken(ctx, params)
+	return s.write.UpdateSubscriptionToken(ctx, params)
 }
 
 func (s *Service) LinkSubscriptionToUser(ctx context.Context, id, projectID, userID string) (dbwrite.Subscription, error) {
@@ -90,9 +92,9 @@ func (s *Service) LinkSubscriptionToUser(ctx context.Context, id, projectID, use
 		ID:        id,
 		ProjectID: projectID,
 	}
-	return s.repo.LinkSubscriptionToUser(ctx, params)
+	return s.write.LinkSubscriptionToUser(ctx, params)
 }
 
 func (s *Service) GetSubscriptionsByProject(ctx context.Context, projectID string) ([]dbread.Subscription, error) {
-	return s.repo.GetSubscriptionsByProject(ctx, projectID)
+	return s.read.GetSubscriptionsByProject(ctx, projectID)
 }

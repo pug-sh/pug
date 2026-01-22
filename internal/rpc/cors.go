@@ -1,4 +1,4 @@
-package interceptors
+package rpc
 
 import (
 	"net/http"
@@ -9,6 +9,8 @@ import (
 )
 
 func WithCORS(connectHandler http.Handler) http.Handler {
+	// todo- replace wildcard origin with specific allowed origins in production.
+	// using "*" with allowcredentials is insecure and allows csrf attacks.
 	c := cors.New(cors.Options{
 		AllowedOrigins: []string{"*"},
 		AllowedMethods: append(connectcors.AllowedMethods(), http.MethodOptions),

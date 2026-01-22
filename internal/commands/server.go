@@ -7,23 +7,26 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
-	"github.com/fivebitsio/cotton/internal/core/users"
+	"connectrpc.com/validate"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1/subscriptionsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/users/v1/usersv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/rpc/auth"
-	"github.com/fivebitsio/cotton/internal/rpc/campaigns"
-	"github.com/fivebitsio/cotton/internal/rpc/delivery"
-	"github.com/fivebitsio/cotton/internal/rpc/interceptors"
-	"github.com/fivebitsio/cotton/internal/rpc/projects"
-	usersrpc "github.com/fivebitsio/cotton/internal/rpc/users"
+	cottonrpc "github.com/fivebitsio/cotton/internal/rpc"
+	"github.com/fivebitsio/cotton/internal/rpc/dashboard/projects"
+	"github.com/fivebitsio/cotton/internal/rpc/public/auth"
+	"github.com/fivebitsio/cotton/internal/rpc/sdk/subscriptions"
+	usersrpc "github.com/fivebitsio/cotton/internal/rpc/sdk/users"
+	"github.com/fivebitsio/cotton/internal/rpc/shared/campaigns"
+	"github.com/fivebitsio/cotton/internal/rpc/shared/delivery"
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/fivebitsio/cotton/pkg/postgres"
@@ -43,20 +46,34 @@ type serverDeps struct {
 	campaignsProducer  jetstream.JetStream
 	deliveriesProducer jetstream.JetStream
 	jwtKey             []byte
+	port               string
+}
+
+func (deps *serverDeps) Close(ctx context.Context) {
+	deps.pgRo.Close()
+	deps.pgW.Close()
+	if deps.nats != nil {
+		deps.nats.Close()
+	}
 }
 
 func newServerDeps(ctx context.Context) (*serverDeps, error) {
-	var cfg postgres.Config
-	if err := envconfig.Process(ctx, &cfg); err != nil {
+	var serverCfg ServerConfig
+	if err := envconfig.Process(ctx, &serverCfg); err != nil {
 		return nil, err
 	}
 
-	pgRo, err := postgres.NewReaderPool(ctx, &cfg)
+	var pgCfg postgres.Config
+	if err := envconfig.Process(ctx, &pgCfg); err != nil {
+		return nil, err
+	}
+
+	pgRo, err := postgres.NewReaderPool(ctx, &pgCfg)
 	if err != nil {
 		return nil, err
 	}
 
-	pgW, err := postgres.NewWriterPool(ctx, &cfg)
+	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -66,112 +83,99 @@ func newServerDeps(ctx context.Context) (*serverDeps, error) {
 		return nil, err
 	}
 
-	jwtKey := []byte("your-jwt-secret-key-here")
-
-	js := natsClient.GetJetStream()
-
 	return &serverDeps{
 		pgRo:               pgRo,
 		pgW:                pgW,
 		nats:               natsClient,
-		campaignsProducer:  js,
-		deliveriesProducer: js,
-		jwtKey:             jwtKey,
+		campaignsProducer:  natsClient.GetJetStream(),
+		deliveriesProducer: natsClient.GetJetStream(),
+		jwtKey:             []byte(serverCfg.JWTKey),
+		port:               serverCfg.Port,
 	}, nil
 }
 
-// StartServer starts the Cotton HTTP/gRPC server with the given dependencies
 func StartServer(ctx context.Context, deps *serverDeps) error {
 	queriesRo := dbread.New(deps.pgRo)
 
-	commonHandlerOptions := func() connect.HandlerOption {
-		return connect.WithInterceptors(interceptors.ErrorInterceptor())
-	}
+	handlerOpts := connect.WithInterceptors(validate.NewInterceptor(), cottonrpc.ErrorInterceptor())
 
-	authServer := auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey)
+	// Middleware
+	// - Dashboard: JWT auth only (for dashboard-only services)
+	// - SDK: API key auth only (for SDK-only services)
+	// - Shared: Dual auth - accepts either JWT or API key (for services accessible from both)
+	dashboardMW := authn.NewMiddleware(cottonrpc.WithJWTAuth(deps.jwtKey, queriesRo))
+	sdkMW := authn.NewMiddleware(cottonrpc.WithAPIKeyAuth(queriesRo))
+	sharedMW := authn.NewMiddleware(cottonrpc.WithDualAuth(deps.jwtKey, queriesRo))
+
+	// Handlers
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
-		authServer,
-		commonHandlerOptions(),
-	)
-
-	projectsServer := projects.NewServer(deps.pgRo, deps.pgW)
+		auth.NewServer(deps.pgRo, deps.pgW, deps.jwtKey), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-		projectsServer,
-		commonHandlerOptions(),
-	)
-	projectsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(projectsHandler)
-
-	// ... existing code ...
-	campaignsServer := campaigns.NewServer(deps.pgRo, deps.pgW, deps.campaignsProducer)
+		projects.NewServer(deps.pgRo, deps.pgW), handlerOpts)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
-		campaignsServer,
-		commonHandlerOptions(),
-	)
-	campaignsHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(campaignsHandler)
-
-	deliveryServer := delivery.NewServer(deps.deliveriesProducer)
+		campaigns.NewServer(deps.pgRo, deps.pgW, deps.campaignsProducer), handlerOpts)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
-		deliveryServer,
-		commonHandlerOptions(),
-	)
-	deliveryHandler = authn.NewMiddleware(interceptors.JwtAuth(deps.jwtKey, queriesRo)).Wrap(deliveryHandler)
-
-	usersServer := users.NewService(deps.pgRo, deps.pgW)
-	usersHandlerObj := usersrpc.NewHandler(usersServer)
+		delivery.NewServer(deps.deliveriesProducer), handlerOpts)
 	usersPath, usersHandler := usersv1connect.NewUsersServiceHandler(
-		usersHandlerObj,
-		commonHandlerOptions(),
-	)
+		usersrpc.NewHandler(deps.pgRo, deps.pgW), handlerOpts)
 
-	handler := http.NewServeMux()
-	handler.Handle(authPath, authHandler)
-	handler.Handle(projectsPath, projectsHandler)
-	handler.Handle(campaignsPath, campaignsHandler)
-	handler.Handle(deliveryPath, deliveryHandler)
-	handler.Handle(usersPath, usersHandler)
+	subscriptionsServer, err := subscriptions.NewServer(deps.nats.GetJetStream())
+	if err != nil {
+		return err
+	}
+	subscriptionsPath, subscriptionsHandler := subscriptionsv1connect.NewSubscriptionsServiceHandler(
+		subscriptionsServer, handlerOpts)
 
+	mux := http.NewServeMux()
+
+	// Public (CORS, no auth)
+	mux.Handle(authPath, cottonrpc.WithCORS(authHandler))
+
+	// Dashboard only (CORS + JWT auth)
+	mux.Handle(projectsPath, cottonrpc.WithCORS(dashboardMW.Wrap(projectsHandler)))
+
+	// Shared: Dashboard + SDK (CORS + dual auth)
+	mux.Handle(campaignsPath, cottonrpc.WithCORS(sharedMW.Wrap(campaignsHandler)))
+	mux.Handle(deliveryPath, cottonrpc.WithCORS(sharedMW.Wrap(deliveryHandler)))
+
+	// SDK only (API key auth, no CORS)
+	mux.Handle(subscriptionsPath, sdkMW.Wrap(subscriptionsHandler))
+	mux.Handle(usersPath, sdkMW.Wrap(usersHandler))
+
+	// Reflection
 	services := []string{
 		authv1connect.AuthServiceName,
 		projectsv1connect.ProjectsServiceName,
 		campaignsv1connect.CampaignServiceName,
 		deliveryv1connect.DeliveryServiceName,
+		subscriptionsv1connect.SubscriptionsServiceName,
 		usersv1connect.UsersServiceName,
 	}
-
 	reflector := grpcreflect.NewStaticReflector(services...)
-	handler.Handle(grpcreflect.NewHandlerV1(reflector))
-	handler.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
-
-	handlerWithCORS := interceptors.WithCORS(handler)
-
-	h2cHandler := h2c.NewHandler(handlerWithCORS, &http2.Server{})
-
-	port := os.Getenv("SERVER_PORT")
-	if port == "" {
-		port = "3000" // Default port
-	}
-	addr := ":" + port
+	mux.Handle(grpcreflect.NewHandlerV1(reflector))
+	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
 
 	server := &http.Server{
-		Addr:    addr,
-		Handler: h2cHandler,
+		Addr:    ":" + deps.port,
+		Handler: h2c.NewHandler(mux, &http2.Server{}),
 	}
 
-	logger.Log.Info("Starting server", slog.String("addr", addr))
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Log.Error("server shutdown error", slog.Any("error", err))
+		}
+	}()
+
+	logger.Log.Info("Starting server", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Log.Error("failed to serve", slog.Any("err", err))
 		return err
 	}
 
 	return nil
-}
-
-func (deps *serverDeps) Close(ctx context.Context) {
-	deps.pgRo.Close()
-	deps.pgW.Close()
-	if deps.nats != nil {
-		deps.nats.Close()
-	}
 }
 
 var ServerCmd = &cobra.Command{
@@ -195,12 +199,9 @@ var ServerCmd = &cobra.Command{
 
 		defer deps.Close(ctx)
 
-		serverErrChan := make(chan error, 1)
-		go func() {
-			serverErrChan <- StartServer(ctx, deps)
-		}()
-
-		<-ctx.Done()
-		logger.Log.Info("Shutting down server...")
+		if err := StartServer(ctx, deps); err != nil {
+			logger.Log.Error("server error", slog.Any("err", err))
+			os.Exit(1)
+		}
 	},
 }
