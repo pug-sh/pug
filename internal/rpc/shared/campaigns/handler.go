@@ -86,7 +86,6 @@ func (s *server) Create(
 ) (*connect.Response[campaignsv1.CreateResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get principal from context", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
