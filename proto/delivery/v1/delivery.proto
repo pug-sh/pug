@@ -1,6 +1,8 @@
 edition = "2023";
 package delivery.v1;
+
 import "google/protobuf/timestamp.proto";
+
 option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1;deliveryv1";
 
@@ -29,9 +31,9 @@ enum EventType {
   EVENT_TYPE_UNSPECIFIED = 0;
   EVENT_TYPE_SENT = 1;
   EVENT_TYPE_RECEIVED = 2;
-  EVENT_TYPE_FAILED = 3;    // FCM delivery failed
-  EVENT_TYPE_CLICKED = 4;     // User clicked the notification
-  EVENT_TYPE_DISMISSED = 5;   // User dismissed the notification
+  EVENT_TYPE_FAILED = 3; // FCM delivery failed
+  EVENT_TYPE_CLICKED = 4; // User clicked the notification
+  EVENT_TYPE_DISMISSED = 5; // User dismissed the notification
 }
 
 // Request sent by subscription when notification events occur
@@ -53,7 +55,7 @@ message RecordEventRequest {
 message RecordEventResponse {
   bool success = 1;
   string message = 2;
-  
+
   bool should_retry = 3;
   int32 retry_after_seconds = 4;
 }

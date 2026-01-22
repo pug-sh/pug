@@ -12,7 +12,7 @@ service SubscriptionsService {
   rpc UpdateMetadata(UpdateMetadataRequest) returns (UpdateMetadataResponse) {}
   rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse) {}
   rpc UpdateToken(UpdateTokenRequest) returns (UpdateTokenResponse) {}
-  
+
   // SDK support methods
   rpc RegisterSubscription(RegisterSubscriptionRequest) returns (RegisterSubscriptionResponse) {}
   rpc SetUserExternalID(SetUserExternalIDRequest) returns (SetUserExternalIDResponse) {}
@@ -111,5 +111,3 @@ message SetUserExternalIDResponse {
   bool user_was_created = 3; // true if user was just created
   bool subscription_was_linked = 4; // true if subscription was successfully linked to user
 }
-
-
