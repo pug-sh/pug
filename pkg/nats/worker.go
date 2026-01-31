@@ -51,6 +51,7 @@ func NewWorker(config WorkerConfig, processor MessageProcessor) (Worker, error) 
 	if config.ProcessingTimeout <= 0 {
 		config.ProcessingTimeout = DefaultProcessingTimeout
 	}
+	// Safety net: ensure a finite retry limit even if YAML config omits max_deliver
 	if config.MaxDeliver <= 0 {
 		config.MaxDeliver = DefaultMaxDeliver
 	}
