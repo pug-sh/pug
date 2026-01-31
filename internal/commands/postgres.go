@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -10,55 +11,12 @@ import (
 
 	"github.com/fivebitsio/cotton/pkg/logger"
 	"github.com/fivebitsio/cotton/pkg/postgres"
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
+	"github.com/pressly/goose/v3"
 	"github.com/sethvargo/go-envconfig"
 	"github.com/spf13/cobra"
 )
-
-type migrateDeps struct {
-	Migration *migrate.Migrate
-}
-
-func (deps *migrateDeps) Close(ctx context.Context) error {
-	deps.Migration.Close()
-	return nil
-}
-
-func newMigrateDeps(ctx context.Context) (*migrateDeps, error) {
-	var databaseConfig postgres.Config
-
-	if err := envconfig.Process(ctx, &databaseConfig); err != nil {
-		logger.Log.Error("error loading database config", slog.Any("err", err))
-		os.Exit(1)
-	}
-
-	wd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-
-	absPath := filepath.Join(wd, "schema", "postgres", "migrations")
-
-	absPath, err = filepath.Abs(absPath)
-	if err != nil {
-		return nil, err
-	}
-
-	migration, err := migrate.New(
-		"file://"+absPath,
-		databaseConfig.ConnectionString(),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &migrateDeps{
-		Migration: migration,
-	}, nil
-}
 
 var MigrateCmd = &cobra.Command{
 	Use:   "migrate",
@@ -75,26 +33,39 @@ var MigrateCmd = &cobra.Command{
 		direction, _ := cmd.Flags().GetString("direction")
 		numOfMigrations, _ := cmd.Flags().GetInt("num")
 
-		deps, err := newMigrateDeps(ctx)
-
-		if err != nil {
-			logger.Log.Error("error while initializing dependencies", slog.Any("err", err))
+		var databaseConfig postgres.Config
+		if err := envconfig.Process(ctx, &databaseConfig); err != nil {
+			logger.Log.Error("error loading database config", slog.Any("err", err))
 			os.Exit(1)
 		}
 
-		defer func() {
-			done()
-			deps.Close(ctx)
-		}()
+		db, err := sql.Open("pgx", databaseConfig.ConnectionString())
+		if err != nil {
+			logger.Log.Error("error opening database connection", slog.Any("err", err))
+			os.Exit(1)
+		}
+		defer db.Close()
+
+		wd, err := os.Getwd()
+		if err != nil {
+			logger.Log.Error("error getting working directory", slog.Any("err", err))
+			os.Exit(1)
+		}
+		migrationsDir := filepath.Join(wd, "schema", "postgres", "migrations")
+
+		if err := goose.SetDialect("postgres"); err != nil {
+			logger.Log.Error("error setting goose dialect", slog.Any("err", err))
+			os.Exit(1)
+		}
 
 		switch direction {
 		case "up":
-			if err := runMigrationsUp(deps.Migration, numOfMigrations); err != nil {
+			if err := runMigrationsUp(ctx, db, migrationsDir, numOfMigrations); err != nil {
 				logger.Log.Error("Error while applying migrations", slog.Any("err", err))
 				os.Exit(1)
 			}
 		case "down":
-			if err := runMigrationsDown(deps.Migration, numOfMigrations); err != nil {
+			if err := runMigrationsDown(ctx, db, migrationsDir, numOfMigrations); err != nil {
 				logger.Log.Error("Error while rolling back migrations", slog.Any("err", err))
 				os.Exit(1)
 			}
@@ -102,16 +73,22 @@ var MigrateCmd = &cobra.Command{
 	},
 }
 
-func runMigrationsUp(migration *migrate.Migrate, num int) error {
+func runMigrationsUp(ctx context.Context, db *sql.DB, dir string, num int) error {
 	if num == 0 {
-		if err := migration.Up(); err != nil && err != migrate.ErrNoChange {
+		if err := goose.UpContext(ctx, db, dir); err != nil {
 			return err
 		}
 		logger.Log.Info("applied all migrations")
 		return nil
 	}
 
-	if err := migration.Steps(num); err != nil && err != migrate.ErrNoChange {
+	current, err := goose.GetDBVersionContext(ctx, db)
+	if err != nil {
+		return err
+	}
+	target := current + int64(num)
+
+	if err := goose.UpToContext(ctx, db, dir, target); err != nil {
 		return err
 	}
 
@@ -119,17 +96,28 @@ func runMigrationsUp(migration *migrate.Migrate, num int) error {
 	return nil
 }
 
-func runMigrationsDown(migration *migrate.Migrate, num int) error {
+func runMigrationsDown(ctx context.Context, db *sql.DB, dir string, num int) error {
 	if num == 0 {
-		if err := migration.Down(); err != nil && err != migrate.ErrNoChange {
-			return err
+		for {
+			current, err := goose.GetDBVersionContext(ctx, db)
+			if err != nil {
+				return err
+			}
+			if current == 0 {
+				break
+			}
+			if err := goose.DownContext(ctx, db, dir); err != nil {
+				return err
+			}
 		}
 		logger.Log.Info("rolled back all migrations")
 		return nil
 	}
 
-	if err := migration.Steps(-num); err != nil && err != migrate.ErrNoChange {
-		return err
+	for i := 0; i < num; i++ {
+		if err := goose.DownContext(ctx, db, dir); err != nil {
+			return err
+		}
 	}
 
 	logger.Log.Info("rolled back migrations", slog.Int("rolledBackMigrations", num))

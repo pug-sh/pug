@@ -55,7 +55,7 @@ func (c *Config) ConnectionString() string {
 }
 
 func (c *Config) DSN() string {
-	// For ClickHouse with golang-migrate, use the standard format
+	// Standard ClickHouse DSN format for database/sql
 	return fmt.Sprintf("clickhouse://%s@%s:%s/%s",
 		url.UserPassword(c.Username, c.Password).String(), c.Host, c.Port, c.Database)
 }

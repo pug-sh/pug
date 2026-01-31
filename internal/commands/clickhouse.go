@@ -2,63 +2,21 @@ package commands
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 
+	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/fivebitsio/cotton/pkg/clickhouse"
 	"github.com/fivebitsio/cotton/pkg/logger"
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/clickhouse"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/joho/godotenv"
+	"github.com/pressly/goose/v3"
 	"github.com/sethvargo/go-envconfig"
 	"github.com/spf13/cobra"
 )
-
-type clickhouseMigrateDeps struct {
-	Migration *migrate.Migrate
-}
-
-func (deps *clickhouseMigrateDeps) Close(ctx context.Context) error {
-	deps.Migration.Close()
-	return nil
-}
-
-func newClickhouseMigrateDeps(ctx context.Context) (*clickhouseMigrateDeps, error) {
-	var databaseConfig clickhouse.Config
-
-	if err := envconfig.Process(ctx, &databaseConfig); err != nil {
-		logger.Log.Error("error loading clickhouse config", slog.Any("err", err))
-		os.Exit(1)
-	}
-
-	wd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-
-	absPath := filepath.Join(wd, "schema", "clickhouse", "migrations")
-
-	absPath, err = filepath.Abs(absPath)
-	if err != nil {
-		return nil, err
-	}
-
-	migration, err := migrate.New(
-		"file://"+absPath,
-		databaseConfig.DSN(),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &clickhouseMigrateDeps{
-		Migration: migration,
-	}, nil
-}
 
 var ClickhouseMigrateCmd = &cobra.Command{
 	Use:   "migrate",
@@ -75,26 +33,39 @@ var ClickhouseMigrateCmd = &cobra.Command{
 		direction, _ := cmd.Flags().GetString("direction")
 		numOfMigrations, _ := cmd.Flags().GetInt("num")
 
-		deps, err := newClickhouseMigrateDeps(ctx)
-
-		if err != nil {
-			logger.Log.Error("error while initializing clickhouse dependencies", slog.Any("err", err))
+		var databaseConfig clickhouse.Config
+		if err := envconfig.Process(ctx, &databaseConfig); err != nil {
+			logger.Log.Error("error loading clickhouse config", slog.Any("err", err))
 			os.Exit(1)
 		}
 
-		defer func() {
-			done()
-			deps.Close(ctx)
-		}()
+		db, err := sql.Open("clickhouse", databaseConfig.DSN())
+		if err != nil {
+			logger.Log.Error("error opening clickhouse connection", slog.Any("err", err))
+			os.Exit(1)
+		}
+		defer db.Close()
+
+		wd, err := os.Getwd()
+		if err != nil {
+			logger.Log.Error("error getting working directory", slog.Any("err", err))
+			os.Exit(1)
+		}
+		migrationsDir := filepath.Join(wd, "schema", "clickhouse", "migrations")
+
+		if err := goose.SetDialect("clickhouse"); err != nil {
+			logger.Log.Error("error setting goose dialect", slog.Any("err", err))
+			os.Exit(1)
+		}
 
 		switch direction {
 		case "up":
-			if err := runClickhouseMigrationsUp(deps.Migration, numOfMigrations); err != nil {
+			if err := runClickhouseMigrationsUp(ctx, db, migrationsDir, numOfMigrations); err != nil {
 				logger.Log.Error("Error while applying clickhouse migrations", slog.Any("err", err))
 				os.Exit(1)
 			}
 		case "down":
-			if err := runClickhouseMigrationsDown(deps.Migration, numOfMigrations); err != nil {
+			if err := runClickhouseMigrationsDown(ctx, db, migrationsDir, numOfMigrations); err != nil {
 				logger.Log.Error("Error while rolling back clickhouse migrations", slog.Any("err", err))
 				os.Exit(1)
 			}
@@ -102,16 +73,22 @@ var ClickhouseMigrateCmd = &cobra.Command{
 	},
 }
 
-func runClickhouseMigrationsUp(migration *migrate.Migrate, num int) error {
+func runClickhouseMigrationsUp(ctx context.Context, db *sql.DB, dir string, num int) error {
 	if num == 0 {
-		if err := migration.Up(); err != nil && err != migrate.ErrNoChange {
+		if err := goose.UpContext(ctx, db, dir); err != nil {
 			return err
 		}
 		logger.Log.Info("applied all clickhouse migrations")
 		return nil
 	}
 
-	if err := migration.Steps(num); err != nil && err != migrate.ErrNoChange {
+	current, err := goose.GetDBVersionContext(ctx, db)
+	if err != nil {
+		return err
+	}
+	target := current + int64(num)
+
+	if err := goose.UpToContext(ctx, db, dir, target); err != nil {
 		return err
 	}
 
@@ -119,17 +96,28 @@ func runClickhouseMigrationsUp(migration *migrate.Migrate, num int) error {
 	return nil
 }
 
-func runClickhouseMigrationsDown(migration *migrate.Migrate, num int) error {
+func runClickhouseMigrationsDown(ctx context.Context, db *sql.DB, dir string, num int) error {
 	if num == 0 {
-		if err := migration.Down(); err != nil && err != migrate.ErrNoChange {
-			return err
+		for {
+			current, err := goose.GetDBVersionContext(ctx, db)
+			if err != nil {
+				return err
+			}
+			if current == 0 {
+				break
+			}
+			if err := goose.DownContext(ctx, db, dir); err != nil {
+				return err
+			}
 		}
 		logger.Log.Info("rolled back all clickhouse migrations")
 		return nil
 	}
 
-	if err := migration.Steps(-num); err != nil && err != migrate.ErrNoChange {
-		return err
+	for i := 0; i < num; i++ {
+		if err := goose.DownContext(ctx, db, dir); err != nil {
+			return err
+		}
 	}
 
 	logger.Log.Info("rolled back clickhouse migrations", slog.Int("rolledBackMigrations", num))

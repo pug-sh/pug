@@ -1,3 +1,4 @@
+-- +goose Up
 create extension if not exists moddatetime;
 -- use xid for id
 create table customers (
@@ -9,5 +10,9 @@ create table customers (
   create_time timestamptz not null default now(),
   update_time timestamptz not null default now()
 );
+
 create trigger update_timestamp before
 update on customers for each row execute procedure moddatetime(update_time);
+
+-- +goose Down
+drop table customers;

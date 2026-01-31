@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS events (
   id String,
   user_id String,
@@ -7,3 +8,6 @@ CREATE TABLE IF NOT EXISTS events (
 ) ENGINE = MergeTree()
 ORDER BY (timestamp, event_type)
 SETTINGS index_granularity = 8192;
+
+-- +goose Down
+DROP TABLE IF EXISTS events;
