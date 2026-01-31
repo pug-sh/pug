@@ -2,6 +2,8 @@ package campaigns
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"github.com/fivebitsio/cotton/internal/core/campaigns"
@@ -28,40 +30,47 @@ func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 }
 
 func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
-	slog.Info("Processing campaign message", slog.Int("data_length", len(data)))
-
-	scheduledCampaigns, err := w.campaignService.GetScheduledCampaigns(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to get scheduled campaigns", slogx.Error(err))
-		return err
+	var msg campaigns.CampaignMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		return fmt.Errorf("failed to unmarshal campaign message: %w", err)
 	}
 
-	slog.Info("Found scheduled campaigns", slog.Int("count", len(scheduledCampaigns)))
+	if msg.CampaignID == "" {
+		return fmt.Errorf("campaign message missing campaign_id")
+	}
 
-	for _, campaign := range scheduledCampaigns {
-		subscriptions, err := w.subscriptionService.GetSubscriptionsByProject(ctx, campaign.ProjectID)
-		if err != nil {
-			slog.ErrorContext(ctx, "failed to get subscriptions for project",
-				slog.String("project_id", campaign.ProjectID), slogx.Error(err))
-			continue
-		}
+	slog.Info("Processing campaign", slog.String("campaign_id", msg.CampaignID))
 
-		slog.Info("Processing subscriptions for campaign",
-			slog.String("campaign_id", campaign.ID),
-			slog.String("project_id", campaign.ProjectID),
-			slog.Int("subscription_count", len(subscriptions)))
+	campaign, err := w.campaignService.GetCampaignByID(ctx, msg.CampaignID)
+	if err != nil {
+		return fmt.Errorf("failed to get campaign %s: %w", msg.CampaignID, err)
+	}
 
-		for _, sub := range subscriptions {
-			// Only send notification to active subscriptions
-			if string(sub.Status) == "active" {
-				if err := w.deliveryService.SendNotification(ctx, campaign, sub); err != nil {
-					slog.ErrorContext(ctx, "failed to send notification",
-						slog.String("subscription_id", sub.ID),
-						slog.String("campaign_id", campaign.ID),
-						slogx.Error(err))
-				}
+	subscriptions, err := w.subscriptionService.GetSubscriptionsByProject(ctx, campaign.ProjectID)
+	if err != nil {
+		return fmt.Errorf("failed to get subscriptions for project %s: %w", campaign.ProjectID, err)
+	}
+
+	slog.Info("Processing subscriptions for campaign",
+		slog.String("campaign_id", campaign.ID),
+		slog.String("project_id", campaign.ProjectID),
+		slog.Int("subscription_count", len(subscriptions)))
+
+	var failCount int
+	for _, sub := range subscriptions {
+		if string(sub.Status) == "active" {
+			if err := w.deliveryService.SendNotification(ctx, campaign, sub); err != nil {
+				failCount++
+				slog.ErrorContext(ctx, "failed to send notification",
+					slog.String("subscription_id", sub.ID),
+					slog.String("campaign_id", campaign.ID),
+					slogx.Error(err))
 			}
 		}
+	}
+
+	if failCount > 0 {
+		return fmt.Errorf("failed to deliver %d notifications for campaign %s", failCount, campaign.ID)
 	}
 
 	return nil
