@@ -12,6 +12,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
@@ -42,6 +43,10 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	_, err := s.read.GetCustomerByEmail(ctx, email)
 	if err == nil {
 		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("user with this email already exists"))
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		slog.ErrorContext(ctx, "failed to check existing customer", slog.Any("error", err))
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
