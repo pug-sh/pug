@@ -111,6 +111,36 @@ func (w *natsWorker) Start(ctx context.Context, client *NATSClient) error {
 func (w *natsWorker) processMessages(ctx context.Context) {
 	defer w.wg.Done()
 
+	const restartBackoff = 5 * time.Second
+
+	for {
+		w.runMessageLoop(ctx)
+
+		// Check if we should restart or exit permanently.
+		select {
+		case <-ctx.Done():
+			return
+		case <-w.shutdownCh:
+			return
+		default:
+		}
+
+		slog.Warn("restarting message processor after failure",
+			slog.String("stream", w.config.StreamName),
+			slog.String("consumer", w.config.ConsumerName))
+		w.healthy.Store(true)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-w.shutdownCh:
+			return
+		case <-time.After(restartBackoff):
+		}
+	}
+}
+
+func (w *natsWorker) runMessageLoop(ctx context.Context) {
 	msgs, err := w.consumer.Messages()
 	if err != nil {
 		slog.Error("failed to start message iterator",
@@ -145,7 +175,7 @@ func (w *natsWorker) processMessages(ctx context.Context) {
 					slog.Int("consecutive_errors", consecutiveErrors),
 					slog.Any("error", err))
 				if consecutiveErrors >= maxConsecutiveErrors {
-					slog.Error("too many consecutive message errors, stopping worker goroutine",
+					slog.Error("too many consecutive message errors, restarting worker goroutine",
 						slog.String("stream", w.config.StreamName),
 						slog.String("consumer", w.config.ConsumerName))
 					w.healthy.Store(false)
@@ -161,6 +191,10 @@ func (w *natsWorker) processMessages(ctx context.Context) {
 			cancel()
 
 			if err != nil {
+				slog.Error("message processing failed",
+					slog.String("stream", w.config.StreamName),
+					slog.String("consumer", w.config.ConsumerName),
+					slog.Any("error", err))
 				if nakErr := msg.Nak(); nakErr != nil {
 					slog.Error("failed to nak message",
 						slog.String("stream", w.config.StreamName),
