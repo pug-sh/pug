@@ -6,15 +6,13 @@ import (
 )
 
 type Config struct {
-	Host         string `env:"CLICKHOUSE_HOST,required"`
-	Port         string `env:"CLICKHOUSE_PORT,required"`
-	Database     string `env:"CLICKHOUSE_DATABASE,required"`
-	Username     string `env:"CLICKHOUSE_USERNAME,required"`
-	Password     string `env:"CLICKHOUSE_PASSWORD,required"`
-	SSL          bool   `env:"CLICKHOUSE_SSL"`
-	Timeout      int    `env:"CLICKHOUSE_TIMEOUT"`
-	MaxOpenConns int    `env:"CLICKHOUSE_MAX_OPEN_CONNS"`
-	MaxIdleConns int    `env:"CLICKHOUSE_MAX_IDLE_CONNS"`
+	Host     string `env:"CLICKHOUSE_HOST,required"`
+	Port     string `env:"CLICKHOUSE_PORT,required"`
+	Database string `env:"CLICKHOUSE_DATABASE,required"`
+	Username string `env:"CLICKHOUSE_USERNAME,required"`
+	Password string `env:"CLICKHOUSE_PASSWORD,required"`
+	SSL      bool   `env:"CLICKHOUSE_SSL"`
+	Timeout  int    `env:"CLICKHOUSE_TIMEOUT"`
 }
 
 func (c *Config) DatabaseConfig() *Config {
@@ -58,6 +56,6 @@ func (c *Config) ConnectionString() string {
 
 func (c *Config) DSN() string {
 	// For ClickHouse with golang-migrate, use the standard format
-	return fmt.Sprintf("clickhouse://%s:%s@%s:%s/%s",
-		c.Username, c.Password, c.Host, c.Port, c.Database)
+	return fmt.Sprintf("clickhouse://%s@%s:%s/%s",
+		url.UserPassword(c.Username, c.Password).String(), c.Host, c.Port, c.Database)
 }
