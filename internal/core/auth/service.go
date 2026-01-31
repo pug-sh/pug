@@ -99,7 +99,11 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (*authv1.SignInWithEmailResponse, error) {
 	customer, err := s.read.GetCustomerByEmail(ctx, email)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
+		}
+		slog.ErrorContext(ctx, "failed to get customer by email", slog.Any("error", err))
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte(password))
