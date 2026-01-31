@@ -16,6 +16,13 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+const (
+	StatusScheduled  = "scheduled"
+	StatusInProgress = "in-progress"
+	StatusComplete   = "complete"
+	StatusFail       = "fail"
+)
+
 type Service struct {
 	read        *dbread.Queries
 	write       *dbwrite.Queries

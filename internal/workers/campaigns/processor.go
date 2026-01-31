@@ -9,14 +9,14 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/campaigns"
 	"github.com/fivebitsio/cotton/internal/core/delivery"
 	"github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/core/subscriptions"
+	subscriptionssvc "github.com/fivebitsio/cotton/internal/core/subscriptions"
 	"github.com/fivebitsio/cotton/pkg/logger/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Worker struct {
 	campaignService     *campaigns.Service
-	subscriptionService *subscriptions.Service
+	subscriptionService *subscriptionssvc.Service
 	deliveryService     delivery.Service
 }
 
@@ -24,7 +24,7 @@ func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 	projectsSvc := projects.NewService(pgRO, pgW)
 	return &Worker{
 		campaignService:     campaigns.NewService(pgRO, pgW, projectsSvc, nil),
-		subscriptionService: subscriptions.NewService(pgRO, pgW),
+		subscriptionService: subscriptionssvc.NewService(pgRO, pgW),
 		deliveryService:     delivery.NewRouter(pgRO, pgW, projectsSvc),
 	}
 }
@@ -58,7 +58,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 
 	var failCount int
 	for _, sub := range subscriptions {
-		if string(sub.Status) == "active" {
+		if string(sub.Status) == subscriptionssvc.StatusActive {
 			if err := w.deliveryService.SendNotification(ctx, campaign, sub); err != nil {
 				failCount++
 				slog.ErrorContext(ctx, "failed to send notification",
