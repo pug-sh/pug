@@ -15,10 +15,11 @@ import (
 )
 
 type FCMService struct {
-	pgRO           *pgxpool.Pool
-	pgW            *pgxpool.Pool
-	projectsSvc    *projects.Service
-	messagingCache sync.Map
+	pgRO        *pgxpool.Pool
+	pgW         *pgxpool.Pool
+	projectsSvc *projects.Service
+	mu          sync.Mutex
+	clients     map[string]*messaging.Client
 }
 
 func NewFCMService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.Service) *FCMService {
@@ -26,12 +27,16 @@ func NewFCMService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.
 		pgRO:        pgRO,
 		pgW:         pgW,
 		projectsSvc: projectsSvc,
+		clients:     make(map[string]*messaging.Client),
 	}
 }
 
 func (f *FCMService) getMessagingClient(ctx context.Context, projectID, fcmServiceJSON string) (*messaging.Client, error) {
-	if cached, ok := f.messagingCache.Load(projectID); ok {
-		return cached.(*messaging.Client), nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if client, ok := f.clients[projectID]; ok {
+		return client, nil
 	}
 
 	opt := option.WithCredentialsJSON([]byte(fcmServiceJSON))
@@ -45,7 +50,7 @@ func (f *FCMService) getMessagingClient(ctx context.Context, projectID, fcmServi
 		return nil, fmt.Errorf("error getting Firebase Messaging client: %w", err)
 	}
 
-	f.messagingCache.Store(projectID, client)
+	f.clients[projectID] = client
 	slog.Info("Firebase messaging client cached", slog.String("project_id", projectID))
 
 	return client, nil
