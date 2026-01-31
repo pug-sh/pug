@@ -120,6 +120,14 @@ func (s *Service) sendCampaignToNATS(ctx context.Context, campaign dbwrite.Campa
 	return nil
 }
 
+func (s *Service) UpdateCampaignStatus(ctx context.Context, id, status string) error {
+	_, err := s.write.UpdateCampaignStatus(ctx, dbwrite.UpdateCampaignStatusParams{
+		ID:     id,
+		Status: status,
+	})
+	return err
+}
+
 func (s *Service) ProjectExistsForCustomer(ctx context.Context, projectID string, customerID string) (bool, error) {
 	return s.projectsSvc.ProjectExistsForCustomer(ctx, projectID, customerID)
 }

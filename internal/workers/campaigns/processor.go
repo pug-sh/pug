@@ -51,6 +51,10 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		return fmt.Errorf("failed to get subscriptions for project %s: %w", campaign.ProjectID, err)
 	}
 
+	if err := w.campaignService.UpdateCampaignStatus(ctx, campaign.ID, campaigns.StatusInProgress); err != nil {
+		slog.ErrorContext(ctx, "failed to set campaign in-progress", slogx.Error(err), slog.String("campaign_id", campaign.ID))
+	}
+
 	slog.Info("Processing subscriptions for campaign",
 		slog.String("campaign_id", campaign.ID),
 		slog.String("project_id", campaign.ProjectID),
@@ -69,8 +73,17 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		}
 	}
 
+	finalStatus := campaigns.StatusComplete
 	if failCount > 0 {
-		return fmt.Errorf("failed to deliver %d notifications for campaign %s", failCount, campaign.ID)
+		finalStatus = campaigns.StatusFail
+		slog.WarnContext(ctx, "campaign delivered with failures",
+			slog.String("campaign_id", campaign.ID),
+			slog.Int("fail_count", failCount),
+			slog.Int("total_count", len(subscriptions)))
+	}
+
+	if err := w.campaignService.UpdateCampaignStatus(ctx, campaign.ID, finalStatus); err != nil {
+		slog.ErrorContext(ctx, "failed to update campaign status", slogx.Error(err), slog.String("campaign_id", campaign.ID))
 	}
 
 	return nil
