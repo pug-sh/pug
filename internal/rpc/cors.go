@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"log/slog"
 	"net/http"
 
 	connectcors "connectrpc.com/cors"
@@ -8,19 +9,24 @@ import (
 	"github.com/rs/cors"
 )
 
-func WithCORS(connectHandler http.Handler) http.Handler {
-	// todo- replace wildcard origin with specific allowed origins in production.
-	// using "*" with allowcredentials is insecure and allows csrf attacks.
+func WithCORS(allowedOrigins []string, connectHandler http.Handler) http.Handler {
+	for _, o := range allowedOrigins {
+		if o == "*" {
+			slog.Warn("CORS: using wildcard origin with credentials is insecure, set COTTON_CORS_ORIGINS to specific origins in production")
+			break
+		}
+	}
+
 	c := cors.New(cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowedMethods: append(connectcors.AllowedMethods(), http.MethodOptions),
+		AllowCredentials: true,
 		AllowedHeaders: append(
 			connectcors.AllowedHeaders(),
 			constant.HeaderAuthorization,
 		),
-		ExposedHeaders:   connectcors.ExposedHeaders(),
-		AllowCredentials: true,
-		MaxAge:           7200,
+		AllowedMethods: append(connectcors.AllowedMethods(), http.MethodOptions),
+		AllowedOrigins: allowedOrigins,
+		ExposedHeaders: connectcors.ExposedHeaders(),
+		MaxAge:         7200,
 	})
 	return c.Handler(connectHandler)
 }

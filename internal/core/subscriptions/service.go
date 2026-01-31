@@ -9,6 +9,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const (
+	StatusActive   = "active"
+	StatusInactive = "inactive"
+)
+
 type Service struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries

@@ -105,9 +105,6 @@ message SetUserExternalIDRequest {
   map<string, google.protobuf.Any> user_metadata = 3; // Optional metadata for user creation
 }
 
-message SetUserExternalIDResponse {
-  string user_id = 1;
-  string external_id = 2;
-  bool user_was_created = 3; // true if user was just created
-  bool subscription_was_linked = 4; // true if subscription was successfully linked to user
-}
+// Response only confirms the operation was enqueued. Actual user creation
+// and subscription linking happen asynchronously in the subscription worker.
+message SetUserExternalIDResponse {}

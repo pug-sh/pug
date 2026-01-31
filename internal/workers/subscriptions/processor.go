@@ -2,9 +2,9 @@ package subscriptions
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"encoding/json"
 	"log/slog"
 
 	"github.com/fivebitsio/cotton/internal/core/subscriptions"

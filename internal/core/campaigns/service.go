@@ -2,8 +2,8 @@ package campaigns
 
 import (
 	"context"
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -14,6 +14,13 @@ import (
 	"github.com/fivebitsio/cotton/pkg/nats"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
+)
+
+const (
+	StatusScheduled  = "scheduled"
+	StatusInProgress = "in-progress"
+	StatusComplete   = "complete"
+	StatusFail       = "fail"
 )
 
 type Service struct {
@@ -88,13 +95,28 @@ func (s *Service) UpdateCampaign(ctx context.Context, arg dbwrite.UpdateCampaign
 	return campaign, nil
 }
 
-func (s *Service) sendCampaignToNATS(ctx context.Context, campaign dbwrite.Campaign, scheduledTime time.Time) error {
-	// For NATS, we'll publish immediately since NATS JetStream doesn't have a direct equivalent to Pulsar's DeliverAt
-	// Instead, we could implement a delayed delivery mechanism using NATS timers if needed
+// CampaignMessage is the payload published to NATS for campaign processing.
+type CampaignMessage struct {
+	CampaignID string `json:"campaign_id"`
+	ProjectID  string `json:"project_id"`
+}
 
-	data, err := json.Marshal(campaign.NotificationData)
+func (s *Service) sendCampaignToNATS(ctx context.Context, campaign dbwrite.Campaign, scheduledTime time.Time) error {
+	if scheduledTime.After(time.Now()) {
+		slog.InfoContext(ctx, "campaign scheduled for the future, skipping immediate publish",
+			slog.String("campaign_id", campaign.ID),
+			slog.Time("scheduled_time", scheduledTime))
+		return nil
+	}
+
+	msg := CampaignMessage{
+		CampaignID: campaign.ID,
+		ProjectID:  campaign.ProjectID,
+	}
+
+	data, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal notification data: %w", err)
+		return fmt.Errorf("failed to marshal campaign message: %w", err)
 	}
 
 	_, err = s.producer.Publish(ctx, nats.CampaignScheduledSubject, data)
@@ -103,6 +125,14 @@ func (s *Service) sendCampaignToNATS(ctx context.Context, campaign dbwrite.Campa
 	}
 
 	return nil
+}
+
+func (s *Service) UpdateCampaignStatus(ctx context.Context, id, status string) error {
+	_, err := s.write.UpdateCampaignStatus(ctx, dbwrite.UpdateCampaignStatusParams{
+		ID:     id,
+		Status: status,
+	})
+	return err
 }
 
 func (s *Service) ProjectExistsForCustomer(ctx context.Context, projectID string, customerID string) (bool, error) {

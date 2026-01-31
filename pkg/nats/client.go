@@ -18,7 +18,7 @@ import (
 type Config struct {
 	NATSUrl         string `env:"NATS_URL,default=nats://localhost:4222"`
 	JWT             string `env:"NATS_JWT"`
-	SeedFile        string `env:"NATS_SEED_FILE"`
+	Seed            string `env:"NATS_SEED"`
 	CredsFile       string `env:"NATS_CREDS_FILE"`
 	StreamsConfig   string `env:"NATS_STREAMS_CONFIG,default=schema/nats/streams.yaml"`
 	ConsumersConfig string `env:"NATS_CONSUMERS_CONFIG,default=schema/nats/consumers.yaml"`
@@ -63,8 +63,8 @@ func New(ctx context.Context) (*NATSClient, error) {
 
 	opts := []nats.Option{nats.Name("cotton-nats-client")}
 
-	if cfg.JWT != "" && cfg.SeedFile != "" {
-		opts = append(opts, nats.UserJWTAndSeed(cfg.JWT, cfg.SeedFile))
+	if cfg.JWT != "" && cfg.Seed != "" {
+		opts = append(opts, nats.UserJWTAndSeed(cfg.JWT, cfg.Seed))
 	} else if cfg.CredsFile != "" {
 		opts = append(opts, nats.UserCredentials(cfg.CredsFile))
 	}

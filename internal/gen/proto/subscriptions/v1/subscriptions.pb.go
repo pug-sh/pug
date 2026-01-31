@@ -835,14 +835,12 @@ func (x *SetUserExternalIDRequest) GetUserMetadata() map[string]*anypb.Any {
 	return nil
 }
 
+// Response only confirms the operation was enqueued. Actual user creation
+// and subscription linking happen asynchronously in the subscription worker.
 type SetUserExternalIDResponse struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	UserId                string                 `protobuf:"bytes,1,opt,name=user_id,json=userId" json:"user_id,omitempty"`
-	ExternalId            string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	UserWasCreated        bool                   `protobuf:"varint,3,opt,name=user_was_created,json=userWasCreated" json:"user_was_created,omitempty"`                      // true if user was just created
-	SubscriptionWasLinked bool                   `protobuf:"varint,4,opt,name=subscription_was_linked,json=subscriptionWasLinked" json:"subscription_was_linked,omitempty"` // true if subscription was successfully linked to user
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetUserExternalIDResponse) Reset() {
@@ -873,34 +871,6 @@ func (x *SetUserExternalIDResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SetUserExternalIDResponse.ProtoReflect.Descriptor instead.
 func (*SetUserExternalIDResponse) Descriptor() ([]byte, []int) {
 	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *SetUserExternalIDResponse) GetUserId() string {
-	if x != nil {
-		return x.UserId
-	}
-	return ""
-}
-
-func (x *SetUserExternalIDResponse) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
-	}
-	return ""
-}
-
-func (x *SetUserExternalIDResponse) GetUserWasCreated() bool {
-	if x != nil {
-		return x.UserWasCreated
-	}
-	return false
-}
-
-func (x *SetUserExternalIDResponse) GetSubscriptionWasLinked() bool {
-	if x != nil {
-		return x.SubscriptionWasLinked
-	}
-	return false
 }
 
 var File_subscriptions_v1_subscriptions_proto protoreflect.FileDescriptor
@@ -973,13 +943,8 @@ const file_subscriptions_v1_subscriptions_proto_rawDesc = "" +
 	"\ruser_metadata\x18\x03 \x03(\v2<.subscriptions.v1.SetUserExternalIDRequest.UserMetadataEntryR\fuserMetadata\x1aU\n" +
 	"\x11UserMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\xb7\x01\n" +
-	"\x19SetUserExternalIDResponse\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1f\n" +
-	"\vexternal_id\x18\x02 \x01(\tR\n" +
-	"externalId\x12(\n" +
-	"\x10user_was_created\x18\x03 \x01(\bR\x0euserWasCreated\x126\n" +
-	"\x17subscription_was_linked\x18\x04 \x01(\bR\x15subscriptionWasLinked*\xdb\x02\n" +
+	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\x1b\n" +
+	"\x19SetUserExternalIDResponse*\xdb\x02\n" +
 	"\x19SubscriptionOperationType\x12+\n" +
 	"'SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED\x10\x00\x12&\n" +
 	"\"SUBSCRIPTION_OPERATION_TYPE_UPSERT\x10\x01\x120\n" +

@@ -6,7 +6,7 @@ consumers:
     durable_name: "subscription-processor-durable"
     deliver_policy: "all"
     ack_explicit: true
-    max_deliver: -1
+    max_deliver: 5
     replay_policy: "instant"
 
   # Consumer for campaign events
@@ -15,5 +15,5 @@ consumers:
     durable_name: "campaign-processor-durable"
     deliver_policy: "all"
     ack_explicit: true
-    max_deliver: -1
+    max_deliver: 5
     replay_policy: "instant"

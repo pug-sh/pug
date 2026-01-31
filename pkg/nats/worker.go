@@ -3,7 +3,9 @@ package nats
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -39,6 +41,7 @@ type natsWorker struct {
 	consumer   jetstream.Consumer
 	shutdownCh chan struct{}
 	wg         sync.WaitGroup
+	healthy    atomic.Bool
 }
 
 func NewWorker(config WorkerConfig, processor MessageProcessor) (Worker, error) {
@@ -48,6 +51,7 @@ func NewWorker(config WorkerConfig, processor MessageProcessor) (Worker, error) 
 	if config.ProcessingTimeout <= 0 {
 		config.ProcessingTimeout = DefaultProcessingTimeout
 	}
+	// Safety net: ensure a finite retry limit even if YAML config omits max_deliver
 	if config.MaxDeliver <= 0 {
 		config.MaxDeliver = DefaultMaxDeliver
 	}
@@ -78,6 +82,7 @@ func (w *natsWorker) Start(ctx context.Context, client *NATSClient) error {
 		return fmt.Errorf("failed to create NATS consumer: %w", err)
 	}
 	w.consumer = consumer
+	w.healthy.Store(true)
 
 	for i := 0; i < w.config.Concurrency; i++ {
 		w.wg.Add(1)
@@ -106,11 +111,50 @@ func (w *natsWorker) Start(ctx context.Context, client *NATSClient) error {
 func (w *natsWorker) processMessages(ctx context.Context) {
 	defer w.wg.Done()
 
+	const restartBackoff = 5 * time.Second
+
+	for {
+		w.runMessageLoop(ctx)
+
+		// Check if we should restart or exit permanently.
+		select {
+		case <-ctx.Done():
+			return
+		case <-w.shutdownCh:
+			return
+		default:
+		}
+
+		slog.Warn("restarting message processor after failure",
+			slog.String("stream", w.config.StreamName),
+			slog.String("consumer", w.config.ConsumerName))
+		w.healthy.Store(true)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-w.shutdownCh:
+			return
+		case <-time.After(restartBackoff):
+		}
+	}
+}
+
+func (w *natsWorker) runMessageLoop(ctx context.Context) {
 	msgs, err := w.consumer.Messages()
 	if err != nil {
+		slog.Error("failed to start message iterator",
+			slog.String("stream", w.config.StreamName),
+			slog.String("consumer", w.config.ConsumerName),
+			slog.Any("error", err))
+		w.healthy.Store(false)
 		return
 	}
 	defer msgs.Stop()
+
+	consecutiveErrors := 0
+	const maxConsecutiveErrors = 10
+	const errorBackoff = 500 * time.Millisecond
 
 	for {
 		select {
@@ -124,22 +168,52 @@ func (w *natsWorker) processMessages(ctx context.Context) {
 				if err == jetstream.ErrMsgIteratorClosed {
 					return
 				}
+				consecutiveErrors++
+				slog.Warn("failed to get next message",
+					slog.String("stream", w.config.StreamName),
+					slog.String("consumer", w.config.ConsumerName),
+					slog.Int("consecutive_errors", consecutiveErrors),
+					slog.Any("error", err))
+				if consecutiveErrors >= maxConsecutiveErrors {
+					slog.Error("too many consecutive message errors, restarting worker goroutine",
+						slog.String("stream", w.config.StreamName),
+						slog.String("consumer", w.config.ConsumerName))
+					w.healthy.Store(false)
+					return
+				}
+				time.Sleep(errorBackoff)
 				continue
 			}
+			consecutiveErrors = 0
 
 			procCtx, cancel := context.WithTimeout(ctx, w.config.ProcessingTimeout)
 			err = w.processor(procCtx, msg)
 			cancel()
 
 			if err != nil {
-				msg.Nak()
+				slog.Error("message processing failed",
+					slog.String("stream", w.config.StreamName),
+					slog.String("consumer", w.config.ConsumerName),
+					slog.Any("error", err))
+				if nakErr := msg.Nak(); nakErr != nil {
+					slog.Error("failed to nak message",
+						slog.String("stream", w.config.StreamName),
+						slog.Any("error", nakErr))
+				}
 			} else {
-				msg.Ack()
+				if ackErr := msg.Ack(); ackErr != nil {
+					slog.Error("failed to ack message",
+						slog.String("stream", w.config.StreamName),
+						slog.Any("error", ackErr))
+				}
 			}
 		}
 	}
 }
 
 func (w *natsWorker) HealthCheck() (bool, error) {
+	if !w.healthy.Load() {
+		return false, fmt.Errorf("worker %s/%s is unhealthy", w.config.StreamName, w.config.ConsumerName)
+	}
 	return true, nil
 }

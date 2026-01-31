@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -40,12 +41,13 @@ import (
 )
 
 type serverDeps struct {
-	pgRo               *pgxpool.Pool
-	pgW                *pgxpool.Pool
-	nats               *nats.NATSClient
 	campaignsProducer  jetstream.JetStream
+	corsOrigins        []string
 	deliveriesProducer jetstream.JetStream
 	jwtKey             []byte
+	nats               *nats.NATSClient
+	pgRo               *pgxpool.Pool
+	pgW                *pgxpool.Pool
 	port               string
 }
 
@@ -84,12 +86,13 @@ func newServerDeps(ctx context.Context) (*serverDeps, error) {
 	}
 
 	return &serverDeps{
-		pgRo:               pgRo,
-		pgW:                pgW,
-		nats:               natsClient,
 		campaignsProducer:  natsClient.GetJetStream(),
+		corsOrigins:        strings.Split(serverCfg.CORSOrigins, ","),
 		deliveriesProducer: natsClient.GetJetStream(),
 		jwtKey:             []byte(serverCfg.JWTKey),
+		nats:               natsClient,
+		pgRo:               pgRo,
+		pgW:                pgW,
 		port:               serverCfg.Port,
 	}, nil
 }
@@ -129,14 +132,14 @@ func StartServer(ctx context.Context, deps *serverDeps) error {
 	mux := http.NewServeMux()
 
 	// Public (CORS, no auth)
-	mux.Handle(authPath, cottonrpc.WithCORS(authHandler))
+	mux.Handle(authPath, cottonrpc.WithCORS(deps.corsOrigins, authHandler))
 
 	// Dashboard only (CORS + JWT auth)
-	mux.Handle(projectsPath, cottonrpc.WithCORS(dashboardMW.Wrap(projectsHandler)))
+	mux.Handle(projectsPath, cottonrpc.WithCORS(deps.corsOrigins, dashboardMW.Wrap(projectsHandler)))
 
 	// Shared: Dashboard + SDK (CORS + dual auth)
-	mux.Handle(campaignsPath, cottonrpc.WithCORS(sharedMW.Wrap(campaignsHandler)))
-	mux.Handle(deliveryPath, cottonrpc.WithCORS(sharedMW.Wrap(deliveryHandler)))
+	mux.Handle(campaignsPath, cottonrpc.WithCORS(deps.corsOrigins, sharedMW.Wrap(campaignsHandler)))
+	mux.Handle(deliveryPath, cottonrpc.WithCORS(deps.corsOrigins, sharedMW.Wrap(deliveryHandler)))
 
 	// SDK only (API key auth, no CORS)
 	mux.Handle(subscriptionsPath, sdkMW.Wrap(subscriptionsHandler))

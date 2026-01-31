@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"log/slog"
 
 	"connectrpc.com/connect"
 	usersv1 "github.com/fivebitsio/cotton/internal/gen/proto/users/v1"
@@ -9,6 +10,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/rpc"
+	"github.com/fivebitsio/cotton/pkg/logger/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -42,6 +44,7 @@ func (h *Handler) Get(
 		ProjectID: principal.Project.ID,
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "failed reading user", slogx.Error(err), slog.String("userId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -69,6 +72,7 @@ func (h *Handler) GetByExternalId(
 		ExternalID: req.Msg.ExternalId,
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "failed reading user by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -93,6 +97,7 @@ func (h *Handler) List(
 
 	usersList, err := h.read.GetUsersByProjectID(ctx, principal.Project.ID)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed listing users", slogx.Error(err), slog.String("projectId", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -127,6 +132,7 @@ func (h *Handler) Create(
 		CustomProperties: req.Msg.CustomProperties.AsMap(),
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "failed creating user", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -155,6 +161,7 @@ func (h *Handler) UpdateProperties(
 		Properties: req.Msg.Properties.AsMap(),
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "failed updating user properties", slogx.Error(err), slog.String("userId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -183,6 +190,7 @@ func (h *Handler) UpdateCustomProperties(
 		CustomProperties: req.Msg.CustomProperties.AsMap(),
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "failed updating user custom properties", slogx.Error(err), slog.String("userId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -209,6 +217,7 @@ func (h *Handler) Delete(
 		ID:        req.Msg.Id,
 		ProjectID: principal.Project.ID,
 	}); err != nil {
+		slog.ErrorContext(ctx, "failed deleting user", slogx.Error(err), slog.String("userId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 

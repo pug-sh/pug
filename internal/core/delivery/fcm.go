@@ -11,14 +11,17 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/option"
 )
 
 type FCMService struct {
-	pgRO           *pgxpool.Pool
-	pgW            *pgxpool.Pool
-	projectsSvc    *projects.Service
-	messagingCache sync.Map
+	pgRO        *pgxpool.Pool
+	pgW         *pgxpool.Pool
+	projectsSvc *projects.Service
+	mu          sync.RWMutex
+	clients     map[string]*messaging.Client
+	sf          singleflight.Group
 }
 
 func NewFCMService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.Service) *FCMService {
@@ -26,29 +29,52 @@ func NewFCMService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.
 		pgRO:        pgRO,
 		pgW:         pgW,
 		projectsSvc: projectsSvc,
+		clients:     make(map[string]*messaging.Client),
 	}
 }
 
 func (f *FCMService) getMessagingClient(ctx context.Context, projectID, fcmServiceJSON string) (*messaging.Client, error) {
-	if cached, ok := f.messagingCache.Load(projectID); ok {
-		return cached.(*messaging.Client), nil
+	f.mu.RLock()
+	if client, ok := f.clients[projectID]; ok {
+		f.mu.RUnlock()
+		return client, nil
 	}
+	f.mu.RUnlock()
 
-	opt := option.WithCredentialsJSON([]byte(fcmServiceJSON))
-	app, err := firebase.NewApp(ctx, nil, opt)
+	// singleflight deduplicates concurrent initialization for the same project ID
+	// so the lock is only held briefly for map access, not during network I/O.
+	v, err, _ := f.sf.Do(projectID, func() (any, error) {
+		// Double-check after winning the singleflight race.
+		f.mu.RLock()
+		if client, ok := f.clients[projectID]; ok {
+			f.mu.RUnlock()
+			return client, nil
+		}
+		f.mu.RUnlock()
+
+		opt := option.WithCredentialsJSON([]byte(fcmServiceJSON))
+		app, err := firebase.NewApp(ctx, nil, opt)
+		if err != nil {
+			return nil, fmt.Errorf("error initializing Firebase app: %w", err)
+		}
+
+		client, err := app.Messaging(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error getting Firebase Messaging client: %w", err)
+		}
+
+		f.mu.Lock()
+		f.clients[projectID] = client
+		f.mu.Unlock()
+
+		slog.Info("Firebase messaging client cached", slog.String("project_id", projectID))
+		return client, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("error initializing Firebase app: %w", err)
+		return nil, err
 	}
 
-	client, err := app.Messaging(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error getting Firebase Messaging client: %w", err)
-	}
-
-	f.messagingCache.Store(projectID, client)
-	slog.Info("Firebase messaging client cached", slog.String("project_id", projectID))
-
-	return client, nil
+	return v.(*messaging.Client), nil
 }
 
 // SendNotification sends a push notification to a device token via FCM
@@ -69,10 +95,14 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 	// Extract title and body from notification data
 	title, ok := campaign.NotificationData["title"].(string)
 	if !ok {
+		slog.WarnContext(ctx, "campaign missing notification title, using fallback",
+			slog.String("campaign_id", campaign.ID))
 		title = "Notification"
 	}
 	body, ok := campaign.NotificationData["body"].(string)
 	if !ok {
+		slog.WarnContext(ctx, "campaign missing notification body, using fallback",
+			slog.String("campaign_id", campaign.ID))
 		body = "You have a new notification"
 	}
 

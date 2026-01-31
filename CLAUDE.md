@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cotton is a push notification platform built with Go (backend), React/TypeScript (frontend), and uses PostgreSQL, ClickHouse, and NATS for data storage and messaging.
+Cotton is a push notification platform built with Go, using PostgreSQL, ClickHouse, and NATS for data storage and messaging.
 
 ## Build & Run Commands
 
@@ -49,17 +49,6 @@ make rpc
 make lint
 ```
 
-### Frontend (web/)
-
-```bash
-cd web
-pnpm install
-pnpm dev       # Start dev server
-pnpm build     # Build for production
-pnpm lint      # Run eslint
-pnpm lint:fix  # Fix eslint issues
-```
-
 ## Architecture
 
 ### Backend (Go)
@@ -89,17 +78,6 @@ PostgreSQL uses read/write separation:
 
 Services defined in `proto/` directory. Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled.
 
-### Frontend (React)
-
-Located in `web/`. Uses:
-- React 19 with Vite
-- TanStack Form for forms
-- Wouter for routing
-- Jotai for state management
-- Connect RPC client for API calls
-- shadcn/ui components in `web/src/components/ui/` (do not modify these)
-
 ## Code Style
 
-- **Frontend**: Use pnpm as package manager. Use TanStack Form for forms. Do not modify `web/src/components/ui/` components.
-- **Backend**: Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change.
+- Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change.
