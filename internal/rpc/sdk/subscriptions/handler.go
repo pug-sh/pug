@@ -284,14 +284,10 @@ func (s *Server) SetUserExternalID(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	// For now, return success - in a real implementation, you might want to make this synchronous
-	// or provide a way to check the result later
-	return connect.NewResponse(&subscriptionsv1.SetUserExternalIDResponse{
-		UserId:                "", // Will be populated by the async processor
-		ExternalId:            req.Msg.GetExternalId(),
-		UserWasCreated:        true, // This would be determined by the async processor
-		SubscriptionWasLinked: true, // This would be determined by the async processor
-	}), nil
+	// Operation is processed asynchronously via NATS. Response only confirms
+	// the message was enqueued — actual user creation and subscription linking
+	// happen in the subscription worker.
+	return connect.NewResponse(&subscriptionsv1.SetUserExternalIDResponse{}), nil
 }
 
 // NewServer creates a new Subscription service server

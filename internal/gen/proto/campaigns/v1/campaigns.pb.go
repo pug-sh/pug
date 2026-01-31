@@ -375,9 +375,10 @@ func (*DeleteResponse) Descriptor() ([]byte, []int) {
 }
 
 type UpdateRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	Name             string                 `protobuf:"bytes,2,opt,name=name" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Name  string                 `protobuf:"bytes,2,opt,name=name" json:"name,omitempty"`
+	// askpolru - why byte?
 	NotificationData []byte                 `protobuf:"bytes,3,opt,name=notification_data,json=notificationData" json:"notification_data,omitempty"`
 	ScheduledTime    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=scheduled_time,json=scheduledTime" json:"scheduled_time,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -487,11 +488,12 @@ func (x *UpdateResponse) GetCampaign() *Campaign {
 }
 
 type Campaign struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	CreateTime       *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
-	EndTime          *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=end_time,json=endTime" json:"end_time,omitempty"`
-	Id               string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
-	Name             string                 `protobuf:"bytes,4,opt,name=name" json:"name,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CreateTime *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
+	EndTime    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=end_time,json=endTime" json:"end_time,omitempty"`
+	Id         string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
+	Name       string                 `protobuf:"bytes,4,opt,name=name" json:"name,omitempty"`
+	// askpolru - why byte?
 	NotificationData []byte                 `protobuf:"bytes,5,opt,name=notification_data,json=notificationData" json:"notification_data,omitempty"`
 	ProjectId        string                 `protobuf:"bytes,6,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	ScheduledTime    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=scheduled_time,json=scheduledTime" json:"scheduled_time,omitempty"`
