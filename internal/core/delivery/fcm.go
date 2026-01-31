@@ -74,10 +74,14 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 	// Extract title and body from notification data
 	title, ok := campaign.NotificationData["title"].(string)
 	if !ok {
+		slog.WarnContext(ctx, "campaign missing notification title, using fallback",
+			slog.String("campaign_id", campaign.ID))
 		title = "Notification"
 	}
 	body, ok := campaign.NotificationData["body"].(string)
 	if !ok {
+		slog.WarnContext(ctx, "campaign missing notification body, using fallback",
+			slog.String("campaign_id", campaign.ID))
 		body = "You have a new notification"
 	}
 
