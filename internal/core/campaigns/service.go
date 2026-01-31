@@ -102,6 +102,13 @@ type CampaignMessage struct {
 }
 
 func (s *Service) sendCampaignToNATS(ctx context.Context, campaign dbwrite.Campaign, scheduledTime time.Time) error {
+	if scheduledTime.After(time.Now()) {
+		slog.InfoContext(ctx, "campaign scheduled for the future, skipping immediate publish",
+			slog.String("campaign_id", campaign.ID),
+			slog.Time("scheduled_time", scheduledTime))
+		return nil
+	}
+
 	msg := CampaignMessage{
 		CampaignID: campaign.ID,
 		ProjectID:  campaign.ProjectID,
