@@ -15,23 +15,23 @@ type DB struct {
 }
 
 func createConnection(ctx context.Context, cfg *Config) (driver.Conn, error) {
-	conn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)},
-		Auth: clickhouse.Auth{
-			Database: cfg.Database,
-			Username: cfg.Username,
-			Password: cfg.Password,
-		},
-	})
+	opts, err := clickhouse.ParseDSN(cfg.DSN())
 	if err != nil {
 		logger := logger.FromContext(ctx)
-		logger.Error("Unable to create ClickHouse connection", slog.Any("error", err), slog.String("host", cfg.Host), slog.String("port", cfg.Port))
+		logger.Error("Unable to parse ClickHouse DSN", slog.Any("error", err))
+		return nil, err
+	}
+
+	conn, err := clickhouse.Open(opts)
+	if err != nil {
+		logger := logger.FromContext(ctx)
+		logger.Error("Unable to create ClickHouse connection", slog.Any("error", err))
 		return nil, err
 	}
 
 	if err := conn.Ping(ctx); err != nil {
 		logger := logger.FromContext(ctx)
-		logger.Error("Unable to ping ClickHouse", slog.Any("error", err), slog.String("host", cfg.Host), slog.String("port", cfg.Port))
+		logger.Error("Unable to ping ClickHouse", slog.Any("error", err))
 		return nil, err
 	}
 
