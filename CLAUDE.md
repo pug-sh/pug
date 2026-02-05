@@ -57,8 +57,8 @@ The backend follows a layered architecture with Connect RPC (HTTP/2):
 
 - **`internal/app/`** - CLI entry points using Cobra, split by feature (server, workers, dev, migrate)
   - `server/rpc/` - RPC handlers that map proto services to business logic
+  - `workers/campaigns/`, `workers/subscriptions/`, `workers/scheduler/` - NATS message consumers
 - **`internal/core/`** - Business logic layer with service and repo per domain (auth, campaigns, delivery, projects, segments, subscriptions)
-- **`internal/workers/`** - NATS message consumers (campaigns, subscriptions)
 - **`internal/gen/`** - Generated code (do not edit manually)
   - `proto/` - Generated from .proto files via buf
   - `repo/dbread/`, `repo/dbwrite/` - Generated from SQL via sqlc

@@ -11,7 +11,8 @@ import (
 	migratenats "github.com/fivebitsio/cotton/internal/app/migrate/nats"
 	"github.com/fivebitsio/cotton/internal/app/migrate/postgres"
 	"github.com/fivebitsio/cotton/internal/app/server"
-	"github.com/fivebitsio/cotton/internal/app/workers"
+	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
+	"github.com/fivebitsio/cotton/internal/app/workers/subscriptions"
 	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -58,7 +59,7 @@ var subscriptionCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		if err := workers.RunSubscription(ctx); err != nil {
+		if err := subscriptions.Run(ctx); err != nil {
 			logger.Log.Error("error starting subscription worker", slog.Any("err", err))
 			os.Exit(1)
 		}
@@ -77,7 +78,7 @@ var campaignCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		if err := workers.RunCampaign(ctx); err != nil {
+		if err := campaigns.Run(ctx); err != nil {
 			logger.Log.Error("error starting campaign worker", slog.Any("err", err))
 			os.Exit(1)
 		}
@@ -96,8 +97,8 @@ var devCmd = &cobra.Command{
 		}
 
 		errChan := make(chan error, 3)
-		go func() { errChan <- workers.RunSubscription(ctx) }()
-		go func() { errChan <- workers.RunCampaign(ctx) }()
+		go func() { errChan <- subscriptions.Run(ctx) }()
+		go func() { errChan <- campaigns.Run(ctx) }()
 		go func() { errChan <- server.Run(ctx) }()
 
 		select {

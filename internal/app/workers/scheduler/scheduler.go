@@ -10,9 +10,11 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/campaigns"
 	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/sethvargo/go-envconfig"
 )
 
 const pollInterval = 30 * time.Second
@@ -20,6 +22,27 @@ const pollInterval = 30 * time.Second
 type Scheduler struct {
 	read     *dbread.Queries
 	producer jetstream.JetStream
+}
+
+func Run(ctx context.Context) error {
+	var cfg postgres.Config
+	if err := envconfig.Process(ctx, &cfg); err != nil {
+		return err
+	}
+
+	pgRO, err := postgres.NewReaderPool(ctx, &cfg)
+	if err != nil {
+		return err
+	}
+	defer pgRO.Close()
+
+	natsClient, err := nats.New(ctx)
+	if err != nil {
+		return err
+	}
+	defer natsClient.Close()
+
+	return StartWorker(ctx, pgRO, natsClient)
 }
 
 func StartWorker(ctx context.Context, pgRO *pgxpool.Pool, natsClient *nats.NATSClient) error {

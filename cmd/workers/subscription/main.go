@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/fivebitsio/cotton/internal/app/workers"
+	"github.com/fivebitsio/cotton/internal/app/workers/subscriptions"
 	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/joho/godotenv"
 )
@@ -21,7 +21,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := workers.RunSubscription(ctx); err != nil {
+	if err := subscriptions.Run(ctx); err != nil {
 		logger.Log.Error("error starting subscription worker", slog.Any("err", err))
 		os.Exit(1)
 	}
