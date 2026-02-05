@@ -10,4 +10,7 @@ const (
 
 	// Delivery subjects
 	DeliveryEventsSubject = "deliveries.events"
+
+	// Events subjects
+	EventsIngestSubject = "events.ingest"
 )

@@ -35,3 +35,15 @@ streams:
     max_age: 2592000000000000  # 30 days in nanoseconds (equivalent to 43200 minutes)
     storage: "file"
     num_replicas: 1
+
+  # Stream for analytics events
+  - name: "events"
+    subjects: ["events.>"]
+    description: "Analytics events from SDKs and internal services"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 50000000000  # ~50GB
+    max_age: 2592000000000000  # 30 days in nanoseconds
+    storage: "file"
+    num_replicas: 1
