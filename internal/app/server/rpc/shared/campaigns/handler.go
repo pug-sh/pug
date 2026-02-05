@@ -6,13 +6,13 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
+	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/campaigns"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/xid"
@@ -108,7 +108,7 @@ func (s *server) Create(
 		Name:             req.Msg.Name,
 		ProjectID:        projectID,
 		NotificationData: notificationData,
-		ScheduledTime:    postgres.TimestampToTimestamptz(scheduledTimeParam),
+		ScheduledTime:    postgres.NewTimestampTZ(scheduledTimeParam.AsTime()),
 		Status:           campaigns.StatusScheduled,
 	})
 	if err != nil {
@@ -163,7 +163,7 @@ func (s *server) Update(
 		ProjectID:        principal.Project.ID,
 		Name:             req.Msg.Name,
 		NotificationData: req.Msg.NotificationData,
-		ScheduledTime:    postgres.TimestampToTimestamptz(req.Msg.ScheduledTime),
+		ScheduledTime:    postgres.NewTimestampTZ(req.Msg.ScheduledTime.AsTime()),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed updating campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
