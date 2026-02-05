@@ -5,7 +5,6 @@ import (
 	"log/slog"
 
 	"github.com/exaring/otelpgx"
-	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,8 +16,7 @@ type DB struct {
 func createPool(ctx context.Context, addr string) (*pgxpool.Pool, error) {
 	dbPoolConfig, err := pgxpool.ParseConfig(addr)
 	if err != nil {
-		logger := logger.FromContext(ctx)
-		logger.Error("unable to parse DBPostgresAddr", slog.Any("error", err), slog.String("DBPostgresAddr", addr))
+		slog.ErrorContext(ctx, "unable to parse DBPostgresAddr", slog.Any("error", err), slog.String("DBPostgresAddr", addr))
 		return nil, err
 	}
 
@@ -26,8 +24,7 @@ func createPool(ctx context.Context, addr string) (*pgxpool.Pool, error) {
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), dbPoolConfig)
 	if err != nil {
-		logger := logger.FromContext(ctx)
-		logger.Error("Unable to create connection pool", slog.Any("error", err), slog.String("DBPostgresAddr", addr))
+		slog.ErrorContext(ctx, "Unable to create connection pool", slog.Any("error", err), slog.String("DBPostgresAddr", addr))
 		return nil, err
 	}
 	return pool, nil
@@ -55,7 +52,6 @@ func NewWriterPool(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) {
 
 // Close closes opened DB connection pool
 func (db *DB) Close(ctx context.Context) {
-	logger := logger.FromContext(ctx)
-	logger.Info("Closing connection pool.")
+	slog.InfoContext(ctx, "Closing connection pool.")
 	db.Pool.Close()
 }

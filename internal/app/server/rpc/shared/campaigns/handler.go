@@ -9,7 +9,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/campaigns"
 	"github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"

@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"github.com/fivebitsio/cotton/internal/app/migrate/postgres"
-	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/joho/godotenv"
 )
 
@@ -17,12 +16,12 @@ func main() {
 	defer done()
 
 	if err := godotenv.Load(); err != nil {
-		logger.Log.Error("error loading .env file", slog.Any("err", err))
+		slog.Error("error loading .env file", slog.Any("err", err))
 		os.Exit(1)
 	}
 
 	if err := postgres.Up(ctx, 0); err != nil {
-		logger.Log.Error("postgres migration error", slog.Any("err", err))
+		slog.Error("postgres migration error", slog.Any("err", err))
 		os.Exit(1)
 	}
 }

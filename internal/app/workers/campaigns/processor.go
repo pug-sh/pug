@@ -10,7 +10,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/delivery"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	subscriptionssvc "github.com/fivebitsio/cotton/internal/core/subscriptions"
-	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

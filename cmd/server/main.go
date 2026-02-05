@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"github.com/fivebitsio/cotton/internal/app/server"
-	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/joho/godotenv"
 )
 
@@ -17,12 +16,12 @@ func main() {
 	defer done()
 
 	if err := godotenv.Load(); err != nil {
-		logger.Log.Error("error loading .env file", slog.Any("err", err))
+		slog.Error("error loading .env file", slog.Any("err", err))
 		os.Exit(1)
 	}
 
 	if err := server.Run(ctx); err != nil {
-		logger.Log.Error("server error", slog.Any("err", err))
+		slog.Error("server error", slog.Any("err", err))
 		os.Exit(1)
 	}
 }

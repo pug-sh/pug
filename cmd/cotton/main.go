@@ -13,7 +13,6 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server"
 	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/workers/subscriptions"
-	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -31,12 +30,12 @@ var serverCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			logger.Log.Error("error loading .env file", slog.Any("err", err))
+			slog.Error("error loading .env file", slog.Any("err", err))
 			os.Exit(1)
 		}
 
 		if err := server.Run(ctx); err != nil {
-			logger.Log.Error("server error", slog.Any("err", err))
+			slog.Error("server error", slog.Any("err", err))
 			os.Exit(1)
 		}
 	},
@@ -55,12 +54,12 @@ var subscriptionCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			logger.Log.Error("error loading .env file", slog.Any("err", err))
+			slog.Error("error loading .env file", slog.Any("err", err))
 			os.Exit(1)
 		}
 
 		if err := subscriptions.Run(ctx); err != nil {
-			logger.Log.Error("error starting subscription worker", slog.Any("err", err))
+			slog.Error("error starting subscription worker", slog.Any("err", err))
 			os.Exit(1)
 		}
 	},
@@ -74,12 +73,12 @@ var campaignCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			logger.Log.Error("error loading .env file", slog.Any("err", err))
+			slog.Error("error loading .env file", slog.Any("err", err))
 			os.Exit(1)
 		}
 
 		if err := campaigns.Run(ctx); err != nil {
-			logger.Log.Error("error starting campaign worker", slog.Any("err", err))
+			slog.Error("error starting campaign worker", slog.Any("err", err))
 			os.Exit(1)
 		}
 	},
@@ -93,7 +92,7 @@ var devCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			logger.Log.Warn("No .env file found, relying on environment variables", slog.Any("err", err))
+			slog.Warn("No .env file found, relying on environment variables", slog.Any("err", err))
 		}
 
 		errChan := make(chan error, 3)
@@ -103,12 +102,12 @@ var devCmd = &cobra.Command{
 
 		select {
 		case err := <-errChan:
-			logger.Log.Error("component stopped", slog.Any("err", err))
+			slog.Error("component stopped", slog.Any("err", err))
 		case <-ctx.Done():
-			logger.Log.Info("Shutdown signal received")
+			slog.Info("Shutdown signal received")
 		}
 
-		logger.Log.Info("Shutting down...")
+		slog.Info("Shutting down...")
 	},
 }
 
@@ -120,7 +119,7 @@ var postgresMigrateCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			logger.Log.Error("error loading .env file", slog.Any("err", err))
+			slog.Error("error loading .env file", slog.Any("err", err))
 			os.Exit(1)
 		}
 
@@ -135,7 +134,7 @@ var postgresMigrateCmd = &cobra.Command{
 			err = postgres.Down(ctx, num)
 		}
 		if err != nil {
-			logger.Log.Error("postgres migration error", slog.Any("err", err))
+			slog.Error("postgres migration error", slog.Any("err", err))
 			os.Exit(1)
 		}
 	},
@@ -166,7 +165,7 @@ var clickhouseMigrateCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			logger.Log.Error("error loading .env file", slog.Any("err", err))
+			slog.Error("error loading .env file", slog.Any("err", err))
 			os.Exit(1)
 		}
 
@@ -181,7 +180,7 @@ var clickhouseMigrateCmd = &cobra.Command{
 			err = clickhouse.Down(ctx, num)
 		}
 		if err != nil {
-			logger.Log.Error("clickhouse migration error", slog.Any("err", err))
+			slog.Error("clickhouse migration error", slog.Any("err", err))
 			os.Exit(1)
 		}
 	},
@@ -225,6 +224,7 @@ func init() {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := rootCmd.ExecuteContext(context.Background()); err != nil {
 		os.Exit(1)
 	}

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -25,7 +24,7 @@ func Up(ctx context.Context, num int) error {
 		if err := goose.UpContext(ctx, db, dir); err != nil {
 			return err
 		}
-		logger.Log.Info("applied all migrations")
+		slog.Info("applied all migrations")
 		return nil
 	}
 
@@ -38,7 +37,7 @@ func Up(ctx context.Context, num int) error {
 		return err
 	}
 
-	logger.Log.Info("applied migrations", slog.Int("appliedMigrations", num))
+	slog.Info("applied migrations", slog.Int("appliedMigrations", num))
 	return nil
 }
 
@@ -62,7 +61,7 @@ func Down(ctx context.Context, num int) error {
 				return err
 			}
 		}
-		logger.Log.Info("rolled back all migrations")
+		slog.Info("rolled back all migrations")
 		return nil
 	}
 
@@ -72,7 +71,7 @@ func Down(ctx context.Context, num int) error {
 		}
 	}
 
-	logger.Log.Info("rolled back migrations", slog.Int("rolledBackMigrations", num))
+	slog.Info("rolled back migrations", slog.Int("rolledBackMigrations", num))
 	return nil
 }
 

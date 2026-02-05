@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"github.com/fivebitsio/cotton/internal/app/workers/subscriptions"
-	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/joho/godotenv"
 )
 
@@ -17,12 +16,12 @@ func main() {
 	defer done()
 
 	if err := godotenv.Load(); err != nil {
-		logger.Log.Error("error loading .env file", slog.Any("err", err))
+		slog.Error("error loading .env file", slog.Any("err", err))
 		os.Exit(1)
 	}
 
 	if err := subscriptions.Run(ctx); err != nil {
-		logger.Log.Error("error starting subscription worker", slog.Any("err", err))
+		slog.Error("error starting subscription worker", slog.Any("err", err))
 		os.Exit(1)
 	}
 }

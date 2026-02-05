@@ -7,7 +7,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"

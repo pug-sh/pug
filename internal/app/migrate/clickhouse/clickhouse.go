@@ -9,7 +9,6 @@ import (
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	clickhousedeps "github.com/fivebitsio/cotton/internal/deps/clickhouse"
-	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/pressly/goose/v3"
 	"github.com/sethvargo/go-envconfig"
 )
@@ -25,7 +24,7 @@ func Up(ctx context.Context, num int) error {
 		if err := goose.UpContext(ctx, db, dir); err != nil {
 			return err
 		}
-		logger.Log.Info("applied all clickhouse migrations")
+		slog.Info("applied all clickhouse migrations")
 		return nil
 	}
 
@@ -38,7 +37,7 @@ func Up(ctx context.Context, num int) error {
 		return err
 	}
 
-	logger.Log.Info("applied clickhouse migrations", slog.Int("appliedMigrations", num))
+	slog.Info("applied clickhouse migrations", slog.Int("appliedMigrations", num))
 	return nil
 }
 
@@ -62,7 +61,7 @@ func Down(ctx context.Context, num int) error {
 				return err
 			}
 		}
-		logger.Log.Info("rolled back all clickhouse migrations")
+		slog.Info("rolled back all clickhouse migrations")
 		return nil
 	}
 
@@ -72,7 +71,7 @@ func Down(ctx context.Context, num int) error {
 		}
 	}
 
-	logger.Log.Info("rolled back clickhouse migrations", slog.Int("rolledBackMigrations", num))
+	slog.Info("rolled back clickhouse migrations", slog.Int("rolledBackMigrations", num))
 	return nil
 }
 

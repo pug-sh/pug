@@ -8,7 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/fivebitsio/cotton/internal/core/subscriptions"
-	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"

@@ -10,14 +10,6 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"connectrpc.com/validate"
-	"github.com/fivebitsio/cotton/internal/deps/logger"
-	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1/subscriptionsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/users/v1/usersv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	cottonrpc "github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/dashboard/projects"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/public/auth"
@@ -25,6 +17,13 @@ import (
 	usersrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/users"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/delivery"
+	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1/subscriptionsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/users/v1/usersv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -110,13 +109,13 @@ func start(ctx context.Context, d *deps) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			logger.Log.Error("server shutdown error", slog.Any("error", err))
+			slog.Error("server shutdown error", slog.Any("error", err))
 		}
 	}()
 
-	logger.Log.Info("Starting server", slog.String("addr", server.Addr))
+	slog.Info("Starting server", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Log.Error("failed to serve", slog.Any("err", err))
+		slog.Error("failed to serve", slog.Any("err", err))
 		return err
 	}
 
