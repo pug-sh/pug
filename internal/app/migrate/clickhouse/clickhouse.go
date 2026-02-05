@@ -81,7 +81,7 @@ func setup(ctx context.Context) (*sql.DB, string, error) {
 		return nil, "", err
 	}
 
-	db, err := sql.Open("clickhouse", cfg.DSN())
+	db, err := sql.Open("clickhouse", cfg.URL)
 	if err != nil {
 		return nil, "", err
 	}

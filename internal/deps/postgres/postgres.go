@@ -32,7 +32,7 @@ func createPool(ctx context.Context, addr string) (*pgxpool.Pool, error) {
 
 // NewFromConfig initiates DB connection from config and returns it
 func NewFromConfig(ctx context.Context, cfg *Config) (*DB, error) {
-	pool, err := createPool(ctx, cfg.ConnectionString())
+	pool, err := createPool(ctx, cfg.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -42,12 +42,12 @@ func NewFromConfig(ctx context.Context, cfg *Config) (*DB, error) {
 
 // NewReaderPool creates and returns a new PostgreSQL connection pool for read operations
 func NewReaderPool(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) {
-	return createPool(ctx, cfg.ConnectionString())
+	return createPool(ctx, cfg.URL)
 }
 
 // NewWriterPool creates and returns a new PostgreSQL connection pool for write operations
 func NewWriterPool(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) {
-	return createPool(ctx, cfg.ConnectionString())
+	return createPool(ctx, cfg.URL)
 }
 
 // Close closes opened DB connection pool

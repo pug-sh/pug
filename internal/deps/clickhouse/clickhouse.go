@@ -14,7 +14,7 @@ type DB struct {
 }
 
 func createConnection(ctx context.Context, cfg *Config) (driver.Conn, error) {
-	opts, err := clickhouse.ParseDSN(cfg.DSN())
+	opts, err := clickhouse.ParseDSN(cfg.URL)
 	if err != nil {
 		slog.ErrorContext(ctx, "Unable to parse ClickHouse DSN", slog.Any("error", err))
 		return nil, err

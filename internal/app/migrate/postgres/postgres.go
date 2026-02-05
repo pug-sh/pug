@@ -81,7 +81,7 @@ func setup(ctx context.Context) (*sql.DB, string, error) {
 		return nil, "", err
 	}
 
-	db, err := sql.Open("pgx", cfg.ConnectionString())
+	db, err := sql.Open("pgx", cfg.URL)
 	if err != nil {
 		return nil, "", err
 	}
