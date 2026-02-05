@@ -13,6 +13,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// TODO: For self-hosting, move stream/consumer initialization to app startup instead of a
+// separate migrate command. This reduces setup friction — users currently need JetStream
+// enabled with specific storage limits, and the 50GB-per-stream defaults break local setups.
+// Consider: auto-create on startup, unified `cotton migrate` for all DBs, env-aware defaults.
+
 // NATSInitializer handles NATS initialization operations
 type NATSInitializer struct {
 	client *nats.NATSClient
