@@ -3,9 +3,9 @@ package subscriptions
 import (
 	"context"
 
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

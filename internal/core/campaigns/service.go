@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 )

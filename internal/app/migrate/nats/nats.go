@@ -1,16 +1,13 @@
-package commands
+package nats
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 
-	"github.com/fivebitsio/cotton/internal/deps/nats"
-	"github.com/joho/godotenv"
+	natsdeps "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/spf13/cobra"
 )
 
 // TODO: For self-hosting, move stream/consumer initialization to app startup instead of a
@@ -18,49 +15,27 @@ import (
 // enabled with specific storage limits, and the 50GB-per-stream defaults break local setups.
 // Consider: auto-create on startup, unified `cotton migrate` for all DBs, env-aware defaults.
 
-// NATSInitializer handles NATS initialization operations
-type NATSInitializer struct {
-	client *nats.NATSClient
+type initializer struct {
+	client *natsdeps.NATSClient
 }
 
-// NATSMigrateCmd represents the nats migrate command
-var NATSMigrateCmd = &cobra.Command{
-	Use:   "migrate",
-	Short: "Initialize NATS streams and consumers",
-	Long:  `Initialize NATS streams and consumers by creating them in the NATS cluster.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		ctx := context.Background()
-
-		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found")
-		}
-
-		client, err := nats.New(ctx)
-		if err != nil {
-			slog.Error("Failed to create NATS client", slog.Any("err", err))
-			os.Exit(1)
-		}
-
-		initializer := NewNATSInitializer(client)
-		defer initializer.client.Close()
-
-		if err := initializer.Initialize(); err != nil {
-			slog.Error("Failed to initialize NATS", slog.Any("err", err))
-			os.Exit(1)
-		}
-
-		slog.Info("NATS initialization completed successfully")
-	},
-}
-
-// NewNATSInitializer creates a new NATSInitializer instance
-func NewNATSInitializer(client *nats.NATSClient) *NATSInitializer {
-	return &NATSInitializer{
-		client: client,
+func Run(ctx context.Context) error {
+	client, err := natsdeps.New(ctx)
+	if err != nil {
+		return err
 	}
+	defer client.Close()
+
+	init := &initializer{client: client}
+	if err := init.run(); err != nil {
+		return err
+	}
+
+	slog.Info("NATS initialization completed successfully")
+	return nil
 }
 
-func (n *NATSInitializer) Initialize() error {
+func (n *initializer) run() error {
 	slog.Info("Starting NATS initialization",
 		slog.String("nats_url", n.client.GetConfig().NATSUrl))
 
@@ -85,7 +60,7 @@ func (n *NATSInitializer) Initialize() error {
 	return nil
 }
 
-func (n *NATSInitializer) createStreams(streams []nats.StreamConfig) error {
+func (n *initializer) createStreams(streams []natsdeps.StreamConfig) error {
 	for _, streamConfig := range streams {
 		slog.Info("Creating stream",
 			slog.String("name", streamConfig.Name),
@@ -151,7 +126,7 @@ func (n *NATSInitializer) createStreams(streams []nats.StreamConfig) error {
 	return nil
 }
 
-func (n *NATSInitializer) createConsumers(consumers []nats.ConsumerConfig) error {
+func (n *initializer) createConsumers(consumers []natsdeps.ConsumerConfig) error {
 	for _, consumerConfig := range consumers {
 		slog.Info("Creating consumer",
 			slog.String("name", consumerConfig.Name),

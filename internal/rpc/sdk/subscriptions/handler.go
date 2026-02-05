@@ -6,10 +6,10 @@ import (
 
 	"connectrpc.com/connect"
 
-	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
-	"github.com/fivebitsio/cotton/internal/rpc"
 	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
+	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
+	"github.com/fivebitsio/cotton/internal/rpc"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 )
