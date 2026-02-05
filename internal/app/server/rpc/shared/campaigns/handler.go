@@ -12,7 +12,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/rpc"
+	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/xid"

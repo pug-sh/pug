@@ -56,7 +56,7 @@ make lint
 The backend follows a layered architecture with Connect RPC (HTTP/2):
 
 - **`internal/app/`** - CLI entry points using Cobra, split by feature (server, workers, dev, migrate)
-- **`internal/rpc/`** - RPC handlers that map proto services to business logic
+  - `server/rpc/` - RPC handlers that map proto services to business logic
 - **`internal/core/`** - Business logic layer with service and repo per domain (auth, campaigns, delivery, projects, segments, subscriptions)
 - **`internal/workers/`** - NATS message consumers (campaigns, subscriptions)
 - **`internal/gen/`** - Generated code (do not edit manually)
