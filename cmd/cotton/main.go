@@ -12,6 +12,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/migrate/postgres"
 	"github.com/fivebitsio/cotton/internal/app/server"
 	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
+	eventsworker "github.com/fivebitsio/cotton/internal/app/workers/events"
 	"github.com/fivebitsio/cotton/internal/app/workers/subscriptions"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -93,6 +94,12 @@ var campaignCmd = &cobra.Command{
 	Run:   run(campaigns.Run),
 }
 
+var eventsCmd = &cobra.Command{
+	Use:   "events",
+	Short: "Start the events worker",
+	Run:   run(eventsworker.Run),
+}
+
 var devCmd = &cobra.Command{
 	Use:   "dev",
 	Short: "Start the Cotton server and workers for development",
@@ -107,9 +114,10 @@ var devCmd = &cobra.Command{
 			slog.Debug("No .env file found, relying on environment variables")
 		}
 
-		errChan := make(chan error, 3)
+		errChan := make(chan error, 4)
 		go func() { errChan <- subscriptions.Run(ctx) }()
 		go func() { errChan <- campaigns.Run(ctx) }()
+		go func() { errChan <- eventsworker.Run(ctx) }()
 		go func() { errChan <- server.Run(ctx) }()
 
 		select {
@@ -120,7 +128,7 @@ var devCmd = &cobra.Command{
 			slog.Info("Shutdown signal received")
 		}
 
-		for i := 0; i < 2; i++ {
+		for i := 0; i < 3; i++ {
 			if err := <-errChan; err != nil && ctx.Err() == nil {
 				slog.Error("component stopped during shutdown", slog.Any("err", err))
 			}
@@ -151,6 +159,7 @@ var clickhouseMigrateCmd = &cobra.Command{
 func init() {
 	workerCmd.AddCommand(subscriptionCmd)
 	workerCmd.AddCommand(campaignCmd)
+	workerCmd.AddCommand(eventsCmd)
 
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)
