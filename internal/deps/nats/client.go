@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -119,13 +117,8 @@ func (nc *NATSClient) ReadStreamConfig() ([]StreamConfig, error) {
 		Streams []StreamConfig `yaml:"streams"`
 	}
 
-	ext := strings.ToLower(filepath.Ext(nc.config.StreamsConfig))
-	if ext == ".yaml" || ext == ".yml" {
-		if err := yaml.Unmarshal(data, &config); err != nil {
-			return nil, fmt.Errorf("failed to parse YAML streams config: %w", err)
-		}
-	} else {
-		return nil, fmt.Errorf("unsupported config file format: %s (only .yaml and .yml are supported)", ext)
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse streams config: %w", err)
 	}
 
 	return config.Streams, nil
@@ -146,13 +139,8 @@ func (nc *NATSClient) ReadConsumerConfig() ([]ConsumerConfig, error) {
 		Consumers []ConsumerConfig `yaml:"consumers"`
 	}
 
-	ext := strings.ToLower(filepath.Ext(nc.config.ConsumersConfig))
-	if ext == ".yaml" || ext == ".yml" {
-		if err := yaml.Unmarshal(data, &config); err != nil {
-			return nil, fmt.Errorf("failed to parse YAML consumers config: %w", err)
-		}
-	} else {
-		return nil, fmt.Errorf("unsupported config file format: %s (only .yaml and .yml are supported)", ext)
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse consumers config: %w", err)
 	}
 
 	return config.Consumers, nil
