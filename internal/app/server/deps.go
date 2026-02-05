@@ -48,11 +48,14 @@ func newDeps(ctx context.Context) (*deps, error) {
 
 	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
 	if err != nil {
+		pgRo.Close()
 		return nil, err
 	}
 
 	natsClient, err := nats.New(ctx)
 	if err != nil {
+		pgRo.Close()
+		pgW.Close()
 		return nil, err
 	}
 

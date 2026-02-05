@@ -16,8 +16,7 @@ func main() {
 	defer done()
 
 	if err := godotenv.Load(); err != nil {
-		slog.Error("error loading .env file", slog.Any("err", err))
-		os.Exit(1)
+		slog.Debug("No .env file found, relying on environment variables")
 	}
 
 	if err := server.Run(ctx); err != nil {

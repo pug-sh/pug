@@ -82,4 +82,4 @@ Services defined in `proto/` directory. Generated code goes to `internal/gen/pro
 
 ## Code Style
 
-- Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change.
+- Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change. A PostToolUse hook auto-runs `goimports` on every `.go` file edit.

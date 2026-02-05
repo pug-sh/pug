@@ -7,9 +7,9 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
 	deliveryv1 "github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -64,14 +64,7 @@ func (s *Server) RecordEvent(
 	_, err = s.producer.Publish(ctx, nats.DeliveryEventsSubject, data)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to publish delivery event to NATS", slogx.Error(err))
-		return &connect.Response[deliveryv1.RecordEventResponse]{
-			Msg: &deliveryv1.RecordEventResponse{
-				Success:           false,
-				Message:           "Failed to record delivery event",
-				ShouldRetry:       true,
-				RetryAfterSeconds: 5, // Retry after 5 seconds
-			},
-		}, nil
+		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
 
 	return &connect.Response[deliveryv1.RecordEventResponse]{

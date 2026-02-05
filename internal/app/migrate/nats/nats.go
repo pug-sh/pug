@@ -104,23 +104,11 @@ func (n *initializer) createStreams(streams []natsdeps.StreamConfig) error {
 		}
 
 		js := n.client.GetJetStream()
-		_, err := js.CreateStream(context.Background(), cfg)
+		_, err := js.CreateOrUpdateStream(context.Background(), cfg)
 		if err != nil {
-			if strings.Contains(err.Error(), "stream name already in use") {
-				slog.Info("Stream already exists", slog.String("name", streamConfig.Name))
-
-				// Update the existing stream with new configuration
-				_, err = js.UpdateStream(context.Background(), cfg)
-				if err != nil {
-					return fmt.Errorf("failed to update stream %s: %w", streamConfig.Name, err)
-				}
-				slog.Info("Updated existing stream", slog.String("name", streamConfig.Name))
-			} else {
-				return fmt.Errorf("failed to create stream %s: %w", streamConfig.Name, err)
-			}
-		} else {
-			slog.Info("Created stream successfully", slog.String("name", streamConfig.Name))
+			return fmt.Errorf("failed to create or update stream %s: %w", streamConfig.Name, err)
 		}
+		slog.Info("Stream ready", slog.String("name", streamConfig.Name))
 	}
 
 	return nil

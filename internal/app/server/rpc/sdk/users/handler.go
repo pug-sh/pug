@@ -6,11 +6,11 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	"github.com/fivebitsio/cotton/internal/slogx"
 	usersv1 "github.com/fivebitsio/cotton/internal/gen/proto/users/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/users/v1/usersv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/types/known/structpb"

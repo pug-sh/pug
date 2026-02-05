@@ -30,8 +30,7 @@ var serverCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			slog.Error("error loading .env file", slog.Any("err", err))
-			os.Exit(1)
+			slog.Debug("No .env file found, relying on environment variables")
 		}
 
 		if err := server.Run(ctx); err != nil {
@@ -54,8 +53,7 @@ var subscriptionCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			slog.Error("error loading .env file", slog.Any("err", err))
-			os.Exit(1)
+			slog.Debug("No .env file found, relying on environment variables")
 		}
 
 		if err := subscriptions.Run(ctx); err != nil {
@@ -73,8 +71,7 @@ var campaignCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			slog.Error("error loading .env file", slog.Any("err", err))
-			os.Exit(1)
+			slog.Debug("No .env file found, relying on environment variables")
 		}
 
 		if err := campaigns.Run(ctx); err != nil {
@@ -88,11 +85,14 @@ var devCmd = &cobra.Command{
 	Use:   "dev",
 	Short: "Start the Cotton server and workers for development",
 	Run: func(cmd *cobra.Command, args []string) {
-		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		sigCtx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
 
+		ctx, cancel := context.WithCancel(sigCtx)
+		defer cancel()
+
 		if err := godotenv.Load(); err != nil {
-			slog.Warn("No .env file found, relying on environment variables", slog.Any("err", err))
+			slog.Debug("No .env file found, relying on environment variables")
 		}
 
 		errChan := make(chan error, 3)
@@ -103,8 +103,15 @@ var devCmd = &cobra.Command{
 		select {
 		case err := <-errChan:
 			slog.Error("component stopped", slog.Any("err", err))
+			cancel()
 		case <-ctx.Done():
 			slog.Info("Shutdown signal received")
+		}
+
+		for i := 0; i < 2; i++ {
+			if err := <-errChan; err != nil && ctx.Err() == nil {
+				slog.Error("component stopped during shutdown", slog.Any("err", err))
+			}
 		}
 
 		slog.Info("Shutting down...")
@@ -119,8 +126,7 @@ var postgresMigrateCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			slog.Error("error loading .env file", slog.Any("err", err))
-			os.Exit(1)
+			slog.Debug("No .env file found, relying on environment variables")
 		}
 
 		direction, _ := cmd.Flags().GetString("direction")
@@ -132,6 +138,9 @@ var postgresMigrateCmd = &cobra.Command{
 			err = postgres.Up(ctx, num)
 		case "down":
 			err = postgres.Down(ctx, num)
+		default:
+			slog.Error("invalid migration direction, must be 'up' or 'down'", slog.String("direction", direction))
+			os.Exit(1)
 		}
 		if err != nil {
 			slog.Error("postgres migration error", slog.Any("err", err))
@@ -165,8 +174,7 @@ var clickhouseMigrateCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			slog.Error("error loading .env file", slog.Any("err", err))
-			os.Exit(1)
+			slog.Debug("No .env file found, relying on environment variables")
 		}
 
 		direction, _ := cmd.Flags().GetString("direction")
@@ -178,6 +186,9 @@ var clickhouseMigrateCmd = &cobra.Command{
 			err = clickhouse.Up(ctx, num)
 		case "down":
 			err = clickhouse.Down(ctx, num)
+		default:
+			slog.Error("invalid migration direction, must be 'up' or 'down'", slog.String("direction", direction))
+			os.Exit(1)
 		}
 		if err != nil {
 			slog.Error("clickhouse migration error", slog.Any("err", err))

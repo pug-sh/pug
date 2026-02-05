@@ -16,7 +16,7 @@ type DB struct {
 func createPool(ctx context.Context, addr string) (*pgxpool.Pool, error) {
 	dbPoolConfig, err := pgxpool.ParseConfig(addr)
 	if err != nil {
-		slog.ErrorContext(ctx, "unable to parse DBPostgresAddr", slog.Any("error", err), slog.String("DBPostgresAddr", addr))
+		slog.ErrorContext(ctx, "unable to parse database URL", slog.Any("error", err))
 		return nil, err
 	}
 
@@ -24,7 +24,7 @@ func createPool(ctx context.Context, addr string) (*pgxpool.Pool, error) {
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), dbPoolConfig)
 	if err != nil {
-		slog.ErrorContext(ctx, "Unable to create connection pool", slog.Any("error", err), slog.String("DBPostgresAddr", addr))
+		slog.ErrorContext(ctx, "unable to create connection pool", slog.Any("error", err))
 		return nil, err
 	}
 	return pool, nil

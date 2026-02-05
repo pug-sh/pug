@@ -83,7 +83,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	if err := w.campaignService.UpdateCampaignStatus(ctx, campaign.ID, finalStatus); err != nil {
-		slog.ErrorContext(ctx, "failed to update campaign status", slogx.Error(err), slog.String("campaign_id", campaign.ID))
+		return fmt.Errorf("failed to update campaign %s status to %s: %w", campaign.ID, finalStatus, err)
 	}
 
 	return nil
