@@ -8,7 +8,7 @@ import (
 
 	"connectrpc.com/authn"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/pkg/logger/slogx"
+	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 )

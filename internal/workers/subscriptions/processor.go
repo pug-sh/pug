@@ -11,7 +11,7 @@ import (
 	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/pkg/logger/slogx"
+	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"

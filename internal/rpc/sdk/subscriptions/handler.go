@@ -8,8 +8,8 @@ import (
 
 	subscriptionsv1 "github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1"
 	"github.com/fivebitsio/cotton/internal/rpc"
-	"github.com/fivebitsio/cotton/pkg/logger/slogx"
-	"github.com/fivebitsio/cotton/pkg/nats"
+	"github.com/fivebitsio/cotton/internal/deps/logger/slogx"
+	"github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 )

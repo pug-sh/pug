@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/fivebitsio/cotton/pkg/logger"
-	"github.com/fivebitsio/cotton/pkg/postgres"
+	"github.com/fivebitsio/cotton/internal/deps/logger"
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
 	"github.com/pressly/goose/v3"

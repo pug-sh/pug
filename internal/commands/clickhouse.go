@@ -10,8 +10,8 @@ import (
 	"syscall"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/fivebitsio/cotton/pkg/clickhouse"
-	"github.com/fivebitsio/cotton/pkg/logger"
+	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
+	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/joho/godotenv"
 	"github.com/pressly/goose/v3"
 	"github.com/sethvargo/go-envconfig"

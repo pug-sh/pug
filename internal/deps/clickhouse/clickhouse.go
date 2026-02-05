@@ -7,7 +7,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/fivebitsio/cotton/pkg/logger"
+	"github.com/fivebitsio/cotton/internal/deps/logger"
 )
 
 type DB struct {

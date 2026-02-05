@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	natsworker "github.com/fivebitsio/cotton/pkg/nats"
+	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 )

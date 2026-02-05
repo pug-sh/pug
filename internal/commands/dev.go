@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/fivebitsio/cotton/pkg/logger"
+	"github.com/fivebitsio/cotton/internal/deps/logger"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )

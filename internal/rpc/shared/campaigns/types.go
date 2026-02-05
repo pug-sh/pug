@@ -6,7 +6,7 @@ import (
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/pkg/postgres"
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 )
 
 func wToRPCMsg(c dbwrite.Campaign) (*campaignsv1.Campaign, error) {

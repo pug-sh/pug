@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	connectcors "connectrpc.com/cors"
-	"github.com/fivebitsio/cotton/pkg/constant"
 	"github.com/rs/cors"
 )
 
@@ -21,7 +20,7 @@ func WithCORS(allowedOrigins []string, connectHandler http.Handler) http.Handler
 		AllowCredentials: true,
 		AllowedHeaders: append(
 			connectcors.AllowedHeaders(),
-			constant.HeaderAuthorization,
+			"Authorization",
 		),
 		AllowedMethods: append(connectcors.AllowedMethods(), http.MethodOptions),
 		AllowedOrigins: allowedOrigins,

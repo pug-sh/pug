@@ -9,9 +9,9 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/workers/campaigns"
 	"github.com/fivebitsio/cotton/internal/workers/subscriptions"
-	"github.com/fivebitsio/cotton/pkg/logger"
-	"github.com/fivebitsio/cotton/pkg/nats"
-	"github.com/fivebitsio/cotton/pkg/postgres"
+	"github.com/fivebitsio/cotton/internal/deps/logger"
+	"github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-envconfig"

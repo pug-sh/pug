@@ -66,10 +66,12 @@ The backend follows a layered architecture with Connect RPC (HTTP/2):
 ### Database Pattern
 
 PostgreSQL uses read/write separation:
+
 - Queries in `schema/postgres/queries/read/` generate to `internal/gen/repo/dbread/`
 - Queries in `schema/postgres/queries/write/` generate to `internal/gen/repo/dbwrite/`
 
 **sqlc conventions**:
+
 - Query names: PascalCase with uppercase `ID` (e.g., `GetCampaignByID`, `GetProjectsByCustomerID`)
 - SQL syntax and identifiers: lowercase (e.g., `select * from campaigns where project_id = @project_id`)
 - Partial updates: use `coalesce(nullif(@field, ''), field)` to preserve existing values when empty

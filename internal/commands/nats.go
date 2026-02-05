@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/fivebitsio/cotton/pkg/nats"
+	"github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/joho/godotenv"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/spf13/cobra"
