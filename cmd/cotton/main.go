@@ -17,6 +17,54 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// run creates a signal-aware context, loads .env, and runs fn.
+func run(fn func(ctx context.Context) error) func(cmd *cobra.Command, args []string) {
+	return func(cmd *cobra.Command, args []string) {
+		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer done()
+
+		if err := godotenv.Load(); err != nil {
+			slog.Debug("No .env file found, relying on environment variables")
+		}
+
+		if err := fn(ctx); err != nil {
+			slog.Error("fatal error", slog.Any("err", err))
+			os.Exit(1)
+		}
+	}
+}
+
+// runMigrate creates a signal-aware context, loads .env, reads --direction and --num flags,
+// validates direction, and calls the appropriate up/down function.
+func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cobra.Command, args []string) {
+	return func(cmd *cobra.Command, args []string) {
+		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer done()
+
+		if err := godotenv.Load(); err != nil {
+			slog.Debug("No .env file found, relying on environment variables")
+		}
+
+		direction, _ := cmd.Flags().GetString("direction")
+		num, _ := cmd.Flags().GetInt("num")
+
+		var err error
+		switch direction {
+		case "up":
+			err = up(ctx, num)
+		case "down":
+			err = down(ctx, num)
+		default:
+			slog.Error("invalid migration direction, must be 'up' or 'down'", slog.String("direction", direction))
+			os.Exit(1)
+		}
+		if err != nil {
+			slog.Error("migration error", slog.Any("err", err))
+			os.Exit(1)
+		}
+	}
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "cotton",
 	Short: "Cotton is a unified command line tool for managing the Cotton application",
@@ -25,19 +73,7 @@ var rootCmd = &cobra.Command{
 var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Start the Cotton server",
-	Run: func(cmd *cobra.Command, args []string) {
-		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer done()
-
-		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
-		}
-
-		if err := server.Run(ctx); err != nil {
-			slog.Error("server error", slog.Any("err", err))
-			os.Exit(1)
-		}
-	},
+	Run:   run(server.Run),
 }
 
 var workerCmd = &cobra.Command{
@@ -48,37 +84,13 @@ var workerCmd = &cobra.Command{
 var subscriptionCmd = &cobra.Command{
 	Use:   "subscription",
 	Short: "Start the subscription worker",
-	Run: func(cmd *cobra.Command, args []string) {
-		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer done()
-
-		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
-		}
-
-		if err := subscriptions.Run(ctx); err != nil {
-			slog.Error("error starting subscription worker", slog.Any("err", err))
-			os.Exit(1)
-		}
-	},
+	Run:   run(subscriptions.Run),
 }
 
 var campaignCmd = &cobra.Command{
 	Use:   "campaign",
 	Short: "Start the campaign worker",
-	Run: func(cmd *cobra.Command, args []string) {
-		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer done()
-
-		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
-		}
-
-		if err := campaigns.Run(ctx); err != nil {
-			slog.Error("error starting campaign worker", slog.Any("err", err))
-			os.Exit(1)
-		}
-	},
+	Run:   run(campaigns.Run),
 }
 
 var devCmd = &cobra.Command{
@@ -121,80 +133,19 @@ var devCmd = &cobra.Command{
 var postgresMigrateCmd = &cobra.Command{
 	Use:   "migrate",
 	Short: "Run database migrations for postgres",
-	Run: func(cmd *cobra.Command, args []string) {
-		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer done()
-
-		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
-		}
-
-		direction, _ := cmd.Flags().GetString("direction")
-		num, _ := cmd.Flags().GetInt("num")
-
-		var err error
-		switch direction {
-		case "up":
-			err = postgres.Up(ctx, num)
-		case "down":
-			err = postgres.Down(ctx, num)
-		default:
-			slog.Error("invalid migration direction, must be 'up' or 'down'", slog.String("direction", direction))
-			os.Exit(1)
-		}
-		if err != nil {
-			slog.Error("postgres migration error", slog.Any("err", err))
-			os.Exit(1)
-		}
-	},
+	Run:   runMigrate(postgres.Up, postgres.Down),
 }
 
 var natsMigrateCmd = &cobra.Command{
 	Use:   "migrate",
 	Short: "Initialize NATS streams and consumers",
-	Run: func(cmd *cobra.Command, args []string) {
-		ctx := context.Background()
-
-		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found")
-		}
-
-		if err := migratenats.Run(ctx); err != nil {
-			slog.Error("NATS initialization error", slog.Any("err", err))
-			os.Exit(1)
-		}
-	},
+	Run:   run(migratenats.Run),
 }
 
 var clickhouseMigrateCmd = &cobra.Command{
 	Use:   "migrate",
 	Short: "Run database migrations for clickhouse",
-	Run: func(cmd *cobra.Command, args []string) {
-		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer done()
-
-		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
-		}
-
-		direction, _ := cmd.Flags().GetString("direction")
-		num, _ := cmd.Flags().GetInt("num")
-
-		var err error
-		switch direction {
-		case "up":
-			err = clickhouse.Up(ctx, num)
-		case "down":
-			err = clickhouse.Down(ctx, num)
-		default:
-			slog.Error("invalid migration direction, must be 'up' or 'down'", slog.String("direction", direction))
-			os.Exit(1)
-		}
-		if err != nil {
-			slog.Error("clickhouse migration error", slog.Any("err", err))
-			os.Exit(1)
-		}
-	},
+	Run:   runMigrate(clickhouse.Up, clickhouse.Down),
 }
 
 func init() {
