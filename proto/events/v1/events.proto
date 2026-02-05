@@ -1,0 +1,33 @@
+edition = "2023";
+package events.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/events/v1;eventsv1";
+
+service EventsService {
+  rpc BatchCreate(BatchCreateRequest) returns (BatchCreateResponse);
+}
+
+message Event {
+  string distinct_id = 1;
+  string event = 2;
+  map<string, string> sdk_properties = 3;
+  map<string, string> user_properties = 4;
+  google.protobuf.Timestamp event_time = 5;
+}
+
+message BatchCreateRequest {
+  repeated Event events = 1;
+}
+
+message BatchCreateResponse {
+  uint32 accepted = 1;
+}
+
+// Internal NATS message wrapping events with project context
+message EventBatch {
+  string project_id = 1;
+  repeated Event events = 2;
+}
