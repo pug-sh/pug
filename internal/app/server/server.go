@@ -13,6 +13,7 @@ import (
 	cottonrpc "github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/dashboard/projects"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/public/auth"
+	eventsrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/events"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/subscriptions"
 	usersrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/users"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/campaigns"
@@ -20,6 +21,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/events/v1/eventsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1/subscriptionsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/users/v1/usersv1connect"
@@ -70,6 +72,9 @@ func start(ctx context.Context, d *deps) error {
 	subscriptionsPath, subscriptionsHandler := subscriptionsv1connect.NewSubscriptionsServiceHandler(
 		subscriptionsServer, handlerOpts)
 
+	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(
+		eventsrpc.NewServer(d.eventsProducer), handlerOpts)
+
 	mux := http.NewServeMux()
 
 	// Public (CORS, no auth)
@@ -85,6 +90,7 @@ func start(ctx context.Context, d *deps) error {
 	// SDK only (API key auth, no CORS)
 	mux.Handle(subscriptionsPath, sdkMW.Wrap(subscriptionsHandler))
 	mux.Handle(usersPath, sdkMW.Wrap(usersHandler))
+	mux.Handle(eventsPath, sdkMW.Wrap(eventsHandler))
 
 	// Reflection
 	services := []string{
@@ -92,6 +98,7 @@ func start(ctx context.Context, d *deps) error {
 		projectsv1connect.ProjectsServiceName,
 		campaignsv1connect.CampaignServiceName,
 		deliveryv1connect.DeliveryServiceName,
+		eventsv1connect.EventsServiceName,
 		subscriptionsv1connect.SubscriptionsServiceName,
 		usersv1connect.UsersServiceName,
 	}
