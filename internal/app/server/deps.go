@@ -15,6 +15,7 @@ type deps struct {
 	campaignsProducer  jetstream.JetStream
 	corsOrigins        []string
 	deliveriesProducer jetstream.JetStream
+	eventsProducer     jetstream.JetStream
 	jwtKey             []byte
 	nats               *nats.NATSClient
 	pgRo               *pgxpool.Pool
@@ -63,6 +64,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 		campaignsProducer:  natsClient.GetJetStream(),
 		corsOrigins:        strings.Split(serverCfg.CORSOrigins, ","),
 		deliveriesProducer: natsClient.GetJetStream(),
+		eventsProducer:     natsClient.GetJetStream(),
 		jwtKey:             []byte(serverCfg.JWTKey),
 		nats:               natsClient,
 		pgRo:               pgRo,

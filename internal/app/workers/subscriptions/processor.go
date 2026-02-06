@@ -20,15 +20,15 @@ import (
 
 type Worker struct {
 	subscriptionService *subscriptions.Service
-	usersRead           *dbread.Queries
-	usersWrite          *dbwrite.Queries
+	profilesRead        *dbread.Queries
+	profilesWrite       *dbwrite.Queries
 }
 
 func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 	return &Worker{
 		subscriptionService: subscriptions.NewService(pgRO, pgW),
-		usersRead:           dbread.New(pgRO),
-		usersWrite:          dbwrite.New(pgW),
+		profilesRead:        dbread.New(pgRO),
+		profilesWrite:       dbwrite.New(pgW),
 	}
 }
 
@@ -63,8 +63,8 @@ func (c *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		return c.handleUpdateStatus(ctx, msg)
 	case subscriptionsv1.SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN:
 		return c.handleUpdateToken(ctx, msg)
-	case subscriptionsv1.SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_USER_LINK:
-		return c.handleUserLink(ctx, msg)
+	case subscriptionsv1.SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK:
+		return c.handleProfileLink(ctx, msg)
 	default:
 		slog.Warn("unknown subscription operation type", slog.Int("type", int(msg.OperationType)))
 		return fmt.Errorf("unknown operation type: %v", msg.OperationType)
@@ -161,44 +161,44 @@ func (c *Worker) handleUpdateToken(ctx context.Context, msg *subscriptionsv1.Sub
 	return nil
 }
 
-func (c *Worker) handleUserLink(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
+func (c *Worker) handleProfileLink(ctx context.Context, msg *subscriptionsv1.SubscriptionOperationMessage) error {
 	projectID := msg.GetProjectId()
 	externalID := msg.GetExternalId()
 	subscriptionID := msg.GetSubscriptionId()
 
-	// Look up user by external_id
-	user, err := c.usersRead.GetUserByProjectAndExternalID(ctx, dbread.GetUserByProjectAndExternalIDParams{
+	// Look up profile by external_id
+	profile, err := c.profilesRead.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
 		ProjectID:  projectID,
 		ExternalID: externalID,
 	})
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
-			slog.ErrorContext(ctx, "failed to get user", slogx.Error(err))
+			slog.ErrorContext(ctx, "failed to get profile", slogx.Error(err))
 			return err
 		}
-		// User not found, create it
-		userMetadata, marshalErr := protoMapToAny(msg.GetUserMetadata())
+		// Profile not found, create it
+		profileMetadata, marshalErr := protoMapToAny(msg.GetProfileMetadata())
 		if marshalErr != nil {
-			slog.ErrorContext(ctx, "failed to convert user metadata", slogx.Error(marshalErr))
+			slog.ErrorContext(ctx, "failed to convert profile metadata", slogx.Error(marshalErr))
 			return marshalErr
 		}
-		newUser, createErr := c.usersWrite.CreateUser(ctx, dbwrite.CreateUserParams{
+		newProfile, createErr := c.profilesWrite.CreateProfile(ctx, dbwrite.CreateProfileParams{
 			ID:               xid.New().String(),
 			ProjectID:        projectID,
 			ExternalID:       externalID,
-			Properties:       userMetadata,
+			Properties:       profileMetadata,
 			CustomProperties: map[string]any{},
 		})
 		if createErr != nil {
-			slog.ErrorContext(ctx, "failed to create user", slogx.Error(createErr))
+			slog.ErrorContext(ctx, "failed to create profile", slogx.Error(createErr))
 			return createErr
 		}
-		user.ID = newUser.ID
+		profile.ID = newProfile.ID
 	}
 
-	// Link subscription to user using actual user ID
-	if _, err := c.subscriptionService.LinkSubscriptionToUser(ctx, subscriptionID, projectID, user.ID); err != nil {
-		slog.ErrorContext(ctx, "failed to link subscription to user", slogx.Error(err))
+	// Link subscription to profile using actual profile ID
+	if _, err := c.subscriptionService.LinkSubscriptionToProfile(ctx, subscriptionID, projectID, profile.ID); err != nil {
+		slog.ErrorContext(ctx, "failed to link subscription to profile", slogx.Error(err))
 		return err
 	}
 	return nil

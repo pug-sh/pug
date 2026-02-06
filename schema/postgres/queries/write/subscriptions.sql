@@ -1,8 +1,8 @@
 -- name: CreateSubscription :one
 insert into subscriptions (
-    id, project_id, token, platform, metadata, status, updater, user_id
+    id, project_id, token, platform, metadata, status, updater, profile_id
 ) values (
-    @id, @project_id, @token, @platform, @metadata, @status, @updater, @user_id
+    @id, @project_id, @token, @platform, @metadata, @status, @updater, @profile_id
 ) returning *;
 
 -- name: GetSubscription :one
@@ -37,15 +37,15 @@ set platform = @platform, update_time = now()
 where id = @id and project_id = @project_id
 returning *;
 
--- name: LinkSubscriptionToUser :one
+-- name: LinkSubscriptionToProfile :one
 update subscriptions
-set user_id = @user_id, update_time = now()
+set profile_id = @profile_id, update_time = now()
 where id = @id and project_id = @project_id
 returning *;
 
--- name: UpdateSubscriptionUserID :one
+-- name: UpdateSubscriptionProfileID :one
 update subscriptions
-set user_id = @user_id, update_time = now()
+set profile_id = @profile_id, update_time = now()
 where id = @id and project_id = @project_id
 returning *;
 

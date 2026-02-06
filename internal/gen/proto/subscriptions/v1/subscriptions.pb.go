@@ -31,7 +31,7 @@ const (
 	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA  SubscriptionOperationType = 3
 	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS    SubscriptionOperationType = 4
 	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN     SubscriptionOperationType = 5
-	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_USER_LINK        SubscriptionOperationType = 6
+	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK     SubscriptionOperationType = 6
 )
 
 // Enum value maps for SubscriptionOperationType.
@@ -43,7 +43,7 @@ var (
 		3: "SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA",
 		4: "SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS",
 		5: "SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN",
-		6: "SUBSCRIPTION_OPERATION_TYPE_USER_LINK",
+		6: "SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK",
 	}
 	SubscriptionOperationType_value = map[string]int32{
 		"SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED":      0,
@@ -52,7 +52,7 @@ var (
 		"SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA":  3,
 		"SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS":    4,
 		"SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN":     5,
-		"SUBSCRIPTION_OPERATION_TYPE_USER_LINK":        6,
+		"SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK":     6,
 	}
 )
 
@@ -537,19 +537,19 @@ func (*UpdateTokenResponse) Descriptor() ([]byte, []int) {
 }
 
 type SubscriptionOperationMessage struct {
-	state          protoimpl.MessageState    `protogen:"open.v1"`
-	OperationType  SubscriptionOperationType `protobuf:"varint,1,opt,name=operation_type,json=operationType,enum=subscriptions.v1.SubscriptionOperationType" json:"operation_type,omitempty"`
-	Id             string                    `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
-	Metadata       map[string]*anypb.Any     `protobuf:"bytes,3,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Platform       string                    `protobuf:"bytes,4,opt,name=platform" json:"platform,omitempty"`
-	Token          string                    `protobuf:"bytes,5,opt,name=token" json:"token,omitempty"`
-	Status         string                    `protobuf:"bytes,6,opt,name=status" json:"status,omitempty"`
-	ProjectId      string                    `protobuf:"bytes,7,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	ExternalId     string                    `protobuf:"bytes,8,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	UserMetadata   map[string]*anypb.Any     `protobuf:"bytes,9,rep,name=user_metadata,json=userMetadata" json:"user_metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	SubscriptionId string                    `protobuf:"bytes,10,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"` // For user linking operations
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state           protoimpl.MessageState    `protogen:"open.v1"`
+	OperationType   SubscriptionOperationType `protobuf:"varint,1,opt,name=operation_type,json=operationType,enum=subscriptions.v1.SubscriptionOperationType" json:"operation_type,omitempty"`
+	Id              string                    `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
+	Metadata        map[string]*anypb.Any     `protobuf:"bytes,3,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Platform        string                    `protobuf:"bytes,4,opt,name=platform" json:"platform,omitempty"`
+	Token           string                    `protobuf:"bytes,5,opt,name=token" json:"token,omitempty"`
+	Status          string                    `protobuf:"bytes,6,opt,name=status" json:"status,omitempty"`
+	ProjectId       string                    `protobuf:"bytes,7,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	ExternalId      string                    `protobuf:"bytes,8,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ProfileMetadata map[string]*anypb.Any     `protobuf:"bytes,9,rep,name=profile_metadata,json=profileMetadata" json:"profile_metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	SubscriptionId  string                    `protobuf:"bytes,10,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"` // For profile linking operations
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SubscriptionOperationMessage) Reset() {
@@ -638,9 +638,9 @@ func (x *SubscriptionOperationMessage) GetExternalId() string {
 	return ""
 }
 
-func (x *SubscriptionOperationMessage) GetUserMetadata() map[string]*anypb.Any {
+func (x *SubscriptionOperationMessage) GetProfileMetadata() map[string]*anypb.Any {
 	if x != nil {
-		return x.UserMetadata
+		return x.ProfileMetadata
 	}
 	return nil
 }
@@ -773,31 +773,31 @@ func (x *RegisterSubscriptionResponse) GetSuccess() bool {
 	return false
 }
 
-// Set user external ID - called when Pushpa.setExternalId("something") is called
-// This will create the user if it doesn't exist and link the subscription to that user
-type SetUserExternalIDRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
-	ExternalId     string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	UserMetadata   map[string]*anypb.Any  `protobuf:"bytes,3,rep,name=user_metadata,json=userMetadata" json:"user_metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Optional metadata for user creation
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+// Set profile external ID - called when Pushpa.setExternalId("something") is called
+// This will create the profile if it doesn't exist and link the subscription to that profile
+type SetProfileExternalIDRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	SubscriptionId  string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
+	ExternalId      string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ProfileMetadata map[string]*anypb.Any  `protobuf:"bytes,3,rep,name=profile_metadata,json=profileMetadata" json:"profile_metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Optional metadata for profile creation
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
-func (x *SetUserExternalIDRequest) Reset() {
-	*x = SetUserExternalIDRequest{}
+func (x *SetProfileExternalIDRequest) Reset() {
+	*x = SetProfileExternalIDRequest{}
 	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SetUserExternalIDRequest) String() string {
+func (x *SetProfileExternalIDRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SetUserExternalIDRequest) ProtoMessage() {}
+func (*SetProfileExternalIDRequest) ProtoMessage() {}
 
-func (x *SetUserExternalIDRequest) ProtoReflect() protoreflect.Message {
+func (x *SetProfileExternalIDRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -809,54 +809,54 @@ func (x *SetUserExternalIDRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SetUserExternalIDRequest.ProtoReflect.Descriptor instead.
-func (*SetUserExternalIDRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use SetProfileExternalIDRequest.ProtoReflect.Descriptor instead.
+func (*SetProfileExternalIDRequest) Descriptor() ([]byte, []int) {
 	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *SetUserExternalIDRequest) GetSubscriptionId() string {
+func (x *SetProfileExternalIDRequest) GetSubscriptionId() string {
 	if x != nil {
 		return x.SubscriptionId
 	}
 	return ""
 }
 
-func (x *SetUserExternalIDRequest) GetExternalId() string {
+func (x *SetProfileExternalIDRequest) GetExternalId() string {
 	if x != nil {
 		return x.ExternalId
 	}
 	return ""
 }
 
-func (x *SetUserExternalIDRequest) GetUserMetadata() map[string]*anypb.Any {
+func (x *SetProfileExternalIDRequest) GetProfileMetadata() map[string]*anypb.Any {
 	if x != nil {
-		return x.UserMetadata
+		return x.ProfileMetadata
 	}
 	return nil
 }
 
-// Response only confirms the operation was enqueued. Actual user creation
+// Response only confirms the operation was enqueued. Actual profile creation
 // and subscription linking happen asynchronously in the subscription worker.
-type SetUserExternalIDResponse struct {
+type SetProfileExternalIDResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SetUserExternalIDResponse) Reset() {
-	*x = SetUserExternalIDResponse{}
+func (x *SetProfileExternalIDResponse) Reset() {
+	*x = SetProfileExternalIDResponse{}
 	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SetUserExternalIDResponse) String() string {
+func (x *SetProfileExternalIDResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SetUserExternalIDResponse) ProtoMessage() {}
+func (*SetProfileExternalIDResponse) ProtoMessage() {}
 
-func (x *SetUserExternalIDResponse) ProtoReflect() protoreflect.Message {
+func (x *SetProfileExternalIDResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -868,8 +868,8 @@ func (x *SetUserExternalIDResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SetUserExternalIDResponse.ProtoReflect.Descriptor instead.
-func (*SetUserExternalIDResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use SetProfileExternalIDResponse.ProtoReflect.Descriptor instead.
+func (*SetProfileExternalIDResponse) Descriptor() ([]byte, []int) {
 	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{14}
 }
 
@@ -904,7 +904,7 @@ const file_subscriptions_v1_subscriptions_proto_rawDesc = "" +
 	"\x12UpdateTokenRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\"\x15\n" +
-	"\x13UpdateTokenResponse\"\xa0\x05\n" +
+	"\x13UpdateTokenResponse\"\xac\x05\n" +
 	"\x1cSubscriptionOperationMessage\x12R\n" +
 	"\x0eoperation_type\x18\x01 \x01(\x0e2+.subscriptions.v1.SubscriptionOperationTypeR\roperationType\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12X\n" +
@@ -915,14 +915,14 @@ const file_subscriptions_v1_subscriptions_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\a \x01(\tR\tprojectId\x12\x1f\n" +
 	"\vexternal_id\x18\b \x01(\tR\n" +
-	"externalId\x12e\n" +
-	"\ruser_metadata\x18\t \x03(\v2@.subscriptions.v1.SubscriptionOperationMessage.UserMetadataEntryR\fuserMetadata\x12'\n" +
+	"externalId\x12n\n" +
+	"\x10profile_metadata\x18\t \x03(\v2C.subscriptions.v1.SubscriptionOperationMessage.ProfileMetadataEntryR\x0fprofileMetadata\x12'\n" +
 	"\x0fsubscription_id\x18\n" +
 	" \x01(\tR\x0esubscriptionId\x1aQ\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\x1aU\n" +
-	"\x11UserMetadataEntry\x12\x10\n" +
+	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\x1aX\n" +
+	"\x14ProfileMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
 	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\xa4\x02\n" +
 	"\x1bRegisterSubscriptionRequest\x12'\n" +
@@ -935,32 +935,32 @@ const file_subscriptions_v1_subscriptions_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"a\n" +
 	"\x1cRegisterSubscriptionResponse\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x18\n" +
-	"\asuccess\x18\x02 \x01(\bR\asuccess\"\x9e\x02\n" +
-	"\x18SetUserExternalIDRequest\x12'\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\"\xb0\x02\n" +
+	"\x1bSetProfileExternalIDRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x1f\n" +
 	"\vexternal_id\x18\x02 \x01(\tR\n" +
-	"externalId\x12a\n" +
-	"\ruser_metadata\x18\x03 \x03(\v2<.subscriptions.v1.SetUserExternalIDRequest.UserMetadataEntryR\fuserMetadata\x1aU\n" +
-	"\x11UserMetadataEntry\x12\x10\n" +
+	"externalId\x12m\n" +
+	"\x10profile_metadata\x18\x03 \x03(\v2B.subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntryR\x0fprofileMetadata\x1aX\n" +
+	"\x14ProfileMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\x1b\n" +
-	"\x19SetUserExternalIDResponse*\xdb\x02\n" +
+	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\x1e\n" +
+	"\x1cSetProfileExternalIDResponse*\xde\x02\n" +
 	"\x19SubscriptionOperationType\x12+\n" +
 	"'SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED\x10\x00\x12&\n" +
 	"\"SUBSCRIPTION_OPERATION_TYPE_UPSERT\x10\x01\x120\n" +
 	",SUBSCRIPTION_OPERATION_TYPE_UPDATE_HEARTBEAT\x10\x02\x12/\n" +
 	"+SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA\x10\x03\x12-\n" +
 	")SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS\x10\x04\x12,\n" +
-	"(SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN\x10\x05\x12)\n" +
-	"%SUBSCRIPTION_OPERATION_TYPE_USER_LINK\x10\x062\xde\x05\n" +
+	"(SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN\x10\x05\x12,\n" +
+	"(SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK\x10\x062\xe7\x05\n" +
 	"\x14SubscriptionsService\x12M\n" +
 	"\x06Upsert\x12\x1f.subscriptions.v1.UpsertRequest\x1a .subscriptions.v1.UpsertResponse\"\x00\x12h\n" +
 	"\x0fUpdateHeartbeat\x12(.subscriptions.v1.UpdateHeartbeatRequest\x1a).subscriptions.v1.UpdateHeartbeatResponse\"\x00\x12e\n" +
 	"\x0eUpdateMetadata\x12'.subscriptions.v1.UpdateMetadataRequest\x1a(.subscriptions.v1.UpdateMetadataResponse\"\x00\x12_\n" +
 	"\fUpdateStatus\x12%.subscriptions.v1.UpdateStatusRequest\x1a&.subscriptions.v1.UpdateStatusResponse\"\x00\x12\\\n" +
 	"\vUpdateToken\x12$.subscriptions.v1.UpdateTokenRequest\x1a%.subscriptions.v1.UpdateTokenResponse\"\x00\x12w\n" +
-	"\x14RegisterSubscription\x12-.subscriptions.v1.RegisterSubscriptionRequest\x1a..subscriptions.v1.RegisterSubscriptionResponse\"\x00\x12n\n" +
-	"\x11SetUserExternalID\x12*.subscriptions.v1.SetUserExternalIDRequest\x1a+.subscriptions.v1.SetUserExternalIDResponse\"\x00BWZPgithub.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1;subscriptionsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x14RegisterSubscription\x12-.subscriptions.v1.RegisterSubscriptionRequest\x1a..subscriptions.v1.RegisterSubscriptionResponse\"\x00\x12w\n" +
+	"\x14SetProfileExternalID\x12-.subscriptions.v1.SetProfileExternalIDRequest\x1a..subscriptions.v1.SetProfileExternalIDResponse\"\x00BWZPgithub.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1;subscriptionsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_subscriptions_v1_subscriptions_proto_rawDescOnce sync.Once
@@ -991,14 +991,14 @@ var file_subscriptions_v1_subscriptions_proto_goTypes = []any{
 	(*SubscriptionOperationMessage)(nil), // 11: subscriptions.v1.SubscriptionOperationMessage
 	(*RegisterSubscriptionRequest)(nil),  // 12: subscriptions.v1.RegisterSubscriptionRequest
 	(*RegisterSubscriptionResponse)(nil), // 13: subscriptions.v1.RegisterSubscriptionResponse
-	(*SetUserExternalIDRequest)(nil),     // 14: subscriptions.v1.SetUserExternalIDRequest
-	(*SetUserExternalIDResponse)(nil),    // 15: subscriptions.v1.SetUserExternalIDResponse
+	(*SetProfileExternalIDRequest)(nil),  // 14: subscriptions.v1.SetProfileExternalIDRequest
+	(*SetProfileExternalIDResponse)(nil), // 15: subscriptions.v1.SetProfileExternalIDResponse
 	nil,                                  // 16: subscriptions.v1.UpsertRequest.MetadataEntry
 	nil,                                  // 17: subscriptions.v1.UpdateMetadataRequest.MetadataEntry
 	nil,                                  // 18: subscriptions.v1.SubscriptionOperationMessage.MetadataEntry
-	nil,                                  // 19: subscriptions.v1.SubscriptionOperationMessage.UserMetadataEntry
+	nil,                                  // 19: subscriptions.v1.SubscriptionOperationMessage.ProfileMetadataEntry
 	nil,                                  // 20: subscriptions.v1.RegisterSubscriptionRequest.MetadataEntry
-	nil,                                  // 21: subscriptions.v1.SetUserExternalIDRequest.UserMetadataEntry
+	nil,                                  // 21: subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntry
 	(*anypb.Any)(nil),                    // 22: google.protobuf.Any
 }
 var file_subscriptions_v1_subscriptions_proto_depIdxs = []int32{
@@ -1006,29 +1006,29 @@ var file_subscriptions_v1_subscriptions_proto_depIdxs = []int32{
 	17, // 1: subscriptions.v1.UpdateMetadataRequest.metadata:type_name -> subscriptions.v1.UpdateMetadataRequest.MetadataEntry
 	0,  // 2: subscriptions.v1.SubscriptionOperationMessage.operation_type:type_name -> subscriptions.v1.SubscriptionOperationType
 	18, // 3: subscriptions.v1.SubscriptionOperationMessage.metadata:type_name -> subscriptions.v1.SubscriptionOperationMessage.MetadataEntry
-	19, // 4: subscriptions.v1.SubscriptionOperationMessage.user_metadata:type_name -> subscriptions.v1.SubscriptionOperationMessage.UserMetadataEntry
+	19, // 4: subscriptions.v1.SubscriptionOperationMessage.profile_metadata:type_name -> subscriptions.v1.SubscriptionOperationMessage.ProfileMetadataEntry
 	20, // 5: subscriptions.v1.RegisterSubscriptionRequest.metadata:type_name -> subscriptions.v1.RegisterSubscriptionRequest.MetadataEntry
-	21, // 6: subscriptions.v1.SetUserExternalIDRequest.user_metadata:type_name -> subscriptions.v1.SetUserExternalIDRequest.UserMetadataEntry
+	21, // 6: subscriptions.v1.SetProfileExternalIDRequest.profile_metadata:type_name -> subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntry
 	22, // 7: subscriptions.v1.UpsertRequest.MetadataEntry.value:type_name -> google.protobuf.Any
 	22, // 8: subscriptions.v1.UpdateMetadataRequest.MetadataEntry.value:type_name -> google.protobuf.Any
 	22, // 9: subscriptions.v1.SubscriptionOperationMessage.MetadataEntry.value:type_name -> google.protobuf.Any
-	22, // 10: subscriptions.v1.SubscriptionOperationMessage.UserMetadataEntry.value:type_name -> google.protobuf.Any
+	22, // 10: subscriptions.v1.SubscriptionOperationMessage.ProfileMetadataEntry.value:type_name -> google.protobuf.Any
 	22, // 11: subscriptions.v1.RegisterSubscriptionRequest.MetadataEntry.value:type_name -> google.protobuf.Any
-	22, // 12: subscriptions.v1.SetUserExternalIDRequest.UserMetadataEntry.value:type_name -> google.protobuf.Any
+	22, // 12: subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntry.value:type_name -> google.protobuf.Any
 	1,  // 13: subscriptions.v1.SubscriptionsService.Upsert:input_type -> subscriptions.v1.UpsertRequest
 	3,  // 14: subscriptions.v1.SubscriptionsService.UpdateHeartbeat:input_type -> subscriptions.v1.UpdateHeartbeatRequest
 	5,  // 15: subscriptions.v1.SubscriptionsService.UpdateMetadata:input_type -> subscriptions.v1.UpdateMetadataRequest
 	7,  // 16: subscriptions.v1.SubscriptionsService.UpdateStatus:input_type -> subscriptions.v1.UpdateStatusRequest
 	9,  // 17: subscriptions.v1.SubscriptionsService.UpdateToken:input_type -> subscriptions.v1.UpdateTokenRequest
 	12, // 18: subscriptions.v1.SubscriptionsService.RegisterSubscription:input_type -> subscriptions.v1.RegisterSubscriptionRequest
-	14, // 19: subscriptions.v1.SubscriptionsService.SetUserExternalID:input_type -> subscriptions.v1.SetUserExternalIDRequest
+	14, // 19: subscriptions.v1.SubscriptionsService.SetProfileExternalID:input_type -> subscriptions.v1.SetProfileExternalIDRequest
 	2,  // 20: subscriptions.v1.SubscriptionsService.Upsert:output_type -> subscriptions.v1.UpsertResponse
 	4,  // 21: subscriptions.v1.SubscriptionsService.UpdateHeartbeat:output_type -> subscriptions.v1.UpdateHeartbeatResponse
 	6,  // 22: subscriptions.v1.SubscriptionsService.UpdateMetadata:output_type -> subscriptions.v1.UpdateMetadataResponse
 	8,  // 23: subscriptions.v1.SubscriptionsService.UpdateStatus:output_type -> subscriptions.v1.UpdateStatusResponse
 	10, // 24: subscriptions.v1.SubscriptionsService.UpdateToken:output_type -> subscriptions.v1.UpdateTokenResponse
 	13, // 25: subscriptions.v1.SubscriptionsService.RegisterSubscription:output_type -> subscriptions.v1.RegisterSubscriptionResponse
-	15, // 26: subscriptions.v1.SubscriptionsService.SetUserExternalID:output_type -> subscriptions.v1.SetUserExternalIDResponse
+	15, // 26: subscriptions.v1.SubscriptionsService.SetProfileExternalID:output_type -> subscriptions.v1.SetProfileExternalIDResponse
 	20, // [20:27] is the sub-list for method output_type
 	13, // [13:20] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name

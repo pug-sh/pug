@@ -1,13 +1,13 @@
 edition = "2023";
-package users.v1;
+package profiles.v1;
 
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 option features.field_presence = IMPLICIT;
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/users/v1;usersv1";
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1;profilesv1";
 
-service UsersService {
+service ProfilesService {
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
   rpc List(ListRequest) returns (ListResponse) {}
@@ -17,7 +17,7 @@ service UsersService {
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
 }
 
-message User {
+message Profile {
   string id = 1;
   string external_id = 2;
   string project_id = 3;
@@ -32,7 +32,7 @@ message GetRequest {
 }
 
 message GetResponse {
-  User user = 1;
+  Profile profile = 1;
 }
 
 message GetByExternalIdRequest {
@@ -40,13 +40,13 @@ message GetByExternalIdRequest {
 }
 
 message GetByExternalIdResponse {
-  User user = 1;
+  Profile profile = 1;
 }
 
 message ListRequest {}
 
 message ListResponse {
-  repeated User users = 1;
+  repeated Profile profiles = 1;
 }
 
 message CreateRequest {
@@ -56,7 +56,7 @@ message CreateRequest {
 }
 
 message CreateResponse {
-  User user = 1;
+  Profile profile = 1;
 }
 
 message UpdatePropertiesRequest {
@@ -65,7 +65,7 @@ message UpdatePropertiesRequest {
 }
 
 message UpdatePropertiesResponse {
-  User user = 1;
+  Profile profile = 1;
 }
 
 message UpdateCustomPropertiesRequest {
@@ -74,7 +74,7 @@ message UpdateCustomPropertiesRequest {
 }
 
 message UpdateCustomPropertiesResponse {
-  User user = 1;
+  Profile profile = 1;
 }
 
 message DeleteRequest {
