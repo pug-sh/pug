@@ -37,6 +37,13 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		return err
 	}
 
+	sent := false
+	defer func() {
+		if !sent {
+			chBatch.Abort()
+		}
+	}()
+
 	for _, e := range batch.Events {
 		ts := time.Now()
 		if e.EventTime != nil {
@@ -61,6 +68,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		slog.ErrorContext(ctx, "failed to send ClickHouse batch", slogx.Error(err))
 		return err
 	}
+	sent = true
 
 	slog.Info("inserted events into ClickHouse",
 		slog.String("project_id", batch.ProjectId),
