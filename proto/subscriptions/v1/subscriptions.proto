@@ -15,7 +15,7 @@ service SubscriptionsService {
 
   // SDK support methods
   rpc RegisterSubscription(RegisterSubscriptionRequest) returns (RegisterSubscriptionResponse) {}
-  rpc SetUserExternalID(SetUserExternalIDRequest) returns (SetUserExternalIDResponse) {}
+  rpc SetProfileExternalID(SetProfileExternalIDRequest) returns (SetProfileExternalIDResponse) {}
 }
 
 // include token in header
@@ -66,7 +66,7 @@ enum SubscriptionOperationType {
   SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA = 3;
   SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS = 4;
   SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN = 5;
-  SUBSCRIPTION_OPERATION_TYPE_USER_LINK = 6;
+  SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK = 6;
 }
 
 message SubscriptionOperationMessage {
@@ -78,8 +78,8 @@ message SubscriptionOperationMessage {
   string status = 6;
   string project_id = 7;
   string external_id = 8;
-  map<string, google.protobuf.Any> user_metadata = 9;
-  string subscription_id = 10; // For user linking operations
+  map<string, google.protobuf.Any> profile_metadata = 9;
+  string subscription_id = 10; // For profile linking operations
 }
 
 // SDK support methods
@@ -97,14 +97,14 @@ message RegisterSubscriptionResponse {
   bool success = 2;
 }
 
-// Set user external ID - called when Pushpa.setExternalId("something") is called
-// This will create the user if it doesn't exist and link the subscription to that user
-message SetUserExternalIDRequest {
+// Set profile external ID - called when Pushpa.setExternalId("something") is called
+// This will create the profile if it doesn't exist and link the subscription to that profile
+message SetProfileExternalIDRequest {
   string subscription_id = 1;
   string external_id = 2;
-  map<string, google.protobuf.Any> user_metadata = 3; // Optional metadata for user creation
+  map<string, google.protobuf.Any> profile_metadata = 3; // Optional metadata for profile creation
 }
 
-// Response only confirms the operation was enqueued. Actual user creation
+// Response only confirms the operation was enqueued. Actual profile creation
 // and subscription linking happen asynchronously in the subscription worker.
-message SetUserExternalIDResponse {}
+message SetProfileExternalIDResponse {}

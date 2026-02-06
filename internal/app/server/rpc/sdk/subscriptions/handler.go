@@ -248,11 +248,11 @@ func (s *Server) RegisterSubscription(
 	}), nil
 }
 
-// SetUserExternalID handles user creation and subscription linking (called when Pushpa.setExternalId("something") is called)
-func (s *Server) SetUserExternalID(
+// SetProfileExternalID handles profile creation and subscription linking (called when Pushpa.setExternalId("something") is called)
+func (s *Server) SetProfileExternalID(
 	ctx context.Context,
-	req *connect.Request[subscriptionsv1.SetUserExternalIDRequest],
-) (*connect.Response[subscriptionsv1.SetUserExternalIDResponse], error) {
+	req *connect.Request[subscriptionsv1.SetProfileExternalIDRequest],
+) (*connect.Response[subscriptionsv1.SetProfileExternalIDResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -262,13 +262,13 @@ func (s *Server) SetUserExternalID(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	// Create a user link operation message that will be processed asynchronously
+	// Create a profile link operation message that will be processed asynchronously
 	msg := &subscriptionsv1.SubscriptionOperationMessage{
-		OperationType:  subscriptionsv1.SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_USER_LINK,
-		SubscriptionId: req.Msg.GetSubscriptionId(),
-		ExternalId:     req.Msg.GetExternalId(),
-		UserMetadata:   req.Msg.GetUserMetadata(),
-		ProjectId:      principal.Project.ID,
+		OperationType:   subscriptionsv1.SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK,
+		SubscriptionId:  req.Msg.GetSubscriptionId(),
+		ExternalId:      req.Msg.GetExternalId(),
+		ProfileMetadata: req.Msg.GetProfileMetadata(),
+		ProjectId:       principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
@@ -285,9 +285,9 @@ func (s *Server) SetUserExternalID(
 	}
 
 	// Operation is processed asynchronously via NATS. Response only confirms
-	// the message was enqueued — actual user creation and subscription linking
+	// the message was enqueued — actual profile creation and subscription linking
 	// happen in the subscription worker.
-	return connect.NewResponse(&subscriptionsv1.SetUserExternalIDResponse{}), nil
+	return connect.NewResponse(&subscriptionsv1.SetProfileExternalIDResponse{}), nil
 }
 
 // NewServer creates a new Subscription service server

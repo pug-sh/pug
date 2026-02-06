@@ -10,9 +10,9 @@ where token = @token;
 select * from subscriptions
 where project_id = @project_id;
 
--- name: GetSubscriptionsByUser :many
+-- name: GetSubscriptionsByProfile :many
 select * from subscriptions
-where user_id = @user_id;
+where profile_id = @profile_id;
 
 -- name: GetActiveSubscriptionsByProject :many
 select * from subscriptions

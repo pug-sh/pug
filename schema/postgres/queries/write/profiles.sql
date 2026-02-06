@@ -1,20 +1,20 @@
--- name: CreateUser :one
-insert into users (id, project_id, external_id, properties, custom_properties)
+-- name: CreateProfile :one
+insert into profiles (id, project_id, external_id, properties, custom_properties)
 values (@id, @project_id, @external_id, coalesce(@properties, '{}'), coalesce(@custom_properties, '{}'))
 returning *;
 
--- name: UpdateUserProperties :one
-update users
+-- name: UpdateProfileProperties :one
+update profiles
 set properties = coalesce(@properties, '{}'), update_time = now()
 where id = @id and project_id = @project_id
 returning *;
 
--- name: UpdateUserCustomProperties :one
-update users
+-- name: UpdateProfileCustomProperties :one
+update profiles
 set custom_properties = coalesce(@custom_properties, '{}'), update_time = now()
 where id = @id and project_id = @project_id
 returning *;
 
--- name: DeleteUserByIDAndProjectID :exec
-delete from users
+-- name: DeleteProfileByIDAndProjectID :exec
+delete from profiles
 where id = @id and project_id = @project_id;

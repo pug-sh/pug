@@ -91,13 +91,13 @@ func (s *Service) UpdateSubscriptionToken(ctx context.Context, id, projectID, to
 	return s.write.UpdateSubscriptionToken(ctx, params)
 }
 
-func (s *Service) LinkSubscriptionToUser(ctx context.Context, id, projectID, userID string) (dbwrite.Subscription, error) {
-	params := dbwrite.LinkSubscriptionToUserParams{
-		UserID:    postgres.NewText(userID),
+func (s *Service) LinkSubscriptionToProfile(ctx context.Context, id, projectID, profileID string) (dbwrite.Subscription, error) {
+	params := dbwrite.LinkSubscriptionToProfileParams{
+		ProfileID: postgres.NewText(profileID),
 		ID:        id,
 		ProjectID: projectID,
 	}
-	return s.write.LinkSubscriptionToUser(ctx, params)
+	return s.write.LinkSubscriptionToProfile(ctx, params)
 }
 
 func (s *Service) GetSubscriptionsByProject(ctx context.Context, projectID string) ([]dbread.Subscription, error) {

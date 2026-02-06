@@ -31,6 +31,16 @@ type Customer struct {
 	UpdateTime   pgtype.Timestamptz
 }
 
+type Profile struct {
+	CreateTime       pgtype.Timestamptz
+	ExternalID       string
+	ID               string
+	Properties       map[string]any
+	CustomProperties map[string]any
+	ProjectID        string
+	UpdateTime       pgtype.Timestamptz
+}
+
 type Project struct {
 	ApiKey         string
 	CustomerID     string
@@ -63,15 +73,5 @@ type Subscription struct {
 	Token             string
 	Updater           string
 	UpdateTime        pgtype.Timestamptz
-	UserID            pgtype.Text
-}
-
-type User struct {
-	CreateTime       pgtype.Timestamptz
-	ExternalID       string
-	ID               string
-	Properties       map[string]any
-	CustomProperties map[string]any
-	ProjectID        string
-	UpdateTime       pgtype.Timestamptz
+	ProfileID         pgtype.Text
 }
