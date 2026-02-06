@@ -3,9 +3,9 @@ package subscriptions
 import (
 	"context"
 
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -93,7 +93,7 @@ func (s *Service) UpdateSubscriptionToken(ctx context.Context, id, projectID, to
 
 func (s *Service) LinkSubscriptionToUser(ctx context.Context, id, projectID, userID string) (dbwrite.Subscription, error) {
 	params := dbwrite.LinkSubscriptionToUserParams{
-		UserID:    postgres.StringToText(userID),
+		UserID:    postgres.NewText(userID),
 		ID:        id,
 		ProjectID: projectID,
 	}

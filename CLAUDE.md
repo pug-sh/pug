@@ -55,10 +55,10 @@ make lint
 
 The backend follows a layered architecture with Connect RPC (HTTP/2):
 
-- **`internal/commands/`** - CLI entry points using Cobra (server, worker, dev, migrations)
-- **`internal/rpc/`** - RPC handlers that map proto services to business logic
+- **`internal/app/`** - CLI entry points using Cobra, split by feature (server, workers, dev, migrate)
+  - `server/rpc/` - RPC handlers that map proto services to business logic
+  - `workers/campaigns/`, `workers/subscriptions/`, `workers/scheduler/` - NATS message consumers
 - **`internal/core/`** - Business logic layer with service and repo per domain (auth, campaigns, delivery, projects, segments, subscriptions)
-- **`internal/workers/`** - NATS message consumers (campaigns, subscriptions)
 - **`internal/gen/`** - Generated code (do not edit manually)
   - `proto/` - Generated from .proto files via buf
   - `repo/dbread/`, `repo/dbwrite/` - Generated from SQL via sqlc
@@ -66,10 +66,12 @@ The backend follows a layered architecture with Connect RPC (HTTP/2):
 ### Database Pattern
 
 PostgreSQL uses read/write separation:
+
 - Queries in `schema/postgres/queries/read/` generate to `internal/gen/repo/dbread/`
 - Queries in `schema/postgres/queries/write/` generate to `internal/gen/repo/dbwrite/`
 
 **sqlc conventions**:
+
 - Query names: PascalCase with uppercase `ID` (e.g., `GetCampaignByID`, `GetProjectsByCustomerID`)
 - SQL syntax and identifiers: lowercase (e.g., `select * from campaigns where project_id = @project_id`)
 - Partial updates: use `coalesce(nullif(@field, ''), field)` to preserve existing values when empty
@@ -80,4 +82,4 @@ Services defined in `proto/` directory. Generated code goes to `internal/gen/pro
 
 ## Code Style
 
-- Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change.
+- Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change. A PostToolUse hook auto-runs `goimports` on every `.go` file edit.

@@ -2,4 +2,4 @@
 clients/
 .env
 __debug*
-cotton
+/bin/
