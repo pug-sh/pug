@@ -13,11 +13,11 @@ func main() {
 	ctx := context.Background()
 
 	if err := godotenv.Load(); err != nil {
-		slog.DebugContext(ctx,"No .env file found")
+		slog.DebugContext(ctx, "No .env file found")
 	}
 
 	if err := nats.Run(ctx); err != nil {
-		slog.ErrorContext(ctx,"NATS initialization error", slog.Any("err", err))
+		slog.ErrorContext(ctx, "NATS initialization error", slog.Any("err", err))
 		os.Exit(1)
 	}
 }

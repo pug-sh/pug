@@ -37,18 +37,18 @@ func (r *Router) SendNotification(ctx context.Context, campaign dbread.Campaign,
 		return r.fcmService.SendNotification(ctx, campaign, subscription)
 	case "apn", "ios", "apple":
 		// TODO: Implement APN delivery
-		slog.WarnContext(ctx,"APN delivery not implemented yet",
+		slog.WarnContext(ctx, "APN delivery not implemented yet",
 			slog.String("subscription_id", subscription.ID),
 			slog.String("platform", subscription.Platform))
 		return fmt.Errorf("APN delivery not implemented yet")
 	case "email":
 		// TODO: Implement email delivery
-		slog.WarnContext(ctx,"Email delivery not implemented yet",
+		slog.WarnContext(ctx, "Email delivery not implemented yet",
 			slog.String("subscription_id", subscription.ID),
 			slog.String("platform", subscription.Platform))
 		return fmt.Errorf("email delivery not implemented yet")
 	default:
-		slog.WarnContext(ctx,"Unknown platform for delivery",
+		slog.WarnContext(ctx, "Unknown platform for delivery",
 			slog.String("subscription_id", subscription.ID),
 			slog.String("platform", subscription.Platform))
 		return fmt.Errorf("unknown platform: %s", subscription.Platform)

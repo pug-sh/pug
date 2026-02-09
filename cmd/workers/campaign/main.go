@@ -16,11 +16,11 @@ func main() {
 	defer done()
 
 	if err := godotenv.Load(); err != nil {
-		slog.DebugContext(ctx,"No .env file found, relying on environment variables")
+		slog.DebugContext(ctx, "No .env file found, relying on environment variables")
 	}
 
 	if err := campaigns.Run(ctx); err != nil {
-		slog.ErrorContext(ctx,"error starting campaign worker", slog.Any("err", err))
+		slog.ErrorContext(ctx, "error starting campaign worker", slog.Any("err", err))
 		os.Exit(1)
 	}
 }
