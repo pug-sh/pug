@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS events (
     occur_time      DateTime64(3),
     insert_time     DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(event_time)
+PARTITION BY toYYYYMM(occur_time)
 ORDER BY (project_id, kind, occur_time)
 SETTINGS index_granularity = 8192;
 
