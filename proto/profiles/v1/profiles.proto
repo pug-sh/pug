@@ -8,23 +8,38 @@ option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1;profilesv1";
 
 service ProfilesService {
+  rpc Create(CreateRequest) returns (CreateResponse) {}
+  rpc Delete(DeleteRequest) returns (DeleteResponse) {}
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
   rpc List(ListRequest) returns (ListResponse) {}
-  rpc Create(CreateRequest) returns (CreateResponse) {}
-  rpc UpdateProperties(UpdatePropertiesRequest) returns (UpdatePropertiesResponse) {}
+  rpc Save(SaveRequest) returns (SaveResponse) {}
+  rpc UpdateAutoProperties(UpdateAutoPropertiesRequest) returns (UpdateAutoPropertiesResponse) {}
   rpc UpdateCustomProperties(UpdateCustomPropertiesRequest) returns (UpdateCustomPropertiesResponse) {}
-  rpc Delete(DeleteRequest) returns (DeleteResponse) {}
 }
 
-message Profile {
+message CreateRequest {
+  google.protobuf.Struct auto_properties = 1;
+  google.protobuf.Struct custom_properties = 2;
+  string external_id = 3;
+}
+
+message CreateResponse {
+  Profile profile = 1;
+}
+
+message DeleteRequest {
   string id = 1;
-  string external_id = 2;
-  string project_id = 3;
-  google.protobuf.Struct properties = 4;
-  google.protobuf.Struct custom_properties = 5;
-  google.protobuf.Timestamp create_time = 6;
-  google.protobuf.Timestamp update_time = 7;
+}
+
+message DeleteResponse {}
+
+message GetByExternalIdRequest {
+  string external_id = 1;
+}
+
+message GetByExternalIdResponse {
+  Profile profile = 1;
 }
 
 message GetRequest {
@@ -35,50 +50,46 @@ message GetResponse {
   Profile profile = 1;
 }
 
-message GetByExternalIdRequest {
-  string external_id = 1;
-}
-
-message GetByExternalIdResponse {
-  Profile profile = 1;
-}
-
 message ListRequest {}
 
 message ListResponse {
   repeated Profile profiles = 1;
 }
 
-message CreateRequest {
-  string external_id = 1;
-  google.protobuf.Struct properties = 2;
+message Profile {
+  google.protobuf.Struct auto_properties = 1;
+  google.protobuf.Timestamp create_time = 2;
   google.protobuf.Struct custom_properties = 3;
+  string external_id = 4;
+  string id = 5;
+  string project_id = 6;
+  google.protobuf.Timestamp update_time = 7;
 }
 
-message CreateResponse {
+message SaveRequest {
+  google.protobuf.Struct auto_properties = 1;
+  google.protobuf.Struct custom_properties = 2;
+  string external_id = 3;
+}
+
+message SaveResponse {
   Profile profile = 1;
 }
 
-message UpdatePropertiesRequest {
-  string id = 1;
-  google.protobuf.Struct properties = 2;
+message UpdateAutoPropertiesRequest {
+  google.protobuf.Struct auto_properties = 1;
+  string id = 2;
 }
 
-message UpdatePropertiesResponse {
+message UpdateAutoPropertiesResponse {
   Profile profile = 1;
 }
 
 message UpdateCustomPropertiesRequest {
-  string id = 1;
-  google.protobuf.Struct custom_properties = 2;
+  google.protobuf.Struct custom_properties = 1;
+  string id = 2;
 }
 
 message UpdateCustomPropertiesResponse {
   Profile profile = 1;
 }
-
-message DeleteRequest {
-  string id = 1;
-}
-
-message DeleteResponse {}

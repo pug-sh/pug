@@ -186,7 +186,7 @@ func (c *Worker) handleProfileLink(ctx context.Context, msg *subscriptionsv1.Sub
 			ID:               xid.New().String(),
 			ProjectID:        projectID,
 			ExternalID:       externalID,
-			Properties:       profileMetadata,
+			AutoProperties:   profileMetadata,
 			CustomProperties: map[string]any{},
 		})
 		if createErr != nil {

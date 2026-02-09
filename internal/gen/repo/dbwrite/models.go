@@ -32,11 +32,11 @@ type Customer struct {
 }
 
 type Profile struct {
+	AutoProperties   map[string]any
 	CreateTime       pgtype.Timestamptz
+	CustomProperties map[string]any
 	ExternalID       string
 	ID               string
-	Properties       map[string]any
-	CustomProperties map[string]any
 	ProjectID        string
 	UpdateTime       pgtype.Timestamptz
 }

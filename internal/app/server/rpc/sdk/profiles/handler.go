@@ -30,6 +30,57 @@ func NewHandler(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Handler {
 	}
 }
 
+func (h *Handler) Create(
+	ctx context.Context,
+	req *connect.Request[profilesv1.CreateRequest],
+) (*connect.Response[profilesv1.CreateResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	p, err := h.write.CreateProfile(ctx, dbwrite.CreateProfileParams{
+		AutoProperties:   req.Msg.AutoProperties.AsMap(),
+		CustomProperties: req.Msg.CustomProperties.AsMap(),
+		ExternalID:       req.Msg.ExternalId,
+		ID:               xid.New().String(),
+		ProjectID:        principal.Project.ID,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed creating profile", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	pbProfile, err := convertWriteProfile(p)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(&profilesv1.CreateResponse{
+		Profile: pbProfile,
+	}), nil
+}
+
+func (h *Handler) Delete(
+	ctx context.Context,
+	req *connect.Request[profilesv1.DeleteRequest],
+) (*connect.Response[profilesv1.DeleteResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	if err := h.write.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
+		ID:        req.Msg.Id,
+		ProjectID: principal.Project.ID,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil
+}
+
 func (h *Handler) Get(
 	ctx context.Context,
 	req *connect.Request[profilesv1.GetRequest],
@@ -68,8 +119,8 @@ func (h *Handler) GetByExternalId(
 	}
 
 	p, err := h.read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
-		ProjectID:  principal.Project.ID,
 		ExternalID: req.Msg.ExternalId,
+		ProjectID:  principal.Project.ID,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
@@ -115,24 +166,24 @@ func (h *Handler) List(
 	}), nil
 }
 
-func (h *Handler) Create(
+func (h *Handler) Save(
 	ctx context.Context,
-	req *connect.Request[profilesv1.CreateRequest],
-) (*connect.Response[profilesv1.CreateResponse], error) {
+	req *connect.Request[profilesv1.SaveRequest],
+) (*connect.Response[profilesv1.SaveResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	p, err := h.write.CreateProfile(ctx, dbwrite.CreateProfileParams{
-		ID:               xid.New().String(),
-		ExternalID:       req.Msg.ExternalId,
-		ProjectID:        principal.Project.ID,
-		Properties:       req.Msg.Properties.AsMap(),
+	p, err := h.write.SaveProfile(ctx, dbwrite.SaveProfileParams{
+		AutoProperties:   req.Msg.AutoProperties.AsMap(),
 		CustomProperties: req.Msg.CustomProperties.AsMap(),
+		ExternalID:       req.Msg.ExternalId,
+		ID:               xid.New().String(),
+		ProjectID:        principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed creating profile", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
+		slog.ErrorContext(ctx, "failed saving profile", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -141,27 +192,27 @@ func (h *Handler) Create(
 		return nil, err
 	}
 
-	return connect.NewResponse(&profilesv1.CreateResponse{
+	return connect.NewResponse(&profilesv1.SaveResponse{
 		Profile: pbProfile,
 	}), nil
 }
 
-func (h *Handler) UpdateProperties(
+func (h *Handler) UpdateAutoProperties(
 	ctx context.Context,
-	req *connect.Request[profilesv1.UpdatePropertiesRequest],
-) (*connect.Response[profilesv1.UpdatePropertiesResponse], error) {
+	req *connect.Request[profilesv1.UpdateAutoPropertiesRequest],
+) (*connect.Response[profilesv1.UpdateAutoPropertiesResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	p, err := h.write.UpdateProfileProperties(ctx, dbwrite.UpdateProfilePropertiesParams{
-		ID:         req.Msg.Id,
-		ProjectID:  principal.Project.ID,
-		Properties: req.Msg.Properties.AsMap(),
+	p, err := h.write.UpdateProfileAutoProperties(ctx, dbwrite.UpdateProfileAutoPropertiesParams{
+		AutoProperties: req.Msg.AutoProperties.AsMap(),
+		ID:             req.Msg.Id,
+		ProjectID:      principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed updating profile properties", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed updating profile auto properties", slogx.Error(err), slog.String("profileId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
@@ -170,7 +221,7 @@ func (h *Handler) UpdateProperties(
 		return nil, err
 	}
 
-	return connect.NewResponse(&profilesv1.UpdatePropertiesResponse{
+	return connect.NewResponse(&profilesv1.UpdateAutoPropertiesResponse{
 		Profile: pbProfile,
 	}), nil
 }
@@ -185,9 +236,9 @@ func (h *Handler) UpdateCustomProperties(
 	}
 
 	p, err := h.write.UpdateProfileCustomProperties(ctx, dbwrite.UpdateProfileCustomPropertiesParams{
+		CustomProperties: req.Msg.CustomProperties.AsMap(),
 		ID:               req.Msg.Id,
 		ProjectID:        principal.Project.ID,
-		CustomProperties: req.Msg.CustomProperties.AsMap(),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed updating profile custom properties", slogx.Error(err), slog.String("profileId", req.Msg.Id))
@@ -204,32 +255,12 @@ func (h *Handler) UpdateCustomProperties(
 	}), nil
 }
 
-func (h *Handler) Delete(
-	ctx context.Context,
-	req *connect.Request[profilesv1.DeleteRequest],
-) (*connect.Response[profilesv1.DeleteResponse], error) {
-	principal, err := rpc.MustGetPrincipalWithProject(ctx)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	if err := h.write.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
-		ID:        req.Msg.Id,
-		ProjectID: principal.Project.ID,
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil
-}
-
 func convertProfile(p dbread.Profile) (*profilesv1.Profile, error) {
-	propertiesMap := p.Properties
-	if propertiesMap == nil {
-		propertiesMap = make(map[string]any)
+	autoPropertiesMap := p.AutoProperties
+	if autoPropertiesMap == nil {
+		autoPropertiesMap = make(map[string]any)
 	}
-	properties, err := structpb.NewStruct(propertiesMap)
+	autoProperties, err := structpb.NewStruct(autoPropertiesMap)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -244,22 +275,22 @@ func convertProfile(p dbread.Profile) (*profilesv1.Profile, error) {
 	}
 
 	return &profilesv1.Profile{
-		Id:               p.ID,
-		ExternalId:       p.ExternalID,
-		ProjectId:        p.ProjectID,
-		Properties:       properties,
-		CustomProperties: customProperties,
+		AutoProperties:   autoProperties,
 		CreateTime:       timestamppb.New(p.CreateTime.Time),
+		CustomProperties: customProperties,
+		ExternalId:       p.ExternalID,
+		Id:               p.ID,
+		ProjectId:        p.ProjectID,
 		UpdateTime:       timestamppb.New(p.UpdateTime.Time),
 	}, nil
 }
 
 func convertWriteProfile(p dbwrite.Profile) (*profilesv1.Profile, error) {
-	propertiesMap := p.Properties
-	if propertiesMap == nil {
-		propertiesMap = make(map[string]any)
+	autoPropertiesMap := p.AutoProperties
+	if autoPropertiesMap == nil {
+		autoPropertiesMap = make(map[string]any)
 	}
-	properties, err := structpb.NewStruct(propertiesMap)
+	autoProperties, err := structpb.NewStruct(autoPropertiesMap)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -274,12 +305,12 @@ func convertWriteProfile(p dbwrite.Profile) (*profilesv1.Profile, error) {
 	}
 
 	return &profilesv1.Profile{
-		Id:               p.ID,
-		ExternalId:       p.ExternalID,
-		ProjectId:        p.ProjectID,
-		Properties:       properties,
-		CustomProperties: customProperties,
+		AutoProperties:   autoProperties,
 		CreateTime:       timestamppb.New(p.CreateTime.Time),
+		CustomProperties: customProperties,
+		ExternalId:       p.ExternalID,
+		Id:               p.ID,
+		ProjectId:        p.ProjectID,
 		UpdateTime:       timestamppb.New(p.UpdateTime.Time),
 	}, nil
 }
