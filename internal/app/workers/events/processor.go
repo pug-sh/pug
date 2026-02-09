@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -11,6 +12,20 @@ import (
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 )
+
+// PermanentError wraps errors that should not be retried.
+type PermanentError struct {
+	Err error
+}
+
+func (e *PermanentError) Error() string { return e.Err.Error() }
+func (e *PermanentError) Unwrap() error { return e.Err }
+
+// IsPermanentError checks if an error is a PermanentError.
+func IsPermanentError(err error) bool {
+	var pe *PermanentError
+	return errors.As(err, &pe)
+}
 
 type Processor struct {
 	ch driver.Conn
@@ -24,7 +39,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	batch := &eventsv1.EventBatch{}
 	if err := proto.Unmarshal(data, batch); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal event batch", slogx.Error(err))
-		return err
+		return &PermanentError{Err: err}
 	}
 
 	if len(batch.Events) == 0 {
