@@ -7,6 +7,7 @@
 package profilesv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -559,7 +560,7 @@ var File_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\x1aprofiles/v1/profiles.proto\x12\vprofiles.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x1f\n" +
+	"\x1aprofiles/v1/profiles.proto\x12\vprofiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x1f\n" +
 	"\rDeleteRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x10\n" +
 	"\x0eDeleteResponse\"9\n" +
@@ -587,11 +588,11 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x06 \x01(\tR\tprojectId\x12;\n" +
 	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\"\xb6\x01\n" +
+	"updateTime\"\xbf\x01\n" +
 	"\vSaveRequest\x12@\n" +
 	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12D\n" +
-	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12\x1f\n" +
-	"\vexternal_id\x18\x03 \x01(\tR\n" +
+	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12(\n" +
+	"\vexternal_id\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"externalId\">\n" +
 	"\fSaveResponse\x12.\n" +
 	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile2\xf0\x02\n" +

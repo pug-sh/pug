@@ -1,6 +1,7 @@
 edition = "2023";
 package profiles.v1;
 
+import "buf/validate/validate.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -57,7 +58,7 @@ message Profile {
 message SaveRequest {
   google.protobuf.Struct auto_properties = 1;
   google.protobuf.Struct custom_properties = 2;
-  string external_id = 3;
+  string external_id = 3 [(buf.validate.field).string.min_len = 1];
 }
 
 message SaveResponse {
