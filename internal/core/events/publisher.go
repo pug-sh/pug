@@ -13,8 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Publisher publishes events to NATS for internal Cotton services.
-// External SDK events go through the RPC handler instead.
+// Publisher marshals events into an EventBatch and publishes to NATS.
+// Used by the RPC handler to enqueue SDK-submitted events for processing.
 type Publisher struct {
 	producer jetstream.JetStream
 }

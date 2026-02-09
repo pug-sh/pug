@@ -27,7 +27,8 @@ message BatchCreateResponse {
   uint32 accepted = 1;
 }
 
-// Internal NATS message wrapping events with project context
+// EventBatch is used internally over NATS between the RPC handler and the
+// events-writer worker. It is not part of the EventsService RPC contract.
 message EventBatch {
   string project_id = 1 [(buf.validate.field).string.min_len = 1];
   repeated Event events = 2;

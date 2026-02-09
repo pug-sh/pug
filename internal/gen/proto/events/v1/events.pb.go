@@ -187,7 +187,8 @@ func (x *BatchCreateResponse) GetAccepted() uint32 {
 	return 0
 }
 
-// Internal NATS message wrapping events with project context
+// EventBatch is used internally over NATS between the RPC handler and the
+// events-writer worker. It is not part of the EventsService RPC contract.
 type EventBatch struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
