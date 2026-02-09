@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 )
+
+var ErrTerminated = errors.New("message terminated")
 
 type MessageProcessor func(context.Context, jetstream.Msg) error
 
@@ -190,7 +193,10 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 			err = w.processor(procCtx, msg)
 			cancel()
 
-			if err != nil {
+			switch {
+			case errors.Is(err, ErrTerminated):
+			  // already terminated. ack / nack isn't needed.
+			case err != nil:
 				slog.ErrorContext(ctx, "message processing failed",
 					slog.String("stream", w.config.StreamName),
 					slog.String("consumer", w.config.ConsumerName),
@@ -200,7 +206,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 						slog.String("stream", w.config.StreamName),
 						slog.Any("error", nakErr))
 				}
-			} else {
+			default:
 				if ackErr := msg.Ack(); ackErr != nil {
 					slog.ErrorContext(ctx, "failed to ack message",
 						slog.String("stream", w.config.StreamName),
