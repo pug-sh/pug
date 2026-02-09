@@ -11,6 +11,7 @@ service ProfilesService {
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
+  // todo - shift to server streaming
   rpc List(ListRequest) returns (ListResponse) {}
   rpc Save(SaveRequest) returns (SaveResponse) {}
 }
