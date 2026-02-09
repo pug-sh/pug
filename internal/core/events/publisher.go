@@ -35,12 +35,10 @@ func (p *Publisher) Publish(ctx context.Context, projectID string, events []*eve
 
 	data, err := proto.Marshal(batch)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal event batch", slogx.Error(err))
 		return err
 	}
 
-	_, err = p.producer.Publish(ctx, nats.EventsIngestSubject, data)
-	if err != nil {
+	if _, err = p.producer.Publish(ctx, nats.EventsIngestSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events to NATS", slogx.Error(err))
 		return err
 	}
