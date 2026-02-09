@@ -2,6 +2,8 @@ package profiles
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 
 	"connectrpc.com/connect"
@@ -11,6 +13,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -44,7 +47,7 @@ func (h *Handler) Delete(
 		ProjectID: principal.Project.ID,
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to delete profile"))
 	}
 
 	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil
@@ -64,8 +67,10 @@ func (h *Handler) Get(
 		ProjectID: principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		}
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get profile"))
 	}
 
 	pbProfile, err := convertProfile(p)
@@ -92,8 +97,10 @@ func (h *Handler) GetByExternalId(
 		ProjectID:  principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
+		}
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get profile"))
 	}
 
 	pbProfile, err := convertProfile(p)
@@ -118,7 +125,7 @@ func (h *Handler) List(
 	profilesList, err := h.read.GetProfilesByProjectID(ctx, principal.Project.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed listing profiles", slogx.Error(err), slog.String("projectId", principal.Project.ID))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to list profiles"))
 	}
 
 	pbProfiles := make([]*profilesv1.Profile, len(profilesList))
@@ -153,7 +160,7 @@ func (h *Handler) Save(
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed saving profile", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to save profile"))
 	}
 
 	pbProfile, err := convertWriteProfile(p)
