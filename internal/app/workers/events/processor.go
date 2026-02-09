@@ -13,7 +13,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// PermanentError wraps errors that should not be retried.
+// PermanentError wraps errors that should not be retried. When the events
+// worker receives a PermanentError, it terminates the NATS message instead
+// of nacking it for redelivery (e.g. corrupt protobuf data).
 type PermanentError struct {
 	Err error
 }
@@ -21,7 +23,6 @@ type PermanentError struct {
 func (e *PermanentError) Error() string { return e.Err.Error() }
 func (e *PermanentError) Unwrap() error { return e.Err }
 
-// IsPermanentError checks if an error is a PermanentError.
 func IsPermanentError(err error) bool {
 	var pe *PermanentError
 	return errors.As(err, &pe)
@@ -43,6 +44,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	if len(batch.Events) == 0 {
+		slog.WarnContext(ctx, "received empty event batch", slog.String("project_id", batch.ProjectId))
 		return nil
 	}
 
@@ -56,7 +58,9 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	sent := false
 	defer func() {
 		if !sent {
-			chBatch.Abort()
+			if err := chBatch.Abort(); err != nil {
+				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.ProjectId))
+			}
 		}
 	}()
 

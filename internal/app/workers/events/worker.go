@@ -50,8 +50,9 @@ func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NAT
 			slog.ErrorContext(ctx, "terminating poison message", slogx.Error(err))
 			if termErr := msg.Term(); termErr != nil {
 				slog.ErrorContext(ctx, "failed to terminate message", slogx.Error(termErr))
+				return termErr
 			}
-			return nil
+			return natsworker.ErrMessageHandled
 		}
 		return err
 	}

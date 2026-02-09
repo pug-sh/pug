@@ -30,11 +30,13 @@ func (p *Publisher) Publish(ctx context.Context, projectID string, events []*eve
 	}
 
 	if err := protovalidate.Validate(batch); err != nil {
+		slog.ErrorContext(ctx, "event batch validation failed", slogx.Error(err), slog.String("project_id", projectID))
 		return err
 	}
 
 	data, err := proto.Marshal(batch)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to marshal event batch", slogx.Error(err), slog.String("project_id", projectID))
 		return err
 	}
 
