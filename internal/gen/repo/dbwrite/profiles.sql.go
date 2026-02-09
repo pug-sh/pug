@@ -28,8 +28,8 @@ const saveProfile = `-- name: SaveProfile :one
 insert into profiles (auto_properties, custom_properties, external_id, id, project_id)
 values (coalesce($1, '{}'), coalesce($2, '{}'), $3, $4, $5)
 on conflict (project_id, external_id) do update set
-  auto_properties = jsonb_deep_merge(profiles.auto_properties, excluded.auto_properties),
-  custom_properties = jsonb_deep_merge(profiles.custom_properties, excluded.custom_properties)
+  auto_properties = jsonb_shallow_merge(profiles.auto_properties, excluded.auto_properties),
+  custom_properties = jsonb_shallow_merge(profiles.custom_properties, excluded.custom_properties)
 returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
 `
 
