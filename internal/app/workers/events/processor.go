@@ -56,7 +56,9 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	sent := false
 	defer func() {
 		if !sent {
-			chBatch.Abort()
+			if err := chBatch.Abort(); err != nil {
+				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.ProjectId))
+			}
 		}
 	}()
 
