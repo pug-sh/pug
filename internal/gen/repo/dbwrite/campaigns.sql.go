@@ -12,7 +12,7 @@ import (
 )
 
 const createCampaign = `-- name: CreateCampaign :one
-insert into campaigns (id, name, project_id, notification_data, scheduled_time, status)
+insert into campaigns (id, name, notification_data, project_id, scheduled_time, status)
 values ($1, $2, $3, $4, $5, $6)
 returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
@@ -20,8 +20,8 @@ returning create_time, end_time, id, name, notification_data, project_id, schedu
 type CreateCampaignParams struct {
 	ID               string
 	Name             string
-	ProjectID        string
 	NotificationData map[string]any
+	ProjectID        string
 	ScheduledTime    pgtype.Timestamptz
 	Status           string
 }
@@ -30,8 +30,8 @@ func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) 
 	row := q.db.QueryRow(ctx, createCampaign,
 		arg.ID,
 		arg.Name,
-		arg.ProjectID,
 		arg.NotificationData,
+		arg.ProjectID,
 		arg.ScheduledTime,
 		arg.Status,
 	)
@@ -70,8 +70,7 @@ const updateCampaign = `-- name: UpdateCampaign :one
 update campaigns
 set name = coalesce(nullif($1, ''), name),
     notification_data = coalesce(nullif($2, ''), notification_data),
-    scheduled_time = coalesce($3, scheduled_time),
-    update_time = now()
+    scheduled_time = coalesce($3, scheduled_time)
 where id = $4 and project_id = $5
 returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
@@ -110,7 +109,7 @@ func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) 
 
 const updateCampaignEndTime = `-- name: UpdateCampaignEndTime :one
 update campaigns
-set end_time = $1, update_time = now()
+set end_time = $1
 where id = $2
 returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
@@ -140,7 +139,7 @@ func (q *Queries) UpdateCampaignEndTime(ctx context.Context, arg UpdateCampaignE
 
 const updateCampaignStartTime = `-- name: UpdateCampaignStartTime :one
 update campaigns
-set start_time = $1, update_time = now()
+set start_time = $1
 where id = $2
 returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `
@@ -170,7 +169,7 @@ func (q *Queries) UpdateCampaignStartTime(ctx context.Context, arg UpdateCampaig
 
 const updateCampaignStatus = `-- name: UpdateCampaignStatus :one
 update campaigns
-set status = $1, update_time = now()
+set status = $1
 where id = $2
 returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
 `

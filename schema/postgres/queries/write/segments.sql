@@ -1,39 +1,36 @@
 -- name: CreateSegment :one
-INSERT INTO segments (
-  id, project_id, name, description, filter
-) VALUES (
-  $1, $2, $3, $4, $5
-) RETURNING *;
-
--- name: GetSegment :one
-SELECT * FROM segments
-WHERE id = $1;
-
--- name: GetSegmentsByProject :many
-SELECT * FROM segments
-WHERE project_id = $1
-ORDER BY create_time DESC
-LIMIT $2 OFFSET $3;
-
--- name: GetSegmentCountByProject :one
-SELECT COUNT(*) FROM segments
-WHERE project_id = $1;
-
--- name: UpdateSegment :one
-UPDATE segments
-SET
-  name = COALESCE($2, name),
-  description = COALESCE($3, description),
-  filter = COALESCE($4, filter),
-  is_active = COALESCE($5, is_active),
-  update_time = NOW()
-WHERE id = $1
-RETURNING *;
+insert into segments (description, display_name, filter, id, project_id)
+values (@description, @display_name, @filter, @id, @project_id)
+returning *;
 
 -- name: DeleteSegment :exec
-DELETE FROM segments
-WHERE id = $1;
+delete from segments
+where id = @id;
 
 -- name: GetActiveSegments :many
-SELECT * FROM segments
-WHERE project_id = $1 AND is_active = true;
+select * from segments
+where project_id = @project_id and is_active = true;
+
+-- name: GetSegment :one
+select * from segments
+where id = @id;
+
+-- name: GetSegmentCountByProject :one
+select count(*) from segments
+where project_id = @project_id;
+
+-- name: GetSegmentsByProject :many
+select * from segments
+where project_id = @project_id
+order by create_time desc
+limit @row_limit offset @row_offset;
+
+-- name: UpdateSegment :one
+update segments
+set
+  description = coalesce(nullif(@description, ''), description),
+  display_name = coalesce(nullif(@display_name, ''), display_name),
+  filter = coalesce(@filter, filter),
+  is_active = coalesce(@is_active, is_active)
+where id = @id
+returning *;

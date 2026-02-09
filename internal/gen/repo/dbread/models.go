@@ -22,12 +22,12 @@ type Campaign struct {
 }
 
 type Customer struct {
+	CreateTime   pgtype.Timestamptz
 	DisplayName  string
 	Email        string
 	ID           string
 	PasswordHash string
 	PictureUri   string
-	CreateTime   pgtype.Timestamptz
 	UpdateTime   pgtype.Timestamptz
 }
 
@@ -43,8 +43,8 @@ type Profile struct {
 
 type Project struct {
 	ApiKey         string
-	CustomerID     string
 	CreateTime     pgtype.Timestamptz
+	CustomerID     string
 	DisplayName    string
 	FcmServiceJson pgtype.Text
 	ID             string
@@ -52,13 +52,13 @@ type Project struct {
 }
 
 type Segment struct {
-	ID          string
-	ProjectID   string
-	Name        string
+	CreateTime  pgtype.Timestamptz
 	Description pgtype.Text
 	Filter      map[string]any
+	ID          string
 	IsActive    bool
-	CreateTime  pgtype.Timestamptz
+	DisplayName string
+	ProjectID   string
 	UpdateTime  pgtype.Timestamptz
 }
 
@@ -68,10 +68,10 @@ type Subscription struct {
 	LastHeartbeatTime pgtype.Timestamptz
 	Metadata          map[string]any
 	Platform          string
+	ProfileID         pgtype.Text
 	ProjectID         string
 	Status            string
 	Token             string
-	Updater           string
 	UpdateTime        pgtype.Timestamptz
-	ProfileID         pgtype.Text
+	Updater           string
 }

@@ -102,27 +102,36 @@ func (x *BatchGetResponse) GetCampaigns() []*Campaign {
 	return nil
 }
 
-type GetRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+type Campaign struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	CreateTime       *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
+	EndTime          *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=end_time,json=endTime" json:"end_time,omitempty"`
+	Id               string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
+	Name             string                 `protobuf:"bytes,4,opt,name=name" json:"name,omitempty"`
+	NotificationData []byte                 `protobuf:"bytes,5,opt,name=notification_data,json=notificationData" json:"notification_data,omitempty"`
+	ProjectId        string                 `protobuf:"bytes,6,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	ScheduledTime    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=scheduled_time,json=scheduledTime" json:"scheduled_time,omitempty"`
+	StartTime        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=start_time,json=startTime" json:"start_time,omitempty"`
+	Status           string                 `protobuf:"bytes,9,opt,name=status" json:"status,omitempty"`
+	UpdateTime       *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
-func (x *GetRequest) Reset() {
-	*x = GetRequest{}
+func (x *Campaign) Reset() {
+	*x = Campaign{}
 	mi := &file_campaigns_v1_campaigns_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetRequest) String() string {
+func (x *Campaign) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetRequest) ProtoMessage() {}
+func (*Campaign) ProtoMessage() {}
 
-func (x *GetRequest) ProtoReflect() protoreflect.Message {
+func (x *Campaign) ProtoReflect() protoreflect.Message {
 	mi := &file_campaigns_v1_campaigns_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -134,39 +143,102 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
-func (*GetRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use Campaign.ProtoReflect.Descriptor instead.
+func (*Campaign) Descriptor() ([]byte, []int) {
 	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *GetRequest) GetId() string {
+func (x *Campaign) GetCreateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreateTime
+	}
+	return nil
+}
+
+func (x *Campaign) GetEndTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndTime
+	}
+	return nil
+}
+
+func (x *Campaign) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-type GetResponse struct {
+func (x *Campaign) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Campaign) GetNotificationData() []byte {
+	if x != nil {
+		return x.NotificationData
+	}
+	return nil
+}
+
+func (x *Campaign) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *Campaign) GetScheduledTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ScheduledTime
+	}
+	return nil
+}
+
+func (x *Campaign) GetStartTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartTime
+	}
+	return nil
+}
+
+func (x *Campaign) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *Campaign) GetUpdateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdateTime
+	}
+	return nil
+}
+
+type CampaignSchedule struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Campaign      *Campaign              `protobuf:"bytes,1,opt,name=campaign" json:"campaign,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetResponse) Reset() {
-	*x = GetResponse{}
+func (x *CampaignSchedule) Reset() {
+	*x = CampaignSchedule{}
 	mi := &file_campaigns_v1_campaigns_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetResponse) String() string {
+func (x *CampaignSchedule) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetResponse) ProtoMessage() {}
+func (*CampaignSchedule) ProtoMessage() {}
 
-func (x *GetResponse) ProtoReflect() protoreflect.Message {
+func (x *CampaignSchedule) ProtoReflect() protoreflect.Message {
 	mi := &file_campaigns_v1_campaigns_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -178,16 +250,16 @@ func (x *GetResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
-func (*GetResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use CampaignSchedule.ProtoReflect.Descriptor instead.
+func (*CampaignSchedule) Descriptor() ([]byte, []int) {
 	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *GetResponse) GetCampaign() *Campaign {
+func (x *CampaignSchedule) GetId() string {
 	if x != nil {
-		return x.Campaign
+		return x.Id
 	}
-	return nil
+	return ""
 }
 
 type CreateRequest struct {
@@ -374,11 +446,98 @@ func (*DeleteResponse) Descriptor() ([]byte, []int) {
 	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{7}
 }
 
+type GetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRequest) Reset() {
+	*x = GetRequest{}
+	mi := &file_campaigns_v1_campaigns_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRequest) ProtoMessage() {}
+
+func (x *GetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_campaigns_v1_campaigns_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
+func (*GetRequest) Descriptor() ([]byte, []int) {
+	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type GetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Campaign      *Campaign              `protobuf:"bytes,1,opt,name=campaign" json:"campaign,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetResponse) Reset() {
+	*x = GetResponse{}
+	mi := &file_campaigns_v1_campaigns_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetResponse) ProtoMessage() {}
+
+func (x *GetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_campaigns_v1_campaigns_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
+func (*GetResponse) Descriptor() ([]byte, []int) {
+	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetResponse) GetCampaign() *Campaign {
+	if x != nil {
+		return x.Campaign
+	}
+	return nil
+}
+
 type UpdateRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Id    string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	Name  string                 `protobuf:"bytes,2,opt,name=name" json:"name,omitempty"`
-	// askpolru - why byte?
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Name             string                 `protobuf:"bytes,2,opt,name=name" json:"name,omitempty"`
 	NotificationData []byte                 `protobuf:"bytes,3,opt,name=notification_data,json=notificationData" json:"notification_data,omitempty"`
 	ScheduledTime    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=scheduled_time,json=scheduledTime" json:"scheduled_time,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -387,7 +546,7 @@ type UpdateRequest struct {
 
 func (x *UpdateRequest) Reset() {
 	*x = UpdateRequest{}
-	mi := &file_campaigns_v1_campaigns_proto_msgTypes[8]
+	mi := &file_campaigns_v1_campaigns_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -399,7 +558,7 @@ func (x *UpdateRequest) String() string {
 func (*UpdateRequest) ProtoMessage() {}
 
 func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_campaigns_v1_campaigns_proto_msgTypes[8]
+	mi := &file_campaigns_v1_campaigns_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -412,7 +571,7 @@ func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRequest) Descriptor() ([]byte, []int) {
-	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{8}
+	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *UpdateRequest) GetId() string {
@@ -452,7 +611,7 @@ type UpdateResponse struct {
 
 func (x *UpdateResponse) Reset() {
 	*x = UpdateResponse{}
-	mi := &file_campaigns_v1_campaigns_proto_msgTypes[9]
+	mi := &file_campaigns_v1_campaigns_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -464,7 +623,7 @@ func (x *UpdateResponse) String() string {
 func (*UpdateResponse) ProtoMessage() {}
 
 func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_campaigns_v1_campaigns_proto_msgTypes[9]
+	mi := &file_campaigns_v1_campaigns_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -477,7 +636,7 @@ func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateResponse.ProtoReflect.Descriptor instead.
 func (*UpdateResponse) Descriptor() ([]byte, []int) {
-	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{9}
+	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *UpdateResponse) GetCampaign() *Campaign {
@@ -487,168 +646,6 @@ func (x *UpdateResponse) GetCampaign() *Campaign {
 	return nil
 }
 
-type Campaign struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	CreateTime *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
-	EndTime    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=end_time,json=endTime" json:"end_time,omitempty"`
-	Id         string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
-	Name       string                 `protobuf:"bytes,4,opt,name=name" json:"name,omitempty"`
-	// askpolru - why byte?
-	NotificationData []byte                 `protobuf:"bytes,5,opt,name=notification_data,json=notificationData" json:"notification_data,omitempty"`
-	ProjectId        string                 `protobuf:"bytes,6,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	ScheduledTime    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=scheduled_time,json=scheduledTime" json:"scheduled_time,omitempty"`
-	StartTime        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=start_time,json=startTime" json:"start_time,omitempty"`
-	Status           string                 `protobuf:"bytes,9,opt,name=status" json:"status,omitempty"`
-	UpdateTime       *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *Campaign) Reset() {
-	*x = Campaign{}
-	mi := &file_campaigns_v1_campaigns_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Campaign) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Campaign) ProtoMessage() {}
-
-func (x *Campaign) ProtoReflect() protoreflect.Message {
-	mi := &file_campaigns_v1_campaigns_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Campaign.ProtoReflect.Descriptor instead.
-func (*Campaign) Descriptor() ([]byte, []int) {
-	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *Campaign) GetCreateTime() *timestamppb.Timestamp {
-	if x != nil {
-		return x.CreateTime
-	}
-	return nil
-}
-
-func (x *Campaign) GetEndTime() *timestamppb.Timestamp {
-	if x != nil {
-		return x.EndTime
-	}
-	return nil
-}
-
-func (x *Campaign) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *Campaign) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *Campaign) GetNotificationData() []byte {
-	if x != nil {
-		return x.NotificationData
-	}
-	return nil
-}
-
-func (x *Campaign) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
-	}
-	return ""
-}
-
-func (x *Campaign) GetScheduledTime() *timestamppb.Timestamp {
-	if x != nil {
-		return x.ScheduledTime
-	}
-	return nil
-}
-
-func (x *Campaign) GetStartTime() *timestamppb.Timestamp {
-	if x != nil {
-		return x.StartTime
-	}
-	return nil
-}
-
-func (x *Campaign) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *Campaign) GetUpdateTime() *timestamppb.Timestamp {
-	if x != nil {
-		return x.UpdateTime
-	}
-	return nil
-}
-
-// messaging
-type CampaignSchedule struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CampaignSchedule) Reset() {
-	*x = CampaignSchedule{}
-	mi := &file_campaigns_v1_campaigns_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CampaignSchedule) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CampaignSchedule) ProtoMessage() {}
-
-func (x *CampaignSchedule) ProtoReflect() protoreflect.Message {
-	mi := &file_campaigns_v1_campaigns_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CampaignSchedule.ProtoReflect.Descriptor instead.
-func (*CampaignSchedule) Descriptor() ([]byte, []int) {
-	return file_campaigns_v1_campaigns_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *CampaignSchedule) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
 var File_campaigns_v1_campaigns_proto protoreflect.FileDescriptor
 
 const file_campaigns_v1_campaigns_proto_rawDesc = "" +
@@ -656,28 +653,7 @@ const file_campaigns_v1_campaigns_proto_rawDesc = "" +
 	"\x1ccampaigns/v1/campaigns.proto\x12\fcampaigns.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x11\n" +
 	"\x0fBatchGetRequest\"H\n" +
 	"\x10BatchGetResponse\x124\n" +
-	"\tcampaigns\x18\x01 \x03(\v2\x16.campaigns.v1.CampaignR\tcampaigns\"\x1c\n" +
-	"\n" +
-	"GetRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"A\n" +
-	"\vGetResponse\x122\n" +
-	"\bcampaign\x18\x01 \x01(\v2\x16.campaigns.v1.CampaignR\bcampaign\"\x93\x01\n" +
-	"\rCreateRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
-	"\x11notification_data\x18\x02 \x01(\fR\x10notificationData\x12A\n" +
-	"\x0escheduled_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\rscheduledTime\"D\n" +
-	"\x0eCreateResponse\x122\n" +
-	"\bcampaign\x18\x01 \x01(\v2\x16.campaigns.v1.CampaignR\bcampaign\"\x1f\n" +
-	"\rDeleteRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x10\n" +
-	"\x0eDeleteResponse\"\xa3\x01\n" +
-	"\rUpdateRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
-	"\x11notification_data\x18\x03 \x01(\fR\x10notificationData\x12A\n" +
-	"\x0escheduled_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\rscheduledTime\"D\n" +
-	"\x0eUpdateResponse\x122\n" +
-	"\bcampaign\x18\x01 \x01(\v2\x16.campaigns.v1.CampaignR\bcampaign\"\xc1\x03\n" +
+	"\tcampaigns\x18\x01 \x03(\v2\x16.campaigns.v1.CampaignR\tcampaigns\"\xc1\x03\n" +
 	"\bCampaign\x12;\n" +
 	"\vcreate_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x125\n" +
@@ -695,12 +671,33 @@ const file_campaigns_v1_campaigns_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"updateTime\"\"\n" +
 	"\x10CampaignSchedule\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id2\xf1\x02\n" +
-	"\x0fCampaignService\x12<\n" +
-	"\x03Get\x12\x18.campaigns.v1.GetRequest\x1a\x19.campaigns.v1.GetResponse\"\x00\x12K\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x93\x01\n" +
+	"\rCreateRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
+	"\x11notification_data\x18\x02 \x01(\fR\x10notificationData\x12A\n" +
+	"\x0escheduled_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\rscheduledTime\"D\n" +
+	"\x0eCreateResponse\x122\n" +
+	"\bcampaign\x18\x01 \x01(\v2\x16.campaigns.v1.CampaignR\bcampaign\"\x1f\n" +
+	"\rDeleteRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x10\n" +
+	"\x0eDeleteResponse\"\x1c\n" +
+	"\n" +
+	"GetRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"A\n" +
+	"\vGetResponse\x122\n" +
+	"\bcampaign\x18\x01 \x01(\v2\x16.campaigns.v1.CampaignR\bcampaign\"\xa3\x01\n" +
+	"\rUpdateRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
+	"\x11notification_data\x18\x03 \x01(\fR\x10notificationData\x12A\n" +
+	"\x0escheduled_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\rscheduledTime\"D\n" +
+	"\x0eUpdateResponse\x122\n" +
+	"\bcampaign\x18\x01 \x01(\v2\x16.campaigns.v1.CampaignR\bcampaign2\xf1\x02\n" +
+	"\x0fCampaignService\x12K\n" +
 	"\bBatchGet\x12\x1d.campaigns.v1.BatchGetRequest\x1a\x1e.campaigns.v1.BatchGetResponse\"\x00\x12E\n" +
 	"\x06Create\x12\x1b.campaigns.v1.CreateRequest\x1a\x1c.campaigns.v1.CreateResponse\"\x00\x12E\n" +
-	"\x06Delete\x12\x1b.campaigns.v1.DeleteRequest\x1a\x1c.campaigns.v1.DeleteResponse\"\x00\x12E\n" +
+	"\x06Delete\x12\x1b.campaigns.v1.DeleteRequest\x1a\x1c.campaigns.v1.DeleteResponse\"\x00\x12<\n" +
+	"\x03Get\x12\x18.campaigns.v1.GetRequest\x1a\x19.campaigns.v1.GetResponse\"\x00\x12E\n" +
 	"\x06Update\x12\x1b.campaigns.v1.UpdateRequest\x1a\x1c.campaigns.v1.UpdateResponse\"\x00BOZHgithub.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1;campaignsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
@@ -719,40 +716,40 @@ var file_campaigns_v1_campaigns_proto_msgTypes = make([]protoimpl.MessageInfo, 1
 var file_campaigns_v1_campaigns_proto_goTypes = []any{
 	(*BatchGetRequest)(nil),       // 0: campaigns.v1.BatchGetRequest
 	(*BatchGetResponse)(nil),      // 1: campaigns.v1.BatchGetResponse
-	(*GetRequest)(nil),            // 2: campaigns.v1.GetRequest
-	(*GetResponse)(nil),           // 3: campaigns.v1.GetResponse
+	(*Campaign)(nil),              // 2: campaigns.v1.Campaign
+	(*CampaignSchedule)(nil),      // 3: campaigns.v1.CampaignSchedule
 	(*CreateRequest)(nil),         // 4: campaigns.v1.CreateRequest
 	(*CreateResponse)(nil),        // 5: campaigns.v1.CreateResponse
 	(*DeleteRequest)(nil),         // 6: campaigns.v1.DeleteRequest
 	(*DeleteResponse)(nil),        // 7: campaigns.v1.DeleteResponse
-	(*UpdateRequest)(nil),         // 8: campaigns.v1.UpdateRequest
-	(*UpdateResponse)(nil),        // 9: campaigns.v1.UpdateResponse
-	(*Campaign)(nil),              // 10: campaigns.v1.Campaign
-	(*CampaignSchedule)(nil),      // 11: campaigns.v1.CampaignSchedule
+	(*GetRequest)(nil),            // 8: campaigns.v1.GetRequest
+	(*GetResponse)(nil),           // 9: campaigns.v1.GetResponse
+	(*UpdateRequest)(nil),         // 10: campaigns.v1.UpdateRequest
+	(*UpdateResponse)(nil),        // 11: campaigns.v1.UpdateResponse
 	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_campaigns_v1_campaigns_proto_depIdxs = []int32{
-	10, // 0: campaigns.v1.BatchGetResponse.campaigns:type_name -> campaigns.v1.Campaign
-	10, // 1: campaigns.v1.GetResponse.campaign:type_name -> campaigns.v1.Campaign
-	12, // 2: campaigns.v1.CreateRequest.scheduled_time:type_name -> google.protobuf.Timestamp
-	10, // 3: campaigns.v1.CreateResponse.campaign:type_name -> campaigns.v1.Campaign
-	12, // 4: campaigns.v1.UpdateRequest.scheduled_time:type_name -> google.protobuf.Timestamp
-	10, // 5: campaigns.v1.UpdateResponse.campaign:type_name -> campaigns.v1.Campaign
-	12, // 6: campaigns.v1.Campaign.create_time:type_name -> google.protobuf.Timestamp
-	12, // 7: campaigns.v1.Campaign.end_time:type_name -> google.protobuf.Timestamp
-	12, // 8: campaigns.v1.Campaign.scheduled_time:type_name -> google.protobuf.Timestamp
-	12, // 9: campaigns.v1.Campaign.start_time:type_name -> google.protobuf.Timestamp
-	12, // 10: campaigns.v1.Campaign.update_time:type_name -> google.protobuf.Timestamp
-	2,  // 11: campaigns.v1.CampaignService.Get:input_type -> campaigns.v1.GetRequest
-	0,  // 12: campaigns.v1.CampaignService.BatchGet:input_type -> campaigns.v1.BatchGetRequest
-	4,  // 13: campaigns.v1.CampaignService.Create:input_type -> campaigns.v1.CreateRequest
-	6,  // 14: campaigns.v1.CampaignService.Delete:input_type -> campaigns.v1.DeleteRequest
-	8,  // 15: campaigns.v1.CampaignService.Update:input_type -> campaigns.v1.UpdateRequest
-	3,  // 16: campaigns.v1.CampaignService.Get:output_type -> campaigns.v1.GetResponse
-	1,  // 17: campaigns.v1.CampaignService.BatchGet:output_type -> campaigns.v1.BatchGetResponse
-	5,  // 18: campaigns.v1.CampaignService.Create:output_type -> campaigns.v1.CreateResponse
-	7,  // 19: campaigns.v1.CampaignService.Delete:output_type -> campaigns.v1.DeleteResponse
-	9,  // 20: campaigns.v1.CampaignService.Update:output_type -> campaigns.v1.UpdateResponse
+	2,  // 0: campaigns.v1.BatchGetResponse.campaigns:type_name -> campaigns.v1.Campaign
+	12, // 1: campaigns.v1.Campaign.create_time:type_name -> google.protobuf.Timestamp
+	12, // 2: campaigns.v1.Campaign.end_time:type_name -> google.protobuf.Timestamp
+	12, // 3: campaigns.v1.Campaign.scheduled_time:type_name -> google.protobuf.Timestamp
+	12, // 4: campaigns.v1.Campaign.start_time:type_name -> google.protobuf.Timestamp
+	12, // 5: campaigns.v1.Campaign.update_time:type_name -> google.protobuf.Timestamp
+	12, // 6: campaigns.v1.CreateRequest.scheduled_time:type_name -> google.protobuf.Timestamp
+	2,  // 7: campaigns.v1.CreateResponse.campaign:type_name -> campaigns.v1.Campaign
+	2,  // 8: campaigns.v1.GetResponse.campaign:type_name -> campaigns.v1.Campaign
+	12, // 9: campaigns.v1.UpdateRequest.scheduled_time:type_name -> google.protobuf.Timestamp
+	2,  // 10: campaigns.v1.UpdateResponse.campaign:type_name -> campaigns.v1.Campaign
+	0,  // 11: campaigns.v1.CampaignService.BatchGet:input_type -> campaigns.v1.BatchGetRequest
+	4,  // 12: campaigns.v1.CampaignService.Create:input_type -> campaigns.v1.CreateRequest
+	6,  // 13: campaigns.v1.CampaignService.Delete:input_type -> campaigns.v1.DeleteRequest
+	8,  // 14: campaigns.v1.CampaignService.Get:input_type -> campaigns.v1.GetRequest
+	10, // 15: campaigns.v1.CampaignService.Update:input_type -> campaigns.v1.UpdateRequest
+	1,  // 16: campaigns.v1.CampaignService.BatchGet:output_type -> campaigns.v1.BatchGetResponse
+	5,  // 17: campaigns.v1.CampaignService.Create:output_type -> campaigns.v1.CreateResponse
+	7,  // 18: campaigns.v1.CampaignService.Delete:output_type -> campaigns.v1.DeleteResponse
+	9,  // 19: campaigns.v1.CampaignService.Get:output_type -> campaigns.v1.GetResponse
+	11, // 20: campaigns.v1.CampaignService.Update:output_type -> campaigns.v1.UpdateResponse
 	16, // [16:21] is the sub-list for method output_type
 	11, // [11:16] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name

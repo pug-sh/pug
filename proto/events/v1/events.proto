@@ -11,14 +11,6 @@ service EventsService {
   rpc BatchCreate(BatchCreateRequest) returns (BatchCreateResponse);
 }
 
-message Event {
-  string distinct_id = 1;
-  string kind = 2;
-  map<string, string> auto_properties = 3;
-  map<string, string> custom_properties = 4;
-  google.protobuf.Timestamp occur_time = 5;
-}
-
 message BatchCreateRequest {
   repeated Event events = 1;
 }
@@ -27,9 +19,15 @@ message BatchCreateResponse {
   uint32 accepted = 1;
 }
 
-// EventBatch is used internally over NATS between the RPC handler and the
-// events-writer worker. It is not part of the EventsService RPC contract.
+message Event {
+  map<string, string> auto_properties = 1;
+  map<string, string> custom_properties = 2;
+  string distinct_id = 3;
+  string kind = 4;
+  google.protobuf.Timestamp occur_time = 5;
+}
+
 message EventBatch {
-  string project_id = 1 [(buf.validate.field).string.min_len = 1];
-  repeated Event events = 2;
+  repeated Event events = 1;
+  string project_id = 2 [(buf.validate.field).string.min_len = 1];
 }

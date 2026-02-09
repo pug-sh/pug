@@ -12,7 +12,7 @@ import (
 )
 
 const getActiveSubscriptionsByProject = `-- name: GetActiveSubscriptionsByProject :many
-select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, profile_id from subscriptions
+select create_time, id, last_heartbeat_time, metadata, platform, profile_id, project_id, status, token, update_time, updater from subscriptions
 where project_id = $1 and status = 'active'
 `
 
@@ -31,12 +31,12 @@ func (q *Queries) GetActiveSubscriptionsByProject(ctx context.Context, projectID
 			&i.LastHeartbeatTime,
 			&i.Metadata,
 			&i.Platform,
+			&i.ProfileID,
 			&i.ProjectID,
 			&i.Status,
 			&i.Token,
-			&i.Updater,
 			&i.UpdateTime,
-			&i.ProfileID,
+			&i.Updater,
 		); err != nil {
 			return nil, err
 		}
@@ -49,7 +49,7 @@ func (q *Queries) GetActiveSubscriptionsByProject(ctx context.Context, projectID
 }
 
 const getSubscription = `-- name: GetSubscription :one
-select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, profile_id from subscriptions
+select create_time, id, last_heartbeat_time, metadata, platform, profile_id, project_id, status, token, update_time, updater from subscriptions
 where id = $1 and project_id = $2
 `
 
@@ -67,18 +67,18 @@ func (q *Queries) GetSubscription(ctx context.Context, arg GetSubscriptionParams
 		&i.LastHeartbeatTime,
 		&i.Metadata,
 		&i.Platform,
+		&i.ProfileID,
 		&i.ProjectID,
 		&i.Status,
 		&i.Token,
-		&i.Updater,
 		&i.UpdateTime,
-		&i.ProfileID,
+		&i.Updater,
 	)
 	return i, err
 }
 
 const getSubscriptionByToken = `-- name: GetSubscriptionByToken :one
-select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, profile_id from subscriptions
+select create_time, id, last_heartbeat_time, metadata, platform, profile_id, project_id, status, token, update_time, updater from subscriptions
 where token = $1
 `
 
@@ -91,18 +91,18 @@ func (q *Queries) GetSubscriptionByToken(ctx context.Context, token string) (Sub
 		&i.LastHeartbeatTime,
 		&i.Metadata,
 		&i.Platform,
+		&i.ProfileID,
 		&i.ProjectID,
 		&i.Status,
 		&i.Token,
-		&i.Updater,
 		&i.UpdateTime,
-		&i.ProfileID,
+		&i.Updater,
 	)
 	return i, err
 }
 
 const getSubscriptionsByProfile = `-- name: GetSubscriptionsByProfile :many
-select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, profile_id from subscriptions
+select create_time, id, last_heartbeat_time, metadata, platform, profile_id, project_id, status, token, update_time, updater from subscriptions
 where profile_id = $1
 `
 
@@ -121,12 +121,12 @@ func (q *Queries) GetSubscriptionsByProfile(ctx context.Context, profileID pgtyp
 			&i.LastHeartbeatTime,
 			&i.Metadata,
 			&i.Platform,
+			&i.ProfileID,
 			&i.ProjectID,
 			&i.Status,
 			&i.Token,
-			&i.Updater,
 			&i.UpdateTime,
-			&i.ProfileID,
+			&i.Updater,
 		); err != nil {
 			return nil, err
 		}
@@ -139,7 +139,7 @@ func (q *Queries) GetSubscriptionsByProfile(ctx context.Context, profileID pgtyp
 }
 
 const getSubscriptionsByProject = `-- name: GetSubscriptionsByProject :many
-select create_time, id, last_heartbeat_time, metadata, platform, project_id, status, token, updater, update_time, profile_id from subscriptions
+select create_time, id, last_heartbeat_time, metadata, platform, profile_id, project_id, status, token, update_time, updater from subscriptions
 where project_id = $1
 `
 
@@ -158,12 +158,12 @@ func (q *Queries) GetSubscriptionsByProject(ctx context.Context, projectID strin
 			&i.LastHeartbeatTime,
 			&i.Metadata,
 			&i.Platform,
+			&i.ProfileID,
 			&i.ProjectID,
 			&i.Status,
 			&i.Token,
-			&i.Updater,
 			&i.UpdateTime,
-			&i.ProfileID,
+			&i.Updater,
 		); err != nil {
 			return nil, err
 		}

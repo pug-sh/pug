@@ -6,19 +6,9 @@ import "buf/validate/validate.proto";
 option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1;authv1";
 
-// web facing
 service AuthService {
-  rpc SignUpWithEmail(SignUpWithEmailRequest) returns (SignUpWithEmailResponse) {}
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
-}
-
-message SignUpWithEmailRequest {
-  string email = 1 [(buf.validate.field).string.email = true];
-  string password = 2 [(buf.validate.field).string.min_len = 1];
-}
-
-message SignUpWithEmailResponse {
-  string token = 1;
+  rpc SignUpWithEmail(SignUpWithEmailRequest) returns (SignUpWithEmailResponse) {}
 }
 
 message SignInWithEmailRequest {
@@ -27,5 +17,14 @@ message SignInWithEmailRequest {
 }
 
 message SignInWithEmailResponse {
+  string token = 1;
+}
+
+message SignUpWithEmailRequest {
+  string email = 1 [(buf.validate.field).string.email = true];
+  string password = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message SignUpWithEmailResponse {
   string token = 1;
 }

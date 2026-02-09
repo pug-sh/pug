@@ -22,7 +22,64 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Platform enum for subscription types
+type EventType int32
+
+const (
+	EventType_EVENT_TYPE_UNSPECIFIED EventType = 0
+	EventType_EVENT_TYPE_CLICKED     EventType = 1
+	EventType_EVENT_TYPE_DISMISSED   EventType = 2
+	EventType_EVENT_TYPE_FAILED      EventType = 3
+	EventType_EVENT_TYPE_RECEIVED    EventType = 4
+	EventType_EVENT_TYPE_SENT        EventType = 5
+)
+
+// Enum value maps for EventType.
+var (
+	EventType_name = map[int32]string{
+		0: "EVENT_TYPE_UNSPECIFIED",
+		1: "EVENT_TYPE_CLICKED",
+		2: "EVENT_TYPE_DISMISSED",
+		3: "EVENT_TYPE_FAILED",
+		4: "EVENT_TYPE_RECEIVED",
+		5: "EVENT_TYPE_SENT",
+	}
+	EventType_value = map[string]int32{
+		"EVENT_TYPE_UNSPECIFIED": 0,
+		"EVENT_TYPE_CLICKED":     1,
+		"EVENT_TYPE_DISMISSED":   2,
+		"EVENT_TYPE_FAILED":      3,
+		"EVENT_TYPE_RECEIVED":    4,
+		"EVENT_TYPE_SENT":        5,
+	}
+)
+
+func (x EventType) Enum() *EventType {
+	p := new(EventType)
+	*p = x
+	return p
+}
+
+func (x EventType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (EventType) Descriptor() protoreflect.EnumDescriptor {
+	return file_delivery_v1_delivery_proto_enumTypes[0].Descriptor()
+}
+
+func (EventType) Type() protoreflect.EnumType {
+	return &file_delivery_v1_delivery_proto_enumTypes[0]
+}
+
+func (x EventType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use EventType.Descriptor instead.
+func (EventType) EnumDescriptor() ([]byte, []int) {
+	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{0}
+}
+
 type Platform int32
 
 const (
@@ -56,11 +113,11 @@ func (x Platform) String() string {
 }
 
 func (Platform) Descriptor() protoreflect.EnumDescriptor {
-	return file_delivery_v1_delivery_proto_enumTypes[0].Descriptor()
+	return file_delivery_v1_delivery_proto_enumTypes[1].Descriptor()
 }
 
 func (Platform) Type() protoreflect.EnumType {
-	return &file_delivery_v1_delivery_proto_enumTypes[0]
+	return &file_delivery_v1_delivery_proto_enumTypes[1]
 }
 
 func (x Platform) Number() protoreflect.EnumNumber {
@@ -69,82 +126,186 @@ func (x Platform) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Platform.Descriptor instead.
 func (Platform) EnumDescriptor() ([]byte, []int) {
-	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{0}
-}
-
-// Event types for notification delivery tracking
-type EventType int32
-
-const (
-	EventType_EVENT_TYPE_UNSPECIFIED EventType = 0
-	EventType_EVENT_TYPE_SENT        EventType = 1
-	EventType_EVENT_TYPE_RECEIVED    EventType = 2
-	EventType_EVENT_TYPE_FAILED      EventType = 3 // FCM delivery failed
-	EventType_EVENT_TYPE_CLICKED     EventType = 4 // User clicked the notification
-	EventType_EVENT_TYPE_DISMISSED   EventType = 5 // User dismissed the notification
-)
-
-// Enum value maps for EventType.
-var (
-	EventType_name = map[int32]string{
-		0: "EVENT_TYPE_UNSPECIFIED",
-		1: "EVENT_TYPE_SENT",
-		2: "EVENT_TYPE_RECEIVED",
-		3: "EVENT_TYPE_FAILED",
-		4: "EVENT_TYPE_CLICKED",
-		5: "EVENT_TYPE_DISMISSED",
-	}
-	EventType_value = map[string]int32{
-		"EVENT_TYPE_UNSPECIFIED": 0,
-		"EVENT_TYPE_SENT":        1,
-		"EVENT_TYPE_RECEIVED":    2,
-		"EVENT_TYPE_FAILED":      3,
-		"EVENT_TYPE_CLICKED":     4,
-		"EVENT_TYPE_DISMISSED":   5,
-	}
-)
-
-func (x EventType) Enum() *EventType {
-	p := new(EventType)
-	*p = x
-	return p
-}
-
-func (x EventType) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (EventType) Descriptor() protoreflect.EnumDescriptor {
-	return file_delivery_v1_delivery_proto_enumTypes[1].Descriptor()
-}
-
-func (EventType) Type() protoreflect.EnumType {
-	return &file_delivery_v1_delivery_proto_enumTypes[1]
-}
-
-func (x EventType) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use EventType.Descriptor instead.
-func (EventType) EnumDescriptor() ([]byte, []int) {
 	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{1}
 }
 
-// Structure of a single delivery event
+type BatchDeliveryEvents struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Events        []*DeliveryEventMessage `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchDeliveryEvents) Reset() {
+	*x = BatchDeliveryEvents{}
+	mi := &file_delivery_v1_delivery_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchDeliveryEvents) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchDeliveryEvents) ProtoMessage() {}
+
+func (x *BatchDeliveryEvents) ProtoReflect() protoreflect.Message {
+	mi := &file_delivery_v1_delivery_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchDeliveryEvents.ProtoReflect.Descriptor instead.
+func (*BatchDeliveryEvents) Descriptor() ([]byte, []int) {
+	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *BatchDeliveryEvents) GetEvents() []*DeliveryEventMessage {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+type BatchMulticastMessage struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Body               string                 `protobuf:"bytes,1,opt,name=body" json:"body,omitempty"`
+	CampaignId         string                 `protobuf:"bytes,2,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
+	Image              string                 `protobuf:"bytes,3,opt,name=image" json:"image,omitempty"`
+	ProjectId          string                 `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	SubscriptionTokens []*SubscriptionToken   `protobuf:"bytes,5,rep,name=subscription_tokens,json=subscriptionTokens" json:"subscription_tokens,omitempty"`
+	Title              string                 `protobuf:"bytes,6,opt,name=title" json:"title,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *BatchMulticastMessage) Reset() {
+	*x = BatchMulticastMessage{}
+	mi := &file_delivery_v1_delivery_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchMulticastMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchMulticastMessage) ProtoMessage() {}
+
+func (x *BatchMulticastMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_delivery_v1_delivery_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchMulticastMessage.ProtoReflect.Descriptor instead.
+func (*BatchMulticastMessage) Descriptor() ([]byte, []int) {
+	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *BatchMulticastMessage) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *BatchMulticastMessage) GetCampaignId() string {
+	if x != nil {
+		return x.CampaignId
+	}
+	return ""
+}
+
+func (x *BatchMulticastMessage) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *BatchMulticastMessage) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *BatchMulticastMessage) GetSubscriptionTokens() []*SubscriptionToken {
+	if x != nil {
+		return x.SubscriptionTokens
+	}
+	return nil
+}
+
+func (x *BatchMulticastMessage) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+type BatchUnicastMessage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchUnicastMessage) Reset() {
+	*x = BatchUnicastMessage{}
+	mi := &file_delivery_v1_delivery_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchUnicastMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchUnicastMessage) ProtoMessage() {}
+
+func (x *BatchUnicastMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_delivery_v1_delivery_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchUnicastMessage.ProtoReflect.Descriptor instead.
+func (*BatchUnicastMessage) Descriptor() ([]byte, []int) {
+	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{2}
+}
+
 type DeliveryEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=timestamp" json:"timestamp,omitempty"`
+	EventCount    uint64                 `protobuf:"varint,1,opt,name=event_count,json=eventCount" json:"event_count,omitempty"`
 	EventType     EventType              `protobuf:"varint,2,opt,name=event_type,json=eventType,enum=delivery.v1.EventType" json:"event_type,omitempty"`
 	Platform      Platform               `protobuf:"varint,3,opt,name=platform,enum=delivery.v1.Platform" json:"platform,omitempty"`
-	EventCount    uint64                 `protobuf:"varint,4,opt,name=event_count,json=eventCount" json:"event_count,omitempty"`
+	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeliveryEvent) Reset() {
 	*x = DeliveryEvent{}
-	mi := &file_delivery_v1_delivery_proto_msgTypes[0]
+	mi := &file_delivery_v1_delivery_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -156,7 +317,7 @@ func (x *DeliveryEvent) String() string {
 func (*DeliveryEvent) ProtoMessage() {}
 
 func (x *DeliveryEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_delivery_v1_delivery_proto_msgTypes[0]
+	mi := &file_delivery_v1_delivery_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -169,14 +330,14 @@ func (x *DeliveryEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliveryEvent.ProtoReflect.Descriptor instead.
 func (*DeliveryEvent) Descriptor() ([]byte, []int) {
-	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{0}
+	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *DeliveryEvent) GetTimestamp() *timestamppb.Timestamp {
+func (x *DeliveryEvent) GetEventCount() uint64 {
 	if x != nil {
-		return x.Timestamp
+		return x.EventCount
 	}
-	return nil
+	return 0
 }
 
 func (x *DeliveryEvent) GetEventType() EventType {
@@ -193,34 +354,129 @@ func (x *DeliveryEvent) GetPlatform() Platform {
 	return Platform_PLATFORM_UNSPECIFIED
 }
 
-func (x *DeliveryEvent) GetEventCount() uint64 {
+func (x *DeliveryEvent) GetTimestamp() *timestamppb.Timestamp {
 	if x != nil {
-		return x.EventCount
+		return x.Timestamp
 	}
-	return 0
+	return nil
 }
 
-// Request sent by subscription when notification events occur
+type DeliveryEventMessage struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CampaignId     string                 `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
+	EventTimestamp *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=event_timestamp,json=eventTimestamp" json:"event_timestamp,omitempty"`
+	EventType      EventType              `protobuf:"varint,3,opt,name=event_type,json=eventType,enum=delivery.v1.EventType" json:"event_type,omitempty"`
+	Metadata       map[string]string      `protobuf:"bytes,4,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	MessageId      string                 `protobuf:"bytes,5,opt,name=message_id,json=messageId" json:"message_id,omitempty"`
+	Platform       Platform               `protobuf:"varint,6,opt,name=platform,enum=delivery.v1.Platform" json:"platform,omitempty"`
+	ProjectId      string                 `protobuf:"bytes,7,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	SubscriptionId string                 `protobuf:"bytes,8,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeliveryEventMessage) Reset() {
+	*x = DeliveryEventMessage{}
+	mi := &file_delivery_v1_delivery_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeliveryEventMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeliveryEventMessage) ProtoMessage() {}
+
+func (x *DeliveryEventMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_delivery_v1_delivery_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeliveryEventMessage.ProtoReflect.Descriptor instead.
+func (*DeliveryEventMessage) Descriptor() ([]byte, []int) {
+	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *DeliveryEventMessage) GetCampaignId() string {
+	if x != nil {
+		return x.CampaignId
+	}
+	return ""
+}
+
+func (x *DeliveryEventMessage) GetEventTimestamp() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EventTimestamp
+	}
+	return nil
+}
+
+func (x *DeliveryEventMessage) GetEventType() EventType {
+	if x != nil {
+		return x.EventType
+	}
+	return EventType_EVENT_TYPE_UNSPECIFIED
+}
+
+func (x *DeliveryEventMessage) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *DeliveryEventMessage) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
+func (x *DeliveryEventMessage) GetPlatform() Platform {
+	if x != nil {
+		return x.Platform
+	}
+	return Platform_PLATFORM_UNSPECIFIED
+}
+
+func (x *DeliveryEventMessage) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *DeliveryEventMessage) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
 type RecordEventRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Core identifiers
-	CampaignId     string `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
-	MessageId      string `protobuf:"bytes,2,opt,name=message_id,json=messageId" json:"message_id,omitempty"`
-	SubscriptionId string `protobuf:"bytes,3,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
-	// Event information
-	EventType EventType `protobuf:"varint,4,opt,name=event_type,json=eventType,enum=delivery.v1.EventType" json:"event_type,omitempty"`
-	Platform  Platform  `protobuf:"varint,5,opt,name=platform,enum=delivery.v1.Platform" json:"platform,omitempty"`
-	// Timing (optional - server can use current time if not provided)
-	EventTimestamp *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=event_timestamp,json=eventTimestamp" json:"event_timestamp,omitempty"`
-	// Additional context (optional)
-	Metadata      map[string]string `protobuf:"bytes,7,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CampaignId     string                 `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
+	EventTimestamp *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=event_timestamp,json=eventTimestamp" json:"event_timestamp,omitempty"`
+	EventType      EventType              `protobuf:"varint,3,opt,name=event_type,json=eventType,enum=delivery.v1.EventType" json:"event_type,omitempty"`
+	Metadata       map[string]string      `protobuf:"bytes,4,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	MessageId      string                 `protobuf:"bytes,5,opt,name=message_id,json=messageId" json:"message_id,omitempty"`
+	Platform       Platform               `protobuf:"varint,6,opt,name=platform,enum=delivery.v1.Platform" json:"platform,omitempty"`
+	SubscriptionId string                 `protobuf:"bytes,7,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RecordEventRequest) Reset() {
 	*x = RecordEventRequest{}
-	mi := &file_delivery_v1_delivery_proto_msgTypes[1]
+	mi := &file_delivery_v1_delivery_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -232,7 +488,7 @@ func (x *RecordEventRequest) String() string {
 func (*RecordEventRequest) ProtoMessage() {}
 
 func (x *RecordEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delivery_v1_delivery_proto_msgTypes[1]
+	mi := &file_delivery_v1_delivery_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -245,7 +501,7 @@ func (x *RecordEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordEventRequest.ProtoReflect.Descriptor instead.
 func (*RecordEventRequest) Descriptor() ([]byte, []int) {
-	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{1}
+	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RecordEventRequest) GetCampaignId() string {
@@ -255,18 +511,11 @@ func (x *RecordEventRequest) GetCampaignId() string {
 	return ""
 }
 
-func (x *RecordEventRequest) GetMessageId() string {
+func (x *RecordEventRequest) GetEventTimestamp() *timestamppb.Timestamp {
 	if x != nil {
-		return x.MessageId
+		return x.EventTimestamp
 	}
-	return ""
-}
-
-func (x *RecordEventRequest) GetSubscriptionId() string {
-	if x != nil {
-		return x.SubscriptionId
-	}
-	return ""
+	return nil
 }
 
 func (x *RecordEventRequest) GetEventType() EventType {
@@ -276,20 +525,6 @@ func (x *RecordEventRequest) GetEventType() EventType {
 	return EventType_EVENT_TYPE_UNSPECIFIED
 }
 
-func (x *RecordEventRequest) GetPlatform() Platform {
-	if x != nil {
-		return x.Platform
-	}
-	return Platform_PLATFORM_UNSPECIFIED
-}
-
-func (x *RecordEventRequest) GetEventTimestamp() *timestamppb.Timestamp {
-	if x != nil {
-		return x.EventTimestamp
-	}
-	return nil
-}
-
 func (x *RecordEventRequest) GetMetadata() map[string]string {
 	if x != nil {
 		return x.Metadata
@@ -297,20 +532,40 @@ func (x *RecordEventRequest) GetMetadata() map[string]string {
 	return nil
 }
 
-// Response sent back to subscription
+func (x *RecordEventRequest) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
+func (x *RecordEventRequest) GetPlatform() Platform {
+	if x != nil {
+		return x.Platform
+	}
+	return Platform_PLATFORM_UNSPECIFIED
+}
+
+func (x *RecordEventRequest) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
 type RecordEventResponse struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	Success           bool                   `protobuf:"varint,1,opt,name=success" json:"success,omitempty"`
-	Message           string                 `protobuf:"bytes,2,opt,name=message" json:"message,omitempty"`
+	Message           string                 `protobuf:"bytes,1,opt,name=message" json:"message,omitempty"`
+	RetryAfterSeconds int32                  `protobuf:"varint,2,opt,name=retry_after_seconds,json=retryAfterSeconds" json:"retry_after_seconds,omitempty"`
 	ShouldRetry       bool                   `protobuf:"varint,3,opt,name=should_retry,json=shouldRetry" json:"should_retry,omitempty"`
-	RetryAfterSeconds int32                  `protobuf:"varint,4,opt,name=retry_after_seconds,json=retryAfterSeconds" json:"retry_after_seconds,omitempty"`
+	Success           bool                   `protobuf:"varint,4,opt,name=success" json:"success,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *RecordEventResponse) Reset() {
 	*x = RecordEventResponse{}
-	mi := &file_delivery_v1_delivery_proto_msgTypes[2]
+	mi := &file_delivery_v1_delivery_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -322,7 +577,7 @@ func (x *RecordEventResponse) String() string {
 func (*RecordEventResponse) ProtoMessage() {}
 
 func (x *RecordEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delivery_v1_delivery_proto_msgTypes[2]
+	mi := &file_delivery_v1_delivery_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -335,14 +590,7 @@ func (x *RecordEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordEventResponse.ProtoReflect.Descriptor instead.
 func (*RecordEventResponse) Descriptor() ([]byte, []int) {
-	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *RecordEventResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
+	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RecordEventResponse) GetMessage() string {
@@ -352,13 +600,6 @@ func (x *RecordEventResponse) GetMessage() string {
 	return ""
 }
 
-func (x *RecordEventResponse) GetShouldRetry() bool {
-	if x != nil {
-		return x.ShouldRetry
-	}
-	return false
-}
-
 func (x *RecordEventResponse) GetRetryAfterSeconds() int32 {
 	if x != nil {
 		return x.RetryAfterSeconds
@@ -366,7 +607,20 @@ func (x *RecordEventResponse) GetRetryAfterSeconds() int32 {
 	return 0
 }
 
-// for messaging
+func (x *RecordEventResponse) GetShouldRetry() bool {
+	if x != nil {
+		return x.ShouldRetry
+	}
+	return false
+}
+
+func (x *RecordEventResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
 type SubscriptionToken struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
@@ -377,7 +631,7 @@ type SubscriptionToken struct {
 
 func (x *SubscriptionToken) Reset() {
 	*x = SubscriptionToken{}
-	mi := &file_delivery_v1_delivery_proto_msgTypes[3]
+	mi := &file_delivery_v1_delivery_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -389,7 +643,7 @@ func (x *SubscriptionToken) String() string {
 func (*SubscriptionToken) ProtoMessage() {}
 
 func (x *SubscriptionToken) ProtoReflect() protoreflect.Message {
-	mi := &file_delivery_v1_delivery_proto_msgTypes[3]
+	mi := &file_delivery_v1_delivery_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -402,7 +656,7 @@ func (x *SubscriptionToken) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionToken.ProtoReflect.Descriptor instead.
 func (*SubscriptionToken) Descriptor() ([]byte, []int) {
-	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{3}
+	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SubscriptionToken) GetSubscriptionId() string {
@@ -419,344 +673,79 @@ func (x *SubscriptionToken) GetToken() string {
 	return ""
 }
 
-type BatchMulticastMessage struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	SubscriptionTokens []*SubscriptionToken   `protobuf:"bytes,1,rep,name=subscription_tokens,json=subscriptionTokens" json:"subscription_tokens,omitempty"`
-	CampaignId         string                 `protobuf:"bytes,2,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
-	ProjectId          string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	Title              string                 `protobuf:"bytes,4,opt,name=title" json:"title,omitempty"`
-	Body               string                 `protobuf:"bytes,5,opt,name=body" json:"body,omitempty"`
-	Image              string                 `protobuf:"bytes,6,opt,name=image" json:"image,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
-}
-
-func (x *BatchMulticastMessage) Reset() {
-	*x = BatchMulticastMessage{}
-	mi := &file_delivery_v1_delivery_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BatchMulticastMessage) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BatchMulticastMessage) ProtoMessage() {}
-
-func (x *BatchMulticastMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_delivery_v1_delivery_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use BatchMulticastMessage.ProtoReflect.Descriptor instead.
-func (*BatchMulticastMessage) Descriptor() ([]byte, []int) {
-	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *BatchMulticastMessage) GetSubscriptionTokens() []*SubscriptionToken {
-	if x != nil {
-		return x.SubscriptionTokens
-	}
-	return nil
-}
-
-func (x *BatchMulticastMessage) GetCampaignId() string {
-	if x != nil {
-		return x.CampaignId
-	}
-	return ""
-}
-
-func (x *BatchMulticastMessage) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
-	}
-	return ""
-}
-
-func (x *BatchMulticastMessage) GetTitle() string {
-	if x != nil {
-		return x.Title
-	}
-	return ""
-}
-
-func (x *BatchMulticastMessage) GetBody() string {
-	if x != nil {
-		return x.Body
-	}
-	return ""
-}
-
-func (x *BatchMulticastMessage) GetImage() string {
-	if x != nil {
-		return x.Image
-	}
-	return ""
-}
-
-type BatchUnicastMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *BatchUnicastMessage) Reset() {
-	*x = BatchUnicastMessage{}
-	mi := &file_delivery_v1_delivery_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BatchUnicastMessage) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BatchUnicastMessage) ProtoMessage() {}
-
-func (x *BatchUnicastMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_delivery_v1_delivery_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use BatchUnicastMessage.ProtoReflect.Descriptor instead.
-func (*BatchUnicastMessage) Descriptor() ([]byte, []int) {
-	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{5}
-}
-
-// Internal message for NATS delivery event processing
-type DeliveryEventMessage struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId      string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	CampaignId     string                 `protobuf:"bytes,2,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
-	MessageId      string                 `protobuf:"bytes,3,opt,name=message_id,json=messageId" json:"message_id,omitempty"`
-	SubscriptionId string                 `protobuf:"bytes,4,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
-	EventType      EventType              `protobuf:"varint,5,opt,name=event_type,json=eventType,enum=delivery.v1.EventType" json:"event_type,omitempty"`
-	Platform       Platform               `protobuf:"varint,6,opt,name=platform,enum=delivery.v1.Platform" json:"platform,omitempty"`
-	EventTimestamp *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=event_timestamp,json=eventTimestamp" json:"event_timestamp,omitempty"`
-	Metadata       map[string]string      `protobuf:"bytes,8,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *DeliveryEventMessage) Reset() {
-	*x = DeliveryEventMessage{}
-	mi := &file_delivery_v1_delivery_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeliveryEventMessage) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeliveryEventMessage) ProtoMessage() {}
-
-func (x *DeliveryEventMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_delivery_v1_delivery_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeliveryEventMessage.ProtoReflect.Descriptor instead.
-func (*DeliveryEventMessage) Descriptor() ([]byte, []int) {
-	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *DeliveryEventMessage) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
-	}
-	return ""
-}
-
-func (x *DeliveryEventMessage) GetCampaignId() string {
-	if x != nil {
-		return x.CampaignId
-	}
-	return ""
-}
-
-func (x *DeliveryEventMessage) GetMessageId() string {
-	if x != nil {
-		return x.MessageId
-	}
-	return ""
-}
-
-func (x *DeliveryEventMessage) GetSubscriptionId() string {
-	if x != nil {
-		return x.SubscriptionId
-	}
-	return ""
-}
-
-func (x *DeliveryEventMessage) GetEventType() EventType {
-	if x != nil {
-		return x.EventType
-	}
-	return EventType_EVENT_TYPE_UNSPECIFIED
-}
-
-func (x *DeliveryEventMessage) GetPlatform() Platform {
-	if x != nil {
-		return x.Platform
-	}
-	return Platform_PLATFORM_UNSPECIFIED
-}
-
-func (x *DeliveryEventMessage) GetEventTimestamp() *timestamppb.Timestamp {
-	if x != nil {
-		return x.EventTimestamp
-	}
-	return nil
-}
-
-func (x *DeliveryEventMessage) GetMetadata() map[string]string {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
-type BatchDeliveryEvents struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	Events        []*DeliveryEventMessage `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *BatchDeliveryEvents) Reset() {
-	*x = BatchDeliveryEvents{}
-	mi := &file_delivery_v1_delivery_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BatchDeliveryEvents) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BatchDeliveryEvents) ProtoMessage() {}
-
-func (x *BatchDeliveryEvents) ProtoReflect() protoreflect.Message {
-	mi := &file_delivery_v1_delivery_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use BatchDeliveryEvents.ProtoReflect.Descriptor instead.
-func (*BatchDeliveryEvents) Descriptor() ([]byte, []int) {
-	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *BatchDeliveryEvents) GetEvents() []*DeliveryEventMessage {
-	if x != nil {
-		return x.Events
-	}
-	return nil
-}
-
 var File_delivery_v1_delivery_proto protoreflect.FileDescriptor
 
 const file_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
-	"\x1adelivery/v1/delivery.proto\x12\vdelivery.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd4\x01\n" +
-	"\rDeliveryEvent\x128\n" +
-	"\ttimestamp\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x125\n" +
+	"\x1adelivery/v1/delivery.proto\x12\vdelivery.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"P\n" +
+	"\x13BatchDeliveryEvents\x129\n" +
+	"\x06events\x18\x01 \x03(\v2!.delivery.v1.DeliveryEventMessageR\x06events\"\xe8\x01\n" +
+	"\x15BatchMulticastMessage\x12\x12\n" +
+	"\x04body\x18\x01 \x01(\tR\x04body\x12\x1f\n" +
+	"\vcampaign_id\x18\x02 \x01(\tR\n" +
+	"campaignId\x12\x14\n" +
+	"\x05image\x18\x03 \x01(\tR\x05image\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x04 \x01(\tR\tprojectId\x12O\n" +
+	"\x13subscription_tokens\x18\x05 \x03(\v2\x1e.delivery.v1.SubscriptionTokenR\x12subscriptionTokens\x12\x14\n" +
+	"\x05title\x18\x06 \x01(\tR\x05title\"\x15\n" +
+	"\x13BatchUnicastMessage\"\xd4\x01\n" +
+	"\rDeliveryEvent\x12\x1f\n" +
+	"\vevent_count\x18\x01 \x01(\x04R\n" +
+	"eventCount\x125\n" +
 	"\n" +
 	"event_type\x18\x02 \x01(\x0e2\x16.delivery.v1.EventTypeR\teventType\x121\n" +
-	"\bplatform\x18\x03 \x01(\x0e2\x15.delivery.v1.PlatformR\bplatform\x12\x1f\n" +
-	"\vevent_count\x18\x04 \x01(\x04R\n" +
-	"eventCount\"\xb4\x03\n" +
+	"\bplatform\x18\x03 \x01(\x0e2\x15.delivery.v1.PlatformR\bplatform\x128\n" +
+	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xd7\x03\n" +
+	"\x14DeliveryEventMessage\x12\x1f\n" +
+	"\vcampaign_id\x18\x01 \x01(\tR\n" +
+	"campaignId\x12C\n" +
+	"\x0fevent_timestamp\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x0eeventTimestamp\x125\n" +
+	"\n" +
+	"event_type\x18\x03 \x01(\x0e2\x16.delivery.v1.EventTypeR\teventType\x12K\n" +
+	"\bmetadata\x18\x04 \x03(\v2/.delivery.v1.DeliveryEventMessage.MetadataEntryR\bmetadata\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x05 \x01(\tR\tmessageId\x121\n" +
+	"\bplatform\x18\x06 \x01(\x0e2\x15.delivery.v1.PlatformR\bplatform\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\a \x01(\tR\tprojectId\x12'\n" +
+	"\x0fsubscription_id\x18\b \x01(\tR\x0esubscriptionId\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb4\x03\n" +
 	"\x12RecordEventRequest\x12\x1f\n" +
 	"\vcampaign_id\x18\x01 \x01(\tR\n" +
-	"campaignId\x12\x1d\n" +
+	"campaignId\x12C\n" +
+	"\x0fevent_timestamp\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x0eeventTimestamp\x125\n" +
 	"\n" +
-	"message_id\x18\x02 \x01(\tR\tmessageId\x12'\n" +
-	"\x0fsubscription_id\x18\x03 \x01(\tR\x0esubscriptionId\x125\n" +
+	"event_type\x18\x03 \x01(\x0e2\x16.delivery.v1.EventTypeR\teventType\x12I\n" +
+	"\bmetadata\x18\x04 \x03(\v2-.delivery.v1.RecordEventRequest.MetadataEntryR\bmetadata\x12\x1d\n" +
 	"\n" +
-	"event_type\x18\x04 \x01(\x0e2\x16.delivery.v1.EventTypeR\teventType\x121\n" +
-	"\bplatform\x18\x05 \x01(\x0e2\x15.delivery.v1.PlatformR\bplatform\x12C\n" +
-	"\x0fevent_timestamp\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0eeventTimestamp\x12I\n" +
-	"\bmetadata\x18\a \x03(\v2-.delivery.v1.RecordEventRequest.MetadataEntryR\bmetadata\x1a;\n" +
+	"message_id\x18\x05 \x01(\tR\tmessageId\x121\n" +
+	"\bplatform\x18\x06 \x01(\x0e2\x15.delivery.v1.PlatformR\bplatform\x12'\n" +
+	"\x0fsubscription_id\x18\a \x01(\tR\x0esubscriptionId\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9c\x01\n" +
 	"\x13RecordEventResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\x12!\n" +
-	"\fshould_retry\x18\x03 \x01(\bR\vshouldRetry\x12.\n" +
-	"\x13retry_after_seconds\x18\x04 \x01(\x05R\x11retryAfterSeconds\"R\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\x12.\n" +
+	"\x13retry_after_seconds\x18\x02 \x01(\x05R\x11retryAfterSeconds\x12!\n" +
+	"\fshould_retry\x18\x03 \x01(\bR\vshouldRetry\x12\x18\n" +
+	"\asuccess\x18\x04 \x01(\bR\asuccess\"R\n" +
 	"\x11SubscriptionToken\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x14\n" +
-	"\x05token\x18\x02 \x01(\tR\x05token\"\xe8\x01\n" +
-	"\x15BatchMulticastMessage\x12O\n" +
-	"\x13subscription_tokens\x18\x01 \x03(\v2\x1e.delivery.v1.SubscriptionTokenR\x12subscriptionTokens\x12\x1f\n" +
-	"\vcampaign_id\x18\x02 \x01(\tR\n" +
-	"campaignId\x12\x1d\n" +
-	"\n" +
-	"project_id\x18\x03 \x01(\tR\tprojectId\x12\x14\n" +
-	"\x05title\x18\x04 \x01(\tR\x05title\x12\x12\n" +
-	"\x04body\x18\x05 \x01(\tR\x04body\x12\x14\n" +
-	"\x05image\x18\x06 \x01(\tR\x05image\"\x15\n" +
-	"\x13BatchUnicastMessage\"\xd7\x03\n" +
-	"\x14DeliveryEventMessage\x12\x1d\n" +
-	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1f\n" +
-	"\vcampaign_id\x18\x02 \x01(\tR\n" +
-	"campaignId\x12\x1d\n" +
-	"\n" +
-	"message_id\x18\x03 \x01(\tR\tmessageId\x12'\n" +
-	"\x0fsubscription_id\x18\x04 \x01(\tR\x0esubscriptionId\x125\n" +
-	"\n" +
-	"event_type\x18\x05 \x01(\x0e2\x16.delivery.v1.EventTypeR\teventType\x121\n" +
-	"\bplatform\x18\x06 \x01(\x0e2\x15.delivery.v1.PlatformR\bplatform\x12C\n" +
-	"\x0fevent_timestamp\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0eeventTimestamp\x12K\n" +
-	"\bmetadata\x18\b \x03(\v2/.delivery.v1.DeliveryEventMessage.MetadataEntryR\bmetadata\x1a;\n" +
-	"\rMetadataEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"P\n" +
-	"\x13BatchDeliveryEvents\x129\n" +
-	"\x06events\x18\x01 \x03(\v2!.delivery.v1.DeliveryEventMessageR\x06events*L\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token*\x9e\x01\n" +
+	"\tEventType\x12\x1a\n" +
+	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12EVENT_TYPE_CLICKED\x10\x01\x12\x18\n" +
+	"\x14EVENT_TYPE_DISMISSED\x10\x02\x12\x15\n" +
+	"\x11EVENT_TYPE_FAILED\x10\x03\x12\x17\n" +
+	"\x13EVENT_TYPE_RECEIVED\x10\x04\x12\x13\n" +
+	"\x0fEVENT_TYPE_SENT\x10\x05*L\n" +
 	"\bPlatform\x12\x18\n" +
 	"\x14PLATFORM_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10PLATFORM_ANDROID\x10\x01\x12\x10\n" +
-	"\fPLATFORM_IOS\x10\x02*\x9e\x01\n" +
-	"\tEventType\x12\x1a\n" +
-	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12\x13\n" +
-	"\x0fEVENT_TYPE_SENT\x10\x01\x12\x17\n" +
-	"\x13EVENT_TYPE_RECEIVED\x10\x02\x12\x15\n" +
-	"\x11EVENT_TYPE_FAILED\x10\x03\x12\x16\n" +
-	"\x12EVENT_TYPE_CLICKED\x10\x04\x12\x18\n" +
-	"\x14EVENT_TYPE_DISMISSED\x10\x052c\n" +
+	"\fPLATFORM_IOS\x10\x022c\n" +
 	"\x0fDeliveryService\x12P\n" +
 	"\vRecordEvent\x12\x1f.delivery.v1.RecordEventRequest\x1a .delivery.v1.RecordEventResponseBMZFgithub.com/fivebitsio/cotton/internal/gen/proto/delivery/v1;deliveryv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
@@ -775,36 +764,36 @@ func file_delivery_v1_delivery_proto_rawDescGZIP() []byte {
 var file_delivery_v1_delivery_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_delivery_v1_delivery_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_delivery_v1_delivery_proto_goTypes = []any{
-	(Platform)(0),                 // 0: delivery.v1.Platform
-	(EventType)(0),                // 1: delivery.v1.EventType
-	(*DeliveryEvent)(nil),         // 2: delivery.v1.DeliveryEvent
-	(*RecordEventRequest)(nil),    // 3: delivery.v1.RecordEventRequest
-	(*RecordEventResponse)(nil),   // 4: delivery.v1.RecordEventResponse
-	(*SubscriptionToken)(nil),     // 5: delivery.v1.SubscriptionToken
-	(*BatchMulticastMessage)(nil), // 6: delivery.v1.BatchMulticastMessage
-	(*BatchUnicastMessage)(nil),   // 7: delivery.v1.BatchUnicastMessage
-	(*DeliveryEventMessage)(nil),  // 8: delivery.v1.DeliveryEventMessage
-	(*BatchDeliveryEvents)(nil),   // 9: delivery.v1.BatchDeliveryEvents
-	nil,                           // 10: delivery.v1.RecordEventRequest.MetadataEntry
-	nil,                           // 11: delivery.v1.DeliveryEventMessage.MetadataEntry
+	(EventType)(0),                // 0: delivery.v1.EventType
+	(Platform)(0),                 // 1: delivery.v1.Platform
+	(*BatchDeliveryEvents)(nil),   // 2: delivery.v1.BatchDeliveryEvents
+	(*BatchMulticastMessage)(nil), // 3: delivery.v1.BatchMulticastMessage
+	(*BatchUnicastMessage)(nil),   // 4: delivery.v1.BatchUnicastMessage
+	(*DeliveryEvent)(nil),         // 5: delivery.v1.DeliveryEvent
+	(*DeliveryEventMessage)(nil),  // 6: delivery.v1.DeliveryEventMessage
+	(*RecordEventRequest)(nil),    // 7: delivery.v1.RecordEventRequest
+	(*RecordEventResponse)(nil),   // 8: delivery.v1.RecordEventResponse
+	(*SubscriptionToken)(nil),     // 9: delivery.v1.SubscriptionToken
+	nil,                           // 10: delivery.v1.DeliveryEventMessage.MetadataEntry
+	nil,                           // 11: delivery.v1.RecordEventRequest.MetadataEntry
 	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_delivery_v1_delivery_proto_depIdxs = []int32{
-	12, // 0: delivery.v1.DeliveryEvent.timestamp:type_name -> google.protobuf.Timestamp
-	1,  // 1: delivery.v1.DeliveryEvent.event_type:type_name -> delivery.v1.EventType
-	0,  // 2: delivery.v1.DeliveryEvent.platform:type_name -> delivery.v1.Platform
-	1,  // 3: delivery.v1.RecordEventRequest.event_type:type_name -> delivery.v1.EventType
-	0,  // 4: delivery.v1.RecordEventRequest.platform:type_name -> delivery.v1.Platform
-	12, // 5: delivery.v1.RecordEventRequest.event_timestamp:type_name -> google.protobuf.Timestamp
-	10, // 6: delivery.v1.RecordEventRequest.metadata:type_name -> delivery.v1.RecordEventRequest.MetadataEntry
-	5,  // 7: delivery.v1.BatchMulticastMessage.subscription_tokens:type_name -> delivery.v1.SubscriptionToken
-	1,  // 8: delivery.v1.DeliveryEventMessage.event_type:type_name -> delivery.v1.EventType
-	0,  // 9: delivery.v1.DeliveryEventMessage.platform:type_name -> delivery.v1.Platform
-	12, // 10: delivery.v1.DeliveryEventMessage.event_timestamp:type_name -> google.protobuf.Timestamp
-	11, // 11: delivery.v1.DeliveryEventMessage.metadata:type_name -> delivery.v1.DeliveryEventMessage.MetadataEntry
-	8,  // 12: delivery.v1.BatchDeliveryEvents.events:type_name -> delivery.v1.DeliveryEventMessage
-	3,  // 13: delivery.v1.DeliveryService.RecordEvent:input_type -> delivery.v1.RecordEventRequest
-	4,  // 14: delivery.v1.DeliveryService.RecordEvent:output_type -> delivery.v1.RecordEventResponse
+	6,  // 0: delivery.v1.BatchDeliveryEvents.events:type_name -> delivery.v1.DeliveryEventMessage
+	9,  // 1: delivery.v1.BatchMulticastMessage.subscription_tokens:type_name -> delivery.v1.SubscriptionToken
+	0,  // 2: delivery.v1.DeliveryEvent.event_type:type_name -> delivery.v1.EventType
+	1,  // 3: delivery.v1.DeliveryEvent.platform:type_name -> delivery.v1.Platform
+	12, // 4: delivery.v1.DeliveryEvent.timestamp:type_name -> google.protobuf.Timestamp
+	12, // 5: delivery.v1.DeliveryEventMessage.event_timestamp:type_name -> google.protobuf.Timestamp
+	0,  // 6: delivery.v1.DeliveryEventMessage.event_type:type_name -> delivery.v1.EventType
+	10, // 7: delivery.v1.DeliveryEventMessage.metadata:type_name -> delivery.v1.DeliveryEventMessage.MetadataEntry
+	1,  // 8: delivery.v1.DeliveryEventMessage.platform:type_name -> delivery.v1.Platform
+	12, // 9: delivery.v1.RecordEventRequest.event_timestamp:type_name -> google.protobuf.Timestamp
+	0,  // 10: delivery.v1.RecordEventRequest.event_type:type_name -> delivery.v1.EventType
+	11, // 11: delivery.v1.RecordEventRequest.metadata:type_name -> delivery.v1.RecordEventRequest.MetadataEntry
+	1,  // 12: delivery.v1.RecordEventRequest.platform:type_name -> delivery.v1.Platform
+	7,  // 13: delivery.v1.DeliveryService.RecordEvent:input_type -> delivery.v1.RecordEventRequest
+	8,  // 14: delivery.v1.DeliveryService.RecordEvent:output_type -> delivery.v1.RecordEventResponse
 	14, // [14:15] is the sub-list for method output_type
 	13, // [13:14] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name

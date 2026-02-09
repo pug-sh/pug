@@ -23,82 +23,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type Event struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	DistinctId       string                 `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
-	Kind             string                 `protobuf:"bytes,2,opt,name=kind" json:"kind,omitempty"`
-	AutoProperties   map[string]string      `protobuf:"bytes,3,rep,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	CustomProperties map[string]string      `protobuf:"bytes,4,rep,name=custom_properties,json=customProperties" json:"custom_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	OccurTime        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *Event) Reset() {
-	*x = Event{}
-	mi := &file_events_v1_events_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Event) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Event) ProtoMessage() {}
-
-func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_events_v1_events_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Event.ProtoReflect.Descriptor instead.
-func (*Event) Descriptor() ([]byte, []int) {
-	return file_events_v1_events_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *Event) GetDistinctId() string {
-	if x != nil {
-		return x.DistinctId
-	}
-	return ""
-}
-
-func (x *Event) GetKind() string {
-	if x != nil {
-		return x.Kind
-	}
-	return ""
-}
-
-func (x *Event) GetAutoProperties() map[string]string {
-	if x != nil {
-		return x.AutoProperties
-	}
-	return nil
-}
-
-func (x *Event) GetCustomProperties() map[string]string {
-	if x != nil {
-		return x.CustomProperties
-	}
-	return nil
-}
-
-func (x *Event) GetOccurTime() *timestamppb.Timestamp {
-	if x != nil {
-		return x.OccurTime
-	}
-	return nil
-}
-
 type BatchCreateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Events        []*Event               `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
@@ -108,7 +32,7 @@ type BatchCreateRequest struct {
 
 func (x *BatchCreateRequest) Reset() {
 	*x = BatchCreateRequest{}
-	mi := &file_events_v1_events_proto_msgTypes[1]
+	mi := &file_events_v1_events_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -120,7 +44,7 @@ func (x *BatchCreateRequest) String() string {
 func (*BatchCreateRequest) ProtoMessage() {}
 
 func (x *BatchCreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_events_v1_events_proto_msgTypes[1]
+	mi := &file_events_v1_events_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -133,7 +57,7 @@ func (x *BatchCreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchCreateRequest.ProtoReflect.Descriptor instead.
 func (*BatchCreateRequest) Descriptor() ([]byte, []int) {
-	return file_events_v1_events_proto_rawDescGZIP(), []int{1}
+	return file_events_v1_events_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *BatchCreateRequest) GetEvents() []*Event {
@@ -152,7 +76,7 @@ type BatchCreateResponse struct {
 
 func (x *BatchCreateResponse) Reset() {
 	*x = BatchCreateResponse{}
-	mi := &file_events_v1_events_proto_msgTypes[2]
+	mi := &file_events_v1_events_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -164,7 +88,7 @@ func (x *BatchCreateResponse) String() string {
 func (*BatchCreateResponse) ProtoMessage() {}
 
 func (x *BatchCreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_events_v1_events_proto_msgTypes[2]
+	mi := &file_events_v1_events_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -177,7 +101,7 @@ func (x *BatchCreateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchCreateResponse.ProtoReflect.Descriptor instead.
 func (*BatchCreateResponse) Descriptor() ([]byte, []int) {
-	return file_events_v1_events_proto_rawDescGZIP(), []int{2}
+	return file_events_v1_events_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *BatchCreateResponse) GetAccepted() uint32 {
@@ -187,12 +111,86 @@ func (x *BatchCreateResponse) GetAccepted() uint32 {
 	return 0
 }
 
-// EventBatch is used internally over NATS between the RPC handler and the
-// events-writer worker. It is not part of the EventsService RPC contract.
+type Event struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AutoProperties   map[string]string      `protobuf:"bytes,1,rep,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	CustomProperties map[string]string      `protobuf:"bytes,2,rep,name=custom_properties,json=customProperties" json:"custom_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	DistinctId       string                 `protobuf:"bytes,3,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	Kind             string                 `protobuf:"bytes,4,opt,name=kind" json:"kind,omitempty"`
+	OccurTime        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *Event) Reset() {
+	*x = Event{}
+	mi := &file_events_v1_events_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Event) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Event) ProtoMessage() {}
+
+func (x *Event) ProtoReflect() protoreflect.Message {
+	mi := &file_events_v1_events_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Event.ProtoReflect.Descriptor instead.
+func (*Event) Descriptor() ([]byte, []int) {
+	return file_events_v1_events_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Event) GetAutoProperties() map[string]string {
+	if x != nil {
+		return x.AutoProperties
+	}
+	return nil
+}
+
+func (x *Event) GetCustomProperties() map[string]string {
+	if x != nil {
+		return x.CustomProperties
+	}
+	return nil
+}
+
+func (x *Event) GetDistinctId() string {
+	if x != nil {
+		return x.DistinctId
+	}
+	return ""
+}
+
+func (x *Event) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *Event) GetOccurTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.OccurTime
+	}
+	return nil
+}
+
 type EventBatch struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	Events        []*Event               `protobuf:"bytes,2,rep,name=events" json:"events,omitempty"`
+	Events        []*Event               `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -227,13 +225,6 @@ func (*EventBatch) Descriptor() ([]byte, []int) {
 	return file_events_v1_events_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *EventBatch) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
-	}
-	return ""
-}
-
 func (x *EventBatch) GetEvents() []*Event {
 	if x != nil {
 		return x.Events
@@ -241,17 +232,28 @@ func (x *EventBatch) GetEvents() []*Event {
 	return nil
 }
 
+func (x *EventBatch) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
 var File_events_v1_events_proto protoreflect.FileDescriptor
 
 const file_events_v1_events_proto_rawDesc = "" +
 	"\n" +
-	"\x16events/v1/events.proto\x12\tevents.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa3\x03\n" +
-	"\x05Event\x12\x1f\n" +
-	"\vdistinct_id\x18\x01 \x01(\tR\n" +
+	"\x16events/v1/events.proto\x12\tevents.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\">\n" +
+	"\x12BatchCreateRequest\x12(\n" +
+	"\x06events\x18\x01 \x03(\v2\x10.events.v1.EventR\x06events\"1\n" +
+	"\x13BatchCreateResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\rR\baccepted\"\xa3\x03\n" +
+	"\x05Event\x12M\n" +
+	"\x0fauto_properties\x18\x01 \x03(\v2$.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12S\n" +
+	"\x11custom_properties\x18\x02 \x03(\v2&.events.v1.Event.CustomPropertiesEntryR\x10customProperties\x12\x1f\n" +
+	"\vdistinct_id\x18\x03 \x01(\tR\n" +
 	"distinctId\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\x12M\n" +
-	"\x0fauto_properties\x18\x03 \x03(\v2$.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12S\n" +
-	"\x11custom_properties\x18\x04 \x03(\v2&.events.v1.Event.CustomPropertiesEntryR\x10customProperties\x129\n" +
+	"\x04kind\x18\x04 \x01(\tR\x04kind\x129\n" +
 	"\n" +
 	"occur_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\toccurTime\x1aA\n" +
 	"\x13AutoPropertiesEntry\x12\x10\n" +
@@ -259,16 +261,12 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +
 	"\x15CustomPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\">\n" +
-	"\x12BatchCreateRequest\x12(\n" +
-	"\x06events\x18\x01 \x03(\v2\x10.events.v1.EventR\x06events\"1\n" +
-	"\x13BatchCreateResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\rR\baccepted\"^\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"^\n" +
 	"\n" +
-	"EventBatch\x12&\n" +
+	"EventBatch\x12(\n" +
+	"\x06events\x18\x01 \x03(\v2\x10.events.v1.EventR\x06events\x12&\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprojectId\x12(\n" +
-	"\x06events\x18\x02 \x03(\v2\x10.events.v1.EventR\x06events2]\n" +
+	"project_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprojectId2]\n" +
 	"\rEventsService\x12L\n" +
 	"\vBatchCreate\x12\x1d.events.v1.BatchCreateRequest\x1a\x1e.events.v1.BatchCreateResponseBIZBgithub.com/fivebitsio/cotton/internal/gen/proto/events/v1;eventsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
@@ -286,22 +284,22 @@ func file_events_v1_events_proto_rawDescGZIP() []byte {
 
 var file_events_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_events_v1_events_proto_goTypes = []any{
-	(*Event)(nil),                 // 0: events.v1.Event
-	(*BatchCreateRequest)(nil),    // 1: events.v1.BatchCreateRequest
-	(*BatchCreateResponse)(nil),   // 2: events.v1.BatchCreateResponse
+	(*BatchCreateRequest)(nil),    // 0: events.v1.BatchCreateRequest
+	(*BatchCreateResponse)(nil),   // 1: events.v1.BatchCreateResponse
+	(*Event)(nil),                 // 2: events.v1.Event
 	(*EventBatch)(nil),            // 3: events.v1.EventBatch
 	nil,                           // 4: events.v1.Event.AutoPropertiesEntry
 	nil,                           // 5: events.v1.Event.CustomPropertiesEntry
 	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
 }
 var file_events_v1_events_proto_depIdxs = []int32{
-	4, // 0: events.v1.Event.auto_properties:type_name -> events.v1.Event.AutoPropertiesEntry
-	5, // 1: events.v1.Event.custom_properties:type_name -> events.v1.Event.CustomPropertiesEntry
-	6, // 2: events.v1.Event.occur_time:type_name -> google.protobuf.Timestamp
-	0, // 3: events.v1.BatchCreateRequest.events:type_name -> events.v1.Event
-	0, // 4: events.v1.EventBatch.events:type_name -> events.v1.Event
-	1, // 5: events.v1.EventsService.BatchCreate:input_type -> events.v1.BatchCreateRequest
-	2, // 6: events.v1.EventsService.BatchCreate:output_type -> events.v1.BatchCreateResponse
+	2, // 0: events.v1.BatchCreateRequest.events:type_name -> events.v1.Event
+	4, // 1: events.v1.Event.auto_properties:type_name -> events.v1.Event.AutoPropertiesEntry
+	5, // 2: events.v1.Event.custom_properties:type_name -> events.v1.Event.CustomPropertiesEntry
+	6, // 3: events.v1.Event.occur_time:type_name -> google.protobuf.Timestamp
+	2, // 4: events.v1.EventBatch.events:type_name -> events.v1.Event
+	0, // 5: events.v1.EventsService.BatchCreate:input_type -> events.v1.BatchCreateRequest
+	1, // 6: events.v1.EventsService.BatchCreate:output_type -> events.v1.BatchCreateResponse
 	6, // [6:7] is the sub-list for method output_type
 	5, // [5:6] is the sub-list for method input_type
 	5, // [5:5] is the sub-list for extension type_name

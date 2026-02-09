@@ -12,7 +12,7 @@ import (
 const createCustomer = `-- name: CreateCustomer :one
 insert into customers (id, display_name, email, password_hash, picture_uri)
 values ($1, $2, $3, $4, $5)
-returning display_name, email, id, password_hash, picture_uri, create_time, update_time
+returning create_time, display_name, email, id, password_hash, picture_uri, update_time
 `
 
 type CreateCustomerParams struct {
@@ -33,12 +33,12 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 	)
 	var i Customer
 	err := row.Scan(
+		&i.CreateTime,
 		&i.DisplayName,
 		&i.Email,
 		&i.ID,
 		&i.PasswordHash,
 		&i.PictureUri,
-		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err
@@ -51,7 +51,7 @@ update -- do not update id
 set display_name = excluded.display_name,
   picture_uri = excluded.picture_uri,
   password_hash = excluded.password_hash
-returning display_name, email, id, password_hash, picture_uri, create_time, update_time
+returning create_time, display_name, email, id, password_hash, picture_uri, update_time
 `
 
 type UpsertCustomerParams struct {
@@ -72,12 +72,12 @@ func (q *Queries) UpsertCustomer(ctx context.Context, arg UpsertCustomerParams) 
 	)
 	var i Customer
 	err := row.Scan(
+		&i.CreateTime,
 		&i.DisplayName,
 		&i.Email,
 		&i.ID,
 		&i.PasswordHash,
 		&i.PictureUri,
-		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err

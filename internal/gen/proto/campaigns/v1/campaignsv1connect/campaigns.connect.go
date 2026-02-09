@@ -33,8 +33,6 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// CampaignServiceGetProcedure is the fully-qualified name of the CampaignService's Get RPC.
-	CampaignServiceGetProcedure = "/campaigns.v1.CampaignService/Get"
 	// CampaignServiceBatchGetProcedure is the fully-qualified name of the CampaignService's BatchGet
 	// RPC.
 	CampaignServiceBatchGetProcedure = "/campaigns.v1.CampaignService/BatchGet"
@@ -42,16 +40,18 @@ const (
 	CampaignServiceCreateProcedure = "/campaigns.v1.CampaignService/Create"
 	// CampaignServiceDeleteProcedure is the fully-qualified name of the CampaignService's Delete RPC.
 	CampaignServiceDeleteProcedure = "/campaigns.v1.CampaignService/Delete"
+	// CampaignServiceGetProcedure is the fully-qualified name of the CampaignService's Get RPC.
+	CampaignServiceGetProcedure = "/campaigns.v1.CampaignService/Get"
 	// CampaignServiceUpdateProcedure is the fully-qualified name of the CampaignService's Update RPC.
 	CampaignServiceUpdateProcedure = "/campaigns.v1.CampaignService/Update"
 )
 
 // CampaignServiceClient is a client for the campaigns.v1.CampaignService service.
 type CampaignServiceClient interface {
-	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	BatchGet(context.Context, *connect.Request[v1.BatchGetRequest]) (*connect.Response[v1.BatchGetResponse], error)
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
+	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error)
 }
 
@@ -66,12 +66,6 @@ func NewCampaignServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 	baseURL = strings.TrimRight(baseURL, "/")
 	campaignServiceMethods := v1.File_campaigns_v1_campaigns_proto.Services().ByName("CampaignService").Methods()
 	return &campaignServiceClient{
-		get: connect.NewClient[v1.GetRequest, v1.GetResponse](
-			httpClient,
-			baseURL+CampaignServiceGetProcedure,
-			connect.WithSchema(campaignServiceMethods.ByName("Get")),
-			connect.WithClientOptions(opts...),
-		),
 		batchGet: connect.NewClient[v1.BatchGetRequest, v1.BatchGetResponse](
 			httpClient,
 			baseURL+CampaignServiceBatchGetProcedure,
@@ -90,6 +84,12 @@ func NewCampaignServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(campaignServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
+		get: connect.NewClient[v1.GetRequest, v1.GetResponse](
+			httpClient,
+			baseURL+CampaignServiceGetProcedure,
+			connect.WithSchema(campaignServiceMethods.ByName("Get")),
+			connect.WithClientOptions(opts...),
+		),
 		update: connect.NewClient[v1.UpdateRequest, v1.UpdateResponse](
 			httpClient,
 			baseURL+CampaignServiceUpdateProcedure,
@@ -101,16 +101,11 @@ func NewCampaignServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // campaignServiceClient implements CampaignServiceClient.
 type campaignServiceClient struct {
-	get      *connect.Client[v1.GetRequest, v1.GetResponse]
 	batchGet *connect.Client[v1.BatchGetRequest, v1.BatchGetResponse]
 	create   *connect.Client[v1.CreateRequest, v1.CreateResponse]
 	delete   *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
+	get      *connect.Client[v1.GetRequest, v1.GetResponse]
 	update   *connect.Client[v1.UpdateRequest, v1.UpdateResponse]
-}
-
-// Get calls campaigns.v1.CampaignService.Get.
-func (c *campaignServiceClient) Get(ctx context.Context, req *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
-	return c.get.CallUnary(ctx, req)
 }
 
 // BatchGet calls campaigns.v1.CampaignService.BatchGet.
@@ -128,6 +123,11 @@ func (c *campaignServiceClient) Delete(ctx context.Context, req *connect.Request
 	return c.delete.CallUnary(ctx, req)
 }
 
+// Get calls campaigns.v1.CampaignService.Get.
+func (c *campaignServiceClient) Get(ctx context.Context, req *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
+	return c.get.CallUnary(ctx, req)
+}
+
 // Update calls campaigns.v1.CampaignService.Update.
 func (c *campaignServiceClient) Update(ctx context.Context, req *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error) {
 	return c.update.CallUnary(ctx, req)
@@ -135,10 +135,10 @@ func (c *campaignServiceClient) Update(ctx context.Context, req *connect.Request
 
 // CampaignServiceHandler is an implementation of the campaigns.v1.CampaignService service.
 type CampaignServiceHandler interface {
-	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	BatchGet(context.Context, *connect.Request[v1.BatchGetRequest]) (*connect.Response[v1.BatchGetResponse], error)
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
+	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error)
 }
 
@@ -149,12 +149,6 @@ type CampaignServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewCampaignServiceHandler(svc CampaignServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	campaignServiceMethods := v1.File_campaigns_v1_campaigns_proto.Services().ByName("CampaignService").Methods()
-	campaignServiceGetHandler := connect.NewUnaryHandler(
-		CampaignServiceGetProcedure,
-		svc.Get,
-		connect.WithSchema(campaignServiceMethods.ByName("Get")),
-		connect.WithHandlerOptions(opts...),
-	)
 	campaignServiceBatchGetHandler := connect.NewUnaryHandler(
 		CampaignServiceBatchGetProcedure,
 		svc.BatchGet,
@@ -173,6 +167,12 @@ func NewCampaignServiceHandler(svc CampaignServiceHandler, opts ...connect.Handl
 		connect.WithSchema(campaignServiceMethods.ByName("Delete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	campaignServiceGetHandler := connect.NewUnaryHandler(
+		CampaignServiceGetProcedure,
+		svc.Get,
+		connect.WithSchema(campaignServiceMethods.ByName("Get")),
+		connect.WithHandlerOptions(opts...),
+	)
 	campaignServiceUpdateHandler := connect.NewUnaryHandler(
 		CampaignServiceUpdateProcedure,
 		svc.Update,
@@ -181,14 +181,14 @@ func NewCampaignServiceHandler(svc CampaignServiceHandler, opts ...connect.Handl
 	)
 	return "/campaigns.v1.CampaignService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case CampaignServiceGetProcedure:
-			campaignServiceGetHandler.ServeHTTP(w, r)
 		case CampaignServiceBatchGetProcedure:
 			campaignServiceBatchGetHandler.ServeHTTP(w, r)
 		case CampaignServiceCreateProcedure:
 			campaignServiceCreateHandler.ServeHTTP(w, r)
 		case CampaignServiceDeleteProcedure:
 			campaignServiceDeleteHandler.ServeHTTP(w, r)
+		case CampaignServiceGetProcedure:
+			campaignServiceGetHandler.ServeHTTP(w, r)
 		case CampaignServiceUpdateProcedure:
 			campaignServiceUpdateHandler.ServeHTTP(w, r)
 		default:
@@ -200,10 +200,6 @@ func NewCampaignServiceHandler(svc CampaignServiceHandler, opts ...connect.Handl
 // UnimplementedCampaignServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedCampaignServiceHandler struct{}
 
-func (UnimplementedCampaignServiceHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("campaigns.v1.CampaignService.Get is not implemented"))
-}
-
 func (UnimplementedCampaignServiceHandler) BatchGet(context.Context, *connect.Request[v1.BatchGetRequest]) (*connect.Response[v1.BatchGetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("campaigns.v1.CampaignService.BatchGet is not implemented"))
 }
@@ -214,6 +210,10 @@ func (UnimplementedCampaignServiceHandler) Create(context.Context, *connect.Requ
 
 func (UnimplementedCampaignServiceHandler) Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("campaigns.v1.CampaignService.Delete is not implemented"))
+}
+
+func (UnimplementedCampaignServiceHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("campaigns.v1.CampaignService.Get is not implemented"))
 }
 
 func (UnimplementedCampaignServiceHandler) Update(context.Context, *connect.Request[v1.UpdateRequest]) (*connect.Response[v1.UpdateResponse], error) {

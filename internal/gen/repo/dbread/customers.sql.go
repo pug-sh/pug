@@ -10,7 +10,7 @@ import (
 )
 
 const getCustomerByEmail = `-- name: GetCustomerByEmail :one
-select display_name, email, id, password_hash, picture_uri, create_time, update_time
+select create_time, display_name, email, id, password_hash, picture_uri, update_time
 from customers
 where email = $1
 `
@@ -19,19 +19,19 @@ func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (Custome
 	row := q.db.QueryRow(ctx, getCustomerByEmail, email)
 	var i Customer
 	err := row.Scan(
+		&i.CreateTime,
 		&i.DisplayName,
 		&i.Email,
 		&i.ID,
 		&i.PasswordHash,
 		&i.PictureUri,
-		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getCustomerByID = `-- name: GetCustomerByID :one
-select display_name, email, id, password_hash, picture_uri, create_time, update_time
+select create_time, display_name, email, id, password_hash, picture_uri, update_time
 from customers
 where id = $1
 `
@@ -40,12 +40,12 @@ func (q *Queries) GetCustomerByID(ctx context.Context, id string) (Customer, err
 	row := q.db.QueryRow(ctx, getCustomerByID, id)
 	var i Customer
 	err := row.Scan(
+		&i.CreateTime,
 		&i.DisplayName,
 		&i.Email,
 		&i.ID,
 		&i.PasswordHash,
 		&i.PictureUri,
-		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err

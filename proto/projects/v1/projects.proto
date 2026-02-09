@@ -5,32 +5,18 @@ option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1;projectsv1";
 
 service ProjectsService {
-  rpc Get(GetRequest) returns (GetResponse) {}
   rpc BatchGet(BatchGetRequest) returns (BatchGetResponse) {}
   rpc Create(CreateRequest) returns (CreateResponse) {}
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+  rpc Get(GetRequest) returns (GetResponse) {}
   rpc UpdateDisplayName(UpdateDisplayNameRequest) returns (UpdateDisplayNameResponse) {}
   rpc UpdateFCMServiceJSON(UpdateFCMServiceJSONRequest) returns (UpdateFCMServiceJSONResponse) {}
-}
-
-message GetRequest {}
-
-message GetResponse {
-  Project project = 1;
 }
 
 message BatchGetRequest {}
 
 message BatchGetResponse {
   repeated Project projects = 1;
-}
-
-message Project {
-  string api_key = 1;
-  string customer_id = 2;
-  string display_name = 3;
-  string id = 4;
-  string fcm_service_json = 5;
 }
 
 message CreateRequest {
@@ -44,6 +30,20 @@ message CreateResponse {
 message DeleteRequest {}
 
 message DeleteResponse {}
+
+message GetRequest {}
+
+message GetResponse {
+  Project project = 1;
+}
+
+message Project {
+  string api_key = 1;
+  string customer_id = 2;
+  string display_name = 3;
+  string fcm_service_json = 4;
+  string id = 5;
+}
 
 message UpdateDisplayNameRequest {
   string display_name = 1;

@@ -12,46 +12,44 @@ import (
 )
 
 const createSegment = `-- name: CreateSegment :one
-INSERT INTO segments (
-  id, project_id, name, description, filter
-) VALUES (
-  $1, $2, $3, $4, $5
-) RETURNING id, project_id, name, description, filter, is_active, create_time, update_time
+insert into segments (description, display_name, filter, id, project_id)
+values ($1, $2, $3, $4, $5)
+returning create_time, description, filter, id, is_active, display_name, project_id, update_time
 `
 
 type CreateSegmentParams struct {
+	Description pgtype.Text
+	DisplayName string
+	Filter      map[string]any
 	ID          string
 	ProjectID   string
-	Name        string
-	Description pgtype.Text
-	Filter      map[string]any
 }
 
 func (q *Queries) CreateSegment(ctx context.Context, arg CreateSegmentParams) (Segment, error) {
 	row := q.db.QueryRow(ctx, createSegment,
+		arg.Description,
+		arg.DisplayName,
+		arg.Filter,
 		arg.ID,
 		arg.ProjectID,
-		arg.Name,
-		arg.Description,
-		arg.Filter,
 	)
 	var i Segment
 	err := row.Scan(
-		&i.ID,
-		&i.ProjectID,
-		&i.Name,
+		&i.CreateTime,
 		&i.Description,
 		&i.Filter,
+		&i.ID,
 		&i.IsActive,
-		&i.CreateTime,
+		&i.DisplayName,
+		&i.ProjectID,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const deleteSegment = `-- name: DeleteSegment :exec
-DELETE FROM segments
-WHERE id = $1
+delete from segments
+where id = $1
 `
 
 func (q *Queries) DeleteSegment(ctx context.Context, id string) error {
@@ -60,8 +58,8 @@ func (q *Queries) DeleteSegment(ctx context.Context, id string) error {
 }
 
 const getActiveSegments = `-- name: GetActiveSegments :many
-SELECT id, project_id, name, description, filter, is_active, create_time, update_time FROM segments
-WHERE project_id = $1 AND is_active = true
+select create_time, description, filter, id, is_active, display_name, project_id, update_time from segments
+where project_id = $1 and is_active = true
 `
 
 func (q *Queries) GetActiveSegments(ctx context.Context, projectID string) ([]Segment, error) {
@@ -74,13 +72,13 @@ func (q *Queries) GetActiveSegments(ctx context.Context, projectID string) ([]Se
 	for rows.Next() {
 		var i Segment
 		if err := rows.Scan(
-			&i.ID,
-			&i.ProjectID,
-			&i.Name,
+			&i.CreateTime,
 			&i.Description,
 			&i.Filter,
+			&i.ID,
 			&i.IsActive,
-			&i.CreateTime,
+			&i.DisplayName,
+			&i.ProjectID,
 			&i.UpdateTime,
 		); err != nil {
 			return nil, err
@@ -94,29 +92,29 @@ func (q *Queries) GetActiveSegments(ctx context.Context, projectID string) ([]Se
 }
 
 const getSegment = `-- name: GetSegment :one
-SELECT id, project_id, name, description, filter, is_active, create_time, update_time FROM segments
-WHERE id = $1
+select create_time, description, filter, id, is_active, display_name, project_id, update_time from segments
+where id = $1
 `
 
 func (q *Queries) GetSegment(ctx context.Context, id string) (Segment, error) {
 	row := q.db.QueryRow(ctx, getSegment, id)
 	var i Segment
 	err := row.Scan(
-		&i.ID,
-		&i.ProjectID,
-		&i.Name,
+		&i.CreateTime,
 		&i.Description,
 		&i.Filter,
+		&i.ID,
 		&i.IsActive,
-		&i.CreateTime,
+		&i.DisplayName,
+		&i.ProjectID,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getSegmentCountByProject = `-- name: GetSegmentCountByProject :one
-SELECT COUNT(*) FROM segments
-WHERE project_id = $1
+select count(*) from segments
+where project_id = $1
 `
 
 func (q *Queries) GetSegmentCountByProject(ctx context.Context, projectID string) (int64, error) {
@@ -127,20 +125,20 @@ func (q *Queries) GetSegmentCountByProject(ctx context.Context, projectID string
 }
 
 const getSegmentsByProject = `-- name: GetSegmentsByProject :many
-SELECT id, project_id, name, description, filter, is_active, create_time, update_time FROM segments
-WHERE project_id = $1
-ORDER BY create_time DESC
-LIMIT $2 OFFSET $3
+select create_time, description, filter, id, is_active, display_name, project_id, update_time from segments
+where project_id = $1
+order by create_time desc
+limit $3 offset $2
 `
 
 type GetSegmentsByProjectParams struct {
 	ProjectID string
-	Limit     int32
-	Offset    int32
+	RowOffset int32
+	RowLimit  int32
 }
 
 func (q *Queries) GetSegmentsByProject(ctx context.Context, arg GetSegmentsByProjectParams) ([]Segment, error) {
-	rows, err := q.db.Query(ctx, getSegmentsByProject, arg.ProjectID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, getSegmentsByProject, arg.ProjectID, arg.RowOffset, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -149,13 +147,13 @@ func (q *Queries) GetSegmentsByProject(ctx context.Context, arg GetSegmentsByPro
 	for rows.Next() {
 		var i Segment
 		if err := rows.Scan(
-			&i.ID,
-			&i.ProjectID,
-			&i.Name,
+			&i.CreateTime,
 			&i.Description,
 			&i.Filter,
+			&i.ID,
 			&i.IsActive,
-			&i.CreateTime,
+			&i.DisplayName,
+			&i.ProjectID,
 			&i.UpdateTime,
 		); err != nil {
 			return nil, err
@@ -169,42 +167,41 @@ func (q *Queries) GetSegmentsByProject(ctx context.Context, arg GetSegmentsByPro
 }
 
 const updateSegment = `-- name: UpdateSegment :one
-UPDATE segments
-SET
-  name = COALESCE($2, name),
-  description = COALESCE($3, description),
-  filter = COALESCE($4, filter),
-  is_active = COALESCE($5, is_active),
-  update_time = NOW()
-WHERE id = $1
-RETURNING id, project_id, name, description, filter, is_active, create_time, update_time
+update segments
+set
+  description = coalesce(nullif($1, ''), description),
+  display_name = coalesce(nullif($2, ''), display_name),
+  filter = coalesce($3, filter),
+  is_active = coalesce($4, is_active)
+where id = $5
+returning create_time, description, filter, id, is_active, display_name, project_id, update_time
 `
 
 type UpdateSegmentParams struct {
-	ID          string
-	Name        string
-	Description pgtype.Text
+	Description interface{}
+	DisplayName interface{}
 	Filter      map[string]any
 	IsActive    bool
+	ID          string
 }
 
 func (q *Queries) UpdateSegment(ctx context.Context, arg UpdateSegmentParams) (Segment, error) {
 	row := q.db.QueryRow(ctx, updateSegment,
-		arg.ID,
-		arg.Name,
 		arg.Description,
+		arg.DisplayName,
 		arg.Filter,
 		arg.IsActive,
+		arg.ID,
 	)
 	var i Segment
 	err := row.Scan(
-		&i.ID,
-		&i.ProjectID,
-		&i.Name,
+		&i.CreateTime,
 		&i.Description,
 		&i.Filter,
+		&i.ID,
 		&i.IsActive,
-		&i.CreateTime,
+		&i.DisplayName,
+		&i.ProjectID,
 		&i.UpdateTime,
 	)
 	return i, err
