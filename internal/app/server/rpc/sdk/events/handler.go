@@ -50,7 +50,7 @@ func (s *Server) BatchCreate(
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("failed to accept events"))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to accept events"))
 	}
 
 	return connect.NewResponse(&eventsv1.BatchCreateResponse{
