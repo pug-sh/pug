@@ -23,14 +23,14 @@ const (
 )
 
 type Event struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	DistinctId     string                 `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
-	Event          string                 `protobuf:"bytes,2,opt,name=event" json:"event,omitempty"`
-	SdkProperties  map[string]string      `protobuf:"bytes,3,rep,name=sdk_properties,json=sdkProperties" json:"sdk_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	UserProperties map[string]string      `protobuf:"bytes,4,rep,name=user_properties,json=userProperties" json:"user_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	EventTime      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=event_time,json=eventTime" json:"event_time,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	DistinctId       string                 `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	Event            string                 `protobuf:"bytes,2,opt,name=event" json:"event,omitempty"`
+	AutoProperties   map[string]string      `protobuf:"bytes,3,rep,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	CustomProperties map[string]string      `protobuf:"bytes,4,rep,name=custom_properties,json=customProperties" json:"custom_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	EventTime        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=event_time,json=eventTime" json:"event_time,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Event) Reset() {
@@ -77,16 +77,16 @@ func (x *Event) GetEvent() string {
 	return ""
 }
 
-func (x *Event) GetSdkProperties() map[string]string {
+func (x *Event) GetAutoProperties() map[string]string {
 	if x != nil {
-		return x.SdkProperties
+		return x.AutoProperties
 	}
 	return nil
 }
 
-func (x *Event) GetUserProperties() map[string]string {
+func (x *Event) GetCustomProperties() map[string]string {
 	if x != nil {
-		return x.UserProperties
+		return x.CustomProperties
 	}
 	return nil
 }
@@ -243,19 +243,19 @@ var File_events_v1_events_proto protoreflect.FileDescriptor
 
 const file_events_v1_events_proto_rawDesc = "" +
 	"\n" +
-	"\x16events/v1/events.proto\x12\tevents.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x99\x03\n" +
+	"\x16events/v1/events.proto\x12\tevents.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa5\x03\n" +
 	"\x05Event\x12\x1f\n" +
 	"\vdistinct_id\x18\x01 \x01(\tR\n" +
 	"distinctId\x12\x14\n" +
-	"\x05event\x18\x02 \x01(\tR\x05event\x12J\n" +
-	"\x0esdk_properties\x18\x03 \x03(\v2#.events.v1.Event.SdkPropertiesEntryR\rsdkProperties\x12M\n" +
-	"\x0fuser_properties\x18\x04 \x03(\v2$.events.v1.Event.UserPropertiesEntryR\x0euserProperties\x129\n" +
+	"\x05event\x18\x02 \x01(\tR\x05event\x12M\n" +
+	"\x0fauto_properties\x18\x03 \x03(\v2$.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12S\n" +
+	"\x11custom_properties\x18\x04 \x03(\v2&.events.v1.Event.CustomPropertiesEntryR\x10customProperties\x129\n" +
 	"\n" +
-	"event_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\teventTime\x1a@\n" +
-	"\x12SdkPropertiesEntry\x12\x10\n" +
+	"event_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\teventTime\x1aA\n" +
+	"\x13AutoPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aA\n" +
-	"\x13UserPropertiesEntry\x12\x10\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +
+	"\x15CustomPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\">\n" +
 	"\x12BatchCreateRequest\x12(\n" +
@@ -288,13 +288,13 @@ var file_events_v1_events_proto_goTypes = []any{
 	(*BatchCreateRequest)(nil),    // 1: events.v1.BatchCreateRequest
 	(*BatchCreateResponse)(nil),   // 2: events.v1.BatchCreateResponse
 	(*EventBatch)(nil),            // 3: events.v1.EventBatch
-	nil,                           // 4: events.v1.Event.SdkPropertiesEntry
-	nil,                           // 5: events.v1.Event.UserPropertiesEntry
+	nil,                           // 4: events.v1.Event.AutoPropertiesEntry
+	nil,                           // 5: events.v1.Event.CustomPropertiesEntry
 	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
 }
 var file_events_v1_events_proto_depIdxs = []int32{
-	4, // 0: events.v1.Event.sdk_properties:type_name -> events.v1.Event.SdkPropertiesEntry
-	5, // 1: events.v1.Event.user_properties:type_name -> events.v1.Event.UserPropertiesEntry
+	4, // 0: events.v1.Event.auto_properties:type_name -> events.v1.Event.AutoPropertiesEntry
+	5, // 1: events.v1.Event.custom_properties:type_name -> events.v1.Event.CustomPropertiesEntry
 	6, // 2: events.v1.Event.event_time:type_name -> google.protobuf.Timestamp
 	0, // 3: events.v1.BatchCreateRequest.events:type_name -> events.v1.Event
 	0, // 4: events.v1.EventBatch.events:type_name -> events.v1.Event

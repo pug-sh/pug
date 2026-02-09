@@ -4,8 +4,8 @@ CREATE TABLE IF NOT EXISTS events (
     project_id      String,
     distinct_id     String,
     event           String,
-    sdk_properties  Map(String, String),
-    user_properties Map(String, String),
+    auto_properties   Map(String, String),
+    custom_properties Map(String, String),
     event_time      DateTime64(3),
     insert_time     DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()

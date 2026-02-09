@@ -13,8 +13,8 @@ service EventsService {
 message Event {
   string distinct_id = 1;
   string event = 2;
-  map<string, string> sdk_properties = 3;
-  map<string, string> user_properties = 4;
+  map<string, string> auto_properties = 3;
+  map<string, string> custom_properties = 4;
   google.protobuf.Timestamp event_time = 5;
 }
 
