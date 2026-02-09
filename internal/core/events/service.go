@@ -13,7 +13,7 @@ const (
 )
 
 // ValidateExternalEvents checks that SDK-submitted events have required fields
-// (event name and distinct_id), don't exceed the batch size limit, and don't
+// (kind and distinct_id), don't exceed the batch size limit, and don't
 // use the reserved "cotton." name prefix.
 func ValidateExternalEvents(events []*eventsv1.Event) error {
 	if len(events) > MaxBatchSize {
