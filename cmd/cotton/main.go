@@ -16,6 +16,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/subscriptions"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 // run creates a signal-aware context, loads .env, and runs fn.
@@ -107,31 +108,18 @@ var devCmd = &cobra.Command{
 		sigCtx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
 
-		ctx, cancel := context.WithCancel(sigCtx)
-		defer cancel()
-
 		if err := godotenv.Load(); err != nil {
 			slog.Debug("No .env file found, relying on environment variables")
 		}
 
-		errChan := make(chan error, 4)
-		go func() { errChan <- subscriptions.Run(ctx) }()
-		go func() { errChan <- campaigns.Run(ctx) }()
-		go func() { errChan <- eventsworker.Run(ctx) }()
-		go func() { errChan <- server.Run(ctx) }()
+		g, ctx := errgroup.WithContext(sigCtx)
+		g.Go(func() error { return subscriptions.Run(ctx) })
+		g.Go(func() error { return campaigns.Run(ctx) })
+		g.Go(func() error { return eventsworker.Run(ctx) })
+		g.Go(func() error { return server.Run(ctx) })
 
-		select {
-		case err := <-errChan:
+		if err := g.Wait(); err != nil {
 			slog.Error("component stopped", slog.Any("err", err))
-			cancel()
-		case <-ctx.Done():
-			slog.Info("Shutdown signal received")
-		}
-
-		for i := 0; i < 3; i++ {
-			if err := <-errChan; err != nil && ctx.Err() == nil {
-				slog.Error("component stopped during shutdown", slog.Any("err", err))
-			}
 		}
 
 		slog.Info("Shutting down...")
