@@ -133,7 +133,6 @@ func (w *natsWorker) processMessages(ctx context.Context) {
 		slog.WarnContext(ctx, "restarting message processor after failure",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName))
-		w.healthy.Store(true)
 
 		select {
 		case <-ctx.Done():
@@ -156,6 +155,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 		return
 	}
 	defer msgs.Stop()
+	w.healthy.Store(true)
 
 	consecutiveErrors := 0
 	const maxConsecutiveErrors = 10
