@@ -10,4 +10,4 @@ breaking:
     - FILE
 modules:
   - path: proto
-    name: buf.build/pushpa/cotton
+    name: buf.build/fivebits/cotton
