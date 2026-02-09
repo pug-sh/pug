@@ -67,8 +67,9 @@ func (h *Handler) Get(
 		ProjectID: principal.Project.ID,
 	})
 	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("failed to get profile"))
 		}
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get profile"))
 	}
@@ -97,8 +98,10 @@ func (h *Handler) GetByExternalId(
 		ProjectID:  principal.Project.ID,
 	})
 	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
+		slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
+
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("failed to get profile"))
 		}
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get profile"))
 	}
