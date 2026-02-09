@@ -9,6 +9,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 )
@@ -31,7 +32,7 @@ func Run(ctx context.Context) error {
 	}
 	defer natsClient.Close()
 
-	slog.Info("Starting events worker...")
+	slog.InfoContext(ctx, "Starting events worker...")
 	return StartWorker(ctx, chDB.Conn, natsClient)
 }
 
@@ -44,7 +45,15 @@ func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NAT
 	processor := NewProcessor(ch)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		return processor.ProcessMessage(ctx, msg.Data())
+		err := processor.ProcessMessage(ctx, msg.Data())
+		if err != nil && IsPermanentError(err) {
+			slog.ErrorContext(ctx, "terminating poison message", slogx.Error(err))
+			if termErr := msg.Term(); termErr != nil {
+				slog.ErrorContext(ctx, "failed to terminate message", slogx.Error(termErr))
+			}
+			return nil
+		}
+		return err
 	}
 
 	config := natsworker.WorkerConfig{

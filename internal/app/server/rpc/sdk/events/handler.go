@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"connectrpc.com/connect"
@@ -9,11 +10,13 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreevents "github.com/fivebitsio/cotton/internal/core/events"
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
+	"github.com/fivebitsio/cotton/internal/gen/proto/events/v1/eventsv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
 type Server struct {
+	eventsv1connect.UnimplementedEventsServiceHandler
 	publisher *coreevents.Publisher
 }
 
@@ -47,7 +50,7 @@ func (s *Server) BatchCreate(
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeUnavailable, err)
+		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("failed to accept events"))
 	}
 
 	return connect.NewResponse(&eventsv1.BatchCreateResponse{

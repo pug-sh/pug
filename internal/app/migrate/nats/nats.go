@@ -27,16 +27,16 @@ func Run(ctx context.Context) error {
 	defer client.Close()
 
 	init := &initializer{client: client}
-	if err := init.run(); err != nil {
+	if err := init.run(ctx); err != nil {
 		return err
 	}
 
-	slog.Info("NATS initialization completed successfully")
+	slog.InfoContext(ctx, "NATS initialization completed successfully")
 	return nil
 }
 
-func (n *initializer) run() error {
-	slog.Info("Starting NATS initialization",
+func (n *initializer) run(ctx context.Context) error {
+	slog.InfoContext(ctx, "Starting NATS initialization",
 		slog.String("nats_url", n.client.GetConfig().NATSUrl))
 
 	streamConfig, err := n.client.ReadStreamConfig()
@@ -49,20 +49,20 @@ func (n *initializer) run() error {
 		return fmt.Errorf("failed to read consumer configuration: %w", err)
 	}
 
-	if err := n.createStreams(streamConfig); err != nil {
+	if err := n.createStreams(ctx, streamConfig); err != nil {
 		return fmt.Errorf("failed to create streams: %w", err)
 	}
 
-	if err := n.createConsumers(consumerConfig); err != nil {
+	if err := n.createConsumers(ctx, consumerConfig); err != nil {
 		return fmt.Errorf("failed to create consumers: %w", err)
 	}
 
 	return nil
 }
 
-func (n *initializer) createStreams(streams []natsdeps.StreamConfig) error {
+func (n *initializer) createStreams(ctx context.Context, streams []natsdeps.StreamConfig) error {
 	for _, streamConfig := range streams {
-		slog.Info("Creating stream",
+		slog.InfoContext(ctx, "Creating stream",
 			slog.String("name", streamConfig.Name),
 			slog.Any("subjects", streamConfig.Subjects))
 
@@ -104,19 +104,19 @@ func (n *initializer) createStreams(streams []natsdeps.StreamConfig) error {
 		}
 
 		js := n.client.GetJetStream()
-		_, err := js.CreateOrUpdateStream(context.Background(), cfg)
+		_, err := js.CreateOrUpdateStream(ctx, cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create or update stream %s: %w", streamConfig.Name, err)
 		}
-		slog.Info("Stream ready", slog.String("name", streamConfig.Name))
+		slog.InfoContext(ctx, "Stream ready", slog.String("name", streamConfig.Name))
 	}
 
 	return nil
 }
 
-func (n *initializer) createConsumers(consumers []natsdeps.ConsumerConfig) error {
+func (n *initializer) createConsumers(ctx context.Context, consumers []natsdeps.ConsumerConfig) error {
 	for _, consumerConfig := range consumers {
-		slog.Info("Creating consumer",
+		slog.InfoContext(ctx, "Creating consumer",
 			slog.String("name", consumerConfig.Name),
 			slog.String("stream", consumerConfig.StreamName))
 
@@ -156,12 +156,12 @@ func (n *initializer) createConsumers(consumers []natsdeps.ConsumerConfig) error
 		}
 
 		js := n.client.GetJetStream()
-		_, err := js.CreateOrUpdateConsumer(context.Background(), consumerConfig.StreamName, cfg)
+		_, err := js.CreateOrUpdateConsumer(ctx, consumerConfig.StreamName, cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create consumer %s for stream %s: %w", consumerConfig.Name, consumerConfig.StreamName, err)
 		}
 
-		slog.Info("Created consumer successfully",
+		slog.InfoContext(ctx, "Created consumer successfully",
 			slog.String("name", consumerConfig.Name),
 			slog.String("stream", consumerConfig.StreamName))
 	}

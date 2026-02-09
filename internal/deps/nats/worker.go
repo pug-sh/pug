@@ -125,7 +125,7 @@ func (w *natsWorker) processMessages(ctx context.Context) {
 		default:
 		}
 
-		slog.Warn("restarting message processor after failure",
+		slog.WarnContext(ctx, "restarting message processor after failure",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName))
 		w.healthy.Store(true)
@@ -143,7 +143,7 @@ func (w *natsWorker) processMessages(ctx context.Context) {
 func (w *natsWorker) runMessageLoop(ctx context.Context) {
 	msgs, err := w.consumer.Messages()
 	if err != nil {
-		slog.Error("failed to start message iterator",
+		slog.ErrorContext(ctx, "failed to start message iterator",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
 			slog.Any("error", err))
@@ -169,13 +169,13 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 					return
 				}
 				consecutiveErrors++
-				slog.Warn("failed to get next message",
+				slog.WarnContext(ctx, "failed to get next message",
 					slog.String("stream", w.config.StreamName),
 					slog.String("consumer", w.config.ConsumerName),
 					slog.Int("consecutive_errors", consecutiveErrors),
 					slog.Any("error", err))
 				if consecutiveErrors >= maxConsecutiveErrors {
-					slog.Error("too many consecutive message errors, restarting worker goroutine",
+					slog.ErrorContext(ctx, "too many consecutive message errors, restarting worker goroutine",
 						slog.String("stream", w.config.StreamName),
 						slog.String("consumer", w.config.ConsumerName))
 					w.healthy.Store(false)
@@ -191,18 +191,18 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 			cancel()
 
 			if err != nil {
-				slog.Error("message processing failed",
+				slog.ErrorContext(ctx, "message processing failed",
 					slog.String("stream", w.config.StreamName),
 					slog.String("consumer", w.config.ConsumerName),
 					slog.Any("error", err))
 				if nakErr := msg.Nak(); nakErr != nil {
-					slog.Error("failed to nak message",
+					slog.ErrorContext(ctx, "failed to nak message",
 						slog.String("stream", w.config.StreamName),
 						slog.Any("error", nakErr))
 				}
 			} else {
 				if ackErr := msg.Ack(); ackErr != nil {
-					slog.Error("failed to ack message",
+					slog.ErrorContext(ctx, "failed to ack message",
 						slog.String("stream", w.config.StreamName),
 						slog.Any("error", ackErr))
 				}

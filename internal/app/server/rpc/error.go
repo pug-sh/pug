@@ -21,6 +21,11 @@ func ErrorInterceptor() connect.UnaryInterceptorFunc {
 				return resp, connectErr
 			}
 
+			// Let Connect RPC map context errors to the correct codes
+			if ctx.Err() != nil {
+				return resp, ctx.Err()
+			}
+
 			// Non-connect error - log and sanitize
 			slog.ErrorContext(ctx, "unhandled error",
 				slog.String("procedure", req.Spec().Procedure),

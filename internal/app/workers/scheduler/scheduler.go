@@ -51,7 +51,7 @@ func StartWorker(ctx context.Context, pgRO *pgxpool.Pool, natsClient *nats.NATSC
 		producer: natsClient.GetJetStream(),
 	}
 
-	slog.Info("Starting campaign scheduler", slog.Duration("poll_interval", pollInterval))
+	slog.InfoContext(ctx, "Starting campaign scheduler", slog.Duration("poll_interval", pollInterval))
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
@@ -80,7 +80,7 @@ func (s *Scheduler) pollAndPublish(ctx context.Context) {
 		return
 	}
 
-	slog.Info("Found due campaigns", slog.Int("count", len(dueCampaigns)))
+	slog.InfoContext(ctx, "Found due campaigns", slog.Int("count", len(dueCampaigns)))
 
 	for _, c := range dueCampaigns {
 		msg := campaigns.CampaignMessage{
@@ -101,7 +101,7 @@ func (s *Scheduler) pollAndPublish(ctx context.Context) {
 			continue
 		}
 
-		slog.Info("Published scheduled campaign",
+		slog.InfoContext(ctx, "Published scheduled campaign",
 			slog.String("campaign_id", c.ID),
 			slog.String("project_id", c.ProjectID))
 	}

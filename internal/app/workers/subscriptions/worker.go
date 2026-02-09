@@ -37,7 +37,7 @@ func Run(ctx context.Context) error {
 	}
 	defer natsClient.Close()
 
-	slog.Info("Starting subscription worker...")
+	slog.InfoContext(ctx, "Starting subscription worker...")
 	return StartWorker(ctx, pgRO, pgW, natsClient)
 }
 

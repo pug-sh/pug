@@ -1,5 +1,5 @@
 -- +goose Up
-create table users (
+create table profiles (
   create_time timestamptz not null default now(),
   external_id varchar(255) not null,
   id char(20) primary key,
@@ -11,10 +11,10 @@ create table users (
 );
 
 create trigger update_timestamp before
-update on users for each row execute procedure moddatetime(update_time);
+update on profiles for each row execute procedure moddatetime(update_time);
 
-create index idx_users_properties on users using gin (properties);
-create index idx_users_custom_properties on users using gin (custom_properties);
+create index idx_profiles_properties on profiles using gin (properties);
+create index idx_profiles_custom_properties on profiles using gin (custom_properties);
 
 -- +goose Down
-drop table if exists users;
+drop table if exists profiles;

@@ -4,6 +4,7 @@ go 1.25.7
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20251209175733-2a1774d88802.1
+	buf.build/go/protovalidate v1.0.0
 	connectrpc.com/authn v0.2.0
 	connectrpc.com/connect v1.19.1
 	connectrpc.com/cors v0.1.0
@@ -30,7 +31,6 @@ require (
 )
 
 require (
-	buf.build/go/protovalidate v1.0.0 // indirect
 	cel.dev/expr v0.24.0 // indirect
 	cloud.google.com/go v0.121.6 // indirect
 	cloud.google.com/go/auth v0.18.1 // indirect

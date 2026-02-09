@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"buf.build/go/protovalidate"
+
 	"github.com/fivebitsio/cotton/internal/deps/nats"
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -11,8 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Publisher publishes events to NATS for internal Cotton services.
-// External SDK events go through the RPC handler instead.
+// Publisher marshals events into an EventBatch and publishes to NATS.
+// Used by the RPC handler to enqueue SDK-submitted events for processing.
 type Publisher struct {
 	producer jetstream.JetStream
 }
@@ -27,14 +29,16 @@ func (p *Publisher) Publish(ctx context.Context, projectID string, events []*eve
 		Events:    events,
 	}
 
-	data, err := proto.Marshal(batch)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal event batch", slogx.Error(err))
+	if err := protovalidate.Validate(batch); err != nil {
 		return err
 	}
 
-	_, err = p.producer.Publish(ctx, nats.EventsIngestSubject, data)
+	data, err := proto.Marshal(batch)
 	if err != nil {
+		return err
+	}
+
+	if _, err = p.producer.Publish(ctx, nats.EventsIngestSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events to NATS", slogx.Error(err))
 		return err
 	}

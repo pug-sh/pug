@@ -116,13 +116,13 @@ func start(ctx context.Context, d *deps) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			slog.Error("server shutdown error", slog.Any("error", err))
+			slog.ErrorContext(shutdownCtx, "server shutdown error", slog.Any("error", err))
 		}
 	}()
 
-	slog.Info("Starting server", slog.String("addr", server.Addr))
+	slog.InfoContext(ctx, "Starting server", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.Error("failed to serve", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to serve", slog.Any("err", err))
 		return err
 	}
 

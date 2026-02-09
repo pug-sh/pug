@@ -67,7 +67,7 @@ func (f *FCMService) getMessagingClient(ctx context.Context, projectID, fcmServi
 		f.clients[projectID] = client
 		f.mu.Unlock()
 
-		slog.Info("Firebase messaging client cached", slog.String("project_id", projectID))
+		slog.InfoContext(ctx, "Firebase messaging client cached", slog.String("project_id", projectID))
 		return client, nil
 	})
 	if err != nil {
@@ -87,7 +87,7 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 
 	// Check if FCM service JSON is available for the project
 	if project.FcmServiceJson.String == "" {
-		slog.Warn("No FCM service JSON configured for project",
+		slog.WarnContext(ctx, "No FCM service JSON configured for project",
 			slog.String("project_id", campaign.ProjectID))
 		return fmt.Errorf("no FCM service configuration for project: %s", campaign.ProjectID)
 	}
@@ -131,7 +131,7 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 		return fmt.Errorf("error sending FCM message: %w", err)
 	}
 
-	slog.Info("FCM notification sent successfully",
+	slog.InfoContext(ctx, "FCM notification sent successfully",
 		slog.String("response_id", response),
 		slog.String("subscription_id", subscription.ID),
 		slog.String("campaign_id", campaign.ID))

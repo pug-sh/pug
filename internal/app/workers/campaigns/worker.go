@@ -37,7 +37,7 @@ func Run(ctx context.Context) error {
 	}
 	defer natsClient.Close()
 
-	slog.Info("Starting campaign worker...")
+	slog.InfoContext(ctx, "Starting campaign worker...")
 	return StartWorker(ctx, pgRO, pgW, natsClient)
 }
 

@@ -16,11 +16,11 @@ func main() {
 	defer done()
 
 	if err := godotenv.Load(); err != nil {
-		slog.Debug("No .env file found, relying on environment variables")
+		slog.DebugContext(ctx, "No .env file found, relying on environment variables")
 	}
 
 	if err := subscriptions.Run(ctx); err != nil {
-		slog.Error("error starting subscription worker", slog.Any("err", err))
+		slog.ErrorContext(ctx, "error starting subscription worker", slog.Any("err", err))
 		os.Exit(1)
 	}
 }

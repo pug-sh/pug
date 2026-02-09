@@ -10,16 +10,14 @@ create table subscriptions (
   token text not null,
   updater text not null default 'system' check (updater in ('system', 'user')),
   update_time timestamptz not null default now(),
-  user_id char(20) references users(id) on delete set null
+  profile_id char(20) references profiles(id) on delete set null
 );
 
 create trigger update_timestamp before
 update on subscriptions for each row execute procedure moddatetime(update_time);
 
 create index idx_subscriptions_project_status_platform on subscriptions (project_id, status, platform);
-create index idx_subscriptions_user_id on subscriptions (user_id);
-create index idx_subscriptions_project_user on subscriptions (project_id, user_id);
-create index idx_subscriptions_project_user_status on subscriptions (project_id, user_id, status);
+create index idx_subscriptions_profile_id on subscriptions (profile_id);
 
 -- +goose Down
 drop table subscriptions;

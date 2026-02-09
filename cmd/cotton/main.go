@@ -16,6 +16,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/subscriptions"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 // run creates a signal-aware context, loads .env, and runs fn.
@@ -25,11 +26,11 @@ func run(fn func(ctx context.Context) error) func(cmd *cobra.Command, args []str
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
+			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
 		}
 
 		if err := fn(ctx); err != nil {
-			slog.Error("fatal error", slog.Any("err", err))
+			slog.ErrorContext(ctx, "fatal error", slog.Any("err", err))
 			os.Exit(1)
 		}
 	}
@@ -43,7 +44,7 @@ func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cob
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
+			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
 		}
 
 		direction, _ := cmd.Flags().GetString("direction")
@@ -56,11 +57,11 @@ func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cob
 		case "down":
 			err = down(ctx, num)
 		default:
-			slog.Error("invalid migration direction, must be 'up' or 'down'", slog.String("direction", direction))
+			slog.ErrorContext(ctx, "invalid migration direction, must be 'up' or 'down'", slog.String("direction", direction))
 			os.Exit(1)
 		}
 		if err != nil {
-			slog.Error("migration error", slog.Any("err", err))
+			slog.ErrorContext(ctx, "migration error", slog.Any("err", err))
 			os.Exit(1)
 		}
 	}
@@ -107,34 +108,21 @@ var devCmd = &cobra.Command{
 		sigCtx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
 
-		ctx, cancel := context.WithCancel(sigCtx)
-		defer cancel()
-
 		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
+			slog.DebugContext(sigCtx, "No .env file found, relying on environment variables")
 		}
 
-		errChan := make(chan error, 4)
-		go func() { errChan <- subscriptions.Run(ctx) }()
-		go func() { errChan <- campaigns.Run(ctx) }()
-		go func() { errChan <- eventsworker.Run(ctx) }()
-		go func() { errChan <- server.Run(ctx) }()
+		g, ctx := errgroup.WithContext(sigCtx)
+		g.Go(func() error { return subscriptions.Run(ctx) })
+		g.Go(func() error { return campaigns.Run(ctx) })
+		g.Go(func() error { return eventsworker.Run(ctx) })
+		g.Go(func() error { return server.Run(ctx) })
 
-		select {
-		case err := <-errChan:
-			slog.Error("component stopped", slog.Any("err", err))
-			cancel()
-		case <-ctx.Done():
-			slog.Info("Shutdown signal received")
+		if err := g.Wait(); err != nil {
+			slog.ErrorContext(sigCtx, "component stopped", slog.Any("err", err))
 		}
 
-		for i := 0; i < 3; i++ {
-			if err := <-errChan; err != nil && ctx.Err() == nil {
-				slog.Error("component stopped during shutdown", slog.Any("err", err))
-			}
-		}
-
-		slog.Info("Shutting down...")
+		slog.InfoContext(sigCtx, "Shutting down...")
 	},
 }
 
