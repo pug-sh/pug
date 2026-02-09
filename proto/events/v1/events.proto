@@ -1,6 +1,7 @@
 edition = "2023";
 package events.v1;
 
+import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 option features.field_presence = IMPLICIT;
@@ -12,10 +13,10 @@ service EventsService {
 
 message Event {
   string distinct_id = 1;
-  string event = 2;
+  string kind = 2;
   map<string, string> auto_properties = 3;
   map<string, string> custom_properties = 4;
-  google.protobuf.Timestamp event_time = 5;
+  google.protobuf.Timestamp occur_time = 5;
 }
 
 message BatchCreateRequest {
@@ -28,6 +29,6 @@ message BatchCreateResponse {
 
 // Internal NATS message wrapping events with project context
 message EventBatch {
-  string project_id = 1;
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
   repeated Event events = 2;
 }

@@ -46,7 +46,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		return nil
 	}
 
-	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (id, project_id, distinct_id, event, auto_properties, custom_properties, event_time)")
+	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time)")
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err))
 		return err
@@ -61,15 +61,15 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 
 	for _, e := range batch.Events {
 		ts := time.Now()
-		if e.EventTime != nil {
-			ts = e.EventTime.AsTime()
+		if e.OccurTime != nil {
+			ts = e.OccurTime.AsTime()
 		}
 
 		if err := chBatch.Append(
 			xid.New().String(),
 			batch.ProjectId,
 			e.DistinctId,
-			e.Event,
+			e.Kind,
 			e.AutoProperties,
 			e.CustomProperties,
 			ts,

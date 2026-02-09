@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"buf.build/go/protovalidate"
+
 	"github.com/fivebitsio/cotton/internal/deps/nats"
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -25,6 +27,10 @@ func (p *Publisher) Publish(ctx context.Context, projectID string, events []*eve
 	batch := &eventsv1.EventBatch{
 		ProjectId: projectID,
 		Events:    events,
+	}
+
+	if err := protovalidate.Validate(batch); err != nil {
+		return err
 	}
 
 	data, err := proto.Marshal(batch)

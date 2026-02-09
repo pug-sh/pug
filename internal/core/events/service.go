@@ -20,14 +20,14 @@ func ValidateExternalEvents(events []*eventsv1.Event) error {
 		return fmt.Errorf("batch size %d exceeds maximum of %d", len(events), MaxBatchSize)
 	}
 	for i, e := range events {
-		if e.Event == "" {
-			return fmt.Errorf("event[%d]: event name is required", i)
+		if e.Kind == "" {
+			return fmt.Errorf("event[%d]: kind is required", i)
 		}
 		if e.DistinctId == "" {
 			return fmt.Errorf("event[%d]: distinct_id is required", i)
 		}
-		if strings.HasPrefix(e.Event, reservedPrefix) {
-			return fmt.Errorf("event[%d]: event name %q uses reserved prefix %q", i, e.Event, reservedPrefix)
+		if strings.HasPrefix(e.Kind, reservedPrefix) {
+			return fmt.Errorf("event[%d]: kind %q uses reserved prefix %q", i, e.Kind, reservedPrefix)
 		}
 	}
 	return nil
