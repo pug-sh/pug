@@ -13,7 +13,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// PermanentError wraps errors that should not be retried.
+// PermanentError wraps errors that should not be retried. When the events
+// worker receives a PermanentError, it terminates the NATS message instead
+// of nacking it for redelivery (e.g. corrupt protobuf data).
 type PermanentError struct {
 	Err error
 }
@@ -21,7 +23,6 @@ type PermanentError struct {
 func (e *PermanentError) Error() string { return e.Err.Error() }
 func (e *PermanentError) Unwrap() error { return e.Err }
 
-// IsPermanentError checks if an error is a PermanentError.
 func IsPermanentError(err error) bool {
 	var pe *PermanentError
 	return errors.As(err, &pe)
