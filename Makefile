@@ -1,9 +1,6 @@
 .PHONY: install-go-deps
 install-go-deps:
-	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
-	go install github.com/pseudomuto/protoc-gen-doc/cmd/protoc-gen-doc@latest
+	go install tool
 
 .PHONY: install-js-deps
 install-js-deps:
@@ -46,7 +43,7 @@ install-all-deps: install-go-deps
 .PHONY: sqlc
 sqlc:
 	rm -rf internal/gen/repo
-	sqlc generate
+	go tool sqlc generate
 
 .PHONY: lint
 lint:

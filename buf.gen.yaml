@@ -2,10 +2,10 @@ version: v2
 clean: true
 plugins:
   # Go plugins (existing)
-  - local: protoc-gen-go
+  - local: ["go", "tool", "protoc-gen-go"]
     out: internal/gen/proto
     opt: paths=source_relative
-  - local: protoc-gen-connect-go
+  - local: ["go", "tool", "protoc-gen-connect-go"]
     out: internal/gen/proto
     opt: paths=source_relative
 
