@@ -44,6 +44,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	if len(batch.Events) == 0 {
+		slog.WarnContext(ctx, "received empty event batch", slog.String("project_id", batch.ProjectId))
 		return nil
 	}
 
