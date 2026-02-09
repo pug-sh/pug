@@ -33,8 +33,6 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// ProfilesServiceCreateProcedure is the fully-qualified name of the ProfilesService's Create RPC.
-	ProfilesServiceCreateProcedure = "/profiles.v1.ProfilesService/Create"
 	// ProfilesServiceDeleteProcedure is the fully-qualified name of the ProfilesService's Delete RPC.
 	ProfilesServiceDeleteProcedure = "/profiles.v1.ProfilesService/Delete"
 	// ProfilesServiceGetProcedure is the fully-qualified name of the ProfilesService's Get RPC.
@@ -46,24 +44,15 @@ const (
 	ProfilesServiceListProcedure = "/profiles.v1.ProfilesService/List"
 	// ProfilesServiceSaveProcedure is the fully-qualified name of the ProfilesService's Save RPC.
 	ProfilesServiceSaveProcedure = "/profiles.v1.ProfilesService/Save"
-	// ProfilesServiceUpdateAutoPropertiesProcedure is the fully-qualified name of the ProfilesService's
-	// UpdateAutoProperties RPC.
-	ProfilesServiceUpdateAutoPropertiesProcedure = "/profiles.v1.ProfilesService/UpdateAutoProperties"
-	// ProfilesServiceUpdateCustomPropertiesProcedure is the fully-qualified name of the
-	// ProfilesService's UpdateCustomProperties RPC.
-	ProfilesServiceUpdateCustomPropertiesProcedure = "/profiles.v1.ProfilesService/UpdateCustomProperties"
 )
 
 // ProfilesServiceClient is a client for the profiles.v1.ProfilesService service.
 type ProfilesServiceClient interface {
-	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
 	Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error)
-	UpdateAutoProperties(context.Context, *connect.Request[v1.UpdateAutoPropertiesRequest]) (*connect.Response[v1.UpdateAutoPropertiesResponse], error)
-	UpdateCustomProperties(context.Context, *connect.Request[v1.UpdateCustomPropertiesRequest]) (*connect.Response[v1.UpdateCustomPropertiesResponse], error)
 }
 
 // NewProfilesServiceClient constructs a client for the profiles.v1.ProfilesService service. By
@@ -77,12 +66,6 @@ func NewProfilesServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 	baseURL = strings.TrimRight(baseURL, "/")
 	profilesServiceMethods := v1.File_profiles_v1_profiles_proto.Services().ByName("ProfilesService").Methods()
 	return &profilesServiceClient{
-		create: connect.NewClient[v1.CreateRequest, v1.CreateResponse](
-			httpClient,
-			baseURL+ProfilesServiceCreateProcedure,
-			connect.WithSchema(profilesServiceMethods.ByName("Create")),
-			connect.WithClientOptions(opts...),
-		),
 		delete: connect.NewClient[v1.DeleteRequest, v1.DeleteResponse](
 			httpClient,
 			baseURL+ProfilesServiceDeleteProcedure,
@@ -113,36 +96,16 @@ func NewProfilesServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(profilesServiceMethods.ByName("Save")),
 			connect.WithClientOptions(opts...),
 		),
-		updateAutoProperties: connect.NewClient[v1.UpdateAutoPropertiesRequest, v1.UpdateAutoPropertiesResponse](
-			httpClient,
-			baseURL+ProfilesServiceUpdateAutoPropertiesProcedure,
-			connect.WithSchema(profilesServiceMethods.ByName("UpdateAutoProperties")),
-			connect.WithClientOptions(opts...),
-		),
-		updateCustomProperties: connect.NewClient[v1.UpdateCustomPropertiesRequest, v1.UpdateCustomPropertiesResponse](
-			httpClient,
-			baseURL+ProfilesServiceUpdateCustomPropertiesProcedure,
-			connect.WithSchema(profilesServiceMethods.ByName("UpdateCustomProperties")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // profilesServiceClient implements ProfilesServiceClient.
 type profilesServiceClient struct {
-	create                 *connect.Client[v1.CreateRequest, v1.CreateResponse]
-	delete                 *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
-	get                    *connect.Client[v1.GetRequest, v1.GetResponse]
-	getByExternalId        *connect.Client[v1.GetByExternalIdRequest, v1.GetByExternalIdResponse]
-	list                   *connect.Client[v1.ListRequest, v1.ListResponse]
-	save                   *connect.Client[v1.SaveRequest, v1.SaveResponse]
-	updateAutoProperties   *connect.Client[v1.UpdateAutoPropertiesRequest, v1.UpdateAutoPropertiesResponse]
-	updateCustomProperties *connect.Client[v1.UpdateCustomPropertiesRequest, v1.UpdateCustomPropertiesResponse]
-}
-
-// Create calls profiles.v1.ProfilesService.Create.
-func (c *profilesServiceClient) Create(ctx context.Context, req *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error) {
-	return c.create.CallUnary(ctx, req)
+	delete          *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
+	get             *connect.Client[v1.GetRequest, v1.GetResponse]
+	getByExternalId *connect.Client[v1.GetByExternalIdRequest, v1.GetByExternalIdResponse]
+	list            *connect.Client[v1.ListRequest, v1.ListResponse]
+	save            *connect.Client[v1.SaveRequest, v1.SaveResponse]
 }
 
 // Delete calls profiles.v1.ProfilesService.Delete.
@@ -170,26 +133,13 @@ func (c *profilesServiceClient) Save(ctx context.Context, req *connect.Request[v
 	return c.save.CallUnary(ctx, req)
 }
 
-// UpdateAutoProperties calls profiles.v1.ProfilesService.UpdateAutoProperties.
-func (c *profilesServiceClient) UpdateAutoProperties(ctx context.Context, req *connect.Request[v1.UpdateAutoPropertiesRequest]) (*connect.Response[v1.UpdateAutoPropertiesResponse], error) {
-	return c.updateAutoProperties.CallUnary(ctx, req)
-}
-
-// UpdateCustomProperties calls profiles.v1.ProfilesService.UpdateCustomProperties.
-func (c *profilesServiceClient) UpdateCustomProperties(ctx context.Context, req *connect.Request[v1.UpdateCustomPropertiesRequest]) (*connect.Response[v1.UpdateCustomPropertiesResponse], error) {
-	return c.updateCustomProperties.CallUnary(ctx, req)
-}
-
 // ProfilesServiceHandler is an implementation of the profiles.v1.ProfilesService service.
 type ProfilesServiceHandler interface {
-	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
 	Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error)
-	UpdateAutoProperties(context.Context, *connect.Request[v1.UpdateAutoPropertiesRequest]) (*connect.Response[v1.UpdateAutoPropertiesResponse], error)
-	UpdateCustomProperties(context.Context, *connect.Request[v1.UpdateCustomPropertiesRequest]) (*connect.Response[v1.UpdateCustomPropertiesResponse], error)
 }
 
 // NewProfilesServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -199,12 +149,6 @@ type ProfilesServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	profilesServiceMethods := v1.File_profiles_v1_profiles_proto.Services().ByName("ProfilesService").Methods()
-	profilesServiceCreateHandler := connect.NewUnaryHandler(
-		ProfilesServiceCreateProcedure,
-		svc.Create,
-		connect.WithSchema(profilesServiceMethods.ByName("Create")),
-		connect.WithHandlerOptions(opts...),
-	)
 	profilesServiceDeleteHandler := connect.NewUnaryHandler(
 		ProfilesServiceDeleteProcedure,
 		svc.Delete,
@@ -235,22 +179,8 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 		connect.WithSchema(profilesServiceMethods.ByName("Save")),
 		connect.WithHandlerOptions(opts...),
 	)
-	profilesServiceUpdateAutoPropertiesHandler := connect.NewUnaryHandler(
-		ProfilesServiceUpdateAutoPropertiesProcedure,
-		svc.UpdateAutoProperties,
-		connect.WithSchema(profilesServiceMethods.ByName("UpdateAutoProperties")),
-		connect.WithHandlerOptions(opts...),
-	)
-	profilesServiceUpdateCustomPropertiesHandler := connect.NewUnaryHandler(
-		ProfilesServiceUpdateCustomPropertiesProcedure,
-		svc.UpdateCustomProperties,
-		connect.WithSchema(profilesServiceMethods.ByName("UpdateCustomProperties")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/profiles.v1.ProfilesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case ProfilesServiceCreateProcedure:
-			profilesServiceCreateHandler.ServeHTTP(w, r)
 		case ProfilesServiceDeleteProcedure:
 			profilesServiceDeleteHandler.ServeHTTP(w, r)
 		case ProfilesServiceGetProcedure:
@@ -261,10 +191,6 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 			profilesServiceListHandler.ServeHTTP(w, r)
 		case ProfilesServiceSaveProcedure:
 			profilesServiceSaveHandler.ServeHTTP(w, r)
-		case ProfilesServiceUpdateAutoPropertiesProcedure:
-			profilesServiceUpdateAutoPropertiesHandler.ServeHTTP(w, r)
-		case ProfilesServiceUpdateCustomPropertiesProcedure:
-			profilesServiceUpdateCustomPropertiesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -273,10 +199,6 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 
 // UnimplementedProfilesServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedProfilesServiceHandler struct{}
-
-func (UnimplementedProfilesServiceHandler) Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Create is not implemented"))
-}
 
 func (UnimplementedProfilesServiceHandler) Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Delete is not implemented"))
@@ -296,12 +218,4 @@ func (UnimplementedProfilesServiceHandler) List(context.Context, *connect.Reques
 
 func (UnimplementedProfilesServiceHandler) Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Save is not implemented"))
-}
-
-func (UnimplementedProfilesServiceHandler) UpdateAutoProperties(context.Context, *connect.Request[v1.UpdateAutoPropertiesRequest]) (*connect.Response[v1.UpdateAutoPropertiesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.UpdateAutoProperties is not implemented"))
-}
-
-func (UnimplementedProfilesServiceHandler) UpdateCustomProperties(context.Context, *connect.Request[v1.UpdateCustomPropertiesRequest]) (*connect.Response[v1.UpdateCustomPropertiesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.UpdateCustomProperties is not implemented"))
 }

@@ -8,24 +8,11 @@ option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1;profilesv1";
 
 service ProfilesService {
-  rpc Create(CreateRequest) returns (CreateResponse) {}
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
   rpc List(ListRequest) returns (ListResponse) {}
   rpc Save(SaveRequest) returns (SaveResponse) {}
-  rpc UpdateAutoProperties(UpdateAutoPropertiesRequest) returns (UpdateAutoPropertiesResponse) {}
-  rpc UpdateCustomProperties(UpdateCustomPropertiesRequest) returns (UpdateCustomPropertiesResponse) {}
-}
-
-message CreateRequest {
-  google.protobuf.Struct auto_properties = 1;
-  google.protobuf.Struct custom_properties = 2;
-  string external_id = 3;
-}
-
-message CreateResponse {
-  Profile profile = 1;
 }
 
 message DeleteRequest {
@@ -73,23 +60,5 @@ message SaveRequest {
 }
 
 message SaveResponse {
-  Profile profile = 1;
-}
-
-message UpdateAutoPropertiesRequest {
-  google.protobuf.Struct auto_properties = 1;
-  string id = 2;
-}
-
-message UpdateAutoPropertiesResponse {
-  Profile profile = 1;
-}
-
-message UpdateCustomPropertiesRequest {
-  google.protobuf.Struct custom_properties = 1;
-  string id = 2;
-}
-
-message UpdateCustomPropertiesResponse {
   Profile profile = 1;
 }

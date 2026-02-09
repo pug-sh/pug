@@ -30,37 +30,6 @@ func NewHandler(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Handler {
 	}
 }
 
-func (h *Handler) Create(
-	ctx context.Context,
-	req *connect.Request[profilesv1.CreateRequest],
-) (*connect.Response[profilesv1.CreateResponse], error) {
-	principal, err := rpc.MustGetPrincipalWithProject(ctx)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	p, err := h.write.CreateProfile(ctx, dbwrite.CreateProfileParams{
-		AutoProperties:   req.Msg.AutoProperties.AsMap(),
-		CustomProperties: req.Msg.CustomProperties.AsMap(),
-		ExternalID:       req.Msg.ExternalId,
-		ID:               xid.New().String(),
-		ProjectID:        principal.Project.ID,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed creating profile", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	pbProfile, err := convertWriteProfile(p)
-	if err != nil {
-		return nil, err
-	}
-
-	return connect.NewResponse(&profilesv1.CreateResponse{
-		Profile: pbProfile,
-	}), nil
-}
-
 func (h *Handler) Delete(
 	ctx context.Context,
 	req *connect.Request[profilesv1.DeleteRequest],
@@ -193,64 +162,6 @@ func (h *Handler) Save(
 	}
 
 	return connect.NewResponse(&profilesv1.SaveResponse{
-		Profile: pbProfile,
-	}), nil
-}
-
-func (h *Handler) UpdateAutoProperties(
-	ctx context.Context,
-	req *connect.Request[profilesv1.UpdateAutoPropertiesRequest],
-) (*connect.Response[profilesv1.UpdateAutoPropertiesResponse], error) {
-	principal, err := rpc.MustGetPrincipalWithProject(ctx)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	p, err := h.write.UpdateProfileAutoProperties(ctx, dbwrite.UpdateProfileAutoPropertiesParams{
-		AutoProperties: req.Msg.AutoProperties.AsMap(),
-		ID:             req.Msg.Id,
-		ProjectID:      principal.Project.ID,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed updating profile auto properties", slogx.Error(err), slog.String("profileId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	pbProfile, err := convertWriteProfile(p)
-	if err != nil {
-		return nil, err
-	}
-
-	return connect.NewResponse(&profilesv1.UpdateAutoPropertiesResponse{
-		Profile: pbProfile,
-	}), nil
-}
-
-func (h *Handler) UpdateCustomProperties(
-	ctx context.Context,
-	req *connect.Request[profilesv1.UpdateCustomPropertiesRequest],
-) (*connect.Response[profilesv1.UpdateCustomPropertiesResponse], error) {
-	principal, err := rpc.MustGetPrincipalWithProject(ctx)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	p, err := h.write.UpdateProfileCustomProperties(ctx, dbwrite.UpdateProfileCustomPropertiesParams{
-		CustomProperties: req.Msg.CustomProperties.AsMap(),
-		ID:               req.Msg.Id,
-		ProjectID:        principal.Project.ID,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed updating profile custom properties", slogx.Error(err), slog.String("profileId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	pbProfile, err := convertWriteProfile(p)
-	if err != nil {
-		return nil, err
-	}
-
-	return connect.NewResponse(&profilesv1.UpdateCustomPropertiesResponse{
 		Profile: pbProfile,
 	}), nil
 }

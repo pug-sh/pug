@@ -182,16 +182,16 @@ func (c *Worker) handleProfileLink(ctx context.Context, msg *subscriptionsv1.Sub
 			slog.ErrorContext(ctx, "failed to convert profile metadata", slogx.Error(marshalErr))
 			return marshalErr
 		}
-		newProfile, createErr := c.profilesWrite.CreateProfile(ctx, dbwrite.CreateProfileParams{
-			ID:               xid.New().String(),
-			ProjectID:        projectID,
-			ExternalID:       externalID,
+		newProfile, saveErr := c.profilesWrite.SaveProfile(ctx, dbwrite.SaveProfileParams{
 			AutoProperties:   profileMetadata,
 			CustomProperties: map[string]any{},
+			ExternalID:       externalID,
+			ID:               xid.New().String(),
+			ProjectID:        projectID,
 		})
-		if createErr != nil {
-			slog.ErrorContext(ctx, "failed to create profile", slogx.Error(createErr))
-			return createErr
+		if saveErr != nil {
+			slog.ErrorContext(ctx, "failed to save profile", slogx.Error(saveErr))
+			return saveErr
 		}
 		profile.ID = newProfile.ID
 	}

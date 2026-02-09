@@ -9,41 +9,6 @@ import (
 	"context"
 )
 
-const createProfile = `-- name: CreateProfile :one
-insert into profiles (auto_properties, custom_properties, external_id, id, project_id)
-values (coalesce($1, '{}'), coalesce($2, '{}'), $3, $4, $5)
-returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
-`
-
-type CreateProfileParams struct {
-	AutoProperties   interface{}
-	CustomProperties interface{}
-	ExternalID       string
-	ID               string
-	ProjectID        string
-}
-
-func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, createProfile,
-		arg.AutoProperties,
-		arg.CustomProperties,
-		arg.ExternalID,
-		arg.ID,
-		arg.ProjectID,
-	)
-	var i Profile
-	err := row.Scan(
-		&i.AutoProperties,
-		&i.CreateTime,
-		&i.CustomProperties,
-		&i.ExternalID,
-		&i.ID,
-		&i.ProjectID,
-		&i.UpdateTime,
-	)
-	return i, err
-}
-
 const deleteProfileByIDAndProjectID = `-- name: DeleteProfileByIDAndProjectID :exec
 delete from profiles
 where id = $1 and project_id = $2
@@ -84,62 +49,6 @@ func (q *Queries) SaveProfile(ctx context.Context, arg SaveProfileParams) (Profi
 		arg.ID,
 		arg.ProjectID,
 	)
-	var i Profile
-	err := row.Scan(
-		&i.AutoProperties,
-		&i.CreateTime,
-		&i.CustomProperties,
-		&i.ExternalID,
-		&i.ID,
-		&i.ProjectID,
-		&i.UpdateTime,
-	)
-	return i, err
-}
-
-const updateProfileAutoProperties = `-- name: UpdateProfileAutoProperties :one
-update profiles
-set auto_properties = coalesce($1, '{}')
-where id = $2 and project_id = $3
-returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
-`
-
-type UpdateProfileAutoPropertiesParams struct {
-	AutoProperties map[string]any
-	ID             string
-	ProjectID      string
-}
-
-func (q *Queries) UpdateProfileAutoProperties(ctx context.Context, arg UpdateProfileAutoPropertiesParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, updateProfileAutoProperties, arg.AutoProperties, arg.ID, arg.ProjectID)
-	var i Profile
-	err := row.Scan(
-		&i.AutoProperties,
-		&i.CreateTime,
-		&i.CustomProperties,
-		&i.ExternalID,
-		&i.ID,
-		&i.ProjectID,
-		&i.UpdateTime,
-	)
-	return i, err
-}
-
-const updateProfileCustomProperties = `-- name: UpdateProfileCustomProperties :one
-update profiles
-set custom_properties = coalesce($1, '{}')
-where id = $2 and project_id = $3
-returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
-`
-
-type UpdateProfileCustomPropertiesParams struct {
-	CustomProperties map[string]any
-	ID               string
-	ProjectID        string
-}
-
-func (q *Queries) UpdateProfileCustomProperties(ctx context.Context, arg UpdateProfileCustomPropertiesParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, updateProfileCustomProperties, arg.CustomProperties, arg.ID, arg.ProjectID)
 	var i Profile
 	err := row.Scan(
 		&i.AutoProperties,
