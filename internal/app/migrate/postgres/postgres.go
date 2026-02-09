@@ -24,7 +24,7 @@ func Up(ctx context.Context, num int) error {
 		if err := goose.UpContext(ctx, db, dir); err != nil {
 			return err
 		}
-		slog.Info("applied all migrations")
+		slog.InfoContext(ctx,"applied all migrations")
 		return nil
 	}
 
@@ -37,7 +37,7 @@ func Up(ctx context.Context, num int) error {
 		return err
 	}
 
-	slog.Info("applied migrations", slog.Int("appliedMigrations", num))
+	slog.InfoContext(ctx,"applied migrations", slog.Int("appliedMigrations", num))
 	return nil
 }
 
@@ -61,7 +61,7 @@ func Down(ctx context.Context, num int) error {
 				return err
 			}
 		}
-		slog.Info("rolled back all migrations")
+		slog.InfoContext(ctx,"rolled back all migrations")
 		return nil
 	}
 
@@ -71,7 +71,7 @@ func Down(ctx context.Context, num int) error {
 		}
 	}
 
-	slog.Info("rolled back migrations", slog.Int("rolledBackMigrations", num))
+	slog.InfoContext(ctx,"rolled back migrations", slog.Int("rolledBackMigrations", num))
 	return nil
 }
 

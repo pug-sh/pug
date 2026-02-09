@@ -32,7 +32,7 @@ func Run(ctx context.Context) error {
 	}
 	defer natsClient.Close()
 
-	slog.Info("Starting events worker...")
+	slog.InfoContext(ctx, "Starting events worker...")
 	return StartWorker(ctx, chDB.Conn, natsClient)
 }
 

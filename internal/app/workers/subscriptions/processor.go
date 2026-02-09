@@ -66,7 +66,7 @@ func (c *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	case subscriptionsv1.SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK:
 		return c.handleProfileLink(ctx, msg)
 	default:
-		slog.Warn("unknown subscription operation type", slog.Int("type", int(msg.OperationType)))
+		slog.WarnContext(ctx, "unknown subscription operation type", slog.Int("type", int(msg.OperationType)))
 		return fmt.Errorf("unknown operation type: %v", msg.OperationType)
 	}
 }

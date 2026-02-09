@@ -85,7 +85,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 	sent = true
 
-	slog.Info("inserted events into ClickHouse",
+	slog.InfoContext(ctx, "inserted events into ClickHouse",
 		slog.String("project_id", batch.ProjectId),
 		slog.Int("count", len(batch.Events)))
 

@@ -26,11 +26,11 @@ func run(fn func(ctx context.Context) error) func(cmd *cobra.Command, args []str
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
+			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
 		}
 
 		if err := fn(ctx); err != nil {
-			slog.Error("fatal error", slog.Any("err", err))
+			slog.ErrorContext(ctx, "fatal error", slog.Any("err", err))
 			os.Exit(1)
 		}
 	}
@@ -44,7 +44,7 @@ func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cob
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
+			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
 		}
 
 		direction, _ := cmd.Flags().GetString("direction")
@@ -57,11 +57,11 @@ func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cob
 		case "down":
 			err = down(ctx, num)
 		default:
-			slog.Error("invalid migration direction, must be 'up' or 'down'", slog.String("direction", direction))
+			slog.ErrorContext(ctx, "invalid migration direction, must be 'up' or 'down'", slog.String("direction", direction))
 			os.Exit(1)
 		}
 		if err != nil {
-			slog.Error("migration error", slog.Any("err", err))
+			slog.ErrorContext(ctx, "migration error", slog.Any("err", err))
 			os.Exit(1)
 		}
 	}
@@ -109,7 +109,7 @@ var devCmd = &cobra.Command{
 		defer done()
 
 		if err := godotenv.Load(); err != nil {
-			slog.Debug("No .env file found, relying on environment variables")
+			slog.DebugContext(sigCtx, "No .env file found, relying on environment variables")
 		}
 
 		g, ctx := errgroup.WithContext(sigCtx)
@@ -119,10 +119,10 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return server.Run(ctx) })
 
 		if err := g.Wait(); err != nil {
-			slog.Error("component stopped", slog.Any("err", err))
+			slog.ErrorContext(sigCtx, "component stopped", slog.Any("err", err))
 		}
 
-		slog.Info("Shutting down...")
+		slog.InfoContext(sigCtx, "Shutting down...")
 	},
 }
 

@@ -39,7 +39,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		return fmt.Errorf("campaign message missing campaign_id")
 	}
 
-	slog.Info("Processing campaign", slog.String("campaign_id", msg.CampaignID))
+	slog.InfoContext(ctx, "Processing campaign", slog.String("campaign_id", msg.CampaignID))
 
 	campaign, err := w.campaignService.GetCampaignByID(ctx, msg.CampaignID)
 	if err != nil {
@@ -55,7 +55,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		slog.ErrorContext(ctx, "failed to set campaign in-progress", slogx.Error(err), slog.String("campaign_id", campaign.ID))
 	}
 
-	slog.Info("Processing subscriptions for campaign",
+	slog.InfoContext(ctx, "Processing subscriptions for campaign",
 		slog.String("campaign_id", campaign.ID),
 		slog.String("project_id", campaign.ProjectID),
 		slog.Int("subscription_count", len(subscriptions)))
