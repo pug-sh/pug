@@ -360,6 +360,102 @@ func (x *ListResponse) GetProfiles() []*Profile {
 	return nil
 }
 
+type MergeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SourceId      string                 `protobuf:"bytes,1,opt,name=source_id,json=sourceId" json:"source_id,omitempty"`
+	TargetId      string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId" json:"target_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MergeRequest) Reset() {
+	*x = MergeRequest{}
+	mi := &file_profiles_v1_profiles_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MergeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MergeRequest) ProtoMessage() {}
+
+func (x *MergeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_profiles_v1_profiles_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MergeRequest.ProtoReflect.Descriptor instead.
+func (*MergeRequest) Descriptor() ([]byte, []int) {
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *MergeRequest) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+func (x *MergeRequest) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+type MergeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       *Profile               `protobuf:"bytes,1,opt,name=profile" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MergeResponse) Reset() {
+	*x = MergeResponse{}
+	mi := &file_profiles_v1_profiles_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MergeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MergeResponse) ProtoMessage() {}
+
+func (x *MergeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_profiles_v1_profiles_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MergeResponse.ProtoReflect.Descriptor instead.
+func (*MergeResponse) Descriptor() ([]byte, []int) {
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *MergeResponse) GetProfile() *Profile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
 type Profile struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	AutoProperties   *structpb.Struct       `protobuf:"bytes,1,opt,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty"`
@@ -375,7 +471,7 @@ type Profile struct {
 
 func (x *Profile) Reset() {
 	*x = Profile{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[8]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -387,7 +483,7 @@ func (x *Profile) String() string {
 func (*Profile) ProtoMessage() {}
 
 func (x *Profile) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[8]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -400,7 +496,7 @@ func (x *Profile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Profile.ProtoReflect.Descriptor instead.
 func (*Profile) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{8}
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Profile) GetAutoProperties() *structpb.Struct {
@@ -463,7 +559,7 @@ type SaveRequest struct {
 
 func (x *SaveRequest) Reset() {
 	*x = SaveRequest{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[9]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -475,7 +571,7 @@ func (x *SaveRequest) String() string {
 func (*SaveRequest) ProtoMessage() {}
 
 func (x *SaveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[9]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -488,7 +584,7 @@ func (x *SaveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveRequest.ProtoReflect.Descriptor instead.
 func (*SaveRequest) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{9}
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *SaveRequest) GetAutoProperties() *structpb.Struct {
@@ -521,7 +617,7 @@ type SaveResponse struct {
 
 func (x *SaveResponse) Reset() {
 	*x = SaveResponse{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[10]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -533,7 +629,7 @@ func (x *SaveResponse) String() string {
 func (*SaveResponse) ProtoMessage() {}
 
 func (x *SaveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[10]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -546,7 +642,7 @@ func (x *SaveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveResponse.ProtoReflect.Descriptor instead.
 func (*SaveResponse) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{10}
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SaveResponse) GetProfile() *Profile {
@@ -576,7 +672,12 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"\r\n" +
 	"\vListRequest\"@\n" +
 	"\fListResponse\x120\n" +
-	"\bprofiles\x18\x01 \x03(\v2\x14.profiles.v1.ProfileR\bprofiles\"\xdb\x02\n" +
+	"\bprofiles\x18\x01 \x03(\v2\x14.profiles.v1.ProfileR\bprofiles\"Z\n" +
+	"\fMergeRequest\x12$\n" +
+	"\tsource_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bsourceId\x12$\n" +
+	"\ttarget_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\btargetId\"?\n" +
+	"\rMergeResponse\x12.\n" +
+	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"\xdb\x02\n" +
 	"\aProfile\x12@\n" +
 	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12;\n" +
 	"\vcreate_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
@@ -595,12 +696,13 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\vexternal_id\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"externalId\">\n" +
 	"\fSaveResponse\x12.\n" +
-	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile2\xf0\x02\n" +
+	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile2\xb2\x03\n" +
 	"\x0fProfilesService\x12C\n" +
 	"\x06Delete\x12\x1a.profiles.v1.DeleteRequest\x1a\x1b.profiles.v1.DeleteResponse\"\x00\x12:\n" +
 	"\x03Get\x12\x17.profiles.v1.GetRequest\x1a\x18.profiles.v1.GetResponse\"\x00\x12^\n" +
 	"\x0fGetByExternalId\x12#.profiles.v1.GetByExternalIdRequest\x1a$.profiles.v1.GetByExternalIdResponse\"\x00\x12=\n" +
-	"\x04List\x12\x18.profiles.v1.ListRequest\x1a\x19.profiles.v1.ListResponse\"\x00\x12=\n" +
+	"\x04List\x12\x18.profiles.v1.ListRequest\x1a\x19.profiles.v1.ListResponse\"\x00\x12@\n" +
+	"\x05Merge\x12\x19.profiles.v1.MergeRequest\x1a\x1a.profiles.v1.MergeResponse\"\x00\x12=\n" +
 	"\x04Save\x12\x18.profiles.v1.SaveRequest\x1a\x19.profiles.v1.SaveResponse\"\x00BMZFgithub.com/fivebitsio/cotton/internal/gen/proto/profiles/v1;profilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
@@ -615,7 +717,7 @@ func file_profiles_v1_profiles_proto_rawDescGZIP() []byte {
 	return file_profiles_v1_profiles_proto_rawDescData
 }
 
-var file_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_profiles_v1_profiles_proto_goTypes = []any{
 	(*DeleteRequest)(nil),           // 0: profiles.v1.DeleteRequest
 	(*DeleteResponse)(nil),          // 1: profiles.v1.DeleteResponse
@@ -625,38 +727,43 @@ var file_profiles_v1_profiles_proto_goTypes = []any{
 	(*GetResponse)(nil),             // 5: profiles.v1.GetResponse
 	(*ListRequest)(nil),             // 6: profiles.v1.ListRequest
 	(*ListResponse)(nil),            // 7: profiles.v1.ListResponse
-	(*Profile)(nil),                 // 8: profiles.v1.Profile
-	(*SaveRequest)(nil),             // 9: profiles.v1.SaveRequest
-	(*SaveResponse)(nil),            // 10: profiles.v1.SaveResponse
-	(*structpb.Struct)(nil),         // 11: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),   // 12: google.protobuf.Timestamp
+	(*MergeRequest)(nil),            // 8: profiles.v1.MergeRequest
+	(*MergeResponse)(nil),           // 9: profiles.v1.MergeResponse
+	(*Profile)(nil),                 // 10: profiles.v1.Profile
+	(*SaveRequest)(nil),             // 11: profiles.v1.SaveRequest
+	(*SaveResponse)(nil),            // 12: profiles.v1.SaveResponse
+	(*structpb.Struct)(nil),         // 13: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),   // 14: google.protobuf.Timestamp
 }
 var file_profiles_v1_profiles_proto_depIdxs = []int32{
-	8,  // 0: profiles.v1.GetByExternalIdResponse.profile:type_name -> profiles.v1.Profile
-	8,  // 1: profiles.v1.GetResponse.profile:type_name -> profiles.v1.Profile
-	8,  // 2: profiles.v1.ListResponse.profiles:type_name -> profiles.v1.Profile
-	11, // 3: profiles.v1.Profile.auto_properties:type_name -> google.protobuf.Struct
-	12, // 4: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
-	11, // 5: profiles.v1.Profile.custom_properties:type_name -> google.protobuf.Struct
-	12, // 6: profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
-	11, // 7: profiles.v1.SaveRequest.auto_properties:type_name -> google.protobuf.Struct
-	11, // 8: profiles.v1.SaveRequest.custom_properties:type_name -> google.protobuf.Struct
-	8,  // 9: profiles.v1.SaveResponse.profile:type_name -> profiles.v1.Profile
-	0,  // 10: profiles.v1.ProfilesService.Delete:input_type -> profiles.v1.DeleteRequest
-	4,  // 11: profiles.v1.ProfilesService.Get:input_type -> profiles.v1.GetRequest
-	2,  // 12: profiles.v1.ProfilesService.GetByExternalId:input_type -> profiles.v1.GetByExternalIdRequest
-	6,  // 13: profiles.v1.ProfilesService.List:input_type -> profiles.v1.ListRequest
-	9,  // 14: profiles.v1.ProfilesService.Save:input_type -> profiles.v1.SaveRequest
-	1,  // 15: profiles.v1.ProfilesService.Delete:output_type -> profiles.v1.DeleteResponse
-	5,  // 16: profiles.v1.ProfilesService.Get:output_type -> profiles.v1.GetResponse
-	3,  // 17: profiles.v1.ProfilesService.GetByExternalId:output_type -> profiles.v1.GetByExternalIdResponse
-	7,  // 18: profiles.v1.ProfilesService.List:output_type -> profiles.v1.ListResponse
-	10, // 19: profiles.v1.ProfilesService.Save:output_type -> profiles.v1.SaveResponse
-	15, // [15:20] is the sub-list for method output_type
-	10, // [10:15] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	10, // 0: profiles.v1.GetByExternalIdResponse.profile:type_name -> profiles.v1.Profile
+	10, // 1: profiles.v1.GetResponse.profile:type_name -> profiles.v1.Profile
+	10, // 2: profiles.v1.ListResponse.profiles:type_name -> profiles.v1.Profile
+	10, // 3: profiles.v1.MergeResponse.profile:type_name -> profiles.v1.Profile
+	13, // 4: profiles.v1.Profile.auto_properties:type_name -> google.protobuf.Struct
+	14, // 5: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
+	13, // 6: profiles.v1.Profile.custom_properties:type_name -> google.protobuf.Struct
+	14, // 7: profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
+	13, // 8: profiles.v1.SaveRequest.auto_properties:type_name -> google.protobuf.Struct
+	13, // 9: profiles.v1.SaveRequest.custom_properties:type_name -> google.protobuf.Struct
+	10, // 10: profiles.v1.SaveResponse.profile:type_name -> profiles.v1.Profile
+	0,  // 11: profiles.v1.ProfilesService.Delete:input_type -> profiles.v1.DeleteRequest
+	4,  // 12: profiles.v1.ProfilesService.Get:input_type -> profiles.v1.GetRequest
+	2,  // 13: profiles.v1.ProfilesService.GetByExternalId:input_type -> profiles.v1.GetByExternalIdRequest
+	6,  // 14: profiles.v1.ProfilesService.List:input_type -> profiles.v1.ListRequest
+	8,  // 15: profiles.v1.ProfilesService.Merge:input_type -> profiles.v1.MergeRequest
+	11, // 16: profiles.v1.ProfilesService.Save:input_type -> profiles.v1.SaveRequest
+	1,  // 17: profiles.v1.ProfilesService.Delete:output_type -> profiles.v1.DeleteResponse
+	5,  // 18: profiles.v1.ProfilesService.Get:output_type -> profiles.v1.GetResponse
+	3,  // 19: profiles.v1.ProfilesService.GetByExternalId:output_type -> profiles.v1.GetByExternalIdResponse
+	7,  // 20: profiles.v1.ProfilesService.List:output_type -> profiles.v1.ListResponse
+	9,  // 21: profiles.v1.ProfilesService.Merge:output_type -> profiles.v1.MergeResponse
+	12, // 22: profiles.v1.ProfilesService.Save:output_type -> profiles.v1.SaveResponse
+	17, // [17:23] is the sub-list for method output_type
+	11, // [11:17] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_profiles_v1_profiles_proto_init() }
@@ -670,7 +777,7 @@ func file_profiles_v1_profiles_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_profiles_v1_profiles_proto_rawDesc), len(file_profiles_v1_profiles_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

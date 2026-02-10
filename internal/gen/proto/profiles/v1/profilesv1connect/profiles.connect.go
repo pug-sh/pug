@@ -42,6 +42,8 @@ const (
 	ProfilesServiceGetByExternalIdProcedure = "/profiles.v1.ProfilesService/GetByExternalId"
 	// ProfilesServiceListProcedure is the fully-qualified name of the ProfilesService's List RPC.
 	ProfilesServiceListProcedure = "/profiles.v1.ProfilesService/List"
+	// ProfilesServiceMergeProcedure is the fully-qualified name of the ProfilesService's Merge RPC.
+	ProfilesServiceMergeProcedure = "/profiles.v1.ProfilesService/Merge"
 	// ProfilesServiceSaveProcedure is the fully-qualified name of the ProfilesService's Save RPC.
 	ProfilesServiceSaveProcedure = "/profiles.v1.ProfilesService/Save"
 )
@@ -53,6 +55,7 @@ type ProfilesServiceClient interface {
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	// todo - shift to server streaming
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
+	Merge(context.Context, *connect.Request[v1.MergeRequest]) (*connect.Response[v1.MergeResponse], error)
 	Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error)
 }
 
@@ -91,6 +94,12 @@ func NewProfilesServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(profilesServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
+		merge: connect.NewClient[v1.MergeRequest, v1.MergeResponse](
+			httpClient,
+			baseURL+ProfilesServiceMergeProcedure,
+			connect.WithSchema(profilesServiceMethods.ByName("Merge")),
+			connect.WithClientOptions(opts...),
+		),
 		save: connect.NewClient[v1.SaveRequest, v1.SaveResponse](
 			httpClient,
 			baseURL+ProfilesServiceSaveProcedure,
@@ -106,6 +115,7 @@ type profilesServiceClient struct {
 	get             *connect.Client[v1.GetRequest, v1.GetResponse]
 	getByExternalId *connect.Client[v1.GetByExternalIdRequest, v1.GetByExternalIdResponse]
 	list            *connect.Client[v1.ListRequest, v1.ListResponse]
+	merge           *connect.Client[v1.MergeRequest, v1.MergeResponse]
 	save            *connect.Client[v1.SaveRequest, v1.SaveResponse]
 }
 
@@ -129,6 +139,11 @@ func (c *profilesServiceClient) List(ctx context.Context, req *connect.Request[v
 	return c.list.CallUnary(ctx, req)
 }
 
+// Merge calls profiles.v1.ProfilesService.Merge.
+func (c *profilesServiceClient) Merge(ctx context.Context, req *connect.Request[v1.MergeRequest]) (*connect.Response[v1.MergeResponse], error) {
+	return c.merge.CallUnary(ctx, req)
+}
+
 // Save calls profiles.v1.ProfilesService.Save.
 func (c *profilesServiceClient) Save(ctx context.Context, req *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error) {
 	return c.save.CallUnary(ctx, req)
@@ -141,6 +156,7 @@ type ProfilesServiceHandler interface {
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	// todo - shift to server streaming
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
+	Merge(context.Context, *connect.Request[v1.MergeRequest]) (*connect.Response[v1.MergeResponse], error)
 	Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error)
 }
 
@@ -175,6 +191,12 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 		connect.WithSchema(profilesServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
+	profilesServiceMergeHandler := connect.NewUnaryHandler(
+		ProfilesServiceMergeProcedure,
+		svc.Merge,
+		connect.WithSchema(profilesServiceMethods.ByName("Merge")),
+		connect.WithHandlerOptions(opts...),
+	)
 	profilesServiceSaveHandler := connect.NewUnaryHandler(
 		ProfilesServiceSaveProcedure,
 		svc.Save,
@@ -191,6 +213,8 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 			profilesServiceGetByExternalIdHandler.ServeHTTP(w, r)
 		case ProfilesServiceListProcedure:
 			profilesServiceListHandler.ServeHTTP(w, r)
+		case ProfilesServiceMergeProcedure:
+			profilesServiceMergeHandler.ServeHTTP(w, r)
 		case ProfilesServiceSaveProcedure:
 			profilesServiceSaveHandler.ServeHTTP(w, r)
 		default:
@@ -216,6 +240,10 @@ func (UnimplementedProfilesServiceHandler) GetByExternalId(context.Context, *con
 
 func (UnimplementedProfilesServiceHandler) List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.List is not implemented"))
+}
+
+func (UnimplementedProfilesServiceHandler) Merge(context.Context, *connect.Request[v1.MergeRequest]) (*connect.Response[v1.MergeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Merge is not implemented"))
 }
 
 func (UnimplementedProfilesServiceHandler) Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error) {

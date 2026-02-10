@@ -7,6 +7,8 @@ package dbwrite
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const deleteProfileByIDAndProjectID = `-- name: DeleteProfileByIDAndProjectID :exec
@@ -21,6 +23,55 @@ type DeleteProfileByIDAndProjectIDParams struct {
 
 func (q *Queries) DeleteProfileByIDAndProjectID(ctx context.Context, arg DeleteProfileByIDAndProjectIDParams) error {
 	_, err := q.db.Exec(ctx, deleteProfileByIDAndProjectID, arg.ID, arg.ProjectID)
+	return err
+}
+
+const mergeProfileProperties = `-- name: MergeProfileProperties :one
+update profiles
+set auto_properties = jsonb_shallow_merge(s.auto_properties, profiles.auto_properties),
+    custom_properties = jsonb_shallow_merge(s.custom_properties, profiles.custom_properties)
+from profiles s
+where s.id = $1
+  and s.project_id = $2
+  and profiles.id = $3
+  and profiles.project_id = $2
+returning profiles.auto_properties, profiles.create_time, profiles.custom_properties, profiles.external_id, profiles.id, profiles.project_id, profiles.update_time
+`
+
+type MergeProfilePropertiesParams struct {
+	SourceID  string
+	ProjectID string
+	TargetID  string
+}
+
+func (q *Queries) MergeProfileProperties(ctx context.Context, arg MergeProfilePropertiesParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, mergeProfileProperties, arg.SourceID, arg.ProjectID, arg.TargetID)
+	var i Profile
+	err := row.Scan(
+		&i.AutoProperties,
+		&i.CreateTime,
+		&i.CustomProperties,
+		&i.ExternalID,
+		&i.ID,
+		&i.ProjectID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const reassignProfileSubscriptions = `-- name: ReassignProfileSubscriptions :exec
+update subscriptions
+set profile_id = $1
+where profile_id = $2
+`
+
+type ReassignProfileSubscriptionsParams struct {
+	TargetID pgtype.Text
+	SourceID pgtype.Text
+}
+
+func (q *Queries) ReassignProfileSubscriptions(ctx context.Context, arg ReassignProfileSubscriptionsParams) error {
+	_, err := q.db.Exec(ctx, reassignProfileSubscriptions, arg.TargetID, arg.SourceID)
 	return err
 }
 
