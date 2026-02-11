@@ -1,13 +1,13 @@
 -- +goose Up
 CREATE TABLE IF NOT EXISTS events (
-    id              String,
-    project_id      String,
-    distinct_id     String,
-    kind            String,
     auto_properties   Map(String, String),
     custom_properties Map(String, String),
-    occur_time      DateTime64(3),
-    insert_time     DateTime64(3) DEFAULT now64(3)
+    distinct_id       String,
+    id                String,
+    insert_time       DateTime64(3) DEFAULT now64(3),
+    kind              String,
+    occur_time        DateTime64(3),
+    project_id        String
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(occur_time)
 ORDER BY (project_id, kind, occur_time)

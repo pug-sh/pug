@@ -7,6 +7,7 @@
 package profilesv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -23,120 +24,28 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type Profile struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	ExternalId       string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	ProjectId        string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	Properties       *structpb.Struct       `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
-	CustomProperties *structpb.Struct       `protobuf:"bytes,5,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
-	CreateTime       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
-	UpdateTime       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *Profile) Reset() {
-	*x = Profile{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Profile) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Profile) ProtoMessage() {}
-
-func (x *Profile) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Profile.ProtoReflect.Descriptor instead.
-func (*Profile) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *Profile) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *Profile) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
-	}
-	return ""
-}
-
-func (x *Profile) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
-	}
-	return ""
-}
-
-func (x *Profile) GetProperties() *structpb.Struct {
-	if x != nil {
-		return x.Properties
-	}
-	return nil
-}
-
-func (x *Profile) GetCustomProperties() *structpb.Struct {
-	if x != nil {
-		return x.CustomProperties
-	}
-	return nil
-}
-
-func (x *Profile) GetCreateTime() *timestamppb.Timestamp {
-	if x != nil {
-		return x.CreateTime
-	}
-	return nil
-}
-
-func (x *Profile) GetUpdateTime() *timestamppb.Timestamp {
-	if x != nil {
-		return x.UpdateTime
-	}
-	return nil
-}
-
-type GetRequest struct {
+type DeleteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetRequest) Reset() {
-	*x = GetRequest{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[1]
+func (x *DeleteRequest) Reset() {
+	*x = DeleteRequest{}
+	mi := &file_profiles_v1_profiles_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetRequest) String() string {
+func (x *DeleteRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetRequest) ProtoMessage() {}
+func (*DeleteRequest) ProtoMessage() {}
 
-func (x *GetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[1]
+func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_profiles_v1_profiles_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -147,40 +56,39 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
-func (*GetRequest) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{1}
+// Deprecated: Use DeleteRequest.ProtoReflect.Descriptor instead.
+func (*DeleteRequest) Descriptor() ([]byte, []int) {
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *GetRequest) GetId() string {
+func (x *DeleteRequest) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-type GetResponse struct {
+type DeleteResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       *Profile               `protobuf:"bytes,1,opt,name=profile" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetResponse) Reset() {
-	*x = GetResponse{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[2]
+func (x *DeleteResponse) Reset() {
+	*x = DeleteResponse{}
+	mi := &file_profiles_v1_profiles_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetResponse) String() string {
+func (x *DeleteResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetResponse) ProtoMessage() {}
+func (*DeleteResponse) ProtoMessage() {}
 
-func (x *GetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[2]
+func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_profiles_v1_profiles_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -191,16 +99,9 @@ func (x *GetResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
-func (*GetResponse) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *GetResponse) GetProfile() *Profile {
-	if x != nil {
-		return x.Profile
-	}
-	return nil
+// Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
+func (*DeleteResponse) Descriptor() ([]byte, []int) {
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{1}
 }
 
 type GetByExternalIdRequest struct {
@@ -212,7 +113,7 @@ type GetByExternalIdRequest struct {
 
 func (x *GetByExternalIdRequest) Reset() {
 	*x = GetByExternalIdRequest{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[3]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -224,7 +125,7 @@ func (x *GetByExternalIdRequest) String() string {
 func (*GetByExternalIdRequest) ProtoMessage() {}
 
 func (x *GetByExternalIdRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[3]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -237,7 +138,7 @@ func (x *GetByExternalIdRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetByExternalIdRequest.ProtoReflect.Descriptor instead.
 func (*GetByExternalIdRequest) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{3}
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *GetByExternalIdRequest) GetExternalId() string {
@@ -256,7 +157,7 @@ type GetByExternalIdResponse struct {
 
 func (x *GetByExternalIdResponse) Reset() {
 	*x = GetByExternalIdResponse{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[4]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -268,7 +169,7 @@ func (x *GetByExternalIdResponse) String() string {
 func (*GetByExternalIdResponse) ProtoMessage() {}
 
 func (x *GetByExternalIdResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[4]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -281,10 +182,98 @@ func (x *GetByExternalIdResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetByExternalIdResponse.ProtoReflect.Descriptor instead.
 func (*GetByExternalIdResponse) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{4}
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetByExternalIdResponse) GetProfile() *Profile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
+type GetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRequest) Reset() {
+	*x = GetRequest{}
+	mi := &file_profiles_v1_profiles_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRequest) ProtoMessage() {}
+
+func (x *GetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_profiles_v1_profiles_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
+func (*GetRequest) Descriptor() ([]byte, []int) {
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type GetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       *Profile               `protobuf:"bytes,1,opt,name=profile" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetResponse) Reset() {
+	*x = GetResponse{}
+	mi := &file_profiles_v1_profiles_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetResponse) ProtoMessage() {}
+
+func (x *GetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_profiles_v1_profiles_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
+func (*GetResponse) Descriptor() ([]byte, []int) {
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetResponse) GetProfile() *Profile {
 	if x != nil {
 		return x.Profile
 	}
@@ -299,7 +288,7 @@ type ListRequest struct {
 
 func (x *ListRequest) Reset() {
 	*x = ListRequest{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[5]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -311,7 +300,7 @@ func (x *ListRequest) String() string {
 func (*ListRequest) ProtoMessage() {}
 
 func (x *ListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[5]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -324,7 +313,7 @@ func (x *ListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
 func (*ListRequest) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{5}
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{6}
 }
 
 type ListResponse struct {
@@ -336,7 +325,7 @@ type ListResponse struct {
 
 func (x *ListResponse) Reset() {
 	*x = ListResponse{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[6]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -348,7 +337,7 @@ func (x *ListResponse) String() string {
 func (*ListResponse) ProtoMessage() {}
 
 func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[6]
+	mi := &file_profiles_v1_profiles_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -361,7 +350,7 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
 func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{6}
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListResponse) GetProfiles() []*Profile {
@@ -371,30 +360,34 @@ func (x *ListResponse) GetProfiles() []*Profile {
 	return nil
 }
 
-type CreateRequest struct {
+type Profile struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId       string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	Properties       *structpb.Struct       `protobuf:"bytes,2,opt,name=properties" json:"properties,omitempty"`
+	AutoProperties   *structpb.Struct       `protobuf:"bytes,1,opt,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty"`
+	CreateTime       *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
 	CustomProperties *structpb.Struct       `protobuf:"bytes,3,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
+	ExternalId       string                 `protobuf:"bytes,4,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	Id               string                 `protobuf:"bytes,5,opt,name=id" json:"id,omitempty"`
+	ProjectId        string                 `protobuf:"bytes,6,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	UpdateTime       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *CreateRequest) Reset() {
-	*x = CreateRequest{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[7]
+func (x *Profile) Reset() {
+	*x = Profile{}
+	mi := &file_profiles_v1_profiles_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CreateRequest) String() string {
+func (x *Profile) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CreateRequest) ProtoMessage() {}
+func (*Profile) ProtoMessage() {}
 
-func (x *CreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[7]
+func (x *Profile) ProtoReflect() protoreflect.Message {
+	mi := &file_profiles_v1_profiles_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -405,195 +398,84 @@ func (x *CreateRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CreateRequest.ProtoReflect.Descriptor instead.
-func (*CreateRequest) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{7}
+// Deprecated: Use Profile.ProtoReflect.Descriptor instead.
+func (*Profile) Descriptor() ([]byte, []int) {
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *CreateRequest) GetExternalId() string {
+func (x *Profile) GetAutoProperties() *structpb.Struct {
+	if x != nil {
+		return x.AutoProperties
+	}
+	return nil
+}
+
+func (x *Profile) GetCreateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreateTime
+	}
+	return nil
+}
+
+func (x *Profile) GetCustomProperties() *structpb.Struct {
+	if x != nil {
+		return x.CustomProperties
+	}
+	return nil
+}
+
+func (x *Profile) GetExternalId() string {
 	if x != nil {
 		return x.ExternalId
 	}
 	return ""
 }
 
-func (x *CreateRequest) GetProperties() *structpb.Struct {
-	if x != nil {
-		return x.Properties
-	}
-	return nil
-}
-
-func (x *CreateRequest) GetCustomProperties() *structpb.Struct {
-	if x != nil {
-		return x.CustomProperties
-	}
-	return nil
-}
-
-type CreateResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       *Profile               `protobuf:"bytes,1,opt,name=profile" json:"profile,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateResponse) Reset() {
-	*x = CreateResponse{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateResponse) ProtoMessage() {}
-
-func (x *CreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateResponse.ProtoReflect.Descriptor instead.
-func (*CreateResponse) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *CreateResponse) GetProfile() *Profile {
-	if x != nil {
-		return x.Profile
-	}
-	return nil
-}
-
-type UpdatePropertiesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	Properties    *structpb.Struct       `protobuf:"bytes,2,opt,name=properties" json:"properties,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdatePropertiesRequest) Reset() {
-	*x = UpdatePropertiesRequest{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdatePropertiesRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdatePropertiesRequest) ProtoMessage() {}
-
-func (x *UpdatePropertiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdatePropertiesRequest.ProtoReflect.Descriptor instead.
-func (*UpdatePropertiesRequest) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *UpdatePropertiesRequest) GetId() string {
+func (x *Profile) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-func (x *UpdatePropertiesRequest) GetProperties() *structpb.Struct {
+func (x *Profile) GetProjectId() string {
 	if x != nil {
-		return x.Properties
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *Profile) GetUpdateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdateTime
 	}
 	return nil
 }
 
-type UpdatePropertiesResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       *Profile               `protobuf:"bytes,1,opt,name=profile" json:"profile,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdatePropertiesResponse) Reset() {
-	*x = UpdatePropertiesResponse{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdatePropertiesResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdatePropertiesResponse) ProtoMessage() {}
-
-func (x *UpdatePropertiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdatePropertiesResponse.ProtoReflect.Descriptor instead.
-func (*UpdatePropertiesResponse) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *UpdatePropertiesResponse) GetProfile() *Profile {
-	if x != nil {
-		return x.Profile
-	}
-	return nil
-}
-
-type UpdateCustomPropertiesRequest struct {
+type SaveRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	AutoProperties   *structpb.Struct       `protobuf:"bytes,1,opt,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty"`
 	CustomProperties *structpb.Struct       `protobuf:"bytes,2,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
+	ExternalId       string                 `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *UpdateCustomPropertiesRequest) Reset() {
-	*x = UpdateCustomPropertiesRequest{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[11]
+func (x *SaveRequest) Reset() {
+	*x = SaveRequest{}
+	mi := &file_profiles_v1_profiles_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateCustomPropertiesRequest) String() string {
+func (x *SaveRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateCustomPropertiesRequest) ProtoMessage() {}
+func (*SaveRequest) ProtoMessage() {}
 
-func (x *UpdateCustomPropertiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[11]
+func (x *SaveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_profiles_v1_profiles_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -604,47 +486,54 @@ func (x *UpdateCustomPropertiesRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateCustomPropertiesRequest.ProtoReflect.Descriptor instead.
-func (*UpdateCustomPropertiesRequest) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{11}
+// Deprecated: Use SaveRequest.ProtoReflect.Descriptor instead.
+func (*SaveRequest) Descriptor() ([]byte, []int) {
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *UpdateCustomPropertiesRequest) GetId() string {
+func (x *SaveRequest) GetAutoProperties() *structpb.Struct {
 	if x != nil {
-		return x.Id
+		return x.AutoProperties
 	}
-	return ""
+	return nil
 }
 
-func (x *UpdateCustomPropertiesRequest) GetCustomProperties() *structpb.Struct {
+func (x *SaveRequest) GetCustomProperties() *structpb.Struct {
 	if x != nil {
 		return x.CustomProperties
 	}
 	return nil
 }
 
-type UpdateCustomPropertiesResponse struct {
+func (x *SaveRequest) GetExternalId() string {
+	if x != nil {
+		return x.ExternalId
+	}
+	return ""
+}
+
+type SaveResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Profile       *Profile               `protobuf:"bytes,1,opt,name=profile" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateCustomPropertiesResponse) Reset() {
-	*x = UpdateCustomPropertiesResponse{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[12]
+func (x *SaveResponse) Reset() {
+	*x = SaveResponse{}
+	mi := &file_profiles_v1_profiles_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateCustomPropertiesResponse) String() string {
+func (x *SaveResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateCustomPropertiesResponse) ProtoMessage() {}
+func (*SaveResponse) ProtoMessage() {}
 
-func (x *UpdateCustomPropertiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[12]
+func (x *SaveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_profiles_v1_profiles_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -655,162 +544,64 @@ func (x *UpdateCustomPropertiesResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateCustomPropertiesResponse.ProtoReflect.Descriptor instead.
-func (*UpdateCustomPropertiesResponse) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{12}
+// Deprecated: Use SaveResponse.ProtoReflect.Descriptor instead.
+func (*SaveResponse) Descriptor() ([]byte, []int) {
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *UpdateCustomPropertiesResponse) GetProfile() *Profile {
+func (x *SaveResponse) GetProfile() *Profile {
 	if x != nil {
 		return x.Profile
 	}
 	return nil
-}
-
-type DeleteRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteRequest) Reset() {
-	*x = DeleteRequest{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteRequest) ProtoMessage() {}
-
-func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteRequest.ProtoReflect.Descriptor instead.
-func (*DeleteRequest) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *DeleteRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type DeleteResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteResponse) Reset() {
-	*x = DeleteResponse{}
-	mi := &file_profiles_v1_profiles_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteResponse) ProtoMessage() {}
-
-func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_profiles_v1_profiles_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
-func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{14}
 }
 
 var File_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\x1aprofiles/v1/profiles.proto\x12\vprofiles.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd2\x02\n" +
-	"\aProfile\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
-	"\vexternal_id\x18\x02 \x01(\tR\n" +
-	"externalId\x12\x1d\n" +
-	"\n" +
-	"project_id\x18\x03 \x01(\tR\tprojectId\x127\n" +
-	"\n" +
-	"properties\x18\x04 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"properties\x12D\n" +
-	"\x11custom_properties\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12;\n" +
-	"\vcreate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\x12;\n" +
-	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\"\x1c\n" +
-	"\n" +
-	"GetRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"=\n" +
-	"\vGetResponse\x12.\n" +
-	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"9\n" +
+	"\x1aprofiles/v1/profiles.proto\x12\vprofiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x1f\n" +
+	"\rDeleteRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x10\n" +
+	"\x0eDeleteResponse\"9\n" +
 	"\x16GetByExternalIdRequest\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +
 	"externalId\"I\n" +
 	"\x17GetByExternalIdResponse\x12.\n" +
+	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"\x1c\n" +
+	"\n" +
+	"GetRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"=\n" +
+	"\vGetResponse\x12.\n" +
 	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"\r\n" +
 	"\vListRequest\"@\n" +
 	"\fListResponse\x120\n" +
-	"\bprofiles\x18\x01 \x03(\v2\x14.profiles.v1.ProfileR\bprofiles\"\xaf\x01\n" +
-	"\rCreateRequest\x12\x1f\n" +
-	"\vexternal_id\x18\x01 \x01(\tR\n" +
-	"externalId\x127\n" +
+	"\bprofiles\x18\x01 \x03(\v2\x14.profiles.v1.ProfileR\bprofiles\"\xdb\x02\n" +
+	"\aProfile\x12@\n" +
+	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12;\n" +
+	"\vcreate_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"createTime\x12D\n" +
+	"\x11custom_properties\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12\x1f\n" +
+	"\vexternal_id\x18\x04 \x01(\tR\n" +
+	"externalId\x12\x0e\n" +
+	"\x02id\x18\x05 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
-	"properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"properties\x12D\n" +
-	"\x11custom_properties\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\"@\n" +
-	"\x0eCreateResponse\x12.\n" +
-	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"b\n" +
-	"\x17UpdatePropertiesRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x127\n" +
-	"\n" +
-	"properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"properties\"J\n" +
-	"\x18UpdatePropertiesResponse\x12.\n" +
-	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"u\n" +
-	"\x1dUpdateCustomPropertiesRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12D\n" +
-	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\"P\n" +
-	"\x1eUpdateCustomPropertiesResponse\x12.\n" +
-	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"\x1f\n" +
-	"\rDeleteRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x10\n" +
-	"\x0eDeleteResponse2\xce\x04\n" +
-	"\x0fProfilesService\x12:\n" +
+	"project_id\x18\x06 \x01(\tR\tprojectId\x12;\n" +
+	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"updateTime\"\xbf\x01\n" +
+	"\vSaveRequest\x12@\n" +
+	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12D\n" +
+	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12(\n" +
+	"\vexternal_id\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
+	"externalId\">\n" +
+	"\fSaveResponse\x12.\n" +
+	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile2\xf0\x02\n" +
+	"\x0fProfilesService\x12C\n" +
+	"\x06Delete\x12\x1a.profiles.v1.DeleteRequest\x1a\x1b.profiles.v1.DeleteResponse\"\x00\x12:\n" +
 	"\x03Get\x12\x17.profiles.v1.GetRequest\x1a\x18.profiles.v1.GetResponse\"\x00\x12^\n" +
 	"\x0fGetByExternalId\x12#.profiles.v1.GetByExternalIdRequest\x1a$.profiles.v1.GetByExternalIdResponse\"\x00\x12=\n" +
-	"\x04List\x12\x18.profiles.v1.ListRequest\x1a\x19.profiles.v1.ListResponse\"\x00\x12C\n" +
-	"\x06Create\x12\x1a.profiles.v1.CreateRequest\x1a\x1b.profiles.v1.CreateResponse\"\x00\x12a\n" +
-	"\x10UpdateProperties\x12$.profiles.v1.UpdatePropertiesRequest\x1a%.profiles.v1.UpdatePropertiesResponse\"\x00\x12s\n" +
-	"\x16UpdateCustomProperties\x12*.profiles.v1.UpdateCustomPropertiesRequest\x1a+.profiles.v1.UpdateCustomPropertiesResponse\"\x00\x12C\n" +
-	"\x06Delete\x12\x1a.profiles.v1.DeleteRequest\x1a\x1b.profiles.v1.DeleteResponse\"\x00BMZFgithub.com/fivebitsio/cotton/internal/gen/proto/profiles/v1;profilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x04List\x12\x18.profiles.v1.ListRequest\x1a\x19.profiles.v1.ListResponse\"\x00\x12=\n" +
+	"\x04Save\x12\x18.profiles.v1.SaveRequest\x1a\x19.profiles.v1.SaveResponse\"\x00BMZFgithub.com/fivebitsio/cotton/internal/gen/proto/profiles/v1;profilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_profiles_v1_profiles_proto_rawDescOnce sync.Once
@@ -824,60 +615,48 @@ func file_profiles_v1_profiles_proto_rawDescGZIP() []byte {
 	return file_profiles_v1_profiles_proto_rawDescData
 }
 
-var file_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_profiles_v1_profiles_proto_goTypes = []any{
-	(*Profile)(nil),                        // 0: profiles.v1.Profile
-	(*GetRequest)(nil),                     // 1: profiles.v1.GetRequest
-	(*GetResponse)(nil),                    // 2: profiles.v1.GetResponse
-	(*GetByExternalIdRequest)(nil),         // 3: profiles.v1.GetByExternalIdRequest
-	(*GetByExternalIdResponse)(nil),        // 4: profiles.v1.GetByExternalIdResponse
-	(*ListRequest)(nil),                    // 5: profiles.v1.ListRequest
-	(*ListResponse)(nil),                   // 6: profiles.v1.ListResponse
-	(*CreateRequest)(nil),                  // 7: profiles.v1.CreateRequest
-	(*CreateResponse)(nil),                 // 8: profiles.v1.CreateResponse
-	(*UpdatePropertiesRequest)(nil),        // 9: profiles.v1.UpdatePropertiesRequest
-	(*UpdatePropertiesResponse)(nil),       // 10: profiles.v1.UpdatePropertiesResponse
-	(*UpdateCustomPropertiesRequest)(nil),  // 11: profiles.v1.UpdateCustomPropertiesRequest
-	(*UpdateCustomPropertiesResponse)(nil), // 12: profiles.v1.UpdateCustomPropertiesResponse
-	(*DeleteRequest)(nil),                  // 13: profiles.v1.DeleteRequest
-	(*DeleteResponse)(nil),                 // 14: profiles.v1.DeleteResponse
-	(*structpb.Struct)(nil),                // 15: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),          // 16: google.protobuf.Timestamp
+	(*DeleteRequest)(nil),           // 0: profiles.v1.DeleteRequest
+	(*DeleteResponse)(nil),          // 1: profiles.v1.DeleteResponse
+	(*GetByExternalIdRequest)(nil),  // 2: profiles.v1.GetByExternalIdRequest
+	(*GetByExternalIdResponse)(nil), // 3: profiles.v1.GetByExternalIdResponse
+	(*GetRequest)(nil),              // 4: profiles.v1.GetRequest
+	(*GetResponse)(nil),             // 5: profiles.v1.GetResponse
+	(*ListRequest)(nil),             // 6: profiles.v1.ListRequest
+	(*ListResponse)(nil),            // 7: profiles.v1.ListResponse
+	(*Profile)(nil),                 // 8: profiles.v1.Profile
+	(*SaveRequest)(nil),             // 9: profiles.v1.SaveRequest
+	(*SaveResponse)(nil),            // 10: profiles.v1.SaveResponse
+	(*structpb.Struct)(nil),         // 11: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),   // 12: google.protobuf.Timestamp
 }
 var file_profiles_v1_profiles_proto_depIdxs = []int32{
-	15, // 0: profiles.v1.Profile.properties:type_name -> google.protobuf.Struct
-	15, // 1: profiles.v1.Profile.custom_properties:type_name -> google.protobuf.Struct
-	16, // 2: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
-	16, // 3: profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
-	0,  // 4: profiles.v1.GetResponse.profile:type_name -> profiles.v1.Profile
-	0,  // 5: profiles.v1.GetByExternalIdResponse.profile:type_name -> profiles.v1.Profile
-	0,  // 6: profiles.v1.ListResponse.profiles:type_name -> profiles.v1.Profile
-	15, // 7: profiles.v1.CreateRequest.properties:type_name -> google.protobuf.Struct
-	15, // 8: profiles.v1.CreateRequest.custom_properties:type_name -> google.protobuf.Struct
-	0,  // 9: profiles.v1.CreateResponse.profile:type_name -> profiles.v1.Profile
-	15, // 10: profiles.v1.UpdatePropertiesRequest.properties:type_name -> google.protobuf.Struct
-	0,  // 11: profiles.v1.UpdatePropertiesResponse.profile:type_name -> profiles.v1.Profile
-	15, // 12: profiles.v1.UpdateCustomPropertiesRequest.custom_properties:type_name -> google.protobuf.Struct
-	0,  // 13: profiles.v1.UpdateCustomPropertiesResponse.profile:type_name -> profiles.v1.Profile
-	1,  // 14: profiles.v1.ProfilesService.Get:input_type -> profiles.v1.GetRequest
-	3,  // 15: profiles.v1.ProfilesService.GetByExternalId:input_type -> profiles.v1.GetByExternalIdRequest
-	5,  // 16: profiles.v1.ProfilesService.List:input_type -> profiles.v1.ListRequest
-	7,  // 17: profiles.v1.ProfilesService.Create:input_type -> profiles.v1.CreateRequest
-	9,  // 18: profiles.v1.ProfilesService.UpdateProperties:input_type -> profiles.v1.UpdatePropertiesRequest
-	11, // 19: profiles.v1.ProfilesService.UpdateCustomProperties:input_type -> profiles.v1.UpdateCustomPropertiesRequest
-	13, // 20: profiles.v1.ProfilesService.Delete:input_type -> profiles.v1.DeleteRequest
-	2,  // 21: profiles.v1.ProfilesService.Get:output_type -> profiles.v1.GetResponse
-	4,  // 22: profiles.v1.ProfilesService.GetByExternalId:output_type -> profiles.v1.GetByExternalIdResponse
-	6,  // 23: profiles.v1.ProfilesService.List:output_type -> profiles.v1.ListResponse
-	8,  // 24: profiles.v1.ProfilesService.Create:output_type -> profiles.v1.CreateResponse
-	10, // 25: profiles.v1.ProfilesService.UpdateProperties:output_type -> profiles.v1.UpdatePropertiesResponse
-	12, // 26: profiles.v1.ProfilesService.UpdateCustomProperties:output_type -> profiles.v1.UpdateCustomPropertiesResponse
-	14, // 27: profiles.v1.ProfilesService.Delete:output_type -> profiles.v1.DeleteResponse
-	21, // [21:28] is the sub-list for method output_type
-	14, // [14:21] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	8,  // 0: profiles.v1.GetByExternalIdResponse.profile:type_name -> profiles.v1.Profile
+	8,  // 1: profiles.v1.GetResponse.profile:type_name -> profiles.v1.Profile
+	8,  // 2: profiles.v1.ListResponse.profiles:type_name -> profiles.v1.Profile
+	11, // 3: profiles.v1.Profile.auto_properties:type_name -> google.protobuf.Struct
+	12, // 4: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
+	11, // 5: profiles.v1.Profile.custom_properties:type_name -> google.protobuf.Struct
+	12, // 6: profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
+	11, // 7: profiles.v1.SaveRequest.auto_properties:type_name -> google.protobuf.Struct
+	11, // 8: profiles.v1.SaveRequest.custom_properties:type_name -> google.protobuf.Struct
+	8,  // 9: profiles.v1.SaveResponse.profile:type_name -> profiles.v1.Profile
+	0,  // 10: profiles.v1.ProfilesService.Delete:input_type -> profiles.v1.DeleteRequest
+	4,  // 11: profiles.v1.ProfilesService.Get:input_type -> profiles.v1.GetRequest
+	2,  // 12: profiles.v1.ProfilesService.GetByExternalId:input_type -> profiles.v1.GetByExternalIdRequest
+	6,  // 13: profiles.v1.ProfilesService.List:input_type -> profiles.v1.ListRequest
+	9,  // 14: profiles.v1.ProfilesService.Save:input_type -> profiles.v1.SaveRequest
+	1,  // 15: profiles.v1.ProfilesService.Delete:output_type -> profiles.v1.DeleteResponse
+	5,  // 16: profiles.v1.ProfilesService.Get:output_type -> profiles.v1.GetResponse
+	3,  // 17: profiles.v1.ProfilesService.GetByExternalId:output_type -> profiles.v1.GetByExternalIdResponse
+	7,  // 18: profiles.v1.ProfilesService.List:output_type -> profiles.v1.ListResponse
+	10, // 19: profiles.v1.ProfilesService.Save:output_type -> profiles.v1.SaveResponse
+	15, // [15:20] is the sub-list for method output_type
+	10, // [10:15] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_profiles_v1_profiles_proto_init() }
@@ -891,7 +670,7 @@ func file_profiles_v1_profiles_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_profiles_v1_profiles_proto_rawDesc), len(file_profiles_v1_profiles_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

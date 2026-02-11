@@ -6,91 +6,76 @@ import "google/protobuf/timestamp.proto";
 option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1;deliveryv1";
 
-// Service definition for delivery tracking
 service DeliveryService {
   rpc RecordEvent(RecordEventRequest) returns (RecordEventResponse);
 }
 
-// Structure of a single delivery event
-message DeliveryEvent {
-  google.protobuf.Timestamp timestamp = 1;
-  EventType event_type = 2;
-  Platform platform = 3;
-  uint64 event_count = 4;
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_CLICKED = 1;
+  EVENT_TYPE_DISMISSED = 2;
+  EVENT_TYPE_FAILED = 3;
+  EVENT_TYPE_RECEIVED = 4;
+  EVENT_TYPE_SENT = 5;
 }
 
-// Platform enum for subscription types
 enum Platform {
   PLATFORM_UNSPECIFIED = 0;
   PLATFORM_ANDROID = 1;
   PLATFORM_IOS = 2;
 }
 
-// Event types for notification delivery tracking
-enum EventType {
-  EVENT_TYPE_UNSPECIFIED = 0;
-  EVENT_TYPE_SENT = 1;
-  EVENT_TYPE_RECEIVED = 2;
-  EVENT_TYPE_FAILED = 3; // FCM delivery failed
-  EVENT_TYPE_CLICKED = 4; // User clicked the notification
-  EVENT_TYPE_DISMISSED = 5; // User dismissed the notification
-}
-
-// Request sent by subscription when notification events occur
-message RecordEventRequest {
-  // Core identifiers
-  string campaign_id = 1;
-  string message_id = 2;
-  string subscription_id = 3;
-  // Event information
-  EventType event_type = 4;
-  Platform platform = 5;
-  // Timing (optional - server can use current time if not provided)
-  google.protobuf.Timestamp event_timestamp = 6;
-  // Additional context (optional)
-  map<string, string> metadata = 7;
-}
-
-// Response sent back to subscription
-message RecordEventResponse {
-  bool success = 1;
-  string message = 2;
-
-  bool should_retry = 3;
-  int32 retry_after_seconds = 4;
-}
-
-/*
-   for messaging
-*/
-message SubscriptionToken {
-  string subscription_id = 1;
-  string token = 2;
+message BatchDeliveryEvents {
+  repeated DeliveryEventMessage events = 1;
 }
 
 message BatchMulticastMessage {
-  repeated SubscriptionToken subscription_tokens = 1;
+  string body = 1;
   string campaign_id = 2;
-  string project_id = 3;
-  string title = 4;
-  string body = 5;
-  string image = 6;
+  string image = 3;
+  string project_id = 4;
+  repeated SubscriptionToken subscription_tokens = 5;
+  string title = 6;
 }
 
 message BatchUnicastMessage {}
 
-// Internal message for NATS delivery event processing
-message DeliveryEventMessage {
-  string project_id = 1;
-  string campaign_id = 2;
-  string message_id = 3;
-  string subscription_id = 4;
-  EventType event_type = 5;
-  Platform platform = 6;
-  google.protobuf.Timestamp event_timestamp = 7;
-  map<string, string> metadata = 8;
+message DeliveryEvent {
+  uint64 event_count = 1;
+  EventType event_type = 2;
+  Platform platform = 3;
+  google.protobuf.Timestamp timestamp = 4;
 }
 
-message BatchDeliveryEvents {
-  repeated DeliveryEventMessage events = 1;
+message DeliveryEventMessage {
+  string campaign_id = 1;
+  google.protobuf.Timestamp event_timestamp = 2;
+  EventType event_type = 3;
+  map<string, string> metadata = 4;
+  string message_id = 5;
+  Platform platform = 6;
+  string project_id = 7;
+  string subscription_id = 8;
+}
+
+message RecordEventRequest {
+  string campaign_id = 1;
+  google.protobuf.Timestamp event_timestamp = 2;
+  EventType event_type = 3;
+  map<string, string> metadata = 4;
+  string message_id = 5;
+  Platform platform = 6;
+  string subscription_id = 7;
+}
+
+message RecordEventResponse {
+  string message = 1;
+  int32 retry_after_seconds = 2;
+  bool should_retry = 3;
+  bool success = 4;
+}
+
+message SubscriptionToken {
+  string subscription_id = 1;
+  string token = 2;
 }

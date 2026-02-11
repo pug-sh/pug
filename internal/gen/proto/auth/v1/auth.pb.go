@@ -22,102 +22,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type SignUpWithEmailRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         string                 `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
-	Password      string                 `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SignUpWithEmailRequest) Reset() {
-	*x = SignUpWithEmailRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SignUpWithEmailRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SignUpWithEmailRequest) ProtoMessage() {}
-
-func (x *SignUpWithEmailRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SignUpWithEmailRequest.ProtoReflect.Descriptor instead.
-func (*SignUpWithEmailRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *SignUpWithEmailRequest) GetEmail() string {
-	if x != nil {
-		return x.Email
-	}
-	return ""
-}
-
-func (x *SignUpWithEmailRequest) GetPassword() string {
-	if x != nil {
-		return x.Password
-	}
-	return ""
-}
-
-type SignUpWithEmailResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SignUpWithEmailResponse) Reset() {
-	*x = SignUpWithEmailResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SignUpWithEmailResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SignUpWithEmailResponse) ProtoMessage() {}
-
-func (x *SignUpWithEmailResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SignUpWithEmailResponse.ProtoReflect.Descriptor instead.
-func (*SignUpWithEmailResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *SignUpWithEmailResponse) GetToken() string {
-	if x != nil {
-		return x.Token
-	}
-	return ""
-}
-
 type SignInWithEmailRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Email         string                 `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
@@ -128,7 +32,7 @@ type SignInWithEmailRequest struct {
 
 func (x *SignInWithEmailRequest) Reset() {
 	*x = SignInWithEmailRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[2]
+	mi := &file_auth_v1_auth_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -140,7 +44,7 @@ func (x *SignInWithEmailRequest) String() string {
 func (*SignInWithEmailRequest) ProtoMessage() {}
 
 func (x *SignInWithEmailRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[2]
+	mi := &file_auth_v1_auth_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -153,7 +57,7 @@ func (x *SignInWithEmailRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignInWithEmailRequest.ProtoReflect.Descriptor instead.
 func (*SignInWithEmailRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{2}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *SignInWithEmailRequest) GetEmail() string {
@@ -179,7 +83,7 @@ type SignInWithEmailResponse struct {
 
 func (x *SignInWithEmailResponse) Reset() {
 	*x = SignInWithEmailResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[3]
+	mi := &file_auth_v1_auth_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -191,7 +95,7 @@ func (x *SignInWithEmailResponse) String() string {
 func (*SignInWithEmailResponse) ProtoMessage() {}
 
 func (x *SignInWithEmailResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[3]
+	mi := &file_auth_v1_auth_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -204,10 +108,106 @@ func (x *SignInWithEmailResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignInWithEmailResponse.ProtoReflect.Descriptor instead.
 func (*SignInWithEmailResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{3}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *SignInWithEmailResponse) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type SignUpWithEmailRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	Password      string                 `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignUpWithEmailRequest) Reset() {
+	*x = SignUpWithEmailRequest{}
+	mi := &file_auth_v1_auth_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignUpWithEmailRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignUpWithEmailRequest) ProtoMessage() {}
+
+func (x *SignUpWithEmailRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignUpWithEmailRequest.ProtoReflect.Descriptor instead.
+func (*SignUpWithEmailRequest) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SignUpWithEmailRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *SignUpWithEmailRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+type SignUpWithEmailResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignUpWithEmailResponse) Reset() {
+	*x = SignUpWithEmailResponse{}
+	mi := &file_auth_v1_auth_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignUpWithEmailResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignUpWithEmailResponse) ProtoMessage() {}
+
+func (x *SignUpWithEmailResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignUpWithEmailResponse.ProtoReflect.Descriptor instead.
+func (*SignUpWithEmailResponse) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SignUpWithEmailResponse) GetToken() string {
 	if x != nil {
 		return x.Token
 	}
@@ -219,19 +219,19 @@ var File_auth_v1_auth_proto protoreflect.FileDescriptor
 const file_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
 	"\x12auth/v1/auth.proto\x12\aauth.v1\x1a\x1bbuf/validate/validate.proto\"\\\n" +
-	"\x16SignUpWithEmailRequest\x12\x1d\n" +
-	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12#\n" +
-	"\bpassword\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bpassword\"/\n" +
-	"\x17SignUpWithEmailResponse\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"\\\n" +
 	"\x16SignInWithEmailRequest\x12\x1d\n" +
 	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12#\n" +
 	"\bpassword\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bpassword\"/\n" +
 	"\x17SignInWithEmailResponse\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"\\\n" +
+	"\x16SignUpWithEmailRequest\x12\x1d\n" +
+	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12#\n" +
+	"\bpassword\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bpassword\"/\n" +
+	"\x17SignUpWithEmailResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token2\xbd\x01\n" +
 	"\vAuthService\x12V\n" +
-	"\x0fSignUpWithEmail\x12\x1f.auth.v1.SignUpWithEmailRequest\x1a .auth.v1.SignUpWithEmailResponse\"\x00\x12V\n" +
-	"\x0fSignInWithEmail\x12\x1f.auth.v1.SignInWithEmailRequest\x1a .auth.v1.SignInWithEmailResponse\"\x00BEZ>github.com/fivebitsio/cotton/internal/gen/proto/auth/v1;authv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x0fSignInWithEmail\x12\x1f.auth.v1.SignInWithEmailRequest\x1a .auth.v1.SignInWithEmailResponse\"\x00\x12V\n" +
+	"\x0fSignUpWithEmail\x12\x1f.auth.v1.SignUpWithEmailRequest\x1a .auth.v1.SignUpWithEmailResponse\"\x00BEZ>github.com/fivebitsio/cotton/internal/gen/proto/auth/v1;authv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_auth_v1_auth_proto_rawDescOnce sync.Once
@@ -247,16 +247,16 @@ func file_auth_v1_auth_proto_rawDescGZIP() []byte {
 
 var file_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_auth_v1_auth_proto_goTypes = []any{
-	(*SignUpWithEmailRequest)(nil),  // 0: auth.v1.SignUpWithEmailRequest
-	(*SignUpWithEmailResponse)(nil), // 1: auth.v1.SignUpWithEmailResponse
-	(*SignInWithEmailRequest)(nil),  // 2: auth.v1.SignInWithEmailRequest
-	(*SignInWithEmailResponse)(nil), // 3: auth.v1.SignInWithEmailResponse
+	(*SignInWithEmailRequest)(nil),  // 0: auth.v1.SignInWithEmailRequest
+	(*SignInWithEmailResponse)(nil), // 1: auth.v1.SignInWithEmailResponse
+	(*SignUpWithEmailRequest)(nil),  // 2: auth.v1.SignUpWithEmailRequest
+	(*SignUpWithEmailResponse)(nil), // 3: auth.v1.SignUpWithEmailResponse
 }
 var file_auth_v1_auth_proto_depIdxs = []int32{
-	0, // 0: auth.v1.AuthService.SignUpWithEmail:input_type -> auth.v1.SignUpWithEmailRequest
-	2, // 1: auth.v1.AuthService.SignInWithEmail:input_type -> auth.v1.SignInWithEmailRequest
-	1, // 2: auth.v1.AuthService.SignUpWithEmail:output_type -> auth.v1.SignUpWithEmailResponse
-	3, // 3: auth.v1.AuthService.SignInWithEmail:output_type -> auth.v1.SignInWithEmailResponse
+	0, // 0: auth.v1.AuthService.SignInWithEmail:input_type -> auth.v1.SignInWithEmailRequest
+	2, // 1: auth.v1.AuthService.SignUpWithEmail:input_type -> auth.v1.SignUpWithEmailRequest
+	1, // 2: auth.v1.AuthService.SignInWithEmail:output_type -> auth.v1.SignInWithEmailResponse
+	3, // 3: auth.v1.AuthService.SignUpWithEmail:output_type -> auth.v1.SignUpWithEmailResponse
 	2, // [2:4] is the sub-list for method output_type
 	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name

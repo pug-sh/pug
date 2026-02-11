@@ -12,9 +12,9 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-insert into projects (api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time)
-values ($1, $2, now(), $3, $4, $5, now())
-returning api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+insert into projects (api_key, customer_id, display_name, fcm_service_json, id)
+values ($1, $2, $3, $4, $5)
+returning api_key, create_time, customer_id, display_name, fcm_service_json, id, update_time
 `
 
 type CreateProjectParams struct {
@@ -36,8 +36,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 	var i Project
 	err := row.Scan(
 		&i.ApiKey,
-		&i.CustomerID,
 		&i.CreateTime,
+		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
@@ -48,9 +48,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 
 const deleteProject = `-- name: DeleteProject :one
 delete from projects
-where customer_id = $1
-    and id = $2
-returning api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+where customer_id = $1 and id = $2
+returning api_key, create_time, customer_id, display_name, fcm_service_json, id, update_time
 `
 
 type DeleteProjectParams struct {
@@ -63,8 +62,8 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (P
 	var i Project
 	err := row.Scan(
 		&i.ApiKey,
-		&i.CustomerID,
 		&i.CreateTime,
+		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
@@ -76,9 +75,8 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (P
 const updateFCMServiceJSON = `-- name: UpdateFCMServiceJSON :one
 update projects
 set fcm_service_json = $1
-where customer_id = $2
-    and id = $3
-returning api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+where customer_id = $2 and id = $3
+returning api_key, create_time, customer_id, display_name, fcm_service_json, id, update_time
 `
 
 type UpdateFCMServiceJSONParams struct {
@@ -92,8 +90,8 @@ func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMService
 	var i Project
 	err := row.Scan(
 		&i.ApiKey,
-		&i.CustomerID,
 		&i.CreateTime,
+		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
@@ -105,9 +103,8 @@ func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMService
 const updateProjectDisplayName = `-- name: UpdateProjectDisplayName :one
 update projects
 set display_name = $1
-where customer_id = $2
-    and id = $3
-returning api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+where customer_id = $2 and id = $3
+returning api_key, create_time, customer_id, display_name, fcm_service_json, id, update_time
 `
 
 type UpdateProjectDisplayNameParams struct {
@@ -121,8 +118,8 @@ func (q *Queries) UpdateProjectDisplayName(ctx context.Context, arg UpdateProjec
 	var i Project
 	err := row.Scan(
 		&i.ApiKey,
-		&i.CustomerID,
 		&i.CreateTime,
+		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,

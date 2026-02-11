@@ -33,18 +33,18 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// AuthServiceSignUpWithEmailProcedure is the fully-qualified name of the AuthService's
-	// SignUpWithEmail RPC.
-	AuthServiceSignUpWithEmailProcedure = "/auth.v1.AuthService/SignUpWithEmail"
 	// AuthServiceSignInWithEmailProcedure is the fully-qualified name of the AuthService's
 	// SignInWithEmail RPC.
 	AuthServiceSignInWithEmailProcedure = "/auth.v1.AuthService/SignInWithEmail"
+	// AuthServiceSignUpWithEmailProcedure is the fully-qualified name of the AuthService's
+	// SignUpWithEmail RPC.
+	AuthServiceSignUpWithEmailProcedure = "/auth.v1.AuthService/SignUpWithEmail"
 )
 
 // AuthServiceClient is a client for the auth.v1.AuthService service.
 type AuthServiceClient interface {
-	SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error)
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
+	SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error)
 }
 
 // NewAuthServiceClient constructs a client for the auth.v1.AuthService service. By default, it uses
@@ -58,16 +58,16 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 	baseURL = strings.TrimRight(baseURL, "/")
 	authServiceMethods := v1.File_auth_v1_auth_proto.Services().ByName("AuthService").Methods()
 	return &authServiceClient{
-		signUpWithEmail: connect.NewClient[v1.SignUpWithEmailRequest, v1.SignUpWithEmailResponse](
-			httpClient,
-			baseURL+AuthServiceSignUpWithEmailProcedure,
-			connect.WithSchema(authServiceMethods.ByName("SignUpWithEmail")),
-			connect.WithClientOptions(opts...),
-		),
 		signInWithEmail: connect.NewClient[v1.SignInWithEmailRequest, v1.SignInWithEmailResponse](
 			httpClient,
 			baseURL+AuthServiceSignInWithEmailProcedure,
 			connect.WithSchema(authServiceMethods.ByName("SignInWithEmail")),
+			connect.WithClientOptions(opts...),
+		),
+		signUpWithEmail: connect.NewClient[v1.SignUpWithEmailRequest, v1.SignUpWithEmailResponse](
+			httpClient,
+			baseURL+AuthServiceSignUpWithEmailProcedure,
+			connect.WithSchema(authServiceMethods.ByName("SignUpWithEmail")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -75,13 +75,8 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // authServiceClient implements AuthServiceClient.
 type authServiceClient struct {
-	signUpWithEmail *connect.Client[v1.SignUpWithEmailRequest, v1.SignUpWithEmailResponse]
 	signInWithEmail *connect.Client[v1.SignInWithEmailRequest, v1.SignInWithEmailResponse]
-}
-
-// SignUpWithEmail calls auth.v1.AuthService.SignUpWithEmail.
-func (c *authServiceClient) SignUpWithEmail(ctx context.Context, req *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error) {
-	return c.signUpWithEmail.CallUnary(ctx, req)
+	signUpWithEmail *connect.Client[v1.SignUpWithEmailRequest, v1.SignUpWithEmailResponse]
 }
 
 // SignInWithEmail calls auth.v1.AuthService.SignInWithEmail.
@@ -89,10 +84,15 @@ func (c *authServiceClient) SignInWithEmail(ctx context.Context, req *connect.Re
 	return c.signInWithEmail.CallUnary(ctx, req)
 }
 
+// SignUpWithEmail calls auth.v1.AuthService.SignUpWithEmail.
+func (c *authServiceClient) SignUpWithEmail(ctx context.Context, req *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error) {
+	return c.signUpWithEmail.CallUnary(ctx, req)
+}
+
 // AuthServiceHandler is an implementation of the auth.v1.AuthService service.
 type AuthServiceHandler interface {
-	SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error)
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
+	SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error)
 }
 
 // NewAuthServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -102,24 +102,24 @@ type AuthServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	authServiceMethods := v1.File_auth_v1_auth_proto.Services().ByName("AuthService").Methods()
-	authServiceSignUpWithEmailHandler := connect.NewUnaryHandler(
-		AuthServiceSignUpWithEmailProcedure,
-		svc.SignUpWithEmail,
-		connect.WithSchema(authServiceMethods.ByName("SignUpWithEmail")),
-		connect.WithHandlerOptions(opts...),
-	)
 	authServiceSignInWithEmailHandler := connect.NewUnaryHandler(
 		AuthServiceSignInWithEmailProcedure,
 		svc.SignInWithEmail,
 		connect.WithSchema(authServiceMethods.ByName("SignInWithEmail")),
 		connect.WithHandlerOptions(opts...),
 	)
+	authServiceSignUpWithEmailHandler := connect.NewUnaryHandler(
+		AuthServiceSignUpWithEmailProcedure,
+		svc.SignUpWithEmail,
+		connect.WithSchema(authServiceMethods.ByName("SignUpWithEmail")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/auth.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case AuthServiceSignUpWithEmailProcedure:
-			authServiceSignUpWithEmailHandler.ServeHTTP(w, r)
 		case AuthServiceSignInWithEmailProcedure:
 			authServiceSignInWithEmailHandler.ServeHTTP(w, r)
+		case AuthServiceSignUpWithEmailProcedure:
+			authServiceSignUpWithEmailHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -129,10 +129,10 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 // UnimplementedAuthServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedAuthServiceHandler struct{}
 
-func (UnimplementedAuthServiceHandler) SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("auth.v1.AuthService.SignUpWithEmail is not implemented"))
-}
-
 func (UnimplementedAuthServiceHandler) SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("auth.v1.AuthService.SignInWithEmail is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("auth.v1.AuthService.SignUpWithEmail is not implemented"))
 }

@@ -10,7 +10,7 @@ import (
 )
 
 const getProfileByIDAndProjectID = `-- name: GetProfileByIDAndProjectID :one
-select create_time, external_id, id, properties, custom_properties, project_id, update_time from profiles
+select auto_properties, create_time, custom_properties, external_id, id, project_id, update_time from profiles
 where id = $1 and project_id = $2
 `
 
@@ -23,11 +23,11 @@ func (q *Queries) GetProfileByIDAndProjectID(ctx context.Context, arg GetProfile
 	row := q.db.QueryRow(ctx, getProfileByIDAndProjectID, arg.ID, arg.ProjectID)
 	var i Profile
 	err := row.Scan(
+		&i.AutoProperties,
 		&i.CreateTime,
+		&i.CustomProperties,
 		&i.ExternalID,
 		&i.ID,
-		&i.Properties,
-		&i.CustomProperties,
 		&i.ProjectID,
 		&i.UpdateTime,
 	)
@@ -35,7 +35,7 @@ func (q *Queries) GetProfileByIDAndProjectID(ctx context.Context, arg GetProfile
 }
 
 const getProfileByProjectAndExternalID = `-- name: GetProfileByProjectAndExternalID :one
-select create_time, external_id, id, properties, custom_properties, project_id, update_time from profiles
+select auto_properties, create_time, custom_properties, external_id, id, project_id, update_time from profiles
 where project_id = $1 and external_id = $2 limit 1
 `
 
@@ -48,11 +48,11 @@ func (q *Queries) GetProfileByProjectAndExternalID(ctx context.Context, arg GetP
 	row := q.db.QueryRow(ctx, getProfileByProjectAndExternalID, arg.ProjectID, arg.ExternalID)
 	var i Profile
 	err := row.Scan(
+		&i.AutoProperties,
 		&i.CreateTime,
+		&i.CustomProperties,
 		&i.ExternalID,
 		&i.ID,
-		&i.Properties,
-		&i.CustomProperties,
 		&i.ProjectID,
 		&i.UpdateTime,
 	)
@@ -60,7 +60,7 @@ func (q *Queries) GetProfileByProjectAndExternalID(ctx context.Context, arg GetP
 }
 
 const getProfilesByProjectID = `-- name: GetProfilesByProjectID :many
-select create_time, external_id, id, properties, custom_properties, project_id, update_time from profiles
+select auto_properties, create_time, custom_properties, external_id, id, project_id, update_time from profiles
 where project_id = $1
 `
 
@@ -74,11 +74,11 @@ func (q *Queries) GetProfilesByProjectID(ctx context.Context, projectID string) 
 	for rows.Next() {
 		var i Profile
 		if err := rows.Scan(
+			&i.AutoProperties,
 			&i.CreateTime,
+			&i.CustomProperties,
 			&i.ExternalID,
 			&i.ID,
-			&i.Properties,
-			&i.CustomProperties,
 			&i.ProjectID,
 			&i.UpdateTime,
 		); err != nil {

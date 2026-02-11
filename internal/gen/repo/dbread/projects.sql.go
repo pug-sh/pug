@@ -10,7 +10,7 @@ import (
 )
 
 const getProjectAndCustomerByApiKey = `-- name: GetProjectAndCustomerByApiKey :one
-select projects.api_key, projects.customer_id, projects.create_time, projects.display_name, projects.fcm_service_json, projects.id, projects.update_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.create_time, customers.update_time
+select projects.api_key, projects.create_time, projects.customer_id, projects.display_name, projects.fcm_service_json, projects.id, projects.update_time, customers.create_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.update_time
 from projects
 join customers on customers.id = projects.customer_id
 where projects.api_key = $1
@@ -26,25 +26,25 @@ func (q *Queries) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey stri
 	var i GetProjectAndCustomerByApiKeyRow
 	err := row.Scan(
 		&i.Project.ApiKey,
-		&i.Project.CustomerID,
 		&i.Project.CreateTime,
+		&i.Project.CustomerID,
 		&i.Project.DisplayName,
 		&i.Project.FcmServiceJson,
 		&i.Project.ID,
 		&i.Project.UpdateTime,
+		&i.Customer.CreateTime,
 		&i.Customer.DisplayName,
 		&i.Customer.Email,
 		&i.Customer.ID,
 		&i.Customer.PasswordHash,
 		&i.Customer.PictureUri,
-		&i.Customer.CreateTime,
 		&i.Customer.UpdateTime,
 	)
 	return i, err
 }
 
 const getProjectByID = `-- name: GetProjectByID :one
-select api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+select api_key, create_time, customer_id, display_name, fcm_service_json, id, update_time
 from projects
 where id = $1
 `
@@ -54,8 +54,8 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 	var i Project
 	err := row.Scan(
 		&i.ApiKey,
-		&i.CustomerID,
 		&i.CreateTime,
+		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
@@ -65,7 +65,7 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 }
 
 const getProjectByIDAndCustomerID = `-- name: GetProjectByIDAndCustomerID :one
-select api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time from projects where id = $1 and customer_id = $2
+select api_key, create_time, customer_id, display_name, fcm_service_json, id, update_time from projects where id = $1 and customer_id = $2
 `
 
 type GetProjectByIDAndCustomerIDParams struct {
@@ -78,8 +78,8 @@ func (q *Queries) GetProjectByIDAndCustomerID(ctx context.Context, arg GetProjec
 	var i Project
 	err := row.Scan(
 		&i.ApiKey,
-		&i.CustomerID,
 		&i.CreateTime,
+		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
@@ -89,7 +89,7 @@ func (q *Queries) GetProjectByIDAndCustomerID(ctx context.Context, arg GetProjec
 }
 
 const getProjectsByCustomerID = `-- name: GetProjectsByCustomerID :many
-select api_key, customer_id, create_time, display_name, fcm_service_json, id, update_time
+select api_key, create_time, customer_id, display_name, fcm_service_json, id, update_time
 from projects
 where customer_id = $1
 `
@@ -105,8 +105,8 @@ func (q *Queries) GetProjectsByCustomerID(ctx context.Context, customerID string
 		var i Project
 		if err := rows.Scan(
 			&i.ApiKey,
-			&i.CustomerID,
 			&i.CreateTime,
+			&i.CustomerID,
 			&i.DisplayName,
 			&i.FcmServiceJson,
 			&i.ID,

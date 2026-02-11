@@ -33,8 +33,6 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// ProjectsServiceGetProcedure is the fully-qualified name of the ProjectsService's Get RPC.
-	ProjectsServiceGetProcedure = "/projects.v1.ProjectsService/Get"
 	// ProjectsServiceBatchGetProcedure is the fully-qualified name of the ProjectsService's BatchGet
 	// RPC.
 	ProjectsServiceBatchGetProcedure = "/projects.v1.ProjectsService/BatchGet"
@@ -42,6 +40,8 @@ const (
 	ProjectsServiceCreateProcedure = "/projects.v1.ProjectsService/Create"
 	// ProjectsServiceDeleteProcedure is the fully-qualified name of the ProjectsService's Delete RPC.
 	ProjectsServiceDeleteProcedure = "/projects.v1.ProjectsService/Delete"
+	// ProjectsServiceGetProcedure is the fully-qualified name of the ProjectsService's Get RPC.
+	ProjectsServiceGetProcedure = "/projects.v1.ProjectsService/Get"
 	// ProjectsServiceUpdateDisplayNameProcedure is the fully-qualified name of the ProjectsService's
 	// UpdateDisplayName RPC.
 	ProjectsServiceUpdateDisplayNameProcedure = "/projects.v1.ProjectsService/UpdateDisplayName"
@@ -52,10 +52,10 @@ const (
 
 // ProjectsServiceClient is a client for the projects.v1.ProjectsService service.
 type ProjectsServiceClient interface {
-	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	BatchGet(context.Context, *connect.Request[v1.BatchGetRequest]) (*connect.Response[v1.BatchGetResponse], error)
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
+	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	UpdateDisplayName(context.Context, *connect.Request[v1.UpdateDisplayNameRequest]) (*connect.Response[v1.UpdateDisplayNameResponse], error)
 	UpdateFCMServiceJSON(context.Context, *connect.Request[v1.UpdateFCMServiceJSONRequest]) (*connect.Response[v1.UpdateFCMServiceJSONResponse], error)
 }
@@ -71,12 +71,6 @@ func NewProjectsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 	baseURL = strings.TrimRight(baseURL, "/")
 	projectsServiceMethods := v1.File_projects_v1_projects_proto.Services().ByName("ProjectsService").Methods()
 	return &projectsServiceClient{
-		get: connect.NewClient[v1.GetRequest, v1.GetResponse](
-			httpClient,
-			baseURL+ProjectsServiceGetProcedure,
-			connect.WithSchema(projectsServiceMethods.ByName("Get")),
-			connect.WithClientOptions(opts...),
-		),
 		batchGet: connect.NewClient[v1.BatchGetRequest, v1.BatchGetResponse](
 			httpClient,
 			baseURL+ProjectsServiceBatchGetProcedure,
@@ -93,6 +87,12 @@ func NewProjectsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+ProjectsServiceDeleteProcedure,
 			connect.WithSchema(projectsServiceMethods.ByName("Delete")),
+			connect.WithClientOptions(opts...),
+		),
+		get: connect.NewClient[v1.GetRequest, v1.GetResponse](
+			httpClient,
+			baseURL+ProjectsServiceGetProcedure,
+			connect.WithSchema(projectsServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
 		updateDisplayName: connect.NewClient[v1.UpdateDisplayNameRequest, v1.UpdateDisplayNameResponse](
@@ -112,17 +112,12 @@ func NewProjectsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // projectsServiceClient implements ProjectsServiceClient.
 type projectsServiceClient struct {
-	get                  *connect.Client[v1.GetRequest, v1.GetResponse]
 	batchGet             *connect.Client[v1.BatchGetRequest, v1.BatchGetResponse]
 	create               *connect.Client[v1.CreateRequest, v1.CreateResponse]
 	delete               *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
+	get                  *connect.Client[v1.GetRequest, v1.GetResponse]
 	updateDisplayName    *connect.Client[v1.UpdateDisplayNameRequest, v1.UpdateDisplayNameResponse]
 	updateFCMServiceJSON *connect.Client[v1.UpdateFCMServiceJSONRequest, v1.UpdateFCMServiceJSONResponse]
-}
-
-// Get calls projects.v1.ProjectsService.Get.
-func (c *projectsServiceClient) Get(ctx context.Context, req *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
-	return c.get.CallUnary(ctx, req)
 }
 
 // BatchGet calls projects.v1.ProjectsService.BatchGet.
@@ -140,6 +135,11 @@ func (c *projectsServiceClient) Delete(ctx context.Context, req *connect.Request
 	return c.delete.CallUnary(ctx, req)
 }
 
+// Get calls projects.v1.ProjectsService.Get.
+func (c *projectsServiceClient) Get(ctx context.Context, req *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
+	return c.get.CallUnary(ctx, req)
+}
+
 // UpdateDisplayName calls projects.v1.ProjectsService.UpdateDisplayName.
 func (c *projectsServiceClient) UpdateDisplayName(ctx context.Context, req *connect.Request[v1.UpdateDisplayNameRequest]) (*connect.Response[v1.UpdateDisplayNameResponse], error) {
 	return c.updateDisplayName.CallUnary(ctx, req)
@@ -152,10 +152,10 @@ func (c *projectsServiceClient) UpdateFCMServiceJSON(ctx context.Context, req *c
 
 // ProjectsServiceHandler is an implementation of the projects.v1.ProjectsService service.
 type ProjectsServiceHandler interface {
-	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	BatchGet(context.Context, *connect.Request[v1.BatchGetRequest]) (*connect.Response[v1.BatchGetResponse], error)
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
+	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	UpdateDisplayName(context.Context, *connect.Request[v1.UpdateDisplayNameRequest]) (*connect.Response[v1.UpdateDisplayNameResponse], error)
 	UpdateFCMServiceJSON(context.Context, *connect.Request[v1.UpdateFCMServiceJSONRequest]) (*connect.Response[v1.UpdateFCMServiceJSONResponse], error)
 }
@@ -167,12 +167,6 @@ type ProjectsServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewProjectsServiceHandler(svc ProjectsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	projectsServiceMethods := v1.File_projects_v1_projects_proto.Services().ByName("ProjectsService").Methods()
-	projectsServiceGetHandler := connect.NewUnaryHandler(
-		ProjectsServiceGetProcedure,
-		svc.Get,
-		connect.WithSchema(projectsServiceMethods.ByName("Get")),
-		connect.WithHandlerOptions(opts...),
-	)
 	projectsServiceBatchGetHandler := connect.NewUnaryHandler(
 		ProjectsServiceBatchGetProcedure,
 		svc.BatchGet,
@@ -191,6 +185,12 @@ func NewProjectsServiceHandler(svc ProjectsServiceHandler, opts ...connect.Handl
 		connect.WithSchema(projectsServiceMethods.ByName("Delete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectsServiceGetHandler := connect.NewUnaryHandler(
+		ProjectsServiceGetProcedure,
+		svc.Get,
+		connect.WithSchema(projectsServiceMethods.ByName("Get")),
+		connect.WithHandlerOptions(opts...),
+	)
 	projectsServiceUpdateDisplayNameHandler := connect.NewUnaryHandler(
 		ProjectsServiceUpdateDisplayNameProcedure,
 		svc.UpdateDisplayName,
@@ -205,14 +205,14 @@ func NewProjectsServiceHandler(svc ProjectsServiceHandler, opts ...connect.Handl
 	)
 	return "/projects.v1.ProjectsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case ProjectsServiceGetProcedure:
-			projectsServiceGetHandler.ServeHTTP(w, r)
 		case ProjectsServiceBatchGetProcedure:
 			projectsServiceBatchGetHandler.ServeHTTP(w, r)
 		case ProjectsServiceCreateProcedure:
 			projectsServiceCreateHandler.ServeHTTP(w, r)
 		case ProjectsServiceDeleteProcedure:
 			projectsServiceDeleteHandler.ServeHTTP(w, r)
+		case ProjectsServiceGetProcedure:
+			projectsServiceGetHandler.ServeHTTP(w, r)
 		case ProjectsServiceUpdateDisplayNameProcedure:
 			projectsServiceUpdateDisplayNameHandler.ServeHTTP(w, r)
 		case ProjectsServiceUpdateFCMServiceJSONProcedure:
@@ -226,10 +226,6 @@ func NewProjectsServiceHandler(svc ProjectsServiceHandler, opts ...connect.Handl
 // UnimplementedProjectsServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedProjectsServiceHandler struct{}
 
-func (UnimplementedProjectsServiceHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("projects.v1.ProjectsService.Get is not implemented"))
-}
-
 func (UnimplementedProjectsServiceHandler) BatchGet(context.Context, *connect.Request[v1.BatchGetRequest]) (*connect.Response[v1.BatchGetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("projects.v1.ProjectsService.BatchGet is not implemented"))
 }
@@ -240,6 +236,10 @@ func (UnimplementedProjectsServiceHandler) Create(context.Context, *connect.Requ
 
 func (UnimplementedProjectsServiceHandler) Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("projects.v1.ProjectsService.Delete is not implemented"))
+}
+
+func (UnimplementedProjectsServiceHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("projects.v1.ProjectsService.Get is not implemented"))
 }
 
 func (UnimplementedProjectsServiceHandler) UpdateDisplayName(context.Context, *connect.Request[v1.UpdateDisplayNameRequest]) (*connect.Response[v1.UpdateDisplayNameResponse], error) {

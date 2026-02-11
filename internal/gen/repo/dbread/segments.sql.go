@@ -10,7 +10,7 @@ import (
 )
 
 const getActiveSegments = `-- name: GetActiveSegments :many
-SELECT id, project_id, name, description, filter, is_active, create_time, update_time FROM segments
+SELECT create_time, description, filter, id, is_active, display_name, project_id, update_time FROM segments
 WHERE project_id = $1 AND is_active = true
 `
 
@@ -24,13 +24,13 @@ func (q *Queries) GetActiveSegments(ctx context.Context, projectID string) ([]Se
 	for rows.Next() {
 		var i Segment
 		if err := rows.Scan(
-			&i.ID,
-			&i.ProjectID,
-			&i.Name,
+			&i.CreateTime,
 			&i.Description,
 			&i.Filter,
+			&i.ID,
 			&i.IsActive,
-			&i.CreateTime,
+			&i.DisplayName,
+			&i.ProjectID,
 			&i.UpdateTime,
 		); err != nil {
 			return nil, err
@@ -44,7 +44,7 @@ func (q *Queries) GetActiveSegments(ctx context.Context, projectID string) ([]Se
 }
 
 const getSegment = `-- name: GetSegment :one
-SELECT id, project_id, name, description, filter, is_active, create_time, update_time FROM segments
+SELECT create_time, description, filter, id, is_active, display_name, project_id, update_time FROM segments
 WHERE id = $1
 `
 
@@ -52,13 +52,13 @@ func (q *Queries) GetSegment(ctx context.Context, id string) (Segment, error) {
 	row := q.db.QueryRow(ctx, getSegment, id)
 	var i Segment
 	err := row.Scan(
-		&i.ID,
-		&i.ProjectID,
-		&i.Name,
+		&i.CreateTime,
 		&i.Description,
 		&i.Filter,
+		&i.ID,
 		&i.IsActive,
-		&i.CreateTime,
+		&i.DisplayName,
+		&i.ProjectID,
 		&i.UpdateTime,
 	)
 	return i, err
@@ -77,7 +77,7 @@ func (q *Queries) GetSegmentCountByProject(ctx context.Context, projectID string
 }
 
 const getSegmentsByProject = `-- name: GetSegmentsByProject :many
-SELECT id, project_id, name, description, filter, is_active, create_time, update_time FROM segments
+SELECT create_time, description, filter, id, is_active, display_name, project_id, update_time FROM segments
 WHERE project_id = $1
 ORDER BY create_time DESC
 LIMIT $2 OFFSET $3
@@ -99,13 +99,13 @@ func (q *Queries) GetSegmentsByProject(ctx context.Context, arg GetSegmentsByPro
 	for rows.Next() {
 		var i Segment
 		if err := rows.Scan(
-			&i.ID,
-			&i.ProjectID,
-			&i.Name,
+			&i.CreateTime,
 			&i.Description,
 			&i.Filter,
+			&i.ID,
 			&i.IsActive,
-			&i.CreateTime,
+			&i.DisplayName,
+			&i.ProjectID,
 			&i.UpdateTime,
 		); err != nil {
 			return nil, err

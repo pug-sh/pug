@@ -26,33 +26,33 @@ type SubscriptionOperationType int32
 
 const (
 	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED      SubscriptionOperationType = 0
-	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPSERT           SubscriptionOperationType = 1
+	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK     SubscriptionOperationType = 1
 	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_HEARTBEAT SubscriptionOperationType = 2
 	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA  SubscriptionOperationType = 3
 	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS    SubscriptionOperationType = 4
 	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN     SubscriptionOperationType = 5
-	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK     SubscriptionOperationType = 6
+	SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UPSERT           SubscriptionOperationType = 6
 )
 
 // Enum value maps for SubscriptionOperationType.
 var (
 	SubscriptionOperationType_name = map[int32]string{
 		0: "SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED",
-		1: "SUBSCRIPTION_OPERATION_TYPE_UPSERT",
+		1: "SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK",
 		2: "SUBSCRIPTION_OPERATION_TYPE_UPDATE_HEARTBEAT",
 		3: "SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA",
 		4: "SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS",
 		5: "SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN",
-		6: "SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK",
+		6: "SUBSCRIPTION_OPERATION_TYPE_UPSERT",
 	}
 	SubscriptionOperationType_value = map[string]int32{
 		"SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED":      0,
-		"SUBSCRIPTION_OPERATION_TYPE_UPSERT":           1,
+		"SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK":     1,
 		"SUBSCRIPTION_OPERATION_TYPE_UPDATE_HEARTBEAT": 2,
 		"SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA":  3,
 		"SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS":    4,
 		"SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN":     5,
-		"SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK":     6,
+		"SUBSCRIPTION_OPERATION_TYPE_UPSERT":           6,
 	}
 )
 
@@ -83,7 +83,682 @@ func (SubscriptionOperationType) EnumDescriptor() ([]byte, []int) {
 	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{0}
 }
 
-// include token in header
+type RegisterSubscriptionRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Metadata       map[string]*anypb.Any  `protobuf:"bytes,1,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Platform       string                 `protobuf:"bytes,2,opt,name=platform" json:"platform,omitempty"`
+	SubscriptionId string                 `protobuf:"bytes,3,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
+	Token          string                 `protobuf:"bytes,4,opt,name=token" json:"token,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RegisterSubscriptionRequest) Reset() {
+	*x = RegisterSubscriptionRequest{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterSubscriptionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterSubscriptionRequest) ProtoMessage() {}
+
+func (x *RegisterSubscriptionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterSubscriptionRequest.ProtoReflect.Descriptor instead.
+func (*RegisterSubscriptionRequest) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *RegisterSubscriptionRequest) GetMetadata() map[string]*anypb.Any {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *RegisterSubscriptionRequest) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
+}
+
+func (x *RegisterSubscriptionRequest) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
+func (x *RegisterSubscriptionRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type RegisterSubscriptionResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
+	Success        bool                   `protobuf:"varint,2,opt,name=success" json:"success,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RegisterSubscriptionResponse) Reset() {
+	*x = RegisterSubscriptionResponse{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterSubscriptionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterSubscriptionResponse) ProtoMessage() {}
+
+func (x *RegisterSubscriptionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterSubscriptionResponse.ProtoReflect.Descriptor instead.
+func (*RegisterSubscriptionResponse) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *RegisterSubscriptionResponse) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
+func (x *RegisterSubscriptionResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+type SetProfileExternalIDRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ExternalId      string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ProfileMetadata map[string]*anypb.Any  `protobuf:"bytes,2,rep,name=profile_metadata,json=profileMetadata" json:"profile_metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	SubscriptionId  string                 `protobuf:"bytes,3,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SetProfileExternalIDRequest) Reset() {
+	*x = SetProfileExternalIDRequest{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetProfileExternalIDRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetProfileExternalIDRequest) ProtoMessage() {}
+
+func (x *SetProfileExternalIDRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetProfileExternalIDRequest.ProtoReflect.Descriptor instead.
+func (*SetProfileExternalIDRequest) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SetProfileExternalIDRequest) GetExternalId() string {
+	if x != nil {
+		return x.ExternalId
+	}
+	return ""
+}
+
+func (x *SetProfileExternalIDRequest) GetProfileMetadata() map[string]*anypb.Any {
+	if x != nil {
+		return x.ProfileMetadata
+	}
+	return nil
+}
+
+func (x *SetProfileExternalIDRequest) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
+type SetProfileExternalIDResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetProfileExternalIDResponse) Reset() {
+	*x = SetProfileExternalIDResponse{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetProfileExternalIDResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetProfileExternalIDResponse) ProtoMessage() {}
+
+func (x *SetProfileExternalIDResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetProfileExternalIDResponse.ProtoReflect.Descriptor instead.
+func (*SetProfileExternalIDResponse) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{3}
+}
+
+type SubscriptionOperationMessage struct {
+	state           protoimpl.MessageState    `protogen:"open.v1"`
+	ExternalId      string                    `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	Id              string                    `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
+	Metadata        map[string]*anypb.Any     `protobuf:"bytes,3,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	OperationType   SubscriptionOperationType `protobuf:"varint,4,opt,name=operation_type,json=operationType,enum=subscriptions.v1.SubscriptionOperationType" json:"operation_type,omitempty"`
+	Platform        string                    `protobuf:"bytes,5,opt,name=platform" json:"platform,omitempty"`
+	ProfileMetadata map[string]*anypb.Any     `protobuf:"bytes,6,rep,name=profile_metadata,json=profileMetadata" json:"profile_metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ProjectId       string                    `protobuf:"bytes,7,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	Status          string                    `protobuf:"bytes,8,opt,name=status" json:"status,omitempty"`
+	SubscriptionId  string                    `protobuf:"bytes,9,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
+	Token           string                    `protobuf:"bytes,10,opt,name=token" json:"token,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SubscriptionOperationMessage) Reset() {
+	*x = SubscriptionOperationMessage{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionOperationMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionOperationMessage) ProtoMessage() {}
+
+func (x *SubscriptionOperationMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionOperationMessage.ProtoReflect.Descriptor instead.
+func (*SubscriptionOperationMessage) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *SubscriptionOperationMessage) GetExternalId() string {
+	if x != nil {
+		return x.ExternalId
+	}
+	return ""
+}
+
+func (x *SubscriptionOperationMessage) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SubscriptionOperationMessage) GetMetadata() map[string]*anypb.Any {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *SubscriptionOperationMessage) GetOperationType() SubscriptionOperationType {
+	if x != nil {
+		return x.OperationType
+	}
+	return SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED
+}
+
+func (x *SubscriptionOperationMessage) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
+}
+
+func (x *SubscriptionOperationMessage) GetProfileMetadata() map[string]*anypb.Any {
+	if x != nil {
+		return x.ProfileMetadata
+	}
+	return nil
+}
+
+func (x *SubscriptionOperationMessage) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *SubscriptionOperationMessage) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *SubscriptionOperationMessage) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
+func (x *SubscriptionOperationMessage) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type UpdateHeartbeatRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateHeartbeatRequest) Reset() {
+	*x = UpdateHeartbeatRequest{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateHeartbeatRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateHeartbeatRequest) ProtoMessage() {}
+
+func (x *UpdateHeartbeatRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateHeartbeatRequest.ProtoReflect.Descriptor instead.
+func (*UpdateHeartbeatRequest) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *UpdateHeartbeatRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type UpdateHeartbeatResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateHeartbeatResponse) Reset() {
+	*x = UpdateHeartbeatResponse{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateHeartbeatResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateHeartbeatResponse) ProtoMessage() {}
+
+func (x *UpdateHeartbeatResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateHeartbeatResponse.ProtoReflect.Descriptor instead.
+func (*UpdateHeartbeatResponse) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{6}
+}
+
+type UpdateMetadataRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Metadata      map[string]*anypb.Any  `protobuf:"bytes,2,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateMetadataRequest) Reset() {
+	*x = UpdateMetadataRequest{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateMetadataRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateMetadataRequest) ProtoMessage() {}
+
+func (x *UpdateMetadataRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateMetadataRequest.ProtoReflect.Descriptor instead.
+func (*UpdateMetadataRequest) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *UpdateMetadataRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdateMetadataRequest) GetMetadata() map[string]*anypb.Any {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type UpdateMetadataResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateMetadataResponse) Reset() {
+	*x = UpdateMetadataResponse{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateMetadataResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateMetadataResponse) ProtoMessage() {}
+
+func (x *UpdateMetadataResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateMetadataResponse.ProtoReflect.Descriptor instead.
+func (*UpdateMetadataResponse) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{8}
+}
+
+type UpdateStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateStatusRequest) Reset() {
+	*x = UpdateStatusRequest{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateStatusRequest) ProtoMessage() {}
+
+func (x *UpdateStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateStatusRequest.ProtoReflect.Descriptor instead.
+func (*UpdateStatusRequest) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *UpdateStatusRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdateStatusRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type UpdateStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateStatusResponse) Reset() {
+	*x = UpdateStatusResponse{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateStatusResponse) ProtoMessage() {}
+
+func (x *UpdateStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateStatusResponse.ProtoReflect.Descriptor instead.
+func (*UpdateStatusResponse) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{10}
+}
+
+type UpdateTokenRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Token         string                 `protobuf:"bytes,2,opt,name=token" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateTokenRequest) Reset() {
+	*x = UpdateTokenRequest{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateTokenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTokenRequest) ProtoMessage() {}
+
+func (x *UpdateTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTokenRequest.ProtoReflect.Descriptor instead.
+func (*UpdateTokenRequest) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UpdateTokenRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdateTokenRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type UpdateTokenResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateTokenResponse) Reset() {
+	*x = UpdateTokenResponse{}
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateTokenResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTokenResponse) ProtoMessage() {}
+
+func (x *UpdateTokenResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTokenResponse.ProtoReflect.Descriptor instead.
+func (*UpdateTokenResponse) Descriptor() ([]byte, []int) {
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{12}
+}
+
 type UpsertRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
@@ -96,7 +771,7 @@ type UpsertRequest struct {
 
 func (x *UpsertRequest) Reset() {
 	*x = UpsertRequest{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[0]
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -108,7 +783,7 @@ func (x *UpsertRequest) String() string {
 func (*UpsertRequest) ProtoMessage() {}
 
 func (x *UpsertRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[0]
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -121,7 +796,7 @@ func (x *UpsertRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertRequest.ProtoReflect.Descriptor instead.
 func (*UpsertRequest) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{0}
+	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UpsertRequest) GetId() string {
@@ -160,7 +835,7 @@ type UpsertResponse struct {
 
 func (x *UpsertResponse) Reset() {
 	*x = UpsertResponse{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[1]
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -172,7 +847,7 @@ func (x *UpsertResponse) String() string {
 func (*UpsertResponse) ProtoMessage() {}
 
 func (x *UpsertResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[1]
+	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -185,691 +860,6 @@ func (x *UpsertResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertResponse.ProtoReflect.Descriptor instead.
 func (*UpsertResponse) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{1}
-}
-
-// include token in header
-type UpdateHeartbeatRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateHeartbeatRequest) Reset() {
-	*x = UpdateHeartbeatRequest{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateHeartbeatRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateHeartbeatRequest) ProtoMessage() {}
-
-func (x *UpdateHeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateHeartbeatRequest.ProtoReflect.Descriptor instead.
-func (*UpdateHeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *UpdateHeartbeatRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type UpdateHeartbeatResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateHeartbeatResponse) Reset() {
-	*x = UpdateHeartbeatResponse{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateHeartbeatResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateHeartbeatResponse) ProtoMessage() {}
-
-func (x *UpdateHeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateHeartbeatResponse.ProtoReflect.Descriptor instead.
-func (*UpdateHeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{3}
-}
-
-// include token in header
-type UpdateMetadataRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	Metadata      map[string]*anypb.Any  `protobuf:"bytes,2,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateMetadataRequest) Reset() {
-	*x = UpdateMetadataRequest{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateMetadataRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateMetadataRequest) ProtoMessage() {}
-
-func (x *UpdateMetadataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateMetadataRequest.ProtoReflect.Descriptor instead.
-func (*UpdateMetadataRequest) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *UpdateMetadataRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *UpdateMetadataRequest) GetMetadata() map[string]*anypb.Any {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
-type UpdateMetadataResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateMetadataResponse) Reset() {
-	*x = UpdateMetadataResponse{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateMetadataResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateMetadataResponse) ProtoMessage() {}
-
-func (x *UpdateMetadataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateMetadataResponse.ProtoReflect.Descriptor instead.
-func (*UpdateMetadataResponse) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{5}
-}
-
-// include token in header
-type UpdateStatusRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	Status        string                 `protobuf:"bytes,2,opt,name=status" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateStatusRequest) Reset() {
-	*x = UpdateStatusRequest{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateStatusRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateStatusRequest) ProtoMessage() {}
-
-func (x *UpdateStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateStatusRequest.ProtoReflect.Descriptor instead.
-func (*UpdateStatusRequest) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *UpdateStatusRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *UpdateStatusRequest) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-type UpdateStatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateStatusResponse) Reset() {
-	*x = UpdateStatusResponse{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateStatusResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateStatusResponse) ProtoMessage() {}
-
-func (x *UpdateStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateStatusResponse.ProtoReflect.Descriptor instead.
-func (*UpdateStatusResponse) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{7}
-}
-
-// include token in header
-type UpdateTokenRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	Token         string                 `protobuf:"bytes,2,opt,name=token" json:"token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateTokenRequest) Reset() {
-	*x = UpdateTokenRequest{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateTokenRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateTokenRequest) ProtoMessage() {}
-
-func (x *UpdateTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateTokenRequest.ProtoReflect.Descriptor instead.
-func (*UpdateTokenRequest) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *UpdateTokenRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *UpdateTokenRequest) GetToken() string {
-	if x != nil {
-		return x.Token
-	}
-	return ""
-}
-
-type UpdateTokenResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateTokenResponse) Reset() {
-	*x = UpdateTokenResponse{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateTokenResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateTokenResponse) ProtoMessage() {}
-
-func (x *UpdateTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateTokenResponse.ProtoReflect.Descriptor instead.
-func (*UpdateTokenResponse) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{9}
-}
-
-type SubscriptionOperationMessage struct {
-	state           protoimpl.MessageState    `protogen:"open.v1"`
-	OperationType   SubscriptionOperationType `protobuf:"varint,1,opt,name=operation_type,json=operationType,enum=subscriptions.v1.SubscriptionOperationType" json:"operation_type,omitempty"`
-	Id              string                    `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
-	Metadata        map[string]*anypb.Any     `protobuf:"bytes,3,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Platform        string                    `protobuf:"bytes,4,opt,name=platform" json:"platform,omitempty"`
-	Token           string                    `protobuf:"bytes,5,opt,name=token" json:"token,omitempty"`
-	Status          string                    `protobuf:"bytes,6,opt,name=status" json:"status,omitempty"`
-	ProjectId       string                    `protobuf:"bytes,7,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	ExternalId      string                    `protobuf:"bytes,8,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	ProfileMetadata map[string]*anypb.Any     `protobuf:"bytes,9,rep,name=profile_metadata,json=profileMetadata" json:"profile_metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	SubscriptionId  string                    `protobuf:"bytes,10,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"` // For profile linking operations
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *SubscriptionOperationMessage) Reset() {
-	*x = SubscriptionOperationMessage{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SubscriptionOperationMessage) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SubscriptionOperationMessage) ProtoMessage() {}
-
-func (x *SubscriptionOperationMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SubscriptionOperationMessage.ProtoReflect.Descriptor instead.
-func (*SubscriptionOperationMessage) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *SubscriptionOperationMessage) GetOperationType() SubscriptionOperationType {
-	if x != nil {
-		return x.OperationType
-	}
-	return SubscriptionOperationType_SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED
-}
-
-func (x *SubscriptionOperationMessage) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *SubscriptionOperationMessage) GetMetadata() map[string]*anypb.Any {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
-func (x *SubscriptionOperationMessage) GetPlatform() string {
-	if x != nil {
-		return x.Platform
-	}
-	return ""
-}
-
-func (x *SubscriptionOperationMessage) GetToken() string {
-	if x != nil {
-		return x.Token
-	}
-	return ""
-}
-
-func (x *SubscriptionOperationMessage) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *SubscriptionOperationMessage) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
-	}
-	return ""
-}
-
-func (x *SubscriptionOperationMessage) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
-	}
-	return ""
-}
-
-func (x *SubscriptionOperationMessage) GetProfileMetadata() map[string]*anypb.Any {
-	if x != nil {
-		return x.ProfileMetadata
-	}
-	return nil
-}
-
-func (x *SubscriptionOperationMessage) GetSubscriptionId() string {
-	if x != nil {
-		return x.SubscriptionId
-	}
-	return ""
-}
-
-// Register subscription - called when Pushpa.init("api_key") is called
-type RegisterSubscriptionRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
-	Platform       string                 `protobuf:"bytes,2,opt,name=platform" json:"platform,omitempty"`
-	Token          string                 `protobuf:"bytes,3,opt,name=token" json:"token,omitempty"`
-	Metadata       map[string]*anypb.Any  `protobuf:"bytes,4,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *RegisterSubscriptionRequest) Reset() {
-	*x = RegisterSubscriptionRequest{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RegisterSubscriptionRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RegisterSubscriptionRequest) ProtoMessage() {}
-
-func (x *RegisterSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RegisterSubscriptionRequest.ProtoReflect.Descriptor instead.
-func (*RegisterSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *RegisterSubscriptionRequest) GetSubscriptionId() string {
-	if x != nil {
-		return x.SubscriptionId
-	}
-	return ""
-}
-
-func (x *RegisterSubscriptionRequest) GetPlatform() string {
-	if x != nil {
-		return x.Platform
-	}
-	return ""
-}
-
-func (x *RegisterSubscriptionRequest) GetToken() string {
-	if x != nil {
-		return x.Token
-	}
-	return ""
-}
-
-func (x *RegisterSubscriptionRequest) GetMetadata() map[string]*anypb.Any {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
-type RegisterSubscriptionResponse struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
-	Success        bool                   `protobuf:"varint,2,opt,name=success" json:"success,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *RegisterSubscriptionResponse) Reset() {
-	*x = RegisterSubscriptionResponse{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RegisterSubscriptionResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RegisterSubscriptionResponse) ProtoMessage() {}
-
-func (x *RegisterSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RegisterSubscriptionResponse.ProtoReflect.Descriptor instead.
-func (*RegisterSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *RegisterSubscriptionResponse) GetSubscriptionId() string {
-	if x != nil {
-		return x.SubscriptionId
-	}
-	return ""
-}
-
-func (x *RegisterSubscriptionResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
-}
-
-// Set profile external ID - called when Pushpa.setExternalId("something") is called
-// This will create the profile if it doesn't exist and link the subscription to that profile
-type SetProfileExternalIDRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	SubscriptionId  string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
-	ExternalId      string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	ProfileMetadata map[string]*anypb.Any  `protobuf:"bytes,3,rep,name=profile_metadata,json=profileMetadata" json:"profile_metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Optional metadata for profile creation
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *SetProfileExternalIDRequest) Reset() {
-	*x = SetProfileExternalIDRequest{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetProfileExternalIDRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetProfileExternalIDRequest) ProtoMessage() {}
-
-func (x *SetProfileExternalIDRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetProfileExternalIDRequest.ProtoReflect.Descriptor instead.
-func (*SetProfileExternalIDRequest) Descriptor() ([]byte, []int) {
-	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *SetProfileExternalIDRequest) GetSubscriptionId() string {
-	if x != nil {
-		return x.SubscriptionId
-	}
-	return ""
-}
-
-func (x *SetProfileExternalIDRequest) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
-	}
-	return ""
-}
-
-func (x *SetProfileExternalIDRequest) GetProfileMetadata() map[string]*anypb.Any {
-	if x != nil {
-		return x.ProfileMetadata
-	}
-	return nil
-}
-
-// Response only confirms the operation was enqueued. Actual profile creation
-// and subscription linking happen asynchronously in the subscription worker.
-type SetProfileExternalIDResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetProfileExternalIDResponse) Reset() {
-	*x = SetProfileExternalIDResponse{}
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetProfileExternalIDResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetProfileExternalIDResponse) ProtoMessage() {}
-
-func (x *SetProfileExternalIDResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_subscriptions_v1_subscriptions_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetProfileExternalIDResponse.ProtoReflect.Descriptor instead.
-func (*SetProfileExternalIDResponse) Descriptor() ([]byte, []int) {
 	return file_subscriptions_v1_subscriptions_proto_rawDescGZIP(), []int{14}
 }
 
@@ -877,16 +867,47 @@ var File_subscriptions_v1_subscriptions_proto protoreflect.FileDescriptor
 
 const file_subscriptions_v1_subscriptions_proto_rawDesc = "" +
 	"\n" +
-	"$subscriptions/v1/subscriptions.proto\x12\x10subscriptions.v1\x1a\x19google/protobuf/any.proto\"\xef\x01\n" +
-	"\rUpsertRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12I\n" +
-	"\bmetadata\x18\x02 \x03(\v2-.subscriptions.v1.UpsertRequest.MetadataEntryR\bmetadata\x12\x1a\n" +
-	"\bplatform\x18\x03 \x01(\tR\bplatform\x12\x14\n" +
+	"$subscriptions/v1/subscriptions.proto\x12\x10subscriptions.v1\x1a\x19google/protobuf/any.proto\"\xa4\x02\n" +
+	"\x1bRegisterSubscriptionRequest\x12W\n" +
+	"\bmetadata\x18\x01 \x03(\v2;.subscriptions.v1.RegisterSubscriptionRequest.MetadataEntryR\bmetadata\x12\x1a\n" +
+	"\bplatform\x18\x02 \x01(\tR\bplatform\x12'\n" +
+	"\x0fsubscription_id\x18\x03 \x01(\tR\x0esubscriptionId\x12\x14\n" +
 	"\x05token\x18\x04 \x01(\tR\x05token\x1aQ\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\x10\n" +
-	"\x0eUpsertResponse\"(\n" +
+	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"a\n" +
+	"\x1cRegisterSubscriptionResponse\x12'\n" +
+	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\"\xb0\x02\n" +
+	"\x1bSetProfileExternalIDRequest\x12\x1f\n" +
+	"\vexternal_id\x18\x01 \x01(\tR\n" +
+	"externalId\x12m\n" +
+	"\x10profile_metadata\x18\x02 \x03(\v2B.subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntryR\x0fprofileMetadata\x12'\n" +
+	"\x0fsubscription_id\x18\x03 \x01(\tR\x0esubscriptionId\x1aX\n" +
+	"\x14ProfileMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
+	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\x1e\n" +
+	"\x1cSetProfileExternalIDResponse\"\xac\x05\n" +
+	"\x1cSubscriptionOperationMessage\x12\x1f\n" +
+	"\vexternal_id\x18\x01 \x01(\tR\n" +
+	"externalId\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12X\n" +
+	"\bmetadata\x18\x03 \x03(\v2<.subscriptions.v1.SubscriptionOperationMessage.MetadataEntryR\bmetadata\x12R\n" +
+	"\x0eoperation_type\x18\x04 \x01(\x0e2+.subscriptions.v1.SubscriptionOperationTypeR\roperationType\x12\x1a\n" +
+	"\bplatform\x18\x05 \x01(\tR\bplatform\x12n\n" +
+	"\x10profile_metadata\x18\x06 \x03(\v2C.subscriptions.v1.SubscriptionOperationMessage.ProfileMetadataEntryR\x0fprofileMetadata\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\a \x01(\tR\tprojectId\x12\x16\n" +
+	"\x06status\x18\b \x01(\tR\x06status\x12'\n" +
+	"\x0fsubscription_id\x18\t \x01(\tR\x0esubscriptionId\x12\x14\n" +
+	"\x05token\x18\n" +
+	" \x01(\tR\x05token\x1aQ\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
+	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\x1aX\n" +
+	"\x14ProfileMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
+	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"(\n" +
 	"\x16UpdateHeartbeatRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x19\n" +
 	"\x17UpdateHeartbeatResponse\"\xcd\x01\n" +
@@ -904,63 +925,32 @@ const file_subscriptions_v1_subscriptions_proto_rawDesc = "" +
 	"\x12UpdateTokenRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\"\x15\n" +
-	"\x13UpdateTokenResponse\"\xac\x05\n" +
-	"\x1cSubscriptionOperationMessage\x12R\n" +
-	"\x0eoperation_type\x18\x01 \x01(\x0e2+.subscriptions.v1.SubscriptionOperationTypeR\roperationType\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\x12X\n" +
-	"\bmetadata\x18\x03 \x03(\v2<.subscriptions.v1.SubscriptionOperationMessage.MetadataEntryR\bmetadata\x12\x1a\n" +
-	"\bplatform\x18\x04 \x01(\tR\bplatform\x12\x14\n" +
-	"\x05token\x18\x05 \x01(\tR\x05token\x12\x16\n" +
-	"\x06status\x18\x06 \x01(\tR\x06status\x12\x1d\n" +
-	"\n" +
-	"project_id\x18\a \x01(\tR\tprojectId\x12\x1f\n" +
-	"\vexternal_id\x18\b \x01(\tR\n" +
-	"externalId\x12n\n" +
-	"\x10profile_metadata\x18\t \x03(\v2C.subscriptions.v1.SubscriptionOperationMessage.ProfileMetadataEntryR\x0fprofileMetadata\x12'\n" +
-	"\x0fsubscription_id\x18\n" +
-	" \x01(\tR\x0esubscriptionId\x1aQ\n" +
+	"\x13UpdateTokenResponse\"\xef\x01\n" +
+	"\rUpsertRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12I\n" +
+	"\bmetadata\x18\x02 \x03(\v2-.subscriptions.v1.UpsertRequest.MetadataEntryR\bmetadata\x12\x1a\n" +
+	"\bplatform\x18\x03 \x01(\tR\bplatform\x12\x14\n" +
+	"\x05token\x18\x04 \x01(\tR\x05token\x1aQ\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\x1aX\n" +
-	"\x14ProfileMetadataEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\xa4\x02\n" +
-	"\x1bRegisterSubscriptionRequest\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x1a\n" +
-	"\bplatform\x18\x02 \x01(\tR\bplatform\x12\x14\n" +
-	"\x05token\x18\x03 \x01(\tR\x05token\x12W\n" +
-	"\bmetadata\x18\x04 \x03(\v2;.subscriptions.v1.RegisterSubscriptionRequest.MetadataEntryR\bmetadata\x1aQ\n" +
-	"\rMetadataEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"a\n" +
-	"\x1cRegisterSubscriptionResponse\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x18\n" +
-	"\asuccess\x18\x02 \x01(\bR\asuccess\"\xb0\x02\n" +
-	"\x1bSetProfileExternalIDRequest\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x1f\n" +
-	"\vexternal_id\x18\x02 \x01(\tR\n" +
-	"externalId\x12m\n" +
-	"\x10profile_metadata\x18\x03 \x03(\v2B.subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntryR\x0fprofileMetadata\x1aX\n" +
-	"\x14ProfileMetadataEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\x1e\n" +
-	"\x1cSetProfileExternalIDResponse*\xde\x02\n" +
+	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\x10\n" +
+	"\x0eUpsertResponse*\xde\x02\n" +
 	"\x19SubscriptionOperationType\x12+\n" +
-	"'SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED\x10\x00\x12&\n" +
-	"\"SUBSCRIPTION_OPERATION_TYPE_UPSERT\x10\x01\x120\n" +
+	"'SUBSCRIPTION_OPERATION_TYPE_UNSPECIFIED\x10\x00\x12,\n" +
+	"(SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK\x10\x01\x120\n" +
 	",SUBSCRIPTION_OPERATION_TYPE_UPDATE_HEARTBEAT\x10\x02\x12/\n" +
 	"+SUBSCRIPTION_OPERATION_TYPE_UPDATE_METADATA\x10\x03\x12-\n" +
 	")SUBSCRIPTION_OPERATION_TYPE_UPDATE_STATUS\x10\x04\x12,\n" +
-	"(SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN\x10\x05\x12,\n" +
-	"(SUBSCRIPTION_OPERATION_TYPE_PROFILE_LINK\x10\x062\xe7\x05\n" +
-	"\x14SubscriptionsService\x12M\n" +
-	"\x06Upsert\x12\x1f.subscriptions.v1.UpsertRequest\x1a .subscriptions.v1.UpsertResponse\"\x00\x12h\n" +
+	"(SUBSCRIPTION_OPERATION_TYPE_UPDATE_TOKEN\x10\x05\x12&\n" +
+	"\"SUBSCRIPTION_OPERATION_TYPE_UPSERT\x10\x062\xe7\x05\n" +
+	"\x14SubscriptionsService\x12w\n" +
+	"\x14RegisterSubscription\x12-.subscriptions.v1.RegisterSubscriptionRequest\x1a..subscriptions.v1.RegisterSubscriptionResponse\"\x00\x12w\n" +
+	"\x14SetProfileExternalID\x12-.subscriptions.v1.SetProfileExternalIDRequest\x1a..subscriptions.v1.SetProfileExternalIDResponse\"\x00\x12h\n" +
 	"\x0fUpdateHeartbeat\x12(.subscriptions.v1.UpdateHeartbeatRequest\x1a).subscriptions.v1.UpdateHeartbeatResponse\"\x00\x12e\n" +
 	"\x0eUpdateMetadata\x12'.subscriptions.v1.UpdateMetadataRequest\x1a(.subscriptions.v1.UpdateMetadataResponse\"\x00\x12_\n" +
 	"\fUpdateStatus\x12%.subscriptions.v1.UpdateStatusRequest\x1a&.subscriptions.v1.UpdateStatusResponse\"\x00\x12\\\n" +
-	"\vUpdateToken\x12$.subscriptions.v1.UpdateTokenRequest\x1a%.subscriptions.v1.UpdateTokenResponse\"\x00\x12w\n" +
-	"\x14RegisterSubscription\x12-.subscriptions.v1.RegisterSubscriptionRequest\x1a..subscriptions.v1.RegisterSubscriptionResponse\"\x00\x12w\n" +
-	"\x14SetProfileExternalID\x12-.subscriptions.v1.SetProfileExternalIDRequest\x1a..subscriptions.v1.SetProfileExternalIDResponse\"\x00BWZPgithub.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1;subscriptionsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\vUpdateToken\x12$.subscriptions.v1.UpdateTokenRequest\x1a%.subscriptions.v1.UpdateTokenResponse\"\x00\x12M\n" +
+	"\x06Upsert\x12\x1f.subscriptions.v1.UpsertRequest\x1a .subscriptions.v1.UpsertResponse\"\x00BWZPgithub.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1;subscriptionsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_subscriptions_v1_subscriptions_proto_rawDescOnce sync.Once
@@ -978,57 +968,57 @@ var file_subscriptions_v1_subscriptions_proto_enumTypes = make([]protoimpl.EnumI
 var file_subscriptions_v1_subscriptions_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_subscriptions_v1_subscriptions_proto_goTypes = []any{
 	(SubscriptionOperationType)(0),       // 0: subscriptions.v1.SubscriptionOperationType
-	(*UpsertRequest)(nil),                // 1: subscriptions.v1.UpsertRequest
-	(*UpsertResponse)(nil),               // 2: subscriptions.v1.UpsertResponse
-	(*UpdateHeartbeatRequest)(nil),       // 3: subscriptions.v1.UpdateHeartbeatRequest
-	(*UpdateHeartbeatResponse)(nil),      // 4: subscriptions.v1.UpdateHeartbeatResponse
-	(*UpdateMetadataRequest)(nil),        // 5: subscriptions.v1.UpdateMetadataRequest
-	(*UpdateMetadataResponse)(nil),       // 6: subscriptions.v1.UpdateMetadataResponse
-	(*UpdateStatusRequest)(nil),          // 7: subscriptions.v1.UpdateStatusRequest
-	(*UpdateStatusResponse)(nil),         // 8: subscriptions.v1.UpdateStatusResponse
-	(*UpdateTokenRequest)(nil),           // 9: subscriptions.v1.UpdateTokenRequest
-	(*UpdateTokenResponse)(nil),          // 10: subscriptions.v1.UpdateTokenResponse
-	(*SubscriptionOperationMessage)(nil), // 11: subscriptions.v1.SubscriptionOperationMessage
-	(*RegisterSubscriptionRequest)(nil),  // 12: subscriptions.v1.RegisterSubscriptionRequest
-	(*RegisterSubscriptionResponse)(nil), // 13: subscriptions.v1.RegisterSubscriptionResponse
-	(*SetProfileExternalIDRequest)(nil),  // 14: subscriptions.v1.SetProfileExternalIDRequest
-	(*SetProfileExternalIDResponse)(nil), // 15: subscriptions.v1.SetProfileExternalIDResponse
-	nil,                                  // 16: subscriptions.v1.UpsertRequest.MetadataEntry
-	nil,                                  // 17: subscriptions.v1.UpdateMetadataRequest.MetadataEntry
+	(*RegisterSubscriptionRequest)(nil),  // 1: subscriptions.v1.RegisterSubscriptionRequest
+	(*RegisterSubscriptionResponse)(nil), // 2: subscriptions.v1.RegisterSubscriptionResponse
+	(*SetProfileExternalIDRequest)(nil),  // 3: subscriptions.v1.SetProfileExternalIDRequest
+	(*SetProfileExternalIDResponse)(nil), // 4: subscriptions.v1.SetProfileExternalIDResponse
+	(*SubscriptionOperationMessage)(nil), // 5: subscriptions.v1.SubscriptionOperationMessage
+	(*UpdateHeartbeatRequest)(nil),       // 6: subscriptions.v1.UpdateHeartbeatRequest
+	(*UpdateHeartbeatResponse)(nil),      // 7: subscriptions.v1.UpdateHeartbeatResponse
+	(*UpdateMetadataRequest)(nil),        // 8: subscriptions.v1.UpdateMetadataRequest
+	(*UpdateMetadataResponse)(nil),       // 9: subscriptions.v1.UpdateMetadataResponse
+	(*UpdateStatusRequest)(nil),          // 10: subscriptions.v1.UpdateStatusRequest
+	(*UpdateStatusResponse)(nil),         // 11: subscriptions.v1.UpdateStatusResponse
+	(*UpdateTokenRequest)(nil),           // 12: subscriptions.v1.UpdateTokenRequest
+	(*UpdateTokenResponse)(nil),          // 13: subscriptions.v1.UpdateTokenResponse
+	(*UpsertRequest)(nil),                // 14: subscriptions.v1.UpsertRequest
+	(*UpsertResponse)(nil),               // 15: subscriptions.v1.UpsertResponse
+	nil,                                  // 16: subscriptions.v1.RegisterSubscriptionRequest.MetadataEntry
+	nil,                                  // 17: subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntry
 	nil,                                  // 18: subscriptions.v1.SubscriptionOperationMessage.MetadataEntry
 	nil,                                  // 19: subscriptions.v1.SubscriptionOperationMessage.ProfileMetadataEntry
-	nil,                                  // 20: subscriptions.v1.RegisterSubscriptionRequest.MetadataEntry
-	nil,                                  // 21: subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntry
+	nil,                                  // 20: subscriptions.v1.UpdateMetadataRequest.MetadataEntry
+	nil,                                  // 21: subscriptions.v1.UpsertRequest.MetadataEntry
 	(*anypb.Any)(nil),                    // 22: google.protobuf.Any
 }
 var file_subscriptions_v1_subscriptions_proto_depIdxs = []int32{
-	16, // 0: subscriptions.v1.UpsertRequest.metadata:type_name -> subscriptions.v1.UpsertRequest.MetadataEntry
-	17, // 1: subscriptions.v1.UpdateMetadataRequest.metadata:type_name -> subscriptions.v1.UpdateMetadataRequest.MetadataEntry
-	0,  // 2: subscriptions.v1.SubscriptionOperationMessage.operation_type:type_name -> subscriptions.v1.SubscriptionOperationType
-	18, // 3: subscriptions.v1.SubscriptionOperationMessage.metadata:type_name -> subscriptions.v1.SubscriptionOperationMessage.MetadataEntry
+	16, // 0: subscriptions.v1.RegisterSubscriptionRequest.metadata:type_name -> subscriptions.v1.RegisterSubscriptionRequest.MetadataEntry
+	17, // 1: subscriptions.v1.SetProfileExternalIDRequest.profile_metadata:type_name -> subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntry
+	18, // 2: subscriptions.v1.SubscriptionOperationMessage.metadata:type_name -> subscriptions.v1.SubscriptionOperationMessage.MetadataEntry
+	0,  // 3: subscriptions.v1.SubscriptionOperationMessage.operation_type:type_name -> subscriptions.v1.SubscriptionOperationType
 	19, // 4: subscriptions.v1.SubscriptionOperationMessage.profile_metadata:type_name -> subscriptions.v1.SubscriptionOperationMessage.ProfileMetadataEntry
-	20, // 5: subscriptions.v1.RegisterSubscriptionRequest.metadata:type_name -> subscriptions.v1.RegisterSubscriptionRequest.MetadataEntry
-	21, // 6: subscriptions.v1.SetProfileExternalIDRequest.profile_metadata:type_name -> subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntry
-	22, // 7: subscriptions.v1.UpsertRequest.MetadataEntry.value:type_name -> google.protobuf.Any
-	22, // 8: subscriptions.v1.UpdateMetadataRequest.MetadataEntry.value:type_name -> google.protobuf.Any
+	20, // 5: subscriptions.v1.UpdateMetadataRequest.metadata:type_name -> subscriptions.v1.UpdateMetadataRequest.MetadataEntry
+	21, // 6: subscriptions.v1.UpsertRequest.metadata:type_name -> subscriptions.v1.UpsertRequest.MetadataEntry
+	22, // 7: subscriptions.v1.RegisterSubscriptionRequest.MetadataEntry.value:type_name -> google.protobuf.Any
+	22, // 8: subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntry.value:type_name -> google.protobuf.Any
 	22, // 9: subscriptions.v1.SubscriptionOperationMessage.MetadataEntry.value:type_name -> google.protobuf.Any
 	22, // 10: subscriptions.v1.SubscriptionOperationMessage.ProfileMetadataEntry.value:type_name -> google.protobuf.Any
-	22, // 11: subscriptions.v1.RegisterSubscriptionRequest.MetadataEntry.value:type_name -> google.protobuf.Any
-	22, // 12: subscriptions.v1.SetProfileExternalIDRequest.ProfileMetadataEntry.value:type_name -> google.protobuf.Any
-	1,  // 13: subscriptions.v1.SubscriptionsService.Upsert:input_type -> subscriptions.v1.UpsertRequest
-	3,  // 14: subscriptions.v1.SubscriptionsService.UpdateHeartbeat:input_type -> subscriptions.v1.UpdateHeartbeatRequest
-	5,  // 15: subscriptions.v1.SubscriptionsService.UpdateMetadata:input_type -> subscriptions.v1.UpdateMetadataRequest
-	7,  // 16: subscriptions.v1.SubscriptionsService.UpdateStatus:input_type -> subscriptions.v1.UpdateStatusRequest
-	9,  // 17: subscriptions.v1.SubscriptionsService.UpdateToken:input_type -> subscriptions.v1.UpdateTokenRequest
-	12, // 18: subscriptions.v1.SubscriptionsService.RegisterSubscription:input_type -> subscriptions.v1.RegisterSubscriptionRequest
-	14, // 19: subscriptions.v1.SubscriptionsService.SetProfileExternalID:input_type -> subscriptions.v1.SetProfileExternalIDRequest
-	2,  // 20: subscriptions.v1.SubscriptionsService.Upsert:output_type -> subscriptions.v1.UpsertResponse
-	4,  // 21: subscriptions.v1.SubscriptionsService.UpdateHeartbeat:output_type -> subscriptions.v1.UpdateHeartbeatResponse
-	6,  // 22: subscriptions.v1.SubscriptionsService.UpdateMetadata:output_type -> subscriptions.v1.UpdateMetadataResponse
-	8,  // 23: subscriptions.v1.SubscriptionsService.UpdateStatus:output_type -> subscriptions.v1.UpdateStatusResponse
-	10, // 24: subscriptions.v1.SubscriptionsService.UpdateToken:output_type -> subscriptions.v1.UpdateTokenResponse
-	13, // 25: subscriptions.v1.SubscriptionsService.RegisterSubscription:output_type -> subscriptions.v1.RegisterSubscriptionResponse
-	15, // 26: subscriptions.v1.SubscriptionsService.SetProfileExternalID:output_type -> subscriptions.v1.SetProfileExternalIDResponse
+	22, // 11: subscriptions.v1.UpdateMetadataRequest.MetadataEntry.value:type_name -> google.protobuf.Any
+	22, // 12: subscriptions.v1.UpsertRequest.MetadataEntry.value:type_name -> google.protobuf.Any
+	1,  // 13: subscriptions.v1.SubscriptionsService.RegisterSubscription:input_type -> subscriptions.v1.RegisterSubscriptionRequest
+	3,  // 14: subscriptions.v1.SubscriptionsService.SetProfileExternalID:input_type -> subscriptions.v1.SetProfileExternalIDRequest
+	6,  // 15: subscriptions.v1.SubscriptionsService.UpdateHeartbeat:input_type -> subscriptions.v1.UpdateHeartbeatRequest
+	8,  // 16: subscriptions.v1.SubscriptionsService.UpdateMetadata:input_type -> subscriptions.v1.UpdateMetadataRequest
+	10, // 17: subscriptions.v1.SubscriptionsService.UpdateStatus:input_type -> subscriptions.v1.UpdateStatusRequest
+	12, // 18: subscriptions.v1.SubscriptionsService.UpdateToken:input_type -> subscriptions.v1.UpdateTokenRequest
+	14, // 19: subscriptions.v1.SubscriptionsService.Upsert:input_type -> subscriptions.v1.UpsertRequest
+	2,  // 20: subscriptions.v1.SubscriptionsService.RegisterSubscription:output_type -> subscriptions.v1.RegisterSubscriptionResponse
+	4,  // 21: subscriptions.v1.SubscriptionsService.SetProfileExternalID:output_type -> subscriptions.v1.SetProfileExternalIDResponse
+	7,  // 22: subscriptions.v1.SubscriptionsService.UpdateHeartbeat:output_type -> subscriptions.v1.UpdateHeartbeatResponse
+	9,  // 23: subscriptions.v1.SubscriptionsService.UpdateMetadata:output_type -> subscriptions.v1.UpdateMetadataResponse
+	11, // 24: subscriptions.v1.SubscriptionsService.UpdateStatus:output_type -> subscriptions.v1.UpdateStatusResponse
+	13, // 25: subscriptions.v1.SubscriptionsService.UpdateToken:output_type -> subscriptions.v1.UpdateTokenResponse
+	15, // 26: subscriptions.v1.SubscriptionsService.Upsert:output_type -> subscriptions.v1.UpsertResponse
 	20, // [20:27] is the sub-list for method output_type
 	13, // [13:20] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name

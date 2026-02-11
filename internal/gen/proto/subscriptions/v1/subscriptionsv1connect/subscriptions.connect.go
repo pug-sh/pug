@@ -33,9 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// SubscriptionsServiceUpsertProcedure is the fully-qualified name of the SubscriptionsService's
-	// Upsert RPC.
-	SubscriptionsServiceUpsertProcedure = "/subscriptions.v1.SubscriptionsService/Upsert"
+	// SubscriptionsServiceRegisterSubscriptionProcedure is the fully-qualified name of the
+	// SubscriptionsService's RegisterSubscription RPC.
+	SubscriptionsServiceRegisterSubscriptionProcedure = "/subscriptions.v1.SubscriptionsService/RegisterSubscription"
+	// SubscriptionsServiceSetProfileExternalIDProcedure is the fully-qualified name of the
+	// SubscriptionsService's SetProfileExternalID RPC.
+	SubscriptionsServiceSetProfileExternalIDProcedure = "/subscriptions.v1.SubscriptionsService/SetProfileExternalID"
 	// SubscriptionsServiceUpdateHeartbeatProcedure is the fully-qualified name of the
 	// SubscriptionsService's UpdateHeartbeat RPC.
 	SubscriptionsServiceUpdateHeartbeatProcedure = "/subscriptions.v1.SubscriptionsService/UpdateHeartbeat"
@@ -48,24 +51,20 @@ const (
 	// SubscriptionsServiceUpdateTokenProcedure is the fully-qualified name of the
 	// SubscriptionsService's UpdateToken RPC.
 	SubscriptionsServiceUpdateTokenProcedure = "/subscriptions.v1.SubscriptionsService/UpdateToken"
-	// SubscriptionsServiceRegisterSubscriptionProcedure is the fully-qualified name of the
-	// SubscriptionsService's RegisterSubscription RPC.
-	SubscriptionsServiceRegisterSubscriptionProcedure = "/subscriptions.v1.SubscriptionsService/RegisterSubscription"
-	// SubscriptionsServiceSetProfileExternalIDProcedure is the fully-qualified name of the
-	// SubscriptionsService's SetProfileExternalID RPC.
-	SubscriptionsServiceSetProfileExternalIDProcedure = "/subscriptions.v1.SubscriptionsService/SetProfileExternalID"
+	// SubscriptionsServiceUpsertProcedure is the fully-qualified name of the SubscriptionsService's
+	// Upsert RPC.
+	SubscriptionsServiceUpsertProcedure = "/subscriptions.v1.SubscriptionsService/Upsert"
 )
 
 // SubscriptionsServiceClient is a client for the subscriptions.v1.SubscriptionsService service.
 type SubscriptionsServiceClient interface {
-	Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error)
+	RegisterSubscription(context.Context, *connect.Request[v1.RegisterSubscriptionRequest]) (*connect.Response[v1.RegisterSubscriptionResponse], error)
+	SetProfileExternalID(context.Context, *connect.Request[v1.SetProfileExternalIDRequest]) (*connect.Response[v1.SetProfileExternalIDResponse], error)
 	UpdateHeartbeat(context.Context, *connect.Request[v1.UpdateHeartbeatRequest]) (*connect.Response[v1.UpdateHeartbeatResponse], error)
 	UpdateMetadata(context.Context, *connect.Request[v1.UpdateMetadataRequest]) (*connect.Response[v1.UpdateMetadataResponse], error)
 	UpdateStatus(context.Context, *connect.Request[v1.UpdateStatusRequest]) (*connect.Response[v1.UpdateStatusResponse], error)
 	UpdateToken(context.Context, *connect.Request[v1.UpdateTokenRequest]) (*connect.Response[v1.UpdateTokenResponse], error)
-	// SDK support methods
-	RegisterSubscription(context.Context, *connect.Request[v1.RegisterSubscriptionRequest]) (*connect.Response[v1.RegisterSubscriptionResponse], error)
-	SetProfileExternalID(context.Context, *connect.Request[v1.SetProfileExternalIDRequest]) (*connect.Response[v1.SetProfileExternalIDResponse], error)
+	Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error)
 }
 
 // NewSubscriptionsServiceClient constructs a client for the subscriptions.v1.SubscriptionsService
@@ -79,10 +78,16 @@ func NewSubscriptionsServiceClient(httpClient connect.HTTPClient, baseURL string
 	baseURL = strings.TrimRight(baseURL, "/")
 	subscriptionsServiceMethods := v1.File_subscriptions_v1_subscriptions_proto.Services().ByName("SubscriptionsService").Methods()
 	return &subscriptionsServiceClient{
-		upsert: connect.NewClient[v1.UpsertRequest, v1.UpsertResponse](
+		registerSubscription: connect.NewClient[v1.RegisterSubscriptionRequest, v1.RegisterSubscriptionResponse](
 			httpClient,
-			baseURL+SubscriptionsServiceUpsertProcedure,
-			connect.WithSchema(subscriptionsServiceMethods.ByName("Upsert")),
+			baseURL+SubscriptionsServiceRegisterSubscriptionProcedure,
+			connect.WithSchema(subscriptionsServiceMethods.ByName("RegisterSubscription")),
+			connect.WithClientOptions(opts...),
+		),
+		setProfileExternalID: connect.NewClient[v1.SetProfileExternalIDRequest, v1.SetProfileExternalIDResponse](
+			httpClient,
+			baseURL+SubscriptionsServiceSetProfileExternalIDProcedure,
+			connect.WithSchema(subscriptionsServiceMethods.ByName("SetProfileExternalID")),
 			connect.WithClientOptions(opts...),
 		),
 		updateHeartbeat: connect.NewClient[v1.UpdateHeartbeatRequest, v1.UpdateHeartbeatResponse](
@@ -109,16 +114,10 @@ func NewSubscriptionsServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(subscriptionsServiceMethods.ByName("UpdateToken")),
 			connect.WithClientOptions(opts...),
 		),
-		registerSubscription: connect.NewClient[v1.RegisterSubscriptionRequest, v1.RegisterSubscriptionResponse](
+		upsert: connect.NewClient[v1.UpsertRequest, v1.UpsertResponse](
 			httpClient,
-			baseURL+SubscriptionsServiceRegisterSubscriptionProcedure,
-			connect.WithSchema(subscriptionsServiceMethods.ByName("RegisterSubscription")),
-			connect.WithClientOptions(opts...),
-		),
-		setProfileExternalID: connect.NewClient[v1.SetProfileExternalIDRequest, v1.SetProfileExternalIDResponse](
-			httpClient,
-			baseURL+SubscriptionsServiceSetProfileExternalIDProcedure,
-			connect.WithSchema(subscriptionsServiceMethods.ByName("SetProfileExternalID")),
+			baseURL+SubscriptionsServiceUpsertProcedure,
+			connect.WithSchema(subscriptionsServiceMethods.ByName("Upsert")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -126,18 +125,23 @@ func NewSubscriptionsServiceClient(httpClient connect.HTTPClient, baseURL string
 
 // subscriptionsServiceClient implements SubscriptionsServiceClient.
 type subscriptionsServiceClient struct {
-	upsert               *connect.Client[v1.UpsertRequest, v1.UpsertResponse]
+	registerSubscription *connect.Client[v1.RegisterSubscriptionRequest, v1.RegisterSubscriptionResponse]
+	setProfileExternalID *connect.Client[v1.SetProfileExternalIDRequest, v1.SetProfileExternalIDResponse]
 	updateHeartbeat      *connect.Client[v1.UpdateHeartbeatRequest, v1.UpdateHeartbeatResponse]
 	updateMetadata       *connect.Client[v1.UpdateMetadataRequest, v1.UpdateMetadataResponse]
 	updateStatus         *connect.Client[v1.UpdateStatusRequest, v1.UpdateStatusResponse]
 	updateToken          *connect.Client[v1.UpdateTokenRequest, v1.UpdateTokenResponse]
-	registerSubscription *connect.Client[v1.RegisterSubscriptionRequest, v1.RegisterSubscriptionResponse]
-	setProfileExternalID *connect.Client[v1.SetProfileExternalIDRequest, v1.SetProfileExternalIDResponse]
+	upsert               *connect.Client[v1.UpsertRequest, v1.UpsertResponse]
 }
 
-// Upsert calls subscriptions.v1.SubscriptionsService.Upsert.
-func (c *subscriptionsServiceClient) Upsert(ctx context.Context, req *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error) {
-	return c.upsert.CallUnary(ctx, req)
+// RegisterSubscription calls subscriptions.v1.SubscriptionsService.RegisterSubscription.
+func (c *subscriptionsServiceClient) RegisterSubscription(ctx context.Context, req *connect.Request[v1.RegisterSubscriptionRequest]) (*connect.Response[v1.RegisterSubscriptionResponse], error) {
+	return c.registerSubscription.CallUnary(ctx, req)
+}
+
+// SetProfileExternalID calls subscriptions.v1.SubscriptionsService.SetProfileExternalID.
+func (c *subscriptionsServiceClient) SetProfileExternalID(ctx context.Context, req *connect.Request[v1.SetProfileExternalIDRequest]) (*connect.Response[v1.SetProfileExternalIDResponse], error) {
+	return c.setProfileExternalID.CallUnary(ctx, req)
 }
 
 // UpdateHeartbeat calls subscriptions.v1.SubscriptionsService.UpdateHeartbeat.
@@ -160,27 +164,21 @@ func (c *subscriptionsServiceClient) UpdateToken(ctx context.Context, req *conne
 	return c.updateToken.CallUnary(ctx, req)
 }
 
-// RegisterSubscription calls subscriptions.v1.SubscriptionsService.RegisterSubscription.
-func (c *subscriptionsServiceClient) RegisterSubscription(ctx context.Context, req *connect.Request[v1.RegisterSubscriptionRequest]) (*connect.Response[v1.RegisterSubscriptionResponse], error) {
-	return c.registerSubscription.CallUnary(ctx, req)
-}
-
-// SetProfileExternalID calls subscriptions.v1.SubscriptionsService.SetProfileExternalID.
-func (c *subscriptionsServiceClient) SetProfileExternalID(ctx context.Context, req *connect.Request[v1.SetProfileExternalIDRequest]) (*connect.Response[v1.SetProfileExternalIDResponse], error) {
-	return c.setProfileExternalID.CallUnary(ctx, req)
+// Upsert calls subscriptions.v1.SubscriptionsService.Upsert.
+func (c *subscriptionsServiceClient) Upsert(ctx context.Context, req *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error) {
+	return c.upsert.CallUnary(ctx, req)
 }
 
 // SubscriptionsServiceHandler is an implementation of the subscriptions.v1.SubscriptionsService
 // service.
 type SubscriptionsServiceHandler interface {
-	Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error)
+	RegisterSubscription(context.Context, *connect.Request[v1.RegisterSubscriptionRequest]) (*connect.Response[v1.RegisterSubscriptionResponse], error)
+	SetProfileExternalID(context.Context, *connect.Request[v1.SetProfileExternalIDRequest]) (*connect.Response[v1.SetProfileExternalIDResponse], error)
 	UpdateHeartbeat(context.Context, *connect.Request[v1.UpdateHeartbeatRequest]) (*connect.Response[v1.UpdateHeartbeatResponse], error)
 	UpdateMetadata(context.Context, *connect.Request[v1.UpdateMetadataRequest]) (*connect.Response[v1.UpdateMetadataResponse], error)
 	UpdateStatus(context.Context, *connect.Request[v1.UpdateStatusRequest]) (*connect.Response[v1.UpdateStatusResponse], error)
 	UpdateToken(context.Context, *connect.Request[v1.UpdateTokenRequest]) (*connect.Response[v1.UpdateTokenResponse], error)
-	// SDK support methods
-	RegisterSubscription(context.Context, *connect.Request[v1.RegisterSubscriptionRequest]) (*connect.Response[v1.RegisterSubscriptionResponse], error)
-	SetProfileExternalID(context.Context, *connect.Request[v1.SetProfileExternalIDRequest]) (*connect.Response[v1.SetProfileExternalIDResponse], error)
+	Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error)
 }
 
 // NewSubscriptionsServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -190,10 +188,16 @@ type SubscriptionsServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSubscriptionsServiceHandler(svc SubscriptionsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	subscriptionsServiceMethods := v1.File_subscriptions_v1_subscriptions_proto.Services().ByName("SubscriptionsService").Methods()
-	subscriptionsServiceUpsertHandler := connect.NewUnaryHandler(
-		SubscriptionsServiceUpsertProcedure,
-		svc.Upsert,
-		connect.WithSchema(subscriptionsServiceMethods.ByName("Upsert")),
+	subscriptionsServiceRegisterSubscriptionHandler := connect.NewUnaryHandler(
+		SubscriptionsServiceRegisterSubscriptionProcedure,
+		svc.RegisterSubscription,
+		connect.WithSchema(subscriptionsServiceMethods.ByName("RegisterSubscription")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionsServiceSetProfileExternalIDHandler := connect.NewUnaryHandler(
+		SubscriptionsServiceSetProfileExternalIDProcedure,
+		svc.SetProfileExternalID,
+		connect.WithSchema(subscriptionsServiceMethods.ByName("SetProfileExternalID")),
 		connect.WithHandlerOptions(opts...),
 	)
 	subscriptionsServiceUpdateHeartbeatHandler := connect.NewUnaryHandler(
@@ -220,22 +224,18 @@ func NewSubscriptionsServiceHandler(svc SubscriptionsServiceHandler, opts ...con
 		connect.WithSchema(subscriptionsServiceMethods.ByName("UpdateToken")),
 		connect.WithHandlerOptions(opts...),
 	)
-	subscriptionsServiceRegisterSubscriptionHandler := connect.NewUnaryHandler(
-		SubscriptionsServiceRegisterSubscriptionProcedure,
-		svc.RegisterSubscription,
-		connect.WithSchema(subscriptionsServiceMethods.ByName("RegisterSubscription")),
-		connect.WithHandlerOptions(opts...),
-	)
-	subscriptionsServiceSetProfileExternalIDHandler := connect.NewUnaryHandler(
-		SubscriptionsServiceSetProfileExternalIDProcedure,
-		svc.SetProfileExternalID,
-		connect.WithSchema(subscriptionsServiceMethods.ByName("SetProfileExternalID")),
+	subscriptionsServiceUpsertHandler := connect.NewUnaryHandler(
+		SubscriptionsServiceUpsertProcedure,
+		svc.Upsert,
+		connect.WithSchema(subscriptionsServiceMethods.ByName("Upsert")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/subscriptions.v1.SubscriptionsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case SubscriptionsServiceUpsertProcedure:
-			subscriptionsServiceUpsertHandler.ServeHTTP(w, r)
+		case SubscriptionsServiceRegisterSubscriptionProcedure:
+			subscriptionsServiceRegisterSubscriptionHandler.ServeHTTP(w, r)
+		case SubscriptionsServiceSetProfileExternalIDProcedure:
+			subscriptionsServiceSetProfileExternalIDHandler.ServeHTTP(w, r)
 		case SubscriptionsServiceUpdateHeartbeatProcedure:
 			subscriptionsServiceUpdateHeartbeatHandler.ServeHTTP(w, r)
 		case SubscriptionsServiceUpdateMetadataProcedure:
@@ -244,10 +244,8 @@ func NewSubscriptionsServiceHandler(svc SubscriptionsServiceHandler, opts ...con
 			subscriptionsServiceUpdateStatusHandler.ServeHTTP(w, r)
 		case SubscriptionsServiceUpdateTokenProcedure:
 			subscriptionsServiceUpdateTokenHandler.ServeHTTP(w, r)
-		case SubscriptionsServiceRegisterSubscriptionProcedure:
-			subscriptionsServiceRegisterSubscriptionHandler.ServeHTTP(w, r)
-		case SubscriptionsServiceSetProfileExternalIDProcedure:
-			subscriptionsServiceSetProfileExternalIDHandler.ServeHTTP(w, r)
+		case SubscriptionsServiceUpsertProcedure:
+			subscriptionsServiceUpsertHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -257,8 +255,12 @@ func NewSubscriptionsServiceHandler(svc SubscriptionsServiceHandler, opts ...con
 // UnimplementedSubscriptionsServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSubscriptionsServiceHandler struct{}
 
-func (UnimplementedSubscriptionsServiceHandler) Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("subscriptions.v1.SubscriptionsService.Upsert is not implemented"))
+func (UnimplementedSubscriptionsServiceHandler) RegisterSubscription(context.Context, *connect.Request[v1.RegisterSubscriptionRequest]) (*connect.Response[v1.RegisterSubscriptionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("subscriptions.v1.SubscriptionsService.RegisterSubscription is not implemented"))
+}
+
+func (UnimplementedSubscriptionsServiceHandler) SetProfileExternalID(context.Context, *connect.Request[v1.SetProfileExternalIDRequest]) (*connect.Response[v1.SetProfileExternalIDResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("subscriptions.v1.SubscriptionsService.SetProfileExternalID is not implemented"))
 }
 
 func (UnimplementedSubscriptionsServiceHandler) UpdateHeartbeat(context.Context, *connect.Request[v1.UpdateHeartbeatRequest]) (*connect.Response[v1.UpdateHeartbeatResponse], error) {
@@ -277,10 +279,6 @@ func (UnimplementedSubscriptionsServiceHandler) UpdateToken(context.Context, *co
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("subscriptions.v1.SubscriptionsService.UpdateToken is not implemented"))
 }
 
-func (UnimplementedSubscriptionsServiceHandler) RegisterSubscription(context.Context, *connect.Request[v1.RegisterSubscriptionRequest]) (*connect.Response[v1.RegisterSubscriptionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("subscriptions.v1.SubscriptionsService.RegisterSubscription is not implemented"))
-}
-
-func (UnimplementedSubscriptionsServiceHandler) SetProfileExternalID(context.Context, *connect.Request[v1.SetProfileExternalIDRequest]) (*connect.Response[v1.SetProfileExternalIDResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("subscriptions.v1.SubscriptionsService.SetProfileExternalID is not implemented"))
+func (UnimplementedSubscriptionsServiceHandler) Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("subscriptions.v1.SubscriptionsService.Upsert is not implemented"))
 }

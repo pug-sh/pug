@@ -166,37 +166,24 @@ func (c *Worker) handleProfileLink(ctx context.Context, msg *subscriptionsv1.Sub
 	externalID := msg.GetExternalId()
 	subscriptionID := msg.GetSubscriptionId()
 
-	// Look up profile by external_id
-	profile, err := c.profilesRead.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
-		ProjectID:  projectID,
-		ExternalID: externalID,
-	})
+	profileMetadata, err := protoMapToAny(msg.GetProfileMetadata())
 	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			slog.ErrorContext(ctx, "failed to get profile", slogx.Error(err))
-			return err
-		}
-		// Profile not found, create it
-		profileMetadata, marshalErr := protoMapToAny(msg.GetProfileMetadata())
-		if marshalErr != nil {
-			slog.ErrorContext(ctx, "failed to convert profile metadata", slogx.Error(marshalErr))
-			return marshalErr
-		}
-		newProfile, createErr := c.profilesWrite.CreateProfile(ctx, dbwrite.CreateProfileParams{
-			ID:               xid.New().String(),
-			ProjectID:        projectID,
-			ExternalID:       externalID,
-			Properties:       profileMetadata,
-			CustomProperties: map[string]any{},
-		})
-		if createErr != nil {
-			slog.ErrorContext(ctx, "failed to create profile", slogx.Error(createErr))
-			return createErr
-		}
-		profile.ID = newProfile.ID
+		slog.ErrorContext(ctx, "failed to convert profile metadata", slogx.Error(err))
+		return err
 	}
 
-	// Link subscription to profile using actual profile ID
+	profile, err := c.profilesWrite.SaveProfile(ctx, dbwrite.SaveProfileParams{
+		AutoProperties:   profileMetadata,
+		CustomProperties: map[string]any{},
+		ExternalID:       externalID,
+		ID:               xid.New().String(),
+		ProjectID:        projectID,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to save profile", slogx.Error(err))
+		return err
+	}
+
 	if _, err := c.subscriptionService.LinkSubscriptionToProfile(ctx, subscriptionID, projectID, profile.ID); err != nil {
 		slog.ErrorContext(ctx, "failed to link subscription to profile", slogx.Error(err))
 		return err
