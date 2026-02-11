@@ -14,7 +14,7 @@ service ProfilesService {
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
   // todo - shift to server streaming
   rpc List(ListRequest) returns (ListResponse) {}
-  rpc Merge(MergeRequest) returns (MergeResponse) {}
+  rpc Identify(IdentifyRequest) returns (IdentifyResponse) {}
   rpc Save(SaveRequest) returns (SaveResponse) {}
 }
 
@@ -46,12 +46,12 @@ message ListResponse {
   repeated Profile profiles = 1;
 }
 
-message MergeRequest {
-  string source_id = 1 [(buf.validate.field).string.min_len = 1];
-  string target_id = 2 [(buf.validate.field).string.min_len = 1];
+message IdentifyRequest {
+  string profile_id = 1 [(buf.validate.field).string.min_len = 1];
+  string external_id = 2 [(buf.validate.field).string.min_len = 1];
 }
 
-message MergeResponse {
+message IdentifyResponse {
   Profile profile = 1;
 }
 

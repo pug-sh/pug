@@ -26,6 +26,31 @@ func (q *Queries) DeleteProfileByIDAndProjectID(ctx context.Context, arg DeleteP
 	return err
 }
 
+const getProfileByProjectAndExternalID = `-- name: GetProfileByProjectAndExternalID :one
+select auto_properties, create_time, custom_properties, external_id, id, project_id, update_time from profiles
+where project_id = $1 and external_id = $2 limit 1
+`
+
+type GetProfileByProjectAndExternalIDParams struct {
+	ProjectID  string
+	ExternalID string
+}
+
+func (q *Queries) GetProfileByProjectAndExternalID(ctx context.Context, arg GetProfileByProjectAndExternalIDParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, getProfileByProjectAndExternalID, arg.ProjectID, arg.ExternalID)
+	var i Profile
+	err := row.Scan(
+		&i.AutoProperties,
+		&i.CreateTime,
+		&i.CustomProperties,
+		&i.ExternalID,
+		&i.ID,
+		&i.ProjectID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const mergeProfileProperties = `-- name: MergeProfileProperties :one
 update profiles
 set auto_properties = jsonb_shallow_merge(s.auto_properties, profiles.auto_properties),
@@ -62,16 +87,17 @@ func (q *Queries) MergeProfileProperties(ctx context.Context, arg MergeProfilePr
 const reassignProfileSubscriptions = `-- name: ReassignProfileSubscriptions :exec
 update subscriptions
 set profile_id = $1
-where profile_id = $2
+where profile_id = $2 and project_id = $3
 `
 
 type ReassignProfileSubscriptionsParams struct {
-	TargetID pgtype.Text
-	SourceID pgtype.Text
+	TargetID  pgtype.Text
+	SourceID  pgtype.Text
+	ProjectID string
 }
 
 func (q *Queries) ReassignProfileSubscriptions(ctx context.Context, arg ReassignProfileSubscriptionsParams) error {
-	_, err := q.db.Exec(ctx, reassignProfileSubscriptions, arg.TargetID, arg.SourceID)
+	_, err := q.db.Exec(ctx, reassignProfileSubscriptions, arg.TargetID, arg.SourceID, arg.ProjectID)
 	return err
 }
 
@@ -100,6 +126,34 @@ func (q *Queries) SaveProfile(ctx context.Context, arg SaveProfileParams) (Profi
 		arg.ID,
 		arg.ProjectID,
 	)
+	var i Profile
+	err := row.Scan(
+		&i.AutoProperties,
+		&i.CreateTime,
+		&i.CustomProperties,
+		&i.ExternalID,
+		&i.ID,
+		&i.ProjectID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const setProfileExternalID = `-- name: SetProfileExternalID :one
+update profiles
+set external_id = $1
+where id = $2 and project_id = $3
+returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
+`
+
+type SetProfileExternalIDParams struct {
+	ExternalID string
+	ID         string
+	ProjectID  string
+}
+
+func (q *Queries) SetProfileExternalID(ctx context.Context, arg SetProfileExternalIDParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, setProfileExternalID, arg.ExternalID, arg.ID, arg.ProjectID)
 	var i Profile
 	err := row.Scan(
 		&i.AutoProperties,

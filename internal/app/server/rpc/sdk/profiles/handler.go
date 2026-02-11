@@ -8,10 +8,10 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5"
@@ -148,71 +148,112 @@ func (h *Handler) List(
 	}), nil
 }
 
-func (h *Handler) Merge(
+func (h *Handler) Identify(
 	ctx context.Context,
-	req *connect.Request[profilesv1.MergeRequest],
-) (*connect.Response[profilesv1.MergeResponse], error) {
+	req *connect.Request[profilesv1.IdentifyRequest],
+) (*connect.Response[profilesv1.IdentifyResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	if req.Msg.SourceId == req.Msg.TargetId {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("source and target must be different profiles"))
-	}
+	projectID := principal.Project.ID
 
 	tx, err := h.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed starting transaction", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to merge profiles"))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back transaction", slogx.Error(err))
+		}
+	}()
 
 	qtx := h.write.WithTx(tx)
 
-	p, err := qtx.MergeProfileProperties(ctx, dbwrite.MergeProfilePropertiesParams{
-		SourceID:  req.Msg.SourceId,
-		TargetID:  req.Msg.TargetId,
-		ProjectID: principal.Project.ID,
+	existing, err := qtx.GetProfileByProjectAndExternalID(ctx, dbwrite.GetProfileByProjectAndExternalIDParams{
+		ProjectID:  projectID,
+		ExternalID: req.Msg.ExternalId,
 	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed merging profile properties", slogx.Error(err),
-			slog.String("sourceId", req.Msg.SourceId), slog.String("targetId", req.Msg.TargetId))
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("source or target profile not found"))
+
+	var p dbwrite.Profile
+
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// No profile with this external_id — assign it to the anonymous profile.
+		p, err = qtx.SetProfileExternalID(ctx, dbwrite.SetProfileExternalIDParams{
+			ExternalID: req.Msg.ExternalId,
+			ID:         req.Msg.ProfileId,
+			ProjectID:  projectID,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "failed setting external ID on profile", slogx.Error(err),
+				slog.String("profileId", req.Msg.ProfileId), slog.String("externalId", req.Msg.ExternalId))
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("profile not found"))
+			}
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
 		}
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to merge profiles"))
-	}
 
-	if err := qtx.ReassignProfileSubscriptions(ctx, dbwrite.ReassignProfileSubscriptionsParams{
-		TargetID: postgres.NewText(req.Msg.TargetId),
-		SourceID: postgres.NewText(req.Msg.SourceId),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed reassigning subscriptions", slogx.Error(err),
-			slog.String("sourceId", req.Msg.SourceId), slog.String("targetId", req.Msg.TargetId))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to merge profiles"))
-	}
+	case err != nil:
+		slog.ErrorContext(ctx, "failed looking up profile by external ID", slogx.Error(err),
+			slog.String("externalId", req.Msg.ExternalId))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
 
-	if err := qtx.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
-		ID:        req.Msg.SourceId,
-		ProjectID: principal.Project.ID,
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed deleting source profile", slogx.Error(err),
-			slog.String("sourceId", req.Msg.SourceId))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to merge profiles"))
+	case existing.ID == req.Msg.ProfileId:
+		// Already identified — no-op.
+		p = existing
+
+	default:
+		// Different profile owns this external_id — merge anonymous into existing.
+		p, err = qtx.MergeProfileProperties(ctx, dbwrite.MergeProfilePropertiesParams{
+			SourceID:  req.Msg.ProfileId,
+			TargetID:  existing.ID,
+			ProjectID: projectID,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "failed merging profile properties", slogx.Error(err),
+				slog.String("sourceId", req.Msg.ProfileId), slog.String("targetId", existing.ID))
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("profile not found"))
+			}
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
+		}
+
+		if err := qtx.ReassignProfileSubscriptions(ctx, dbwrite.ReassignProfileSubscriptionsParams{
+			TargetID:  postgres.NewText(existing.ID),
+			SourceID:  postgres.NewText(req.Msg.ProfileId),
+			ProjectID: projectID,
+		}); err != nil {
+			slog.ErrorContext(ctx, "failed reassigning subscriptions", slogx.Error(err),
+				slog.String("sourceId", req.Msg.ProfileId), slog.String("targetId", existing.ID))
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
+		}
+
+		if err := qtx.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
+			ID:        req.Msg.ProfileId,
+			ProjectID: projectID,
+		}); err != nil {
+			slog.ErrorContext(ctx, "failed deleting source profile", slogx.Error(err),
+				slog.String("sourceId", req.Msg.ProfileId))
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed committing merge transaction", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to merge profiles"))
+		slog.ErrorContext(ctx, "failed committing identify transaction", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
 	}
 
 	pbProfile, err := convertWriteProfile(p)
 	if err != nil {
-		return nil, err
+		slog.ErrorContext(ctx, "failed converting profile", slogx.Error(err),
+			slog.String("profileId", p.ID))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
 	}
 
-	return connect.NewResponse(&profilesv1.MergeResponse{
+	return connect.NewResponse(&profilesv1.IdentifyResponse{
 		Profile: pbProfile,
 	}), nil
 }

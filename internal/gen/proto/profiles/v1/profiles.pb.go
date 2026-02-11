@@ -360,28 +360,28 @@ func (x *ListResponse) GetProfiles() []*Profile {
 	return nil
 }
 
-type MergeRequest struct {
+type IdentifyRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	SourceId      string                 `protobuf:"bytes,1,opt,name=source_id,json=sourceId" json:"source_id,omitempty"`
-	TargetId      string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId" json:"target_id,omitempty"`
+	ProfileId     string                 `protobuf:"bytes,1,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	ExternalId    string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *MergeRequest) Reset() {
-	*x = MergeRequest{}
+func (x *IdentifyRequest) Reset() {
+	*x = IdentifyRequest{}
 	mi := &file_profiles_v1_profiles_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MergeRequest) String() string {
+func (x *IdentifyRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MergeRequest) ProtoMessage() {}
+func (*IdentifyRequest) ProtoMessage() {}
 
-func (x *MergeRequest) ProtoReflect() protoreflect.Message {
+func (x *IdentifyRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_profiles_v1_profiles_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -393,46 +393,46 @@ func (x *MergeRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MergeRequest.ProtoReflect.Descriptor instead.
-func (*MergeRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use IdentifyRequest.ProtoReflect.Descriptor instead.
+func (*IdentifyRequest) Descriptor() ([]byte, []int) {
 	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *MergeRequest) GetSourceId() string {
+func (x *IdentifyRequest) GetProfileId() string {
 	if x != nil {
-		return x.SourceId
+		return x.ProfileId
 	}
 	return ""
 }
 
-func (x *MergeRequest) GetTargetId() string {
+func (x *IdentifyRequest) GetExternalId() string {
 	if x != nil {
-		return x.TargetId
+		return x.ExternalId
 	}
 	return ""
 }
 
-type MergeResponse struct {
+type IdentifyResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Profile       *Profile               `protobuf:"bytes,1,opt,name=profile" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *MergeResponse) Reset() {
-	*x = MergeResponse{}
+func (x *IdentifyResponse) Reset() {
+	*x = IdentifyResponse{}
 	mi := &file_profiles_v1_profiles_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MergeResponse) String() string {
+func (x *IdentifyResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MergeResponse) ProtoMessage() {}
+func (*IdentifyResponse) ProtoMessage() {}
 
-func (x *MergeResponse) ProtoReflect() protoreflect.Message {
+func (x *IdentifyResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_profiles_v1_profiles_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -444,12 +444,12 @@ func (x *MergeResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MergeResponse.ProtoReflect.Descriptor instead.
-func (*MergeResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use IdentifyResponse.ProtoReflect.Descriptor instead.
+func (*IdentifyResponse) Descriptor() ([]byte, []int) {
 	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *MergeResponse) GetProfile() *Profile {
+func (x *IdentifyResponse) GetProfile() *Profile {
 	if x != nil {
 		return x.Profile
 	}
@@ -672,11 +672,13 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"\r\n" +
 	"\vListRequest\"@\n" +
 	"\fListResponse\x120\n" +
-	"\bprofiles\x18\x01 \x03(\v2\x14.profiles.v1.ProfileR\bprofiles\"Z\n" +
-	"\fMergeRequest\x12$\n" +
-	"\tsource_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bsourceId\x12$\n" +
-	"\ttarget_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\btargetId\"?\n" +
-	"\rMergeResponse\x12.\n" +
+	"\bprofiles\x18\x01 \x03(\v2\x14.profiles.v1.ProfileR\bprofiles\"c\n" +
+	"\x0fIdentifyRequest\x12&\n" +
+	"\n" +
+	"profile_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprofileId\x12(\n" +
+	"\vexternal_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
+	"externalId\"B\n" +
+	"\x10IdentifyResponse\x12.\n" +
 	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"\xdb\x02\n" +
 	"\aProfile\x12@\n" +
 	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12;\n" +
@@ -696,13 +698,13 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\vexternal_id\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"externalId\">\n" +
 	"\fSaveResponse\x12.\n" +
-	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile2\xb2\x03\n" +
+	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile2\xbb\x03\n" +
 	"\x0fProfilesService\x12C\n" +
 	"\x06Delete\x12\x1a.profiles.v1.DeleteRequest\x1a\x1b.profiles.v1.DeleteResponse\"\x00\x12:\n" +
 	"\x03Get\x12\x17.profiles.v1.GetRequest\x1a\x18.profiles.v1.GetResponse\"\x00\x12^\n" +
 	"\x0fGetByExternalId\x12#.profiles.v1.GetByExternalIdRequest\x1a$.profiles.v1.GetByExternalIdResponse\"\x00\x12=\n" +
-	"\x04List\x12\x18.profiles.v1.ListRequest\x1a\x19.profiles.v1.ListResponse\"\x00\x12@\n" +
-	"\x05Merge\x12\x19.profiles.v1.MergeRequest\x1a\x1a.profiles.v1.MergeResponse\"\x00\x12=\n" +
+	"\x04List\x12\x18.profiles.v1.ListRequest\x1a\x19.profiles.v1.ListResponse\"\x00\x12I\n" +
+	"\bIdentify\x12\x1c.profiles.v1.IdentifyRequest\x1a\x1d.profiles.v1.IdentifyResponse\"\x00\x12=\n" +
 	"\x04Save\x12\x18.profiles.v1.SaveRequest\x1a\x19.profiles.v1.SaveResponse\"\x00BMZFgithub.com/fivebitsio/cotton/internal/gen/proto/profiles/v1;profilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
@@ -727,8 +729,8 @@ var file_profiles_v1_profiles_proto_goTypes = []any{
 	(*GetResponse)(nil),             // 5: profiles.v1.GetResponse
 	(*ListRequest)(nil),             // 6: profiles.v1.ListRequest
 	(*ListResponse)(nil),            // 7: profiles.v1.ListResponse
-	(*MergeRequest)(nil),            // 8: profiles.v1.MergeRequest
-	(*MergeResponse)(nil),           // 9: profiles.v1.MergeResponse
+	(*IdentifyRequest)(nil),         // 8: profiles.v1.IdentifyRequest
+	(*IdentifyResponse)(nil),        // 9: profiles.v1.IdentifyResponse
 	(*Profile)(nil),                 // 10: profiles.v1.Profile
 	(*SaveRequest)(nil),             // 11: profiles.v1.SaveRequest
 	(*SaveResponse)(nil),            // 12: profiles.v1.SaveResponse
@@ -739,7 +741,7 @@ var file_profiles_v1_profiles_proto_depIdxs = []int32{
 	10, // 0: profiles.v1.GetByExternalIdResponse.profile:type_name -> profiles.v1.Profile
 	10, // 1: profiles.v1.GetResponse.profile:type_name -> profiles.v1.Profile
 	10, // 2: profiles.v1.ListResponse.profiles:type_name -> profiles.v1.Profile
-	10, // 3: profiles.v1.MergeResponse.profile:type_name -> profiles.v1.Profile
+	10, // 3: profiles.v1.IdentifyResponse.profile:type_name -> profiles.v1.Profile
 	13, // 4: profiles.v1.Profile.auto_properties:type_name -> google.protobuf.Struct
 	14, // 5: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
 	13, // 6: profiles.v1.Profile.custom_properties:type_name -> google.protobuf.Struct
@@ -751,13 +753,13 @@ var file_profiles_v1_profiles_proto_depIdxs = []int32{
 	4,  // 12: profiles.v1.ProfilesService.Get:input_type -> profiles.v1.GetRequest
 	2,  // 13: profiles.v1.ProfilesService.GetByExternalId:input_type -> profiles.v1.GetByExternalIdRequest
 	6,  // 14: profiles.v1.ProfilesService.List:input_type -> profiles.v1.ListRequest
-	8,  // 15: profiles.v1.ProfilesService.Merge:input_type -> profiles.v1.MergeRequest
+	8,  // 15: profiles.v1.ProfilesService.Identify:input_type -> profiles.v1.IdentifyRequest
 	11, // 16: profiles.v1.ProfilesService.Save:input_type -> profiles.v1.SaveRequest
 	1,  // 17: profiles.v1.ProfilesService.Delete:output_type -> profiles.v1.DeleteResponse
 	5,  // 18: profiles.v1.ProfilesService.Get:output_type -> profiles.v1.GetResponse
 	3,  // 19: profiles.v1.ProfilesService.GetByExternalId:output_type -> profiles.v1.GetByExternalIdResponse
 	7,  // 20: profiles.v1.ProfilesService.List:output_type -> profiles.v1.ListResponse
-	9,  // 21: profiles.v1.ProfilesService.Merge:output_type -> profiles.v1.MergeResponse
+	9,  // 21: profiles.v1.ProfilesService.Identify:output_type -> profiles.v1.IdentifyResponse
 	12, // 22: profiles.v1.ProfilesService.Save:output_type -> profiles.v1.SaveResponse
 	17, // [17:23] is the sub-list for method output_type
 	11, // [11:17] is the sub-list for method input_type
