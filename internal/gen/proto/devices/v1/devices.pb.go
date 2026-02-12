@@ -373,6 +373,7 @@ type DeviceOperationMessage struct {
 	Properties        map[string]*anypb.Any  `protobuf:"bytes,6,rep,name=properties" json:"properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Status            string                 `protobuf:"bytes,7,opt,name=status" json:"status,omitempty"`
 	Token             string                 `protobuf:"bytes,8,opt,name=token" json:"token,omitempty"`
+	ProfileId         string                 `protobuf:"bytes,9,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -463,20 +464,27 @@ func (x *DeviceOperationMessage) GetToken() string {
 	return ""
 }
 
+func (x *DeviceOperationMessage) GetProfileId() string {
+	if x != nil {
+		return x.ProfileId
+	}
+	return ""
+}
+
 var File_devices_v1_devices_proto protoreflect.FileDescriptor
 
 const file_devices_v1_devices_proto_rawDesc = "" +
 	"\n" +
 	"\x18devices/v1/devices.proto\x12\n" +
-	"devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19google/protobuf/any.proto\"\xce\x02\n" +
+	"devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19google/protobuf/any.proto\"\xc5\x02\n" +
 	"\rUpsertRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x124\n" +
 	"\bplatform\x18\x02 \x01(\tB\x18\xbaH\x15r\x13R\aandroidR\x03iosR\x03webR\bplatform\x12.\n" +
 	"\x13profile_external_id\x18\x03 \x01(\tR\x11profileExternalId\x12I\n" +
 	"\n" +
 	"properties\x18\x04 \x03(\v2).devices.v1.UpsertRequest.PropertiesEntryR\n" +
-	"properties\x12\x1d\n" +
-	"\x05token\x18\x05 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05token\x1aS\n" +
+	"properties\x12\x14\n" +
+	"\x05token\x18\x05 \x01(\tR\x05token\x1aS\n" +
 	"\x0fPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
 	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\x10\n" +
@@ -488,7 +496,7 @@ const file_devices_v1_devices_proto_rawDesc = "" +
 	"\x12UpdateTokenRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\"\x15\n" +
-	"\x13UpdateTokenResponse\"\xbf\x03\n" +
+	"\x13UpdateTokenResponse\"\xde\x03\n" +
 	"\x16DeviceOperationMessage\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12F\n" +
 	"\x0eoperation_type\x18\x02 \x01(\x0e2\x1f.devices.v1.DeviceOperationTypeR\roperationType\x12\x1a\n" +
@@ -500,7 +508,9 @@ const file_devices_v1_devices_proto_rawDesc = "" +
 	"properties\x18\x06 \x03(\v22.devices.v1.DeviceOperationMessage.PropertiesEntryR\n" +
 	"properties\x12\x16\n" +
 	"\x06status\x18\a \x01(\tR\x06status\x12\x14\n" +
-	"\x05token\x18\b \x01(\tR\x05token\x1aS\n" +
+	"\x05token\x18\b \x01(\tR\x05token\x12\x1d\n" +
+	"\n" +
+	"profile_id\x18\t \x01(\tR\tprofileId\x1aS\n" +
 	"\x0fPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
 	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01*\xaf\x01\n" +

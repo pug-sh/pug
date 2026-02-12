@@ -7,31 +7,18 @@ package dbwrite
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
-
-const deleteProfileDevice = `-- name: DeleteProfileDevice :exec
-delete from profile_devices
-where id = $1 and project_id = $2
-`
-
-type DeleteProfileDeviceParams struct {
-	ID        string
-	ProjectID string
-}
-
-func (q *Queries) DeleteProfileDevice(ctx context.Context, arg DeleteProfileDeviceParams) error {
-	_, err := q.db.Exec(ctx, deleteProfileDevice, arg.ID, arg.ProjectID)
-	return err
-}
 
 const saveProfileDevice = `-- name: SaveProfileDevice :one
 insert into profile_devices (id, platform, profile_id, project_id, properties, status, token)
-values ($1, $2, $3, $4, coalesce($5, '{}'), $6, $7)
+values ($1, $2, $3, $4, coalesce($5, '{}'), $6, nullif($7, ''))
 on conflict (project_id, id) do update set
   platform = excluded.platform,
   properties = jsonb_shallow_merge(profile_devices.properties, excluded.properties),
   status = excluded.status,
-  token = excluded.token
+  token = coalesce(nullif(excluded.token, ''), profile_devices.token)
 returning create_time, id, platform, profile_id, project_id, properties, status, token, update_time
 `
 
@@ -42,7 +29,7 @@ type SaveProfileDeviceParams struct {
 	ProjectID  string
 	Properties interface{}
 	Status     string
-	Token      string
+	Token      interface{}
 }
 
 func (q *Queries) SaveProfileDevice(ctx context.Context, arg SaveProfileDeviceParams) (ProfileDevice, error) {
@@ -108,7 +95,7 @@ returning create_time, id, platform, profile_id, project_id, properties, status,
 `
 
 type UpdateProfileDeviceTokenParams struct {
-	Token     string
+	Token     pgtype.Text
 	ID        string
 	ProjectID string
 }

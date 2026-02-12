@@ -45,8 +45,12 @@ const (
 	// ProfilesServiceIdentifyProcedure is the fully-qualified name of the ProfilesService's Identify
 	// RPC.
 	ProfilesServiceIdentifyProcedure = "/profiles.v1.ProfilesService/Identify"
-	// ProfilesServiceSaveProcedure is the fully-qualified name of the ProfilesService's Save RPC.
-	ProfilesServiceSaveProcedure = "/profiles.v1.ProfilesService/Save"
+	// ProfilesServiceRegisterProcedure is the fully-qualified name of the ProfilesService's Register
+	// RPC.
+	ProfilesServiceRegisterProcedure = "/profiles.v1.ProfilesService/Register"
+	// ProfilesServiceSubscribeProcedure is the fully-qualified name of the ProfilesService's Subscribe
+	// RPC.
+	ProfilesServiceSubscribeProcedure = "/profiles.v1.ProfilesService/Subscribe"
 )
 
 // ProfilesServiceClient is a client for the profiles.v1.ProfilesService service.
@@ -57,7 +61,8 @@ type ProfilesServiceClient interface {
 	// todo - shift to server streaming
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
 	Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error)
-	Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error)
+	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error)
+	Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error)
 }
 
 // NewProfilesServiceClient constructs a client for the profiles.v1.ProfilesService service. By
@@ -101,10 +106,16 @@ func NewProfilesServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(profilesServiceMethods.ByName("Identify")),
 			connect.WithClientOptions(opts...),
 		),
-		save: connect.NewClient[v1.SaveRequest, v1.SaveResponse](
+		register: connect.NewClient[v1.RegisterRequest, v1.RegisterResponse](
 			httpClient,
-			baseURL+ProfilesServiceSaveProcedure,
-			connect.WithSchema(profilesServiceMethods.ByName("Save")),
+			baseURL+ProfilesServiceRegisterProcedure,
+			connect.WithSchema(profilesServiceMethods.ByName("Register")),
+			connect.WithClientOptions(opts...),
+		),
+		subscribe: connect.NewClient[v1.SubscribeRequest, v1.SubscribeResponse](
+			httpClient,
+			baseURL+ProfilesServiceSubscribeProcedure,
+			connect.WithSchema(profilesServiceMethods.ByName("Subscribe")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -117,7 +128,8 @@ type profilesServiceClient struct {
 	getByExternalId *connect.Client[v1.GetByExternalIdRequest, v1.GetByExternalIdResponse]
 	list            *connect.Client[v1.ListRequest, v1.ListResponse]
 	identify        *connect.Client[v1.IdentifyRequest, v1.IdentifyResponse]
-	save            *connect.Client[v1.SaveRequest, v1.SaveResponse]
+	register        *connect.Client[v1.RegisterRequest, v1.RegisterResponse]
+	subscribe       *connect.Client[v1.SubscribeRequest, v1.SubscribeResponse]
 }
 
 // Delete calls profiles.v1.ProfilesService.Delete.
@@ -145,9 +157,14 @@ func (c *profilesServiceClient) Identify(ctx context.Context, req *connect.Reque
 	return c.identify.CallUnary(ctx, req)
 }
 
-// Save calls profiles.v1.ProfilesService.Save.
-func (c *profilesServiceClient) Save(ctx context.Context, req *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error) {
-	return c.save.CallUnary(ctx, req)
+// Register calls profiles.v1.ProfilesService.Register.
+func (c *profilesServiceClient) Register(ctx context.Context, req *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error) {
+	return c.register.CallUnary(ctx, req)
+}
+
+// Subscribe calls profiles.v1.ProfilesService.Subscribe.
+func (c *profilesServiceClient) Subscribe(ctx context.Context, req *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error) {
+	return c.subscribe.CallUnary(ctx, req)
 }
 
 // ProfilesServiceHandler is an implementation of the profiles.v1.ProfilesService service.
@@ -158,7 +175,8 @@ type ProfilesServiceHandler interface {
 	// todo - shift to server streaming
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
 	Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error)
-	Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error)
+	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error)
+	Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error)
 }
 
 // NewProfilesServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -198,10 +216,16 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 		connect.WithSchema(profilesServiceMethods.ByName("Identify")),
 		connect.WithHandlerOptions(opts...),
 	)
-	profilesServiceSaveHandler := connect.NewUnaryHandler(
-		ProfilesServiceSaveProcedure,
-		svc.Save,
-		connect.WithSchema(profilesServiceMethods.ByName("Save")),
+	profilesServiceRegisterHandler := connect.NewUnaryHandler(
+		ProfilesServiceRegisterProcedure,
+		svc.Register,
+		connect.WithSchema(profilesServiceMethods.ByName("Register")),
+		connect.WithHandlerOptions(opts...),
+	)
+	profilesServiceSubscribeHandler := connect.NewUnaryHandler(
+		ProfilesServiceSubscribeProcedure,
+		svc.Subscribe,
+		connect.WithSchema(profilesServiceMethods.ByName("Subscribe")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/profiles.v1.ProfilesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -216,8 +240,10 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 			profilesServiceListHandler.ServeHTTP(w, r)
 		case ProfilesServiceIdentifyProcedure:
 			profilesServiceIdentifyHandler.ServeHTTP(w, r)
-		case ProfilesServiceSaveProcedure:
-			profilesServiceSaveHandler.ServeHTTP(w, r)
+		case ProfilesServiceRegisterProcedure:
+			profilesServiceRegisterHandler.ServeHTTP(w, r)
+		case ProfilesServiceSubscribeProcedure:
+			profilesServiceSubscribeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -247,6 +273,10 @@ func (UnimplementedProfilesServiceHandler) Identify(context.Context, *connect.Re
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Identify is not implemented"))
 }
 
-func (UnimplementedProfilesServiceHandler) Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Save is not implemented"))
+func (UnimplementedProfilesServiceHandler) Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Register is not implemented"))
+}
+
+func (UnimplementedProfilesServiceHandler) Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Subscribe is not implemented"))
 }

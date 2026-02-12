@@ -29,5 +29,5 @@ message Event {
 
 message EventBatch {
   repeated Event events = 1;
-  string project_id = 2 [(buf.validate.field).string.min_len = 1];
+  string project_id = 2 [(buf.validate.field).required = true];
 }

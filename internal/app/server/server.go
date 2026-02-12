@@ -63,7 +63,7 @@ func start(ctx context.Context, d *deps) error {
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
 		delivery.NewServer(d.deliveriesProducer), handlerOpts)
 	profilesPath, profilesHandler := profilesv1connect.NewProfilesServiceHandler(
-		profilesrpc.NewHandler(d.pgRo, d.pgW), handlerOpts)
+		profilesrpc.NewHandler(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 
 	devicesServer, err := devicesrpc.NewServer(d.nats.GetJetStream())
 	if err != nil {

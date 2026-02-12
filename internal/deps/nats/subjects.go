@@ -5,6 +5,9 @@ const (
 	// Device subjects
 	DeviceOpsSubject = "devices.ops"
 
+	// Profile subjects
+	ProfileOpsSubject = "profiles.ops"
+
 	// Campaign subjects
 	CampaignScheduledSubject = "campaigns.scheduled"
 

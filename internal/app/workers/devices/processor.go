@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/fivebitsio/cotton/internal/core/devices"
@@ -64,56 +62,42 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 }
 
 func (w *Worker) handleUpsert(ctx context.Context, msg *devicesv1.DeviceOperationMessage) error {
-	props, err := protoMapToAny(msg.GetProperties())
+	profileID, err := w.resolveProfileID(ctx, msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to convert properties", slogx.Error(err))
 		return err
 	}
 
-	tx, err := w.pgW.Begin(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to begin transaction", slogx.Error(err))
-		return err
-	}
-	defer func() {
-		if err := tx.Rollback(ctx); err != nil && err != pgx.ErrTxClosed {
-			slog.ErrorContext(ctx, "failed to rollback transaction", slogx.Error(err))
-		}
-	}()
-
-	qtx := w.write.WithTx(tx)
-
-	profile, err := qtx.SaveProfile(ctx, dbwrite.SaveProfileParams{
-		AutoProperties:   map[string]any{},
-		CustomProperties: map[string]any{},
-		ExternalID:       msg.GetProfileExternalId(),
-		ID:               xid.New().String(),
-		ProjectID:        msg.GetProjectId(),
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to save profile for device upsert", slogx.Error(err))
-		return err
-	}
-
-	if _, err := qtx.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
-		ID:         msg.GetDeviceId(),
-		Platform:   msg.GetPlatform(),
-		ProfileID:  profile.ID,
-		ProjectID:  msg.GetProjectId(),
-		Properties: props,
-		Status:     "active",
-		Token:      msg.GetToken(),
+	if _, err := w.write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
+		ID:        msg.GetDeviceId(),
+		Platform:  msg.GetPlatform(),
+		ProfileID: profileID,
+		ProjectID: msg.GetProjectId(),
+		Status:    "active",
+		Token:     msg.GetToken(),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to save device", slogx.Error(err))
 		return err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed to commit transaction", slogx.Error(err))
-		return err
+	return nil
+}
+
+func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOperationMessage) (string, error) {
+	if id := msg.GetProfileId(); id != "" {
+		return id, nil
 	}
 
-	return nil
+	profile, err := w.write.GetProfileByProjectAndExternalID(ctx, dbwrite.GetProfileByProjectAndExternalIDParams{
+		ProjectID:  msg.GetProjectId(),
+		ExternalID: msg.GetProfileExternalId(),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to find profile for device upsert", slogx.Error(err),
+			slog.String("externalId", msg.GetProfileExternalId()))
+		return "", err
+	}
+
+	return profile.ID, nil
 }
 
 func (w *Worker) handleUpdateStatus(ctx context.Context, msg *devicesv1.DeviceOperationMessage) error {

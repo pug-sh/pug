@@ -44,33 +44,6 @@ func (q *Queries) GetActiveProfileDevicesByProject(ctx context.Context, projectI
 	return items, nil
 }
 
-const getProfileDevice = `-- name: GetProfileDevice :one
-select create_time, id, platform, profile_id, project_id, properties, status, token, update_time from profile_devices
-where id = $1 and project_id = $2
-`
-
-type GetProfileDeviceParams struct {
-	ID        string
-	ProjectID string
-}
-
-func (q *Queries) GetProfileDevice(ctx context.Context, arg GetProfileDeviceParams) (ProfileDevice, error) {
-	row := q.db.QueryRow(ctx, getProfileDevice, arg.ID, arg.ProjectID)
-	var i ProfileDevice
-	err := row.Scan(
-		&i.CreateTime,
-		&i.ID,
-		&i.Platform,
-		&i.ProfileID,
-		&i.ProjectID,
-		&i.Properties,
-		&i.Status,
-		&i.Token,
-		&i.UpdateTime,
-	)
-	return i, err
-}
-
 const getProfileDevicesByProfileID = `-- name: GetProfileDevicesByProfileID :many
 select create_time, id, platform, profile_id, project_id, properties, status, token, update_time from profile_devices
 where profile_id = $1
@@ -78,41 +51,6 @@ where profile_id = $1
 
 func (q *Queries) GetProfileDevicesByProfileID(ctx context.Context, profileID string) ([]ProfileDevice, error) {
 	rows, err := q.db.Query(ctx, getProfileDevicesByProfileID, profileID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ProfileDevice
-	for rows.Next() {
-		var i ProfileDevice
-		if err := rows.Scan(
-			&i.CreateTime,
-			&i.ID,
-			&i.Platform,
-			&i.ProfileID,
-			&i.ProjectID,
-			&i.Properties,
-			&i.Status,
-			&i.Token,
-			&i.UpdateTime,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getProfileDevicesByProject = `-- name: GetProfileDevicesByProject :many
-select create_time, id, platform, profile_id, project_id, properties, status, token, update_time from profile_devices
-where project_id = $1
-`
-
-func (q *Queries) GetProfileDevicesByProject(ctx context.Context, projectID string) ([]ProfileDevice, error) {
-	rows, err := q.db.Query(ctx, getProfileDevicesByProject, projectID)
 	if err != nil {
 		return nil, err
 	}

@@ -15,18 +15,6 @@ set name = coalesce(nullif(@name, ''), name),
 where id = @id and project_id = @project_id
 returning *;
 
--- name: UpdateCampaignEndTime :one
-update campaigns
-set end_time = @end_time
-where id = @id
-returning *;
-
--- name: UpdateCampaignStartTime :one
-update campaigns
-set start_time = @start_time
-where id = @id
-returning *;
-
 -- name: UpdateCampaignStatus :one
 update campaigns
 set status = @status

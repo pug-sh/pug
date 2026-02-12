@@ -7,7 +7,7 @@ create table profile_devices (
   project_id char(20) not null references projects(id) on delete cascade,
   properties jsonb not null default '{}'::jsonb,
   status text not null default 'active' check (status in ('active', 'inactive')),
-  token text not null,
+  token text,
   update_time timestamptz not null default now(),
   primary key (project_id, id)
 );

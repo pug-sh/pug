@@ -93,41 +93,6 @@ func (q *Queries) GetCampaignsByProjectID(ctx context.Context, projectID string)
 	return items, nil
 }
 
-const getCampaignsByStatus = `-- name: GetCampaignsByStatus :many
-select create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time from campaigns where status = $1
-`
-
-func (q *Queries) GetCampaignsByStatus(ctx context.Context, status string) ([]Campaign, error) {
-	rows, err := q.db.Query(ctx, getCampaignsByStatus, status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Campaign
-	for rows.Next() {
-		var i Campaign
-		if err := rows.Scan(
-			&i.CreateTime,
-			&i.EndTime,
-			&i.ID,
-			&i.Name,
-			&i.NotificationData,
-			&i.ProjectID,
-			&i.ScheduledTime,
-			&i.StartTime,
-			&i.Status,
-			&i.UpdateTime,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getScheduledCampaigns = `-- name: GetScheduledCampaigns :many
 select create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time from campaigns where scheduled_time <= now() and status = 'scheduled'
 `

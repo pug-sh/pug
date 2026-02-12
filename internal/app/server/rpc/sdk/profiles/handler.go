@@ -8,6 +8,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
+	"github.com/fivebitsio/cotton/internal/deps/nats"
+	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/devices/v1"
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -15,23 +17,26 @@ import (
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/xid"
+	"github.com/nats-io/nats.go/jetstream"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Handler struct {
 	profilesv1connect.UnimplementedProfilesServiceHandler
-	pgW   *pgxpool.Pool
-	read  *dbread.Queries
-	write *dbwrite.Queries
+	pgW      *pgxpool.Pool
+	producer jetstream.JetStream
+	read     *dbread.Queries
+	write    *dbwrite.Queries
 }
 
-func NewHandler(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Handler {
+func NewHandler(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, js jetstream.JetStream) *Handler {
 	return &Handler{
-		pgW:   pgW,
-		read:  dbread.New(pgRO),
-		write: dbwrite.New(pgW),
+		pgW:      pgW,
+		producer: js,
+		read:     dbread.New(pgRO),
+		write:    dbwrite.New(pgW),
 	}
 }
 
@@ -257,35 +262,68 @@ func (h *Handler) Identify(
 	}), nil
 }
 
-func (h *Handler) Save(
+func (h *Handler) Register(
 	ctx context.Context,
-	req *connect.Request[profilesv1.SaveRequest],
-) (*connect.Response[profilesv1.SaveResponse], error) {
+	req *connect.Request[profilesv1.RegisterRequest],
+) (*connect.Response[profilesv1.RegisterResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	p, err := h.write.SaveProfile(ctx, dbwrite.SaveProfileParams{
-		AutoProperties:   req.Msg.AutoProperties.AsMap(),
-		CustomProperties: req.Msg.CustomProperties.AsMap(),
-		ExternalID:       req.Msg.ExternalId,
-		ID:               xid.New().String(),
-		ProjectID:        principal.Project.ID,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed saving profile", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to save profile"))
+	msg := &profilesv1.ProfileOperationMessage{
+		OperationType:    profilesv1.ProfileOperationType_PROFILE_OPERATION_TYPE_REGISTER,
+		AutoProperties:   req.Msg.GetAutoProperties(),
+		CustomProperties: req.Msg.GetCustomProperties(),
+		ExternalId:       req.Msg.GetExternalId(),
+		ProjectId:        principal.Project.ID,
 	}
 
-	pbProfile, err := convertWriteProfile(p)
+	data, err := proto.Marshal(msg)
 	if err != nil {
-		return nil, err
+		slog.ErrorContext(ctx, "failed to marshal profile operation message", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	return connect.NewResponse(&profilesv1.SaveResponse{
-		Profile: pbProfile,
-	}), nil
+	if _, err = h.producer.Publish(ctx, nats.ProfileOpsSubject, data); err != nil {
+		slog.ErrorContext(ctx, "failed to publish profile operation to NATS", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&profilesv1.RegisterResponse{}), nil
+}
+
+func (h *Handler) Subscribe(
+	ctx context.Context,
+	req *connect.Request[profilesv1.SubscribeRequest],
+) (*connect.Response[profilesv1.SubscribeResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	msg := &devicesv1.DeviceOperationMessage{
+		OperationType:     devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPSERT,
+		DeviceId:          req.Msg.GetDeviceId(),
+		Platform:          req.Msg.GetPlatform(),
+		ProfileExternalId: req.Msg.GetProfileExternalId(),
+		ProfileId:         req.Msg.GetProfileId(),
+		Token:             req.Msg.GetToken(),
+		ProjectId:         principal.Project.ID,
+	}
+
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to marshal subscribe message", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	if _, err = h.producer.Publish(ctx, nats.DeviceOpsSubject, data); err != nil {
+		slog.ErrorContext(ctx, "failed to publish subscribe operation to NATS", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&profilesv1.SubscribeResponse{}), nil
 }
 
 func convertProfile(p dbread.Profile) (*profilesv1.Profile, error) {

@@ -122,7 +122,7 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 			"campaign_id": campaign.ID,
 			"project_id":  campaign.ProjectID,
 		},
-		Token: device.Token,
+		Token: device.Token.String,
 	}
 
 	// Send the message

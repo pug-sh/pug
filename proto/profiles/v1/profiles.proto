@@ -15,7 +15,8 @@ service ProfilesService {
   // todo - shift to server streaming
   rpc List(ListRequest) returns (ListResponse) {}
   rpc Identify(IdentifyRequest) returns (IdentifyResponse) {}
-  rpc Save(SaveRequest) returns (SaveResponse) {}
+  rpc Register(RegisterRequest) returns (RegisterResponse) {}
+  rpc Subscribe(SubscribeRequest) returns (SubscribeResponse) {}
 }
 
 message DeleteRequest {
@@ -47,8 +48,8 @@ message ListResponse {
 }
 
 message IdentifyRequest {
-  string profile_id = 1 [(buf.validate.field).string.min_len = 1];
-  string external_id = 2 [(buf.validate.field).string.min_len = 1];
+  string profile_id = 1 [(buf.validate.field).required = true];
+  string external_id = 2 [(buf.validate.field).required = true];
 }
 
 message IdentifyResponse {
@@ -65,12 +66,38 @@ message Profile {
   google.protobuf.Timestamp update_time = 7;
 }
 
-message SaveRequest {
+message RegisterRequest {
   google.protobuf.Struct auto_properties = 1;
   google.protobuf.Struct custom_properties = 2;
-  string external_id = 3 [(buf.validate.field).string.min_len = 1];
+  string external_id = 3 [(buf.validate.field).required = true];
 }
 
-message SaveResponse {
-  Profile profile = 1;
+message RegisterResponse {}
+
+message SubscribeRequest {
+  option (buf.validate.message).cel = {
+    id: "subscribe_request.profile_identifier"
+    message: "either profile_id or profile_external_id must be provided"
+    expression: "this.profile_id != '' || this.profile_external_id != ''"
+  };
+  string device_id = 1 [(buf.validate.field).string = {len: 20}];
+  string platform = 2 [(buf.validate.field).string = {in: ["android", "ios", "web"]}];
+  string profile_external_id = 3;
+  string profile_id = 4;
+  string token = 5 [(buf.validate.field).required = true];
+}
+
+message SubscribeResponse {}
+
+enum ProfileOperationType {
+  PROFILE_OPERATION_TYPE_UNSPECIFIED = 0;
+  PROFILE_OPERATION_TYPE_REGISTER = 1;
+}
+
+message ProfileOperationMessage {
+  google.protobuf.Struct auto_properties = 1;
+  google.protobuf.Struct custom_properties = 2;
+  string external_id = 3;
+  ProfileOperationType operation_type = 4;
+  string project_id = 5;
 }

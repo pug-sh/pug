@@ -49,7 +49,7 @@ type ProfileDevice struct {
 	ProjectID  string
 	Properties map[string]any
 	Status     string
-	Token      string
+	Token      pgtype.Text
 	UpdateTime pgtype.Timestamptz
 }
 
