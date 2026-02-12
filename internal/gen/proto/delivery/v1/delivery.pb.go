@@ -174,15 +174,15 @@ func (x *BatchDeliveryEvents) GetEvents() []*DeliveryEventMessage {
 }
 
 type BatchMulticastMessage struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Body               string                 `protobuf:"bytes,1,opt,name=body" json:"body,omitempty"`
-	CampaignId         string                 `protobuf:"bytes,2,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
-	Image              string                 `protobuf:"bytes,3,opt,name=image" json:"image,omitempty"`
-	ProjectId          string                 `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	SubscriptionTokens []*SubscriptionToken   `protobuf:"bytes,5,rep,name=subscription_tokens,json=subscriptionTokens" json:"subscription_tokens,omitempty"`
-	Title              string                 `protobuf:"bytes,6,opt,name=title" json:"title,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Body          string                 `protobuf:"bytes,1,opt,name=body" json:"body,omitempty"`
+	CampaignId    string                 `protobuf:"bytes,2,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
+	Image         string                 `protobuf:"bytes,3,opt,name=image" json:"image,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	DeviceTokens  []*DeviceToken         `protobuf:"bytes,5,rep,name=device_tokens,json=deviceTokens" json:"device_tokens,omitempty"`
+	Title         string                 `protobuf:"bytes,6,opt,name=title" json:"title,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BatchMulticastMessage) Reset() {
@@ -243,9 +243,9 @@ func (x *BatchMulticastMessage) GetProjectId() string {
 	return ""
 }
 
-func (x *BatchMulticastMessage) GetSubscriptionTokens() []*SubscriptionToken {
+func (x *BatchMulticastMessage) GetDeviceTokens() []*DeviceToken {
 	if x != nil {
-		return x.SubscriptionTokens
+		return x.DeviceTokens
 	}
 	return nil
 }
@@ -370,7 +370,7 @@ type DeliveryEventMessage struct {
 	MessageId      string                 `protobuf:"bytes,5,opt,name=message_id,json=messageId" json:"message_id,omitempty"`
 	Platform       Platform               `protobuf:"varint,6,opt,name=platform,enum=delivery.v1.Platform" json:"platform,omitempty"`
 	ProjectId      string                 `protobuf:"bytes,7,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	SubscriptionId string                 `protobuf:"bytes,8,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
+	DeviceId       string                 `protobuf:"bytes,8,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -454,9 +454,9 @@ func (x *DeliveryEventMessage) GetProjectId() string {
 	return ""
 }
 
-func (x *DeliveryEventMessage) GetSubscriptionId() string {
+func (x *DeliveryEventMessage) GetDeviceId() string {
 	if x != nil {
-		return x.SubscriptionId
+		return x.DeviceId
 	}
 	return ""
 }
@@ -469,7 +469,7 @@ type RecordEventRequest struct {
 	Metadata       map[string]string      `protobuf:"bytes,4,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	MessageId      string                 `protobuf:"bytes,5,opt,name=message_id,json=messageId" json:"message_id,omitempty"`
 	Platform       Platform               `protobuf:"varint,6,opt,name=platform,enum=delivery.v1.Platform" json:"platform,omitempty"`
-	SubscriptionId string                 `protobuf:"bytes,7,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
+	DeviceId       string                 `protobuf:"bytes,7,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -546,9 +546,9 @@ func (x *RecordEventRequest) GetPlatform() Platform {
 	return Platform_PLATFORM_UNSPECIFIED
 }
 
-func (x *RecordEventRequest) GetSubscriptionId() string {
+func (x *RecordEventRequest) GetDeviceId() string {
 	if x != nil {
-		return x.SubscriptionId
+		return x.DeviceId
 	}
 	return ""
 }
@@ -621,28 +621,28 @@ func (x *RecordEventResponse) GetSuccess() bool {
 	return false
 }
 
-type SubscriptionToken struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId" json:"subscription_id,omitempty"`
-	Token          string                 `protobuf:"bytes,2,opt,name=token" json:"token,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+type DeviceToken struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	Token         string                 `protobuf:"bytes,2,opt,name=token" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SubscriptionToken) Reset() {
-	*x = SubscriptionToken{}
+func (x *DeviceToken) Reset() {
+	*x = DeviceToken{}
 	mi := &file_delivery_v1_delivery_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SubscriptionToken) String() string {
+func (x *DeviceToken) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SubscriptionToken) ProtoMessage() {}
+func (*DeviceToken) ProtoMessage() {}
 
-func (x *SubscriptionToken) ProtoReflect() protoreflect.Message {
+func (x *DeviceToken) ProtoReflect() protoreflect.Message {
 	mi := &file_delivery_v1_delivery_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -654,19 +654,19 @@ func (x *SubscriptionToken) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SubscriptionToken.ProtoReflect.Descriptor instead.
-func (*SubscriptionToken) Descriptor() ([]byte, []int) {
+// Deprecated: Use DeviceToken.ProtoReflect.Descriptor instead.
+func (*DeviceToken) Descriptor() ([]byte, []int) {
 	return file_delivery_v1_delivery_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *SubscriptionToken) GetSubscriptionId() string {
+func (x *DeviceToken) GetDeviceId() string {
 	if x != nil {
-		return x.SubscriptionId
+		return x.DeviceId
 	}
 	return ""
 }
 
-func (x *SubscriptionToken) GetToken() string {
+func (x *DeviceToken) GetToken() string {
 	if x != nil {
 		return x.Token
 	}
@@ -679,15 +679,15 @@ const file_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
 	"\x1adelivery/v1/delivery.proto\x12\vdelivery.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"P\n" +
 	"\x13BatchDeliveryEvents\x129\n" +
-	"\x06events\x18\x01 \x03(\v2!.delivery.v1.DeliveryEventMessageR\x06events\"\xe8\x01\n" +
+	"\x06events\x18\x01 \x03(\v2!.delivery.v1.DeliveryEventMessageR\x06events\"\xd6\x01\n" +
 	"\x15BatchMulticastMessage\x12\x12\n" +
 	"\x04body\x18\x01 \x01(\tR\x04body\x12\x1f\n" +
 	"\vcampaign_id\x18\x02 \x01(\tR\n" +
 	"campaignId\x12\x14\n" +
 	"\x05image\x18\x03 \x01(\tR\x05image\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x04 \x01(\tR\tprojectId\x12O\n" +
-	"\x13subscription_tokens\x18\x05 \x03(\v2\x1e.delivery.v1.SubscriptionTokenR\x12subscriptionTokens\x12\x14\n" +
+	"project_id\x18\x04 \x01(\tR\tprojectId\x12=\n" +
+	"\rdevice_tokens\x18\x05 \x03(\v2\x18.delivery.v1.DeviceTokenR\fdeviceTokens\x12\x14\n" +
 	"\x05title\x18\x06 \x01(\tR\x05title\"\x15\n" +
 	"\x13BatchUnicastMessage\"\xd4\x01\n" +
 	"\rDeliveryEvent\x12\x1f\n" +
@@ -696,7 +696,7 @@ const file_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
 	"event_type\x18\x02 \x01(\x0e2\x16.delivery.v1.EventTypeR\teventType\x121\n" +
 	"\bplatform\x18\x03 \x01(\x0e2\x15.delivery.v1.PlatformR\bplatform\x128\n" +
-	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xd7\x03\n" +
+	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xcb\x03\n" +
 	"\x14DeliveryEventMessage\x12\x1f\n" +
 	"\vcampaign_id\x18\x01 \x01(\tR\n" +
 	"campaignId\x12C\n" +
@@ -708,11 +708,11 @@ const file_delivery_v1_delivery_proto_rawDesc = "" +
 	"message_id\x18\x05 \x01(\tR\tmessageId\x121\n" +
 	"\bplatform\x18\x06 \x01(\x0e2\x15.delivery.v1.PlatformR\bplatform\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\a \x01(\tR\tprojectId\x12'\n" +
-	"\x0fsubscription_id\x18\b \x01(\tR\x0esubscriptionId\x1a;\n" +
+	"project_id\x18\a \x01(\tR\tprojectId\x12\x1b\n" +
+	"\tdevice_id\x18\b \x01(\tR\bdeviceId\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb4\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa8\x03\n" +
 	"\x12RecordEventRequest\x12\x1f\n" +
 	"\vcampaign_id\x18\x01 \x01(\tR\n" +
 	"campaignId\x12C\n" +
@@ -722,8 +722,8 @@ const file_delivery_v1_delivery_proto_rawDesc = "" +
 	"\bmetadata\x18\x04 \x03(\v2-.delivery.v1.RecordEventRequest.MetadataEntryR\bmetadata\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x05 \x01(\tR\tmessageId\x121\n" +
-	"\bplatform\x18\x06 \x01(\x0e2\x15.delivery.v1.PlatformR\bplatform\x12'\n" +
-	"\x0fsubscription_id\x18\a \x01(\tR\x0esubscriptionId\x1a;\n" +
+	"\bplatform\x18\x06 \x01(\x0e2\x15.delivery.v1.PlatformR\bplatform\x12\x1b\n" +
+	"\tdevice_id\x18\a \x01(\tR\bdeviceId\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9c\x01\n" +
@@ -731,9 +731,9 @@ const file_delivery_v1_delivery_proto_rawDesc = "" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12.\n" +
 	"\x13retry_after_seconds\x18\x02 \x01(\x05R\x11retryAfterSeconds\x12!\n" +
 	"\fshould_retry\x18\x03 \x01(\bR\vshouldRetry\x12\x18\n" +
-	"\asuccess\x18\x04 \x01(\bR\asuccess\"R\n" +
-	"\x11SubscriptionToken\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x14\n" +
+	"\asuccess\x18\x04 \x01(\bR\asuccess\"@\n" +
+	"\vDeviceToken\x12\x1b\n" +
+	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token*\x9e\x01\n" +
 	"\tEventType\x12\x1a\n" +
 	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12\x16\n" +
@@ -773,14 +773,14 @@ var file_delivery_v1_delivery_proto_goTypes = []any{
 	(*DeliveryEventMessage)(nil),  // 6: delivery.v1.DeliveryEventMessage
 	(*RecordEventRequest)(nil),    // 7: delivery.v1.RecordEventRequest
 	(*RecordEventResponse)(nil),   // 8: delivery.v1.RecordEventResponse
-	(*SubscriptionToken)(nil),     // 9: delivery.v1.SubscriptionToken
+	(*DeviceToken)(nil),           // 9: delivery.v1.DeviceToken
 	nil,                           // 10: delivery.v1.DeliveryEventMessage.MetadataEntry
 	nil,                           // 11: delivery.v1.RecordEventRequest.MetadataEntry
 	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_delivery_v1_delivery_proto_depIdxs = []int32{
 	6,  // 0: delivery.v1.BatchDeliveryEvents.events:type_name -> delivery.v1.DeliveryEventMessage
-	9,  // 1: delivery.v1.BatchMulticastMessage.subscription_tokens:type_name -> delivery.v1.SubscriptionToken
+	9,  // 1: delivery.v1.BatchMulticastMessage.device_tokens:type_name -> delivery.v1.DeviceToken
 	0,  // 2: delivery.v1.DeliveryEvent.event_type:type_name -> delivery.v1.EventType
 	1,  // 3: delivery.v1.DeliveryEvent.platform:type_name -> delivery.v1.Platform
 	12, // 4: delivery.v1.DeliveryEvent.timestamp:type_name -> google.protobuf.Timestamp

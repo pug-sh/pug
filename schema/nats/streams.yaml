@@ -1,9 +1,9 @@
 # NATS JetStream Streams Configuration
 streams:
-  # Stream for subscription events
-  - name: "subscriptions"
-    subjects: ["subscriptions.>"]
-    description: "Events related to subscription management"
+  # Stream for device events
+  - name: "devices"
+    subjects: ["devices.>"]
+    description: "Events related to device management"
     retention_policy: "limits"
     max_consumers: -1
     max_msgs: -1

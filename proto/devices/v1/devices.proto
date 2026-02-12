@@ -1,0 +1,55 @@
+edition = "2023";
+package devices.v1;
+
+import "google/protobuf/any.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/devices/v1;devicesv1";
+
+service DevicesService {
+  rpc Upsert(UpsertRequest) returns (UpsertResponse) {}
+  rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse) {}
+  rpc UpdateToken(UpdateTokenRequest) returns (UpdateTokenResponse) {}
+}
+
+message UpsertRequest {
+  string id = 1;
+  string platform = 2;
+  string profile_external_id = 3;
+  map<string, google.protobuf.Any> properties = 4;
+  string token = 5;
+}
+
+message UpsertResponse {}
+
+message UpdateStatusRequest {
+  string id = 1;
+  string status = 2;
+}
+
+message UpdateStatusResponse {}
+
+message UpdateTokenRequest {
+  string id = 1;
+  string token = 2;
+}
+
+message UpdateTokenResponse {}
+
+enum DeviceOperationType {
+  DEVICE_OPERATION_TYPE_UNSPECIFIED = 0;
+  DEVICE_OPERATION_TYPE_UPSERT = 1;
+  DEVICE_OPERATION_TYPE_UPDATE_STATUS = 2;
+  DEVICE_OPERATION_TYPE_UPDATE_TOKEN = 3;
+}
+
+message DeviceOperationMessage {
+  string device_id = 1;
+  DeviceOperationType operation_type = 2;
+  string platform = 3;
+  string profile_external_id = 4;
+  string project_id = 5;
+  map<string, google.protobuf.Any> properties = 6;
+  string status = 7;
+  string token = 8;
+}

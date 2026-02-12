@@ -1,9 +1,9 @@
 # NATS JetStream Consumers Configuration
 consumers:
-  # Consumer for subscription events
-  - name: "subscription-processor"
-    stream_name: "subscriptions"
-    durable_name: "subscription-processor-durable"
+  # Consumer for device events
+  - name: "device-processor"
+    stream_name: "devices"
+    durable_name: "device-processor-durable"
     deliver_policy: "all"
     ack_explicit: true
     max_deliver: 5

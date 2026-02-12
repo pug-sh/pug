@@ -17,8 +17,8 @@ returning profiles.*;
 select * from profiles
 where project_id = @project_id and external_id = @external_id limit 1;
 
--- name: ReassignProfileSubscriptions :exec
-update subscriptions
+-- name: ReassignProfileDevices :exec
+update profile_devices
 set profile_id = @target_id
 where profile_id = @source_id and project_id = @project_id;
 

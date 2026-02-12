@@ -41,6 +41,18 @@ type Profile struct {
 	UpdateTime       pgtype.Timestamptz
 }
 
+type ProfileDevice struct {
+	CreateTime pgtype.Timestamptz
+	ID         string
+	Platform   string
+	ProfileID  string
+	ProjectID  string
+	Properties map[string]any
+	Status     string
+	Token      string
+	UpdateTime pgtype.Timestamptz
+}
+
 type Project struct {
 	ApiKey         string
 	CreateTime     pgtype.Timestamptz
@@ -60,18 +72,4 @@ type Segment struct {
 	DisplayName string
 	ProjectID   string
 	UpdateTime  pgtype.Timestamptz
-}
-
-type Subscription struct {
-	CreateTime        pgtype.Timestamptz
-	ID                string
-	LastHeartbeatTime pgtype.Timestamptz
-	Metadata          map[string]any
-	Platform          string
-	ProfileID         pgtype.Text
-	ProjectID         string
-	Status            string
-	Token             string
-	UpdateTime        pgtype.Timestamptz
-	Updater           string
 }

@@ -7,8 +7,6 @@ package dbwrite
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const deleteProfileByIDAndProjectID = `-- name: DeleteProfileByIDAndProjectID :exec
@@ -84,20 +82,20 @@ func (q *Queries) MergeProfileProperties(ctx context.Context, arg MergeProfilePr
 	return i, err
 }
 
-const reassignProfileSubscriptions = `-- name: ReassignProfileSubscriptions :exec
-update subscriptions
+const reassignProfileDevices = `-- name: ReassignProfileDevices :exec
+update profile_devices
 set profile_id = $1
 where profile_id = $2 and project_id = $3
 `
 
-type ReassignProfileSubscriptionsParams struct {
-	TargetID  pgtype.Text
-	SourceID  pgtype.Text
+type ReassignProfileDevicesParams struct {
+	TargetID  string
+	SourceID  string
 	ProjectID string
 }
 
-func (q *Queries) ReassignProfileSubscriptions(ctx context.Context, arg ReassignProfileSubscriptionsParams) error {
-	_, err := q.db.Exec(ctx, reassignProfileSubscriptions, arg.TargetID, arg.SourceID, arg.ProjectID)
+func (q *Queries) ReassignProfileDevices(ctx context.Context, arg ReassignProfileDevicesParams) error {
+	_, err := q.db.Exec(ctx, reassignProfileDevices, arg.TargetID, arg.SourceID, arg.ProjectID)
 	return err
 }
 

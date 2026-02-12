@@ -2,8 +2,8 @@ package nats
 
 // Subject constants for NATS publishing
 const (
-	// Subscription subjects
-	SubscriptionOpsSubject = "subscriptions.ops"
+	// Device subjects
+	DeviceOpsSubject = "devices.ops"
 
 	// Campaign subjects
 	CampaignScheduledSubject = "campaigns.scheduled"
