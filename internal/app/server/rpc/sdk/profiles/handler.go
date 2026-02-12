@@ -8,7 +8,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -221,12 +220,12 @@ func (h *Handler) Identify(
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
 		}
 
-		if err := qtx.ReassignProfileSubscriptions(ctx, dbwrite.ReassignProfileSubscriptionsParams{
-			TargetID:  postgres.NewText(existing.ID),
-			SourceID:  postgres.NewText(req.Msg.ProfileId),
+		if err := qtx.ReassignProfileDevices(ctx, dbwrite.ReassignProfileDevicesParams{
+			TargetID:  existing.ID,
+			SourceID:  req.Msg.ProfileId,
 			ProjectID: projectID,
 		}); err != nil {
-			slog.ErrorContext(ctx, "failed reassigning subscriptions", slogx.Error(err),
+			slog.ErrorContext(ctx, "failed reassigning devices", slogx.Error(err),
 				slog.String("sourceId", req.Msg.ProfileId), slog.String("targetId", existing.ID))
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
 		}

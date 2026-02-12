@@ -47,7 +47,7 @@ func (s *Server) RecordEvent(
 		ProjectId:      projectID,
 		CampaignId:     req.Msg.GetCampaignId(),
 		MessageId:      req.Msg.GetMessageId(),
-		SubscriptionId: req.Msg.GetSubscriptionId(),
+		DeviceId:       req.Msg.GetDeviceId(),
 		EventType:      req.Msg.GetEventType(),
 		Platform:       req.Msg.GetPlatform(),
 		EventTimestamp: eventTimestamp,

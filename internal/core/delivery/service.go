@@ -8,5 +8,5 @@ import (
 
 // Service defines the interface for sending notifications through different channels
 type Service interface {
-	SendNotification(ctx context.Context, campaign dbread.Campaign, subscription dbread.Subscription) error
+	SendNotification(ctx context.Context, campaign dbread.Campaign, device dbread.ProfileDevice) error
 }

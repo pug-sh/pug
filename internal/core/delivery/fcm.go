@@ -78,7 +78,7 @@ func (f *FCMService) getMessagingClient(ctx context.Context, projectID, fcmServi
 }
 
 // SendNotification sends a push notification to a device token via FCM
-func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campaign, subscription dbread.Subscription) error {
+func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campaign, device dbread.ProfileDevice) error {
 	// Get project details to access FCM service JSON
 	project, err := f.projectsSvc.GetProjectByID(ctx, campaign.ProjectID)
 	if err != nil {
@@ -122,7 +122,7 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 			"campaign_id": campaign.ID,
 			"project_id":  campaign.ProjectID,
 		},
-		Token: subscription.Token, // The device token is stored in the Token field
+		Token: device.Token,
 	}
 
 	// Send the message
@@ -133,7 +133,7 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 
 	slog.InfoContext(ctx, "FCM notification sent successfully",
 		slog.String("response_id", response),
-		slog.String("subscription_id", subscription.ID),
+		slog.String("device_id", device.ID),
 		slog.String("campaign_id", campaign.ID))
 
 	return nil

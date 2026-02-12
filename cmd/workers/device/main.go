@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/fivebitsio/cotton/internal/app/workers/subscriptions"
+	"github.com/fivebitsio/cotton/internal/app/workers/devices"
 	"github.com/joho/godotenv"
 )
 
@@ -19,8 +19,8 @@ func main() {
 		slog.DebugContext(ctx, "No .env file found, relying on environment variables")
 	}
 
-	if err := subscriptions.Run(ctx); err != nil {
-		slog.ErrorContext(ctx, "error starting subscription worker", slog.Any("err", err))
+	if err := devices.Run(ctx); err != nil {
+		slog.ErrorContext(ctx, "error starting device worker", slog.Any("err", err))
 		os.Exit(1)
 	}
 }

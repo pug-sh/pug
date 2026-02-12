@@ -15,7 +15,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/public/auth"
 	eventsrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/events"
 	profilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/profiles"
-	"github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/subscriptions"
+	devicesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/devices"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/delivery"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
@@ -24,7 +24,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/events/v1/eventsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/subscriptions/v1/subscriptionsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/devices/v1/devicesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -65,12 +65,12 @@ func start(ctx context.Context, d *deps) error {
 	profilesPath, profilesHandler := profilesv1connect.NewProfilesServiceHandler(
 		profilesrpc.NewHandler(d.pgRo, d.pgW), handlerOpts)
 
-	subscriptionsServer, err := subscriptions.NewServer(d.nats.GetJetStream())
+	devicesServer, err := devicesrpc.NewServer(d.nats.GetJetStream())
 	if err != nil {
 		return err
 	}
-	subscriptionsPath, subscriptionsHandler := subscriptionsv1connect.NewSubscriptionsServiceHandler(
-		subscriptionsServer, handlerOpts)
+	devicesPath, devicesHandler := devicesv1connect.NewDevicesServiceHandler(
+		devicesServer, handlerOpts)
 
 	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(
 		eventsrpc.NewServer(d.eventsProducer), handlerOpts)
@@ -88,7 +88,7 @@ func start(ctx context.Context, d *deps) error {
 	mux.Handle(deliveryPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(deliveryHandler)))
 
 	// SDK only (API key auth, no CORS)
-	mux.Handle(subscriptionsPath, sdkMW.Wrap(subscriptionsHandler))
+	mux.Handle(devicesPath, sdkMW.Wrap(devicesHandler))
 	mux.Handle(profilesPath, sdkMW.Wrap(profilesHandler))
 	mux.Handle(eventsPath, sdkMW.Wrap(eventsHandler))
 
@@ -99,7 +99,7 @@ func start(ctx context.Context, d *deps) error {
 		campaignsv1connect.CampaignServiceName,
 		deliveryv1connect.DeliveryServiceName,
 		eventsv1connect.EventsServiceName,
-		subscriptionsv1connect.SubscriptionsServiceName,
+		devicesv1connect.DevicesServiceName,
 		profilesv1connect.ProfilesServiceName,
 	}
 	reflector := grpcreflect.NewStaticReflector(services...)

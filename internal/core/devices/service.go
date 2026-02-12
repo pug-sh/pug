@@ -1,0 +1,54 @@
+package devices
+
+import (
+	"context"
+
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const (
+	StatusActive   = "active"
+	StatusInactive = "inactive"
+)
+
+type Service struct {
+	read  *dbread.Queries
+	write *dbwrite.Queries
+}
+
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
+	return &Service{
+		read:  dbread.New(pgRO),
+		write: dbwrite.New(pgW),
+	}
+}
+
+func (s *Service) SaveDevice(ctx context.Context, params dbwrite.SaveProfileDeviceParams) (dbwrite.ProfileDevice, error) {
+	return s.write.SaveProfileDevice(ctx, params)
+}
+
+func (s *Service) UpdateDeviceStatus(ctx context.Context, id, projectID, status string) (dbwrite.ProfileDevice, error) {
+	return s.write.UpdateProfileDeviceStatus(ctx, dbwrite.UpdateProfileDeviceStatusParams{
+		Status:    status,
+		ID:        id,
+		ProjectID: projectID,
+	})
+}
+
+func (s *Service) UpdateDeviceToken(ctx context.Context, id, projectID, token string) (dbwrite.ProfileDevice, error) {
+	return s.write.UpdateProfileDeviceToken(ctx, dbwrite.UpdateProfileDeviceTokenParams{
+		Token:     token,
+		ID:        id,
+		ProjectID: projectID,
+	})
+}
+
+func (s *Service) GetActiveDevicesByProject(ctx context.Context, projectID string) ([]dbread.ProfileDevice, error) {
+	return s.read.GetActiveProfileDevicesByProject(ctx, projectID)
+}
+
+func (s *Service) GetDevicesByProfileID(ctx context.Context, profileID string) ([]dbread.ProfileDevice, error) {
+	return s.read.GetProfileDevicesByProfileID(ctx, profileID)
+}

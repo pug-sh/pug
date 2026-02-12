@@ -61,7 +61,7 @@ gen-ts: lint
 build:
 	go build -o bin/cotton ./cmd/cotton
 	go build -o bin/cotton-server ./cmd/server
-	go build -o bin/cotton-worker-subscription ./cmd/workers/subscription
+	go build -o bin/cotton-worker-device ./cmd/workers/device
 	go build -o bin/cotton-worker-campaign ./cmd/workers/campaign
 	go build -o bin/cotton-migrate-postgres ./cmd/migrate/postgres
 	go build -o bin/cotton-migrate-nats ./cmd/migrate/nats

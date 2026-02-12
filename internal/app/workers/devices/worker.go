@@ -1,4 +1,4 @@
-package subscriptions
+package devices
 
 import (
 	"context"
@@ -37,26 +37,25 @@ func Run(ctx context.Context) error {
 	}
 	defer natsClient.Close()
 
-	slog.InfoContext(ctx, "Starting subscription worker...")
+	slog.InfoContext(ctx, "Starting device worker...")
 	return StartWorker(ctx, pgRO, pgW, natsClient)
 }
 
 func StartWorker(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, natsClient *natsworker.NATSClient) error {
-	// Get consumer configuration from YAML file
-	consumerConfig, err := natsClient.GetConsumerConfigByName("subscription-processor-durable")
+	consumerConfig, err := natsClient.GetConsumerConfigByName("device-processor-durable")
 	if err != nil {
-		return fmt.Errorf("failed to get subscription consumer config: %w", err)
+		return fmt.Errorf("failed to get device consumer config: %w", err)
 	}
 
-	subscriptionWorker := NewWorker(pgRO, pgW)
+	deviceWorker := NewWorker(pgRO, pgW)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		return subscriptionWorker.ProcessMessage(ctx, msg.Data())
+		return deviceWorker.ProcessMessage(ctx, msg.Data())
 	}
 
 	config := natsworker.WorkerConfig{
 		StreamName:        consumerConfig.StreamName,
-		ConsumerName:      consumerConfig.DurableName, // Use the durable name for both
+		ConsumerName:      consumerConfig.DurableName,
 		DurableName:       consumerConfig.DurableName,
 		Concurrency:       100,
 		ProcessingTimeout: 30 * time.Second,

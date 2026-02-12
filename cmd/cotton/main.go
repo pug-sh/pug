@@ -13,7 +13,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server"
 	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
 	eventsworker "github.com/fivebitsio/cotton/internal/app/workers/events"
-	"github.com/fivebitsio/cotton/internal/app/workers/subscriptions"
+	"github.com/fivebitsio/cotton/internal/app/workers/devices"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -83,10 +83,10 @@ var workerCmd = &cobra.Command{
 	Short: "Worker related commands",
 }
 
-var subscriptionCmd = &cobra.Command{
-	Use:   "subscription",
-	Short: "Start the subscription worker",
-	Run:   run(subscriptions.Run),
+var deviceCmd = &cobra.Command{
+	Use:   "device",
+	Short: "Start the device worker",
+	Run:   run(devices.Run),
 }
 
 var campaignCmd = &cobra.Command{
@@ -113,7 +113,7 @@ var devCmd = &cobra.Command{
 		}
 
 		g, ctx := errgroup.WithContext(sigCtx)
-		g.Go(func() error { return subscriptions.Run(ctx) })
+		g.Go(func() error { return devices.Run(ctx) })
 		g.Go(func() error { return campaigns.Run(ctx) })
 		g.Go(func() error { return eventsworker.Run(ctx) })
 		g.Go(func() error { return server.Run(ctx) })
@@ -145,7 +145,7 @@ var clickhouseMigrateCmd = &cobra.Command{
 }
 
 func init() {
-	workerCmd.AddCommand(subscriptionCmd)
+	workerCmd.AddCommand(deviceCmd)
 	workerCmd.AddCommand(campaignCmd)
 	workerCmd.AddCommand(eventsCmd)
 
