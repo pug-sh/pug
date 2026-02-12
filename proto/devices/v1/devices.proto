@@ -1,6 +1,7 @@
 edition = "2023";
 package devices.v1;
 
+import "buf/validate/validate.proto";
 import "google/protobuf/any.proto";
 
 option features.field_presence = IMPLICIT;
@@ -14,23 +15,23 @@ service DevicesService {
 
 message UpsertRequest {
   string id = 1;
-  string platform = 2;
+  string platform = 2 [(buf.validate.field).string = {in: ["android", "ios", "web"]}];
   string profile_external_id = 3;
   map<string, google.protobuf.Any> properties = 4;
-  string token = 5;
+  string token = 5 [(buf.validate.field).string.min_len = 1];
 }
 
 message UpsertResponse {}
 
 message UpdateStatusRequest {
-  string id = 1;
+  string id = 1 [(buf.validate.field).string.min_len = 1];
   string status = 2;
 }
 
 message UpdateStatusResponse {}
 
 message UpdateTokenRequest {
-  string id = 1;
+  string id = 1 [(buf.validate.field).string.min_len = 1];
   string token = 2;
 }
 

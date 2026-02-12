@@ -6,24 +6,28 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/xid"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/fivebitsio/cotton/internal/core/devices"
 	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/devices/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/xid"
-	"google.golang.org/protobuf/proto"
 )
 
 type Worker struct {
 	deviceService *devices.Service
-	profilesWrite *dbwrite.Queries
+	pgW           *pgxpool.Pool
+	write         *dbwrite.Queries
 }
 
 func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 	return &Worker{
 		deviceService: devices.NewService(pgRO, pgW),
-		profilesWrite: dbwrite.New(pgW),
+		pgW:           pgW,
+		write:         dbwrite.New(pgW),
 	}
 }
 
@@ -60,7 +64,26 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 }
 
 func (w *Worker) handleUpsert(ctx context.Context, msg *devicesv1.DeviceOperationMessage) error {
-	profile, err := w.profilesWrite.SaveProfile(ctx, dbwrite.SaveProfileParams{
+	props, err := protoMapToAny(msg.GetProperties())
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to convert properties", slogx.Error(err))
+		return err
+	}
+
+	tx, err := w.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin transaction", slogx.Error(err))
+		return err
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && err != pgx.ErrTxClosed {
+			slog.ErrorContext(ctx, "failed to rollback transaction", slogx.Error(err))
+		}
+	}()
+
+	qtx := w.write.WithTx(tx)
+
+	profile, err := qtx.SaveProfile(ctx, dbwrite.SaveProfileParams{
 		AutoProperties:   map[string]any{},
 		CustomProperties: map[string]any{},
 		ExternalID:       msg.GetProfileExternalId(),
@@ -72,13 +95,7 @@ func (w *Worker) handleUpsert(ctx context.Context, msg *devicesv1.DeviceOperatio
 		return err
 	}
 
-	props, err := protoMapToAny(msg.GetProperties())
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to convert properties", slogx.Error(err))
-		return err
-	}
-
-	if _, err := w.deviceService.SaveDevice(ctx, dbwrite.SaveProfileDeviceParams{
+	if _, err := qtx.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 		ID:         msg.GetDeviceId(),
 		Platform:   msg.GetPlatform(),
 		ProfileID:  profile.ID,
@@ -88,6 +105,11 @@ func (w *Worker) handleUpsert(ctx context.Context, msg *devicesv1.DeviceOperatio
 		Token:      msg.GetToken(),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to save device", slogx.Error(err))
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit transaction", slogx.Error(err))
 		return err
 	}
 

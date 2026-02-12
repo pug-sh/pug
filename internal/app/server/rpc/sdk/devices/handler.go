@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
+	"github.com/rs/xid"
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
@@ -37,9 +38,14 @@ func (s *Server) Upsert(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
+	deviceID := req.Msg.GetId()
+	if deviceID == "" {
+		deviceID = xid.New().String()
+	}
+
 	msg := &devicesv1.DeviceOperationMessage{
 		OperationType:     devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPSERT,
-		DeviceId:          req.Msg.GetId(),
+		DeviceId:          deviceID,
 		Platform:          req.Msg.GetPlatform(),
 		ProfileExternalId: req.Msg.GetProfileExternalId(),
 		Properties:        req.Msg.GetProperties(),
