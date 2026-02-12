@@ -2,7 +2,6 @@ package devices
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -27,18 +26,6 @@ func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 		pgW:           pgW,
 		write:         dbwrite.New(pgW),
 	}
-}
-
-func protoMapToAny(m any) (map[string]any, error) {
-	data, err := json.Marshal(m)
-	if err != nil {
-		return nil, err
-	}
-	var result map[string]any
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
