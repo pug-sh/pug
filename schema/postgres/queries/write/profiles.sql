@@ -27,3 +27,11 @@ update profiles
 set external_id = @external_id
 where id = @id and project_id = @project_id
 returning *;
+
+-- name: RegisterProfile :one
+insert into profiles (auto_properties, custom_properties, external_id, id, project_id)
+values (coalesce(@auto_properties, '{}'), coalesce(@custom_properties, '{}'), @external_id, @id, @project_id)
+on conflict (project_id, external_id) do update set
+  auto_properties = jsonb_shallow_merge(profiles.auto_properties, excluded.auto_properties),
+  custom_properties = jsonb_shallow_merge(profiles.custom_properties, excluded.custom_properties)
+returning *;

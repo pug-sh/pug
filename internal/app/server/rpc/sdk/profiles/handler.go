@@ -25,7 +25,6 @@ import (
 
 type Handler struct {
 	profilesv1connect.UnimplementedProfilesServiceHandler
-	pgW      *pgxpool.Pool
 	producer jetstream.JetStream
 	read     *dbread.Queries
 	write    *dbwrite.Queries
@@ -33,7 +32,6 @@ type Handler struct {
 
 func NewHandler(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, js jetstream.JetStream) *Handler {
 	return &Handler{
-		pgW:      pgW,
 		producer: js,
 		read:     dbread.New(pgRO),
 		write:    dbwrite.New(pgW),
@@ -161,105 +159,25 @@ func (h *Handler) Identify(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	projectID := principal.Project.ID
+	msg := &profilesv1.ProfileOperationMessage{
+		OperationType: profilesv1.ProfileOperationType_PROFILE_OPERATION_TYPE_IDENTIFY,
+		ExternalId:    req.Msg.GetExternalId(),
+		ProfileId:     req.Msg.GetProfileId(),
+		ProjectId:     principal.Project.ID,
+	}
 
-	tx, err := h.pgW.Begin(ctx)
+	data, err := proto.Marshal(msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed starting transaction", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
-	}
-	defer func() {
-		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "failed rolling back transaction", slogx.Error(err))
-		}
-	}()
-
-	qtx := h.write.WithTx(tx)
-
-	existing, err := qtx.GetProfileByProjectAndExternalID(ctx, dbwrite.GetProfileByProjectAndExternalIDParams{
-		ProjectID:  projectID,
-		ExternalID: req.Msg.ExternalId,
-	})
-
-	var p dbwrite.Profile
-
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		// No profile with this external_id — assign it to the anonymous profile.
-		p, err = qtx.SetProfileExternalID(ctx, dbwrite.SetProfileExternalIDParams{
-			ExternalID: req.Msg.ExternalId,
-			ID:         req.Msg.ProfileId,
-			ProjectID:  projectID,
-		})
-		if err != nil {
-			slog.ErrorContext(ctx, "failed setting external ID on profile", slogx.Error(err),
-				slog.String("profileId", req.Msg.ProfileId), slog.String("externalId", req.Msg.ExternalId))
-			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("profile not found"))
-			}
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
-		}
-
-	case err != nil:
-		slog.ErrorContext(ctx, "failed looking up profile by external ID", slogx.Error(err),
-			slog.String("externalId", req.Msg.ExternalId))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
-
-	case existing.ID == req.Msg.ProfileId:
-		// Already identified — no-op.
-		p = existing
-
-	default:
-		// Different profile owns this external_id — merge anonymous into existing.
-		p, err = qtx.MergeProfileProperties(ctx, dbwrite.MergeProfilePropertiesParams{
-			SourceID:  req.Msg.ProfileId,
-			TargetID:  existing.ID,
-			ProjectID: projectID,
-		})
-		if err != nil {
-			slog.ErrorContext(ctx, "failed merging profile properties", slogx.Error(err),
-				slog.String("sourceId", req.Msg.ProfileId), slog.String("targetId", existing.ID))
-			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("profile not found"))
-			}
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
-		}
-
-		if err := qtx.ReassignProfileDevices(ctx, dbwrite.ReassignProfileDevicesParams{
-			TargetID:  existing.ID,
-			SourceID:  req.Msg.ProfileId,
-			ProjectID: projectID,
-		}); err != nil {
-			slog.ErrorContext(ctx, "failed reassigning devices", slogx.Error(err),
-				slog.String("sourceId", req.Msg.ProfileId), slog.String("targetId", existing.ID))
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
-		}
-
-		if err := qtx.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
-			ID:        req.Msg.ProfileId,
-			ProjectID: projectID,
-		}); err != nil {
-			slog.ErrorContext(ctx, "failed deleting source profile", slogx.Error(err),
-				slog.String("sourceId", req.Msg.ProfileId))
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
-		}
+		slog.ErrorContext(ctx, "failed to marshal identify message", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed committing identify transaction", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
+	if _, err = h.producer.Publish(ctx, nats.ProfileOpsSubject, data); err != nil {
+		slog.ErrorContext(ctx, "failed to publish identify operation to NATS", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	pbProfile, err := convertWriteProfile(p)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed converting profile", slogx.Error(err),
-			slog.String("profileId", p.ID))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to identify profile"))
-	}
-
-	return connect.NewResponse(&profilesv1.IdentifyResponse{
-		Profile: pbProfile,
-	}), nil
+	return connect.NewResponse(&profilesv1.IdentifyResponse{}), nil
 }
 
 func (h *Handler) Register(
@@ -327,36 +245,6 @@ func (h *Handler) Subscribe(
 }
 
 func convertProfile(p dbread.Profile) (*profilesv1.Profile, error) {
-	autoPropertiesMap := p.AutoProperties
-	if autoPropertiesMap == nil {
-		autoPropertiesMap = make(map[string]any)
-	}
-	autoProperties, err := structpb.NewStruct(autoPropertiesMap)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	customPropertiesMap := p.CustomProperties
-	if customPropertiesMap == nil {
-		customPropertiesMap = make(map[string]any)
-	}
-	customProperties, err := structpb.NewStruct(customPropertiesMap)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	return &profilesv1.Profile{
-		AutoProperties:   autoProperties,
-		CreateTime:       timestamppb.New(p.CreateTime.Time),
-		CustomProperties: customProperties,
-		ExternalId:       p.ExternalID,
-		Id:               p.ID,
-		ProjectId:        p.ProjectID,
-		UpdateTime:       timestamppb.New(p.UpdateTime.Time),
-	}, nil
-}
-
-func convertWriteProfile(p dbwrite.Profile) (*profilesv1.Profile, error) {
 	autoPropertiesMap := p.AutoProperties
 	if autoPropertiesMap == nil {
 		autoPropertiesMap = make(map[string]any)

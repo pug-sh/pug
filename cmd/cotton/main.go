@@ -14,6 +14,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/workers/devices"
 	eventsworker "github.com/fivebitsio/cotton/internal/app/workers/events"
+	profilesworker "github.com/fivebitsio/cotton/internal/app/workers/profiles"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -101,6 +102,12 @@ var eventsCmd = &cobra.Command{
 	Run:   run(eventsworker.Run),
 }
 
+var profileCmd = &cobra.Command{
+	Use:   "profile",
+	Short: "Start the profile worker",
+	Run:   run(profilesworker.Run),
+}
+
 var devCmd = &cobra.Command{
 	Use:   "dev",
 	Short: "Start the Cotton server and workers for development",
@@ -116,6 +123,7 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return devices.Run(ctx) })
 		g.Go(func() error { return campaigns.Run(ctx) })
 		g.Go(func() error { return eventsworker.Run(ctx) })
+		g.Go(func() error { return profilesworker.Run(ctx) })
 		g.Go(func() error { return server.Run(ctx) })
 
 		if err := g.Wait(); err != nil {
@@ -148,6 +156,7 @@ func init() {
 	workerCmd.AddCommand(deviceCmd)
 	workerCmd.AddCommand(campaignCmd)
 	workerCmd.AddCommand(eventsCmd)
+	workerCmd.AddCommand(profileCmd)
 
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)

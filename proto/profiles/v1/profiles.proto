@@ -52,9 +52,7 @@ message IdentifyRequest {
   string external_id = 2 [(buf.validate.field).required = true];
 }
 
-message IdentifyResponse {
-  Profile profile = 1;
-}
+message IdentifyResponse {}
 
 message Profile {
   google.protobuf.Struct auto_properties = 1;
@@ -92,6 +90,7 @@ message SubscribeResponse {}
 enum ProfileOperationType {
   PROFILE_OPERATION_TYPE_UNSPECIFIED = 0;
   PROFILE_OPERATION_TYPE_REGISTER = 1;
+  PROFILE_OPERATION_TYPE_IDENTIFY = 2;
 }
 
 message ProfileOperationMessage {
@@ -99,5 +98,6 @@ message ProfileOperationMessage {
   google.protobuf.Struct custom_properties = 2;
   string external_id = 3;
   ProfileOperationType operation_type = 4;
-  string project_id = 5;
+  string profile_id = 5;
+  string project_id = 6;
 }

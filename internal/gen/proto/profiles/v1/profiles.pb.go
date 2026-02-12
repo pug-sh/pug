@@ -29,6 +29,7 @@ type ProfileOperationType int32
 const (
 	ProfileOperationType_PROFILE_OPERATION_TYPE_UNSPECIFIED ProfileOperationType = 0
 	ProfileOperationType_PROFILE_OPERATION_TYPE_REGISTER    ProfileOperationType = 1
+	ProfileOperationType_PROFILE_OPERATION_TYPE_IDENTIFY    ProfileOperationType = 2
 )
 
 // Enum value maps for ProfileOperationType.
@@ -36,10 +37,12 @@ var (
 	ProfileOperationType_name = map[int32]string{
 		0: "PROFILE_OPERATION_TYPE_UNSPECIFIED",
 		1: "PROFILE_OPERATION_TYPE_REGISTER",
+		2: "PROFILE_OPERATION_TYPE_IDENTIFY",
 	}
 	ProfileOperationType_value = map[string]int32{
 		"PROFILE_OPERATION_TYPE_UNSPECIFIED": 0,
 		"PROFILE_OPERATION_TYPE_REGISTER":    1,
+		"PROFILE_OPERATION_TYPE_IDENTIFY":    2,
 	}
 )
 
@@ -460,7 +463,6 @@ func (x *IdentifyRequest) GetExternalId() string {
 
 type IdentifyResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       *Profile               `protobuf:"bytes,1,opt,name=profile" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -493,13 +495,6 @@ func (x *IdentifyResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use IdentifyResponse.ProtoReflect.Descriptor instead.
 func (*IdentifyResponse) Descriptor() ([]byte, []int) {
 	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *IdentifyResponse) GetProfile() *Profile {
-	if x != nil {
-		return x.Profile
-	}
-	return nil
 }
 
 type Profile struct {
@@ -808,7 +803,8 @@ type ProfileOperationMessage struct {
 	CustomProperties *structpb.Struct       `protobuf:"bytes,2,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
 	ExternalId       string                 `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	OperationType    ProfileOperationType   `protobuf:"varint,4,opt,name=operation_type,json=operationType,enum=profiles.v1.ProfileOperationType" json:"operation_type,omitempty"`
-	ProjectId        string                 `protobuf:"bytes,5,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	ProfileId        string                 `protobuf:"bytes,5,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	ProjectId        string                 `protobuf:"bytes,6,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -871,6 +867,13 @@ func (x *ProfileOperationMessage) GetOperationType() ProfileOperationType {
 	return ProfileOperationType_PROFILE_OPERATION_TYPE_UNSPECIFIED
 }
 
+func (x *ProfileOperationMessage) GetProfileId() string {
+	if x != nil {
+		return x.ProfileId
+	}
+	return ""
+}
+
 func (x *ProfileOperationMessage) GetProjectId() string {
 	if x != nil {
 		return x.ProjectId
@@ -903,9 +906,8 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
 	"profile_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprofileId\x12'\n" +
 	"\vexternal_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"externalId\"B\n" +
-	"\x10IdentifyResponse\x12.\n" +
-	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"\xdb\x02\n" +
+	"externalId\"\x12\n" +
+	"\x10IdentifyResponse\"\xdb\x02\n" +
 	"\aProfile\x12@\n" +
 	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12;\n" +
 	"\vcreate_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
@@ -932,7 +934,7 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"profile_id\x18\x04 \x01(\tR\tprofileId\x12\x1c\n" +
 	"\x05token\x18\x05 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token:\xa1\x01\xbaH\x9d\x01\x1a\x9a\x01\n" +
 	"$subscribe_request.profile_identifier\x129either profile_id or profile_external_id must be provided\x1a7this.profile_id != '' || this.profile_external_id != ''\"\x13\n" +
-	"\x11SubscribeResponse\"\xab\x02\n" +
+	"\x11SubscribeResponse\"\xca\x02\n" +
 	"\x17ProfileOperationMessage\x12@\n" +
 	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12D\n" +
 	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12\x1f\n" +
@@ -940,10 +942,13 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"externalId\x12H\n" +
 	"\x0eoperation_type\x18\x04 \x01(\x0e2!.profiles.v1.ProfileOperationTypeR\roperationType\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x05 \x01(\tR\tprojectId*c\n" +
+	"profile_id\x18\x05 \x01(\tR\tprofileId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x06 \x01(\tR\tprojectId*\x88\x01\n" +
 	"\x14ProfileOperationType\x12&\n" +
 	"\"PROFILE_OPERATION_TYPE_UNSPECIFIED\x10\x00\x12#\n" +
-	"\x1fPROFILE_OPERATION_TYPE_REGISTER\x10\x012\x95\x04\n" +
+	"\x1fPROFILE_OPERATION_TYPE_REGISTER\x10\x01\x12#\n" +
+	"\x1fPROFILE_OPERATION_TYPE_IDENTIFY\x10\x022\x95\x04\n" +
 	"\x0fProfilesService\x12C\n" +
 	"\x06Delete\x12\x1a.profiles.v1.DeleteRequest\x1a\x1b.profiles.v1.DeleteResponse\"\x00\x12:\n" +
 	"\x03Get\x12\x17.profiles.v1.GetRequest\x1a\x18.profiles.v1.GetResponse\"\x00\x12^\n" +
@@ -992,35 +997,34 @@ var file_profiles_v1_profiles_proto_depIdxs = []int32{
 	11, // 0: profiles.v1.GetByExternalIdResponse.profile:type_name -> profiles.v1.Profile
 	11, // 1: profiles.v1.GetResponse.profile:type_name -> profiles.v1.Profile
 	11, // 2: profiles.v1.ListResponse.profiles:type_name -> profiles.v1.Profile
-	11, // 3: profiles.v1.IdentifyResponse.profile:type_name -> profiles.v1.Profile
-	17, // 4: profiles.v1.Profile.auto_properties:type_name -> google.protobuf.Struct
-	18, // 5: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
-	17, // 6: profiles.v1.Profile.custom_properties:type_name -> google.protobuf.Struct
-	18, // 7: profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
-	17, // 8: profiles.v1.RegisterRequest.auto_properties:type_name -> google.protobuf.Struct
-	17, // 9: profiles.v1.RegisterRequest.custom_properties:type_name -> google.protobuf.Struct
-	17, // 10: profiles.v1.ProfileOperationMessage.auto_properties:type_name -> google.protobuf.Struct
-	17, // 11: profiles.v1.ProfileOperationMessage.custom_properties:type_name -> google.protobuf.Struct
-	0,  // 12: profiles.v1.ProfileOperationMessage.operation_type:type_name -> profiles.v1.ProfileOperationType
-	1,  // 13: profiles.v1.ProfilesService.Delete:input_type -> profiles.v1.DeleteRequest
-	5,  // 14: profiles.v1.ProfilesService.Get:input_type -> profiles.v1.GetRequest
-	3,  // 15: profiles.v1.ProfilesService.GetByExternalId:input_type -> profiles.v1.GetByExternalIdRequest
-	7,  // 16: profiles.v1.ProfilesService.List:input_type -> profiles.v1.ListRequest
-	9,  // 17: profiles.v1.ProfilesService.Identify:input_type -> profiles.v1.IdentifyRequest
-	12, // 18: profiles.v1.ProfilesService.Register:input_type -> profiles.v1.RegisterRequest
-	14, // 19: profiles.v1.ProfilesService.Subscribe:input_type -> profiles.v1.SubscribeRequest
-	2,  // 20: profiles.v1.ProfilesService.Delete:output_type -> profiles.v1.DeleteResponse
-	6,  // 21: profiles.v1.ProfilesService.Get:output_type -> profiles.v1.GetResponse
-	4,  // 22: profiles.v1.ProfilesService.GetByExternalId:output_type -> profiles.v1.GetByExternalIdResponse
-	8,  // 23: profiles.v1.ProfilesService.List:output_type -> profiles.v1.ListResponse
-	10, // 24: profiles.v1.ProfilesService.Identify:output_type -> profiles.v1.IdentifyResponse
-	13, // 25: profiles.v1.ProfilesService.Register:output_type -> profiles.v1.RegisterResponse
-	15, // 26: profiles.v1.ProfilesService.Subscribe:output_type -> profiles.v1.SubscribeResponse
-	20, // [20:27] is the sub-list for method output_type
-	13, // [13:20] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	17, // 3: profiles.v1.Profile.auto_properties:type_name -> google.protobuf.Struct
+	18, // 4: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
+	17, // 5: profiles.v1.Profile.custom_properties:type_name -> google.protobuf.Struct
+	18, // 6: profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
+	17, // 7: profiles.v1.RegisterRequest.auto_properties:type_name -> google.protobuf.Struct
+	17, // 8: profiles.v1.RegisterRequest.custom_properties:type_name -> google.protobuf.Struct
+	17, // 9: profiles.v1.ProfileOperationMessage.auto_properties:type_name -> google.protobuf.Struct
+	17, // 10: profiles.v1.ProfileOperationMessage.custom_properties:type_name -> google.protobuf.Struct
+	0,  // 11: profiles.v1.ProfileOperationMessage.operation_type:type_name -> profiles.v1.ProfileOperationType
+	1,  // 12: profiles.v1.ProfilesService.Delete:input_type -> profiles.v1.DeleteRequest
+	5,  // 13: profiles.v1.ProfilesService.Get:input_type -> profiles.v1.GetRequest
+	3,  // 14: profiles.v1.ProfilesService.GetByExternalId:input_type -> profiles.v1.GetByExternalIdRequest
+	7,  // 15: profiles.v1.ProfilesService.List:input_type -> profiles.v1.ListRequest
+	9,  // 16: profiles.v1.ProfilesService.Identify:input_type -> profiles.v1.IdentifyRequest
+	12, // 17: profiles.v1.ProfilesService.Register:input_type -> profiles.v1.RegisterRequest
+	14, // 18: profiles.v1.ProfilesService.Subscribe:input_type -> profiles.v1.SubscribeRequest
+	2,  // 19: profiles.v1.ProfilesService.Delete:output_type -> profiles.v1.DeleteResponse
+	6,  // 20: profiles.v1.ProfilesService.Get:output_type -> profiles.v1.GetResponse
+	4,  // 21: profiles.v1.ProfilesService.GetByExternalId:output_type -> profiles.v1.GetByExternalIdResponse
+	8,  // 22: profiles.v1.ProfilesService.List:output_type -> profiles.v1.ListResponse
+	10, // 23: profiles.v1.ProfilesService.Identify:output_type -> profiles.v1.IdentifyResponse
+	13, // 24: profiles.v1.ProfilesService.Register:output_type -> profiles.v1.RegisterResponse
+	15, // 25: profiles.v1.ProfilesService.Subscribe:output_type -> profiles.v1.SubscribeResponse
+	19, // [19:26] is the sub-list for method output_type
+	12, // [12:19] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_profiles_v1_profiles_proto_init() }
