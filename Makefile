@@ -63,6 +63,7 @@ build:
 	go build -o bin/cotton-server ./cmd/server
 	go build -o bin/cotton-worker-device ./cmd/workers/device
 	go build -o bin/cotton-worker-campaign ./cmd/workers/campaign
+	go build -o bin/cotton-worker-profile ./cmd/workers/profile
 	go build -o bin/cotton-migrate-postgres ./cmd/migrate/postgres
 	go build -o bin/cotton-migrate-nats ./cmd/migrate/nats
 	go build -o bin/cotton-migrate-clickhouse ./cmd/migrate/clickhouse
