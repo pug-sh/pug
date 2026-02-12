@@ -9,7 +9,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
-	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/devices/v1"
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -209,39 +208,6 @@ func (h *Handler) Register(
 	}
 
 	return connect.NewResponse(&profilesv1.RegisterResponse{}), nil
-}
-
-func (h *Handler) Subscribe(
-	ctx context.Context,
-	req *connect.Request[profilesv1.SubscribeRequest],
-) (*connect.Response[profilesv1.SubscribeResponse], error) {
-	principal, err := rpc.MustGetPrincipalWithProject(ctx)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	msg := &devicesv1.DeviceOperationMessage{
-		OperationType:     devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPSERT,
-		DeviceId:          req.Msg.GetDeviceId(),
-		Platform:          req.Msg.GetPlatform(),
-		ProfileExternalId: req.Msg.GetProfileExternalId(),
-		ProfileId:         req.Msg.GetProfileId(),
-		Token:             req.Msg.GetToken(),
-		ProjectId:         principal.Project.ID,
-	}
-
-	data, err := proto.Marshal(msg)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal subscribe message", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	if _, err = h.producer.Publish(ctx, nats.DeviceOpsSubject, data); err != nil {
-		slog.ErrorContext(ctx, "failed to publish subscribe operation to NATS", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-
-	return connect.NewResponse(&profilesv1.SubscribeResponse{}), nil
 }
 
 func convertProfile(p dbread.Profile) (*profilesv1.Profile, error) {

@@ -16,7 +16,6 @@ service ProfilesService {
   rpc List(ListRequest) returns (ListResponse) {}
   rpc Identify(IdentifyRequest) returns (IdentifyResponse) {}
   rpc Register(RegisterRequest) returns (RegisterResponse) {}
-  rpc Subscribe(SubscribeRequest) returns (SubscribeResponse) {}
 }
 
 message DeleteRequest {
@@ -71,21 +70,6 @@ message RegisterRequest {
 }
 
 message RegisterResponse {}
-
-message SubscribeRequest {
-  option (buf.validate.message).cel = {
-    id: "subscribe_request.profile_identifier"
-    message: "either profile_id or profile_external_id must be provided"
-    expression: "this.profile_id != '' || this.profile_external_id != ''"
-  };
-  string device_id = 1 [(buf.validate.field).string = {len: 20}];
-  string platform = 2 [(buf.validate.field).string = {in: ["android", "ios", "web"]}];
-  string profile_external_id = 3;
-  string profile_id = 4;
-  string token = 5 [(buf.validate.field).required = true];
-}
-
-message SubscribeResponse {}
 
 enum ProfileOperationType {
   PROFILE_OPERATION_TYPE_UNSPECIFIED = 0;

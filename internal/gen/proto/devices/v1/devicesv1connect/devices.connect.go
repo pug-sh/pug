@@ -33,6 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// DevicesServiceSubscribeProcedure is the fully-qualified name of the DevicesService's Subscribe
+	// RPC.
+	DevicesServiceSubscribeProcedure = "/devices.v1.DevicesService/Subscribe"
 	// DevicesServiceUpsertProcedure is the fully-qualified name of the DevicesService's Upsert RPC.
 	DevicesServiceUpsertProcedure = "/devices.v1.DevicesService/Upsert"
 	// DevicesServiceUpdateStatusProcedure is the fully-qualified name of the DevicesService's
@@ -45,6 +48,7 @@ const (
 
 // DevicesServiceClient is a client for the devices.v1.DevicesService service.
 type DevicesServiceClient interface {
+	Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error)
 	Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error)
 	UpdateStatus(context.Context, *connect.Request[v1.UpdateStatusRequest]) (*connect.Response[v1.UpdateStatusResponse], error)
 	UpdateToken(context.Context, *connect.Request[v1.UpdateTokenRequest]) (*connect.Response[v1.UpdateTokenResponse], error)
@@ -61,6 +65,12 @@ func NewDevicesServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	devicesServiceMethods := v1.File_devices_v1_devices_proto.Services().ByName("DevicesService").Methods()
 	return &devicesServiceClient{
+		subscribe: connect.NewClient[v1.SubscribeRequest, v1.SubscribeResponse](
+			httpClient,
+			baseURL+DevicesServiceSubscribeProcedure,
+			connect.WithSchema(devicesServiceMethods.ByName("Subscribe")),
+			connect.WithClientOptions(opts...),
+		),
 		upsert: connect.NewClient[v1.UpsertRequest, v1.UpsertResponse](
 			httpClient,
 			baseURL+DevicesServiceUpsertProcedure,
@@ -84,9 +94,15 @@ func NewDevicesServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // devicesServiceClient implements DevicesServiceClient.
 type devicesServiceClient struct {
+	subscribe    *connect.Client[v1.SubscribeRequest, v1.SubscribeResponse]
 	upsert       *connect.Client[v1.UpsertRequest, v1.UpsertResponse]
 	updateStatus *connect.Client[v1.UpdateStatusRequest, v1.UpdateStatusResponse]
 	updateToken  *connect.Client[v1.UpdateTokenRequest, v1.UpdateTokenResponse]
+}
+
+// Subscribe calls devices.v1.DevicesService.Subscribe.
+func (c *devicesServiceClient) Subscribe(ctx context.Context, req *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error) {
+	return c.subscribe.CallUnary(ctx, req)
 }
 
 // Upsert calls devices.v1.DevicesService.Upsert.
@@ -106,6 +122,7 @@ func (c *devicesServiceClient) UpdateToken(ctx context.Context, req *connect.Req
 
 // DevicesServiceHandler is an implementation of the devices.v1.DevicesService service.
 type DevicesServiceHandler interface {
+	Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error)
 	Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error)
 	UpdateStatus(context.Context, *connect.Request[v1.UpdateStatusRequest]) (*connect.Response[v1.UpdateStatusResponse], error)
 	UpdateToken(context.Context, *connect.Request[v1.UpdateTokenRequest]) (*connect.Response[v1.UpdateTokenResponse], error)
@@ -118,6 +135,12 @@ type DevicesServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewDevicesServiceHandler(svc DevicesServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	devicesServiceMethods := v1.File_devices_v1_devices_proto.Services().ByName("DevicesService").Methods()
+	devicesServiceSubscribeHandler := connect.NewUnaryHandler(
+		DevicesServiceSubscribeProcedure,
+		svc.Subscribe,
+		connect.WithSchema(devicesServiceMethods.ByName("Subscribe")),
+		connect.WithHandlerOptions(opts...),
+	)
 	devicesServiceUpsertHandler := connect.NewUnaryHandler(
 		DevicesServiceUpsertProcedure,
 		svc.Upsert,
@@ -138,6 +161,8 @@ func NewDevicesServiceHandler(svc DevicesServiceHandler, opts ...connect.Handler
 	)
 	return "/devices.v1.DevicesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case DevicesServiceSubscribeProcedure:
+			devicesServiceSubscribeHandler.ServeHTTP(w, r)
 		case DevicesServiceUpsertProcedure:
 			devicesServiceUpsertHandler.ServeHTTP(w, r)
 		case DevicesServiceUpdateStatusProcedure:
@@ -152,6 +177,10 @@ func NewDevicesServiceHandler(svc DevicesServiceHandler, opts ...connect.Handler
 
 // UnimplementedDevicesServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedDevicesServiceHandler struct{}
+
+func (UnimplementedDevicesServiceHandler) Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devices.v1.DevicesService.Subscribe is not implemented"))
+}
 
 func (UnimplementedDevicesServiceHandler) Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devices.v1.DevicesService.Upsert is not implemented"))

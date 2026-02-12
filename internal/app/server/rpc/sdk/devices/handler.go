@@ -24,6 +24,43 @@ func NewServer(js jetstream.JetStream) (*Server, error) {
 	}, nil
 }
 
+func (s *Server) Subscribe(
+	ctx context.Context,
+	req *connect.Request[devicesv1.SubscribeRequest],
+) (*connect.Response[devicesv1.SubscribeResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	msg := &devicesv1.DeviceOperationMessage{
+		OperationType:     devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_SUBSCRIBE,
+		DeviceId:          req.Msg.GetDeviceId(),
+		Platform:          req.Msg.GetPlatform(),
+		ProfileExternalId: req.Msg.GetProfileExternalId(),
+		ProfileId:         req.Msg.GetProfileId(),
+		Token:             req.Msg.GetToken(),
+		ProjectId:         principal.Project.ID,
+	}
+
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to marshal subscribe message", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	if _, err = s.producer.Publish(ctx, nats.DeviceOpsSubject, data); err != nil {
+		slog.ErrorContext(ctx, "failed to publish subscribe operation to NATS", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&devicesv1.SubscribeResponse{}), nil
+}
+
 func (s *Server) Upsert(
 	ctx context.Context,
 	req *connect.Request[devicesv1.UpsertRequest],

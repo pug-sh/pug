@@ -8,10 +8,26 @@ option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/devices/v1;devicesv1";
 
 service DevicesService {
+  rpc Subscribe(SubscribeRequest) returns (SubscribeResponse) {}
   rpc Upsert(UpsertRequest) returns (UpsertResponse) {}
   rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse) {}
   rpc UpdateToken(UpdateTokenRequest) returns (UpdateTokenResponse) {}
 }
+
+message SubscribeRequest {
+  option (buf.validate.message).cel = {
+    id: "subscribe_request.profile_identifier"
+    message: "either profile_id or profile_external_id must be provided"
+    expression: "this.profile_id != '' || this.profile_external_id != ''"
+  };
+  string device_id = 1 [(buf.validate.field).string = {len: 20}];
+  string platform = 2 [(buf.validate.field).string = {in: ["android", "ios", "web"]}];
+  string profile_external_id = 3;
+  string profile_id = 4;
+  string token = 5 [(buf.validate.field).required = true];
+}
+
+message SubscribeResponse {}
 
 message UpsertRequest {
   string id = 1 [(buf.validate.field).string = {len: 20}];
@@ -42,6 +58,7 @@ enum DeviceOperationType {
   DEVICE_OPERATION_TYPE_UPSERT = 1;
   DEVICE_OPERATION_TYPE_UPDATE_STATUS = 2;
   DEVICE_OPERATION_TYPE_UPDATE_TOKEN = 3;
+  DEVICE_OPERATION_TYPE_SUBSCRIBE = 4;
 }
 
 message DeviceOperationMessage {

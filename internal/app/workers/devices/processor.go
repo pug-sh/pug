@@ -42,6 +42,8 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		return w.handleUpdateStatus(ctx, msg)
 	case devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPDATE_TOKEN:
 		return w.handleUpdateToken(ctx, msg)
+	case devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_SUBSCRIBE:
+		return w.handleSubscribe(ctx, msg)
 	default:
 		slog.WarnContext(ctx, "unknown device operation type", slog.Int("type", int(msg.OperationType)))
 		return fmt.Errorf("unknown operation type: %v", msg.OperationType)
@@ -85,6 +87,27 @@ func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOper
 	}
 
 	return profile.ID, nil
+}
+
+func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOperationMessage) error {
+	profileID, err := w.resolveProfileID(ctx, msg)
+	if err != nil {
+		return err
+	}
+
+	if _, err := w.write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
+		ID:        msg.GetDeviceId(),
+		Platform:  msg.GetPlatform(),
+		ProfileID: profileID,
+		ProjectID: msg.GetProjectId(),
+		Status:    "active",
+		Token:     msg.GetToken(),
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to save device", slogx.Error(err))
+		return err
+	}
+
+	return nil
 }
 
 func (w *Worker) handleUpdateStatus(ctx context.Context, msg *devicesv1.DeviceOperationMessage) error {

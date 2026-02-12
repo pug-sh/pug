@@ -48,9 +48,6 @@ const (
 	// ProfilesServiceRegisterProcedure is the fully-qualified name of the ProfilesService's Register
 	// RPC.
 	ProfilesServiceRegisterProcedure = "/profiles.v1.ProfilesService/Register"
-	// ProfilesServiceSubscribeProcedure is the fully-qualified name of the ProfilesService's Subscribe
-	// RPC.
-	ProfilesServiceSubscribeProcedure = "/profiles.v1.ProfilesService/Subscribe"
 )
 
 // ProfilesServiceClient is a client for the profiles.v1.ProfilesService service.
@@ -62,7 +59,6 @@ type ProfilesServiceClient interface {
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
 	Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error)
 	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error)
-	Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error)
 }
 
 // NewProfilesServiceClient constructs a client for the profiles.v1.ProfilesService service. By
@@ -112,12 +108,6 @@ func NewProfilesServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(profilesServiceMethods.ByName("Register")),
 			connect.WithClientOptions(opts...),
 		),
-		subscribe: connect.NewClient[v1.SubscribeRequest, v1.SubscribeResponse](
-			httpClient,
-			baseURL+ProfilesServiceSubscribeProcedure,
-			connect.WithSchema(profilesServiceMethods.ByName("Subscribe")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
@@ -129,7 +119,6 @@ type profilesServiceClient struct {
 	list            *connect.Client[v1.ListRequest, v1.ListResponse]
 	identify        *connect.Client[v1.IdentifyRequest, v1.IdentifyResponse]
 	register        *connect.Client[v1.RegisterRequest, v1.RegisterResponse]
-	subscribe       *connect.Client[v1.SubscribeRequest, v1.SubscribeResponse]
 }
 
 // Delete calls profiles.v1.ProfilesService.Delete.
@@ -162,11 +151,6 @@ func (c *profilesServiceClient) Register(ctx context.Context, req *connect.Reque
 	return c.register.CallUnary(ctx, req)
 }
 
-// Subscribe calls profiles.v1.ProfilesService.Subscribe.
-func (c *profilesServiceClient) Subscribe(ctx context.Context, req *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error) {
-	return c.subscribe.CallUnary(ctx, req)
-}
-
 // ProfilesServiceHandler is an implementation of the profiles.v1.ProfilesService service.
 type ProfilesServiceHandler interface {
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
@@ -176,7 +160,6 @@ type ProfilesServiceHandler interface {
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
 	Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error)
 	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error)
-	Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error)
 }
 
 // NewProfilesServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -222,12 +205,6 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 		connect.WithSchema(profilesServiceMethods.ByName("Register")),
 		connect.WithHandlerOptions(opts...),
 	)
-	profilesServiceSubscribeHandler := connect.NewUnaryHandler(
-		ProfilesServiceSubscribeProcedure,
-		svc.Subscribe,
-		connect.WithSchema(profilesServiceMethods.ByName("Subscribe")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/profiles.v1.ProfilesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProfilesServiceDeleteProcedure:
@@ -242,8 +219,6 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 			profilesServiceIdentifyHandler.ServeHTTP(w, r)
 		case ProfilesServiceRegisterProcedure:
 			profilesServiceRegisterHandler.ServeHTTP(w, r)
-		case ProfilesServiceSubscribeProcedure:
-			profilesServiceSubscribeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -275,8 +250,4 @@ func (UnimplementedProfilesServiceHandler) Identify(context.Context, *connect.Re
 
 func (UnimplementedProfilesServiceHandler) Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Register is not implemented"))
-}
-
-func (UnimplementedProfilesServiceHandler) Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Subscribe is not implemented"))
 }
