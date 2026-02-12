@@ -468,9 +468,9 @@ var File_devices_v1_devices_proto protoreflect.FileDescriptor
 const file_devices_v1_devices_proto_rawDesc = "" +
 	"\n" +
 	"\x18devices/v1/devices.proto\x12\n" +
-	"devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19google/protobuf/any.proto\"\xc4\x02\n" +
-	"\rUpsertRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x124\n" +
+	"devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19google/protobuf/any.proto\"\xce\x02\n" +
+	"\rUpsertRequest\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x124\n" +
 	"\bplatform\x18\x02 \x01(\tB\x18\xbaH\x15r\x13R\aandroidR\x03iosR\x03webR\bplatform\x12.\n" +
 	"\x13profile_external_id\x18\x03 \x01(\tR\x11profileExternalId\x12I\n" +
 	"\n" +
@@ -480,13 +480,13 @@ const file_devices_v1_devices_proto_rawDesc = "" +
 	"\x0fPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
 	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01\"\x10\n" +
-	"\x0eUpsertResponse\"F\n" +
-	"\x13UpdateStatusRequest\x12\x17\n" +
-	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\x12\x16\n" +
+	"\x0eUpsertResponse\"G\n" +
+	"\x13UpdateStatusRequest\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\"\x16\n" +
-	"\x14UpdateStatusResponse\"C\n" +
-	"\x12UpdateTokenRequest\x12\x17\n" +
-	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\x12\x14\n" +
+	"\x14UpdateStatusResponse\"D\n" +
+	"\x12UpdateTokenRequest\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\"\x15\n" +
 	"\x13UpdateTokenResponse\"\xbf\x03\n" +
 	"\x16DeviceOperationMessage\x12\x1b\n" +

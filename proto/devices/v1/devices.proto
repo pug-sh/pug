@@ -14,7 +14,7 @@ service DevicesService {
 }
 
 message UpsertRequest {
-  string id = 1;
+  string id = 1 [(buf.validate.field).string = {len: 20}];
   string platform = 2 [(buf.validate.field).string = {in: ["android", "ios", "web"]}];
   string profile_external_id = 3;
   map<string, google.protobuf.Any> properties = 4;
@@ -24,14 +24,14 @@ message UpsertRequest {
 message UpsertResponse {}
 
 message UpdateStatusRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
+  string id = 1 [(buf.validate.field).string = {len: 20}];
   string status = 2;
 }
 
 message UpdateStatusResponse {}
 
 message UpdateTokenRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
+  string id = 1 [(buf.validate.field).string = {len: 20}];
   string token = 2;
 }
 
