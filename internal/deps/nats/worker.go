@@ -42,10 +42,11 @@ type WorkerConfig struct {
 	ProcessingTimeout time.Duration
 	MaxDeliver        int
 	AckWait           time.Duration
+	DLQSubject        string
 }
 
 type Worker interface {
-	Start(ctx context.Context, client *NATSClient) error
+	Start(ctx context.Context) error
 	HealthCheck() (bool, error)
 }
 
@@ -60,12 +61,13 @@ type natsWorker struct {
 	config     WorkerConfig
 	processor  MessageProcessor
 	consumer   jetstream.Consumer
+	js         jetstream.JetStream
 	shutdownCh chan struct{}
 	wg         sync.WaitGroup
 	healthy    atomic.Bool
 }
 
-func NewWorker(config WorkerConfig, processor MessageProcessor) (Worker, error) {
+func NewWorker(config WorkerConfig, processor MessageProcessor, client *NATSClient) (Worker, error) {
 	if config.Concurrency <= 0 {
 		config.Concurrency = DefaultConcurrency
 	}
@@ -83,13 +85,12 @@ func NewWorker(config WorkerConfig, processor MessageProcessor) (Worker, error) 
 	return &natsWorker{
 		config:     config,
 		processor:  processor,
+		js:         client.GetJetStream(),
 		shutdownCh: make(chan struct{}),
 	}, nil
 }
 
-func (w *natsWorker) Start(ctx context.Context, client *NATSClient) error {
-	js := client.GetJetStream()
-
+func (w *natsWorker) Start(ctx context.Context) error {
 	consumerConfig := jetstream.ConsumerConfig{
 		Name:          w.config.ConsumerName,
 		Durable:       w.config.DurableName,
@@ -104,7 +105,7 @@ func (w *natsWorker) Start(ctx context.Context, client *NATSClient) error {
 		consumerConfig.FilterSubject = w.config.FilterSubject
 	}
 
-	consumer, err := js.CreateOrUpdateConsumer(ctx, w.config.StreamName, consumerConfig)
+	consumer, err := w.js.CreateOrUpdateConsumer(ctx, w.config.StreamName, consumerConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create NATS consumer: %w", err)
 	}
@@ -235,10 +236,20 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 					slog.String("stream", w.config.StreamName),
 					slog.String("consumer", w.config.ConsumerName),
 					slog.Any("error", err))
-				if nakErr := msg.Nak(); nakErr != nil {
-					slog.ErrorContext(ctx, "failed to nak message",
-						slog.String("stream", w.config.StreamName),
-						slog.Any("error", nakErr))
+
+				if w.isLastDelivery(msg) {
+					w.publishToDLQ(ctx, msg)
+					if termErr := msg.Term(); termErr != nil {
+						slog.ErrorContext(ctx, "failed to term message",
+							slog.String("stream", w.config.StreamName),
+							slog.Any("error", termErr))
+					}
+				} else {
+					if nakErr := msg.Nak(); nakErr != nil {
+						slog.ErrorContext(ctx, "failed to nak message",
+							slog.String("stream", w.config.StreamName),
+							slog.Any("error", nakErr))
+					}
 				}
 			default:
 				if ackErr := msg.Ack(); ackErr != nil {
@@ -248,6 +259,31 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 				}
 			}
 		}
+	}
+}
+
+func (w *natsWorker) isLastDelivery(msg jetstream.Msg) bool {
+	meta, err := msg.Metadata()
+	if err != nil {
+		return false
+	}
+	return int(meta.NumDelivered) >= w.config.MaxDeliver
+}
+
+func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg) {
+	if w.config.DLQSubject == "" || w.js == nil {
+		return
+	}
+
+	if _, err := w.js.Publish(ctx, w.config.DLQSubject, msg.Data()); err != nil {
+		slog.ErrorContext(ctx, "failed to publish message to DLQ",
+			slog.String("stream", w.config.StreamName),
+			slog.String("dlq_subject", w.config.DLQSubject),
+			slog.Any("error", err))
+	} else {
+		slog.WarnContext(ctx, "message sent to DLQ",
+			slog.String("stream", w.config.StreamName),
+			slog.String("dlq_subject", w.config.DLQSubject))
 	}
 }
 

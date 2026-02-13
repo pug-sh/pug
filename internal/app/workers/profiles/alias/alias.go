@@ -60,12 +60,12 @@ func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NAT
 		AckWait:           30 * time.Second,
 	}
 
-	worker, err := natsworker.NewWorker(config, messageProcessor)
+	worker, err := natsworker.NewWorker(config, messageProcessor, natsClient)
 	if err != nil {
 		return err
 	}
 
-	return worker.Start(ctx, natsClient)
+	return worker.Start(ctx)
 }
 
 func handleAlias(ctx context.Context, ch driver.Conn, data []byte) error {

@@ -18,4 +18,10 @@ const (
 
 	// Events subjects
 	EventsIngestSubject = "events.ingest"
+
+	// Dead letter queue subjects
+	DLQSubscriptionsSubject = "dlq.subscriptions"
+	DLQCampaignsSubject     = "dlq.campaigns"
+	DLQDeliveriesSubject    = "dlq.deliveries"
+	DLQEventsSubject        = "dlq.events"
 )

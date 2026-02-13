@@ -73,12 +73,12 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 		AckWait:           30 * time.Second,
 	}
 
-	worker, err := natsworker.NewWorker(config, messageProcessor)
+	worker, err := natsworker.NewWorker(config, messageProcessor, natsClient)
 	if err != nil {
 		return err
 	}
 
-	return worker.Start(ctx, natsClient)
+	return worker.Start(ctx)
 }
 
 func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natsworker.NATSClient, data []byte) error {
