@@ -45,16 +45,20 @@ sqlc:
 	rm -rf internal/gen/repo
 	go tool sqlc generate
 
+.PHONY: lint-proto
+lint-proto:
+	go tool buf lint
+
 .PHONY: lint
 lint:
-	buf lint
+	go tool golangci-lint run --timeout 5m ./...
 
 .PHONY: rpc
-rpc: lint
-	buf generate
+rpc: lint-proto
+	go tool buf generate
 
 .PHONY: gen-ts
-gen-ts: lint
+gen-ts: lint-proto
 	buf generate
 
 .PHONY: build

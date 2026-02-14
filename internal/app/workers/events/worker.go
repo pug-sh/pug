@@ -23,7 +23,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer chDB.Close(ctx)
+	defer func() { _ = chDB.Close(ctx) }()
 
 	natsClient, err := natsworker.New(ctx)
 	if err != nil {
