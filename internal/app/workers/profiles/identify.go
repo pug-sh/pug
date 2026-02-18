@@ -87,6 +87,15 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 				slog.String("sourceId", profileID))
 			return err
 		}
+
+		if err := w.ch.Exec(ctx,
+			"INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)",
+			profileID, existing.ID, externalID, projectID,
+		); err != nil {
+			slog.ErrorContext(ctx, "failed inserting profile alias into ClickHouse", slogx.Error(err),
+				slog.String("aliasId", profileID), slog.String("profileId", existing.ID))
+			return err
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

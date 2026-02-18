@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/proto"
 
@@ -16,12 +17,14 @@ import (
 type Worker struct {
 	pgW   *pgxpool.Pool
 	write *dbwrite.Queries
+	ch    driver.Conn
 }
 
-func NewWorker(pgW *pgxpool.Pool) *Worker {
+func NewWorker(pgW *pgxpool.Pool, ch driver.Conn) *Worker {
 	return &Worker{
 		pgW:   pgW,
 		write: dbwrite.New(pgW),
+		ch:    ch,
 	}
 }
 
