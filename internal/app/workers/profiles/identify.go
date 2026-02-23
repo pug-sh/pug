@@ -64,6 +64,12 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 			TargetID:  existing.ID,
 			ProjectID: projectID,
 		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// Source profile no longer exists — already merged on a previous attempt.
+				slog.WarnContext(ctx, "source profile missing during merge, assuming already merged",
+					slog.String("sourceId", profileID), slog.String("targetId", existing.ID))
+				return nil
+			}
 			slog.ErrorContext(ctx, "failed merging profile properties", slogx.Error(err),
 				slog.String("sourceId", profileID), slog.String("targetId", existing.ID))
 			return err
