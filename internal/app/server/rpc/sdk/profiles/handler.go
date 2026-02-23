@@ -192,7 +192,7 @@ func (h *Handler) Register(
 		OperationType:    profilesv1.ProfileOperationType_PROFILE_OPERATION_TYPE_REGISTER,
 		AutoProperties:   req.Msg.GetAutoProperties(),
 		CustomProperties: req.Msg.GetCustomProperties(),
-		ExternalId:       req.Msg.GetExternalId(),
+		ProfileId:        req.Msg.GetProfileId(),
 		ProjectId:        principal.Project.ID,
 	}
 
@@ -233,7 +233,7 @@ func convertProfile(p dbread.Profile) (*profilesv1.Profile, error) {
 		AutoProperties:   autoProperties,
 		CreateTime:       timestamppb.New(p.CreateTime.Time),
 		CustomProperties: customProperties,
-		ExternalId:       p.ExternalID,
+		ExternalId:       p.ExternalID.String,
 		Id:               p.ID,
 		ProjectId:        p.ProjectID,
 		UpdateTime:       timestamppb.New(p.UpdateTime.Time),

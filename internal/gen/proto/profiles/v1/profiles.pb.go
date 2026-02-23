@@ -593,7 +593,7 @@ type RegisterRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	AutoProperties   *structpb.Struct       `protobuf:"bytes,1,opt,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty"`
 	CustomProperties *structpb.Struct       `protobuf:"bytes,2,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
-	ExternalId       string                 `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ProfileId        string                 `protobuf:"bytes,3,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -642,9 +642,9 @@ func (x *RegisterRequest) GetCustomProperties() *structpb.Struct {
 	return nil
 }
 
-func (x *RegisterRequest) GetExternalId() string {
+func (x *RegisterRequest) GetProfileId() string {
 	if x != nil {
-		return x.ExternalId
+		return x.ProfileId
 	}
 	return ""
 }
@@ -807,12 +807,12 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x06 \x01(\tR\tprojectId\x12;\n" +
 	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\"\xc2\x01\n" +
+	"updateTime\"\xc0\x01\n" +
 	"\x0fRegisterRequest\x12@\n" +
 	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12D\n" +
-	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12'\n" +
-	"\vexternal_id\x18\x03 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"externalId\"\x12\n" +
+	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12%\n" +
+	"\n" +
+	"profile_id\x18\x03 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprofileId\"\x12\n" +
 	"\x10RegisterResponse\"\xca\x02\n" +
 	"\x17ProfileOperationMessage\x12@\n" +
 	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12D\n" +

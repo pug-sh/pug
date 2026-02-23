@@ -66,7 +66,7 @@ message Profile {
 message RegisterRequest {
   google.protobuf.Struct auto_properties = 1;
   google.protobuf.Struct custom_properties = 2;
-  string external_id = 3 [(buf.validate.field).required = true];
+  string profile_id = 3 [(buf.validate.field).required = true];
 }
 
 message RegisterResponse {}

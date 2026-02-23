@@ -26,7 +26,7 @@ func (q *Queries) DeleteProfileByIDAndProjectID(ctx context.Context, arg DeleteP
 
 const getProfileByProjectAndExternalID = `-- name: GetProfileByProjectAndExternalID :one
 select auto_properties, create_time, custom_properties, external_id, id, project_id, update_time from profiles
-where project_id = $1 and external_id = $2 limit 1
+where project_id = $1 and external_id = $2::text limit 1
 `
 
 type GetProfileByProjectAndExternalIDParams struct {
@@ -100,9 +100,9 @@ func (q *Queries) ReassignProfileDevices(ctx context.Context, arg ReassignProfil
 }
 
 const registerProfile = `-- name: RegisterProfile :one
-insert into profiles (auto_properties, custom_properties, external_id, id, project_id)
-values (coalesce($1, '{}'), coalesce($2, '{}'), $3, $4, $5)
-on conflict (project_id, external_id) do update set
+insert into profiles (auto_properties, custom_properties, id, project_id)
+values (coalesce($1, '{}'), coalesce($2, '{}'), $3, $4)
+on conflict (id, project_id) do update set
   auto_properties = jsonb_shallow_merge(profiles.auto_properties, excluded.auto_properties),
   custom_properties = jsonb_shallow_merge(profiles.custom_properties, excluded.custom_properties)
 returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
@@ -111,7 +111,6 @@ returning auto_properties, create_time, custom_properties, external_id, id, proj
 type RegisterProfileParams struct {
 	AutoProperties   interface{}
 	CustomProperties interface{}
-	ExternalID       string
 	ID               string
 	ProjectID        string
 }
@@ -120,7 +119,6 @@ func (q *Queries) RegisterProfile(ctx context.Context, arg RegisterProfileParams
 	row := q.db.QueryRow(ctx, registerProfile,
 		arg.AutoProperties,
 		arg.CustomProperties,
-		arg.ExternalID,
 		arg.ID,
 		arg.ProjectID,
 	)
@@ -139,7 +137,7 @@ func (q *Queries) RegisterProfile(ctx context.Context, arg RegisterProfileParams
 
 const setProfileExternalID = `-- name: SetProfileExternalID :one
 update profiles
-set external_id = $1
+set external_id = $1::text
 where id = $2 and project_id = $3
 returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
 `

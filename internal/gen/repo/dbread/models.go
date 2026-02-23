@@ -35,7 +35,7 @@ type Profile struct {
 	AutoProperties   map[string]any
 	CreateTime       pgtype.Timestamptz
 	CustomProperties map[string]any
-	ExternalID       string
+	ExternalID       pgtype.Text
 	ID               string
 	ProjectID        string
 	UpdateTime       pgtype.Timestamptz
