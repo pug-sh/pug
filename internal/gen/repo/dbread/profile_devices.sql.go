@@ -11,11 +11,19 @@ import (
 
 const getActiveProfileDevicesByProject = `-- name: GetActiveProfileDevicesByProject :many
 select create_time, id, platform, profile_id, project_id, properties, status, token, update_time from profile_devices
-where project_id = $1 and status = 'active'
+where project_id = $1 and status = 'active' and id > $2
+order by id
+limit $3
 `
 
-func (q *Queries) GetActiveProfileDevicesByProject(ctx context.Context, projectID string) ([]ProfileDevice, error) {
-	rows, err := q.db.Query(ctx, getActiveProfileDevicesByProject, projectID)
+type GetActiveProfileDevicesByProjectParams struct {
+	ProjectID string
+	AfterID   string
+	RowLimit  int32
+}
+
+func (q *Queries) GetActiveProfileDevicesByProject(ctx context.Context, arg GetActiveProfileDevicesByProjectParams) ([]ProfileDevice, error) {
+	rows, err := q.db.Query(ctx, getActiveProfileDevicesByProject, arg.ProjectID, arg.AfterID, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -46,11 +54,16 @@ func (q *Queries) GetActiveProfileDevicesByProject(ctx context.Context, projectI
 
 const getProfileDevicesByProfileID = `-- name: GetProfileDevicesByProfileID :many
 select create_time, id, platform, profile_id, project_id, properties, status, token, update_time from profile_devices
-where profile_id = $1
+where profile_id = $1 and project_id = $2
 `
 
-func (q *Queries) GetProfileDevicesByProfileID(ctx context.Context, profileID string) ([]ProfileDevice, error) {
-	rows, err := q.db.Query(ctx, getProfileDevicesByProfileID, profileID)
+type GetProfileDevicesByProfileIDParams struct {
+	ProfileID string
+	ProjectID string
+}
+
+func (q *Queries) GetProfileDevicesByProfileID(ctx context.Context, arg GetProfileDevicesByProfileIDParams) ([]ProfileDevice, error) {
+	rows, err := q.db.Query(ctx, getProfileDevicesByProfileID, arg.ProfileID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}

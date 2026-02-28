@@ -18,6 +18,15 @@ consumers:
     max_deliver: 5
     replay_policy: "instant"
 
+  # Consumer for profile events
+  - name: "profile-processor"
+    stream_name: "profiles"
+    durable_name: "profile-processor-durable"
+    deliver_policy: "all"
+    ack_explicit: true
+    max_deliver: 5
+    replay_policy: "instant"
+
   # Consumer for analytics events -> ClickHouse
   - name: "events-writer"
     stream_name: "events"

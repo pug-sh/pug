@@ -46,29 +46,37 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		return fmt.Errorf("failed to get campaign %s: %w", msg.CampaignID, err)
 	}
 
-	devices, err := w.deviceService.GetActiveDevicesByProject(ctx, campaign.ProjectID)
-	if err != nil {
-		return fmt.Errorf("failed to get active devices for project %s: %w", campaign.ProjectID, err)
-	}
-
 	if err := w.campaignService.UpdateCampaignStatus(ctx, campaign.ID, campaigns.StatusInProgress); err != nil {
 		slog.ErrorContext(ctx, "failed to set campaign in-progress", slogx.Error(err), slog.String("campaign_id", campaign.ID))
 	}
 
-	slog.InfoContext(ctx, "Processing devices for campaign",
-		slog.String("campaign_id", campaign.ID),
-		slog.String("project_id", campaign.ProjectID),
-		slog.Int("device_count", len(devices)))
-
-	var failCount int
-	for _, device := range devices {
-		if err := w.deliveryService.SendNotification(ctx, campaign, device); err != nil {
-			failCount++
-			slog.ErrorContext(ctx, "failed to send notification",
-				slog.String("device_id", device.ID),
-				slog.String("campaign_id", campaign.ID),
-				slogx.Error(err))
+	const pageSize = 100
+	var (
+		afterID    string
+		failCount  int
+		totalCount int
+	)
+	for {
+		devices, err := w.deviceService.GetActiveDevicesByProject(ctx, campaign.ProjectID, afterID, pageSize)
+		if err != nil {
+			return fmt.Errorf("failed to get active devices for project %s: %w", campaign.ProjectID, err)
 		}
+
+		for _, device := range devices {
+			if err := w.deliveryService.SendNotification(ctx, campaign, device); err != nil {
+				failCount++
+				slog.ErrorContext(ctx, "failed to send notification",
+					slog.String("device_id", device.ID),
+					slog.String("campaign_id", campaign.ID),
+					slogx.Error(err))
+			}
+		}
+
+		totalCount += len(devices)
+		if len(devices) < pageSize {
+			break
+		}
+		afterID = devices[len(devices)-1].ID
 	}
 
 	finalStatus := campaigns.StatusComplete
@@ -77,7 +85,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		slog.WarnContext(ctx, "campaign delivered with failures",
 			slog.String("campaign_id", campaign.ID),
 			slog.Int("fail_count", failCount),
-			slog.Int("total_count", len(devices)))
+			slog.Int("total_count", totalCount))
 	}
 
 	if err := w.campaignService.UpdateCampaignStatus(ctx, campaign.ID, finalStatus); err != nil {

@@ -46,10 +46,20 @@ func (s *Service) UpdateDeviceToken(ctx context.Context, id, projectID, token st
 	})
 }
 
-func (s *Service) GetActiveDevicesByProject(ctx context.Context, projectID string) ([]dbread.ProfileDevice, error) {
-	return s.read.GetActiveProfileDevicesByProject(ctx, projectID)
+func (s *Service) GetActiveDevicesByProject(ctx context.Context, projectID, afterID string, limit int32) ([]dbread.ProfileDevice, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	return s.read.GetActiveProfileDevicesByProject(ctx, dbread.GetActiveProfileDevicesByProjectParams{
+		ProjectID: projectID,
+		AfterID:   afterID,
+		RowLimit:  limit,
+	})
 }
 
-func (s *Service) GetDevicesByProfileID(ctx context.Context, profileID string) ([]dbread.ProfileDevice, error) {
-	return s.read.GetProfileDevicesByProfileID(ctx, profileID)
+func (s *Service) GetDevicesByProfileID(ctx context.Context, projectID, profileID string) ([]dbread.ProfileDevice, error) {
+	return s.read.GetProfileDevicesByProfileID(ctx, dbread.GetProfileDevicesByProfileIDParams{
+		ProfileID: profileID,
+		ProjectID: projectID,
+	})
 }
