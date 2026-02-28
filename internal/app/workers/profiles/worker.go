@@ -65,7 +65,7 @@ func StartWorker(ctx context.Context, pgW *pgxpool.Pool, ch driver.Conn, natsCli
 		ConsumerName:      consumerConfig.DurableName,
 		DurableName:       consumerConfig.DurableName,
 		Concurrency:       100,
-		ProcessingTimeout: 30 * time.Second,
+		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
 	}

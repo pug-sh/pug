@@ -62,7 +62,7 @@ func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NAT
 		ConsumerName:      consumerConfig.DurableName,
 		DurableName:       consumerConfig.DurableName,
 		Concurrency:       10,
-		ProcessingTimeout: 30 * time.Second,
+		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
 	}

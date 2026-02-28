@@ -17,6 +17,22 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 	profileID := msg.GetProfileId()
 	externalID := msg.GetExternalId()
 
+	existing, err := w.write.GetProfileByProjectAndExternalID(ctx, dbwrite.GetProfileByProjectAndExternalIDParams{
+		ProjectID:  projectID,
+		ExternalID: externalID,
+	})
+
+	switch {
+	case err != nil && !errors.Is(err, pgx.ErrNoRows):
+		slog.ErrorContext(ctx, "failed looking up profile by external ID", slogx.Error(err),
+			slog.String("externalId", externalID))
+		return err
+
+	case err == nil && existing.ID == profileID:
+		// Already identified — no-op.
+		return nil
+	}
+
 	tx, err := w.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed starting transaction", slogx.Error(err))
@@ -30,11 +46,6 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 
 	qtx := w.write.WithTx(tx)
 
-	existing, err := qtx.GetProfileByProjectAndExternalID(ctx, dbwrite.GetProfileByProjectAndExternalIDParams{
-		ProjectID:  projectID,
-		ExternalID: externalID,
-	})
-
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		// No profile with this external_id — assign it to the anonymous profile.
@@ -47,15 +58,6 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 				slog.String("profileId", profileID), slog.String("externalId", externalID))
 			return err
 		}
-
-	case err != nil:
-		slog.ErrorContext(ctx, "failed looking up profile by external ID", slogx.Error(err),
-			slog.String("externalId", externalID))
-		return err
-
-	case existing.ID == profileID:
-		// Already identified — no-op.
-		return nil
 
 	default:
 		// Different profile owns this external_id — merge anonymous into existing.
@@ -94,18 +96,19 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 			return err
 		}
 
-		if err := w.ch.Exec(ctx,
-			"INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)",
-			profileID, existing.ID, externalID, projectID,
-		); err != nil {
-			slog.ErrorContext(ctx, "failed inserting profile alias into ClickHouse", slogx.Error(err),
-				slog.String("aliasId", profileID), slog.String("profileId", existing.ID))
-			return err
-		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed committing identify transaction", slogx.Error(err))
+		return err
+	}
+
+	if err := w.ch.Exec(ctx,
+		"INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)",
+		profileID, existing.ID, externalID, projectID,
+	); err != nil {
+		slog.ErrorContext(ctx, "failed inserting profile alias into ClickHouse", slogx.Error(err),
+			slog.String("aliasId", profileID), slog.String("profileId", existing.ID))
 		return err
 	}
 

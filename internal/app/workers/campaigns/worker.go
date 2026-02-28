@@ -59,7 +59,7 @@ func StartWorker(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nat
 		ConsumerName:      consumerConfig.DurableName, // Use the durable name for both
 		DurableName:       consumerConfig.DurableName,
 		Concurrency:       100,
-		ProcessingTimeout: 30 * time.Second,
+		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
 	}
