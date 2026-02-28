@@ -144,10 +144,10 @@ func (nc *NATSClient) ReadConsumerConfig() ([]ConsumerConfig, error) {
 		return nil, fmt.Errorf("failed to parse consumers config: %w", err)
 	}
 
-	ackDefault := true
 	for i := range config.Consumers {
 		if config.Consumers[i].AckExplicit == nil {
-			config.Consumers[i].AckExplicit = &ackDefault
+			ack := true
+			config.Consumers[i].AckExplicit = &ack
 		}
 		if config.Consumers[i].DeliverPolicy == "" {
 			config.Consumers[i].DeliverPolicy = "all"

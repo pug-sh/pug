@@ -238,11 +238,18 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 					slog.Any("error", err))
 
 				if w.isLastDelivery(msg) {
-					w.publishToDLQ(ctx, msg)
-					if termErr := msg.Term(); termErr != nil {
-						slog.ErrorContext(ctx, "failed to term message",
-							slog.String("stream", w.config.StreamName),
-							slog.Any("error", termErr))
+					if w.publishToDLQ(ctx, msg) {
+						if termErr := msg.Term(); termErr != nil {
+							slog.ErrorContext(ctx, "failed to term message",
+								slog.String("stream", w.config.StreamName),
+								slog.Any("error", termErr))
+						}
+					} else {
+						if nakErr := msg.Nak(); nakErr != nil {
+							slog.ErrorContext(ctx, "failed to nak message after dlq failure",
+								slog.String("stream", w.config.StreamName),
+								slog.Any("error", nakErr))
+						}
 					}
 				} else {
 					if nakErr := msg.Nak(); nakErr != nil {
@@ -270,9 +277,9 @@ func (w *natsWorker) isLastDelivery(msg jetstream.Msg) bool {
 	return int(meta.NumDelivered) >= w.config.MaxDeliver
 }
 
-func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg) {
+func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg) bool {
 	if w.config.DLQSubject == "" || w.js == nil {
-		return
+		return true
 	}
 
 	if _, err := w.js.Publish(ctx, w.config.DLQSubject, msg.Data()); err != nil {
@@ -280,11 +287,13 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg) {
 			slog.String("stream", w.config.StreamName),
 			slog.String("dlq_subject", w.config.DLQSubject),
 			slog.Any("error", err))
-	} else {
-		slog.WarnContext(ctx, "message sent to DLQ",
-			slog.String("stream", w.config.StreamName),
-			slog.String("dlq_subject", w.config.DLQSubject))
+		return false
 	}
+
+	slog.WarnContext(ctx, "message sent to DLQ",
+		slog.String("stream", w.config.StreamName),
+		slog.String("dlq_subject", w.config.DLQSubject))
+	return true
 }
 
 func (w *natsWorker) HealthCheck() (bool, error) {
