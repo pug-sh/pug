@@ -62,14 +62,3 @@ type Project struct {
 	ID             string
 	UpdateTime     pgtype.Timestamptz
 }
-
-type Segment struct {
-	CreateTime  pgtype.Timestamptz
-	Description pgtype.Text
-	Filter      map[string]any
-	ID          string
-	IsActive    bool
-	DisplayName string
-	ProjectID   string
-	UpdateTime  pgtype.Timestamptz
-}
