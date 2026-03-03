@@ -16,14 +16,12 @@ import (
 
 type Worker struct {
 	deviceService *devices.Service
-	pgW           *pgxpool.Pool
 	write         *dbwrite.Queries
 }
 
 func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 	return &Worker{
 		deviceService: devices.NewService(pgRO, pgW),
-		pgW:           pgW,
 		write:         dbwrite.New(pgW),
 	}
 }
@@ -36,8 +34,6 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	switch msg.OperationType {
-	case devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPSERT:
-		return w.handleUpsert(ctx, msg)
 	case devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPDATE_STATUS:
 		return w.handleUpdateStatus(ctx, msg)
 	case devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPDATE_TOKEN:
@@ -48,27 +44,6 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		slog.WarnContext(ctx, "unknown device operation type", slog.Int("type", int(msg.OperationType)))
 		return fmt.Errorf("unknown operation type: %v", msg.OperationType)
 	}
-}
-
-func (w *Worker) handleUpsert(ctx context.Context, msg *devicesv1.DeviceOperationMessage) error {
-	profileID, err := w.resolveProfileID(ctx, msg)
-	if err != nil {
-		return err
-	}
-
-	if _, err := w.write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
-		ID:        msg.GetDeviceId(),
-		Platform:  msg.GetPlatform(),
-		ProfileID: profileID,
-		ProjectID: msg.GetProjectId(),
-		Status:    "active",
-		Token:     msg.GetToken(),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to save device", slogx.Error(err))
-		return err
-	}
-
-	return nil
 }
 
 func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOperationMessage) (string, error) {
@@ -96,12 +71,13 @@ func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOpera
 	}
 
 	if _, err := w.write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
-		ID:        msg.GetDeviceId(),
-		Platform:  msg.GetPlatform(),
-		ProfileID: profileID,
-		ProjectID: msg.GetProjectId(),
-		Status:    "active",
-		Token:     msg.GetToken(),
+		ID:         msg.GetDeviceId(),
+		Platform:   msg.GetPlatform(),
+		ProfileID:  profileID,
+		ProjectID:  msg.GetProjectId(),
+		Properties: msg.GetProperties(),
+		Status:     "active",
+		Token:      msg.GetToken(),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to save device", slogx.Error(err))
 		return err

@@ -36,8 +36,6 @@ const (
 	// DevicesServiceSubscribeProcedure is the fully-qualified name of the DevicesService's Subscribe
 	// RPC.
 	DevicesServiceSubscribeProcedure = "/devices.v1.DevicesService/Subscribe"
-	// DevicesServiceUpsertProcedure is the fully-qualified name of the DevicesService's Upsert RPC.
-	DevicesServiceUpsertProcedure = "/devices.v1.DevicesService/Upsert"
 	// DevicesServiceUpdateStatusProcedure is the fully-qualified name of the DevicesService's
 	// UpdateStatus RPC.
 	DevicesServiceUpdateStatusProcedure = "/devices.v1.DevicesService/UpdateStatus"
@@ -49,7 +47,6 @@ const (
 // DevicesServiceClient is a client for the devices.v1.DevicesService service.
 type DevicesServiceClient interface {
 	Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error)
-	Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error)
 	UpdateStatus(context.Context, *connect.Request[v1.UpdateStatusRequest]) (*connect.Response[v1.UpdateStatusResponse], error)
 	UpdateToken(context.Context, *connect.Request[v1.UpdateTokenRequest]) (*connect.Response[v1.UpdateTokenResponse], error)
 }
@@ -71,12 +68,6 @@ func NewDevicesServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(devicesServiceMethods.ByName("Subscribe")),
 			connect.WithClientOptions(opts...),
 		),
-		upsert: connect.NewClient[v1.UpsertRequest, v1.UpsertResponse](
-			httpClient,
-			baseURL+DevicesServiceUpsertProcedure,
-			connect.WithSchema(devicesServiceMethods.ByName("Upsert")),
-			connect.WithClientOptions(opts...),
-		),
 		updateStatus: connect.NewClient[v1.UpdateStatusRequest, v1.UpdateStatusResponse](
 			httpClient,
 			baseURL+DevicesServiceUpdateStatusProcedure,
@@ -95,7 +86,6 @@ func NewDevicesServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 // devicesServiceClient implements DevicesServiceClient.
 type devicesServiceClient struct {
 	subscribe    *connect.Client[v1.SubscribeRequest, v1.SubscribeResponse]
-	upsert       *connect.Client[v1.UpsertRequest, v1.UpsertResponse]
 	updateStatus *connect.Client[v1.UpdateStatusRequest, v1.UpdateStatusResponse]
 	updateToken  *connect.Client[v1.UpdateTokenRequest, v1.UpdateTokenResponse]
 }
@@ -103,11 +93,6 @@ type devicesServiceClient struct {
 // Subscribe calls devices.v1.DevicesService.Subscribe.
 func (c *devicesServiceClient) Subscribe(ctx context.Context, req *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error) {
 	return c.subscribe.CallUnary(ctx, req)
-}
-
-// Upsert calls devices.v1.DevicesService.Upsert.
-func (c *devicesServiceClient) Upsert(ctx context.Context, req *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error) {
-	return c.upsert.CallUnary(ctx, req)
 }
 
 // UpdateStatus calls devices.v1.DevicesService.UpdateStatus.
@@ -123,7 +108,6 @@ func (c *devicesServiceClient) UpdateToken(ctx context.Context, req *connect.Req
 // DevicesServiceHandler is an implementation of the devices.v1.DevicesService service.
 type DevicesServiceHandler interface {
 	Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error)
-	Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error)
 	UpdateStatus(context.Context, *connect.Request[v1.UpdateStatusRequest]) (*connect.Response[v1.UpdateStatusResponse], error)
 	UpdateToken(context.Context, *connect.Request[v1.UpdateTokenRequest]) (*connect.Response[v1.UpdateTokenResponse], error)
 }
@@ -139,12 +123,6 @@ func NewDevicesServiceHandler(svc DevicesServiceHandler, opts ...connect.Handler
 		DevicesServiceSubscribeProcedure,
 		svc.Subscribe,
 		connect.WithSchema(devicesServiceMethods.ByName("Subscribe")),
-		connect.WithHandlerOptions(opts...),
-	)
-	devicesServiceUpsertHandler := connect.NewUnaryHandler(
-		DevicesServiceUpsertProcedure,
-		svc.Upsert,
-		connect.WithSchema(devicesServiceMethods.ByName("Upsert")),
 		connect.WithHandlerOptions(opts...),
 	)
 	devicesServiceUpdateStatusHandler := connect.NewUnaryHandler(
@@ -163,8 +141,6 @@ func NewDevicesServiceHandler(svc DevicesServiceHandler, opts ...connect.Handler
 		switch r.URL.Path {
 		case DevicesServiceSubscribeProcedure:
 			devicesServiceSubscribeHandler.ServeHTTP(w, r)
-		case DevicesServiceUpsertProcedure:
-			devicesServiceUpsertHandler.ServeHTTP(w, r)
 		case DevicesServiceUpdateStatusProcedure:
 			devicesServiceUpdateStatusHandler.ServeHTTP(w, r)
 		case DevicesServiceUpdateTokenProcedure:
@@ -180,10 +156,6 @@ type UnimplementedDevicesServiceHandler struct{}
 
 func (UnimplementedDevicesServiceHandler) Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.Response[v1.SubscribeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devices.v1.DevicesService.Subscribe is not implemented"))
-}
-
-func (UnimplementedDevicesServiceHandler) Upsert(context.Context, *connect.Request[v1.UpsertRequest]) (*connect.Response[v1.UpsertResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devices.v1.DevicesService.Upsert is not implemented"))
 }
 
 func (UnimplementedDevicesServiceHandler) UpdateStatus(context.Context, *connect.Request[v1.UpdateStatusRequest]) (*connect.Response[v1.UpdateStatusResponse], error) {

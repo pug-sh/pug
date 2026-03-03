@@ -9,7 +9,6 @@ option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/devices/v1;
 
 service DevicesService {
   rpc Subscribe(SubscribeRequest) returns (SubscribeResponse) {}
-  rpc Upsert(UpsertRequest) returns (UpsertResponse) {}
   rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse) {}
   rpc UpdateToken(UpdateTokenRequest) returns (UpdateTokenResponse) {}
 }
@@ -25,19 +24,10 @@ message SubscribeRequest {
   string profile_external_id = 3;
   string profile_id = 4;
   string token = 5 [(buf.validate.field).required = true];
+  map<string, google.protobuf.Any> properties = 6;
 }
 
 message SubscribeResponse {}
-
-message UpsertRequest {
-  string id = 1 [(buf.validate.field).string = {len: 20}];
-  string platform = 2 [(buf.validate.field).string = {in: ["android", "ios", "web"]}];
-  string profile_external_id = 3;
-  map<string, google.protobuf.Any> properties = 4;
-  string token = 5;
-}
-
-message UpsertResponse {}
 
 message UpdateStatusRequest {
   string id = 1 [(buf.validate.field).string = {len: 20}];
@@ -55,10 +45,9 @@ message UpdateTokenResponse {}
 
 enum DeviceOperationType {
   DEVICE_OPERATION_TYPE_UNSPECIFIED = 0;
-  DEVICE_OPERATION_TYPE_UPSERT = 1;
-  DEVICE_OPERATION_TYPE_UPDATE_STATUS = 2;
-  DEVICE_OPERATION_TYPE_UPDATE_TOKEN = 3;
-  DEVICE_OPERATION_TYPE_SUBSCRIBE = 4;
+  DEVICE_OPERATION_TYPE_UPDATE_STATUS = 1;
+  DEVICE_OPERATION_TYPE_UPDATE_TOKEN = 2;
+  DEVICE_OPERATION_TYPE_SUBSCRIBE = 3;
 }
 
 message DeviceOperationMessage {

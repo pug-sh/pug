@@ -27,11 +27,9 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 		slog.ErrorContext(ctx, "failed looking up profile by external ID", slogx.Error(err),
 			slog.String("externalId", externalID))
 		return err
-
-	case err == nil && existing.ID == profileID:
-		// Already identified — no-op.
-		return nil
 	}
+
+	lookupErr := err
 
 	tx, err := w.pgW.Begin(ctx)
 	if err != nil {
@@ -47,7 +45,7 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 	qtx := w.write.WithTx(tx)
 
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
+	case errors.Is(lookupErr, pgx.ErrNoRows):
 		// No profile with this external_id — assign it to the anonymous profile.
 		if _, err = qtx.SetProfileExternalID(ctx, dbwrite.SetProfileExternalIDParams{
 			ExternalID: externalID,

@@ -48,6 +48,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 
 	if err := w.campaignService.UpdateCampaignStatus(ctx, campaign.ID, campaigns.StatusInProgress); err != nil {
 		slog.ErrorContext(ctx, "failed to set campaign in-progress", slogx.Error(err), slog.String("campaign_id", campaign.ID))
+		return err
 	}
 
 	const pageSize = 100
