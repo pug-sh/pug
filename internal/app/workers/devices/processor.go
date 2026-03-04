@@ -10,18 +10,21 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/devices"
 	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/devices/v1"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
 type Worker struct {
 	deviceService *devices.Service
+	read          *dbread.Queries
 	write         *dbwrite.Queries
 }
 
 func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 	return &Worker{
 		deviceService: devices.NewService(pgRO, pgW),
+		read:          dbread.New(pgRO),
 		write:         dbwrite.New(pgW),
 	}
 }
@@ -51,7 +54,7 @@ func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOper
 		return id, nil
 	}
 
-	profile, err := w.write.GetProfileByProjectAndExternalID(ctx, dbwrite.GetProfileByProjectAndExternalIDParams{
+	profile, err := w.read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
 		ProjectID:  msg.GetProjectId(),
 		ExternalID: msg.GetProfileExternalId(),
 	})

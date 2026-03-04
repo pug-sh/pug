@@ -40,7 +40,7 @@ func (s *Service) UpdateDeviceStatus(ctx context.Context, id, projectID, status 
 
 func (s *Service) UpdateDeviceToken(ctx context.Context, id, projectID, token string) (dbwrite.ProfileDevice, error) {
 	return s.write.UpdateProfileDeviceToken(ctx, dbwrite.UpdateProfileDeviceTokenParams{
-		Token:     pgtype.Text{String: token, Valid: token != ""},
+		Token:     pgtype.Text{String: token, Valid: true},
 		ID:        id,
 		ProjectID: projectID,
 	})

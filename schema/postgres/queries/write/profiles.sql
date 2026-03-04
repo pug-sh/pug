@@ -13,10 +13,6 @@ where s.id = @source_id
   and profiles.project_id = @project_id
 returning profiles.*;
 
--- name: GetProfileByProjectAndExternalID :one
-select * from profiles
-where project_id = @project_id and external_id = @external_id::text limit 1;
-
 -- name: ReassignProfileDevices :exec
 update profile_devices
 set profile_id = @target_id

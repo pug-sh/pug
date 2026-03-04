@@ -499,14 +499,14 @@ const file_devices_v1_devices_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
 	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01:\xa1\x01\xbaH\x9d\x01\x1a\x9a\x01\n" +
 	"$subscribe_request.profile_identifier\x129either profile_id or profile_external_id must be provided\x1a7this.profile_id != '' || this.profile_external_id != ''\"\x13\n" +
-	"\x11SubscribeResponse\"G\n" +
+	"\x11SubscribeResponse\"`\n" +
 	"\x13UpdateStatusRequest\x12\x18\n" +
-	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\"\x16\n" +
-	"\x14UpdateStatusResponse\"D\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x12/\n" +
+	"\x06status\x18\x02 \x01(\tB\x17\xbaH\x14r\x12R\x06activeR\binactiveR\x06status\"\x16\n" +
+	"\x14UpdateStatusResponse\"L\n" +
 	"\x12UpdateTokenRequest\x12\x18\n" +
-	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x12\x14\n" +
-	"\x05token\x18\x02 \x01(\tR\x05token\"\x15\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x12\x1c\n" +
+	"\x05token\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\"\x15\n" +
 	"\x13UpdateTokenResponse\"\xde\x03\n" +
 	"\x16DeviceOperationMessage\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12F\n" +

@@ -21,6 +21,12 @@ func Run(ctx context.Context) error {
 		return err
 	}
 
+	pgRO, err := postgres.NewReaderPool(ctx, &pgCfg)
+	if err != nil {
+		return err
+	}
+	defer pgRO.Close()
+
 	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
 	if err != nil {
 		return err
@@ -45,16 +51,16 @@ func Run(ctx context.Context) error {
 	defer natsClient.Close()
 
 	slog.InfoContext(ctx, "Starting profile worker...")
-	return StartWorker(ctx, pgW, chDB.Conn, natsClient)
+	return StartWorker(ctx, pgRO, pgW, chDB.Conn, natsClient)
 }
 
-func StartWorker(ctx context.Context, pgW *pgxpool.Pool, ch driver.Conn, natsClient *natsworker.NATSClient) error {
+func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, natsClient *natsworker.NATSClient) error {
 	consumerConfig, err := natsClient.GetConsumerConfigByName("profile-processor-durable")
 	if err != nil {
 		return fmt.Errorf("failed to get profile consumer config: %w", err)
 	}
 
-	profileWorker := NewWorker(pgW, ch)
+	profileWorker := NewWorker(pgRO, pgW, ch)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
 		return profileWorker.ProcessMessage(ctx, msg.Data())

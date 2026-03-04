@@ -168,12 +168,12 @@ func (h *Handler) Identify(
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal identify message", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	if _, err = h.producer.Publish(ctx, nats.ProfileOpsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish identify operation to NATS", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	return connect.NewResponse(&profilesv1.IdentifyResponse{}), nil
@@ -199,12 +199,12 @@ func (h *Handler) Register(
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal profile operation message", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	if _, err = h.producer.Publish(ctx, nats.ProfileOpsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish profile operation to NATS", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	return connect.NewResponse(&profilesv1.RegisterResponse{}), nil

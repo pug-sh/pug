@@ -31,14 +31,14 @@ message SubscribeResponse {}
 
 message UpdateStatusRequest {
   string id = 1 [(buf.validate.field).string = {len: 20}];
-  string status = 2;
+  string status = 2 [(buf.validate.field).string = {in: ["active", "inactive"]}];
 }
 
 message UpdateStatusResponse {}
 
 message UpdateTokenRequest {
   string id = 1 [(buf.validate.field).string = {len: 20}];
-  string token = 2;
+  string token = 2 [(buf.validate.field).required = true];
 }
 
 message UpdateTokenResponse {}

@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
@@ -17,7 +18,7 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 	profileID := msg.GetProfileId()
 	externalID := msg.GetExternalId()
 
-	existing, err := w.write.GetProfileByProjectAndExternalID(ctx, dbwrite.GetProfileByProjectAndExternalIDParams{
+	existing, err := w.read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
 		ProjectID:  projectID,
 		ExternalID: externalID,
 	})
@@ -58,6 +59,11 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 		}
 
 	default:
+		// Already identified — skip to avoid self-merge and deletion.
+		if existing.ID == profileID {
+			return nil
+		}
+
 		// Different profile owns this external_id — merge anonymous into existing.
 		if _, err = qtx.MergeProfileProperties(ctx, dbwrite.MergeProfilePropertiesParams{
 			SourceID:  profileID,

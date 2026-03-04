@@ -10,19 +10,22 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
 type Worker struct {
 	pgW   *pgxpool.Pool
+	read  *dbread.Queries
 	write *dbwrite.Queries
 	ch    driver.Conn
 }
 
-func NewWorker(pgW *pgxpool.Pool, ch driver.Conn) *Worker {
+func NewWorker(pgRO, pgW *pgxpool.Pool, ch driver.Conn) *Worker {
 	return &Worker{
 		pgW:   pgW,
+		read:  dbread.New(pgRO),
 		write: dbwrite.New(pgW),
 		ch:    ch,
 	}
