@@ -261,12 +261,12 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +
 	"\x15CustomPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"^\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"]\n" +
 	"\n" +
 	"EventBatch\x12(\n" +
-	"\x06events\x18\x01 \x03(\v2\x10.events.v1.EventR\x06events\x12&\n" +
+	"\x06events\x18\x01 \x03(\v2\x10.events.v1.EventR\x06events\x12%\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprojectId2]\n" +
+	"project_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprojectId2]\n" +
 	"\rEventsService\x12L\n" +
 	"\vBatchCreate\x12\x1d.events.v1.BatchCreateRequest\x1a\x1e.events.v1.BatchCreateResponseBIZBgithub.com/fivebitsio/cotton/internal/gen/proto/events/v1;eventsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 

@@ -7,8 +7,5 @@ select * from campaigns where id = @id and project_id = @project_id;
 -- name: GetCampaignsByProjectID :many
 select * from campaigns where project_id = @project_id;
 
--- name: GetCampaignsByStatus :many
-select * from campaigns where status = @status;
-
 -- name: GetScheduledCampaigns :many
 select * from campaigns where scheduled_time <= now() and status = 'scheduled';

@@ -13,7 +13,7 @@ service AuthService {
 
 message SignInWithEmailRequest {
   string email = 1 [(buf.validate.field).string.email = true];
-  string password = 2 [(buf.validate.field).string.min_len = 1];
+  string password = 2 [(buf.validate.field).required = true];
 }
 
 message SignInWithEmailResponse {
@@ -22,7 +22,7 @@ message SignInWithEmailResponse {
 
 message SignUpWithEmailRequest {
   string email = 1 [(buf.validate.field).string.email = true];
-  string password = 2 [(buf.validate.field).string.min_len = 1];
+  string password = 2 [(buf.validate.field).required = true];
 }
 
 message SignUpWithEmailResponse {

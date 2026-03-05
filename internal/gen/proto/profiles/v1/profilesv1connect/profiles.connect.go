@@ -42,8 +42,12 @@ const (
 	ProfilesServiceGetByExternalIdProcedure = "/profiles.v1.ProfilesService/GetByExternalId"
 	// ProfilesServiceListProcedure is the fully-qualified name of the ProfilesService's List RPC.
 	ProfilesServiceListProcedure = "/profiles.v1.ProfilesService/List"
-	// ProfilesServiceSaveProcedure is the fully-qualified name of the ProfilesService's Save RPC.
-	ProfilesServiceSaveProcedure = "/profiles.v1.ProfilesService/Save"
+	// ProfilesServiceIdentifyProcedure is the fully-qualified name of the ProfilesService's Identify
+	// RPC.
+	ProfilesServiceIdentifyProcedure = "/profiles.v1.ProfilesService/Identify"
+	// ProfilesServiceRegisterProcedure is the fully-qualified name of the ProfilesService's Register
+	// RPC.
+	ProfilesServiceRegisterProcedure = "/profiles.v1.ProfilesService/Register"
 )
 
 // ProfilesServiceClient is a client for the profiles.v1.ProfilesService service.
@@ -53,7 +57,8 @@ type ProfilesServiceClient interface {
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	// todo - shift to server streaming
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
-	Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error)
+	Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error)
+	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error)
 }
 
 // NewProfilesServiceClient constructs a client for the profiles.v1.ProfilesService service. By
@@ -91,10 +96,16 @@ func NewProfilesServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(profilesServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
-		save: connect.NewClient[v1.SaveRequest, v1.SaveResponse](
+		identify: connect.NewClient[v1.IdentifyRequest, v1.IdentifyResponse](
 			httpClient,
-			baseURL+ProfilesServiceSaveProcedure,
-			connect.WithSchema(profilesServiceMethods.ByName("Save")),
+			baseURL+ProfilesServiceIdentifyProcedure,
+			connect.WithSchema(profilesServiceMethods.ByName("Identify")),
+			connect.WithClientOptions(opts...),
+		),
+		register: connect.NewClient[v1.RegisterRequest, v1.RegisterResponse](
+			httpClient,
+			baseURL+ProfilesServiceRegisterProcedure,
+			connect.WithSchema(profilesServiceMethods.ByName("Register")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -106,7 +117,8 @@ type profilesServiceClient struct {
 	get             *connect.Client[v1.GetRequest, v1.GetResponse]
 	getByExternalId *connect.Client[v1.GetByExternalIdRequest, v1.GetByExternalIdResponse]
 	list            *connect.Client[v1.ListRequest, v1.ListResponse]
-	save            *connect.Client[v1.SaveRequest, v1.SaveResponse]
+	identify        *connect.Client[v1.IdentifyRequest, v1.IdentifyResponse]
+	register        *connect.Client[v1.RegisterRequest, v1.RegisterResponse]
 }
 
 // Delete calls profiles.v1.ProfilesService.Delete.
@@ -129,9 +141,14 @@ func (c *profilesServiceClient) List(ctx context.Context, req *connect.Request[v
 	return c.list.CallUnary(ctx, req)
 }
 
-// Save calls profiles.v1.ProfilesService.Save.
-func (c *profilesServiceClient) Save(ctx context.Context, req *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error) {
-	return c.save.CallUnary(ctx, req)
+// Identify calls profiles.v1.ProfilesService.Identify.
+func (c *profilesServiceClient) Identify(ctx context.Context, req *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error) {
+	return c.identify.CallUnary(ctx, req)
+}
+
+// Register calls profiles.v1.ProfilesService.Register.
+func (c *profilesServiceClient) Register(ctx context.Context, req *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error) {
+	return c.register.CallUnary(ctx, req)
 }
 
 // ProfilesServiceHandler is an implementation of the profiles.v1.ProfilesService service.
@@ -141,7 +158,8 @@ type ProfilesServiceHandler interface {
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	// todo - shift to server streaming
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
-	Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error)
+	Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error)
+	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error)
 }
 
 // NewProfilesServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -175,10 +193,16 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 		connect.WithSchema(profilesServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
-	profilesServiceSaveHandler := connect.NewUnaryHandler(
-		ProfilesServiceSaveProcedure,
-		svc.Save,
-		connect.WithSchema(profilesServiceMethods.ByName("Save")),
+	profilesServiceIdentifyHandler := connect.NewUnaryHandler(
+		ProfilesServiceIdentifyProcedure,
+		svc.Identify,
+		connect.WithSchema(profilesServiceMethods.ByName("Identify")),
+		connect.WithHandlerOptions(opts...),
+	)
+	profilesServiceRegisterHandler := connect.NewUnaryHandler(
+		ProfilesServiceRegisterProcedure,
+		svc.Register,
+		connect.WithSchema(profilesServiceMethods.ByName("Register")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/profiles.v1.ProfilesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -191,8 +215,10 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 			profilesServiceGetByExternalIdHandler.ServeHTTP(w, r)
 		case ProfilesServiceListProcedure:
 			profilesServiceListHandler.ServeHTTP(w, r)
-		case ProfilesServiceSaveProcedure:
-			profilesServiceSaveHandler.ServeHTTP(w, r)
+		case ProfilesServiceIdentifyProcedure:
+			profilesServiceIdentifyHandler.ServeHTTP(w, r)
+		case ProfilesServiceRegisterProcedure:
+			profilesServiceRegisterHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -218,6 +244,10 @@ func (UnimplementedProfilesServiceHandler) List(context.Context, *connect.Reques
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.List is not implemented"))
 }
 
-func (UnimplementedProfilesServiceHandler) Save(context.Context, *connect.Request[v1.SaveRequest]) (*connect.Response[v1.SaveResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Save is not implemented"))
+func (UnimplementedProfilesServiceHandler) Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Identify is not implemented"))
+}
+
+func (UnimplementedProfilesServiceHandler) Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("profiles.v1.ProfilesService.Register is not implemented"))
 }

@@ -34,7 +34,7 @@ message BatchMulticastMessage {
   string campaign_id = 2;
   string image = 3;
   string project_id = 4;
-  repeated SubscriptionToken subscription_tokens = 5;
+  repeated DeviceToken device_tokens = 5;
   string title = 6;
 }
 
@@ -55,7 +55,7 @@ message DeliveryEventMessage {
   string message_id = 5;
   Platform platform = 6;
   string project_id = 7;
-  string subscription_id = 8;
+  string device_id = 8;
 }
 
 message RecordEventRequest {
@@ -65,7 +65,7 @@ message RecordEventRequest {
   map<string, string> metadata = 4;
   string message_id = 5;
   Platform platform = 6;
-  string subscription_id = 7;
+  string device_id = 7;
 }
 
 message RecordEventResponse {
@@ -75,7 +75,7 @@ message RecordEventResponse {
   bool success = 4;
 }
 
-message SubscriptionToken {
-  string subscription_id = 1;
+message DeviceToken {
+  string device_id = 1;
   string token = 2;
 }

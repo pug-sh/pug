@@ -39,6 +39,7 @@ type ConsumerConfig struct {
 	Name          string `yaml:"name"`
 	StreamName    string `yaml:"stream_name"`
 	DurableName   string `yaml:"durable_name"`
+	FilterSubject string `yaml:"filter_subject"`
 	DeliverPolicy string `yaml:"deliver_policy"`
 	AckExplicit   bool   `yaml:"ack_explicit"`
 	MaxDeliver    int    `yaml:"max_deliver"`
@@ -176,4 +177,10 @@ func (nc *NATSClient) GetStreamConfigByName(name string) (*StreamConfig, error) 
 	}
 
 	return nil, fmt.Errorf("stream configuration not found for name: %s", name)
+}
+
+// Publish publishes a message to the specified subject
+func (nc *NATSClient) Publish(ctx context.Context, subject string, data []byte) error {
+	_, err := nc.jetStream.Publish(ctx, subject, data)
+	return err
 }

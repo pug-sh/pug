@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"connectrpc.com/connect"
@@ -47,7 +48,7 @@ func (s *Server) RecordEvent(
 		ProjectId:      projectID,
 		CampaignId:     req.Msg.GetCampaignId(),
 		MessageId:      req.Msg.GetMessageId(),
-		SubscriptionId: req.Msg.GetSubscriptionId(),
+		DeviceId:       req.Msg.GetDeviceId(),
 		EventType:      req.Msg.GetEventType(),
 		Platform:       req.Msg.GetPlatform(),
 		EventTimestamp: eventTimestamp,
@@ -57,24 +58,22 @@ func (s *Server) RecordEvent(
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal delivery event message", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	// Publish to NATS JetStream
 	_, err = s.producer.Publish(ctx, nats.DeliveryEventsSubject, data)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to publish delivery event to NATS", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeUnavailable, err)
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("failed to process request"))
 	}
 
-	return &connect.Response[deliveryv1.RecordEventResponse]{
-		Msg: &deliveryv1.RecordEventResponse{
-			Success:           true,
-			Message:           "Successfully recorded delivery event",
-			ShouldRetry:       false,
-			RetryAfterSeconds: 0,
-		},
-	}, nil
+	return connect.NewResponse(&deliveryv1.RecordEventResponse{
+		Success:           true,
+		Message:           "Successfully recorded delivery event",
+		ShouldRetry:       false,
+		RetryAfterSeconds: 0,
+	}), nil
 }
 
 // NewServer creates a new Delivery service server

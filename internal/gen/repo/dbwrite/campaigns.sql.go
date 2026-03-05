@@ -107,66 +107,6 @@ func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) 
 	return i, err
 }
 
-const updateCampaignEndTime = `-- name: UpdateCampaignEndTime :one
-update campaigns
-set end_time = $1
-where id = $2
-returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
-`
-
-type UpdateCampaignEndTimeParams struct {
-	EndTime pgtype.Timestamptz
-	ID      string
-}
-
-func (q *Queries) UpdateCampaignEndTime(ctx context.Context, arg UpdateCampaignEndTimeParams) (Campaign, error) {
-	row := q.db.QueryRow(ctx, updateCampaignEndTime, arg.EndTime, arg.ID)
-	var i Campaign
-	err := row.Scan(
-		&i.CreateTime,
-		&i.EndTime,
-		&i.ID,
-		&i.Name,
-		&i.NotificationData,
-		&i.ProjectID,
-		&i.ScheduledTime,
-		&i.StartTime,
-		&i.Status,
-		&i.UpdateTime,
-	)
-	return i, err
-}
-
-const updateCampaignStartTime = `-- name: UpdateCampaignStartTime :one
-update campaigns
-set start_time = $1
-where id = $2
-returning create_time, end_time, id, name, notification_data, project_id, scheduled_time, start_time, status, update_time
-`
-
-type UpdateCampaignStartTimeParams struct {
-	StartTime pgtype.Timestamptz
-	ID        string
-}
-
-func (q *Queries) UpdateCampaignStartTime(ctx context.Context, arg UpdateCampaignStartTimeParams) (Campaign, error) {
-	row := q.db.QueryRow(ctx, updateCampaignStartTime, arg.StartTime, arg.ID)
-	var i Campaign
-	err := row.Scan(
-		&i.CreateTime,
-		&i.EndTime,
-		&i.ID,
-		&i.Name,
-		&i.NotificationData,
-		&i.ProjectID,
-		&i.ScheduledTime,
-		&i.StartTime,
-		&i.Status,
-		&i.UpdateTime,
-	)
-	return i, err
-}
-
 const updateCampaignStatus = `-- name: UpdateCampaignStatus :one
 update campaigns
 set status = $1

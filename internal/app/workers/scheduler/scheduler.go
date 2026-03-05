@@ -82,6 +82,7 @@ func (s *Scheduler) pollAndPublish(ctx context.Context) {
 
 	slog.InfoContext(ctx, "Found due campaigns", slog.Int("count", len(dueCampaigns)))
 
+	var failCount int
 	for _, c := range dueCampaigns {
 		msg := campaigns.CampaignMessage{
 			CampaignID: c.ID,
@@ -90,12 +91,14 @@ func (s *Scheduler) pollAndPublish(ctx context.Context) {
 
 		data, err := json.Marshal(msg)
 		if err != nil {
+			failCount++
 			slog.ErrorContext(ctx, "failed to marshal campaign message",
 				slogx.Error(err), slog.String("campaign_id", c.ID))
 			continue
 		}
 
 		if _, err := s.producer.Publish(ctx, nats.CampaignScheduledSubject, data); err != nil {
+			failCount++
 			slog.ErrorContext(ctx, "failed to publish scheduled campaign",
 				slogx.Error(err), slog.String("campaign_id", c.ID))
 			continue
@@ -104,6 +107,12 @@ func (s *Scheduler) pollAndPublish(ctx context.Context) {
 		slog.InfoContext(ctx, "Published scheduled campaign",
 			slog.String("campaign_id", c.ID),
 			slog.String("project_id", c.ProjectID))
+	}
+
+	if failCount > 0 {
+		slog.WarnContext(ctx, "some scheduled campaigns failed to publish",
+			slog.Int("failed", failCount),
+			slog.Int("total", len(dueCampaigns)))
 	}
 }
 

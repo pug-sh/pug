@@ -31,26 +31,26 @@ func NewRouter(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.Serv
 }
 
 // SendNotification routes the notification to the appropriate delivery service based on platform
-func (r *Router) SendNotification(ctx context.Context, campaign dbread.Campaign, subscription dbread.Subscription) error {
-	switch subscription.Platform {
-	case "fcm", "android", "firebase":
-		return r.fcmService.SendNotification(ctx, campaign, subscription)
-	case "apn", "ios", "apple":
+func (r *Router) SendNotification(ctx context.Context, campaign dbread.Campaign, device dbread.ProfileDevice) error {
+	switch device.Platform {
+	case "android":
+		return r.fcmService.SendNotification(ctx, campaign, device)
+	case "ios":
 		// TODO: Implement APN delivery
 		slog.WarnContext(ctx, "APN delivery not implemented yet",
-			slog.String("subscription_id", subscription.ID),
-			slog.String("platform", subscription.Platform))
+			slog.String("device_id", device.ID),
+			slog.String("platform", device.Platform))
 		return fmt.Errorf("APN delivery not implemented yet")
-	case "email":
-		// TODO: Implement email delivery
-		slog.WarnContext(ctx, "Email delivery not implemented yet",
-			slog.String("subscription_id", subscription.ID),
-			slog.String("platform", subscription.Platform))
-		return fmt.Errorf("email delivery not implemented yet")
+	case "web":
+		// TODO: Implement web push delivery
+		slog.WarnContext(ctx, "web push delivery not implemented yet",
+			slog.String("device_id", device.ID),
+			slog.String("platform", device.Platform))
+		return fmt.Errorf("web push delivery not implemented yet")
 	default:
 		slog.WarnContext(ctx, "Unknown platform for delivery",
-			slog.String("subscription_id", subscription.ID),
-			slog.String("platform", subscription.Platform))
-		return fmt.Errorf("unknown platform: %s", subscription.Platform)
+			slog.String("device_id", device.ID),
+			slog.String("platform", device.Platform))
+		return fmt.Errorf("unknown platform: %s", device.Platform)
 	}
 }

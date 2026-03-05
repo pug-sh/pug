@@ -60,12 +60,17 @@ gen-ts: lint
 .PHONY: build
 build:
 	go build -o bin/cotton ./cmd/cotton
-	go build -o bin/cotton-server ./cmd/server
-	go build -o bin/cotton-worker-subscription ./cmd/workers/subscription
-	go build -o bin/cotton-worker-campaign ./cmd/workers/campaign
-	go build -o bin/cotton-migrate-postgres ./cmd/migrate/postgres
-	go build -o bin/cotton-migrate-nats ./cmd/migrate/nats
 	go build -o bin/cotton-migrate-clickhouse ./cmd/migrate/clickhouse
+	go build -o bin/cotton-migrate-nats ./cmd/migrate/nats
+	go build -o bin/cotton-migrate-postgres ./cmd/migrate/postgres
+	go build -o bin/cotton-server ./cmd/server
+	go build -o bin/cotton-worker-campaign ./cmd/workers/campaign
+	go build -o bin/cotton-worker-device ./cmd/workers/device
+	go build -o bin/cotton-worker-events ./cmd/workers/events
+	go build -o bin/cotton-worker-profile-register ./cmd/workers/profile/register
+	go build -o bin/cotton-worker-profile-identify ./cmd/workers/profile/identify
+	go build -o bin/cotton-worker-profile-alias ./cmd/workers/profile/alias
+	go build -o bin/cotton-worker-scheduler ./cmd/workers/scheduler
 
 .PHONY: test
 test:

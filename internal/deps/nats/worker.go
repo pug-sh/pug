@@ -16,12 +16,28 @@ import (
 // (e.g. via Term). The worker skips both Ack and Nak.
 var ErrMessageHandled = errors.New("message already handled")
 
+// PermanentError wraps errors that should not be retried. When a worker
+// receives a PermanentError, it terminates the NATS message instead of
+// nacking it for redelivery (e.g. corrupt protobuf data).
+type PermanentError struct {
+	Err error
+}
+
+func (e *PermanentError) Error() string { return e.Err.Error() }
+func (e *PermanentError) Unwrap() error { return e.Err }
+
+func IsPermanentError(err error) bool {
+	var pe *PermanentError
+	return errors.As(err, &pe)
+}
+
 type MessageProcessor func(context.Context, jetstream.Msg) error
 
 type WorkerConfig struct {
 	StreamName        string
 	ConsumerName      string
 	DurableName       string
+	FilterSubject     string
 	Concurrency       int
 	ProcessingTimeout time.Duration
 	MaxDeliver        int
@@ -74,7 +90,7 @@ func NewWorker(config WorkerConfig, processor MessageProcessor) (Worker, error) 
 func (w *natsWorker) Start(ctx context.Context, client *NATSClient) error {
 	js := client.GetJetStream()
 
-	consumer, err := js.CreateOrUpdateConsumer(ctx, w.config.StreamName, jetstream.ConsumerConfig{
+	consumerConfig := jetstream.ConsumerConfig{
 		Name:          w.config.ConsumerName,
 		Durable:       w.config.DurableName,
 		AckPolicy:     jetstream.AckExplicitPolicy,
@@ -82,7 +98,13 @@ func (w *natsWorker) Start(ctx context.Context, client *NATSClient) error {
 		AckWait:       w.config.AckWait,
 		DeliverPolicy: jetstream.DeliverAllPolicy,
 		ReplayPolicy:  jetstream.ReplayInstantPolicy,
-	})
+	}
+
+	if w.config.FilterSubject != "" {
+		consumerConfig.FilterSubject = w.config.FilterSubject
+	}
+
+	consumer, err := js.CreateOrUpdateConsumer(ctx, w.config.StreamName, consumerConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create NATS consumer: %w", err)
 	}
@@ -198,6 +220,16 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 			switch {
 			case errors.Is(err, ErrMessageHandled):
 				// Processor already handled acknowledgment (e.g. via Term).
+			case IsPermanentError(err):
+				slog.ErrorContext(ctx, "terminating poison message",
+					slog.String("stream", w.config.StreamName),
+					slog.String("consumer", w.config.ConsumerName),
+					slog.Any("error", err))
+				if termErr := msg.Term(); termErr != nil {
+					slog.ErrorContext(ctx, "failed to terminate message",
+						slog.String("stream", w.config.StreamName),
+						slog.Any("error", termErr))
+				}
 			case err != nil:
 				slog.ErrorContext(ctx, "message processing failed",
 					slog.String("stream", w.config.StreamName),

@@ -1,9 +1,9 @@
 # NATS JetStream Consumers Configuration
 consumers:
-  # Consumer for subscription events
-  - name: "subscription-processor"
-    stream_name: "subscriptions"
-    durable_name: "subscription-processor-durable"
+  # Consumer for device events
+  - name: "device-processor"
+    stream_name: "devices"
+    durable_name: "device-processor-durable"
     deliver_policy: "all"
     ack_explicit: true
     max_deliver: 5
@@ -13,6 +13,36 @@ consumers:
   - name: "campaign-processor"
     stream_name: "campaigns"
     durable_name: "campaign-processor-durable"
+    deliver_policy: "all"
+    ack_explicit: true
+    max_deliver: 5
+    replay_policy: "instant"
+
+  # Consumer for profile register events
+  - name: "profile-register-processor"
+    stream_name: "profiles"
+    durable_name: "profile-register-processor-durable"
+    filter_subject: "profiles.register"
+    deliver_policy: "all"
+    ack_explicit: true
+    max_deliver: 5
+    replay_policy: "instant"
+
+  # Consumer for profile identify events
+  - name: "profile-identify-processor"
+    stream_name: "profiles"
+    durable_name: "profile-identify-processor-durable"
+    filter_subject: "profiles.identify"
+    deliver_policy: "all"
+    ack_explicit: true
+    max_deliver: 5
+    replay_policy: "instant"
+
+  # Consumer for profile alias events
+  - name: "profile-alias-processor"
+    stream_name: "profiles"
+    durable_name: "profile-alias-processor-durable"
+    filter_subject: "profiles.alias"
     deliver_policy: "all"
     ack_explicit: true
     max_deliver: 5

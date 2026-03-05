@@ -3,10 +3,11 @@ create table profiles (
   auto_properties jsonb default '{}'::jsonb,
   create_time timestamptz not null default now(),
   custom_properties jsonb default '{}'::jsonb,
-  external_id varchar(255) not null,
+  external_id text,
   id char(20) primary key,
   project_id char(20) not null references projects(id) on delete cascade,
   update_time timestamptz not null default now(),
+  unique (id, project_id),
   unique (project_id, external_id)
 );
 

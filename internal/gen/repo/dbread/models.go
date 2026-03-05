@@ -35,10 +35,22 @@ type Profile struct {
 	AutoProperties   map[string]any
 	CreateTime       pgtype.Timestamptz
 	CustomProperties map[string]any
-	ExternalID       string
+	ExternalID       pgtype.Text
 	ID               string
 	ProjectID        string
 	UpdateTime       pgtype.Timestamptz
+}
+
+type ProfileDevice struct {
+	CreateTime pgtype.Timestamptz
+	ID         string
+	Platform   string
+	ProfileID  string
+	ProjectID  string
+	Properties map[string]any
+	Status     string
+	Token      pgtype.Text
+	UpdateTime pgtype.Timestamptz
 }
 
 type Project struct {
@@ -49,29 +61,4 @@ type Project struct {
 	FcmServiceJson pgtype.Text
 	ID             string
 	UpdateTime     pgtype.Timestamptz
-}
-
-type Segment struct {
-	CreateTime  pgtype.Timestamptz
-	Description pgtype.Text
-	Filter      map[string]any
-	ID          string
-	IsActive    bool
-	DisplayName string
-	ProjectID   string
-	UpdateTime  pgtype.Timestamptz
-}
-
-type Subscription struct {
-	CreateTime        pgtype.Timestamptz
-	ID                string
-	LastHeartbeatTime pgtype.Timestamptz
-	Metadata          map[string]any
-	Platform          string
-	ProfileID         pgtype.Text
-	ProjectID         string
-	Status            string
-	Token             string
-	UpdateTime        pgtype.Timestamptz
-	Updater           string
 }

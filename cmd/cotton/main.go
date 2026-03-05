@@ -12,8 +12,12 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/migrate/postgres"
 	"github.com/fivebitsio/cotton/internal/app/server"
 	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
+	"github.com/fivebitsio/cotton/internal/app/workers/devices"
 	eventsworker "github.com/fivebitsio/cotton/internal/app/workers/events"
-	"github.com/fivebitsio/cotton/internal/app/workers/subscriptions"
+	"github.com/fivebitsio/cotton/internal/app/workers/profiles/alias"
+	"github.com/fivebitsio/cotton/internal/app/workers/profiles/identify"
+	"github.com/fivebitsio/cotton/internal/app/workers/profiles/register"
+	"github.com/fivebitsio/cotton/internal/app/workers/scheduler"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -83,10 +87,33 @@ var workerCmd = &cobra.Command{
 	Short: "Worker related commands",
 }
 
-var subscriptionCmd = &cobra.Command{
-	Use:   "subscription",
-	Short: "Start the subscription worker",
-	Run:   run(subscriptions.Run),
+var profileCmd = &cobra.Command{
+	Use:   "profile",
+	Short: "Profile worker related commands",
+}
+
+var profileRegisterCmd = &cobra.Command{
+	Use:   "register",
+	Short: "Start the profile register worker",
+	Run:   run(register.Run),
+}
+
+var profileIdentifyCmd = &cobra.Command{
+	Use:   "identify",
+	Short: "Start the profile identify worker",
+	Run:   run(identify.Run),
+}
+
+var profileAliasCmd = &cobra.Command{
+	Use:   "alias",
+	Short: "Start the profile alias worker",
+	Run:   run(alias.Run),
+}
+
+var deviceCmd = &cobra.Command{
+	Use:   "device",
+	Short: "Start the device worker",
+	Run:   run(devices.Run),
 }
 
 var campaignCmd = &cobra.Command{
@@ -101,6 +128,12 @@ var eventsCmd = &cobra.Command{
 	Run:   run(eventsworker.Run),
 }
 
+var schedulerCmd = &cobra.Command{
+	Use:   "scheduler",
+	Short: "Start the scheduler worker",
+	Run:   run(scheduler.Run),
+}
+
 var devCmd = &cobra.Command{
 	Use:   "dev",
 	Short: "Start the Cotton server and workers for development",
@@ -113,9 +146,13 @@ var devCmd = &cobra.Command{
 		}
 
 		g, ctx := errgroup.WithContext(sigCtx)
-		g.Go(func() error { return subscriptions.Run(ctx) })
+		g.Go(func() error { return devices.Run(ctx) })
 		g.Go(func() error { return campaigns.Run(ctx) })
 		g.Go(func() error { return eventsworker.Run(ctx) })
+		g.Go(func() error { return register.Run(ctx) })
+		g.Go(func() error { return identify.Run(ctx) })
+		g.Go(func() error { return alias.Run(ctx) })
+		g.Go(func() error { return scheduler.Run(ctx) })
 		g.Go(func() error { return server.Run(ctx) })
 
 		if err := g.Wait(); err != nil {
@@ -145,9 +182,14 @@ var clickhouseMigrateCmd = &cobra.Command{
 }
 
 func init() {
-	workerCmd.AddCommand(subscriptionCmd)
+	profileCmd.AddCommand(profileRegisterCmd)
+	profileCmd.AddCommand(profileIdentifyCmd)
+	profileCmd.AddCommand(profileAliasCmd)
+	workerCmd.AddCommand(profileCmd)
+	workerCmd.AddCommand(deviceCmd)
 	workerCmd.AddCommand(campaignCmd)
 	workerCmd.AddCommand(eventsCmd)
+	workerCmd.AddCommand(schedulerCmd)
 
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)

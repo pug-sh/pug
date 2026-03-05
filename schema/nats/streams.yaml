@@ -1,13 +1,13 @@
 # NATS JetStream Streams Configuration
 streams:
-  # Stream for subscription events
-  - name: "subscriptions"
-    subjects: ["subscriptions.>"]
-    description: "Events related to subscription management"
+  # Stream for device events
+  - name: "devices"
+    subjects: ["devices.>"]
+    description: "Events related to device management"
     retention_policy: "limits"
     max_consumers: -1
     max_msgs: -1
-    max_bytes: 50000000000  # ~50GB in bytes (equivalent to 50000MB)
+    max_bytes: -1
     max_age: 2592000000000000  # 30 days in nanoseconds (equivalent to 43200 minutes)
     storage: "file"
     num_replicas: 1
@@ -19,7 +19,7 @@ streams:
     retention_policy: "limits"
     max_consumers: -1
     max_msgs: -1
-    max_bytes: 50000000000  # ~50GB in bytes (equivalent to 50000MB)
+    max_bytes: -1
     max_age: 2592000000000000  # 30 days in nanoseconds (equivalent to 43200 minutes)
     storage: "file"
     num_replicas: 1
@@ -31,7 +31,19 @@ streams:
     retention_policy: "limits"
     max_consumers: -1
     max_msgs: -1
-    max_bytes: 50000000000  # ~50GB in bytes (equivalent to 50000MB)
+    max_bytes: -1
+    max_age: 2592000000000000  # 30 days in nanoseconds (equivalent to 43200 minutes)
+    storage: "file"
+    num_replicas: 1
+
+  # Stream for profile events
+  - name: "profiles"
+    subjects: ["profiles.>"]
+    description: "Events related to profile management"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: -1
     max_age: 2592000000000000  # 30 days in nanoseconds (equivalent to 43200 minutes)
     storage: "file"
     num_replicas: 1
@@ -43,7 +55,7 @@ streams:
     retention_policy: "limits"
     max_consumers: -1
     max_msgs: -1
-    max_bytes: 50000000000  # ~50GB
+    max_bytes: -1
     max_age: 2592000000000000  # 30 days in nanoseconds
     storage: "file"
     num_replicas: 1

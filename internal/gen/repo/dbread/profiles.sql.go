@@ -36,7 +36,7 @@ func (q *Queries) GetProfileByIDAndProjectID(ctx context.Context, arg GetProfile
 
 const getProfileByProjectAndExternalID = `-- name: GetProfileByProjectAndExternalID :one
 select auto_properties, create_time, custom_properties, external_id, id, project_id, update_time from profiles
-where project_id = $1 and external_id = $2 limit 1
+where project_id = $1 and external_id = $2::text limit 1
 `
 
 type GetProfileByProjectAndExternalIDParams struct {

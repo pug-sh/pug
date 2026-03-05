@@ -14,7 +14,8 @@ service ProfilesService {
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
   // todo - shift to server streaming
   rpc List(ListRequest) returns (ListResponse) {}
-  rpc Save(SaveRequest) returns (SaveResponse) {}
+  rpc Identify(IdentifyRequest) returns (IdentifyResponse) {}
+  rpc Register(RegisterRequest) returns (RegisterResponse) {}
 }
 
 message DeleteRequest {
@@ -45,6 +46,13 @@ message ListResponse {
   repeated Profile profiles = 1;
 }
 
+message IdentifyRequest {
+  string profile_id = 1 [(buf.validate.field).string = {min_len: 1}];
+  string external_id = 2 [(buf.validate.field).string = {min_len: 1}];
+}
+
+message IdentifyResponse {}
+
 message Profile {
   google.protobuf.Struct auto_properties = 1;
   google.protobuf.Timestamp create_time = 2;
@@ -55,12 +63,30 @@ message Profile {
   google.protobuf.Timestamp update_time = 7;
 }
 
-message SaveRequest {
+message RegisterRequest {
   google.protobuf.Struct auto_properties = 1;
   google.protobuf.Struct custom_properties = 2;
-  string external_id = 3 [(buf.validate.field).string.min_len = 1];
+  string profile_id = 3 [(buf.validate.field).string = {min_len: 1}];
 }
 
-message SaveResponse {
-  Profile profile = 1;
+message RegisterResponse {}
+
+message ProfileRegisterMessage {
+  google.protobuf.Struct auto_properties = 1;
+  google.protobuf.Struct custom_properties = 2;
+  string profile_id = 3;
+  string project_id = 4;
+}
+
+message ProfileIdentifyMessage {
+  string external_id = 1;
+  string profile_id = 2;
+  string project_id = 3;
+}
+
+message ProfileAliasMessage {
+  string alias_id = 1;
+  string profile_id = 2;
+  string external_id = 3;
+  string project_id = 4;
 }

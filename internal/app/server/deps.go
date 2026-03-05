@@ -7,20 +7,16 @@ import (
 	"github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 )
 
 type deps struct {
-	campaignsProducer  jetstream.JetStream
-	corsOrigins        []string
-	deliveriesProducer jetstream.JetStream
-	eventsProducer     jetstream.JetStream
-	jwtKey             []byte
-	nats               *nats.NATSClient
-	pgRo               *pgxpool.Pool
-	pgW                *pgxpool.Pool
-	port               string
+	corsOrigins []string
+	jwtKey      []byte
+	nats        *nats.NATSClient
+	pgRo        *pgxpool.Pool
+	pgW         *pgxpool.Pool
+	port        string
 }
 
 func (d *deps) close(ctx context.Context) {
@@ -61,14 +57,11 @@ func newDeps(ctx context.Context) (*deps, error) {
 	}
 
 	return &deps{
-		campaignsProducer:  natsClient.GetJetStream(),
-		corsOrigins:        strings.Split(serverCfg.CORSOrigins, ","),
-		deliveriesProducer: natsClient.GetJetStream(),
-		eventsProducer:     natsClient.GetJetStream(),
-		jwtKey:             []byte(serverCfg.JWTKey),
-		nats:               natsClient,
-		pgRo:               pgRo,
-		pgW:                pgW,
-		port:               serverCfg.Port,
+		corsOrigins: strings.Split(serverCfg.CORSOrigins, ","),
+		jwtKey:      []byte(serverCfg.JWTKey),
+		nats:        natsClient,
+		pgRo:        pgRo,
+		pgW:         pgW,
+		port:        serverCfg.Port,
 	}, nil
 }

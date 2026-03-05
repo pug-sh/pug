@@ -24,31 +24,107 @@ func (q *Queries) DeleteProfileByIDAndProjectID(ctx context.Context, arg DeleteP
 	return err
 }
 
-const saveProfile = `-- name: SaveProfile :one
-insert into profiles (auto_properties, custom_properties, external_id, id, project_id)
-values (coalesce($1, '{}'), coalesce($2, '{}'), $3, $4, $5)
-on conflict (project_id, external_id) do update set
+const mergeProfileProperties = `-- name: MergeProfileProperties :one
+update profiles
+set auto_properties = jsonb_shallow_merge(s.auto_properties, profiles.auto_properties),
+    custom_properties = jsonb_shallow_merge(s.custom_properties, profiles.custom_properties)
+from profiles s
+where s.id = $1
+  and s.project_id = $2
+  and profiles.id = $3
+  and profiles.project_id = $2
+returning profiles.auto_properties, profiles.create_time, profiles.custom_properties, profiles.external_id, profiles.id, profiles.project_id, profiles.update_time
+`
+
+type MergeProfilePropertiesParams struct {
+	SourceID  string
+	ProjectID string
+	TargetID  string
+}
+
+func (q *Queries) MergeProfileProperties(ctx context.Context, arg MergeProfilePropertiesParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, mergeProfileProperties, arg.SourceID, arg.ProjectID, arg.TargetID)
+	var i Profile
+	err := row.Scan(
+		&i.AutoProperties,
+		&i.CreateTime,
+		&i.CustomProperties,
+		&i.ExternalID,
+		&i.ID,
+		&i.ProjectID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const reassignProfileDevices = `-- name: ReassignProfileDevices :exec
+update profile_devices
+set profile_id = $1
+where profile_id = $2 and project_id = $3
+`
+
+type ReassignProfileDevicesParams struct {
+	TargetID  string
+	SourceID  string
+	ProjectID string
+}
+
+func (q *Queries) ReassignProfileDevices(ctx context.Context, arg ReassignProfileDevicesParams) error {
+	_, err := q.db.Exec(ctx, reassignProfileDevices, arg.TargetID, arg.SourceID, arg.ProjectID)
+	return err
+}
+
+const registerProfile = `-- name: RegisterProfile :one
+insert into profiles (auto_properties, custom_properties, id, project_id)
+values (coalesce($1, '{}'), coalesce($2, '{}'), $3, $4)
+on conflict (id, project_id) do update set
   auto_properties = jsonb_shallow_merge(profiles.auto_properties, excluded.auto_properties),
   custom_properties = jsonb_shallow_merge(profiles.custom_properties, excluded.custom_properties)
 returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
 `
 
-type SaveProfileParams struct {
+type RegisterProfileParams struct {
 	AutoProperties   interface{}
 	CustomProperties interface{}
-	ExternalID       string
 	ID               string
 	ProjectID        string
 }
 
-func (q *Queries) SaveProfile(ctx context.Context, arg SaveProfileParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, saveProfile,
+func (q *Queries) RegisterProfile(ctx context.Context, arg RegisterProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, registerProfile,
 		arg.AutoProperties,
 		arg.CustomProperties,
-		arg.ExternalID,
 		arg.ID,
 		arg.ProjectID,
 	)
+	var i Profile
+	err := row.Scan(
+		&i.AutoProperties,
+		&i.CreateTime,
+		&i.CustomProperties,
+		&i.ExternalID,
+		&i.ID,
+		&i.ProjectID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const setProfileExternalID = `-- name: SetProfileExternalID :one
+update profiles
+set external_id = $1::text
+where id = $2 and project_id = $3
+returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
+`
+
+type SetProfileExternalIDParams struct {
+	ExternalID string
+	ID         string
+	ProjectID  string
+}
+
+func (q *Queries) SetProfileExternalID(ctx context.Context, arg SetProfileExternalIDParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, setProfileExternalID, arg.ExternalID, arg.ID, arg.ProjectID)
 	var i Profile
 	err := row.Scan(
 		&i.AutoProperties,
