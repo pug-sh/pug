@@ -56,16 +56,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 	profileWorker := profiles.NewWorker(pgRO, pgW, nil)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		err := handleRegister(ctx, profileWorker, msg.Data())
-		if err != nil && natsworker.IsPermanentError(err) {
-			slog.ErrorContext(ctx, "terminating poison message", slogx.Error(err))
-			if termErr := msg.Term(); termErr != nil {
-				slog.ErrorContext(ctx, "failed to terminate message", slogx.Error(termErr))
-				return termErr
-			}
-			return natsworker.ErrMessageHandled
-		}
-		return err
+		return handleRegister(ctx, profileWorker, msg.Data())
 	}
 
 	config := natsworker.WorkerConfig{

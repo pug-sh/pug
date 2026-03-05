@@ -2,17 +2,13 @@ package alias
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/fivebitsio/cotton/internal/app/workers/profiles"
 	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
-	"github.com/fivebitsio/cotton/internal/deps/postgres"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
@@ -22,23 +18,6 @@ import (
 )
 
 func Run(ctx context.Context) error {
-	var pgCfg postgres.Config
-	if err := envconfig.Process(ctx, &pgCfg); err != nil {
-		return err
-	}
-
-	pgRO, err := postgres.NewReaderPool(ctx, &pgCfg)
-	if err != nil {
-		return err
-	}
-	defer pgRO.Close()
-
-	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
-	if err != nil {
-		return err
-	}
-	defer pgW.Close()
-
 	var chCfg clickhouse.Config
 	if err := envconfig.Process(ctx, &chCfg); err != nil {
 		return err
@@ -57,28 +36,17 @@ func Run(ctx context.Context) error {
 	defer natsClient.Close()
 
 	slog.InfoContext(ctx, "Starting profile alias worker...")
-	return StartWorker(ctx, pgRO, pgW, chDB.Conn, natsClient)
+	return StartWorker(ctx, chDB.Conn, natsClient)
 }
 
-func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, natsClient *natsworker.NATSClient) error {
+func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NATSClient) error {
 	consumerConfig, err := natsClient.GetConsumerConfigByName("profile-alias-processor-durable")
 	if err != nil {
 		return fmt.Errorf("failed to get profile alias consumer config: %w", err)
 	}
 
-	profileWorker := profiles.NewWorker(pgRO, pgW, ch)
-
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		err := handleAlias(ctx, profileWorker, msg.Data())
-		if err != nil && natsworker.IsPermanentError(err) {
-			slog.ErrorContext(ctx, "terminating poison message", slogx.Error(err))
-			if termErr := msg.Term(); termErr != nil {
-				slog.ErrorContext(ctx, "failed to terminate message", slogx.Error(termErr))
-				return termErr
-			}
-			return natsworker.ErrMessageHandled
-		}
-		return err
+		return handleAlias(ctx, ch, msg.Data())
 	}
 
 	config := natsworker.WorkerConfig{
@@ -100,7 +68,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, n
 	return worker.Start(ctx, natsClient)
 }
 
-func handleAlias(ctx context.Context, w *profiles.Worker, data []byte) error {
+func handleAlias(ctx context.Context, ch driver.Conn, data []byte) error {
 	msg := &profilesv1.ProfileAliasMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal alias message", slogx.Error(err))
@@ -112,11 +80,7 @@ func handleAlias(ctx context.Context, w *profiles.Worker, data []byte) error {
 	externalID := msg.GetExternalId()
 	projectID := msg.GetProjectId()
 
-	if w.Ch == nil {
-		return errors.New("ClickHouse connection not configured for alias worker")
-	}
-
-	if err := w.Ch.Exec(ctx,
+	if err := ch.Exec(ctx,
 		"INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)",
 		aliasID, profileID, externalID, projectID,
 	); err != nil {

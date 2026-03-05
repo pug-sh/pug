@@ -47,7 +47,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		return w.handleSubscribe(ctx, msg)
 	default:
 		slog.WarnContext(ctx, "unknown device operation type")
-		return errors.New("unknown operation type")
+		return &natsworker.PermanentError{Err: errors.New("unknown operation type")}
 	}
 }
 
@@ -61,8 +61,14 @@ func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOper
 		ExternalID: subscribe.GetProfileExternalId(),
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to find profile for device upsert", slogx.Error(err),
-			slog.String("externalId", subscribe.GetProfileExternalId()))
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.WarnContext(ctx, "profile not found for device subscription, will retry",
+				slog.String("externalId", subscribe.GetProfileExternalId()),
+				slog.String("projectId", msg.GetProjectId()))
+		} else {
+			slog.ErrorContext(ctx, "failed to find profile for device upsert", slogx.Error(err),
+				slog.String("externalId", subscribe.GetProfileExternalId()))
+		}
 		return "", err
 	}
 

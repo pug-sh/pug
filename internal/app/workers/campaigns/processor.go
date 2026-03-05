@@ -8,6 +8,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/campaigns"
 	"github.com/fivebitsio/cotton/internal/core/delivery"
+	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	devicessvc "github.com/fivebitsio/cotton/internal/core/devices"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -32,11 +33,11 @@ func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	var msg campaigns.CampaignMessage
 	if err := json.Unmarshal(data, &msg); err != nil {
-		return fmt.Errorf("failed to unmarshal campaign message: %w", err)
+		return &natsworker.PermanentError{Err: fmt.Errorf("failed to unmarshal campaign message: %w", err)}
 	}
 
 	if msg.CampaignID == "" {
-		return fmt.Errorf("campaign message missing campaign_id")
+		return &natsworker.PermanentError{Err: fmt.Errorf("campaign message missing campaign_id")}
 	}
 
 	slog.InfoContext(ctx, "Processing campaign", slog.String("campaign_id", msg.CampaignID))
@@ -91,6 +92,10 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 
 	if err := w.campaignService.UpdateCampaignStatus(ctx, campaign.ID, finalStatus); err != nil {
 		return fmt.Errorf("failed to update campaign %s status to %s: %w", campaign.ID, finalStatus, err)
+	}
+
+	if failCount > 0 && failCount == totalCount {
+		return fmt.Errorf("campaign %s: all %d deliveries failed", campaign.ID, totalCount)
 	}
 
 	return nil

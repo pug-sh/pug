@@ -59,16 +59,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 	profileWorker := profiles.NewWorker(pgRO, pgW, nil)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		err := handleIdentify(ctx, profileWorker, natsClient, msg.Data())
-		if err != nil && natsworker.IsPermanentError(err) {
-			slog.ErrorContext(ctx, "terminating poison message", slogx.Error(err))
-			if termErr := msg.Term(); termErr != nil {
-				slog.ErrorContext(ctx, "failed to terminate message", slogx.Error(termErr))
-				return termErr
-			}
-			return natsworker.ErrMessageHandled
-		}
-		return err
+		return handleIdentify(ctx, profileWorker, natsClient, msg.Data())
 	}
 
 	config := natsworker.WorkerConfig{
@@ -137,6 +128,11 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			ID:         profileID,
 			ProjectID:  projectID,
 		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				slog.WarnContext(ctx, "profile not found when setting external ID, may have been deleted",
+					slog.String("profileId", profileID), slog.String("externalId", externalID))
+				return nil
+			}
 			slog.ErrorContext(ctx, "failed setting external ID on profile", slogx.Error(err),
 				slog.String("profileId", profileID), slog.String("externalId", externalID))
 			return err

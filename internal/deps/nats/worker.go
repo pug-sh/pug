@@ -220,6 +220,16 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 			switch {
 			case errors.Is(err, ErrMessageHandled):
 				// Processor already handled acknowledgment (e.g. via Term).
+			case IsPermanentError(err):
+				slog.ErrorContext(ctx, "terminating poison message",
+					slog.String("stream", w.config.StreamName),
+					slog.String("consumer", w.config.ConsumerName),
+					slog.Any("error", err))
+				if termErr := msg.Term(); termErr != nil {
+					slog.ErrorContext(ctx, "failed to terminate message",
+						slog.String("stream", w.config.StreamName),
+						slog.Any("error", termErr))
+				}
 			case err != nil:
 				slog.ErrorContext(ctx, "message processing failed",
 					slog.String("stream", w.config.StreamName),
