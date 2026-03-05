@@ -67,7 +67,8 @@ build:
 	go build -o bin/cotton-worker-campaign ./cmd/workers/campaign
 	go build -o bin/cotton-worker-device ./cmd/workers/device
 	go build -o bin/cotton-worker-events ./cmd/workers/events
-	go build -o bin/cotton-worker-profile ./cmd/workers/profile
+	go build -o bin/cotton-worker-profile-register ./cmd/workers/profile/register
+	go build -o bin/cotton-worker-profile-identify ./cmd/workers/profile/identify
 	go build -o bin/cotton-worker-scheduler ./cmd/workers/scheduler
 
 .PHONY: test

@@ -158,11 +158,10 @@ func (h *Handler) Identify(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	msg := &profilesv1.ProfileOperationMessage{
-		OperationType: profilesv1.ProfileOperationType_PROFILE_OPERATION_TYPE_IDENTIFY,
-		ExternalId:    req.Msg.GetExternalId(),
-		ProfileId:     req.Msg.GetProfileId(),
-		ProjectId:     principal.Project.ID,
+	msg := &profilesv1.ProfileIdentifyMessage{
+		ExternalId: req.Msg.GetExternalId(),
+		ProfileId:  req.Msg.GetProfileId(),
+		ProjectId:  principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
@@ -171,7 +170,7 @@ func (h *Handler) Identify(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
-	if _, err = h.producer.Publish(ctx, nats.ProfileOpsSubject, data); err != nil {
+	if _, err = h.producer.Publish(ctx, nats.ProfileIdentifySubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish identify operation to NATS", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
@@ -188,8 +187,7 @@ func (h *Handler) Register(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	msg := &profilesv1.ProfileOperationMessage{
-		OperationType:    profilesv1.ProfileOperationType_PROFILE_OPERATION_TYPE_REGISTER,
+	msg := &profilesv1.ProfileRegisterMessage{
 		AutoProperties:   req.Msg.GetAutoProperties(),
 		CustomProperties: req.Msg.GetCustomProperties(),
 		ProfileId:        req.Msg.GetProfileId(),
@@ -202,7 +200,7 @@ func (h *Handler) Register(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
-	if _, err = h.producer.Publish(ctx, nats.ProfileOpsSubject, data); err != nil {
+	if _, err = h.producer.Publish(ctx, nats.ProfileRegisterSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish profile operation to NATS", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}

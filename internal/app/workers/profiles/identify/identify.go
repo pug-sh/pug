@@ -1,11 +1,22 @@
-package profiles
+package identify
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/fivebitsio/cotton/internal/app/workers/profiles"
+	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
+	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nats-io/nats.go/jetstream"
+	"github.com/sethvargo/go-envconfig"
+	"google.golang.org/protobuf/proto"
 
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -13,12 +24,87 @@ import (
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
-func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOperationMessage) error {
+func Run(ctx context.Context) error {
+	var pgCfg postgres.Config
+	if err := envconfig.Process(ctx, &pgCfg); err != nil {
+		return err
+	}
+
+	pgRO, err := postgres.NewReaderPool(ctx, &pgCfg)
+	if err != nil {
+		return err
+	}
+	defer pgRO.Close()
+
+	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
+	if err != nil {
+		return err
+	}
+	defer pgW.Close()
+
+	var chCfg clickhouse.Config
+	if err := envconfig.Process(ctx, &chCfg); err != nil {
+		return err
+	}
+
+	chDB, err := clickhouse.NewFromConfig(ctx, &chCfg)
+	if err != nil {
+		return err
+	}
+	defer chDB.Close(ctx)
+
+	natsClient, err := natsworker.New(ctx)
+	if err != nil {
+		return err
+	}
+	defer natsClient.Close()
+
+	slog.InfoContext(ctx, "Starting profile identify worker...")
+	return StartWorker(ctx, pgRO, pgW, chDB.Conn, natsClient)
+}
+
+func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, natsClient *natsworker.NATSClient) error {
+	consumerConfig, err := natsClient.GetConsumerConfigByName("profile-identify-processor-durable")
+	if err != nil {
+		return fmt.Errorf("failed to get profile identify consumer config: %w", err)
+	}
+
+	profileWorker := profiles.NewWorker(pgRO, pgW, ch)
+
+	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
+		return handleIdentify(ctx, profileWorker, msg.Data())
+	}
+
+	config := natsworker.WorkerConfig{
+		StreamName:        consumerConfig.StreamName,
+		ConsumerName:      consumerConfig.DurableName,
+		DurableName:       consumerConfig.DurableName,
+		Concurrency:       100,
+		ProcessingTimeout: 25 * time.Second,
+		MaxDeliver:        consumerConfig.MaxDeliver,
+		AckWait:           30 * time.Second,
+	}
+
+	worker, err := natsworker.NewWorker(config, messageProcessor)
+	if err != nil {
+		return err
+	}
+
+	return worker.Start(ctx, natsClient)
+}
+
+func handleIdentify(ctx context.Context, w *profiles.Worker, data []byte) error {
+	msg := &profilesv1.ProfileIdentifyMessage{}
+	if err := proto.Unmarshal(data, msg); err != nil {
+		slog.ErrorContext(ctx, "failed to unmarshal identify message", slogx.Error(err))
+		return err
+	}
+
 	projectID := msg.GetProjectId()
 	profileID := msg.GetProfileId()
 	externalID := msg.GetExternalId()
 
-	existing, err := w.read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
+	existing, err := w.Read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
 		ProjectID:  projectID,
 		ExternalID: externalID,
 	})
@@ -32,7 +118,7 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 
 	lookupErr := err
 
-	tx, err := w.pgW.Begin(ctx)
+	tx, err := w.PgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed starting transaction", slogx.Error(err))
 		return err
@@ -43,7 +129,7 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 		}
 	}()
 
-	qtx := w.write.WithTx(tx)
+	qtx := w.Write.WithTx(tx)
 
 	switch {
 	case errors.Is(lookupErr, pgx.ErrNoRows):
@@ -107,7 +193,7 @@ func (w *Worker) handleIdentify(ctx context.Context, msg *profilesv1.ProfileOper
 		return err
 	}
 
-	if err := w.ch.Exec(ctx,
+	if err := w.Ch.Exec(ctx,
 		"INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)",
 		profileID, existing.ID, externalID, projectID,
 	); err != nil {

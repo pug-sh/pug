@@ -14,7 +14,8 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/workers/devices"
 	eventsworker "github.com/fivebitsio/cotton/internal/app/workers/events"
-	profilesworker "github.com/fivebitsio/cotton/internal/app/workers/profiles"
+	"github.com/fivebitsio/cotton/internal/app/workers/profiles/identify"
+	"github.com/fivebitsio/cotton/internal/app/workers/profiles/register"
 	"github.com/fivebitsio/cotton/internal/app/workers/scheduler"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -85,6 +86,23 @@ var workerCmd = &cobra.Command{
 	Short: "Worker related commands",
 }
 
+var profileCmd = &cobra.Command{
+	Use:   "profile",
+	Short: "Profile worker related commands",
+}
+
+var profileRegisterCmd = &cobra.Command{
+	Use:   "register",
+	Short: "Start the profile register worker",
+	Run:   run(register.Run),
+}
+
+var profileIdentifyCmd = &cobra.Command{
+	Use:   "identify",
+	Short: "Start the profile identify worker",
+	Run:   run(identify.Run),
+}
+
 var deviceCmd = &cobra.Command{
 	Use:   "device",
 	Short: "Start the device worker",
@@ -101,12 +119,6 @@ var eventsCmd = &cobra.Command{
 	Use:   "events",
 	Short: "Start the events worker",
 	Run:   run(eventsworker.Run),
-}
-
-var profileCmd = &cobra.Command{
-	Use:   "profile",
-	Short: "Start the profile worker",
-	Run:   run(profilesworker.Run),
 }
 
 var schedulerCmd = &cobra.Command{
@@ -130,7 +142,8 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return devices.Run(ctx) })
 		g.Go(func() error { return campaigns.Run(ctx) })
 		g.Go(func() error { return eventsworker.Run(ctx) })
-		g.Go(func() error { return profilesworker.Run(ctx) })
+		g.Go(func() error { return register.Run(ctx) })
+		g.Go(func() error { return identify.Run(ctx) })
 		g.Go(func() error { return scheduler.Run(ctx) })
 		g.Go(func() error { return server.Run(ctx) })
 
@@ -161,10 +174,12 @@ var clickhouseMigrateCmd = &cobra.Command{
 }
 
 func init() {
+	profileCmd.AddCommand(profileRegisterCmd)
+	profileCmd.AddCommand(profileIdentifyCmd)
+	workerCmd.AddCommand(profileCmd)
 	workerCmd.AddCommand(deviceCmd)
 	workerCmd.AddCommand(campaignCmd)
 	workerCmd.AddCommand(eventsCmd)
-	workerCmd.AddCommand(profileCmd)
 	workerCmd.AddCommand(schedulerCmd)
 
 	rootCmd.AddCommand(serverCmd)
