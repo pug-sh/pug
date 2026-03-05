@@ -75,6 +75,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, n
 		StreamName:        consumerConfig.StreamName,
 		ConsumerName:      consumerConfig.DurableName,
 		DurableName:       consumerConfig.DurableName,
+		FilterSubject:     consumerConfig.FilterSubject,
 		Concurrency:       100,
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,

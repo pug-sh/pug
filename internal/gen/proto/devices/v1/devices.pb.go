@@ -10,7 +10,7 @@ import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	anypb "google.golang.org/protobuf/types/known/anypb"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -82,7 +82,7 @@ type SubscribeRequest struct {
 	ProfileExternalId string                 `protobuf:"bytes,3,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
 	ProfileId         string                 `protobuf:"bytes,4,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
 	Token             string                 `protobuf:"bytes,5,opt,name=token" json:"token,omitempty"`
-	Properties        map[string]*anypb.Any  `protobuf:"bytes,6,rep,name=properties" json:"properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Properties        *structpb.Struct       `protobuf:"bytes,6,opt,name=properties" json:"properties,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -152,7 +152,7 @@ func (x *SubscribeRequest) GetToken() string {
 	return ""
 }
 
-func (x *SubscribeRequest) GetProperties() map[string]*anypb.Any {
+func (x *SubscribeRequest) GetProperties() *structpb.Struct {
 	if x != nil {
 		return x.Properties
 	}
@@ -378,7 +378,7 @@ type DeviceOperationMessage struct {
 	Platform          string                 `protobuf:"bytes,3,opt,name=platform" json:"platform,omitempty"`
 	ProfileExternalId string                 `protobuf:"bytes,4,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
 	ProjectId         string                 `protobuf:"bytes,5,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	Properties        map[string]*anypb.Any  `protobuf:"bytes,6,rep,name=properties" json:"properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Properties        *structpb.Struct       `protobuf:"bytes,6,opt,name=properties" json:"properties,omitempty"`
 	Status            string                 `protobuf:"bytes,7,opt,name=status" json:"status,omitempty"`
 	Token             string                 `protobuf:"bytes,8,opt,name=token" json:"token,omitempty"`
 	ProfileId         string                 `protobuf:"bytes,9,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
@@ -451,7 +451,7 @@ func (x *DeviceOperationMessage) GetProjectId() string {
 	return ""
 }
 
-func (x *DeviceOperationMessage) GetProperties() map[string]*anypb.Any {
+func (x *DeviceOperationMessage) GetProperties() *structpb.Struct {
 	if x != nil {
 		return x.Properties
 	}
@@ -484,20 +484,17 @@ var File_devices_v1_devices_proto protoreflect.FileDescriptor
 const file_devices_v1_devices_proto_rawDesc = "" +
 	"\n" +
 	"\x18devices/v1/devices.proto\x12\n" +
-	"devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19google/protobuf/any.proto\"\xa3\x04\n" +
+	"devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xb9\x03\n" +
 	"\x10SubscribeRequest\x12%\n" +
 	"\tdevice_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\bdeviceId\x124\n" +
 	"\bplatform\x18\x02 \x01(\tB\x18\xbaH\x15r\x13R\aandroidR\x03iosR\x03webR\bplatform\x12.\n" +
 	"\x13profile_external_id\x18\x03 \x01(\tR\x11profileExternalId\x12\x1d\n" +
 	"\n" +
 	"profile_id\x18\x04 \x01(\tR\tprofileId\x12\x1c\n" +
-	"\x05token\x18\x05 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\x12L\n" +
+	"\x05token\x18\x05 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\x127\n" +
 	"\n" +
-	"properties\x18\x06 \x03(\v2,.devices.v1.SubscribeRequest.PropertiesEntryR\n" +
-	"properties\x1aS\n" +
-	"\x0fPropertiesEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01:\xa1\x01\xbaH\x9d\x01\x1a\x9a\x01\n" +
+	"properties\x18\x06 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"properties:\xa1\x01\xbaH\x9d\x01\x1a\x9a\x01\n" +
 	"$subscribe_request.profile_identifier\x129either profile_id or profile_external_id must be provided\x1a7this.profile_id != '' || this.profile_external_id != ''\"\x13\n" +
 	"\x11SubscribeResponse\"`\n" +
 	"\x13UpdateStatusRequest\x12\x18\n" +
@@ -507,24 +504,21 @@ const file_devices_v1_devices_proto_rawDesc = "" +
 	"\x12UpdateTokenRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x12\x1c\n" +
 	"\x05token\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\"\x15\n" +
-	"\x13UpdateTokenResponse\"\xde\x03\n" +
+	"\x13UpdateTokenResponse\"\xee\x02\n" +
 	"\x16DeviceOperationMessage\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12F\n" +
 	"\x0eoperation_type\x18\x02 \x01(\x0e2\x1f.devices.v1.DeviceOperationTypeR\roperationType\x12\x1a\n" +
 	"\bplatform\x18\x03 \x01(\tR\bplatform\x12.\n" +
 	"\x13profile_external_id\x18\x04 \x01(\tR\x11profileExternalId\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x05 \x01(\tR\tprojectId\x12R\n" +
+	"project_id\x18\x05 \x01(\tR\tprojectId\x127\n" +
 	"\n" +
-	"properties\x18\x06 \x03(\v22.devices.v1.DeviceOperationMessage.PropertiesEntryR\n" +
+	"properties\x18\x06 \x01(\v2\x17.google.protobuf.StructR\n" +
 	"properties\x12\x16\n" +
 	"\x06status\x18\a \x01(\tR\x06status\x12\x14\n" +
 	"\x05token\x18\b \x01(\tR\x05token\x12\x1d\n" +
 	"\n" +
-	"profile_id\x18\t \x01(\tR\tprofileId\x1aS\n" +
-	"\x0fPropertiesEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value:\x028\x01*\xb2\x01\n" +
+	"profile_id\x18\t \x01(\tR\tprofileId*\xb2\x01\n" +
 	"\x13DeviceOperationType\x12%\n" +
 	"!DEVICE_OPERATION_TYPE_UNSPECIFIED\x10\x00\x12'\n" +
 	"#DEVICE_OPERATION_TYPE_UPDATE_STATUS\x10\x01\x12&\n" +
@@ -548,7 +542,7 @@ func file_devices_v1_devices_proto_rawDescGZIP() []byte {
 }
 
 var file_devices_v1_devices_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_devices_v1_devices_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_devices_v1_devices_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_devices_v1_devices_proto_goTypes = []any{
 	(DeviceOperationType)(0),       // 0: devices.v1.DeviceOperationType
 	(*SubscribeRequest)(nil),       // 1: devices.v1.SubscribeRequest
@@ -558,27 +552,23 @@ var file_devices_v1_devices_proto_goTypes = []any{
 	(*UpdateTokenRequest)(nil),     // 5: devices.v1.UpdateTokenRequest
 	(*UpdateTokenResponse)(nil),    // 6: devices.v1.UpdateTokenResponse
 	(*DeviceOperationMessage)(nil), // 7: devices.v1.DeviceOperationMessage
-	nil,                            // 8: devices.v1.SubscribeRequest.PropertiesEntry
-	nil,                            // 9: devices.v1.DeviceOperationMessage.PropertiesEntry
-	(*anypb.Any)(nil),              // 10: google.protobuf.Any
+	(*structpb.Struct)(nil),        // 8: google.protobuf.Struct
 }
 var file_devices_v1_devices_proto_depIdxs = []int32{
-	8,  // 0: devices.v1.SubscribeRequest.properties:type_name -> devices.v1.SubscribeRequest.PropertiesEntry
-	0,  // 1: devices.v1.DeviceOperationMessage.operation_type:type_name -> devices.v1.DeviceOperationType
-	9,  // 2: devices.v1.DeviceOperationMessage.properties:type_name -> devices.v1.DeviceOperationMessage.PropertiesEntry
-	10, // 3: devices.v1.SubscribeRequest.PropertiesEntry.value:type_name -> google.protobuf.Any
-	10, // 4: devices.v1.DeviceOperationMessage.PropertiesEntry.value:type_name -> google.protobuf.Any
-	1,  // 5: devices.v1.DevicesService.Subscribe:input_type -> devices.v1.SubscribeRequest
-	3,  // 6: devices.v1.DevicesService.UpdateStatus:input_type -> devices.v1.UpdateStatusRequest
-	5,  // 7: devices.v1.DevicesService.UpdateToken:input_type -> devices.v1.UpdateTokenRequest
-	2,  // 8: devices.v1.DevicesService.Subscribe:output_type -> devices.v1.SubscribeResponse
-	4,  // 9: devices.v1.DevicesService.UpdateStatus:output_type -> devices.v1.UpdateStatusResponse
-	6,  // 10: devices.v1.DevicesService.UpdateToken:output_type -> devices.v1.UpdateTokenResponse
-	8,  // [8:11] is the sub-list for method output_type
-	5,  // [5:8] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	8, // 0: devices.v1.SubscribeRequest.properties:type_name -> google.protobuf.Struct
+	0, // 1: devices.v1.DeviceOperationMessage.operation_type:type_name -> devices.v1.DeviceOperationType
+	8, // 2: devices.v1.DeviceOperationMessage.properties:type_name -> google.protobuf.Struct
+	1, // 3: devices.v1.DevicesService.Subscribe:input_type -> devices.v1.SubscribeRequest
+	3, // 4: devices.v1.DevicesService.UpdateStatus:input_type -> devices.v1.UpdateStatusRequest
+	5, // 5: devices.v1.DevicesService.UpdateToken:input_type -> devices.v1.UpdateTokenRequest
+	2, // 6: devices.v1.DevicesService.Subscribe:output_type -> devices.v1.SubscribeResponse
+	4, // 7: devices.v1.DevicesService.UpdateStatus:output_type -> devices.v1.UpdateStatusResponse
+	6, // 8: devices.v1.DevicesService.UpdateToken:output_type -> devices.v1.UpdateTokenResponse
+	6, // [6:9] is the sub-list for method output_type
+	3, // [3:6] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_devices_v1_devices_proto_init() }
@@ -592,7 +582,7 @@ func file_devices_v1_devices_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devices_v1_devices_proto_rawDesc), len(file_devices_v1_devices_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

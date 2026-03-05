@@ -73,12 +73,18 @@ func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOpera
 		return err
 	}
 
+	// Convert Struct to map[string]any for clean JSON serialization
+	properties := msg.GetProperties().AsMap()
+	if properties == nil {
+		properties = map[string]any{}
+	}
+
 	if _, err := w.write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 		ID:         msg.GetDeviceId(),
 		Platform:   msg.GetPlatform(),
 		ProfileID:  profileID,
 		ProjectID:  msg.GetProjectId(),
-		Properties: msg.GetProperties(),
+		Properties: properties,
 		Status:     "active",
 		Token:      msg.GetToken(),
 	}); err != nil {

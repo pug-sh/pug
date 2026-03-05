@@ -22,6 +22,7 @@ type WorkerConfig struct {
 	StreamName        string
 	ConsumerName      string
 	DurableName       string
+	FilterSubject     string
 	Concurrency       int
 	ProcessingTimeout time.Duration
 	MaxDeliver        int
@@ -74,7 +75,7 @@ func NewWorker(config WorkerConfig, processor MessageProcessor) (Worker, error) 
 func (w *natsWorker) Start(ctx context.Context, client *NATSClient) error {
 	js := client.GetJetStream()
 
-	consumer, err := js.CreateOrUpdateConsumer(ctx, w.config.StreamName, jetstream.ConsumerConfig{
+	consumerConfig := jetstream.ConsumerConfig{
 		Name:          w.config.ConsumerName,
 		Durable:       w.config.DurableName,
 		AckPolicy:     jetstream.AckExplicitPolicy,
@@ -82,7 +83,14 @@ func (w *natsWorker) Start(ctx context.Context, client *NATSClient) error {
 		AckWait:       w.config.AckWait,
 		DeliverPolicy: jetstream.DeliverAllPolicy,
 		ReplayPolicy:  jetstream.ReplayInstantPolicy,
-	})
+	}
+
+	// Set filter subject if configured
+	if w.config.FilterSubject != "" {
+		consumerConfig.FilterSubject = w.config.FilterSubject
+	}
+
+	consumer, err := js.CreateOrUpdateConsumer(ctx, w.config.StreamName, consumerConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create NATS consumer: %w", err)
 	}

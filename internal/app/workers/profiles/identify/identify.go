@@ -79,6 +79,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, n
 		StreamName:        consumerConfig.StreamName,
 		ConsumerName:      consumerConfig.DurableName,
 		DurableName:       consumerConfig.DurableName,
+		FilterSubject:     consumerConfig.FilterSubject,
 		Concurrency:       100,
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
@@ -194,9 +195,14 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	}
 
 	// Publish alias message for ClickHouse tracking
+	targetProfileID := profileID
+	if existing.ID != "" {
+		targetProfileID = existing.ID
+	}
+
 	aliasMsg := &profilesv1.ProfileAliasMessage{
 		AliasId:    profileID,
-		ProfileId:  existing.ID,
+		ProfileId:  targetProfileID,
 		ExternalId: externalID,
 		ProjectId:  projectID,
 	}

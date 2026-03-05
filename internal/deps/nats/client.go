@@ -39,6 +39,7 @@ type ConsumerConfig struct {
 	Name          string `yaml:"name"`
 	StreamName    string `yaml:"stream_name"`
 	DurableName   string `yaml:"durable_name"`
+	FilterSubject string `yaml:"filter_subject"`
 	DeliverPolicy string `yaml:"deliver_policy"`
 	AckExplicit   bool   `yaml:"ack_explicit"`
 	MaxDeliver    int    `yaml:"max_deliver"`

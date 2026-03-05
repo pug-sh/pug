@@ -155,6 +155,11 @@ func (n *initializer) createConsumers(ctx context.Context, consumers []natsdeps.
 			cfg.ReplayPolicy = jetstream.ReplayInstantPolicy // default
 		}
 
+		// Set filter subject if configured
+		if consumerConfig.FilterSubject != "" {
+			cfg.FilterSubject = consumerConfig.FilterSubject
+		}
+
 		js := n.client.GetJetStream()
 		_, err := js.CreateOrUpdateConsumer(ctx, consumerConfig.StreamName, cfg)
 		if err != nil {
