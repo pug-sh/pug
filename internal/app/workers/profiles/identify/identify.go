@@ -172,18 +172,15 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			return err
 		}
 
+		// :exec DELETE returns nil when zero rows match (profile already gone),
+		// so any error here is a genuine database failure.
 		if err := qtx.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
 			ID:        profileID,
 			ProjectID: projectID,
 		}); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				slog.WarnContext(ctx, "source profile already deleted during merge",
-					slog.String("sourceId", profileID))
-			} else {
-				slog.ErrorContext(ctx, "failed deleting source profile", slogx.Error(err),
-					slog.String("sourceId", profileID))
-				return err
-			}
+			slog.ErrorContext(ctx, "failed deleting source profile", slogx.Error(err),
+				slog.String("sourceId", profileID))
+			return err
 		}
 
 		// Track which profile we merged into for alias recording
