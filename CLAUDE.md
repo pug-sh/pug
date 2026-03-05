@@ -51,8 +51,11 @@ make sqlc
 # Generate protobuf code (after modifying .proto files)
 make rpc
 
-# Lint proto files
+# Lint Go code
 make lint
+
+# Lint proto files
+make lint-proto
 ```
 
 ## Architecture

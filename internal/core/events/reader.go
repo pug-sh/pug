@@ -45,7 +45,7 @@ func (r *Reader) GetEventsByProfile(ctx context.Context, projectID, profileID st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []Event
 	for rows.Next() {
@@ -76,7 +76,7 @@ func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {

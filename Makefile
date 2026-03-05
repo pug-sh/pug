@@ -59,7 +59,7 @@ rpc: lint-proto
 
 .PHONY: gen-ts
 gen-ts: lint-proto
-	buf generate
+	go tool buf generate
 
 .PHONY: build
 build:

@@ -52,6 +52,7 @@ func (f *FCMService) getMessagingClient(ctx context.Context, projectID, fcmServi
 		}
 		f.mu.RUnlock()
 
+		// TODO: migrate to credential files or ADC; deprecated due to potential security risk.
 		opt := option.WithCredentialsJSON([]byte(fcmServiceJSON)) //nolint:staticcheck
 		app, err := firebase.NewApp(ctx, nil, opt)
 		if err != nil {
