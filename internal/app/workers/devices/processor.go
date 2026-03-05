@@ -33,7 +33,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	msg := &devicesv1.DeviceOperationMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal device operation message", slogx.Error(err))
-		return &natsworker.PermanentError{Err: err}
+		return natsworker.NewPermanentError(err)
 	}
 
 	switch msg.OperationPayload.(type) {
@@ -45,7 +45,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		return w.handleSubscribe(ctx, msg)
 	default:
 		slog.WarnContext(ctx, "unknown device operation type")
-		return &natsworker.PermanentError{Err: errors.New("unknown operation type")}
+		return natsworker.NewPermanentError(errors.New("unknown operation type"))
 	}
 }
 
@@ -94,7 +94,7 @@ func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOpera
 			slog.String("projectId", msg.GetProjectId()))
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			return &natsworker.PermanentError{Err: err}
+			return natsworker.NewPermanentError(err)
 		}
 		return err
 	}

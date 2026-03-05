@@ -83,7 +83,7 @@ func handleRegister(ctx context.Context, w *profiles.Worker, data []byte) error 
 	msg := &profilesv1.ProfileRegisterMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal register message", slogx.Error(err))
-		return &natsworker.PermanentError{Err: err}
+		return natsworker.NewPermanentError(err)
 	}
 
 	autoProps := msg.GetAutoProperties().AsMap()

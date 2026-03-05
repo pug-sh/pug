@@ -86,7 +86,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	msg := &profilesv1.ProfileIdentifyMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal identify message", slogx.Error(err))
-		return &natsworker.PermanentError{Err: err}
+		return natsworker.NewPermanentError(err)
 	}
 
 	projectID := msg.GetProjectId()

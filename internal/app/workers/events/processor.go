@@ -25,7 +25,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	batch := &eventsv1.EventBatch{}
 	if err := proto.Unmarshal(data, batch); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal event batch", slogx.Error(err))
-		return &natsworker.PermanentError{Err: err}
+		return natsworker.NewPermanentError(err)
 	}
 
 	if len(batch.Events) == 0 {

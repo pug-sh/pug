@@ -73,7 +73,7 @@ func handleAlias(ctx context.Context, ch driver.Conn, data []byte) error {
 	msg := &profilesv1.ProfileAliasMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal alias message", slogx.Error(err))
-		return &natsworker.PermanentError{Err: err}
+		return natsworker.NewPermanentError(err)
 	}
 
 	aliasID := msg.GetAliasId()
