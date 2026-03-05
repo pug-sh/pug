@@ -18,7 +18,7 @@ func Up(ctx context.Context, num int) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if num == 0 {
 		if err := goose.UpContext(ctx, db, dir); err != nil {
@@ -46,7 +46,7 @@ func Down(ctx context.Context, num int) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if num == 0 {
 		for {
@@ -88,12 +88,12 @@ func setup(ctx context.Context) (*sql.DB, string, error) {
 
 	wd, err := os.Getwd()
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, "", err
 	}
 
 	if err := goose.SetDialect("postgres"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, "", err
 	}
 
