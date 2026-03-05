@@ -23,7 +23,7 @@ jobs:
 
       - name: Restore Go cache
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             /home/runner/go/pkg/mod
@@ -47,7 +47,7 @@ jobs:
           cache: false
 
       - name: Restore Go cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             /home/runner/go/pkg/mod
@@ -70,7 +70,7 @@ jobs:
           cache: false
 
       - name: Restore Go cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             /home/runner/go/pkg/mod
@@ -93,7 +93,7 @@ jobs:
           cache: false
 
       - name: Restore Go cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             /home/runner/go/pkg/mod
@@ -116,7 +116,7 @@ jobs:
           cache: false
 
       - name: Restore Go cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             /home/runner/go/pkg/mod
