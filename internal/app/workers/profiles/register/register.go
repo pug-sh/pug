@@ -53,7 +53,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 		return fmt.Errorf("failed to get profile register consumer config: %w", err)
 	}
 
-	profileWorker := profiles.NewWorker(pgRO, pgW, nil)
+	profileWorker := profiles.NewWorker(pgRO, pgW)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
 		return handleRegister(ctx, profileWorker, msg.Data())

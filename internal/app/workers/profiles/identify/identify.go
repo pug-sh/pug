@@ -56,7 +56,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 		return fmt.Errorf("failed to get profile identify consumer config: %w", err)
 	}
 
-	profileWorker := profiles.NewWorker(pgRO, pgW, nil)
+	profileWorker := profiles.NewWorker(pgRO, pgW)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
 		return handleIdentify(ctx, profileWorker, natsClient, msg.Data())
@@ -141,10 +141,6 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	default:
 		// Already identified — skip to avoid self-merge and deletion.
 		if existing.ID == profileID {
-			if err := tx.Commit(ctx); err != nil {
-				slog.ErrorContext(ctx, "failed committing identify transaction", slogx.Error(err))
-				return err
-			}
 			return nil
 		}
 
@@ -180,9 +176,14 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			ID:        profileID,
 			ProjectID: projectID,
 		}); err != nil {
-			slog.ErrorContext(ctx, "failed deleting source profile", slogx.Error(err),
-				slog.String("sourceId", profileID))
-			return err
+			if errors.Is(err, pgx.ErrNoRows) {
+				slog.WarnContext(ctx, "source profile already deleted during merge",
+					slog.String("sourceId", profileID))
+			} else {
+				slog.ErrorContext(ctx, "failed deleting source profile", slogx.Error(err),
+					slog.String("sourceId", profileID))
+				return err
+			}
 		}
 
 		// Track which profile we merged into for alias recording

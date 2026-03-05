@@ -13,21 +13,18 @@ import (
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/devices/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
 type Worker struct {
 	deviceService *devices.Service
 	read          *dbread.Queries
-	write         *dbwrite.Queries
 }
 
 func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 	return &Worker{
 		deviceService: devices.NewService(pgRO, pgW),
 		read:          dbread.New(pgRO),
-		write:         dbwrite.New(pgW),
 	}
 }
 
@@ -67,7 +64,8 @@ func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOper
 				slog.String("projectId", msg.GetProjectId()))
 		} else {
 			slog.ErrorContext(ctx, "failed to find profile for device upsert", slogx.Error(err),
-				slog.String("externalId", subscribe.GetProfileExternalId()))
+				slog.String("externalId", subscribe.GetProfileExternalId()),
+				slog.String("projectId", msg.GetProjectId()))
 		}
 		return "", err
 	}
@@ -88,15 +86,7 @@ func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOpera
 		properties = map[string]any{}
 	}
 
-	if _, err := w.write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
-		ID:         msg.GetDeviceId(),
-		Platform:   subscribe.GetPlatform(),
-		ProfileID:  profileID,
-		ProjectID:  msg.GetProjectId(),
-		Properties: properties,
-		Status:     devices.StatusActive,
-		Token:      subscribe.GetToken(),
-	}); err != nil {
+	if _, err := w.deviceService.SaveDevice(ctx, msg.GetDeviceId(), subscribe.GetPlatform(), profileID, msg.GetProjectId(), subscribe.GetToken(), properties); err != nil {
 		slog.ErrorContext(ctx, "failed to save device", slogx.Error(err))
 		return err
 	}

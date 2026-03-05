@@ -39,6 +39,18 @@ func (s *Service) UpdateDeviceToken(ctx context.Context, id, projectID, token st
 	})
 }
 
+func (s *Service) SaveDevice(ctx context.Context, id, platform, profileID, projectID, token string, properties map[string]any) (dbwrite.ProfileDevice, error) {
+	return s.write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
+		ID:         id,
+		Platform:   platform,
+		ProfileID:  profileID,
+		ProjectID:  projectID,
+		Properties: properties,
+		Status:     StatusActive,
+		Token:      token,
+	})
+}
+
 func (s *Service) GetActiveDevicesByProject(ctx context.Context, projectID, afterID string, limit int32) ([]dbread.ProfileDevice, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
@@ -49,4 +61,3 @@ func (s *Service) GetActiveDevicesByProject(ctx context.Context, projectID, afte
 		RowLimit:  limit,
 	})
 }
-

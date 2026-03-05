@@ -68,14 +68,12 @@ func (s *Server) RecordEvent(
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("failed to process request"))
 	}
 
-	return &connect.Response[deliveryv1.RecordEventResponse]{
-		Msg: &deliveryv1.RecordEventResponse{
-			Success:           true,
-			Message:           "Successfully recorded delivery event",
-			ShouldRetry:       false,
-			RetryAfterSeconds: 0,
-		},
-	}, nil
+	return connect.NewResponse(&deliveryv1.RecordEventResponse{
+		Success:           true,
+		Message:           "Successfully recorded delivery event",
+		ShouldRetry:       false,
+		RetryAfterSeconds: 0,
+	}), nil
 }
 
 // NewServer creates a new Delivery service server

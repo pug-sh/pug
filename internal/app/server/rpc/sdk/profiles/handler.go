@@ -77,7 +77,7 @@ func (h *Handler) Get(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
 	}
 
-	pbProfile, err := convertProfile(p)
+	pbProfile, err := convertProfile(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (h *Handler) GetByExternalId(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
 	}
 
-	pbProfile, err := convertProfile(p)
+	pbProfile, err := convertProfile(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (h *Handler) List(
 
 	pbProfiles := make([]*profilesv1.Profile, len(profilesList))
 	for i, p := range profilesList {
-		pbProfile, err := convertProfile(p)
+		pbProfile, err := convertProfile(ctx, p)
 		if err != nil {
 			return nil, err
 		}
@@ -207,14 +207,14 @@ func (h *Handler) Register(
 	return connect.NewResponse(&profilesv1.RegisterResponse{}), nil
 }
 
-func convertProfile(p dbread.Profile) (*profilesv1.Profile, error) {
+func convertProfile(ctx context.Context, p dbread.Profile) (*profilesv1.Profile, error) {
 	autoPropertiesMap := p.AutoProperties
 	if autoPropertiesMap == nil {
 		autoPropertiesMap = make(map[string]any)
 	}
 	autoProperties, err := structpb.NewStruct(autoPropertiesMap)
 	if err != nil {
-		slog.Error("failed converting auto_properties to protobuf struct",
+		slog.ErrorContext(ctx, "failed converting auto_properties to protobuf struct",
 			slogx.Error(err), slog.String("profileId", p.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
 	}
@@ -225,7 +225,7 @@ func convertProfile(p dbread.Profile) (*profilesv1.Profile, error) {
 	}
 	customProperties, err := structpb.NewStruct(customPropertiesMap)
 	if err != nil {
-		slog.Error("failed converting custom_properties to protobuf struct",
+		slog.ErrorContext(ctx, "failed converting custom_properties to protobuf struct",
 			slogx.Error(err), slog.String("profileId", p.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
 	}

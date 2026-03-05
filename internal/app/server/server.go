@@ -59,9 +59,9 @@ func start(ctx context.Context, d *deps) error {
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
 		projects.NewServer(d.pgRo, d.pgW), handlerOpts)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
-		campaigns.NewServer(d.pgRo, d.pgW, d.campaignsProducer), handlerOpts)
+		campaigns.NewServer(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
-		delivery.NewServer(d.deliveriesProducer), handlerOpts)
+		delivery.NewServer(d.nats.GetJetStream()), handlerOpts)
 	profilesPath, profilesHandler := profilesv1connect.NewProfilesServiceHandler(
 		profilesrpc.NewHandler(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 
@@ -69,7 +69,7 @@ func start(ctx context.Context, d *deps) error {
 		devicesrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
 
 	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(
-		eventsrpc.NewServer(d.eventsProducer), handlerOpts)
+		eventsrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
 
 	mux := http.NewServeMux()
 
