@@ -151,9 +151,10 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			ProjectID: projectID,
 		}); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				// Source profile no longer exists — likely merged on a previous attempt.
+				// ErrNoRows means either the source or target profile no longer exists.
+				// Most likely the source was already merged on a previous attempt.
 				// Continue with device reassignment to ensure no devices are orphaned.
-				slog.WarnContext(ctx, "source profile missing during merge, continuing with device reassignment",
+				slog.WarnContext(ctx, "profile missing during merge, continuing with device reassignment",
 					slog.String("sourceId", profileID), slog.String("targetId", existing.ID))
 			} else {
 				slog.ErrorContext(ctx, "failed merging profile properties", slogx.Error(err),

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/proto"
 
@@ -87,7 +88,14 @@ func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOpera
 	}
 
 	if _, err := w.deviceService.SaveDevice(ctx, msg.GetDeviceId(), subscribe.GetPlatform(), profileID, msg.GetProjectId(), subscribe.GetToken(), properties); err != nil {
-		slog.ErrorContext(ctx, "failed to save device", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to save device", slogx.Error(err),
+			slog.String("deviceId", msg.GetDeviceId()),
+			slog.String("profileId", profileID),
+			slog.String("projectId", msg.GetProjectId()))
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return &natsworker.PermanentError{Err: err}
+		}
 		return err
 	}
 
