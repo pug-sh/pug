@@ -83,3 +83,10 @@ message ProfileIdentifyMessage {
   string profile_id = 2;
   string project_id = 3;
 }
+
+message ProfileAliasMessage {
+  string alias_id = 1;
+  string profile_id = 2;
+  string external_id = 3;
+  string project_id = 4;
+}

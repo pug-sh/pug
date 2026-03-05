@@ -764,6 +764,74 @@ func (x *ProfileIdentifyMessage) GetProjectId() string {
 	return ""
 }
 
+type ProfileAliasMessage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AliasId       string                 `protobuf:"bytes,1,opt,name=alias_id,json=aliasId" json:"alias_id,omitempty"`
+	ProfileId     string                 `protobuf:"bytes,2,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	ExternalId    string                 `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProfileAliasMessage) Reset() {
+	*x = ProfileAliasMessage{}
+	mi := &file_profiles_v1_profiles_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileAliasMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileAliasMessage) ProtoMessage() {}
+
+func (x *ProfileAliasMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_profiles_v1_profiles_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileAliasMessage.ProtoReflect.Descriptor instead.
+func (*ProfileAliasMessage) Descriptor() ([]byte, []int) {
+	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ProfileAliasMessage) GetAliasId() string {
+	if x != nil {
+		return x.AliasId
+	}
+	return ""
+}
+
+func (x *ProfileAliasMessage) GetProfileId() string {
+	if x != nil {
+		return x.ProfileId
+	}
+	return ""
+}
+
+func (x *ProfileAliasMessage) GetExternalId() string {
+	if x != nil {
+		return x.ExternalId
+	}
+	return ""
+}
+
+func (x *ProfileAliasMessage) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
 var File_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_profiles_v1_profiles_proto_rawDesc = "" +
@@ -822,7 +890,15 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
 	"profile_id\x18\x02 \x01(\tR\tprofileId\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x03 \x01(\tR\tprojectId2\xc7\x03\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId\"\x8f\x01\n" +
+	"\x13ProfileAliasMessage\x12\x19\n" +
+	"\balias_id\x18\x01 \x01(\tR\aaliasId\x12\x1d\n" +
+	"\n" +
+	"profile_id\x18\x02 \x01(\tR\tprofileId\x12\x1f\n" +
+	"\vexternal_id\x18\x03 \x01(\tR\n" +
+	"externalId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x04 \x01(\tR\tprojectId2\xc7\x03\n" +
 	"\x0fProfilesService\x12C\n" +
 	"\x06Delete\x12\x1a.profiles.v1.DeleteRequest\x1a\x1b.profiles.v1.DeleteResponse\"\x00\x12:\n" +
 	"\x03Get\x12\x17.profiles.v1.GetRequest\x1a\x18.profiles.v1.GetResponse\"\x00\x12^\n" +
@@ -843,7 +919,7 @@ func file_profiles_v1_profiles_proto_rawDescGZIP() []byte {
 	return file_profiles_v1_profiles_proto_rawDescData
 }
 
-var file_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_profiles_v1_profiles_proto_goTypes = []any{
 	(*DeleteRequest)(nil),           // 0: profiles.v1.DeleteRequest
 	(*DeleteResponse)(nil),          // 1: profiles.v1.DeleteResponse
@@ -860,21 +936,22 @@ var file_profiles_v1_profiles_proto_goTypes = []any{
 	(*RegisterResponse)(nil),        // 12: profiles.v1.RegisterResponse
 	(*ProfileRegisterMessage)(nil),  // 13: profiles.v1.ProfileRegisterMessage
 	(*ProfileIdentifyMessage)(nil),  // 14: profiles.v1.ProfileIdentifyMessage
-	(*structpb.Struct)(nil),         // 15: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),   // 16: google.protobuf.Timestamp
+	(*ProfileAliasMessage)(nil),     // 15: profiles.v1.ProfileAliasMessage
+	(*structpb.Struct)(nil),         // 16: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),   // 17: google.protobuf.Timestamp
 }
 var file_profiles_v1_profiles_proto_depIdxs = []int32{
 	10, // 0: profiles.v1.GetByExternalIdResponse.profile:type_name -> profiles.v1.Profile
 	10, // 1: profiles.v1.GetResponse.profile:type_name -> profiles.v1.Profile
 	10, // 2: profiles.v1.ListResponse.profiles:type_name -> profiles.v1.Profile
-	15, // 3: profiles.v1.Profile.auto_properties:type_name -> google.protobuf.Struct
-	16, // 4: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
-	15, // 5: profiles.v1.Profile.custom_properties:type_name -> google.protobuf.Struct
-	16, // 6: profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
-	15, // 7: profiles.v1.RegisterRequest.auto_properties:type_name -> google.protobuf.Struct
-	15, // 8: profiles.v1.RegisterRequest.custom_properties:type_name -> google.protobuf.Struct
-	15, // 9: profiles.v1.ProfileRegisterMessage.auto_properties:type_name -> google.protobuf.Struct
-	15, // 10: profiles.v1.ProfileRegisterMessage.custom_properties:type_name -> google.protobuf.Struct
+	16, // 3: profiles.v1.Profile.auto_properties:type_name -> google.protobuf.Struct
+	17, // 4: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
+	16, // 5: profiles.v1.Profile.custom_properties:type_name -> google.protobuf.Struct
+	17, // 6: profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
+	16, // 7: profiles.v1.RegisterRequest.auto_properties:type_name -> google.protobuf.Struct
+	16, // 8: profiles.v1.RegisterRequest.custom_properties:type_name -> google.protobuf.Struct
+	16, // 9: profiles.v1.ProfileRegisterMessage.auto_properties:type_name -> google.protobuf.Struct
+	16, // 10: profiles.v1.ProfileRegisterMessage.custom_properties:type_name -> google.protobuf.Struct
 	0,  // 11: profiles.v1.ProfilesService.Delete:input_type -> profiles.v1.DeleteRequest
 	4,  // 12: profiles.v1.ProfilesService.Get:input_type -> profiles.v1.GetRequest
 	2,  // 13: profiles.v1.ProfilesService.GetByExternalId:input_type -> profiles.v1.GetByExternalIdRequest
@@ -905,7 +982,7 @@ func file_profiles_v1_profiles_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_profiles_v1_profiles_proto_rawDesc), len(file_profiles_v1_profiles_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

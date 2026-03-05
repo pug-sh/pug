@@ -14,6 +14,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/workers/devices"
 	eventsworker "github.com/fivebitsio/cotton/internal/app/workers/events"
+	"github.com/fivebitsio/cotton/internal/app/workers/profiles/alias"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/identify"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/register"
 	"github.com/fivebitsio/cotton/internal/app/workers/scheduler"
@@ -103,6 +104,12 @@ var profileIdentifyCmd = &cobra.Command{
 	Run:   run(identify.Run),
 }
 
+var profileAliasCmd = &cobra.Command{
+	Use:   "alias",
+	Short: "Start the profile alias worker",
+	Run:   run(alias.Run),
+}
+
 var deviceCmd = &cobra.Command{
 	Use:   "device",
 	Short: "Start the device worker",
@@ -144,6 +151,7 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return eventsworker.Run(ctx) })
 		g.Go(func() error { return register.Run(ctx) })
 		g.Go(func() error { return identify.Run(ctx) })
+		g.Go(func() error { return alias.Run(ctx) })
 		g.Go(func() error { return scheduler.Run(ctx) })
 		g.Go(func() error { return server.Run(ctx) })
 
@@ -176,6 +184,7 @@ var clickhouseMigrateCmd = &cobra.Command{
 func init() {
 	profileCmd.AddCommand(profileRegisterCmd)
 	profileCmd.AddCommand(profileIdentifyCmd)
+	profileCmd.AddCommand(profileAliasCmd)
 	workerCmd.AddCommand(profileCmd)
 	workerCmd.AddCommand(deviceCmd)
 	workerCmd.AddCommand(campaignCmd)

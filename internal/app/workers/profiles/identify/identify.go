@@ -72,7 +72,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, n
 	profileWorker := profiles.NewWorker(pgRO, pgW, ch)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		return handleIdentify(ctx, profileWorker, msg.Data())
+		return handleIdentify(ctx, profileWorker, natsClient, msg.Data())
 	}
 
 	config := natsworker.WorkerConfig{
@@ -93,7 +93,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, n
 	return worker.Start(ctx, natsClient)
 }
 
-func handleIdentify(ctx context.Context, w *profiles.Worker, data []byte) error {
+func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natsworker.NATSClient, data []byte) error {
 	msg := &profilesv1.ProfileIdentifyMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal identify message", slogx.Error(err))
@@ -193,12 +193,22 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, data []byte) error 
 		return err
 	}
 
-	if err := w.Ch.Exec(ctx,
-		"INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)",
-		profileID, existing.ID, externalID, projectID,
-	); err != nil {
-		slog.ErrorContext(ctx, "failed inserting profile alias into ClickHouse", slogx.Error(err),
-			slog.String("aliasId", profileID), slog.String("profileId", existing.ID))
+	// Publish alias message for ClickHouse tracking
+	aliasMsg := &profilesv1.ProfileAliasMessage{
+		AliasId:    profileID,
+		ProfileId:  existing.ID,
+		ExternalId: externalID,
+		ProjectId:  projectID,
+	}
+
+	aliasData, err := proto.Marshal(aliasMsg)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to marshal alias message", slogx.Error(err))
+		return err
+	}
+
+	if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
+		slog.ErrorContext(ctx, "failed to publish alias operation to NATS", slogx.Error(err))
 		return err
 	}
 

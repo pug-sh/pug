@@ -8,6 +8,7 @@ const (
 	// Profile subjects
 	ProfileRegisterSubject = "profiles.register"
 	ProfileIdentifySubject = "profiles.identify"
+	ProfileAliasSubject    = "profiles.alias"
 
 	// Campaign subjects
 	CampaignScheduledSubject = "campaigns.scheduled"

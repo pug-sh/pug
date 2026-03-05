@@ -38,6 +38,16 @@ consumers:
     max_deliver: 5
     replay_policy: "instant"
 
+  # Consumer for profile alias events
+  - name: "profile-alias-processor"
+    stream_name: "profiles"
+    durable_name: "profile-alias-processor-durable"
+    filter_subject: "profiles.alias"
+    deliver_policy: "all"
+    ack_explicit: true
+    max_deliver: 5
+    replay_policy: "instant"
+
   # Consumer for analytics events -> ClickHouse
   - name: "events-writer"
     stream_name: "events"
