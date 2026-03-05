@@ -248,7 +248,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 					slog.String("stream", w.config.StreamName),
 					slog.String("consumer", w.config.ConsumerName),
 					slog.Any("error", err))
-				if w.publishToDLQ(ctx, msg) {
+				if w.publishToDLQ(ctx, msg, err) {
 					if termErr := msg.Term(); termErr != nil {
 						slog.ErrorContext(ctx, "failed to terminate message",
 							slog.String("stream", w.config.StreamName),
@@ -268,7 +268,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 					slog.Any("error", err))
 
 				if w.isLastDelivery(ctx, msg) {
-					if w.publishToDLQ(ctx, msg) {
+					if w.publishToDLQ(ctx, msg, err) {
 						if termErr := msg.Term(); termErr != nil {
 							slog.ErrorContext(ctx, "failed to term message",
 								slog.String("stream", w.config.StreamName),
@@ -311,7 +311,7 @@ func (w *natsWorker) isLastDelivery(ctx context.Context, msg jetstream.Msg) bool
 	return int(meta.NumDelivered) >= w.config.MaxDeliver
 }
 
-func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg) bool {
+func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, processingErr error) bool {
 	if w.config.DLQSubject == "" {
 		slog.ErrorContext(ctx, "no DLQ subject configured, message will be redelivered",
 			slog.String("stream", w.config.StreamName),
@@ -324,9 +324,16 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg) bool {
 		Data:    msg.Data(),
 		Header:  nats.Header{},
 	}
+	// Copy original message headers for tracing and debugging.
+	for k, v := range msg.Headers() {
+		dlqMsg.Header[k] = v
+	}
 	dlqMsg.Header.Set("Original-Subject", msg.Subject())
 	dlqMsg.Header.Set("Original-Stream", w.config.StreamName)
 	dlqMsg.Header.Set("Original-Consumer", w.config.ConsumerName)
+	if processingErr != nil {
+		dlqMsg.Header.Set("Error-Reason", processingErr.Error())
+	}
 	if meta, err := msg.Metadata(); err == nil {
 		dlqMsg.Header.Set("Delivery-Count", fmt.Sprintf("%d", meta.NumDelivered))
 		dlqMsg.Header.Set("Stream-Sequence", fmt.Sprintf("%d", meta.Sequence.Stream))

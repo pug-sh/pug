@@ -65,7 +65,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			ts,
 		); err != nil {
 			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)))
-			return err
+			return natsworker.NewPermanentError(err)
 		}
 	}
 

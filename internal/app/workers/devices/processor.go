@@ -60,7 +60,7 @@ func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOper
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.WarnContext(ctx, "profile not found for device subscription, will retry",
+			slog.WarnContext(ctx, "profile not found for device subscription, retrying (will DLQ if profile never exists)",
 				slog.String("externalId", subscribe.GetProfileExternalId()),
 				slog.String("projectId", msg.GetProjectId()))
 		} else {
