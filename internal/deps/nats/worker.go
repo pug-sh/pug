@@ -13,10 +13,6 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// ErrMessageHandled signals that the processor has already called Ack, Nak,
-// or Term on the message. The worker will take no further acknowledgment action.
-var ErrMessageHandled = errors.New("message already handled")
-
 // PermanentError wraps errors that should not be retried. When a worker
 // receives a PermanentError, the message is published to the configured DLQ
 // subject and then terminated (not nacked for redelivery). Use for unrecoverable
@@ -68,13 +64,13 @@ const (
 )
 
 type natsWorker struct {
-	config     WorkerConfig
-	processor  MessageProcessor
-	consumer   jetstream.Consumer
-	js         jetstream.JetStream
-	shutdownCh chan struct{}
-	wg         sync.WaitGroup
-	healthy    atomic.Bool
+	config    WorkerConfig
+	processor MessageProcessor
+	consumer  jetstream.Consumer
+	js        jetstream.JetStream
+	wg        sync.WaitGroup
+	healthy   atomic.Bool
+	started   atomic.Bool
 }
 
 func NewWorker(config WorkerConfig, processor MessageProcessor, client *NATSClient) (Worker, error) {
@@ -89,6 +85,9 @@ func NewWorker(config WorkerConfig, processor MessageProcessor, client *NATSClie
 	}
 	if processor == nil {
 		return nil, fmt.Errorf("nats: processor must not be nil")
+	}
+	if config.DLQSubject == "" {
+		return nil, fmt.Errorf("nats: WorkerConfig.DLQSubject is required")
 	}
 	if config.Concurrency <= 0 {
 		config.Concurrency = DefaultConcurrency
@@ -105,14 +104,19 @@ func NewWorker(config WorkerConfig, processor MessageProcessor, client *NATSClie
 	}
 
 	return &natsWorker{
-		config:     config,
-		processor:  processor,
-		js:         client.GetJetStream(),
-		shutdownCh: make(chan struct{}),
+		config:    config,
+		processor: processor,
+		js:        client.GetJetStream(),
 	}, nil
 }
 
+var errWorkerAlreadyStarted = errors.New("nats: worker already started")
+
 func (w *natsWorker) Start(ctx context.Context) error {
+	if !w.started.CompareAndSwap(false, true) {
+		return errWorkerAlreadyStarted
+	}
+
 	consumerConfig := jetstream.ConsumerConfig{
 		Name:          w.config.ConsumerName,
 		Durable:       w.config.DurableName,
@@ -139,10 +143,7 @@ func (w *natsWorker) Start(ctx context.Context) error {
 		go w.processMessages(ctx)
 	}
 
-	select {
-	case <-ctx.Done():
-	case <-w.shutdownCh:
-	}
+	<-ctx.Done()
 
 	done := make(chan struct{})
 	go func() {
@@ -170,8 +171,6 @@ func (w *natsWorker) processMessages(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-w.shutdownCh:
-			return
 		default:
 		}
 
@@ -181,8 +180,6 @@ func (w *natsWorker) processMessages(ctx context.Context) {
 
 		select {
 		case <-ctx.Done():
-			return
-		case <-w.shutdownCh:
 			return
 		case <-time.After(restartBackoff):
 		}
@@ -209,8 +206,6 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			return
-		case <-w.shutdownCh:
 			return
 		default:
 			msg, err := msgs.Next()
@@ -241,25 +236,21 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 			cancel()
 
 			switch {
-			case errors.Is(err, ErrMessageHandled):
-				// Processor already handled acknowledgment (e.g. via Term).
 			case IsPermanentError(err):
 				slog.ErrorContext(ctx, "terminating poison message",
 					slog.String("stream", w.config.StreamName),
 					slog.String("consumer", w.config.ConsumerName),
 					slog.Any("error", err))
-				if w.publishToDLQ(ctx, msg, err) {
-					if termErr := msg.Term(); termErr != nil {
-						slog.ErrorContext(ctx, "failed to terminate message",
-							slog.String("stream", w.config.StreamName),
-							slog.Any("error", termErr))
-					}
-				} else {
-					if nakErr := msg.Nak(); nakErr != nil {
-						slog.ErrorContext(ctx, "failed to nak message after dlq failure",
-							slog.String("stream", w.config.StreamName),
-							slog.Any("error", nakErr))
-					}
+				if !w.publishToDLQ(ctx, msg, err) {
+					slog.ErrorContext(ctx, "DLQ publish failed for permanent error, terminating to avoid wasting retries",
+						slog.String("stream", w.config.StreamName),
+						slog.String("consumer", w.config.ConsumerName),
+						slog.String("subject", msg.Subject()))
+				}
+				if termErr := msg.Term(); termErr != nil {
+					slog.ErrorContext(ctx, "failed to terminate message",
+						slog.String("stream", w.config.StreamName),
+						slog.Any("error", termErr))
 				}
 			case err != nil:
 				slog.ErrorContext(ctx, "message processing failed",
@@ -268,18 +259,16 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 					slog.Any("error", err))
 
 				if w.isLastDelivery(ctx, msg) {
-					if w.publishToDLQ(ctx, msg, err) {
-						if termErr := msg.Term(); termErr != nil {
-							slog.ErrorContext(ctx, "failed to term message",
-								slog.String("stream", w.config.StreamName),
-								slog.Any("error", termErr))
-						}
-					} else {
-						if nakErr := msg.Nak(); nakErr != nil {
-							slog.ErrorContext(ctx, "failed to nak message after dlq failure",
-								slog.String("stream", w.config.StreamName),
-								slog.Any("error", nakErr))
-						}
+					if !w.publishToDLQ(ctx, msg, err) {
+						slog.ErrorContext(ctx, "DLQ publish failed on last delivery, terminating to avoid silent message loss",
+							slog.String("stream", w.config.StreamName),
+							slog.String("consumer", w.config.ConsumerName),
+							slog.String("subject", msg.Subject()))
+					}
+					if termErr := msg.Term(); termErr != nil {
+						slog.ErrorContext(ctx, "failed to term message",
+							slog.String("stream", w.config.StreamName),
+							slog.Any("error", termErr))
 					}
 				} else {
 					if nakErr := msg.Nak(); nakErr != nil {
@@ -302,11 +291,11 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 func (w *natsWorker) isLastDelivery(ctx context.Context, msg jetstream.Msg) bool {
 	meta, err := msg.Metadata()
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to read message metadata, allowing redelivery",
+		slog.ErrorContext(ctx, "failed to read message metadata, treating as last delivery to preserve DLQ routing",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
 			slog.Any("error", err))
-		return false
+		return true
 	}
 	return int(meta.NumDelivered) >= w.config.MaxDeliver
 }
@@ -334,6 +323,7 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, proces
 	if processingErr != nil {
 		dlqMsg.Header.Set("Error-Reason", processingErr.Error())
 	}
+	dlqMsg.Header.Set("DLQ-Timestamp", time.Now().UTC().Format(time.RFC3339))
 	if meta, err := msg.Metadata(); err == nil {
 		dlqMsg.Header.Set("Delivery-Count", fmt.Sprintf("%d", meta.NumDelivered))
 		dlqMsg.Header.Set("Stream-Sequence", fmt.Sprintf("%d", meta.Sequence.Stream))

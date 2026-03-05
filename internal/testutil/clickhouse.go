@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
+	"testing"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -23,10 +25,9 @@ type TestClickHouse struct {
 }
 
 // SetupClickHouse starts a ClickHouse container, runs all goose migrations,
-// and returns a connection. Call Close when done.
-//
-// Panics on any setup failure.
-func SetupClickHouse() *TestClickHouse {
+// and returns a connection. Cleanup is registered via t.Cleanup.
+func SetupClickHouse(t *testing.T) *TestClickHouse {
+	t.Helper()
 	ctx := context.Background()
 
 	ctr, err := tcclickhouse.Run(ctx, "clickhouse/clickhouse-server:24-alpine",
@@ -35,34 +36,42 @@ func SetupClickHouse() *TestClickHouse {
 		tcclickhouse.WithPassword(""),
 	)
 	if err != nil {
-		panic(fmt.Sprintf("testutil: start clickhouse container: %v", err))
+		t.Fatalf("testutil: start clickhouse container: %v", err)
 	}
 
 	connStr, err := ctr.ConnectionString(ctx)
 	if err != nil {
 		_ = ctr.Terminate(ctx)
-		panic(fmt.Sprintf("testutil: get clickhouse connection string: %v", err))
+		t.Fatalf("testutil: get clickhouse connection string: %v", err)
 	}
 
 	if err := migrateClickHouse(ctx, connStr); err != nil {
 		_ = ctr.Terminate(ctx)
-		panic(fmt.Sprintf("testutil: run clickhouse migrations: %v", err))
+		t.Fatalf("testutil: run clickhouse migrations: %v", err)
 	}
 
 	conn, err := chdep.NewReaderPool(ctx, &chdep.Config{URL: connStr})
 	if err != nil {
 		_ = ctr.Terminate(ctx)
-		panic(fmt.Sprintf("testutil: create clickhouse connection: %v", err))
+		t.Fatalf("testutil: create clickhouse connection: %v", err)
 	}
 
-	return &TestClickHouse{container: ctr, Conn: conn, URL: connStr}
+	tc := &TestClickHouse{container: ctr, Conn: conn, URL: connStr}
+
+	t.Cleanup(func() {
+		_ = conn.Close()
+		if err := ctr.Terminate(context.Background()); err != nil {
+			fmt.Printf("testutil: terminate clickhouse container: %v\n", err)
+		}
+	})
+
+	return tc
 }
 
 // SetupBareClickHouse starts a ClickHouse container without running migrations.
-// Use this when testing migration logic directly. Call Close when done.
-//
-// Panics on any setup failure.
-func SetupBareClickHouse() *TestClickHouse {
+// Use this when testing migration logic directly. Cleanup is registered via t.Cleanup.
+func SetupBareClickHouse(t *testing.T) *TestClickHouse {
+	t.Helper()
 	ctx := context.Background()
 
 	ctr, err := tcclickhouse.Run(ctx, "clickhouse/clickhouse-server:24-alpine",
@@ -71,24 +80,24 @@ func SetupBareClickHouse() *TestClickHouse {
 		tcclickhouse.WithPassword(""),
 	)
 	if err != nil {
-		panic(fmt.Sprintf("testutil: start clickhouse container: %v", err))
+		t.Fatalf("testutil: start clickhouse container: %v", err)
 	}
 
 	connStr, err := ctr.ConnectionString(ctx)
 	if err != nil {
 		_ = ctr.Terminate(ctx)
-		panic(fmt.Sprintf("testutil: get clickhouse connection string: %v", err))
+		t.Fatalf("testutil: get clickhouse connection string: %v", err)
 	}
 
-	return &TestClickHouse{container: ctr, URL: connStr}
-}
+	tc := &TestClickHouse{container: ctr, URL: connStr}
 
-// Close tears down the connection and the container.
-func (tc *TestClickHouse) Close() {
-	if tc.Conn != nil {
-		_ = tc.Conn.Close()
-	}
-	_ = tc.container.Terminate(context.Background())
+	t.Cleanup(func() {
+		if err := ctr.Terminate(context.Background()); err != nil {
+			fmt.Printf("testutil: terminate clickhouse container: %v\n", err)
+		}
+	})
+
+	return tc
 }
 
 func migrateClickHouse(ctx context.Context, connStr string) error {
@@ -98,15 +107,17 @@ func migrateClickHouse(ctx context.Context, connStr string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	if err := goose.SetDialect("clickhouse"); err != nil {
-		return err
-	}
-
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
 		return fmt.Errorf("unable to determine source file path")
 	}
 	dir := filepath.Join(filepath.Dir(thisFile), "..", "..", "schema", "clickhouse", "migrations")
 
-	return goose.UpContext(ctx, db, dir)
+	provider, err := goose.NewProvider(goose.DialectClickHouse, db, os.DirFS(dir))
+	if err != nil {
+		return err
+	}
+
+	_, err = provider.Up(ctx)
+	return err
 }
