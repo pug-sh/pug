@@ -631,9 +631,9 @@ const file_devices_v1_devices_proto_rawDesc = "" +
 	" \x01(\v2\x1c.devices.v1.SubscribePayloadH\x00R\tsubscribe\x12F\n" +
 	"\rupdate_status\x18\v \x01(\v2\x1f.devices.v1.UpdateStatusPayloadH\x00R\fupdateStatus\x12C\n" +
 	"\fupdate_token\x18\f \x01(\v2\x1e.devices.v1.UpdateTokenPayloadH\x00R\vupdateTokenB\x13\n" +
-	"\x11operation_payload\"\x90\x02\n" +
-	"\x10SubscribePayload\x12V\n" +
-	"\bplatform\x18\x01 \x01(\tB:\xbaH7r5R\x03fcmR\aandroidR\bfirebaseR\x03apnR\x03iosR\x05appleR\x03webR\x05emailR\bplatform\x12.\n" +
+	"\x11operation_payload\"\xee\x01\n" +
+	"\x10SubscribePayload\x124\n" +
+	"\bplatform\x18\x01 \x01(\tB\x18\xbaH\x15r\x13R\aandroidR\x03iosR\x03webR\bplatform\x12.\n" +
 	"\x13profile_external_id\x18\x02 \x01(\tR\x11profileExternalId\x12\x1d\n" +
 	"\n" +
 	"profile_id\x18\x03 \x01(\tR\tprofileId\x12\x1c\n" +

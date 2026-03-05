@@ -46,7 +46,7 @@ func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NAT
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
 		err := processor.ProcessMessage(ctx, msg.Data())
-		if err != nil && IsPermanentError(err) {
+		if err != nil && natsworker.IsPermanentError(err) {
 			slog.ErrorContext(ctx, "terminating poison message", slogx.Error(err))
 			if termErr := msg.Term(); termErr != nil {
 				slog.ErrorContext(ctx, "failed to terminate message", slogx.Error(termErr))

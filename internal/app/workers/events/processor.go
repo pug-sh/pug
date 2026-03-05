@@ -2,31 +2,16 @@ package events
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 )
-
-// PermanentError wraps errors that should not be retried. When the events
-// worker receives a PermanentError, it terminates the NATS message instead
-// of nacking it for redelivery (e.g. corrupt protobuf data).
-type PermanentError struct {
-	Err error
-}
-
-func (e *PermanentError) Error() string { return e.Err.Error() }
-func (e *PermanentError) Unwrap() error { return e.Err }
-
-func IsPermanentError(err error) bool {
-	var pe *PermanentError
-	return errors.As(err, &pe)
-}
 
 type Processor struct {
 	ch driver.Conn
@@ -40,7 +25,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	batch := &eventsv1.EventBatch{}
 	if err := proto.Unmarshal(data, batch); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal event batch", slogx.Error(err))
-		return &PermanentError{Err: err}
+		return &natsworker.PermanentError{Err: err}
 	}
 
 	if len(batch.Events) == 0 {

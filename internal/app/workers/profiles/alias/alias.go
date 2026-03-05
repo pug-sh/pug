@@ -2,6 +2,7 @@ package alias
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -68,7 +69,16 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, n
 	profileWorker := profiles.NewWorker(pgRO, pgW, ch)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		return handleAlias(ctx, profileWorker, msg.Data())
+		err := handleAlias(ctx, profileWorker, msg.Data())
+		if err != nil && natsworker.IsPermanentError(err) {
+			slog.ErrorContext(ctx, "terminating poison message", slogx.Error(err))
+			if termErr := msg.Term(); termErr != nil {
+				slog.ErrorContext(ctx, "failed to terminate message", slogx.Error(termErr))
+				return termErr
+			}
+			return natsworker.ErrMessageHandled
+		}
+		return err
 	}
 
 	config := natsworker.WorkerConfig{
@@ -94,13 +104,17 @@ func handleAlias(ctx context.Context, w *profiles.Worker, data []byte) error {
 	msg := &profilesv1.ProfileAliasMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal alias message", slogx.Error(err))
-		return err
+		return &natsworker.PermanentError{Err: err}
 	}
 
 	aliasID := msg.GetAliasId()
 	profileID := msg.GetProfileId()
 	externalID := msg.GetExternalId()
 	projectID := msg.GetProjectId()
+
+	if w.Ch == nil {
+		return errors.New("ClickHouse connection not configured for alias worker")
+	}
 
 	if err := w.Ch.Exec(ctx,
 		"INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)",

@@ -36,7 +36,9 @@ make infra-down
 ./bin/cotton worker device
 ./bin/cotton worker campaign
 ./bin/cotton worker events
-./bin/cotton worker profile
+./bin/cotton worker profile register
+./bin/cotton worker profile identify
+./bin/cotton worker profile alias
 ./bin/cotton worker scheduler
 ```
 

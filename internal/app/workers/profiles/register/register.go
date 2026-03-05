@@ -56,7 +56,16 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 	profileWorker := profiles.NewWorker(pgRO, pgW, nil)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		return handleRegister(ctx, profileWorker, msg.Data())
+		err := handleRegister(ctx, profileWorker, msg.Data())
+		if err != nil && natsworker.IsPermanentError(err) {
+			slog.ErrorContext(ctx, "terminating poison message", slogx.Error(err))
+			if termErr := msg.Term(); termErr != nil {
+				slog.ErrorContext(ctx, "failed to terminate message", slogx.Error(termErr))
+				return termErr
+			}
+			return natsworker.ErrMessageHandled
+		}
+		return err
 	}
 
 	config := natsworker.WorkerConfig{
@@ -82,7 +91,7 @@ func handleRegister(ctx context.Context, w *profiles.Worker, data []byte) error 
 	msg := &profilesv1.ProfileRegisterMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal register message", slogx.Error(err))
-		return err
+		return &natsworker.PermanentError{Err: err}
 	}
 
 	autoProps := msg.GetAutoProperties().AsMap()

@@ -7,9 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles"
-	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/jackc/pgx/v5"
@@ -42,17 +40,6 @@ func Run(ctx context.Context) error {
 	}
 	defer pgW.Close()
 
-	var chCfg clickhouse.Config
-	if err := envconfig.Process(ctx, &chCfg); err != nil {
-		return err
-	}
-
-	chDB, err := clickhouse.NewFromConfig(ctx, &chCfg)
-	if err != nil {
-		return err
-	}
-	defer chDB.Close(ctx)
-
 	natsClient, err := natsworker.New(ctx)
 	if err != nil {
 		return err
@@ -60,19 +47,28 @@ func Run(ctx context.Context) error {
 	defer natsClient.Close()
 
 	slog.InfoContext(ctx, "Starting profile identify worker...")
-	return StartWorker(ctx, pgRO, pgW, chDB.Conn, natsClient)
+	return StartWorker(ctx, pgRO, pgW, natsClient)
 }
 
-func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, natsClient *natsworker.NATSClient) error {
+func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsworker.NATSClient) error {
 	consumerConfig, err := natsClient.GetConsumerConfigByName("profile-identify-processor-durable")
 	if err != nil {
 		return fmt.Errorf("failed to get profile identify consumer config: %w", err)
 	}
 
-	profileWorker := profiles.NewWorker(pgRO, pgW, ch)
+	profileWorker := profiles.NewWorker(pgRO, pgW, nil)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		return handleIdentify(ctx, profileWorker, natsClient, msg.Data())
+		err := handleIdentify(ctx, profileWorker, natsClient, msg.Data())
+		if err != nil && natsworker.IsPermanentError(err) {
+			slog.ErrorContext(ctx, "terminating poison message", slogx.Error(err))
+			if termErr := msg.Term(); termErr != nil {
+				slog.ErrorContext(ctx, "failed to terminate message", slogx.Error(termErr))
+				return termErr
+			}
+			return natsworker.ErrMessageHandled
+		}
+		return err
 	}
 
 	config := natsworker.WorkerConfig{
@@ -98,7 +94,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	msg := &profilesv1.ProfileIdentifyMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal identify message", slogx.Error(err))
-		return err
+		return &natsworker.PermanentError{Err: err}
 	}
 
 	projectID := msg.GetProjectId()
@@ -110,8 +106,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		ExternalID: externalID,
 	})
 
-	switch {
-	case err != nil && !errors.Is(err, pgx.ErrNoRows):
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "failed looking up profile by external ID", slogx.Error(err),
 			slog.String("externalId", externalID))
 		return err
@@ -164,14 +159,15 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			ProjectID: projectID,
 		}); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				// Source profile no longer exists — already merged on a previous attempt.
-				slog.WarnContext(ctx, "source profile missing during merge, assuming already merged",
+				// Source profile no longer exists — likely merged on a previous attempt.
+				// Continue with device reassignment to ensure no devices are orphaned.
+				slog.WarnContext(ctx, "source profile missing during merge, continuing with device reassignment",
 					slog.String("sourceId", profileID), slog.String("targetId", existing.ID))
-				return nil
+			} else {
+				slog.ErrorContext(ctx, "failed merging profile properties", slogx.Error(err),
+					slog.String("sourceId", profileID), slog.String("targetId", existing.ID))
+				return err
 			}
-			slog.ErrorContext(ctx, "failed merging profile properties", slogx.Error(err),
-				slog.String("sourceId", profileID), slog.String("targetId", existing.ID))
-			return err
 		}
 
 		if err := qtx.ReassignProfileDevices(ctx, dbwrite.ReassignProfileDevicesParams{
@@ -213,13 +209,16 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 		aliasData, err := proto.Marshal(aliasMsg)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to marshal alias message", slogx.Error(err))
-			return err
-		}
-
-		if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
-			slog.ErrorContext(ctx, "failed to publish alias operation to NATS", slogx.Error(err))
-			return err
+			slog.ErrorContext(ctx, "failed to marshal alias message after committed merge",
+				slogx.Error(err),
+				slog.String("aliasId", profileID),
+				slog.String("profileId", mergedIntoProfileID))
+		} else if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
+			slog.ErrorContext(ctx, "failed to publish alias after committed merge, alias will be missing in ClickHouse",
+				slogx.Error(err),
+				slog.String("aliasId", profileID),
+				slog.String("profileId", mergedIntoProfileID),
+				slog.String("projectId", projectID))
 		}
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
@@ -50,7 +51,16 @@ func StartWorker(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nat
 	deviceWorker := NewWorker(pgRO, pgW)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
-		return deviceWorker.ProcessMessage(ctx, msg.Data())
+		err := deviceWorker.ProcessMessage(ctx, msg.Data())
+		if err != nil && natsworker.IsPermanentError(err) {
+			slog.ErrorContext(ctx, "terminating poison message", slogx.Error(err))
+			if termErr := msg.Term(); termErr != nil {
+				slog.ErrorContext(ctx, "failed to terminate message", slogx.Error(termErr))
+				return termErr
+			}
+			return natsworker.ErrMessageHandled
+		}
+		return err
 	}
 
 	config := natsworker.WorkerConfig{

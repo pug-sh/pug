@@ -5,10 +5,12 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/fivebitsio/cotton/internal/core/devices"
+	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/devices/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
@@ -33,7 +35,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	msg := &devicesv1.DeviceOperationMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal device operation message", slogx.Error(err))
-		return err
+		return &natsworker.PermanentError{Err: err}
 	}
 
 	switch msg.OperationPayload.(type) {
@@ -75,7 +77,6 @@ func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOpera
 		return err
 	}
 
-	// Convert Struct to map[string]any for clean JSON serialization
 	properties := subscribe.GetProperties().AsMap()
 	if properties == nil {
 		properties = map[string]any{}
@@ -101,6 +102,11 @@ func (w *Worker) handleUpdateStatus(ctx context.Context, msg *devicesv1.DeviceOp
 	updateStatus := msg.GetUpdateStatus()
 
 	if _, err := w.deviceService.UpdateDeviceStatus(ctx, msg.GetDeviceId(), msg.GetProjectId(), updateStatus.GetStatus()); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.WarnContext(ctx, "device not found for status update",
+				slog.String("deviceId", msg.GetDeviceId()))
+			return nil
+		}
 		slog.ErrorContext(ctx, "failed to update device status", slogx.Error(err))
 		return err
 	}
@@ -111,6 +117,11 @@ func (w *Worker) handleUpdateToken(ctx context.Context, msg *devicesv1.DeviceOpe
 	updateToken := msg.GetUpdateToken()
 
 	if _, err := w.deviceService.UpdateDeviceToken(ctx, msg.GetDeviceId(), msg.GetProjectId(), updateToken.GetToken()); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.WarnContext(ctx, "device not found for token update",
+				slog.String("deviceId", msg.GetDeviceId()))
+			return nil
+		}
 		slog.ErrorContext(ctx, "failed to update device token", slogx.Error(err))
 		return err
 	}

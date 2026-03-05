@@ -65,9 +65,8 @@ func start(ctx context.Context, d *deps) error {
 	profilesPath, profilesHandler := profilesv1connect.NewProfilesServiceHandler(
 		profilesrpc.NewHandler(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 
-	devicesServer := devicesrpc.NewServer(d.nats.GetJetStream())
 	devicesPath, devicesHandler := devicesv1connect.NewDevicesServiceHandler(
-		devicesServer, handlerOpts)
+		devicesrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
 
 	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(
 		eventsrpc.NewServer(d.eventsProducer), handlerOpts)

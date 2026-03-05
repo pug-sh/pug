@@ -56,7 +56,7 @@ func StartWorker(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nat
 
 	config := natsworker.WorkerConfig{
 		StreamName:        consumerConfig.StreamName,
-		ConsumerName:      consumerConfig.DurableName, // Use the durable name for both
+		ConsumerName:      consumerConfig.DurableName,
 		DurableName:       consumerConfig.DurableName,
 		Concurrency:       100,
 		ProcessingTimeout: 25 * time.Second,

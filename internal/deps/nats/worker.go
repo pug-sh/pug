@@ -16,6 +16,21 @@ import (
 // (e.g. via Term). The worker skips both Ack and Nak.
 var ErrMessageHandled = errors.New("message already handled")
 
+// PermanentError wraps errors that should not be retried. When a worker
+// receives a PermanentError, it terminates the NATS message instead of
+// nacking it for redelivery (e.g. corrupt protobuf data).
+type PermanentError struct {
+	Err error
+}
+
+func (e *PermanentError) Error() string { return e.Err.Error() }
+func (e *PermanentError) Unwrap() error { return e.Err }
+
+func IsPermanentError(err error) bool {
+	var pe *PermanentError
+	return errors.As(err, &pe)
+}
+
 type MessageProcessor func(context.Context, jetstream.Msg) error
 
 type WorkerConfig struct {
@@ -85,7 +100,6 @@ func (w *natsWorker) Start(ctx context.Context, client *NATSClient) error {
 		ReplayPolicy:  jetstream.ReplayInstantPolicy,
 	}
 
-	// Set filter subject if configured
 	if w.config.FilterSubject != "" {
 		consumerConfig.FilterSubject = w.config.FilterSubject
 	}

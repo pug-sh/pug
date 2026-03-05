@@ -55,7 +55,7 @@ message DeviceOperationMessage {
 }
 
 message SubscribePayload {
-  string platform = 1 [(buf.validate.field).string = {in: ["fcm", "android", "firebase", "apn", "ios", "apple", "web", "email"]}];
+  string platform = 1 [(buf.validate.field).string = {in: ["android", "ios", "web"]}];
   string profile_external_id = 2;
   string profile_id = 3;
   string token = 4 [(buf.validate.field).required = true];

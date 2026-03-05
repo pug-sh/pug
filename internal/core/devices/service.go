@@ -9,10 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const (
-	StatusActive   = "active"
-	StatusInactive = "inactive"
-)
+const StatusActive = "active"
 
 type Service struct {
 	read  *dbread.Queries
@@ -24,10 +21,6 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
 		read:  dbread.New(pgRO),
 		write: dbwrite.New(pgW),
 	}
-}
-
-func (s *Service) SaveDevice(ctx context.Context, params dbwrite.SaveProfileDeviceParams) (dbwrite.ProfileDevice, error) {
-	return s.write.SaveProfileDevice(ctx, params)
 }
 
 func (s *Service) UpdateDeviceStatus(ctx context.Context, id, projectID, status string) (dbwrite.ProfileDevice, error) {
@@ -57,9 +50,3 @@ func (s *Service) GetActiveDevicesByProject(ctx context.Context, projectID, afte
 	})
 }
 
-func (s *Service) GetDevicesByProfileID(ctx context.Context, projectID, profileID string) ([]dbread.ProfileDevice, error) {
-	return s.read.GetProfileDevicesByProfileID(ctx, dbread.GetProfileDevicesByProfileIDParams{
-		ProfileID: profileID,
-		ProjectID: projectID,
-	})
-}

@@ -3,7 +3,6 @@ package profiles
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 
 	"connectrpc.com/connect"
@@ -73,9 +72,9 @@ func (h *Handler) Get(
 	if err != nil {
 		slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("failed to get profile"))
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("failed to get profile"))
 		}
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get profile"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
 	}
 
 	pbProfile, err := convertProfile(p)
@@ -105,9 +104,9 @@ func (h *Handler) GetByExternalId(
 		slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
 
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("failed to get profile"))
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("failed to get profile"))
 		}
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get profile"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
 	}
 
 	pbProfile, err := convertProfile(p)
@@ -132,7 +131,7 @@ func (h *Handler) List(
 	profilesList, err := h.read.GetProfilesByProjectID(ctx, principal.Project.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed listing profiles", slogx.Error(err), slog.String("projectId", principal.Project.ID))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to list profiles"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
 	}
 
 	pbProfiles := make([]*profilesv1.Profile, len(profilesList))
@@ -215,7 +214,9 @@ func convertProfile(p dbread.Profile) (*profilesv1.Profile, error) {
 	}
 	autoProperties, err := structpb.NewStruct(autoPropertiesMap)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.Error("failed converting auto_properties to protobuf struct",
+			slogx.Error(err), slog.String("profileId", p.ID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
 	}
 
 	customPropertiesMap := p.CustomProperties
@@ -224,7 +225,9 @@ func convertProfile(p dbread.Profile) (*profilesv1.Profile, error) {
 	}
 	customProperties, err := structpb.NewStruct(customPropertiesMap)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.Error("failed converting custom_properties to protobuf struct",
+			slogx.Error(err), slog.String("profileId", p.ID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
 	}
 
 	return &profilesv1.Profile{
