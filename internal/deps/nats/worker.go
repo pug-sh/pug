@@ -22,7 +22,7 @@ var ErrMessageHandled = errors.New("message already handled")
 // subject and then terminated (not nacked for redelivery). Use for unrecoverable
 // failures such as corrupt protobuf data. Use NewPermanentError to construct.
 type PermanentError struct {
-	Err error
+	err error
 }
 
 // NewPermanentError wraps err as a PermanentError. Panics if err is nil.
@@ -30,11 +30,11 @@ func NewPermanentError(err error) *PermanentError {
 	if err == nil {
 		panic("nats: NewPermanentError called with nil error")
 	}
-	return &PermanentError{Err: err}
+	return &PermanentError{err: err}
 }
 
-func (e *PermanentError) Error() string { return e.Err.Error() }
-func (e *PermanentError) Unwrap() error { return e.Err }
+func (e *PermanentError) Error() string { return e.err.Error() }
+func (e *PermanentError) Unwrap() error { return e.err }
 
 func IsPermanentError(err error) bool {
 	var pe *PermanentError
@@ -78,6 +78,18 @@ type natsWorker struct {
 }
 
 func NewWorker(config WorkerConfig, processor MessageProcessor, client *NATSClient) (Worker, error) {
+	if config.StreamName == "" {
+		return nil, fmt.Errorf("nats: WorkerConfig.StreamName is required")
+	}
+	if config.ConsumerName == "" {
+		return nil, fmt.Errorf("nats: WorkerConfig.ConsumerName is required")
+	}
+	if config.DurableName == "" {
+		return nil, fmt.Errorf("nats: WorkerConfig.DurableName is required")
+	}
+	if processor == nil {
+		return nil, fmt.Errorf("nats: processor must not be nil")
+	}
 	if config.Concurrency <= 0 {
 		config.Concurrency = DefaultConcurrency
 	}
@@ -290,21 +302,21 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 func (w *natsWorker) isLastDelivery(ctx context.Context, msg jetstream.Msg) bool {
 	meta, err := msg.Metadata()
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to read message metadata, treating as last delivery",
+		slog.ErrorContext(ctx, "failed to read message metadata, allowing redelivery",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
 			slog.Any("error", err))
-		return true
+		return false
 	}
 	return int(meta.NumDelivered) >= w.config.MaxDeliver
 }
 
 func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg) bool {
 	if w.config.DLQSubject == "" {
-		slog.WarnContext(ctx, "no DLQ subject configured, message will be terminated without backup",
+		slog.ErrorContext(ctx, "no DLQ subject configured, message will be redelivered",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName))
-		return true
+		return false
 	}
 
 	dlqMsg := &nats.Msg{

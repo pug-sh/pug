@@ -8,9 +8,9 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/campaigns"
 	"github.com/fivebitsio/cotton/internal/core/delivery"
-	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	devicessvc "github.com/fivebitsio/cotton/internal/core/devices"
 	"github.com/fivebitsio/cotton/internal/core/projects"
+	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -81,10 +81,15 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		afterID = devices[len(devices)-1].ID
 	}
 
+	// All deliveries failed — return error to retry via Nak (campaign stays InProgress).
+	if failCount > 0 && failCount == totalCount {
+		return fmt.Errorf("campaign %s: all %d deliveries failed", campaign.ID, totalCount)
+	}
+
 	finalStatus := campaigns.StatusComplete
 	if failCount > 0 {
 		finalStatus = campaigns.StatusFail
-		slog.WarnContext(ctx, "campaign delivered with failures",
+		slog.WarnContext(ctx, "campaign delivered with partial failures",
 			slog.String("campaign_id", campaign.ID),
 			slog.Int("fail_count", failCount),
 			slog.Int("total_count", totalCount))
@@ -92,10 +97,6 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 
 	if err := w.campaignService.UpdateCampaignStatus(ctx, campaign.ID, finalStatus); err != nil {
 		return fmt.Errorf("failed to update campaign %s status to %s: %w", campaign.ID, finalStatus, err)
-	}
-
-	if failCount > 0 && failCount == totalCount {
-		return fmt.Errorf("campaign %s: all %d deliveries failed", campaign.ID, totalCount)
 	}
 
 	return nil

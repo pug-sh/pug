@@ -20,9 +20,9 @@ const (
 	EventsIngestSubject = "events.ingest"
 
 	// Dead letter queue subjects
-	DLQSubscriptionsSubject = "dlq.subscriptions"
-	DLQCampaignsSubject     = "dlq.campaigns"
-	DLQDeliveriesSubject    = "dlq.deliveries"
-	DLQEventsSubject        = "dlq.events"
-	DLQProfilesSubject      = "dlq.profiles"
+	DLQDevicesSubject    = "dlq.devices"
+	DLQCampaignsSubject  = "dlq.campaigns"
+	DLQDeliveriesSubject = "dlq.deliveries"
+	DLQEventsSubject     = "dlq.events"
+	DLQProfilesSubject   = "dlq.profiles"
 )

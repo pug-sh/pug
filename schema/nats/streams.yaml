@@ -60,9 +60,9 @@ streams:
     storage: "file"
     num_replicas: 1
 
-  - name: "dlq-subscriptions"
-    subjects: ["dlq.subscriptions"]
-    description: "Dead letter queue for subscription events"
+  - name: "dlq-devices"
+    subjects: ["dlq.devices"]
+    description: "Dead letter queue for device events"
     retention_policy: "limits"
     max_consumers: -1
     max_msgs: -1

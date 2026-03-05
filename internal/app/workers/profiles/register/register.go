@@ -6,9 +6,12 @@ import (
 	"log/slog"
 	"time"
 
+	"errors"
+
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
@@ -103,6 +106,10 @@ func handleRegister(ctx context.Context, w *profiles.Worker, data []byte) error 
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to register profile", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return natsworker.NewPermanentError(err)
+		}
 		return err
 	}
 
