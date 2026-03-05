@@ -71,21 +71,22 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
+		DLQSubject:        natsworker.DLQProfilesSubject,
 	}
 
-	worker, err := natsworker.NewWorker(config, messageProcessor)
+	worker, err := natsworker.NewWorker(config, messageProcessor, natsClient)
 	if err != nil {
 		return err
 	}
 
-	return worker.Start(ctx, natsClient)
+	return worker.Start(ctx)
 }
 
 func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natsworker.NATSClient, data []byte) error {
 	msg := &profilesv1.ProfileIdentifyMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal identify message", slogx.Error(err))
-		return &natsworker.PermanentError{Err: err}
+		return natsworker.NewPermanentError(err)
 	}
 
 	projectID := msg.GetProjectId()
@@ -129,9 +130,9 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			ProjectID:  projectID,
 		}); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				slog.WarnContext(ctx, "profile not found when setting external ID, may have been deleted",
+				slog.WarnContext(ctx, "profile not found when setting external ID, will retry",
 					slog.String("profileId", profileID), slog.String("externalId", externalID))
-				return nil
+				return fmt.Errorf("profile %s not found, register may not have completed yet", profileID)
 			}
 			slog.ErrorContext(ctx, "failed setting external ID on profile", slogx.Error(err),
 				slog.String("profileId", profileID), slog.String("externalId", externalID))
@@ -204,16 +205,10 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 		aliasData, err := proto.Marshal(aliasMsg)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to marshal alias message after committed merge",
-				slogx.Error(err),
-				slog.String("aliasId", profileID),
-				slog.String("profileId", mergedIntoProfileID))
-		} else if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
-			slog.ErrorContext(ctx, "failed to publish alias after committed merge, alias will be missing in ClickHouse",
-				slogx.Error(err),
-				slog.String("aliasId", profileID),
-				slog.String("profileId", mergedIntoProfileID),
-				slog.String("projectId", projectID))
+			return fmt.Errorf("marshal alias message after committed merge: %w", err)
+		}
+		if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
+			return fmt.Errorf("publish alias after committed merge: %w", err)
 		}
 	}
 

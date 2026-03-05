@@ -33,7 +33,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	msg := &devicesv1.DeviceOperationMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal device operation message", slogx.Error(err))
-		return &natsworker.PermanentError{Err: err}
+		return natsworker.NewPermanentError(err)
 	}
 
 	switch msg.OperationPayload.(type) {
@@ -45,7 +45,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		return w.handleSubscribe(ctx, msg)
 	default:
 		slog.WarnContext(ctx, "unknown device operation type")
-		return &natsworker.PermanentError{Err: errors.New("unknown operation type")}
+		return natsworker.NewPermanentError(errors.New("unknown operation type"))
 	}
 }
 
@@ -60,7 +60,7 @@ func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOper
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.WarnContext(ctx, "profile not found for device subscription, will retry",
+			slog.WarnContext(ctx, "profile not found for device subscription, retrying (will DLQ if profile never exists)",
 				slog.String("externalId", subscribe.GetProfileExternalId()),
 				slog.String("projectId", msg.GetProjectId()))
 		} else {
@@ -94,7 +94,7 @@ func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOpera
 			slog.String("projectId", msg.GetProjectId()))
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			return &natsworker.PermanentError{Err: err}
+			return natsworker.NewPermanentError(err)
 		}
 		return err
 	}
@@ -107,9 +107,9 @@ func (w *Worker) handleUpdateStatus(ctx context.Context, msg *devicesv1.DeviceOp
 
 	if _, err := w.deviceService.UpdateDeviceStatus(ctx, msg.GetDeviceId(), msg.GetProjectId(), updateStatus.GetStatus()); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.WarnContext(ctx, "device not found for status update",
+			slog.WarnContext(ctx, "device not found for status update, terminating",
 				slog.String("deviceId", msg.GetDeviceId()))
-			return nil
+			return natsworker.NewPermanentError(err)
 		}
 		slog.ErrorContext(ctx, "failed to update device status", slogx.Error(err))
 		return err
@@ -122,9 +122,9 @@ func (w *Worker) handleUpdateToken(ctx context.Context, msg *devicesv1.DeviceOpe
 
 	if _, err := w.deviceService.UpdateDeviceToken(ctx, msg.GetDeviceId(), msg.GetProjectId(), updateToken.GetToken()); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.WarnContext(ctx, "device not found for token update",
+			slog.WarnContext(ctx, "device not found for token update, terminating",
 				slog.String("deviceId", msg.GetDeviceId()))
-			return nil
+			return natsworker.NewPermanentError(err)
 		}
 		slog.ErrorContext(ctx, "failed to update device token", slogx.Error(err))
 		return err

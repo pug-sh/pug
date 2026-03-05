@@ -59,3 +59,58 @@ streams:
     max_age: 2592000000000000  # 30 days in nanoseconds
     storage: "file"
     num_replicas: 1
+
+  - name: "dlq-devices"
+    subjects: ["dlq.devices"]
+    description: "Dead letter queue for device events"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 1000000000  # ~1GB
+    max_age: 2592000000000000  # 30 days in nanoseconds
+    storage: "file"
+    num_replicas: 1
+
+  - name: "dlq-campaigns"
+    subjects: ["dlq.campaigns"]
+    description: "Dead letter queue for campaign events"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 1000000000  # ~1GB
+    max_age: 2592000000000000  # 30 days in nanoseconds
+    storage: "file"
+    num_replicas: 1
+
+  - name: "dlq-deliveries"
+    subjects: ["dlq.deliveries"]
+    description: "Dead letter queue for delivery events"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 1000000000  # ~1GB
+    max_age: 2592000000000000  # 30 days in nanoseconds
+    storage: "file"
+    num_replicas: 1
+
+  - name: "dlq-events"
+    subjects: ["dlq.events"]
+    description: "Dead letter queue for analytics events"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 1000000000  # ~1GB
+    max_age: 2592000000000000  # 30 days in nanoseconds
+    storage: "file"
+    num_replicas: 1
+
+  - name: "dlq-profiles"
+    subjects: ["dlq.profiles"]
+    description: "Dead letter queue for profile events"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 1000000000  # ~1GB
+    max_age: 2592000000000000  # 30 days in nanoseconds
+    storage: "file"
+    num_replicas: 1

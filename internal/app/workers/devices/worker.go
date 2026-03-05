@@ -62,12 +62,13 @@ func StartWorker(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nat
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
+		DLQSubject:        natsworker.DLQDevicesSubject,
 	}
 
-	worker, err := natsworker.NewWorker(config, messageProcessor)
+	worker, err := natsworker.NewWorker(config, messageProcessor, natsClient)
 	if err != nil {
 		return err
 	}
 
-	return worker.Start(ctx, natsClient)
+	return worker.Start(ctx)
 }

@@ -58,21 +58,22 @@ func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NAT
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
+		DLQSubject:        natsworker.DLQProfilesSubject,
 	}
 
-	worker, err := natsworker.NewWorker(config, messageProcessor)
+	worker, err := natsworker.NewWorker(config, messageProcessor, natsClient)
 	if err != nil {
 		return err
 	}
 
-	return worker.Start(ctx, natsClient)
+	return worker.Start(ctx)
 }
 
 func handleAlias(ctx context.Context, ch driver.Conn, data []byte) error {
 	msg := &profilesv1.ProfileAliasMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal alias message", slogx.Error(err))
-		return &natsworker.PermanentError{Err: err}
+		return natsworker.NewPermanentError(err)
 	}
 
 	aliasID := msg.GetAliasId()

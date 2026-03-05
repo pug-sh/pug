@@ -7,16 +7,12 @@ consumers:
     deliver_policy: "all"
     ack_explicit: true
     max_deliver: 5
-    replay_policy: "instant"
 
   # Consumer for campaign events
   - name: "campaign-processor"
     stream_name: "campaigns"
     durable_name: "campaign-processor-durable"
-    deliver_policy: "all"
-    ack_explicit: true
     max_deliver: 5
-    replay_policy: "instant"
 
   # Consumer for profile register events
   - name: "profile-register-processor"
@@ -52,7 +48,4 @@ consumers:
   - name: "events-writer"
     stream_name: "events"
     durable_name: "events-writer-durable"
-    deliver_policy: "all"
-    ack_explicit: true
     max_deliver: 5
-    replay_policy: "instant"

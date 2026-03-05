@@ -25,7 +25,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	batch := &eventsv1.EventBatch{}
 	if err := proto.Unmarshal(data, batch); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal event batch", slogx.Error(err))
-		return &natsworker.PermanentError{Err: err}
+		return natsworker.NewPermanentError(err)
 	}
 
 	if len(batch.Events) == 0 {
@@ -65,7 +65,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			ts,
 		); err != nil {
 			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)))
-			return err
+			return natsworker.NewPermanentError(err)
 		}
 	}
 

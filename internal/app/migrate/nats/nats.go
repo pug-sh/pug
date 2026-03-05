@@ -120,10 +120,15 @@ func (n *initializer) createConsumers(ctx context.Context, consumers []natsdeps.
 			slog.String("name", consumerConfig.Name),
 			slog.String("stream", consumerConfig.StreamName))
 
+		ackPolicy := jetstream.AckNonePolicy
+		if *consumerConfig.AckExplicit {
+			ackPolicy = jetstream.AckExplicitPolicy
+		}
+
 		cfg := jetstream.ConsumerConfig{
 			Name:       consumerConfig.DurableName,
 			Durable:    consumerConfig.DurableName,
-			AckPolicy:  jetstream.AckExplicitPolicy, // Using AckExplicit as AckPolicy
+			AckPolicy:  ackPolicy,
 			MaxDeliver: consumerConfig.MaxDeliver,
 		}
 

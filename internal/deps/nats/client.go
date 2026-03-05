@@ -41,7 +41,7 @@ type ConsumerConfig struct {
 	DurableName   string `yaml:"durable_name"`
 	FilterSubject string `yaml:"filter_subject"`
 	DeliverPolicy string `yaml:"deliver_policy"`
-	AckExplicit   bool   `yaml:"ack_explicit"`
+	AckExplicit   *bool  `yaml:"ack_explicit"`
 	MaxDeliver    int    `yaml:"max_deliver"`
 	ReplayPolicy  string `yaml:"replay_policy"`
 }
@@ -142,6 +142,19 @@ func (nc *NATSClient) ReadConsumerConfig() ([]ConsumerConfig, error) {
 
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse consumers config: %w", err)
+	}
+
+	for i := range config.Consumers {
+		if config.Consumers[i].AckExplicit == nil {
+			ack := true
+			config.Consumers[i].AckExplicit = &ack
+		}
+		if config.Consumers[i].DeliverPolicy == "" {
+			config.Consumers[i].DeliverPolicy = "all"
+		}
+		if config.Consumers[i].ReplayPolicy == "" {
+			config.Consumers[i].ReplayPolicy = "instant"
+		}
 	}
 
 	return config.Consumers, nil
