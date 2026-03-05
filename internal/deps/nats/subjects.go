@@ -24,4 +24,5 @@ const (
 	DLQCampaignsSubject     = "dlq.campaigns"
 	DLQDeliveriesSubject    = "dlq.deliveries"
 	DLQEventsSubject        = "dlq.events"
+	DLQProfilesSubject      = "dlq.profiles"
 )

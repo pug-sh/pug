@@ -58,6 +58,7 @@ func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NAT
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
+		DLQSubject:        natsworker.DLQProfilesSubject,
 	}
 
 	worker, err := natsworker.NewWorker(config, messageProcessor, natsClient)

@@ -71,6 +71,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
+		DLQSubject:        natsworker.DLQProfilesSubject,
 	}
 
 	worker, err := natsworker.NewWorker(config, messageProcessor, natsClient)

@@ -226,6 +226,7 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 					slog.String("stream", w.config.StreamName),
 					slog.String("consumer", w.config.ConsumerName),
 					slog.Any("error", err))
+				w.publishToDLQ(ctx, msg)
 				if termErr := msg.Term(); termErr != nil {
 					slog.ErrorContext(ctx, "failed to terminate message",
 						slog.String("stream", w.config.StreamName),
