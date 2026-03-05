@@ -47,8 +47,8 @@ message ListResponse {
 }
 
 message IdentifyRequest {
-  string profile_id = 1 [(buf.validate.field).required = true];
-  string external_id = 2 [(buf.validate.field).required = true];
+  string profile_id = 1 [(buf.validate.field).string = {min_len: 1}];
+  string external_id = 2 [(buf.validate.field).string = {min_len: 1}];
 }
 
 message IdentifyResponse {}
@@ -66,7 +66,7 @@ message Profile {
 message RegisterRequest {
   google.protobuf.Struct auto_properties = 1;
   google.protobuf.Struct custom_properties = 2;
-  string profile_id = 3 [(buf.validate.field).required = true];
+  string profile_id = 3 [(buf.validate.field).string = {min_len: 1}];
 }
 
 message RegisterResponse {}

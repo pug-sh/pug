@@ -132,6 +132,8 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 	qtx := w.Write.WithTx(tx)
 
+	var mergedIntoProfileID string
+
 	switch {
 	case errors.Is(lookupErr, pgx.ErrNoRows):
 		// No profile with this external_id — assign it to the anonymous profile.
@@ -148,6 +150,10 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	default:
 		// Already identified — skip to avoid self-merge and deletion.
 		if existing.ID == profileID {
+			if err := tx.Commit(ctx); err != nil {
+				slog.ErrorContext(ctx, "failed committing identify transaction", slogx.Error(err))
+				return err
+			}
 			return nil
 		}
 
@@ -187,6 +193,8 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			return err
 		}
 
+		// Track which profile we merged into for alias recording
+		mergedIntoProfileID = existing.ID
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -194,28 +202,25 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		return err
 	}
 
-	// Publish alias message for ClickHouse tracking
-	targetProfileID := profileID
-	if existing.ID != "" {
-		targetProfileID = existing.ID
-	}
+	// Publish alias message for ClickHouse tracking only when a merge occurred
+	if mergedIntoProfileID != "" {
+		aliasMsg := &profilesv1.ProfileAliasMessage{
+			AliasId:    profileID,
+			ProfileId:  mergedIntoProfileID,
+			ExternalId: externalID,
+			ProjectId:  projectID,
+		}
 
-	aliasMsg := &profilesv1.ProfileAliasMessage{
-		AliasId:    profileID,
-		ProfileId:  targetProfileID,
-		ExternalId: externalID,
-		ProjectId:  projectID,
-	}
+		aliasData, err := proto.Marshal(aliasMsg)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to marshal alias message", slogx.Error(err))
+			return err
+		}
 
-	aliasData, err := proto.Marshal(aliasMsg)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal alias message", slogx.Error(err))
-		return err
-	}
-
-	if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
-		slog.ErrorContext(ctx, "failed to publish alias operation to NATS", slogx.Error(err))
-		return err
+		if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
+			slog.ErrorContext(ctx, "failed to publish alias operation to NATS", slogx.Error(err))
+			return err
+		}
 	}
 
 	return nil

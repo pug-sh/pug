@@ -852,11 +852,11 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\aprofile\x18\x01 \x01(\v2\x14.profiles.v1.ProfileR\aprofile\"\r\n" +
 	"\vListRequest\"@\n" +
 	"\fListResponse\x120\n" +
-	"\bprofiles\x18\x01 \x03(\v2\x14.profiles.v1.ProfileR\bprofiles\"a\n" +
-	"\x0fIdentifyRequest\x12%\n" +
+	"\bprofiles\x18\x01 \x03(\v2\x14.profiles.v1.ProfileR\bprofiles\"c\n" +
+	"\x0fIdentifyRequest\x12&\n" +
 	"\n" +
-	"profile_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprofileId\x12'\n" +
-	"\vexternal_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
+	"profile_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprofileId\x12(\n" +
+	"\vexternal_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"externalId\"\x12\n" +
 	"\x10IdentifyResponse\"\xdb\x02\n" +
 	"\aProfile\x12@\n" +
@@ -870,12 +870,12 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x06 \x01(\tR\tprojectId\x12;\n" +
 	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\"\xc0\x01\n" +
+	"updateTime\"\xc1\x01\n" +
 	"\x0fRegisterRequest\x12@\n" +
 	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12D\n" +
-	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12%\n" +
+	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12&\n" +
 	"\n" +
-	"profile_id\x18\x03 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprofileId\"\x12\n" +
+	"profile_id\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprofileId\"\x12\n" +
 	"\x10RegisterResponse\"\xde\x01\n" +
 	"\x16ProfileRegisterMessage\x12@\n" +
 	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12D\n" +

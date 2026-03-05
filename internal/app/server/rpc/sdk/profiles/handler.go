@@ -51,7 +51,7 @@ func (h *Handler) Delete(
 		ProjectID: principal.Project.ID,
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to delete profile"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 
 	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil

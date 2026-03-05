@@ -6,9 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles"
-	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,17 +37,6 @@ func Run(ctx context.Context) error {
 	}
 	defer pgW.Close()
 
-	var chCfg clickhouse.Config
-	if err := envconfig.Process(ctx, &chCfg); err != nil {
-		return err
-	}
-
-	chDB, err := clickhouse.NewFromConfig(ctx, &chCfg)
-	if err != nil {
-		return err
-	}
-	defer chDB.Close(ctx)
-
 	natsClient, err := natsworker.New(ctx)
 	if err != nil {
 		return err
@@ -57,16 +44,16 @@ func Run(ctx context.Context) error {
 	defer natsClient.Close()
 
 	slog.InfoContext(ctx, "Starting profile register worker...")
-	return StartWorker(ctx, pgRO, pgW, chDB.Conn, natsClient)
+	return StartWorker(ctx, pgRO, pgW, natsClient)
 }
 
-func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, ch driver.Conn, natsClient *natsworker.NATSClient) error {
+func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsworker.NATSClient) error {
 	consumerConfig, err := natsClient.GetConsumerConfigByName("profile-register-processor-durable")
 	if err != nil {
 		return fmt.Errorf("failed to get profile register consumer config: %w", err)
 	}
 
-	profileWorker := profiles.NewWorker(pgRO, pgW, ch)
+	profileWorker := profiles.NewWorker(pgRO, pgW, nil)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
 		return handleRegister(ctx, profileWorker, msg.Data())

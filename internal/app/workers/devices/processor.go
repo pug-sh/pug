@@ -2,7 +2,7 @@ package devices
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,31 +36,31 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 		return err
 	}
 
-	switch msg.OperationType {
-	case devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPDATE_STATUS:
+	switch msg.OperationPayload.(type) {
+	case *devicesv1.DeviceOperationMessage_UpdateStatus:
 		return w.handleUpdateStatus(ctx, msg)
-	case devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPDATE_TOKEN:
+	case *devicesv1.DeviceOperationMessage_UpdateToken:
 		return w.handleUpdateToken(ctx, msg)
-	case devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_SUBSCRIBE:
+	case *devicesv1.DeviceOperationMessage_Subscribe:
 		return w.handleSubscribe(ctx, msg)
 	default:
-		slog.WarnContext(ctx, "unknown device operation type", slog.Int("type", int(msg.OperationType)))
-		return fmt.Errorf("unknown operation type: %v", msg.OperationType)
+		slog.WarnContext(ctx, "unknown device operation type")
+		return errors.New("unknown operation type")
 	}
 }
 
-func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOperationMessage) (string, error) {
-	if id := msg.GetProfileId(); id != "" {
+func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOperationMessage, subscribe *devicesv1.SubscribePayload) (string, error) {
+	if id := subscribe.GetProfileId(); id != "" {
 		return id, nil
 	}
 
 	profile, err := w.read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
 		ProjectID:  msg.GetProjectId(),
-		ExternalID: msg.GetProfileExternalId(),
+		ExternalID: subscribe.GetProfileExternalId(),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to find profile for device upsert", slogx.Error(err),
-			slog.String("externalId", msg.GetProfileExternalId()))
+			slog.String("externalId", subscribe.GetProfileExternalId()))
 		return "", err
 	}
 
@@ -68,25 +68,27 @@ func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOper
 }
 
 func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOperationMessage) error {
-	profileID, err := w.resolveProfileID(ctx, msg)
+	subscribe := msg.GetSubscribe()
+
+	profileID, err := w.resolveProfileID(ctx, msg, subscribe)
 	if err != nil {
 		return err
 	}
 
 	// Convert Struct to map[string]any for clean JSON serialization
-	properties := msg.GetProperties().AsMap()
+	properties := subscribe.GetProperties().AsMap()
 	if properties == nil {
 		properties = map[string]any{}
 	}
 
 	if _, err := w.write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 		ID:         msg.GetDeviceId(),
-		Platform:   msg.GetPlatform(),
+		Platform:   subscribe.GetPlatform(),
 		ProfileID:  profileID,
 		ProjectID:  msg.GetProjectId(),
 		Properties: properties,
-		Status:     "active",
-		Token:      msg.GetToken(),
+		Status:     devices.StatusActive,
+		Token:      subscribe.GetToken(),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to save device", slogx.Error(err))
 		return err
@@ -96,7 +98,9 @@ func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOpera
 }
 
 func (w *Worker) handleUpdateStatus(ctx context.Context, msg *devicesv1.DeviceOperationMessage) error {
-	if _, err := w.deviceService.UpdateDeviceStatus(ctx, msg.GetDeviceId(), msg.GetProjectId(), msg.GetStatus()); err != nil {
+	updateStatus := msg.GetUpdateStatus()
+
+	if _, err := w.deviceService.UpdateDeviceStatus(ctx, msg.GetDeviceId(), msg.GetProjectId(), updateStatus.GetStatus()); err != nil {
 		slog.ErrorContext(ctx, "failed to update device status", slogx.Error(err))
 		return err
 	}
@@ -104,7 +108,9 @@ func (w *Worker) handleUpdateStatus(ctx context.Context, msg *devicesv1.DeviceOp
 }
 
 func (w *Worker) handleUpdateToken(ctx context.Context, msg *devicesv1.DeviceOperationMessage) error {
-	if _, err := w.deviceService.UpdateDeviceToken(ctx, msg.GetDeviceId(), msg.GetProjectId(), msg.GetToken()); err != nil {
+	updateToken := msg.GetUpdateToken()
+
+	if _, err := w.deviceService.UpdateDeviceToken(ctx, msg.GetDeviceId(), msg.GetProjectId(), updateToken.GetToken()); err != nil {
 		slog.ErrorContext(ctx, "failed to update device token", slogx.Error(err))
 		return err
 	}

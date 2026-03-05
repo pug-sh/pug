@@ -43,21 +43,29 @@ message UpdateTokenRequest {
 
 message UpdateTokenResponse {}
 
-enum DeviceOperationType {
-  DEVICE_OPERATION_TYPE_UNSPECIFIED = 0;
-  DEVICE_OPERATION_TYPE_UPDATE_STATUS = 1;
-  DEVICE_OPERATION_TYPE_UPDATE_TOKEN = 2;
-  DEVICE_OPERATION_TYPE_SUBSCRIBE = 3;
+message DeviceOperationMessage {
+  string device_id = 1 [(buf.validate.field).string = {len: 20}];
+  string project_id = 2 [(buf.validate.field).string = {min_len: 1}];
+  
+  oneof operation_payload {
+    SubscribePayload subscribe = 10;
+    UpdateStatusPayload update_status = 11;
+    UpdateTokenPayload update_token = 12;
+  }
 }
 
-message DeviceOperationMessage {
-  string device_id = 1;
-  DeviceOperationType operation_type = 2;
-  string platform = 3;
-  string profile_external_id = 4;
-  string project_id = 5;
-  google.protobuf.Struct properties = 6;
-  string status = 7;
-  string token = 8;
-  string profile_id = 9;
+message SubscribePayload {
+  string platform = 1 [(buf.validate.field).string = {in: ["fcm", "android", "firebase", "apn", "ios", "apple", "web", "email"]}];
+  string profile_external_id = 2;
+  string profile_id = 3;
+  string token = 4 [(buf.validate.field).required = true];
+  google.protobuf.Struct properties = 5;
+}
+
+message UpdateStatusPayload {
+  string status = 1 [(buf.validate.field).string = {in: ["active", "inactive"]}];
+}
+
+message UpdateTokenPayload {
+  string token = 1 [(buf.validate.field).required = true];
 }

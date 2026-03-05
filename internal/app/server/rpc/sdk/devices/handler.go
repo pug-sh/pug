@@ -35,14 +35,17 @@ func (s *Server) Subscribe(
 	}
 
 	msg := &devicesv1.DeviceOperationMessage{
-		OperationType:     devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_SUBSCRIBE,
-		DeviceId:          req.Msg.GetDeviceId(),
-		Platform:          req.Msg.GetPlatform(),
-		ProfileExternalId: req.Msg.GetProfileExternalId(),
-		ProfileId:         req.Msg.GetProfileId(),
-		Properties:        req.Msg.GetProperties(),
-		Token:             req.Msg.GetToken(),
-		ProjectId:         principal.Project.ID,
+		DeviceId:  req.Msg.GetDeviceId(),
+		ProjectId: principal.Project.ID,
+		OperationPayload: &devicesv1.DeviceOperationMessage_Subscribe{
+			Subscribe: &devicesv1.SubscribePayload{
+				Platform:          req.Msg.GetPlatform(),
+				ProfileExternalId: req.Msg.GetProfileExternalId(),
+				ProfileId:         req.Msg.GetProfileId(),
+				Token:             req.Msg.GetToken(),
+				Properties:        req.Msg.GetProperties(),
+			},
+		},
 	}
 
 	data, err := proto.Marshal(msg)
@@ -69,10 +72,13 @@ func (s *Server) UpdateStatus(
 	}
 
 	msg := &devicesv1.DeviceOperationMessage{
-		OperationType: devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPDATE_STATUS,
-		DeviceId:      req.Msg.GetId(),
-		Status:        req.Msg.GetStatus(),
-		ProjectId:     principal.Project.ID,
+		DeviceId:  req.Msg.GetId(),
+		ProjectId: principal.Project.ID,
+		OperationPayload: &devicesv1.DeviceOperationMessage_UpdateStatus{
+			UpdateStatus: &devicesv1.UpdateStatusPayload{
+				Status: req.Msg.GetStatus(),
+			},
+		},
 	}
 
 	data, err := proto.Marshal(msg)
@@ -99,10 +105,13 @@ func (s *Server) UpdateToken(
 	}
 
 	msg := &devicesv1.DeviceOperationMessage{
-		OperationType: devicesv1.DeviceOperationType_DEVICE_OPERATION_TYPE_UPDATE_TOKEN,
-		DeviceId:      req.Msg.GetId(),
-		Token:         req.Msg.GetToken(),
-		ProjectId:     principal.Project.ID,
+		DeviceId:  req.Msg.GetId(),
+		ProjectId: principal.Project.ID,
+		OperationPayload: &devicesv1.DeviceOperationMessage_UpdateToken{
+			UpdateToken: &devicesv1.UpdateTokenPayload{
+				Token: req.Msg.GetToken(),
+			},
+		},
 	}
 
 	data, err := proto.Marshal(msg)

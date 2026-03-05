@@ -23,58 +23,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type DeviceOperationType int32
-
-const (
-	DeviceOperationType_DEVICE_OPERATION_TYPE_UNSPECIFIED   DeviceOperationType = 0
-	DeviceOperationType_DEVICE_OPERATION_TYPE_UPDATE_STATUS DeviceOperationType = 1
-	DeviceOperationType_DEVICE_OPERATION_TYPE_UPDATE_TOKEN  DeviceOperationType = 2
-	DeviceOperationType_DEVICE_OPERATION_TYPE_SUBSCRIBE     DeviceOperationType = 3
-)
-
-// Enum value maps for DeviceOperationType.
-var (
-	DeviceOperationType_name = map[int32]string{
-		0: "DEVICE_OPERATION_TYPE_UNSPECIFIED",
-		1: "DEVICE_OPERATION_TYPE_UPDATE_STATUS",
-		2: "DEVICE_OPERATION_TYPE_UPDATE_TOKEN",
-		3: "DEVICE_OPERATION_TYPE_SUBSCRIBE",
-	}
-	DeviceOperationType_value = map[string]int32{
-		"DEVICE_OPERATION_TYPE_UNSPECIFIED":   0,
-		"DEVICE_OPERATION_TYPE_UPDATE_STATUS": 1,
-		"DEVICE_OPERATION_TYPE_UPDATE_TOKEN":  2,
-		"DEVICE_OPERATION_TYPE_SUBSCRIBE":     3,
-	}
-)
-
-func (x DeviceOperationType) Enum() *DeviceOperationType {
-	p := new(DeviceOperationType)
-	*p = x
-	return p
-}
-
-func (x DeviceOperationType) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (DeviceOperationType) Descriptor() protoreflect.EnumDescriptor {
-	return file_devices_v1_devices_proto_enumTypes[0].Descriptor()
-}
-
-func (DeviceOperationType) Type() protoreflect.EnumType {
-	return &file_devices_v1_devices_proto_enumTypes[0]
-}
-
-func (x DeviceOperationType) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use DeviceOperationType.Descriptor instead.
-func (DeviceOperationType) EnumDescriptor() ([]byte, []int) {
-	return file_devices_v1_devices_proto_rawDescGZIP(), []int{0}
-}
-
 type SubscribeRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	DeviceId          string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
@@ -372,18 +320,17 @@ func (*UpdateTokenResponse) Descriptor() ([]byte, []int) {
 }
 
 type DeviceOperationMessage struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId          string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
-	OperationType     DeviceOperationType    `protobuf:"varint,2,opt,name=operation_type,json=operationType,enum=devices.v1.DeviceOperationType" json:"operation_type,omitempty"`
-	Platform          string                 `protobuf:"bytes,3,opt,name=platform" json:"platform,omitempty"`
-	ProfileExternalId string                 `protobuf:"bytes,4,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
-	ProjectId         string                 `protobuf:"bytes,5,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	Properties        *structpb.Struct       `protobuf:"bytes,6,opt,name=properties" json:"properties,omitempty"`
-	Status            string                 `protobuf:"bytes,7,opt,name=status" json:"status,omitempty"`
-	Token             string                 `protobuf:"bytes,8,opt,name=token" json:"token,omitempty"`
-	ProfileId         string                 `protobuf:"bytes,9,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId  string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	ProjectId string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	// Types that are valid to be assigned to OperationPayload:
+	//
+	//	*DeviceOperationMessage_Subscribe
+	//	*DeviceOperationMessage_UpdateStatus
+	//	*DeviceOperationMessage_UpdateToken
+	OperationPayload isDeviceOperationMessage_OperationPayload `protobuf_oneof:"operation_payload"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *DeviceOperationMessage) Reset() {
@@ -423,27 +370,6 @@ func (x *DeviceOperationMessage) GetDeviceId() string {
 	return ""
 }
 
-func (x *DeviceOperationMessage) GetOperationType() DeviceOperationType {
-	if x != nil {
-		return x.OperationType
-	}
-	return DeviceOperationType_DEVICE_OPERATION_TYPE_UNSPECIFIED
-}
-
-func (x *DeviceOperationMessage) GetPlatform() string {
-	if x != nil {
-		return x.Platform
-	}
-	return ""
-}
-
-func (x *DeviceOperationMessage) GetProfileExternalId() string {
-	if x != nil {
-		return x.ProfileExternalId
-	}
-	return ""
-}
-
 func (x *DeviceOperationMessage) GetProjectId() string {
 	if x != nil {
 		return x.ProjectId
@@ -451,30 +377,222 @@ func (x *DeviceOperationMessage) GetProjectId() string {
 	return ""
 }
 
-func (x *DeviceOperationMessage) GetProperties() *structpb.Struct {
+func (x *DeviceOperationMessage) GetOperationPayload() isDeviceOperationMessage_OperationPayload {
 	if x != nil {
-		return x.Properties
+		return x.OperationPayload
 	}
 	return nil
 }
 
-func (x *DeviceOperationMessage) GetStatus() string {
+func (x *DeviceOperationMessage) GetSubscribe() *SubscribePayload {
 	if x != nil {
-		return x.Status
+		if x, ok := x.OperationPayload.(*DeviceOperationMessage_Subscribe); ok {
+			return x.Subscribe
+		}
+	}
+	return nil
+}
+
+func (x *DeviceOperationMessage) GetUpdateStatus() *UpdateStatusPayload {
+	if x != nil {
+		if x, ok := x.OperationPayload.(*DeviceOperationMessage_UpdateStatus); ok {
+			return x.UpdateStatus
+		}
+	}
+	return nil
+}
+
+func (x *DeviceOperationMessage) GetUpdateToken() *UpdateTokenPayload {
+	if x != nil {
+		if x, ok := x.OperationPayload.(*DeviceOperationMessage_UpdateToken); ok {
+			return x.UpdateToken
+		}
+	}
+	return nil
+}
+
+type isDeviceOperationMessage_OperationPayload interface {
+	isDeviceOperationMessage_OperationPayload()
+}
+
+type DeviceOperationMessage_Subscribe struct {
+	Subscribe *SubscribePayload `protobuf:"bytes,10,opt,name=subscribe,oneof"`
+}
+
+type DeviceOperationMessage_UpdateStatus struct {
+	UpdateStatus *UpdateStatusPayload `protobuf:"bytes,11,opt,name=update_status,json=updateStatus,oneof"`
+}
+
+type DeviceOperationMessage_UpdateToken struct {
+	UpdateToken *UpdateTokenPayload `protobuf:"bytes,12,opt,name=update_token,json=updateToken,oneof"`
+}
+
+func (*DeviceOperationMessage_Subscribe) isDeviceOperationMessage_OperationPayload() {}
+
+func (*DeviceOperationMessage_UpdateStatus) isDeviceOperationMessage_OperationPayload() {}
+
+func (*DeviceOperationMessage_UpdateToken) isDeviceOperationMessage_OperationPayload() {}
+
+type SubscribePayload struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Platform          string                 `protobuf:"bytes,1,opt,name=platform" json:"platform,omitempty"`
+	ProfileExternalId string                 `protobuf:"bytes,2,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
+	ProfileId         string                 `protobuf:"bytes,3,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	Token             string                 `protobuf:"bytes,4,opt,name=token" json:"token,omitempty"`
+	Properties        *structpb.Struct       `protobuf:"bytes,5,opt,name=properties" json:"properties,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *SubscribePayload) Reset() {
+	*x = SubscribePayload{}
+	mi := &file_devices_v1_devices_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscribePayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscribePayload) ProtoMessage() {}
+
+func (x *SubscribePayload) ProtoReflect() protoreflect.Message {
+	mi := &file_devices_v1_devices_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscribePayload.ProtoReflect.Descriptor instead.
+func (*SubscribePayload) Descriptor() ([]byte, []int) {
+	return file_devices_v1_devices_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SubscribePayload) GetPlatform() string {
+	if x != nil {
+		return x.Platform
 	}
 	return ""
 }
 
-func (x *DeviceOperationMessage) GetToken() string {
+func (x *SubscribePayload) GetProfileExternalId() string {
+	if x != nil {
+		return x.ProfileExternalId
+	}
+	return ""
+}
+
+func (x *SubscribePayload) GetProfileId() string {
+	if x != nil {
+		return x.ProfileId
+	}
+	return ""
+}
+
+func (x *SubscribePayload) GetToken() string {
 	if x != nil {
 		return x.Token
 	}
 	return ""
 }
 
-func (x *DeviceOperationMessage) GetProfileId() string {
+func (x *SubscribePayload) GetProperties() *structpb.Struct {
 	if x != nil {
-		return x.ProfileId
+		return x.Properties
+	}
+	return nil
+}
+
+type UpdateStatusPayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateStatusPayload) Reset() {
+	*x = UpdateStatusPayload{}
+	mi := &file_devices_v1_devices_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateStatusPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateStatusPayload) ProtoMessage() {}
+
+func (x *UpdateStatusPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_devices_v1_devices_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateStatusPayload.ProtoReflect.Descriptor instead.
+func (*UpdateStatusPayload) Descriptor() ([]byte, []int) {
+	return file_devices_v1_devices_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *UpdateStatusPayload) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type UpdateTokenPayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateTokenPayload) Reset() {
+	*x = UpdateTokenPayload{}
+	mi := &file_devices_v1_devices_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateTokenPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTokenPayload) ProtoMessage() {}
+
+func (x *UpdateTokenPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_devices_v1_devices_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTokenPayload.ProtoReflect.Descriptor instead.
+func (*UpdateTokenPayload) Descriptor() ([]byte, []int) {
+	return file_devices_v1_devices_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *UpdateTokenPayload) GetToken() string {
+	if x != nil {
+		return x.Token
 	}
 	return ""
 }
@@ -504,26 +622,29 @@ const file_devices_v1_devices_proto_rawDesc = "" +
 	"\x12UpdateTokenRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x12\x1c\n" +
 	"\x05token\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\"\x15\n" +
-	"\x13UpdateTokenResponse\"\xee\x02\n" +
-	"\x16DeviceOperationMessage\x12\x1b\n" +
-	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12F\n" +
-	"\x0eoperation_type\x18\x02 \x01(\x0e2\x1f.devices.v1.DeviceOperationTypeR\roperationType\x12\x1a\n" +
-	"\bplatform\x18\x03 \x01(\tR\bplatform\x12.\n" +
-	"\x13profile_external_id\x18\x04 \x01(\tR\x11profileExternalId\x12\x1d\n" +
+	"\x13UpdateTokenResponse\"\xc7\x02\n" +
+	"\x16DeviceOperationMessage\x12%\n" +
+	"\tdevice_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\bdeviceId\x12&\n" +
 	"\n" +
-	"project_id\x18\x05 \x01(\tR\tprojectId\x127\n" +
+	"project_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprojectId\x12<\n" +
+	"\tsubscribe\x18\n" +
+	" \x01(\v2\x1c.devices.v1.SubscribePayloadH\x00R\tsubscribe\x12F\n" +
+	"\rupdate_status\x18\v \x01(\v2\x1f.devices.v1.UpdateStatusPayloadH\x00R\fupdateStatus\x12C\n" +
+	"\fupdate_token\x18\f \x01(\v2\x1e.devices.v1.UpdateTokenPayloadH\x00R\vupdateTokenB\x13\n" +
+	"\x11operation_payload\"\x90\x02\n" +
+	"\x10SubscribePayload\x12V\n" +
+	"\bplatform\x18\x01 \x01(\tB:\xbaH7r5R\x03fcmR\aandroidR\bfirebaseR\x03apnR\x03iosR\x05appleR\x03webR\x05emailR\bplatform\x12.\n" +
+	"\x13profile_external_id\x18\x02 \x01(\tR\x11profileExternalId\x12\x1d\n" +
 	"\n" +
-	"properties\x18\x06 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"properties\x12\x16\n" +
-	"\x06status\x18\a \x01(\tR\x06status\x12\x14\n" +
-	"\x05token\x18\b \x01(\tR\x05token\x12\x1d\n" +
+	"profile_id\x18\x03 \x01(\tR\tprofileId\x12\x1c\n" +
+	"\x05token\x18\x04 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\x127\n" +
 	"\n" +
-	"profile_id\x18\t \x01(\tR\tprofileId*\xb2\x01\n" +
-	"\x13DeviceOperationType\x12%\n" +
-	"!DEVICE_OPERATION_TYPE_UNSPECIFIED\x10\x00\x12'\n" +
-	"#DEVICE_OPERATION_TYPE_UPDATE_STATUS\x10\x01\x12&\n" +
-	"\"DEVICE_OPERATION_TYPE_UPDATE_TOKEN\x10\x02\x12#\n" +
-	"\x1fDEVICE_OPERATION_TYPE_SUBSCRIBE\x10\x032\x83\x02\n" +
+	"properties\x18\x05 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"properties\"F\n" +
+	"\x13UpdateStatusPayload\x12/\n" +
+	"\x06status\x18\x01 \x01(\tB\x17\xbaH\x14r\x12R\x06activeR\binactiveR\x06status\"2\n" +
+	"\x12UpdateTokenPayload\x12\x1c\n" +
+	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token2\x83\x02\n" +
 	"\x0eDevicesService\x12J\n" +
 	"\tSubscribe\x12\x1c.devices.v1.SubscribeRequest\x1a\x1d.devices.v1.SubscribeResponse\"\x00\x12S\n" +
 	"\fUpdateStatus\x12\x1f.devices.v1.UpdateStatusRequest\x1a .devices.v1.UpdateStatusResponse\"\x00\x12P\n" +
@@ -541,34 +662,37 @@ func file_devices_v1_devices_proto_rawDescGZIP() []byte {
 	return file_devices_v1_devices_proto_rawDescData
 }
 
-var file_devices_v1_devices_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_devices_v1_devices_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_devices_v1_devices_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_devices_v1_devices_proto_goTypes = []any{
-	(DeviceOperationType)(0),       // 0: devices.v1.DeviceOperationType
-	(*SubscribeRequest)(nil),       // 1: devices.v1.SubscribeRequest
-	(*SubscribeResponse)(nil),      // 2: devices.v1.SubscribeResponse
-	(*UpdateStatusRequest)(nil),    // 3: devices.v1.UpdateStatusRequest
-	(*UpdateStatusResponse)(nil),   // 4: devices.v1.UpdateStatusResponse
-	(*UpdateTokenRequest)(nil),     // 5: devices.v1.UpdateTokenRequest
-	(*UpdateTokenResponse)(nil),    // 6: devices.v1.UpdateTokenResponse
-	(*DeviceOperationMessage)(nil), // 7: devices.v1.DeviceOperationMessage
-	(*structpb.Struct)(nil),        // 8: google.protobuf.Struct
+	(*SubscribeRequest)(nil),       // 0: devices.v1.SubscribeRequest
+	(*SubscribeResponse)(nil),      // 1: devices.v1.SubscribeResponse
+	(*UpdateStatusRequest)(nil),    // 2: devices.v1.UpdateStatusRequest
+	(*UpdateStatusResponse)(nil),   // 3: devices.v1.UpdateStatusResponse
+	(*UpdateTokenRequest)(nil),     // 4: devices.v1.UpdateTokenRequest
+	(*UpdateTokenResponse)(nil),    // 5: devices.v1.UpdateTokenResponse
+	(*DeviceOperationMessage)(nil), // 6: devices.v1.DeviceOperationMessage
+	(*SubscribePayload)(nil),       // 7: devices.v1.SubscribePayload
+	(*UpdateStatusPayload)(nil),    // 8: devices.v1.UpdateStatusPayload
+	(*UpdateTokenPayload)(nil),     // 9: devices.v1.UpdateTokenPayload
+	(*structpb.Struct)(nil),        // 10: google.protobuf.Struct
 }
 var file_devices_v1_devices_proto_depIdxs = []int32{
-	8, // 0: devices.v1.SubscribeRequest.properties:type_name -> google.protobuf.Struct
-	0, // 1: devices.v1.DeviceOperationMessage.operation_type:type_name -> devices.v1.DeviceOperationType
-	8, // 2: devices.v1.DeviceOperationMessage.properties:type_name -> google.protobuf.Struct
-	1, // 3: devices.v1.DevicesService.Subscribe:input_type -> devices.v1.SubscribeRequest
-	3, // 4: devices.v1.DevicesService.UpdateStatus:input_type -> devices.v1.UpdateStatusRequest
-	5, // 5: devices.v1.DevicesService.UpdateToken:input_type -> devices.v1.UpdateTokenRequest
-	2, // 6: devices.v1.DevicesService.Subscribe:output_type -> devices.v1.SubscribeResponse
-	4, // 7: devices.v1.DevicesService.UpdateStatus:output_type -> devices.v1.UpdateStatusResponse
-	6, // 8: devices.v1.DevicesService.UpdateToken:output_type -> devices.v1.UpdateTokenResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	10, // 0: devices.v1.SubscribeRequest.properties:type_name -> google.protobuf.Struct
+	7,  // 1: devices.v1.DeviceOperationMessage.subscribe:type_name -> devices.v1.SubscribePayload
+	8,  // 2: devices.v1.DeviceOperationMessage.update_status:type_name -> devices.v1.UpdateStatusPayload
+	9,  // 3: devices.v1.DeviceOperationMessage.update_token:type_name -> devices.v1.UpdateTokenPayload
+	10, // 4: devices.v1.SubscribePayload.properties:type_name -> google.protobuf.Struct
+	0,  // 5: devices.v1.DevicesService.Subscribe:input_type -> devices.v1.SubscribeRequest
+	2,  // 6: devices.v1.DevicesService.UpdateStatus:input_type -> devices.v1.UpdateStatusRequest
+	4,  // 7: devices.v1.DevicesService.UpdateToken:input_type -> devices.v1.UpdateTokenRequest
+	1,  // 8: devices.v1.DevicesService.Subscribe:output_type -> devices.v1.SubscribeResponse
+	3,  // 9: devices.v1.DevicesService.UpdateStatus:output_type -> devices.v1.UpdateStatusResponse
+	5,  // 10: devices.v1.DevicesService.UpdateToken:output_type -> devices.v1.UpdateTokenResponse
+	8,  // [8:11] is the sub-list for method output_type
+	5,  // [5:8] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_devices_v1_devices_proto_init() }
@@ -576,19 +700,23 @@ func file_devices_v1_devices_proto_init() {
 	if File_devices_v1_devices_proto != nil {
 		return
 	}
+	file_devices_v1_devices_proto_msgTypes[6].OneofWrappers = []any{
+		(*DeviceOperationMessage_Subscribe)(nil),
+		(*DeviceOperationMessage_UpdateStatus)(nil),
+		(*DeviceOperationMessage_UpdateToken)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devices_v1_devices_proto_rawDesc), len(file_devices_v1_devices_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   7,
+			NumEnums:      0,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_devices_v1_devices_proto_goTypes,
 		DependencyIndexes: file_devices_v1_devices_proto_depIdxs,
-		EnumInfos:         file_devices_v1_devices_proto_enumTypes,
 		MessageInfos:      file_devices_v1_devices_proto_msgTypes,
 	}.Build()
 	File_devices_v1_devices_proto = out.File
