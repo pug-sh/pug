@@ -9,7 +9,6 @@ import (
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -34,7 +33,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	// insert_time is omitted; ClickHouse fills it via DEFAULT now64(3).
-	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time)")
+	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time)")
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)))
 		return err
@@ -56,7 +55,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		}
 
 		if err := chBatch.Append(
-			xid.New().String(),
+			e.EventId,
 			batch.ProjectId,
 			e.DistinctId,
 			e.Kind,

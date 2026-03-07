@@ -113,6 +113,7 @@ func (x *BatchCreateResponse) GetAccepted() uint32 {
 
 type Event struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
+	EventId          string                 `protobuf:"bytes,6,opt,name=event_id,json=eventId" json:"event_id,omitempty"`
 	AutoProperties   map[string]string      `protobuf:"bytes,1,rep,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	CustomProperties map[string]string      `protobuf:"bytes,2,rep,name=custom_properties,json=customProperties" json:"custom_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	DistinctId       string                 `protobuf:"bytes,3,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
@@ -150,6 +151,13 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
 	return file_events_v1_events_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Event) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
 }
 
 func (x *Event) GetAutoProperties() map[string]string {
@@ -247,8 +255,9 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x12BatchCreateRequest\x12(\n" +
 	"\x06events\x18\x01 \x03(\v2\x10.events.v1.EventR\x06events\"1\n" +
 	"\x13BatchCreateResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\rR\baccepted\"\xa3\x03\n" +
-	"\x05Event\x12M\n" +
+	"\baccepted\x18\x01 \x01(\rR\baccepted\"\xc7\x03\n" +
+	"\x05Event\x12\"\n" +
+	"\bevent_id\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\aeventId\x12M\n" +
 	"\x0fauto_properties\x18\x01 \x03(\v2$.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12S\n" +
 	"\x11custom_properties\x18\x02 \x03(\v2&.events.v1.Event.CustomPropertiesEntryR\x10customProperties\x12\x1f\n" +
 	"\vdistinct_id\x18\x03 \x01(\tR\n" +

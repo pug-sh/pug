@@ -11,7 +11,7 @@ type Event struct {
 	AutoProperties   map[string]string
 	CustomProperties map[string]string
 	DistinctID       string
-	ID               string
+	EventID          string
 	InsertTime       time.Time
 	Kind             string
 	OccurTime        time.Time
@@ -37,8 +37,8 @@ func (r *Reader) GetEventsByProfile(ctx context.Context, projectID, profileID st
 	ids := append([]string{profileID}, aliasIDs...)
 
 	rows, err := r.ch.Query(ctx,
-		`SELECT auto_properties, custom_properties, distinct_id, id, insert_time, kind, occur_time, project_id
-		 FROM events
+		`SELECT auto_properties, custom_properties, distinct_id, event_id, insert_time, kind, occur_time, project_id
+		 FROM events FINAL
 		 WHERE project_id = ? AND distinct_id IN ?
 		 ORDER BY occur_time DESC`,
 		projectID, ids)
@@ -54,7 +54,7 @@ func (r *Reader) GetEventsByProfile(ctx context.Context, projectID, profileID st
 			&e.AutoProperties,
 			&e.CustomProperties,
 			&e.DistinctID,
-			&e.ID,
+			&e.EventID,
 			&e.InsertTime,
 			&e.Kind,
 			&e.OccurTime,
