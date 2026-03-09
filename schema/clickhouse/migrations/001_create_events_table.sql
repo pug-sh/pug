@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS events (
     kind              String,
     occur_time        DateTime64(3),
     project_id        String
-) ENGINE = ReplacingMergeTree()
+) ENGINE = ReplacingMergeTree(insert_time)
 PARTITION BY toYYYYMM(occur_time)
 ORDER BY (project_id, event_id)
 SETTINGS index_granularity = 8192;

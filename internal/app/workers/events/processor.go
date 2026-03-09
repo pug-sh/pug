@@ -48,7 +48,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		}
 	}()
 
-	for _, e := range batch.Events {
+	for i, e := range batch.Events {
 		ts := time.Now()
 		if e.OccurTime != nil {
 			ts = e.OccurTime.AsTime()
@@ -63,7 +63,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			e.CustomProperties,
 			ts,
 		); err != nil {
-			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)))
+			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)), slog.String("event_id", e.EventId), slog.Int("event_index", i))
 			return natsworker.NewPermanentError(err)
 		}
 	}
