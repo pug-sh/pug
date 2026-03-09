@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "clickhouse-best-practices": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "computedHash": "2b8d018f92874e50d28d9c1d18dd3d979e6750c9a322f4f54984da69454292d2"
+    }
+  }
+}
