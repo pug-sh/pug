@@ -9,7 +9,6 @@ import (
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -34,7 +33,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	// insert_time is omitted; ClickHouse fills it via DEFAULT now64(3).
-	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time)")
+	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time)")
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)))
 		return err
@@ -49,14 +48,14 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		}
 	}()
 
-	for _, e := range batch.Events {
+	for i, e := range batch.Events {
 		ts := time.Now()
 		if e.OccurTime != nil {
 			ts = e.OccurTime.AsTime()
 		}
 
 		if err := chBatch.Append(
-			xid.New().String(),
+			e.EventId,
 			batch.ProjectId,
 			e.DistinctId,
 			e.Kind,
@@ -64,7 +63,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			e.CustomProperties,
 			ts,
 		); err != nil {
-			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)))
+			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)), slog.String("event_id", e.EventId), slog.Int("event_index", i))
 			return natsworker.NewPermanentError(err)
 		}
 	}

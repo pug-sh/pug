@@ -7,25 +7,17 @@ import (
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
 )
 
-const (
-	reservedPrefix = "cotton."
-	MaxBatchSize   = 1000
-)
+const reservedPrefix = "cotton."
 
-// ValidateExternalEvents checks that SDK-submitted events have required fields
-// (kind and distinct_id), don't exceed the batch size limit, and don't
-// use the reserved "cotton." name prefix.
+// ValidateExternalEvents checks that SDK-submitted events don't use the
+// reserved "cotton." name prefix.
 func ValidateExternalEvents(events []*eventsv1.Event) error {
-	if len(events) > MaxBatchSize {
-		return fmt.Errorf("batch size %d exceeds maximum of %d", len(events), MaxBatchSize)
-	}
+	seen := make(map[string]struct{}, len(events))
 	for i, e := range events {
-		if e.Kind == "" {
-			return fmt.Errorf("event[%d]: kind is required", i)
+		if _, exists := seen[e.EventId]; exists {
+			return fmt.Errorf("event[%d]: duplicate event_id %q in batch", i, e.EventId)
 		}
-		if e.DistinctId == "" {
-			return fmt.Errorf("event[%d]: distinct_id is required", i)
-		}
+		seen[e.EventId] = struct{}{}
 		if strings.HasPrefix(e.Kind, reservedPrefix) {
 			return fmt.Errorf("event[%d]: kind %q uses reserved prefix %q", i, e.Kind, reservedPrefix)
 		}

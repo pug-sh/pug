@@ -3,14 +3,15 @@ CREATE TABLE IF NOT EXISTS events (
     auto_properties   Map(String, String),
     custom_properties Map(String, String),
     distinct_id       String,
-    id                String,
+    event_id          UUID,
     insert_time       DateTime64(3) DEFAULT now64(3),
-    kind              String,
+    kind              LowCardinality(String),
     occur_time        DateTime64(3),
-    project_id        String
-) ENGINE = MergeTree()
+    project_id        String,
+    INDEX idx_distinct_id distinct_id TYPE bloom_filter GRANULARITY 4
+) ENGINE = ReplacingMergeTree(insert_time)
 PARTITION BY toYYYYMM(occur_time)
-ORDER BY (project_id, kind, occur_time)
+ORDER BY (project_id, kind, event_id)
 SETTINGS index_granularity = 8192;
 
 -- +goose Down

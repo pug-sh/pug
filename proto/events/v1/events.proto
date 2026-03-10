@@ -12,7 +12,7 @@ service EventsService {
 }
 
 message BatchCreateRequest {
-  repeated Event events = 1;
+  repeated Event events = 1 [(buf.validate.field).repeated.max_items = 1000];
 }
 
 message BatchCreateResponse {
@@ -20,10 +20,11 @@ message BatchCreateResponse {
 }
 
 message Event {
+  string event_id = 6 [(buf.validate.field).string.uuid = true];
   map<string, string> auto_properties = 1;
   map<string, string> custom_properties = 2;
-  string distinct_id = 3;
-  string kind = 4;
+  string distinct_id = 3 [(buf.validate.field).string.min_len = 1];
+  string kind = 4 [(buf.validate.field).string.min_len = 1];
   google.protobuf.Timestamp occur_time = 5;
 }
 
