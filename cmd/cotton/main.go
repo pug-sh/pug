@@ -185,7 +185,7 @@ var clickhouseMigrateCmd = &cobra.Command{
 
 var clickhouseSeedCmd = &cobra.Command{
 	Use:   "seed",
-	Short: "Seed ClickHouse with mock events for the first user and project",
+	Short: "Seed ClickHouse with events for the first user and project",
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
@@ -196,8 +196,9 @@ var clickhouseSeedCmd = &cobra.Command{
 
 		count, _ := cmd.Flags().GetInt64("count")
 		batchSize, _ := cmd.Flags().GetInt("batch")
+		file, _ := cmd.Flags().GetString("file")
 
-		if err := chseed.Run(ctx, count, batchSize); err != nil {
+		if err := chseed.Run(ctx, count, batchSize, file); err != nil {
 			slog.ErrorContext(ctx, "seed error", slog.Any("err", err))
 			os.Exit(1)
 		}
@@ -255,8 +256,9 @@ func init() {
 	clickhouseMigrateCmd.Flags().StringP("direction", "d", "up", "can be any of 'up' or 'down' (default: up)")
 	clickhouseMigrateCmd.Flags().IntP("num", "n", 0, "number of migrations to apply")
 
-	clickhouseSeedCmd.Flags().Int64P("count", "c", 10_000_000, "total number of events to generate")
+	clickhouseSeedCmd.Flags().Int64P("count", "c", 10_000_000, "total number of events to generate (used when no file provided)")
 	clickhouseSeedCmd.Flags().IntP("batch", "b", 10_000, "number of events per ClickHouse batch")
+	clickhouseSeedCmd.Flags().StringP("file", "f", "", "CSV file to import (REES46 format: event_time,order_id,product_id,category_id,category_code,brand,price,user_id)")
 
 	clickhouseCmd := &cobra.Command{
 		Use:   "clickhouse",
