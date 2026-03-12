@@ -46,6 +46,9 @@ func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		apiKey := req.Header.Get(HeaderAPIKey)
 		if apiKey == "" {
+			apiKey = req.URL.Query().Get(HeaderAPIKey)
+		}
+		if apiKey == "" {
 			return nil, authn.Errorf("x-api-key header not present")
 		}
 
