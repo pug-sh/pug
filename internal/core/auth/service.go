@@ -70,14 +70,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	}
 
 	// Create a default project for the new customer
-	projectParams := dbwrite.CreateProjectParams{
-		ID:          xid.New().String(),
-		ApiKey:      xid.New().String(),
-		CustomerID:  customer.ID,
-		DisplayName: "default",
-	}
-
-	_, err = s.projectsService.CreateProject(ctx, projectParams)
+	_, err = s.projectsService.CreateProject(ctx, customer.ID, "default")
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to create default project", slog.Any("error", err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))

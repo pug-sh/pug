@@ -6,6 +6,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/xid"
 )
 
 type Service struct {
@@ -25,8 +26,14 @@ func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectPa
 	return err
 }
 
-func (s *Service) CreateProject(ctx context.Context, arg dbwrite.CreateProjectParams) (dbwrite.Project, error) {
-	return s.write.CreateProject(ctx, arg)
+func (s *Service) CreateProject(ctx context.Context, customerID, displayName string) (dbwrite.Project, error) {
+	return s.write.CreateProject(ctx, dbwrite.CreateProjectParams{
+		ID:            xid.New().String(),
+		PrivateApiKey: "prv_" + xid.New().String(),
+		PublicApiKey:  "pub_" + xid.New().String(),
+		CustomerID:    customerID,
+		DisplayName:   displayName,
+	})
 }
 
 func (s *Service) GetProjectByID(ctx context.Context, id string) (dbread.Project, error) {

@@ -1,6 +1,6 @@
 -- name: CreateProject :one
-insert into projects (api_key, customer_id, display_name, fcm_service_json, id)
-values (@api_key, @customer_id, @display_name, @fcm_service_json, @id)
+insert into projects (customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key)
+values (@customer_id, @display_name, @fcm_service_json, @id, @private_api_key, @public_api_key)
 returning *;
 
 -- name: DeleteProject :one

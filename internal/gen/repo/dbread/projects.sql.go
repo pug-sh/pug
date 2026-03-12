@@ -10,10 +10,10 @@ import (
 )
 
 const getProjectAndCustomerByApiKey = `-- name: GetProjectAndCustomerByApiKey :one
-select projects.api_key, projects.create_time, projects.customer_id, projects.display_name, projects.fcm_service_json, projects.id, projects.update_time, customers.create_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.update_time
+select projects.create_time, projects.customer_id, projects.display_name, projects.fcm_service_json, projects.id, projects.private_api_key, projects.public_api_key, projects.update_time, customers.create_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.update_time
 from projects
 join customers on customers.id = projects.customer_id
-where projects.api_key = $1
+where projects.public_api_key = $1 or projects.private_api_key = $1
 `
 
 type GetProjectAndCustomerByApiKeyRow struct {
@@ -25,12 +25,48 @@ func (q *Queries) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey stri
 	row := q.db.QueryRow(ctx, getProjectAndCustomerByApiKey, apiKey)
 	var i GetProjectAndCustomerByApiKeyRow
 	err := row.Scan(
-		&i.Project.ApiKey,
 		&i.Project.CreateTime,
 		&i.Project.CustomerID,
 		&i.Project.DisplayName,
 		&i.Project.FcmServiceJson,
 		&i.Project.ID,
+		&i.Project.PrivateApiKey,
+		&i.Project.PublicApiKey,
+		&i.Project.UpdateTime,
+		&i.Customer.CreateTime,
+		&i.Customer.DisplayName,
+		&i.Customer.Email,
+		&i.Customer.ID,
+		&i.Customer.PasswordHash,
+		&i.Customer.PictureUri,
+		&i.Customer.UpdateTime,
+	)
+	return i, err
+}
+
+const getProjectAndCustomerByPrivateApiKey = `-- name: GetProjectAndCustomerByPrivateApiKey :one
+select projects.create_time, projects.customer_id, projects.display_name, projects.fcm_service_json, projects.id, projects.private_api_key, projects.public_api_key, projects.update_time, customers.create_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.update_time
+from projects
+join customers on customers.id = projects.customer_id
+where projects.private_api_key = $1
+`
+
+type GetProjectAndCustomerByPrivateApiKeyRow struct {
+	Project  Project
+	Customer Customer
+}
+
+func (q *Queries) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, privateApiKey string) (GetProjectAndCustomerByPrivateApiKeyRow, error) {
+	row := q.db.QueryRow(ctx, getProjectAndCustomerByPrivateApiKey, privateApiKey)
+	var i GetProjectAndCustomerByPrivateApiKeyRow
+	err := row.Scan(
+		&i.Project.CreateTime,
+		&i.Project.CustomerID,
+		&i.Project.DisplayName,
+		&i.Project.FcmServiceJson,
+		&i.Project.ID,
+		&i.Project.PrivateApiKey,
+		&i.Project.PublicApiKey,
 		&i.Project.UpdateTime,
 		&i.Customer.CreateTime,
 		&i.Customer.DisplayName,
@@ -44,7 +80,7 @@ func (q *Queries) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey stri
 }
 
 const getProjectByID = `-- name: GetProjectByID :one
-select api_key, create_time, customer_id, display_name, fcm_service_json, id, update_time
+select create_time, customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key, update_time
 from projects
 where id = $1
 `
@@ -53,19 +89,20 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 	row := q.db.QueryRow(ctx, getProjectByID, id)
 	var i Project
 	err := row.Scan(
-		&i.ApiKey,
 		&i.CreateTime,
 		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
+		&i.PrivateApiKey,
+		&i.PublicApiKey,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getProjectByIDAndCustomerID = `-- name: GetProjectByIDAndCustomerID :one
-select api_key, create_time, customer_id, display_name, fcm_service_json, id, update_time from projects where id = $1 and customer_id = $2
+select create_time, customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key, update_time from projects where id = $1 and customer_id = $2
 `
 
 type GetProjectByIDAndCustomerIDParams struct {
@@ -77,19 +114,20 @@ func (q *Queries) GetProjectByIDAndCustomerID(ctx context.Context, arg GetProjec
 	row := q.db.QueryRow(ctx, getProjectByIDAndCustomerID, arg.ID, arg.CustomerID)
 	var i Project
 	err := row.Scan(
-		&i.ApiKey,
 		&i.CreateTime,
 		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
+		&i.PrivateApiKey,
+		&i.PublicApiKey,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getProjectsByCustomerID = `-- name: GetProjectsByCustomerID :many
-select api_key, create_time, customer_id, display_name, fcm_service_json, id, update_time
+select create_time, customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key, update_time
 from projects
 where customer_id = $1
 `
@@ -104,12 +142,13 @@ func (q *Queries) GetProjectsByCustomerID(ctx context.Context, customerID string
 	for rows.Next() {
 		var i Project
 		if err := rows.Scan(
-			&i.ApiKey,
 			&i.CreateTime,
 			&i.CustomerID,
 			&i.DisplayName,
 			&i.FcmServiceJson,
 			&i.ID,
+			&i.PrivateApiKey,
+			&i.PublicApiKey,
 			&i.UpdateTime,
 		); err != nil {
 			return nil, err

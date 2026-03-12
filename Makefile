@@ -84,6 +84,10 @@ test:
 psql:
 	docker compose -f infra/dev/docker-compose.yaml exec postgres psql -U postgres -d cotton
 
+.PHONY: chql
+chql:
+	docker compose -f infra/dev/docker-compose.yaml exec clickhouse clickhouse-client -d cotton
+
 .PHONY: infra infra-up infra-up-fg infra-down
 infra: infra-up
 

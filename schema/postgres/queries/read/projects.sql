@@ -15,11 +15,17 @@ select exists(
   where id = @id and customer_id = @customer_id
 );
 
+-- name: GetProjectAndCustomerByPrivateApiKey :one
+select sqlc.embed(projects), sqlc.embed(customers)
+from projects
+join customers on customers.id = projects.customer_id
+where projects.private_api_key = @private_api_key;
+
 -- name: GetProjectAndCustomerByApiKey :one
 select sqlc.embed(projects), sqlc.embed(customers)
 from projects
 join customers on customers.id = projects.customer_id
-where projects.api_key = @api_key;
+where projects.public_api_key = @api_key or projects.private_api_key = @api_key;
 
 -- name: GetProjectByIDAndCustomerID :one
 select * from projects where id = @id and customer_id = @customer_id;

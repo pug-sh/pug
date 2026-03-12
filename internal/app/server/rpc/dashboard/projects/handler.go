@@ -12,7 +12,6 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/xid"
 )
 
 type server struct {
@@ -90,16 +89,9 @@ func (s *server) Create(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	wParams := dbwrite.CreateProjectParams{
-		ApiKey:      xid.New().String(),
-		CustomerID:  principal.Customer.ID,
-		DisplayName: req.Msg.DisplayName,
-		ID:          xid.New().String(),
-	}
-
-	projectData, err := s.service.CreateProject(ctx, wParams)
+	projectData, err := s.service.CreateProject(ctx, principal.Customer.ID, req.Msg.DisplayName)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.Any("params", wParams))
+		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 

@@ -36,8 +36,9 @@ type Principal struct {
 	Project  *dbread.Project
 }
 
-// WithAPIKeyAuth authenticates via API key in the x-api-key header.
-func WithAPIKeyAuth(queries *dbread.Queries) authn.AuthFunc {
+// WithSDKAuth authenticates via API key in the x-api-key header.
+// Accepts both public and private keys.
+func WithSDKAuth(queries *dbread.Queries) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		apiKey := req.Header.Get(HeaderAPIKey)
 		if apiKey == "" {
@@ -130,14 +131,25 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 	}
 }
 
-// WithDualAuth tries API key first, then JWT.
+// WithDualAuth tries private API key first, then JWT.
 func WithDualAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
-	apiKeyAuth := WithAPIKeyAuth(queries)
 	jwtAuth := WithJWTAuth(jwtKey, queries)
 
 	return func(ctx context.Context, req *http.Request) (any, error) {
-		if req.Header.Get(HeaderAPIKey) != "" {
-			return apiKeyAuth(ctx, req)
+		if apiKey := req.Header.Get(HeaderAPIKey); apiKey != "" {
+			row, err := queries.GetProjectAndCustomerByPrivateApiKey(ctx, apiKey)
+			if err != nil {
+				if err == pgx.ErrNoRows {
+					return nil, authn.Errorf("invalid API key")
+				}
+				slog.ErrorContext(ctx, "error querying project by private API key", slogx.Error(err))
+				return nil, authn.Errorf("failed to validate API key")
+			}
+			return &Principal{
+				AuthType: AuthTypeAPIKey,
+				Customer: row.Customer,
+				Project:  &row.Project,
+			}, nil
 		}
 		return jwtAuth(ctx, req)
 	}
@@ -168,3 +180,4 @@ func MustGetPrincipalWithProject(ctx context.Context) (*Principal, error) {
 
 	return principal, nil
 }
+

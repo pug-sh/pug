@@ -50,7 +50,7 @@ func start(ctx context.Context, d *deps) error {
 	// - SDK: API key auth only (for SDK-only services)
 	// - Shared: Dual auth - accepts either JWT or API key (for services accessible from both)
 	dashboardMW := authn.NewMiddleware(cottonrpc.WithJWTAuth(d.jwtKey, queriesRo))
-	sdkMW := authn.NewMiddleware(cottonrpc.WithAPIKeyAuth(queriesRo))
+	sdkMW := authn.NewMiddleware(cottonrpc.WithSDKAuth(queriesRo))
 	sharedMW := authn.NewMiddleware(cottonrpc.WithDualAuth(d.jwtKey, queriesRo))
 
 	// Handlers
