@@ -10,6 +10,8 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/migrate/clickhouse"
 	migratenats "github.com/fivebitsio/cotton/internal/app/migrate/nats"
 	"github.com/fivebitsio/cotton/internal/app/migrate/postgres"
+	chseed "github.com/fivebitsio/cotton/internal/app/seed/clickhouse"
+	pgseed "github.com/fivebitsio/cotton/internal/app/seed/postgres"
 	"github.com/fivebitsio/cotton/internal/app/server"
 	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/workers/devices"
@@ -181,6 +183,46 @@ var clickhouseMigrateCmd = &cobra.Command{
 	Run:   runMigrate(clickhouse.Up, clickhouse.Down),
 }
 
+var clickhouseSeedCmd = &cobra.Command{
+	Use:   "seed",
+	Short: "Seed ClickHouse with events for the first user and project",
+	Run: func(cmd *cobra.Command, args []string) {
+		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer done()
+
+		if err := godotenv.Load(); err != nil {
+			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
+		}
+
+		count, _ := cmd.Flags().GetInt64("count")
+		batchSize, _ := cmd.Flags().GetInt("batch")
+		file, _ := cmd.Flags().GetString("file")
+
+		if err := chseed.Run(ctx, count, batchSize, file); err != nil {
+			slog.ErrorContext(ctx, "seed error", slog.Any("err", err))
+			os.Exit(1)
+		}
+	},
+}
+
+var postgresSeedCmd = &cobra.Command{
+	Use:   "seed",
+	Short: "Seed PostgreSQL with test user and default project",
+	Run: func(cmd *cobra.Command, args []string) {
+		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer done()
+
+		if err := godotenv.Load(); err != nil {
+			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
+		}
+
+		if err := pgseed.Run(ctx); err != nil {
+			slog.ErrorContext(ctx, "seed error", slog.Any("err", err))
+			os.Exit(1)
+		}
+	},
+}
+
 func init() {
 	profileCmd.AddCommand(profileRegisterCmd)
 	profileCmd.AddCommand(profileIdentifyCmd)
@@ -203,6 +245,7 @@ func init() {
 		Short: "PostgreSQL related commands",
 	}
 	postgresCmd.AddCommand(postgresMigrateCmd)
+	postgresCmd.AddCommand(postgresSeedCmd)
 
 	natsCmd := &cobra.Command{
 		Use:   "nats",
@@ -213,11 +256,16 @@ func init() {
 	clickhouseMigrateCmd.Flags().StringP("direction", "d", "up", "can be any of 'up' or 'down' (default: up)")
 	clickhouseMigrateCmd.Flags().IntP("num", "n", 0, "number of migrations to apply")
 
+	clickhouseSeedCmd.Flags().Int64P("count", "c", 10_000_000, "total number of events to generate (used when no file provided)")
+	clickhouseSeedCmd.Flags().IntP("batch", "b", 10_000, "number of events per ClickHouse batch")
+	clickhouseSeedCmd.Flags().StringP("file", "f", "", "CSV file to import (REES46 format: event_time,order_id,product_id,category_id,category_code,brand,price,user_id)")
+
 	clickhouseCmd := &cobra.Command{
 		Use:   "clickhouse",
 		Short: "ClickHouse related commands",
 	}
 	clickhouseCmd.AddCommand(clickhouseMigrateCmd)
+	clickhouseCmd.AddCommand(clickhouseSeedCmd)
 
 	rootCmd.AddCommand(postgresCmd)
 	rootCmd.AddCommand(natsCmd)
