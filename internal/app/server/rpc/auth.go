@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"connectrpc.com/authn"
+	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/golang-jwt/jwt/v5"
@@ -38,14 +39,14 @@ type Principal struct {
 
 // WithSDKAuth authenticates via API key in the x-api-key header.
 // Accepts both public and private keys.
-func WithSDKAuth(queries *dbread.Queries) authn.AuthFunc {
+func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		apiKey := req.Header.Get(HeaderAPIKey)
 		if apiKey == "" {
 			return nil, authn.Errorf("x-api-key header not present")
 		}
 
-		row, err := queries.GetProjectAndCustomerByApiKey(ctx, apiKey)
+		row, err := repo.GetProjectAndCustomerByApiKey(ctx, apiKey)
 		if err != nil {
 			if err == pgx.ErrNoRows {
 				return nil, authn.Errorf("invalid API key")
@@ -132,12 +133,12 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 }
 
 // WithDualAuth tries private API key first, then JWT.
-func WithDualAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
+func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo *projects.Repo) authn.AuthFunc {
 	jwtAuth := WithJWTAuth(jwtKey, queries)
 
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		if apiKey := req.Header.Get(HeaderAPIKey); apiKey != "" {
-			row, err := queries.GetProjectAndCustomerByPrivateApiKey(ctx, apiKey)
+			row, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, apiKey)
 			if err != nil {
 				if err == pgx.ErrNoRows {
 					return nil, authn.Errorf("invalid API key")
@@ -180,4 +181,3 @@ func MustGetPrincipalWithProject(ctx context.Context) (*Principal, error) {
 
 	return principal, nil
 }
-

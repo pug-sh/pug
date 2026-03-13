@@ -18,6 +18,7 @@ import (
 	profilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/profiles"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/delivery"
+	coreprojects "github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
@@ -45,13 +46,15 @@ func start(ctx context.Context, d *deps) error {
 
 	handlerOpts := connect.WithInterceptors(validate.NewInterceptor(), cottonrpc.ErrorInterceptor())
 
+	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Redis)
+
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)
 	// - SDK: API key auth only (for SDK-only services)
 	// - Shared: Dual auth - accepts either JWT or API key (for services accessible from both)
 	dashboardMW := authn.NewMiddleware(cottonrpc.WithJWTAuth(d.jwtKey, queriesRo))
-	sdkMW := authn.NewMiddleware(cottonrpc.WithSDKAuth(queriesRo))
-	sharedMW := authn.NewMiddleware(cottonrpc.WithDualAuth(d.jwtKey, queriesRo))
+	sdkMW := authn.NewMiddleware(cottonrpc.WithSDKAuth(projectsRepo))
+	sharedMW := authn.NewMiddleware(cottonrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo))
 
 	// Handlers
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
