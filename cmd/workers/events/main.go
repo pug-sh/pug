@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/fivebitsio/cotton/internal/app/workers/events"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
 )
 
@@ -20,7 +21,7 @@ func main() {
 	}
 
 	if err := events.Run(ctx); err != nil {
-		slog.ErrorContext(ctx, "error starting events worker", slog.Any("err", err))
+		slog.ErrorContext(ctx, "error starting events worker", slogx.Error(err))
 		os.Exit(1)
 	}
 }

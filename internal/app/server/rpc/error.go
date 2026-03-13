@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"connectrpc.com/connect"
 )
 
@@ -29,7 +30,7 @@ func ErrorInterceptor() connect.UnaryInterceptorFunc {
 			// Non-connect error - log and sanitize
 			slog.ErrorContext(ctx, "unhandled error",
 				slog.String("procedure", req.Spec().Procedure),
-				slog.Any("error", err))
+				slogx.Error(err))
 			return resp, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 	}

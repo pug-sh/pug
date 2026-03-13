@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/fivebitsio/cotton/internal/app/workers/devices"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
 )
 
@@ -20,7 +21,7 @@ func main() {
 	}
 
 	if err := devices.Run(ctx); err != nil {
-		slog.ErrorContext(ctx, "error starting device worker", slog.Any("err", err))
+		slog.ErrorContext(ctx, "error starting device worker", slogx.Error(err))
 		os.Exit(1)
 	}
 }

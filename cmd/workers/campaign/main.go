@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
 )
 
@@ -20,7 +21,7 @@ func main() {
 	}
 
 	if err := campaigns.Run(ctx); err != nil {
-		slog.ErrorContext(ctx, "error starting campaign worker", slog.Any("err", err))
+		slog.ErrorContext(ctx, "error starting campaign worker", slogx.Error(err))
 		os.Exit(1)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
@@ -115,13 +116,13 @@ func start(ctx context.Context, d *deps) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "server shutdown error", slog.Any("error", err))
+			slog.ErrorContext(shutdownCtx, "server shutdown error", slogx.Error(err))
 		}
 	}()
 
 	slog.InfoContext(ctx, "Starting server", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.ErrorContext(ctx, "failed to serve", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err))
 		return err
 	}
 
