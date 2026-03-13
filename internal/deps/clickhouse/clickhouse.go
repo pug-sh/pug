@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
 type DB struct {

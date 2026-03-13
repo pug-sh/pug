@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/fivebitsio/cotton/internal/app/migrate/clickhouse"
 	migratenats "github.com/fivebitsio/cotton/internal/app/migrate/nats"
 	"github.com/fivebitsio/cotton/internal/app/migrate/postgres"
@@ -21,6 +20,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/identify"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/register"
 	"github.com/fivebitsio/cotton/internal/app/workers/scheduler"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"

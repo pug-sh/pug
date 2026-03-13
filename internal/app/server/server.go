@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/fivebitsio/cotton/internal/slogx"
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
@@ -28,6 +27,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )

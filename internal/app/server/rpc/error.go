@@ -5,8 +5,8 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/fivebitsio/cotton/internal/slogx"
 	"connectrpc.com/connect"
+	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
 func ErrorInterceptor() connect.UnaryInterceptorFunc {
