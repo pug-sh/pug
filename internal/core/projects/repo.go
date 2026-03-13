@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	goredis "github.com/redis/go-redis/v9"
 )
 
-const apiKeyCachePrefix = "project:apikey:"
+const (
+	apiKeyCachePrefix = "project:apikey:"
+	apiKeyCacheTTL    = 30 * 24 * time.Hour
+)
 
 type Repo struct {
 	queries *dbread.Queries
@@ -44,7 +48,7 @@ func (r *Repo) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, private
 	data, err = json.Marshal(row)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to marshal project by private api key for caching", slogx.Error(err))
-	} else if err := r.cache.Set(ctx, cacheKey, data, 0).Err(); err != nil {
+	} else if err := r.cache.Set(ctx, cacheKey, data, apiKeyCacheTTL).Err(); err != nil {
 		slog.WarnContext(ctx, "failed to cache project by private api key", slogx.Error(err))
 	}
 
@@ -74,7 +78,7 @@ func (r *Repo) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey string)
 	data, err = json.Marshal(row)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to marshal project by api key for caching", slogx.Error(err))
-	} else if err := r.cache.Set(ctx, cacheKey, data, 0).Err(); err != nil {
+	} else if err := r.cache.Set(ctx, cacheKey, data, apiKeyCacheTTL).Err(); err != nil {
 		slog.WarnContext(ctx, "failed to cache project by api key", slogx.Error(err))
 	}
 

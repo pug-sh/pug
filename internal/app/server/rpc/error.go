@@ -17,8 +17,7 @@ func ErrorInterceptor() connect.UnaryInterceptorFunc {
 				return resp, nil
 			}
 
-			var connectErr *connect.Error
-			if errors.As(err, &connectErr) {
+			if connectErr, ok := errors.AsType[*connect.Error](err); ok {
 				return resp, connectErr
 			}
 

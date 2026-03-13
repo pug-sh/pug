@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -48,7 +49,7 @@ func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 
 		row, err := repo.GetProjectAndCustomerByApiKey(ctx, apiKey)
 		if err != nil {
-			if err == pgx.ErrNoRows {
+			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, authn.Errorf("invalid API key")
 			}
 			slog.ErrorContext(ctx, "error querying project by API key", slogx.Error(err))
@@ -103,7 +104,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 
 		customer, err := queries.GetCustomerByID(ctx, customerID)
 		if err != nil {
-			if err != pgx.ErrNoRows {
+			if !errors.Is(err, pgx.ErrNoRows) {
 				slog.ErrorContext(ctx, "unable to get customer", slogx.Error(err))
 			}
 			return nil, authn.Errorf("invalid authorization")
@@ -121,7 +122,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 				CustomerID: customerID,
 			})
 			if err != nil {
-				if err == pgx.ErrNoRows {
+				if errors.Is(err, pgx.ErrNoRows) {
 					return nil, authn.Errorf("project not found or access denied")
 				}
 				slog.ErrorContext(ctx, "unable to get project", slogx.Error(err))
@@ -142,7 +143,7 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo *projects.Repo) a
 		if apiKey := req.Header.Get(HeaderAPIKey); apiKey != "" {
 			row, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, apiKey)
 			if err != nil {
-				if err == pgx.ErrNoRows {
+				if errors.Is(err, pgx.ErrNoRows) {
 					return nil, authn.Errorf("invalid API key")
 				}
 				slog.ErrorContext(ctx, "error querying project by private API key", slogx.Error(err))

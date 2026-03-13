@@ -3,3 +3,4 @@ clients/
 .env
 __debug*
 /bin/
+pr-review.md

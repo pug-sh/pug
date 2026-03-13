@@ -34,8 +34,8 @@ func (e *PermanentError) Error() string { return e.err.Error() }
 func (e *PermanentError) Unwrap() error { return e.err }
 
 func IsPermanentError(err error) bool {
-	var pe *PermanentError
-	return errors.As(err, &pe)
+	_, ok := errors.AsType[*PermanentError](err)
+	return ok
 }
 
 type MessageProcessor func(context.Context, jetstream.Msg) error
