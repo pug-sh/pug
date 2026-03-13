@@ -103,7 +103,9 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 
 		customer, err := queries.GetCustomerByID(ctx, customerID)
 		if err != nil {
-			slog.ErrorContext(ctx, "unable to get customer", slogx.Error(err))
+			if err != pgx.ErrNoRows {
+				slog.ErrorContext(ctx, "unable to get customer", slogx.Error(err))
+			}
 			return nil, authn.Errorf("invalid authorization")
 		}
 

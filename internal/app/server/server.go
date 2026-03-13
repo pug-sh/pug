@@ -46,7 +46,7 @@ func start(ctx context.Context, d *deps) error {
 
 	handlerOpts := connect.WithInterceptors(validate.NewInterceptor(), cottonrpc.ErrorInterceptor())
 
-	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Redis)
+	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
 
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)

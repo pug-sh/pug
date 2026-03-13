@@ -12,7 +12,6 @@ func roToRPCMsg(p dbread.Project) *projectsv1.Project {
 		DisplayName:    p.DisplayName,
 		FcmServiceJson: p.FcmServiceJson.String,
 		Id:             p.ID,
-		PrivateApiKey:  p.PrivateApiKey,
 		PublicApiKey:   p.PublicApiKey,
 	}
 }

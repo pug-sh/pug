@@ -8,7 +8,11 @@ import (
 )
 
 type Client struct {
-	Redis *redis.Client
+	client *redis.Client
+}
+
+func (c *Client) Unwrap() *redis.Client {
+	return c.client
 }
 
 func NewFromConfig(ctx context.Context, cfg *Config) (*Client, error) {
@@ -25,12 +29,12 @@ func NewFromConfig(ctx context.Context, cfg *Config) (*Client, error) {
 		return nil, err
 	}
 
-	return &Client{Redis: client}, nil
+	return &Client{client: client}, nil
 }
 
 func (c *Client) Close(ctx context.Context) {
 	slog.InfoContext(ctx, "Closing redis connection.")
-	if err := c.Redis.Close(); err != nil {
+	if err := c.client.Close(); err != nil {
 		slog.ErrorContext(ctx, "error closing redis connection", slog.Any("error", err))
 	}
 }
