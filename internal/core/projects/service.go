@@ -12,6 +12,7 @@ import (
 type Service struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
+	repo  *Repo
 }
 
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
@@ -21,16 +22,25 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
 	}
 }
 
+func (s *Service) SetRepo(repo *Repo) { s.repo = repo }
+
 func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) error {
-	_, err := s.write.DeleteProject(ctx, arg)
-	return err
+	project, err := s.write.DeleteProject(ctx, arg)
+	if err != nil {
+		return err
+	}
+	s.invalidateProject(ctx, project)
+	return nil
 }
+
+func newPrivateKey() string { return "prv_" + xid.New().String() }
+func newPublicKey() string  { return "pub_" + xid.New().String() }
 
 func (s *Service) CreateProject(ctx context.Context, customerID, displayName string) (dbwrite.Project, error) {
 	return s.write.CreateProject(ctx, dbwrite.CreateProjectParams{
 		ID:            xid.New().String(),
-		PrivateApiKey: "prv_" + xid.New().String(),
-		PublicApiKey:  "pub_" + xid.New().String(),
+		PrivateApiKey: newPrivateKey(),
+		PublicApiKey:  newPublicKey(),
 		CustomerID:    customerID,
 		DisplayName:   displayName,
 	})
@@ -52,9 +62,25 @@ func (s *Service) ProjectExistsForCustomer(ctx context.Context, projectID string
 }
 
 func (s *Service) UpdateProjectDisplayName(ctx context.Context, arg dbwrite.UpdateProjectDisplayNameParams) (dbwrite.Project, error) {
-	return s.write.UpdateProjectDisplayName(ctx, arg)
+	project, err := s.write.UpdateProjectDisplayName(ctx, arg)
+	if err != nil {
+		return project, err
+	}
+	s.invalidateProject(ctx, project)
+	return project, nil
 }
 
 func (s *Service) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFCMServiceJSONParams) (dbwrite.Project, error) {
-	return s.write.UpdateFCMServiceJSON(ctx, arg)
+	project, err := s.write.UpdateFCMServiceJSON(ctx, arg)
+	if err != nil {
+		return project, err
+	}
+	s.invalidateProject(ctx, project)
+	return project, nil
+}
+
+func (s *Service) invalidateProject(ctx context.Context, project dbwrite.Project) {
+	if s.repo != nil {
+		s.repo.InvalidateProjectKeys(ctx, project.PrivateApiKey, project.PublicApiKey)
+	}
 }

@@ -2,10 +2,12 @@ package seed
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	clickhousedeps "github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sethvargo/go-envconfig"
 )
@@ -15,9 +17,11 @@ type deps struct {
 	ch driver.Conn
 }
 
-func (d *deps) close() {
+func (d *deps) close(ctx context.Context) {
 	d.pg.Close()
-	_ = d.ch.Close()
+	if err := d.ch.Close(); err != nil {
+		slog.ErrorContext(ctx, "error closing clickhouse connection", slogx.Error(err))
+	}
 }
 
 func newDeps(ctx context.Context) (*deps, error) {

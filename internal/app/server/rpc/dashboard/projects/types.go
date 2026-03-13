@@ -6,6 +6,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 )
 
+// roToRPCMsg intentionally omits PrivateApiKey — it is only exposed once at creation time via wToRPCMsg.
 func roToRPCMsg(p dbread.Project) *projectsv1.Project {
 	return &projectsv1.Project{
 		CustomerId:     p.CustomerID,

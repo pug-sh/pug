@@ -61,7 +61,7 @@ func start(ctx context.Context, d *deps) error {
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
 		auth.NewServer(d.pgRo, d.pgW, d.jwtKey), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-		projects.NewServer(d.pgRo, d.pgW), handlerOpts)
+		projects.NewServer(d.pgRo, d.pgW, projectsRepo), handlerOpts)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
 		campaigns.NewServer(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(

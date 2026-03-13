@@ -18,8 +18,9 @@ type server struct {
 	service *projects.Service
 }
 
-func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *server {
+func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, repo *projects.Repo) *server {
 	service := projects.NewService(pgRO, pgW)
+	service.SetRepo(repo)
 
 	return &server{
 		service: service,

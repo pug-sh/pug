@@ -209,7 +209,7 @@ func Run(ctx context.Context, count int64, batchSize int, file string) error {
 	if err != nil {
 		return err
 	}
-	defer d.close()
+	defer d.close(ctx)
 
 	return NewSeeder(d).Run(ctx, count, batchSize, file)
 }

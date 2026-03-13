@@ -55,6 +55,15 @@ func (r *Repo) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, private
 	return row, nil
 }
 
+func (r *Repo) InvalidateProjectKeys(ctx context.Context, privateKey, publicKey string) {
+	for _, key := range []string{privateKey, publicKey} {
+		cacheKey := apiKeyCachePrefix + key
+		if err := r.cache.Del(ctx, cacheKey).Err(); err != nil {
+			slog.WarnContext(ctx, "failed to invalidate project cache", slogx.Error(err))
+		}
+	}
+}
+
 func (r *Repo) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey string) (dbread.GetProjectAndCustomerByApiKeyRow, error) {
 	cacheKey := apiKeyCachePrefix + apiKey
 
