@@ -41,7 +41,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	// Queries use SELECT ... FINAL to force dedup at read time.
 	//
 	// occur_time is part of the dedup key. Clients must send a stable
-	// occur_time on retries — a different value that crosses an hour boundary
+	// occur_time on retries — a different value that crosses a minute boundary
 	// creates a new sort-key bucket and dedup will not fire. If occur_time
 	// crosses a month boundary it also lands in a different partition
 	// (PARTITION BY toYYYYMM(occur_time)), and ReplacingMergeTree never
