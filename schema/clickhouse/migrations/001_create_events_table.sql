@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS events (
     INDEX idx_distinct_id distinct_id TYPE bloom_filter GRANULARITY 4
 ) ENGINE = ReplacingMergeTree(insert_time)
 PARTITION BY toYYYYMM(occur_time)
-ORDER BY (project_id, occur_time, kind, event_id)
+ORDER BY (project_id, toStartOfMinute(occur_time), kind, event_id)
 SETTINGS index_granularity = 8192;
 
 -- +goose Down

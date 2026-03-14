@@ -33,6 +33,24 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	// insert_time is omitted; ClickHouse fills it via DEFAULT now64(3).
+	//
+	// Deduplication: the events table uses ReplacingMergeTree(insert_time).
+	// ClickHouse deduplicates rows whose ORDER BY key matches:
+	//   (project_id, toStartOfMinute(occur_time), kind, event_id)
+	// The row with the highest insert_time wins after a background merge.
+	// Queries use SELECT ... FINAL to force dedup at read time.
+	//
+	// occur_time is part of the dedup key. Clients must send a stable
+	// occur_time on retries — a different value that crosses an hour boundary
+	// creates a new sort-key bucket and dedup will not fire. If occur_time
+	// crosses a month boundary it also lands in a different partition
+	// (PARTITION BY toYYYYMM(occur_time)), and ReplacingMergeTree never
+	// deduplicates across partitions, producing permanent duplicates.
+	//
+	// If the client omits occur_time, the server defaults to time.Now() (see
+	// below). A retry will produce a different time.Now(), which can cross
+	// partition boundaries and break dedup. Clients should always send
+	// occur_time explicitly.
 	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time)")
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)))
