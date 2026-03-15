@@ -21,6 +21,10 @@ type GetProjectAndCustomerByApiKeyRow struct {
 	Customer Customer
 }
 
+// NOTE: Same as above — the customer join is unused by SDK auth handlers.
+// Also note: this query matches on either public_api_key OR private_api_key.
+// It is used by WithSDKAuth (accepts both keys). WithDualAuth uses only
+// GetProjectAndCustomerByPrivateApiKey and rejects public keys silently.
 func (q *Queries) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey string) (GetProjectAndCustomerByApiKeyRow, error) {
 	row := q.db.QueryRow(ctx, getProjectAndCustomerByApiKey, apiKey)
 	var i GetProjectAndCustomerByApiKeyRow
@@ -56,6 +60,10 @@ type GetProjectAndCustomerByPrivateApiKeyRow struct {
 	Customer Customer
 }
 
+// NOTE: The customer join is currently unused by SDK/shared auth handlers, which only
+// access principal.Project.ID. The join exists because Principal embeds dbread.Customer.
+// If the Principal type is ever refactored to not require a Customer for API key auth,
+// this query can be simplified to select from projects only.
 func (q *Queries) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, privateApiKey string) (GetProjectAndCustomerByPrivateApiKeyRow, error) {
 	row := q.db.QueryRow(ctx, getProjectAndCustomerByPrivateApiKey, privateApiKey)
 	var i GetProjectAndCustomerByPrivateApiKeyRow
