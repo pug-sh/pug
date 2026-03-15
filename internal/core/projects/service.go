@@ -2,6 +2,8 @@ package projects
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -33,14 +35,25 @@ func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectPa
 	return nil
 }
 
-func newPrivateKey() string { return "prv_" + xid.New().String() }
-func newPublicKey() string  { return "pub_" + xid.New().String() }
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
+	return hex.EncodeToString(b)
+}
+
+// NewPrivateKey generates a 24-char private API key: "prv_" + 20 hex chars (80 bits of entropy).
+func NewPrivateKey() string { return "prv_" + randomHex(10) }
+
+// NewPublicKey generates a 24-char public API key: "pub_" + 20 hex chars (80 bits of entropy).
+func NewPublicKey() string { return "pub_" + randomHex(10) }
 
 func (s *Service) CreateProject(ctx context.Context, customerID, displayName string) (dbwrite.Project, error) {
 	return s.write.CreateProject(ctx, dbwrite.CreateProjectParams{
 		ID:            xid.New().String(),
-		PrivateApiKey: newPrivateKey(),
-		PublicApiKey:  newPublicKey(),
+		PrivateApiKey: NewPrivateKey(),
+		PublicApiKey:  NewPublicKey(),
 		CustomerID:    customerID,
 		DisplayName:   displayName,
 	})

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/jackc/pgx/v5"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
@@ -57,8 +58,8 @@ func (s *Seeder) Run(ctx context.Context) error {
 	slog.InfoContext(ctx, "creating default project", slog.String("customer_id", customerID))
 
 	projectID := xid.New().String()
-	privateKey := "prv_" + xid.New().String()
-	publicKey := "pub_" + xid.New().String()
+	privateKey := projects.NewPrivateKey()
+	publicKey := projects.NewPublicKey()
 	_, err = s.deps.pg.Exec(ctx,
 		`INSERT INTO projects (id, customer_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
 		projectID, customerID, "default", privateKey, publicKey,

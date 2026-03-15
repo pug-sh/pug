@@ -16,9 +16,11 @@ import (
 )
 
 const (
-	HeaderAPIKey    = "x-api-key"
-	HeaderProjectID = "x-project-id"
-	bearerPrefix    = "Bearer "
+	HeaderAPIKey     = "x-api-key"
+	HeaderProjectID  = "x-project-id"
+	bearerPrefix     = "Bearer "
+	publicKeyPrefix  = "pub_"
+	privateKeyPrefix = "prv_"
 )
 
 // AuthType indicates which authentication method was used
@@ -45,6 +47,10 @@ func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 		apiKey := req.Header.Get(HeaderAPIKey)
 		if apiKey == "" {
 			return nil, authn.Errorf("x-api-key header not present")
+		}
+
+		if !strings.HasPrefix(apiKey, publicKeyPrefix) {
+			return nil, authn.Errorf("invalid API key")
 		}
 
 		row, err := repo.GetProjectAndCustomerByPublicApiKey(ctx, apiKey)
@@ -135,12 +141,15 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 	}
 }
 
-// WithDualAuth tries private API key first, then JWT.
+// WithDualAuth authenticates via private API key if x-api-key header is present; otherwise falls back to JWT.
 func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo *projects.Repo) authn.AuthFunc {
 	jwtAuth := WithJWTAuth(jwtKey, queries)
 
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		if apiKey := req.Header.Get(HeaderAPIKey); apiKey != "" {
+			if !strings.HasPrefix(apiKey, privateKeyPrefix) {
+				return nil, authn.Errorf("invalid API key")
+			}
 			row, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, apiKey)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {

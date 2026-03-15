@@ -61,7 +61,7 @@ func (s *server) BatchGet(
 	projectsData, err := s.service.GetProjectsByCustomerID(ctx, principal.Customer.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("customerId", principal.Customer.ID))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	projects := make([]*projectsv1.Project, 0, len(projectsData))
@@ -89,10 +89,10 @@ func (s *server) Create(
 	projectData, err := s.service.CreateProject(ctx, principal.Customer.ID, req.Msg.DisplayName)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&projectsv1.CreateResponse{Project: wToRPCMsg(projectData)}), nil
+	return connect.NewResponse(&projectsv1.CreateResponse{Project: wToRPCMsgWithPrivateKey(projectData)}), nil
 }
 
 // Delete removes the project specified by x-project-id header.
@@ -120,7 +120,7 @@ func (s *server) Delete(
 
 	if err := s.service.DeleteProject(ctx, wParams); err != nil {
 		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("customerId", principal.Customer.ID), slog.String("id", principal.Project.ID))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&projectsv1.DeleteResponse{}), nil
@@ -148,7 +148,7 @@ func (s *server) UpdateDisplayName(
 	projectData, err := s.service.UpdateProjectDisplayName(ctx, wParams)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.Any("params", wParams))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&projectsv1.UpdateDisplayNameResponse{Project: wToRPCMsg(projectData)}), nil
@@ -179,7 +179,7 @@ func (s *server) UpdateFCMServiceJSON(
 	}
 	if _, err := s.service.UpdateFCMServiceJSON(ctx, wParams); err != nil {
 		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.Any("params", wParams))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&projectsv1.UpdateFCMServiceJSONResponse{}), nil

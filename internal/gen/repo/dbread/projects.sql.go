@@ -21,7 +21,7 @@ type GetProjectAndCustomerByPrivateApiKeyRow struct {
 	Customer Customer
 }
 
-// NOTE: The customer join is currently unused by SDK/shared auth handlers, which only
+// NOTE: The customer join is currently unused by shared auth handlers (WithDualAuth), which only
 // access principal.Project.ID. The join exists because Principal embeds dbread.Customer.
 // If the Principal type is ever refactored to not require a Customer for API key auth,
 // this query can be simplified to select from projects only.

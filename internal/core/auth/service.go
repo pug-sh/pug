@@ -47,7 +47,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "failed to check existing customer", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -97,7 +97,7 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
 		}
 		slog.ErrorContext(ctx, "failed to get customer by email", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte(password))
