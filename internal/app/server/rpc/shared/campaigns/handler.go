@@ -181,7 +181,7 @@ func (s *server) Update(
 }
 
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, producer jetstream.JetStream) *server {
-	projectsSvc := projects.NewService(pgRO, pgW)
+	projectsSvc := projects.NewService(pgRO, pgW, nil)
 	service := campaigns.NewService(pgRO, pgW, projectsSvc, producer)
 
 	return &server{

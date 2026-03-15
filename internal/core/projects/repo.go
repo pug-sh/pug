@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -29,7 +30,7 @@ func (r *Repo) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, private
 	cacheKey := apiKeyCachePrefix + privateApiKey
 
 	data, err := r.cache.Get(ctx, cacheKey).Bytes()
-	if err != nil && err != goredis.Nil {
+	if err != nil && !errors.Is(err, goredis.Nil) {
 		slog.WarnContext(ctx, "failed to get project by private api key from cache", slogx.Error(err))
 	} else if err == nil {
 		var row dbread.GetProjectAndCustomerByPrivateApiKeyRow
@@ -59,7 +60,7 @@ func (r *Repo) InvalidateProjectKeys(ctx context.Context, privateKey, publicKey 
 	for _, key := range []string{privateKey, publicKey} {
 		cacheKey := apiKeyCachePrefix + key
 		if err := r.cache.Del(ctx, cacheKey).Err(); err != nil {
-			slog.WarnContext(ctx, "failed to invalidate project cache", slogx.Error(err))
+			slog.WarnContext(ctx, "failed to invalidate project cache", slogx.Error(err), slog.String("cacheKey", cacheKey))
 		}
 	}
 }
@@ -68,7 +69,7 @@ func (r *Repo) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey string)
 	cacheKey := apiKeyCachePrefix + apiKey
 
 	data, err := r.cache.Get(ctx, cacheKey).Bytes()
-	if err != nil && err != goredis.Nil {
+	if err != nil && !errors.Is(err, goredis.Nil) {
 		slog.WarnContext(ctx, "failed to get project by api key from cache", slogx.Error(err))
 	} else if err == nil {
 		var row dbread.GetProjectAndCustomerByApiKeyRow

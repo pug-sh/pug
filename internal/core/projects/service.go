@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
@@ -15,14 +16,13 @@ type Service struct {
 	repo  *Repo
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, repo *Repo) *Service {
 	return &Service{
 		read:  dbread.New(pgRO),
 		write: dbwrite.New(pgW),
+		repo:  repo,
 	}
 }
-
-func (s *Service) SetRepo(repo *Repo) { s.repo = repo }
 
 func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) error {
 	project, err := s.write.DeleteProject(ctx, arg)
@@ -80,7 +80,9 @@ func (s *Service) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFC
 }
 
 func (s *Service) invalidateProject(ctx context.Context, project dbwrite.Project) {
-	if s.repo != nil {
-		s.repo.InvalidateProjectKeys(ctx, project.PrivateApiKey, project.PublicApiKey)
+	if s.repo == nil {
+		slog.WarnContext(ctx, "cache repo not set; skipping project cache invalidation", slog.String("projectID", project.ID))
+		return
 	}
+	s.repo.InvalidateProjectKeys(ctx, project.PrivateApiKey, project.PublicApiKey)
 }

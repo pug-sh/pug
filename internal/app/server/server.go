@@ -48,6 +48,7 @@ func start(ctx context.Context, d *deps) error {
 	handlerOpts := connect.WithInterceptors(validate.NewInterceptor(), cottonrpc.ErrorInterceptor())
 
 	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
+	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
 
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)
@@ -59,9 +60,9 @@ func start(ctx context.Context, d *deps) error {
 
 	// Handlers
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
-		auth.NewServer(d.pgRo, d.pgW, d.jwtKey), handlerOpts)
+		auth.NewServer(d.pgRo, d.pgW, d.jwtKey, projectsSvc), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-		projects.NewServer(d.pgRo, d.pgW, projectsRepo), handlerOpts)
+		projects.NewServer(projectsSvc), handlerOpts)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
 		campaigns.NewServer(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(

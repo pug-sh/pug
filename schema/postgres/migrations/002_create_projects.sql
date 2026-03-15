@@ -14,8 +14,6 @@ create table projects (
 create trigger update_timestamp before
 update on projects for each row execute procedure moddatetime(update_time);
 
-create index idx_projects_private_api_key on projects (private_api_key);
-create index idx_projects_public_api_key on projects (public_api_key);
 
 -- +goose Down
 drop table projects;

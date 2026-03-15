@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"errors"
+
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/projects"
@@ -11,20 +13,14 @@ import (
 	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type server struct {
 	service *projects.Service
 }
 
-func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, repo *projects.Repo) *server {
-	service := projects.NewService(pgRO, pgW)
-	service.SetRepo(repo)
-
-	return &server{
-		service: service,
-	}
+func NewServer(service *projects.Service) *server {
+	return &server{service: service}
 }
 
 // Get returns the project specified by x-project-id header.
@@ -42,7 +38,7 @@ func (s *server) Get(
 	}
 
 	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	return connect.NewResponse(&projectsv1.GetResponse{Project: roToRPCMsg(*principal.Project)}), nil
@@ -114,7 +110,7 @@ func (s *server) Delete(
 	}
 
 	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	wParams := dbwrite.DeleteProjectParams{
@@ -145,7 +141,7 @@ func (s *server) UpdateDisplayName(
 	}
 
 	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	wParams := dbwrite.UpdateProjectDisplayNameParams{CustomerID: principal.Customer.ID, DisplayName: req.Msg.DisplayName, ID: principal.Project.ID}
@@ -173,7 +169,7 @@ func (s *server) UpdateFCMServiceJSON(
 	}
 
 	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	wParams := dbwrite.UpdateFCMServiceJSONParams{

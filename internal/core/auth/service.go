@@ -31,11 +31,11 @@ type Service struct {
 	jwtKey          []byte
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, projectsSvc *projects.Service) *Service {
 	return &Service{
 		read:            dbread.New(pgRO),
 		write:           dbwrite.New(pgW),
-		projectsService: projects.NewService(pgRO, pgW),
+		projectsService: projectsSvc,
 		jwtKey:          jwtKey,
 	}
 }
