@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	apiKeyCachePrefix = "project:apikey:"
-	apiKeyCacheTTL    = 30 * 24 * time.Hour
+	privateKeyCachePrefix = "project:prvkey:"
+	publicKeyCachePrefix  = "project:pubkey:"
+	apiKeyCacheTTL        = 30 * 24 * time.Hour
 )
 
 type Repo struct {
@@ -27,7 +28,7 @@ func NewRepo(queries *dbread.Queries, cache *goredis.Client) *Repo {
 }
 
 func (r *Repo) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, privateApiKey string) (dbread.GetProjectAndCustomerByPrivateApiKeyRow, error) {
-	cacheKey := apiKeyCachePrefix + privateApiKey
+	cacheKey := privateKeyCachePrefix + privateApiKey
 
 	data, err := r.cache.Get(ctx, cacheKey).Bytes()
 	if err != nil && !errors.Is(err, goredis.Nil) {
@@ -57,39 +58,42 @@ func (r *Repo) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, private
 }
 
 func (r *Repo) InvalidateProjectKeys(ctx context.Context, privateKey, publicKey string) {
-	for _, key := range []string{privateKey, publicKey} {
-		cacheKey := apiKeyCachePrefix + key
+	keys := []string{
+		privateKeyCachePrefix + privateKey,
+		publicKeyCachePrefix + publicKey,
+	}
+	for _, cacheKey := range keys {
 		if err := r.cache.Del(ctx, cacheKey).Err(); err != nil {
 			slog.WarnContext(ctx, "failed to invalidate project cache", slogx.Error(err), slog.String("cacheKey", cacheKey))
 		}
 	}
 }
 
-func (r *Repo) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey string) (dbread.GetProjectAndCustomerByApiKeyRow, error) {
-	cacheKey := apiKeyCachePrefix + apiKey
+func (r *Repo) GetProjectAndCustomerByPublicApiKey(ctx context.Context, publicApiKey string) (dbread.GetProjectAndCustomerByPublicApiKeyRow, error) {
+	cacheKey := publicKeyCachePrefix + publicApiKey
 
 	data, err := r.cache.Get(ctx, cacheKey).Bytes()
 	if err != nil && !errors.Is(err, goredis.Nil) {
-		slog.WarnContext(ctx, "failed to get project by api key from cache", slogx.Error(err))
+		slog.WarnContext(ctx, "failed to get project by public api key from cache", slogx.Error(err))
 	} else if err == nil {
-		var row dbread.GetProjectAndCustomerByApiKeyRow
+		var row dbread.GetProjectAndCustomerByPublicApiKeyRow
 		if err := json.Unmarshal(data, &row); err != nil {
-			slog.WarnContext(ctx, "failed to unmarshal cached project by api key", slogx.Error(err))
+			slog.WarnContext(ctx, "failed to unmarshal cached project by public api key", slogx.Error(err))
 		} else {
 			return row, nil
 		}
 	}
 
-	row, err := r.queries.GetProjectAndCustomerByApiKey(ctx, apiKey)
+	row, err := r.queries.GetProjectAndCustomerByPublicApiKey(ctx, publicApiKey)
 	if err != nil {
-		return dbread.GetProjectAndCustomerByApiKeyRow{}, err
+		return dbread.GetProjectAndCustomerByPublicApiKeyRow{}, err
 	}
 
 	data, err = json.Marshal(row)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to marshal project by api key for caching", slogx.Error(err))
+		slog.WarnContext(ctx, "failed to marshal project by public api key for caching", slogx.Error(err))
 	} else if err := r.cache.Set(ctx, cacheKey, data, apiKeyCacheTTL).Err(); err != nil {
-		slog.WarnContext(ctx, "failed to cache project by api key", slogx.Error(err))
+		slog.WarnContext(ctx, "failed to cache project by public api key", slogx.Error(err))
 	}
 
 	return row, nil

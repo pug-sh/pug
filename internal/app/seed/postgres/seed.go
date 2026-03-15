@@ -57,10 +57,11 @@ func (s *Seeder) Run(ctx context.Context) error {
 	slog.InfoContext(ctx, "creating default project", slog.String("customer_id", customerID))
 
 	projectID := xid.New().String()
-	apiKey := xid.New().String()
+	privateKey := "prv_" + xid.New().String()
+	publicKey := "pub_" + xid.New().String()
 	_, err = s.deps.pg.Exec(ctx,
-		`INSERT INTO projects (id, customer_id, display_name, api_key) VALUES ($1, $2, $3, $4)`,
-		projectID, customerID, "default", apiKey,
+		`INSERT INTO projects (id, customer_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
+		projectID, customerID, "default", privateKey, publicKey,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create project: %w", err)
@@ -69,7 +70,8 @@ func (s *Seeder) Run(ctx context.Context) error {
 	slog.InfoContext(ctx, "seed complete",
 		slog.String("customer_id", customerID),
 		slog.String("project_id", projectID),
-		slog.String("api_key", apiKey),
+		slog.String("private_api_key", privateKey),
+		slog.String("public_api_key", publicKey),
 	)
 
 	return nil

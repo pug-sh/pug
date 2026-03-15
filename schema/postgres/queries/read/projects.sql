@@ -25,15 +25,13 @@ from projects
 join customers on customers.id = projects.customer_id
 where projects.private_api_key = @private_api_key;
 
--- name: GetProjectAndCustomerByApiKey :one
+-- name: GetProjectAndCustomerByPublicApiKey :one
 -- NOTE: Same as above — the customer join is unused by SDK auth handlers.
--- Also note: this query matches on either public_api_key OR private_api_key.
--- It is used by WithSDKAuth (accepts both keys). WithDualAuth uses only
--- GetProjectAndCustomerByPrivateApiKey and rejects public keys silently.
+-- Used by WithSDKAuth which only accepts public keys.
 select sqlc.embed(projects), sqlc.embed(customers)
 from projects
 join customers on customers.id = projects.customer_id
-where projects.public_api_key = @api_key or projects.private_api_key = @api_key;
+where projects.public_api_key = @public_api_key;
 
 -- name: GetProjectByIDAndCustomerID :one
 select * from projects where id = @id and customer_id = @customer_id;

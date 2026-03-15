@@ -9,25 +9,25 @@ import (
 	"context"
 )
 
-const getProjectAndCustomerByApiKey = `-- name: GetProjectAndCustomerByApiKey :one
+const getProjectAndCustomerByPrivateApiKey = `-- name: GetProjectAndCustomerByPrivateApiKey :one
 select projects.create_time, projects.customer_id, projects.display_name, projects.fcm_service_json, projects.id, projects.private_api_key, projects.public_api_key, projects.update_time, customers.create_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.update_time
 from projects
 join customers on customers.id = projects.customer_id
-where projects.public_api_key = $1 or projects.private_api_key = $1
+where projects.private_api_key = $1
 `
 
-type GetProjectAndCustomerByApiKeyRow struct {
+type GetProjectAndCustomerByPrivateApiKeyRow struct {
 	Project  Project
 	Customer Customer
 }
 
-// NOTE: Same as above — the customer join is unused by SDK auth handlers.
-// Also note: this query matches on either public_api_key OR private_api_key.
-// It is used by WithSDKAuth (accepts both keys). WithDualAuth uses only
-// GetProjectAndCustomerByPrivateApiKey and rejects public keys silently.
-func (q *Queries) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey string) (GetProjectAndCustomerByApiKeyRow, error) {
-	row := q.db.QueryRow(ctx, getProjectAndCustomerByApiKey, apiKey)
-	var i GetProjectAndCustomerByApiKeyRow
+// NOTE: The customer join is currently unused by SDK/shared auth handlers, which only
+// access principal.Project.ID. The join exists because Principal embeds dbread.Customer.
+// If the Principal type is ever refactored to not require a Customer for API key auth,
+// this query can be simplified to select from projects only.
+func (q *Queries) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, privateApiKey string) (GetProjectAndCustomerByPrivateApiKeyRow, error) {
+	row := q.db.QueryRow(ctx, getProjectAndCustomerByPrivateApiKey, privateApiKey)
+	var i GetProjectAndCustomerByPrivateApiKeyRow
 	err := row.Scan(
 		&i.Project.CreateTime,
 		&i.Project.CustomerID,
@@ -48,25 +48,23 @@ func (q *Queries) GetProjectAndCustomerByApiKey(ctx context.Context, apiKey stri
 	return i, err
 }
 
-const getProjectAndCustomerByPrivateApiKey = `-- name: GetProjectAndCustomerByPrivateApiKey :one
+const getProjectAndCustomerByPublicApiKey = `-- name: GetProjectAndCustomerByPublicApiKey :one
 select projects.create_time, projects.customer_id, projects.display_name, projects.fcm_service_json, projects.id, projects.private_api_key, projects.public_api_key, projects.update_time, customers.create_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.update_time
 from projects
 join customers on customers.id = projects.customer_id
-where projects.private_api_key = $1
+where projects.public_api_key = $1
 `
 
-type GetProjectAndCustomerByPrivateApiKeyRow struct {
+type GetProjectAndCustomerByPublicApiKeyRow struct {
 	Project  Project
 	Customer Customer
 }
 
-// NOTE: The customer join is currently unused by SDK/shared auth handlers, which only
-// access principal.Project.ID. The join exists because Principal embeds dbread.Customer.
-// If the Principal type is ever refactored to not require a Customer for API key auth,
-// this query can be simplified to select from projects only.
-func (q *Queries) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, privateApiKey string) (GetProjectAndCustomerByPrivateApiKeyRow, error) {
-	row := q.db.QueryRow(ctx, getProjectAndCustomerByPrivateApiKey, privateApiKey)
-	var i GetProjectAndCustomerByPrivateApiKeyRow
+// NOTE: Same as above — the customer join is unused by SDK auth handlers.
+// Used by WithSDKAuth which only accepts public keys.
+func (q *Queries) GetProjectAndCustomerByPublicApiKey(ctx context.Context, publicApiKey string) (GetProjectAndCustomerByPublicApiKeyRow, error) {
+	row := q.db.QueryRow(ctx, getProjectAndCustomerByPublicApiKey, publicApiKey)
+	var i GetProjectAndCustomerByPublicApiKeyRow
 	err := row.Scan(
 		&i.Project.CreateTime,
 		&i.Project.CustomerID,
