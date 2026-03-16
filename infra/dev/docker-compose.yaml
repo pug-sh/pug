@@ -56,10 +56,26 @@ services:
     networks:
       - cotton-net
 
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.36.0
+    restart: always
+    ports:
+      - "${DRAGONFLY_PORT:-6380}:6379"
+    volumes:
+      - dragonfly-data:/data
+    networks:
+      - cotton-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres-data:
   nats-jetstream-data:
   clickhouse-data:
+  dragonfly-data:
 
 networks:
   cotton-net:

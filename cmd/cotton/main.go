@@ -20,6 +20,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/identify"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/register"
 	"github.com/fivebitsio/cotton/internal/app/workers/scheduler"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -36,7 +37,7 @@ func run(fn func(ctx context.Context) error) func(cmd *cobra.Command, args []str
 		}
 
 		if err := fn(ctx); err != nil {
-			slog.ErrorContext(ctx, "fatal error", slog.Any("err", err))
+			slog.ErrorContext(ctx, "fatal error", slogx.Error(err))
 			os.Exit(1)
 		}
 	}
@@ -67,7 +68,7 @@ func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cob
 			os.Exit(1)
 		}
 		if err != nil {
-			slog.ErrorContext(ctx, "migration error", slog.Any("err", err))
+			slog.ErrorContext(ctx, "migration error", slogx.Error(err))
 			os.Exit(1)
 		}
 	}
@@ -158,7 +159,7 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return server.Run(ctx) })
 
 		if err := g.Wait(); err != nil {
-			slog.ErrorContext(sigCtx, "component stopped", slog.Any("err", err))
+			slog.ErrorContext(sigCtx, "component stopped", slogx.Error(err))
 		}
 
 		slog.InfoContext(sigCtx, "Shutting down...")
@@ -199,7 +200,7 @@ var clickhouseSeedCmd = &cobra.Command{
 		file, _ := cmd.Flags().GetString("file")
 
 		if err := chseed.Run(ctx, count, batchSize, file); err != nil {
-			slog.ErrorContext(ctx, "seed error", slog.Any("err", err))
+			slog.ErrorContext(ctx, "seed error", slogx.Error(err))
 			os.Exit(1)
 		}
 	},
@@ -217,7 +218,7 @@ var postgresSeedCmd = &cobra.Command{
 		}
 
 		if err := pgseed.Run(ctx); err != nil {
-			slog.ErrorContext(ctx, "seed error", slog.Any("err", err))
+			slog.ErrorContext(ctx, "seed error", slogx.Error(err))
 			os.Exit(1)
 		}
 	},

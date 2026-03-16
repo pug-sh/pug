@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/fivebitsio/cotton/internal/app/migrate/postgres"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
 )
 
@@ -20,7 +21,7 @@ func main() {
 	}
 
 	if err := postgres.Up(ctx, 0); err != nil {
-		slog.ErrorContext(ctx, "postgres migration error", slog.Any("err", err))
+		slog.ErrorContext(ctx, "postgres migration error", slogx.Error(err))
 		os.Exit(1)
 	}
 }

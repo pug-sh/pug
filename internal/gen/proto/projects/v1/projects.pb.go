@@ -343,11 +343,12 @@ func (x *GetResponse) GetProject() *Project {
 
 type Project struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	ApiKey         string                 `protobuf:"bytes,1,opt,name=api_key,json=apiKey" json:"api_key,omitempty"`
-	CustomerId     string                 `protobuf:"bytes,2,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
-	DisplayName    string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	FcmServiceJson string                 `protobuf:"bytes,4,opt,name=fcm_service_json,json=fcmServiceJson" json:"fcm_service_json,omitempty"`
-	Id             string                 `protobuf:"bytes,5,opt,name=id" json:"id,omitempty"`
+	CustomerId     string                 `protobuf:"bytes,1,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
+	DisplayName    string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	FcmServiceJson string                 `protobuf:"bytes,3,opt,name=fcm_service_json,json=fcmServiceJson" json:"fcm_service_json,omitempty"`
+	Id             string                 `protobuf:"bytes,4,opt,name=id" json:"id,omitempty"`
+	PrivateApiKey  string                 `protobuf:"bytes,5,opt,name=private_api_key,json=privateApiKey" json:"private_api_key,omitempty"`
+	PublicApiKey   string                 `protobuf:"bytes,6,opt,name=public_api_key,json=publicApiKey" json:"public_api_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -382,13 +383,6 @@ func (*Project) Descriptor() ([]byte, []int) {
 	return file_projects_v1_projects_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *Project) GetApiKey() string {
-	if x != nil {
-		return x.ApiKey
-	}
-	return ""
-}
-
 func (x *Project) GetCustomerId() string {
 	if x != nil {
 		return x.CustomerId
@@ -413,6 +407,20 @@ func (x *Project) GetFcmServiceJson() string {
 func (x *Project) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *Project) GetPrivateApiKey() string {
+	if x != nil {
+		return x.PrivateApiKey
+	}
+	return ""
+}
+
+func (x *Project) GetPublicApiKey() string {
+	if x != nil {
+		return x.PublicApiKey
 	}
 	return ""
 }
@@ -602,14 +610,15 @@ const file_projects_v1_projects_proto_rawDesc = "" +
 	"\n" +
 	"GetRequest\"=\n" +
 	"\vGetResponse\x12.\n" +
-	"\aproject\x18\x01 \x01(\v2\x14.projects.v1.ProjectR\aproject\"\xa0\x01\n" +
-	"\aProject\x12\x17\n" +
-	"\aapi_key\x18\x01 \x01(\tR\x06apiKey\x12\x1f\n" +
-	"\vcustomer_id\x18\x02 \x01(\tR\n" +
+	"\aproject\x18\x01 \x01(\v2\x14.projects.v1.ProjectR\aproject\"\xd5\x01\n" +
+	"\aProject\x12\x1f\n" +
+	"\vcustomer_id\x18\x01 \x01(\tR\n" +
 	"customerId\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12(\n" +
-	"\x10fcm_service_json\x18\x04 \x01(\tR\x0efcmServiceJson\x12\x0e\n" +
-	"\x02id\x18\x05 \x01(\tR\x02id\"=\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12(\n" +
+	"\x10fcm_service_json\x18\x03 \x01(\tR\x0efcmServiceJson\x12\x0e\n" +
+	"\x02id\x18\x04 \x01(\tR\x02id\x12&\n" +
+	"\x0fprivate_api_key\x18\x05 \x01(\tR\rprivateApiKey\x12$\n" +
+	"\x0epublic_api_key\x18\x06 \x01(\tR\fpublicApiKey\"=\n" +
 	"\x18UpdateDisplayNameRequest\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\"K\n" +
 	"\x19UpdateDisplayNameResponse\x12.\n" +

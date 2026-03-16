@@ -38,11 +38,12 @@ message GetResponse {
 }
 
 message Project {
-  string api_key = 1;
-  string customer_id = 2;
-  string display_name = 3;
-  string fcm_service_json = 4;
-  string id = 5;
+  string customer_id = 1;
+  string display_name = 2;
+  string fcm_service_json = 3;
+  string id = 4;
+  string private_api_key = 5;
+  string public_api_key = 6;
 }
 
 message UpdateDisplayNameRequest {

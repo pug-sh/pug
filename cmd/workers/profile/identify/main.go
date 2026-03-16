@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/identify"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
 )
 
@@ -20,7 +21,7 @@ func main() {
 	}
 
 	if err := identify.Run(ctx); err != nil {
-		slog.ErrorContext(ctx, "error starting profile identify worker", slog.Any("err", err))
+		slog.ErrorContext(ctx, "error starting profile identify worker", slogx.Error(err))
 		os.Exit(1)
 	}
 }

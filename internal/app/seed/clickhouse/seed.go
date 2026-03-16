@@ -2,7 +2,9 @@ package seed
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 )
@@ -50,7 +52,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		select {
 		case <-ctx.Done():
 			slog.InfoContext(ctx, "seed interrupted", slog.Int64("inserted", inserted))
-			return nil
+			return ctx.Err()
 		default:
 		}
 
@@ -150,7 +152,7 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 		select {
 		case <-ctx.Done():
 			slog.InfoContext(ctx, "import interrupted", slog.Int64("inserted", inserted))
-			return nil
+			return ctx.Err()
 		default:
 		}
 
@@ -163,7 +165,7 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 		for i := 0; i < batchSize; i++ {
 			e, err := reader.Read()
 			if err != nil {
-				if err.Error() == "EOF" {
+				if errors.Is(err, io.EOF) {
 					slog.InfoContext(ctx, "import complete",
 						slog.Int64("inserted", inserted),
 						slog.String("elapsed", time.Since(startTime).Round(time.Second).String()),
@@ -207,7 +209,7 @@ func Run(ctx context.Context, count int64, batchSize int, file string) error {
 	if err != nil {
 		return err
 	}
-	defer d.close()
+	defer d.close(ctx)
 
 	return NewSeeder(d).Run(ctx, count, batchSize, file)
 }

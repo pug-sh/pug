@@ -7,6 +7,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
 type DB struct {
@@ -16,18 +17,18 @@ type DB struct {
 func createConnection(ctx context.Context, cfg *Config) (driver.Conn, error) {
 	opts, err := clickhouse.ParseDSN(cfg.URL)
 	if err != nil {
-		slog.ErrorContext(ctx, "Unable to parse ClickHouse DSN", slog.Any("error", err))
+		slog.ErrorContext(ctx, "Unable to parse ClickHouse DSN", slogx.Error(err))
 		return nil, err
 	}
 
 	conn, err := clickhouse.Open(opts)
 	if err != nil {
-		slog.ErrorContext(ctx, "Unable to create ClickHouse connection", slog.Any("error", err))
+		slog.ErrorContext(ctx, "Unable to create ClickHouse connection", slogx.Error(err))
 		return nil, err
 	}
 
 	if err := conn.Ping(ctx); err != nil {
-		slog.ErrorContext(ctx, "Unable to ping ClickHouse", slog.Any("error", err))
+		slog.ErrorContext(ctx, "Unable to ping ClickHouse", slogx.Error(err))
 		return nil, err
 	}
 
@@ -57,7 +58,7 @@ func (db *DB) Close(ctx context.Context) error {
 	if db.Conn != nil {
 		err := db.Conn.Close()
 		if err != nil {
-			slog.ErrorContext(ctx, "Error closing ClickHouse connection", slog.Any("error", err))
+			slog.ErrorContext(ctx, "Error closing ClickHouse connection", slogx.Error(err))
 			return fmt.Errorf("error closing ClickHouse connection: %w", err)
 		}
 	}
