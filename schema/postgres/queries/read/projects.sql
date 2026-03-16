@@ -15,11 +15,23 @@ select exists(
   where id = @id and customer_id = @customer_id
 );
 
--- name: GetProjectAndCustomerByApiKey :one
+-- name: GetProjectAndCustomerByPrivateApiKey :one
+-- NOTE: The customer data from this join is required by the Principal struct populated in
+-- WithDualAuth, but is not accessed by downstream shared handler code. If Principal is
+-- refactored to not require a Customer for API key auth, this query can be simplified
+-- to select from projects only.
 select sqlc.embed(projects), sqlc.embed(customers)
 from projects
 join customers on customers.id = projects.customer_id
-where projects.api_key = @api_key;
+where projects.private_api_key = @private_api_key;
+
+-- name: GetProjectAndCustomerByPublicApiKey :one
+-- NOTE: Same as above — the customer data is required by the Principal struct
+-- populated in WithSDKAuth, but is not accessed by downstream SDK handler code.
+select sqlc.embed(projects), sqlc.embed(customers)
+from projects
+join customers on customers.id = projects.customer_id
+where projects.public_api_key = @public_api_key;
 
 -- name: GetProjectByIDAndCustomerID :one
 select * from projects where id = @id and customer_id = @customer_id;

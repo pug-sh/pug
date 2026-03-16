@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/fivebitsio/cotton/internal/core/projects"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/jackc/pgx/v5"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
@@ -26,10 +29,13 @@ func NewSeeder(deps *deps) *Seeder {
 }
 
 func (s *Seeder) Run(ctx context.Context) error {
+	read := dbread.New(s.deps.pg)
+	write := dbwrite.New(s.deps.pg)
+	projectsSvc := projects.NewService(s.deps.pg, s.deps.pg, nil)
+
 	slog.InfoContext(ctx, "checking for existing test user")
 
-	var existingID string
-	err := s.deps.pg.QueryRow(ctx, "SELECT id FROM customers WHERE email = $1", testEmail).Scan(&existingID)
+	_, err := read.GetCustomerByEmail(ctx, testEmail)
 	if err == nil {
 		slog.InfoContext(ctx, "test user already exists, skipping seed")
 		return nil
@@ -45,31 +51,29 @@ func (s *Seeder) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	customerID := xid.New().String()
-	_, err = s.deps.pg.Exec(ctx,
-		`INSERT INTO customers (id, email, display_name, picture_uri, password_hash) VALUES ($1, $2, $3, $4, $5)`,
-		customerID, testEmail, testName, "", string(passwordHash),
-	)
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           xid.New().String(),
+		Email:        testEmail,
+		DisplayName:  testName,
+		PasswordHash: string(passwordHash),
+		PictureUri:   "",
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create customer: %w", err)
 	}
 
-	slog.InfoContext(ctx, "creating default project", slog.String("customer_id", customerID))
+	slog.InfoContext(ctx, "creating default project", slog.String("customer_id", customer.ID))
 
-	projectID := xid.New().String()
-	apiKey := xid.New().String()
-	_, err = s.deps.pg.Exec(ctx,
-		`INSERT INTO projects (id, customer_id, display_name, api_key) VALUES ($1, $2, $3, $4)`,
-		projectID, customerID, "default", apiKey,
-	)
+	project, err := projectsSvc.CreateProject(ctx, customer.ID, "default")
 	if err != nil {
 		return fmt.Errorf("failed to create project: %w", err)
 	}
 
 	slog.InfoContext(ctx, "seed complete",
-		slog.String("customer_id", customerID),
-		slog.String("project_id", projectID),
-		slog.String("api_key", apiKey),
+		slog.String("customer_id", customer.ID),
+		slog.String("project_id", project.ID),
+		slog.String("public_api_key", project.PublicApiKey),
+		slog.String("private_api_key", project.PrivateApiKey),
 	)
 
 	return nil

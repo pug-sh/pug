@@ -18,6 +18,7 @@ import (
 	profilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/profiles"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/delivery"
+	coreprojects "github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
@@ -26,6 +27,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -45,19 +47,22 @@ func start(ctx context.Context, d *deps) error {
 
 	handlerOpts := connect.WithInterceptors(validate.NewInterceptor(), cottonrpc.ErrorInterceptor())
 
+	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
+	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
+
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)
 	// - SDK: API key auth only (for SDK-only services)
 	// - Shared: Dual auth - accepts either JWT or API key (for services accessible from both)
 	dashboardMW := authn.NewMiddleware(cottonrpc.WithJWTAuth(d.jwtKey, queriesRo))
-	sdkMW := authn.NewMiddleware(cottonrpc.WithAPIKeyAuth(queriesRo))
-	sharedMW := authn.NewMiddleware(cottonrpc.WithDualAuth(d.jwtKey, queriesRo))
+	sdkMW := authn.NewMiddleware(cottonrpc.WithSDKAuth(projectsRepo))
+	sharedMW := authn.NewMiddleware(cottonrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo))
 
 	// Handlers
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
-		auth.NewServer(d.pgRo, d.pgW, d.jwtKey), handlerOpts)
+		auth.NewServer(d.pgRo, d.pgW, d.jwtKey, projectsSvc), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-		projects.NewServer(d.pgRo, d.pgW), handlerOpts)
+		projects.NewServer(projectsSvc), handlerOpts)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
 		campaigns.NewServer(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
@@ -112,13 +117,13 @@ func start(ctx context.Context, d *deps) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "server shutdown error", slog.Any("error", err))
+			slog.ErrorContext(shutdownCtx, "server shutdown error", slogx.Error(err))
 		}
 	}()
 
 	slog.InfoContext(ctx, "Starting server", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.ErrorContext(ctx, "failed to serve", slog.Any("err", err))
+		slog.ErrorContext(ctx, "failed to serve", slogx.Error(err))
 		return err
 	}
 

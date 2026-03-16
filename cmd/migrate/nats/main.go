@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/fivebitsio/cotton/internal/app/migrate/nats"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
 )
 
@@ -17,7 +18,7 @@ func main() {
 	}
 
 	if err := nats.Run(ctx); err != nil {
-		slog.ErrorContext(ctx, "NATS initialization error", slog.Any("err", err))
+		slog.ErrorContext(ctx, "NATS initialization error", slogx.Error(err))
 		os.Exit(1)
 	}
 }

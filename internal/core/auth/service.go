@@ -11,6 +11,7 @@ import (
 	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,11 +31,11 @@ type Service struct {
 	jwtKey          []byte
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, projectsSvc *projects.Service) *Service {
 	return &Service{
 		read:            dbread.New(pgRO),
 		write:           dbwrite.New(pgW),
-		projectsService: projects.NewService(pgRO, pgW),
+		projectsService: projectsSvc,
 		jwtKey:          jwtKey,
 	}
 }
@@ -45,13 +46,13 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("user with this email already exists"))
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		slog.ErrorContext(ctx, "failed to check existing customer", slog.Any("error", err))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "failed to check existing customer", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to hash password", slog.Any("error", err))
+		slog.ErrorContext(ctx, "failed to hash password", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -65,27 +66,20 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 
 	customer, err := s.write.CreateCustomer(ctx, arg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to create customer", slog.Any("error", err))
+		slog.ErrorContext(ctx, "failed to create customer", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	// Create a default project for the new customer
-	projectParams := dbwrite.CreateProjectParams{
-		ID:          xid.New().String(),
-		ApiKey:      xid.New().String(),
-		CustomerID:  customer.ID,
-		DisplayName: "default",
-	}
-
-	_, err = s.projectsService.CreateProject(ctx, projectParams)
+	_, err = s.projectsService.CreateProject(ctx, customer.ID, "default")
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to create default project", slog.Any("error", err))
+		slog.ErrorContext(ctx, "failed to create default project", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	token, err := s.generateJWT(customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate JWT", slog.Any("error", err))
+		slog.ErrorContext(ctx, "failed to generate JWT", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -102,8 +96,8 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
 		}
-		slog.ErrorContext(ctx, "failed to get customer by email", slog.Any("error", err))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "failed to get customer by email", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte(password))
@@ -113,7 +107,7 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 
 	token, err := s.generateJWT(customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate JWT", slog.Any("error", err))
+		slog.ErrorContext(ctx, "failed to generate JWT", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

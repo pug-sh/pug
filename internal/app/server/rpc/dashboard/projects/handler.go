@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"errors"
+
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/projects"
@@ -11,20 +13,14 @@ import (
 	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/xid"
 )
 
 type server struct {
 	service *projects.Service
 }
 
-func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *server {
-	service := projects.NewService(pgRO, pgW)
-
-	return &server{
-		service: service,
-	}
+func NewServer(service *projects.Service) *server {
+	return &server{service: service}
 }
 
 // Get returns the project specified by x-project-id header.
@@ -42,7 +38,7 @@ func (s *server) Get(
 	}
 
 	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	return connect.NewResponse(&projectsv1.GetResponse{Project: roToRPCMsg(*principal.Project)}), nil
@@ -65,7 +61,7 @@ func (s *server) BatchGet(
 	projectsData, err := s.service.GetProjectsByCustomerID(ctx, principal.Customer.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("customerId", principal.Customer.ID))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	projects := make([]*projectsv1.Project, 0, len(projectsData))
@@ -90,20 +86,13 @@ func (s *server) Create(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	wParams := dbwrite.CreateProjectParams{
-		ApiKey:      xid.New().String(),
-		CustomerID:  principal.Customer.ID,
-		DisplayName: req.Msg.DisplayName,
-		ID:          xid.New().String(),
-	}
-
-	projectData, err := s.service.CreateProject(ctx, wParams)
+	projectData, err := s.service.CreateProject(ctx, principal.Customer.ID, req.Msg.DisplayName)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.Any("params", wParams))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&projectsv1.CreateResponse{Project: wToRPCMsg(projectData)}), nil
+	return connect.NewResponse(&projectsv1.CreateResponse{Project: wToRPCMsgWithPrivateKey(projectData)}), nil
 }
 
 // Delete removes the project specified by x-project-id header.
@@ -121,7 +110,7 @@ func (s *server) Delete(
 	}
 
 	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	wParams := dbwrite.DeleteProjectParams{
@@ -131,7 +120,7 @@ func (s *server) Delete(
 
 	if err := s.service.DeleteProject(ctx, wParams); err != nil {
 		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("customerId", principal.Customer.ID), slog.String("id", principal.Project.ID))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&projectsv1.DeleteResponse{}), nil
@@ -152,14 +141,14 @@ func (s *server) UpdateDisplayName(
 	}
 
 	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	wParams := dbwrite.UpdateProjectDisplayNameParams{CustomerID: principal.Customer.ID, DisplayName: req.Msg.DisplayName, ID: principal.Project.ID}
 	projectData, err := s.service.UpdateProjectDisplayName(ctx, wParams)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.Any("params", wParams))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&projectsv1.UpdateDisplayNameResponse{Project: wToRPCMsg(projectData)}), nil
@@ -180,7 +169,7 @@ func (s *server) UpdateFCMServiceJSON(
 	}
 
 	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	wParams := dbwrite.UpdateFCMServiceJSONParams{
@@ -189,8 +178,8 @@ func (s *server) UpdateFCMServiceJSON(
 		ID:             principal.Project.ID,
 	}
 	if _, err := s.service.UpdateFCMServiceJSON(ctx, wParams); err != nil {
-		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.Any("params", wParams))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.String("projectID", wParams.ID), slog.String("customerID", wParams.CustomerID), slogx.Redacted("fcm_service_json", wParams.FcmServiceJson.String))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&projectsv1.UpdateFCMServiceJSONResponse{}), nil

@@ -1,0 +1,41 @@
+package redis
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/redis/go-redis/v9"
+)
+
+type Client struct {
+	client *redis.Client
+}
+
+func (c *Client) Unwrap() *redis.Client {
+	return c.client
+}
+
+func NewFromConfig(ctx context.Context, cfg *Config) (*Client, error) {
+	opts, err := redis.ParseURL(cfg.URL)
+	if err != nil {
+		slog.ErrorContext(ctx, "unable to parse redis URL", slogx.Error(err))
+		return nil, err
+	}
+
+	client := redis.NewClient(opts)
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		slog.ErrorContext(ctx, "unable to connect to redis", slogx.Error(err))
+		return nil, err
+	}
+
+	return &Client{client: client}, nil
+}
+
+func (c *Client) Close(ctx context.Context) {
+	slog.InfoContext(ctx, "Closing redis connection.")
+	if err := c.client.Close(); err != nil {
+		slog.ErrorContext(ctx, "error closing redis connection", slogx.Error(err))
+	}
+}

@@ -54,11 +54,12 @@ type ProfileDevice struct {
 }
 
 type Project struct {
-	ApiKey         string
 	CreateTime     pgtype.Timestamptz
 	CustomerID     string
 	DisplayName    string
 	FcmServiceJson pgtype.Text
 	ID             string
+	PrivateApiKey  string
+	PublicApiKey   string
 	UpdateTime     pgtype.Timestamptz
 }

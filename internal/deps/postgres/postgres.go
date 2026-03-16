@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/exaring/otelpgx"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -16,7 +17,7 @@ type DB struct {
 func createPool(ctx context.Context, addr string) (*pgxpool.Pool, error) {
 	dbPoolConfig, err := pgxpool.ParseConfig(addr)
 	if err != nil {
-		slog.ErrorContext(ctx, "unable to parse database URL", slog.Any("error", err))
+		slog.ErrorContext(ctx, "unable to parse database URL", slogx.Error(err))
 		return nil, err
 	}
 
@@ -24,7 +25,7 @@ func createPool(ctx context.Context, addr string) (*pgxpool.Pool, error) {
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), dbPoolConfig)
 	if err != nil {
-		slog.ErrorContext(ctx, "unable to create connection pool", slog.Any("error", err))
+		slog.ErrorContext(ctx, "unable to create connection pool", slogx.Error(err))
 		return nil, err
 	}
 	return pool, nil

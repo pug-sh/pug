@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
+	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
 func ErrorInterceptor() connect.UnaryInterceptorFunc {
@@ -16,8 +17,7 @@ func ErrorInterceptor() connect.UnaryInterceptorFunc {
 				return resp, nil
 			}
 
-			var connectErr *connect.Error
-			if errors.As(err, &connectErr) {
+			if connectErr, ok := errors.AsType[*connect.Error](err); ok {
 				return resp, connectErr
 			}
 
@@ -29,7 +29,7 @@ func ErrorInterceptor() connect.UnaryInterceptorFunc {
 			// Non-connect error - log and sanitize
 			slog.ErrorContext(ctx, "unhandled error",
 				slog.String("procedure", req.Spec().Procedure),
-				slog.Any("error", err))
+				slogx.Error(err))
 			return resp, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 	}

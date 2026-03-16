@@ -2,11 +2,13 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"connectrpc.com/authn"
+	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/golang-jwt/jwt/v5"
@@ -14,9 +16,11 @@ import (
 )
 
 const (
-	HeaderAPIKey    = "x-api-key"
-	HeaderProjectID = "x-project-id"
-	bearerPrefix    = "Bearer "
+	HeaderAPIKey     = "x-api-key"
+	HeaderProjectID  = "x-project-id"
+	bearerPrefix     = "Bearer "
+	publicKeyPrefix  = "pub_"
+	privateKeyPrefix = "prv_"
 )
 
 // AuthType indicates which authentication method was used
@@ -36,20 +40,25 @@ type Principal struct {
 	Project  *dbread.Project
 }
 
-// WithAPIKeyAuth authenticates via API key in the x-api-key header.
-func WithAPIKeyAuth(queries *dbread.Queries) authn.AuthFunc {
+// WithSDKAuth authenticates via public API key in the x-api-key header.
+// Only accepts public keys — private keys are rejected.
+func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		apiKey := req.Header.Get(HeaderAPIKey)
 		if apiKey == "" {
 			return nil, authn.Errorf("x-api-key header not present")
 		}
 
-		row, err := queries.GetProjectAndCustomerByApiKey(ctx, apiKey)
+		if !strings.HasPrefix(apiKey, publicKeyPrefix) {
+			return nil, authn.Errorf("invalid API key")
+		}
+
+		row, err := repo.GetProjectAndCustomerByPublicApiKey(ctx, apiKey)
 		if err != nil {
-			if err == pgx.ErrNoRows {
+			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, authn.Errorf("invalid API key")
 			}
-			slog.ErrorContext(ctx, "error querying project by API key", slogx.Error(err))
+			slog.ErrorContext(ctx, "error querying project by public API key", slogx.Error(err))
 			return nil, authn.Errorf("failed to validate API key")
 		}
 
@@ -101,7 +110,9 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 
 		customer, err := queries.GetCustomerByID(ctx, customerID)
 		if err != nil {
-			slog.ErrorContext(ctx, "unable to get customer", slogx.Error(err))
+			if !errors.Is(err, pgx.ErrNoRows) {
+				slog.ErrorContext(ctx, "unable to get customer", slogx.Error(err))
+			}
 			return nil, authn.Errorf("invalid authorization")
 		}
 
@@ -117,7 +128,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 				CustomerID: customerID,
 			})
 			if err != nil {
-				if err == pgx.ErrNoRows {
+				if errors.Is(err, pgx.ErrNoRows) {
 					return nil, authn.Errorf("project not found or access denied")
 				}
 				slog.ErrorContext(ctx, "unable to get project", slogx.Error(err))
@@ -130,14 +141,28 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 	}
 }
 
-// WithDualAuth tries API key first, then JWT.
-func WithDualAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
-	apiKeyAuth := WithAPIKeyAuth(queries)
+// WithDualAuth authenticates via private API key if x-api-key header is present; otherwise falls back to JWT.
+func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo *projects.Repo) authn.AuthFunc {
 	jwtAuth := WithJWTAuth(jwtKey, queries)
 
 	return func(ctx context.Context, req *http.Request) (any, error) {
-		if req.Header.Get(HeaderAPIKey) != "" {
-			return apiKeyAuth(ctx, req)
+		if apiKey := req.Header.Get(HeaderAPIKey); apiKey != "" {
+			if !strings.HasPrefix(apiKey, privateKeyPrefix) {
+				return nil, authn.Errorf("invalid API key")
+			}
+			row, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, apiKey)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return nil, authn.Errorf("invalid API key")
+				}
+				slog.ErrorContext(ctx, "error querying project by private API key", slogx.Error(err))
+				return nil, authn.Errorf("failed to validate API key")
+			}
+			return &Principal{
+				AuthType: AuthTypeAPIKey,
+				Customer: row.Customer,
+				Project:  &row.Project,
+			}, nil
 		}
 		return jwtAuth(ctx, req)
 	}

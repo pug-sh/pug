@@ -22,7 +22,7 @@ type Worker struct {
 }
 
 func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
-	projectsSvc := projects.NewService(pgRO, pgW)
+	projectsSvc := projects.NewService(pgRO, pgW, nil)
 	return &Worker{
 		campaignService: campaigns.NewService(pgRO, pgW, projectsSvc, nil),
 		deviceService:   devicessvc.NewService(pgRO, pgW),
