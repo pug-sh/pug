@@ -27,6 +27,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/geo"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -73,8 +74,9 @@ func start(ctx context.Context, d *deps) error {
 	devicesPath, devicesHandler := devicesv1connect.NewDevicesServiceHandler(
 		devicesrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
 
+	geoProvider := geo.CloudflareProvider{}
 	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(
-		eventsrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
+		eventsrpc.NewServer(d.nats.GetJetStream(), geoProvider), handlerOpts)
 
 	mux := http.NewServeMux()
 
