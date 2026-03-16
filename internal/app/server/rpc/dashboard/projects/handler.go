@@ -178,7 +178,7 @@ func (s *server) UpdateFCMServiceJSON(
 		ID:             principal.Project.ID,
 	}
 	if _, err := s.service.UpdateFCMServiceJSON(ctx, wParams); err != nil {
-		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.Any("params", wParams))
+		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.String("projectID", wParams.ID), slog.String("customerID", wParams.CustomerID), slogx.Redacted("fcm_service_json", wParams.FcmServiceJson.String))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

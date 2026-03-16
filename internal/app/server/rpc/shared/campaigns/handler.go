@@ -3,6 +3,7 @@ package campaigns
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 
 	"connectrpc.com/connect"
@@ -36,12 +37,13 @@ func (s *server) Get(
 	campaign, err := s.service.GetCampaignByIDAndProjectID(ctx, req.Msg.Id, principal.Project.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed getting campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProto, err := roToRPCMsg(campaign)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&campaignsv1.GetResponse{
@@ -63,14 +65,15 @@ func (s *server) BatchGet(
 	campaigns, err := s.service.GetCampaignsByProjectID(ctx, projectID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed getting campaigns by project ID", slogx.Error(err), slog.String("projectId", projectID))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProtos := make([]*campaignsv1.Campaign, len(campaigns))
 	for i, c := range campaigns {
 		proto, err := roToRPCMsg(c)
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
+			slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", c.ID))
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		campaignProtos[i] = proto
 	}
@@ -113,12 +116,13 @@ func (s *server) Create(
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed creating campaign", slogx.Error(err), slog.String("projectId", projectID), slog.String("campaignName", req.Msg.Name))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProto, err := wToRPCMsg(campaign)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", campaign.ID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&campaignsv1.CreateResponse{
@@ -140,7 +144,7 @@ func (s *server) Delete(
 	err = s.service.DeleteCampaign(ctx, req.Msg.Id, projectID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed deleting campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	resp := connect.NewResponse(&campaignsv1.DeleteResponse{})
@@ -167,12 +171,13 @@ func (s *server) Update(
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed updating campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProto, err := wToRPCMsg(campaign)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", campaign.ID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&campaignsv1.UpdateResponse{

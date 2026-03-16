@@ -37,7 +37,9 @@ func (r *Repo) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, private
 		var row dbread.GetProjectAndCustomerByPrivateApiKeyRow
 		if err := json.Unmarshal(data, &row); err != nil {
 			slog.WarnContext(ctx, "failed to unmarshal cached project by private api key, deleting corrupt entry", slogx.Error(err))
-			r.cache.Del(ctx, cacheKey)
+			if err := r.cache.Del(ctx, cacheKey).Err(); err != nil {
+				slog.WarnContext(ctx, "failed to delete corrupt cache entry", slogx.Error(err), slog.String("cacheKey", cacheKey))
+			}
 		} else {
 			return row, nil
 		}
@@ -80,7 +82,9 @@ func (r *Repo) GetProjectAndCustomerByPublicApiKey(ctx context.Context, publicAp
 		var row dbread.GetProjectAndCustomerByPublicApiKeyRow
 		if err := json.Unmarshal(data, &row); err != nil {
 			slog.WarnContext(ctx, "failed to unmarshal cached project by public api key, deleting corrupt entry", slogx.Error(err))
-			r.cache.Del(ctx, cacheKey)
+			if err := r.cache.Del(ctx, cacheKey).Err(); err != nil {
+				slog.WarnContext(ctx, "failed to delete corrupt cache entry", slogx.Error(err), slog.String("cacheKey", cacheKey))
+			}
 		} else {
 			return row, nil
 		}

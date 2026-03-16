@@ -16,18 +16,18 @@ select exists(
 );
 
 -- name: GetProjectAndCustomerByPrivateApiKey :one
--- NOTE: The customer join is currently unused by shared auth handlers (WithDualAuth), which only
--- access principal.Project.ID. The join exists because Principal embeds dbread.Customer.
--- If the Principal type is ever refactored to not require a Customer for API key auth,
--- this query can be simplified to select from projects only.
+-- NOTE: The customer data from this join is required by the Principal struct populated in
+-- WithDualAuth, but is not accessed by downstream shared handler code. If Principal is
+-- refactored to not require a Customer for API key auth, this query can be simplified
+-- to select from projects only.
 select sqlc.embed(projects), sqlc.embed(customers)
 from projects
 join customers on customers.id = projects.customer_id
 where projects.private_api_key = @private_api_key;
 
 -- name: GetProjectAndCustomerByPublicApiKey :one
--- NOTE: Same as above — the customer join is unused by SDK auth handlers.
--- Used by WithSDKAuth which only accepts public keys.
+-- NOTE: Same as above — the customer data is required by the Principal struct
+-- populated in WithSDKAuth, but is not accessed by downstream SDK handler code.
 select sqlc.embed(projects), sqlc.embed(customers)
 from projects
 join customers on customers.id = projects.customer_id

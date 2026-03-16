@@ -21,10 +21,10 @@ type GetProjectAndCustomerByPrivateApiKeyRow struct {
 	Customer Customer
 }
 
-// NOTE: The customer join is currently unused by shared auth handlers (WithDualAuth), which only
-// access principal.Project.ID. The join exists because Principal embeds dbread.Customer.
-// If the Principal type is ever refactored to not require a Customer for API key auth,
-// this query can be simplified to select from projects only.
+// NOTE: The customer data from this join is required by the Principal struct populated in
+// WithDualAuth, but is not accessed by downstream shared handler code. If Principal is
+// refactored to not require a Customer for API key auth, this query can be simplified
+// to select from projects only.
 func (q *Queries) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, privateApiKey string) (GetProjectAndCustomerByPrivateApiKeyRow, error) {
 	row := q.db.QueryRow(ctx, getProjectAndCustomerByPrivateApiKey, privateApiKey)
 	var i GetProjectAndCustomerByPrivateApiKeyRow
