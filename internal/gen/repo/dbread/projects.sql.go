@@ -60,8 +60,8 @@ type GetProjectAndCustomerByPublicApiKeyRow struct {
 	Customer Customer
 }
 
-// NOTE: Same as above — the customer join is unused by SDK auth handlers.
-// Used by WithSDKAuth which only accepts public keys.
+// NOTE: Same as above — the customer data is required by the Principal struct
+// populated in WithSDKAuth, but is not accessed by downstream SDK handler code.
 func (q *Queries) GetProjectAndCustomerByPublicApiKey(ctx context.Context, publicApiKey string) (GetProjectAndCustomerByPublicApiKeyRow, error) {
 	row := q.db.QueryRow(ctx, getProjectAndCustomerByPublicApiKey, publicApiKey)
 	var i GetProjectAndCustomerByPublicApiKeyRow
