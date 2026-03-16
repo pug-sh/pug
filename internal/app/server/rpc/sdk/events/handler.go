@@ -52,7 +52,7 @@ func (s *Server) BatchCreate(
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	s.enrichGeo(req.Header(), events)
+	s.enrichGeo(ctx, req.Header(), events)
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events", slogx.Error(err))
@@ -64,23 +64,18 @@ func (s *Server) BatchCreate(
 	}), nil
 }
 
-func (s *Server) enrichGeo(h http.Header, events []*eventsv1.Event) {
+func (s *Server) enrichGeo(ctx context.Context, h http.Header, events []*eventsv1.Event) {
 	loc := s.geoProvider.Locate(h)
-	if loc.IsZero() {
+	if len(loc) == 0 {
+		slog.DebugContext(ctx, "geo location empty, skipping enrichment")
 		return
 	}
 	for _, event := range events {
 		if event.AutoProperties == nil {
-			event.AutoProperties = make(map[string]string)
+			event.AutoProperties = make(map[string]string, len(loc))
 		}
-		if loc.Country != "" {
-			event.AutoProperties[geo.PropCountry] = loc.Country
-		}
-		if loc.Region != "" {
-			event.AutoProperties[geo.PropRegion] = loc.Region
-		}
-		if loc.City != "" {
-			event.AutoProperties[geo.PropCity] = loc.City
+		for k, v := range loc {
+			event.AutoProperties[k] = v
 		}
 	}
 }
