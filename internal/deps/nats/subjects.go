@@ -19,10 +19,13 @@ const (
 	// Events subjects
 	EventsIngestSubject = "events.ingest"
 
-	// Dead letter queue subjects
-	DLQDevicesSubject    = "dlq.devices"
-	DLQCampaignsSubject  = "dlq.campaigns"
-	DLQDeliveriesSubject = "dlq.deliveries"
-	DLQEventsSubject     = "dlq.events"
-	DLQProfilesSubject   = "dlq.profiles"
+	// Dead letter queue subjects — mirror the ingest subject hierarchy.
+	// Subscribe to "dlq.>" for all DLQ messages, or "dlq.profiles.>" for a domain.
+	DLQDevicesSubject         = "dlq.devices.ops"
+	DLQCampaignsSubject       = "dlq.campaigns.scheduled"
+	DLQDeliveriesSubject      = "dlq.deliveries.events"
+	DLQEventsSubject          = "dlq.events.ingest"
+	DLQProfilesRegisterSubject = "dlq.profiles.register"
+	DLQProfilesIdentifySubject = "dlq.profiles.identify"
+	DLQProfilesAliasSubject   = "dlq.profiles.alias"
 )
