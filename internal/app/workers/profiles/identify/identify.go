@@ -71,7 +71,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
-		DLQSubject:        natsworker.DLQProfilesSubject,
+		DLQSubject:        natsworker.DLQProfilesIdentifySubject,
 	}
 
 	worker, err := natsworker.NewWorker(config, messageProcessor, natsClient)
@@ -86,7 +86,8 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	msg := &profilesv1.ProfileIdentifyMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal identify message", slogx.Error(err))
-		return natsworker.NewPermanentError(err)
+		return natsworker.NewPermanentError(err).
+			With("worker", "profile-identify")
 	}
 
 	projectID := msg.GetProjectId()

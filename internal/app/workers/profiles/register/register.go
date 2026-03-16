@@ -72,7 +72,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 		ProcessingTimeout: 25 * time.Second,
 		MaxDeliver:        consumerConfig.MaxDeliver,
 		AckWait:           30 * time.Second,
-		DLQSubject:        natsworker.DLQProfilesSubject,
+		DLQSubject:        natsworker.DLQProfilesRegisterSubject,
 	}
 
 	worker, err := natsworker.NewWorker(config, messageProcessor, natsClient)
@@ -87,7 +87,8 @@ func handleRegister(ctx context.Context, w *profiles.Worker, data []byte) error 
 	msg := &profilesv1.ProfileRegisterMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal register message", slogx.Error(err))
-		return natsworker.NewPermanentError(err)
+		return natsworker.NewPermanentError(err).
+			With("worker", "profile-register")
 	}
 
 	autoProps := msg.GetAutoProperties().AsMap()
@@ -108,7 +109,10 @@ func handleRegister(ctx context.Context, w *profiles.Worker, data []byte) error 
 		slog.ErrorContext(ctx, "failed to register profile", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return natsworker.NewPermanentError(err)
+			return natsworker.NewPermanentError(err).
+				With("worker", "profile-register").
+				With("profile_id", msg.GetProfileId()).
+				With("project_id", msg.GetProjectId())
 		}
 		return err
 	}

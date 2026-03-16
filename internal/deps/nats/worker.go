@@ -18,8 +18,13 @@ import (
 // receives a PermanentError, the message is published to the configured DLQ
 // subject and then terminated (not nacked for redelivery). Use for unrecoverable
 // failures such as corrupt protobuf data. Use NewPermanentError to construct.
+//
+// Attach structured context via With() — these key-value pairs are written as
+// individual DLQ message headers for filtering and inspection without
+// deserializing the payload.
 type PermanentError struct {
-	err error
+	err      error
+	metadata map[string]string
 }
 
 // NewPermanentError wraps err as a PermanentError. Panics if err is nil.
@@ -29,6 +34,19 @@ func NewPermanentError(err error) *PermanentError {
 	}
 	return &PermanentError{err: err}
 }
+
+// With attaches structured key-value metadata to the error. These are written
+// as headers on the DLQ message. Use lowercase snake_case keys.
+func (e *PermanentError) With(key, value string) *PermanentError {
+	if e.metadata == nil {
+		e.metadata = make(map[string]string)
+	}
+	e.metadata[key] = value
+	return e
+}
+
+// Metadata returns the structured context attached via With().
+func (e *PermanentError) Metadata() map[string]string { return e.metadata }
 
 func (e *PermanentError) Error() string { return e.err.Error() }
 func (e *PermanentError) Unwrap() error { return e.err }
@@ -318,16 +336,21 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, proces
 	for k, v := range msg.Headers() {
 		dlqMsg.Header[k] = v
 	}
-	dlqMsg.Header.Set("Original-Subject", msg.Subject())
-	dlqMsg.Header.Set("Original-Stream", w.config.StreamName)
-	dlqMsg.Header.Set("Original-Consumer", w.config.ConsumerName)
+	dlqMsg.Header.Set("original_subject", msg.Subject())
+	dlqMsg.Header.Set("original_stream", w.config.StreamName)
+	dlqMsg.Header.Set("original_consumer", w.config.ConsumerName)
 	if processingErr != nil {
-		dlqMsg.Header.Set("Error-Reason", processingErr.Error())
+		dlqMsg.Header.Set("error_reason", processingErr.Error())
+		if pe, ok := errors.AsType[*PermanentError](processingErr); ok {
+			for k, v := range pe.Metadata() {
+				dlqMsg.Header.Set(k, v)
+			}
+		}
 	}
-	dlqMsg.Header.Set("DLQ-Timestamp", time.Now().UTC().Format(time.RFC3339))
+	dlqMsg.Header.Set("dlq_timestamp", time.Now().UTC().Format(time.RFC3339))
 	if meta, err := msg.Metadata(); err == nil {
-		dlqMsg.Header.Set("Delivery-Count", fmt.Sprintf("%d", meta.NumDelivered))
-		dlqMsg.Header.Set("Stream-Sequence", fmt.Sprintf("%d", meta.Sequence.Stream))
+		dlqMsg.Header.Set("delivery_count", fmt.Sprintf("%d", meta.NumDelivered))
+		dlqMsg.Header.Set("stream_sequence", fmt.Sprintf("%d", meta.Sequence.Stream))
 	}
 
 	if _, err := w.js.PublishMsg(ctx, dlqMsg); err != nil {

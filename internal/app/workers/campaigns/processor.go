@@ -33,11 +33,13 @@ func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	var msg campaigns.CampaignMessage
 	if err := json.Unmarshal(data, &msg); err != nil {
-		return natsworker.NewPermanentError(fmt.Errorf("failed to unmarshal campaign message: %w", err))
+		return natsworker.NewPermanentError(fmt.Errorf("failed to unmarshal campaign message: %w", err)).
+			With("worker", "campaigns")
 	}
 
 	if msg.CampaignID == "" {
-		return natsworker.NewPermanentError(fmt.Errorf("campaign message missing campaign_id"))
+		return natsworker.NewPermanentError(fmt.Errorf("campaign message missing campaign_id")).
+			With("worker", "campaigns")
 	}
 
 	slog.InfoContext(ctx, "Processing campaign", slog.String("campaign_id", msg.CampaignID))
