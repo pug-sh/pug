@@ -17,6 +17,7 @@ import (
 
 const (
 	HeaderAPIKey     = "x-api-key"
+	QueryAPIKey      = "api_key"
 	HeaderProjectID  = "x-project-id"
 	bearerPrefix     = "Bearer "
 	publicKeyPrefix  = "pub_"
@@ -45,6 +46,10 @@ type Principal struct {
 func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		apiKey := req.Header.Get(HeaderAPIKey)
+		// Fallback to query param for beacon requests, which cannot set headers.
+		if apiKey == "" {
+			apiKey = req.URL.Query().Get(QueryAPIKey)
+		}
 		if apiKey == "" {
 			return nil, authn.Errorf("x-api-key header not present")
 		}
