@@ -852,16 +852,16 @@ var File_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"\x1ainsights/v1/insights.proto\x12\vinsights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb1\x03\n" +
+	"\x1ainsights/v1/insights.proto\x12\vinsights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbb\x03\n" +
 	"\fQueryRequest\x12H\n" +
 	"\finsight_type\x18\x01 \x01(\x0e2\x18.insights.v1.InsightTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vinsightType\x12=\n" +
 	"\n" +
 	"time_range\x18\x02 \x01(\v2\x16.insights.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x12D\n" +
 	"\vgranularity\x18\x03 \x01(\x0e2\x18.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\vgranularity\x12/\n" +
 	"\x06events\x18\x04 \x03(\v2\x17.insights.v1.EventQueryR\x06events\x125\n" +
-	"\afilters\x18\x05 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x126\n" +
+	"\afilters\x18\x05 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12@\n" +
 	"\n" +
-	"breakdowns\x18\x06 \x03(\v2\x16.insights.v1.BreakdownR\n" +
+	"breakdowns\x18\x06 \x03(\v2\x16.insights.v1.BreakdownB\b\xbaH\x05\x92\x01\x02\x10\x05R\n" +
 	"breakdowns\x122\n" +
 	"\x0fbreakdown_limit\x18\a \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x0ebreakdownLimit\"<\n" +
 	"\rQueryResponse\x12+\n" +

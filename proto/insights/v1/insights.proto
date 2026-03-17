@@ -18,7 +18,7 @@ message QueryRequest {
   Granularity granularity = 3 [(buf.validate.field).enum.defined_only = true];
   repeated EventQuery events = 4;
   repeated PropertyFilter filters = 5;
-  repeated Breakdown breakdowns = 6;
+  repeated Breakdown breakdowns = 6 [(buf.validate.field).repeated.max_items = 5];
   int32 breakdown_limit = 7 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
 }
 
