@@ -886,14 +886,14 @@ const file_insights_v1_insights_proto_rawDesc = "" +
 	"EventQuery\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x125\n" +
 	"\afilters\x18\x02 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12K\n" +
-	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vaggregation\"\x9e\x02\n" +
+	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vaggregation\"\x95\x03\n" +
 	"\x0ePropertyFilter\x127\n" +
 	"\bproperty\x18\x01 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x132\x11^[a-zA-Z0-9_.-]+$R\bproperty\x12D\n" +
 	"\boperator\x18\x02 \x01(\x0e2\x1b.insights.v1.FilterOperatorB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\boperator\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value:w\xbaHt\x1ar\n" +
-	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a+this.operator in [5, 6] || this.value != ''\"/\n" +
-	"\tBreakdown\x12\"\n" +
-	"\bproperty\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bproperty\"\x83\x02\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value:\xed\x01\xbaH\xe9\x01\x1a\xe6\x01\n" +
+	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a\x9e\x01this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET|| this.value != ''\"D\n" +
+	"\tBreakdown\x127\n" +
+	"\bproperty\x18\x01 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x132\x11^[a-zA-Z0-9_.-]+$R\bproperty\"\x83\x02\n" +
 	"\x06Series\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x1d\n" +
 	"\n" +

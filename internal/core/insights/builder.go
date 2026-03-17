@@ -2,15 +2,12 @@ package insights
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
 )
 
 const DefaultPageSize int32 = 100
-
-var validPropertyName = regexp.MustCompile(`^[a-zA-Z0-9_.\-]+$`)
 
 // BuildQuery builds a ClickHouse SQL query and positional args from a QueryRequest.
 func BuildQuery(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
@@ -81,10 +78,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			expr, err := propertyExpr(bd.GetProperty())
-			if err != nil {
-				return "", nil, err
-			}
+			expr := propertyExpr(bd.GetProperty())
 			fmt.Fprintf(&sb, "%s AS breakdown_%d", expr, i)
 		}
 		sb.WriteString("\nFROM events\n")
@@ -111,10 +105,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	sb.WriteString("SELECT ")
 	fmt.Fprintf(&sb, "%s(occur_time) AS t", granFn)
 	for i, bd := range breakdowns {
-		expr, err := propertyExpr(bd.GetProperty())
-		if err != nil {
-			return "", nil, err
-		}
+		expr := propertyExpr(bd.GetProperty())
 		fmt.Fprintf(&sb, ",\nif(%s IN (SELECT breakdown_%d FROM top_vals), %s, '$others') AS breakdown_%d",
 			expr, i, expr, i)
 	}
@@ -267,12 +258,9 @@ func aggregationExpr(agg insightsv1.AggregationType) string {
 
 // propertyExpr returns the ClickHouse expression to resolve a property.
 // It checks auto_properties first; if the value is empty or missing, it falls back to custom_properties.
-// Returns error if the property name contains invalid characters.
-func propertyExpr(name string) (string, error) {
-	if !validPropertyName.MatchString(name) {
-		return "", fmt.Errorf("invalid property name: %q", name)
-	}
-	return fmt.Sprintf("ifNull(nullIf(auto_properties['%s'], ''), custom_properties['%s'])", name, name), nil
+// Property name validation is enforced by proto validation (pattern: ^[a-zA-Z0-9_.-]+$).
+func propertyExpr(name string) string {
+	return fmt.Sprintf("ifNull(nullIf(auto_properties['%s'], ''), custom_properties['%s'])", name, name)
 }
 
 // escapeLike escapes ClickHouse LIKE metacharacters in a value.
@@ -285,10 +273,7 @@ func escapeLike(s string) string {
 
 // filterClause builds a single WHERE condition fragment for a PropertyFilter.
 func filterClause(f *insightsv1.PropertyFilter) (string, []any, error) {
-	prop, err := propertyExpr(f.GetProperty())
-	if err != nil {
-		return "", nil, err
-	}
+	prop := propertyExpr(f.GetProperty())
 
 	switch f.GetOperator() {
 	case insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS:

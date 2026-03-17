@@ -90,8 +90,10 @@ message PropertyFilter {
   option (buf.validate.message).cel = {
     id: "property_filter.value_required"
     message: "value is required for this operator"
-    // IS_SET (5) and IS_NOT_SET (6) don't require a value
-    expression: "this.operator in [5, 6] || this.value != ''"
+    expression:
+      "this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_SET"
+      "|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET"
+      "|| this.value != ''"
   };
   string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^[a-zA-Z0-9_.-]+$"}}];
   FilterOperator operator = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
@@ -99,7 +101,7 @@ message PropertyFilter {
 }
 
 message Breakdown {
-  string property = 1 [(buf.validate.field).required = true];
+  string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^[a-zA-Z0-9_.-]+$"}}];
 }
 
 message Series {
