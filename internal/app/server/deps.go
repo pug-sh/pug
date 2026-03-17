@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -9,6 +10,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/fivebitsio/cotton/internal/deps/redis"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sethvargo/go-envconfig"
 )
@@ -34,7 +36,9 @@ func (d *deps) close(ctx context.Context) {
 		d.redis.Close(ctx)
 	}
 	if d.ch != nil {
-		d.ch.Close()
+		if err := d.ch.Close(); err != nil {
+			slog.ErrorContext(ctx, "failed to close clickhouse", slogx.Error(err))
+		}
 	}
 }
 
