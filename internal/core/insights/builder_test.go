@@ -592,3 +592,197 @@ func TestBuildSegmentUsersQuery_WithPageToken(t *testing.T) {
 		t.Errorf("cursor arg (idx %d) should come before limit arg (idx %d)", cursorIdx, limitIdx)
 	}
 }
+
+func TestUnsupportedInsightType(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_UNSPECIFIED,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+	}
+
+	_, _, err := insights.BuildQuery(req, "proj_123")
+	if err == nil {
+		t.Fatal("expected error for unsupported insight type, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported insight type") {
+		t.Errorf("expected 'unsupported insight type' in error, got: %v", err)
+	}
+}
+
+func TestUnsupportedFilterOperator(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Events: []*insightsv1.EventQuery{
+			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+		},
+		Filters: []*insightsv1.PropertyFilter{
+			{Property: "browser", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED, Value: "x"},
+		},
+	}
+
+	_, _, err := insights.BuildQuery(req, "proj_123")
+	if err == nil {
+		t.Fatal("expected error for unsupported filter operator, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported filter operator") {
+		t.Errorf("expected 'unsupported filter operator' in error, got: %v", err)
+	}
+}
+
+func TestMultipleCombinedFilters(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+		Events: []*insightsv1.EventQuery{
+			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+		},
+		Filters: []*insightsv1.PropertyFilter{
+			{Property: "country", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+			{Property: "browser", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "Chrome"},
+			{Property: "age", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_GTE, Value: "18"},
+		},
+	}
+
+	sql, args, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// All three filters should appear as AND clauses
+	if !strings.Contains(sql, "= ?") {
+		t.Errorf("expected EQUALS clause in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "LIKE ?") {
+		t.Errorf("expected LIKE clause in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, ">= ?") {
+		t.Errorf("expected GTE clause in SQL, got: %s", sql)
+	}
+
+	// args: projectID, from, to, kind, "US", "%Chrome%", 18.0
+	if len(args) != 7 {
+		t.Fatalf("expected 7 args, got %d: %v", len(args), args)
+	}
+	if args[4] != "US" {
+		t.Errorf("expected args[4]='US', got %v", args[4])
+	}
+	if args[5] != "%Chrome%" {
+		t.Errorf("expected args[5]='%%Chrome%%', got %v", args[5])
+	}
+	if args[6] != float64(18) {
+		t.Errorf("expected args[6]=18.0, got %v", args[6])
+	}
+}
+
+func TestGranularityHourAndMonth(t *testing.T) {
+	tests := []struct {
+		name        string
+		granularity insightsv1.Granularity
+		wantFunc    string
+	}{
+		{name: "hour", granularity: insightsv1.Granularity_GRANULARITY_HOUR, wantFunc: "toStartOfHour"},
+		{name: "month", granularity: insightsv1.Granularity_GRANULARITY_MONTH, wantFunc: "toStartOfMonth"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &insightsv1.QueryRequest{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+				Granularity: tc.granularity,
+				Events: []*insightsv1.EventQuery{
+					{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				},
+			}
+
+			sql, _, err := insights.BuildQuery(req, "proj_123")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(sql, tc.wantFunc) {
+				t.Errorf("expected %s in SQL, got: %s", tc.wantFunc, sql)
+			}
+		})
+	}
+}
+
+func TestGroupBreakdownSeries(t *testing.T) {
+	rows := []insights.BreakdownTrendRow{
+		{Time: mustTime("2024-01-01T00:00:00Z"), Breakdowns: []string{"US"}, Value: 10},
+		{Time: mustTime("2024-01-02T00:00:00Z"), Breakdowns: []string{"US"}, Value: 20},
+		{Time: mustTime("2024-01-01T00:00:00Z"), Breakdowns: []string{"GB"}, Value: 5},
+		{Time: mustTime("2024-01-02T00:00:00Z"), Breakdowns: []string{"GB"}, Value: 8},
+		{Time: mustTime("2024-01-01T00:00:00Z"), Breakdowns: []string{"US"}, Value: 3}, // duplicate key, appends to US
+	}
+
+	series := insights.GroupBreakdownSeries(rows, []string{"country"})
+
+	// Should produce 2 series (US, GB) in insertion order
+	if len(series) != 2 {
+		t.Fatalf("expected 2 series, got %d", len(series))
+	}
+
+	// First series: US with 3 points
+	if series[0].Breakdown["country"] != "US" {
+		t.Errorf("expected first series breakdown country=US, got %v", series[0].Breakdown)
+	}
+	if len(series[0].Points) != 3 {
+		t.Errorf("expected 3 points for US, got %d", len(series[0].Points))
+	}
+
+	// Second series: GB with 2 points
+	if series[1].Breakdown["country"] != "GB" {
+		t.Errorf("expected second series breakdown country=GB, got %v", series[1].Breakdown)
+	}
+	if len(series[1].Points) != 2 {
+		t.Errorf("expected 2 points for GB, got %d", len(series[1].Points))
+	}
+
+	// Verify values
+	if series[0].Points[0].Value != 10 {
+		t.Errorf("expected first US point value=10, got %v", series[0].Points[0].Value)
+	}
+	if series[1].Points[1].Value != 8 {
+		t.Errorf("expected second GB point value=8, got %v", series[1].Points[1].Value)
+	}
+}
+
+func TestContainsEscapesLIKEMetacharacters(t *testing.T) {
+	tests := []struct {
+		name    string
+		val     string
+		wantArg string
+	}{
+		{name: "percent", val: "100%", wantArg: `%100\%%`},
+		{name: "underscore", val: "a_b", wantArg: `%a\_b%`},
+		{name: "backslash", val: `a\b`, wantArg: `%a\\b%`},
+		{name: "all_three", val: `10%_\x`, wantArg: `%10\%\_\\x%`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &insightsv1.QueryRequest{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+				Events: []*insightsv1.EventQuery{
+					{Kind: "click", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				},
+				Filters: []*insightsv1.PropertyFilter{
+					{Property: "url", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: tc.val},
+				},
+			}
+
+			_, args, err := insights.BuildQuery(req, "proj_123")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			last := args[len(args)-1]
+			if last != tc.wantArg {
+				t.Errorf("expected LIKE arg %q, got %q", tc.wantArg, last)
+			}
+		})
+	}
+}

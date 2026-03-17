@@ -46,7 +46,7 @@ func (s *server) Query(
 
 	sql, args, err := coreinsights.BuildQuery(req.Msg, principal.Project.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to build insights query", slogx.Error(err),
+		slog.WarnContext(ctx, "failed to build insights query", slogx.Error(err),
 			slog.String("projectID", principal.Project.ID),
 			slog.String("insightType", insightType.String()))
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -91,40 +91,11 @@ func (s *server) Query(
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 
-			// Group rows by breakdown values (stringified key)
-			type seriesEntry struct {
-				breakdown map[string]string
-				points    []*insightsv1.DataPoint
+			properties := make([]string, len(breakdowns))
+			for i, bk := range breakdowns {
+				properties[i] = bk.GetProperty()
 			}
-			// Use a slice to preserve insertion order
-			var orderedKeys []string
-			entriesByKey := map[string]*seriesEntry{}
-
-			for _, r := range rows {
-				// Build a canonical key from the breakdown values
-				key := buildBreakdownKey(r.Breakdowns)
-				if _, ok := entriesByKey[key]; !ok {
-					orderedKeys = append(orderedKeys, key)
-					bd := make(map[string]string, len(breakdowns))
-					for i, bk := range breakdowns {
-						bd[bk.GetProperty()] = r.Breakdowns[i]
-					}
-					entriesByKey[key] = &seriesEntry{breakdown: bd}
-				}
-				entriesByKey[key].points = append(entriesByKey[key].points, &insightsv1.DataPoint{
-					Time:  timestamppb.New(r.Time),
-					Value: r.Value,
-				})
-			}
-
-			series = make([]*insightsv1.Series, 0, len(orderedKeys))
-			for _, k := range orderedKeys {
-				e := entriesByKey[k]
-				series = append(series, &insightsv1.Series{
-					Breakdown: e.breakdown,
-					Points:    e.points,
-				})
-			}
+			series = coreinsights.GroupBreakdownSeries(rows, properties)
 		}
 
 	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
@@ -164,7 +135,7 @@ func (s *server) SegmentUsers(
 
 	sql, args, err := coreinsights.BuildSegmentUsersQuery(req.Msg, principal.Project.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to build segment users query", slogx.Error(err),
+		slog.WarnContext(ctx, "failed to build segment users query", slogx.Error(err),
 			slog.String("projectID", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
@@ -191,10 +162,4 @@ func (s *server) SegmentUsers(
 		DistinctIds:   ids,
 		NextPageToken: nextPageToken,
 	}), nil
-}
-
-// buildBreakdownKey creates a canonical string key from a slice of breakdown values.
-// Uses fmt.Sprintf("%q") to encode values unambiguously, avoiding collisions.
-func buildBreakdownKey(breakdowns []string) string {
-	return fmt.Sprintf("%q", breakdowns)
 }

@@ -2,11 +2,14 @@ package insights
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // TrendRow is a single time-bucketed aggregate value.
@@ -143,4 +146,42 @@ func (e *Executor) QueryDistinctIDs(ctx context.Context, sql string, args []any)
 		return nil, err
 	}
 	return result, nil
+}
+
+// GroupBreakdownSeries groups BreakdownTrendRow results into Series, keyed by
+// their breakdown values. The properties slice provides the property name for
+// each breakdown dimension. Insertion order is preserved.
+func GroupBreakdownSeries(rows []BreakdownTrendRow, properties []string) []*insightsv1.Series {
+	type seriesEntry struct {
+		breakdown map[string]string
+		points    []*insightsv1.DataPoint
+	}
+	var orderedKeys []string
+	entriesByKey := map[string]*seriesEntry{}
+
+	for _, r := range rows {
+		key := fmt.Sprintf("%q", r.Breakdowns)
+		if _, ok := entriesByKey[key]; !ok {
+			orderedKeys = append(orderedKeys, key)
+			bd := make(map[string]string, len(properties))
+			for i, prop := range properties {
+				bd[prop] = r.Breakdowns[i]
+			}
+			entriesByKey[key] = &seriesEntry{breakdown: bd}
+		}
+		entriesByKey[key].points = append(entriesByKey[key].points, &insightsv1.DataPoint{
+			Time:  timestamppb.New(r.Time),
+			Value: r.Value,
+		})
+	}
+
+	series := make([]*insightsv1.Series, 0, len(orderedKeys))
+	for _, k := range orderedKeys {
+		e := entriesByKey[k]
+		series = append(series, &insightsv1.Series{
+			Breakdown: e.breakdown,
+			Points:    e.points,
+		})
+	}
+	return series
 }

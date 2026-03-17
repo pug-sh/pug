@@ -121,6 +121,14 @@ message PropertyFilter {
       "|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN)"
       "|| this.values.size() > 0"
   };
+  option (buf.validate.message).cel = {
+    id: "property_filter.values_not_allowed"
+    message: "values must be empty for this operator"
+    expression:
+      "this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IN"
+      "|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN"
+      "|| this.values.size() == 0"
+  };
   string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^[a-zA-Z0-9_.-]+$"}}];
   FilterOperator operator = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
   string value = 3;
@@ -131,8 +139,13 @@ message Breakdown {
   string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^[a-zA-Z0-9_.-]+$"}}];
 }
 
+// Series represents a single data series in a query response.
+//
+// For TRENDS without breakdowns: event_kind + points are set.
+// For TRENDS with breakdowns: breakdown + points are set.
+// For SEGMENTATION: total is set.
 message Series {
-  string label = 1;
+  string label = 1; // Reserved for future use.
   string event_kind = 2;
   map<string, string> breakdown = 3;
   repeated DataPoint points = 4;

@@ -290,16 +290,28 @@ func filterClause(f *insightsv1.PropertyFilter) (string, []any, error) {
 	case insightsv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET:
 		return fmt.Sprintf("%s = ''", prop), nil, nil
 	case insightsv1.FilterOperator_FILTER_OPERATOR_LTE:
-		n, _ := strconv.ParseFloat(f.GetValue(), 64)
+		n, err := strconv.ParseFloat(f.GetValue(), 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
+		}
 		return fmt.Sprintf("toFloat64OrNull(%s) <= ?", prop), []any{n}, nil
 	case insightsv1.FilterOperator_FILTER_OPERATOR_GTE:
-		n, _ := strconv.ParseFloat(f.GetValue(), 64)
+		n, err := strconv.ParseFloat(f.GetValue(), 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
+		}
 		return fmt.Sprintf("toFloat64OrNull(%s) >= ?", prop), []any{n}, nil
 	case insightsv1.FilterOperator_FILTER_OPERATOR_LT:
-		n, _ := strconv.ParseFloat(f.GetValue(), 64)
+		n, err := strconv.ParseFloat(f.GetValue(), 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
+		}
 		return fmt.Sprintf("toFloat64OrNull(%s) < ?", prop), []any{n}, nil
 	case insightsv1.FilterOperator_FILTER_OPERATOR_GT:
-		n, _ := strconv.ParseFloat(f.GetValue(), 64)
+		n, err := strconv.ParseFloat(f.GetValue(), 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
+		}
 		return fmt.Sprintf("toFloat64OrNull(%s) > ?", prop), []any{n}, nil
 	case insightsv1.FilterOperator_FILTER_OPERATOR_IN:
 		args := make([]any, len(f.GetValues()))
