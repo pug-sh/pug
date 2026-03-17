@@ -8,12 +8,14 @@ import (
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
 )
 
+const DefaultPageSize int32 = 100
+
 var validPropertyName = regexp.MustCompile(`^[a-zA-Z0-9_.\-]+$`)
 
 // BuildQuery builds a ClickHouse SQL query and positional args from a QueryRequest.
 func BuildQuery(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	switch req.GetInsightType() {
-	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS, insightsv1.InsightType_INSIGHT_TYPE_UNSPECIFIED:
+	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
 		return buildTrends(req, projectID)
 	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
 		return buildSegmentation(req, projectID)
@@ -175,8 +177,8 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 	return sb.String(), args, nil
 }
 
-// BuildSegmentUsersQuery builds a ClickHouse SQL query and positional args from a SegmentUsersRequest.
-// It returns a paginated list of distinct user IDs matching the given filters.
+// BuildSegmentUsersQuery builds a ClickHouse SQL query and args from a SegmentUsersRequest.
+// The generated query returns a paginated, cursor-keyed list of distinct user IDs.
 func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID string) (string, []any, error) {
 	var sb strings.Builder
 	var args []any
@@ -218,7 +220,7 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 	// LIMIT
 	pageSize := req.GetPageSize()
 	if pageSize == 0 {
-		pageSize = 100
+		pageSize = DefaultPageSize
 	}
 	sb.WriteString("LIMIT ?")
 	args = append(args, pageSize)
@@ -263,8 +265,8 @@ func aggregationExpr(agg insightsv1.AggregationType) string {
 	}
 }
 
-// propertyExpr returns the ClickHouse expression to resolve a property,
-// with auto_properties taking precedence over custom_properties.
+// propertyExpr returns the ClickHouse expression to resolve a property.
+// It checks auto_properties first; if the value is empty or missing, it falls back to custom_properties.
 // Returns error if the property name contains invalid characters.
 func propertyExpr(name string) (string, error) {
 	if !validPropertyName.MatchString(name) {

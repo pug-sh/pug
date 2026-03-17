@@ -46,7 +46,9 @@ func (s *server) Query(
 
 	sql, args, err := coreinsights.BuildQuery(req.Msg, principal.Project.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to build insights query", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to build insights query", slogx.Error(err),
+			slog.String("projectID", principal.Project.ID),
+			slog.String("insightType", insightType.String()))
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
@@ -59,7 +61,8 @@ func (s *server) Query(
 			// Simple trends: one series of (time, value) points
 			rows, err := s.executor.QueryTrends(ctx, sql, args)
 			if err != nil {
-				slog.ErrorContext(ctx, "failed to query trends", slogx.Error(err))
+				slog.ErrorContext(ctx, "failed to query trends", slogx.Error(err),
+				slog.String("projectID", principal.Project.ID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			points := make([]*insightsv1.DataPoint, 0, len(rows))
@@ -83,7 +86,8 @@ func (s *server) Query(
 			// Breakdown trends: group rows into Series by their breakdown tuple
 			rows, err := s.executor.QueryTrendsWithBreakdowns(ctx, sql, args, len(breakdowns))
 			if err != nil {
-				slog.ErrorContext(ctx, "failed to query trends with breakdowns", slogx.Error(err))
+				slog.ErrorContext(ctx, "failed to query trends with breakdowns", slogx.Error(err),
+				slog.String("projectID", principal.Project.ID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 
@@ -126,7 +130,8 @@ func (s *server) Query(
 	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
 		value, err := s.executor.QueryScalar(ctx, sql, args)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to query segmentation", slogx.Error(err))
+			slog.ErrorContext(ctx, "failed to query segmentation", slogx.Error(err),
+				slog.String("projectID", principal.Project.ID))
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		series = []*insightsv1.Series{
@@ -134,6 +139,10 @@ func (s *server) Query(
 				Total: value,
 			},
 		}
+
+	default:
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("unsupported insight type: %v", insightType))
 	}
 
 	return connect.NewResponse(&insightsv1.QueryResponse{Series: series}), nil
@@ -155,19 +164,21 @@ func (s *server) SegmentUsers(
 
 	sql, args, err := coreinsights.BuildSegmentUsersQuery(req.Msg, principal.Project.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to build segment users query", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to build segment users query", slogx.Error(err),
+			slog.String("projectID", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
 	ids, err := s.executor.QueryDistinctIDs(ctx, sql, args)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to query distinct IDs", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to query distinct IDs", slogx.Error(err),
+			slog.String("projectID", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	pageSize := req.Msg.GetPageSize()
 	if pageSize == 0 {
-		pageSize = 100
+		pageSize = coreinsights.DefaultPageSize
 	}
 
 	// Build next page token: set to last ID when page is full

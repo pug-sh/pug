@@ -852,12 +852,12 @@ var File_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"\x1ainsights/v1/insights.proto\x12\vinsights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbb\x03\n" +
+	"\x1ainsights/v1/insights.proto\x12\vinsights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbe\x03\n" +
 	"\fQueryRequest\x12H\n" +
 	"\finsight_type\x18\x01 \x01(\x0e2\x18.insights.v1.InsightTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vinsightType\x12=\n" +
 	"\n" +
-	"time_range\x18\x02 \x01(\v2\x16.insights.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x12D\n" +
-	"\vgranularity\x18\x03 \x01(\x0e2\x18.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\vgranularity\x12/\n" +
+	"time_range\x18\x02 \x01(\v2\x16.insights.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x12G\n" +
+	"\vgranularity\x18\x03 \x01(\x0e2\x18.insights.v1.GranularityB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vgranularity\x12/\n" +
 	"\x06events\x18\x04 \x03(\v2\x17.insights.v1.EventQueryR\x06events\x125\n" +
 	"\afilters\x18\x05 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12@\n" +
 	"\n" +
@@ -881,16 +881,15 @@ const file_insights_v1_insights_proto_rawDesc = "" +
 	"\tTimeRange\x126\n" +
 	"\x04from\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x04from\x122\n" +
 	"\x02to\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x02to:c\xbaH`\x1a^\n" +
-	"\x19time_range.from_before_to\x12,time_range.from must be before time_range.to\x1a\x13this.from < this.to\"\xa1\x01\n" +
+	"\x19time_range.from_before_to\x12,time_range.from must be before time_range.to\x1a\x13this.from < this.to\"\xa4\x01\n" +
 	"\n" +
 	"EventQuery\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x125\n" +
-	"\afilters\x18\x02 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12H\n" +
-	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\b\xbaH\x05\x82\x01\x02\x10\x01R\vaggregation\"\x9d\x02\n" +
+	"\afilters\x18\x02 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12K\n" +
+	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vaggregation\"\x9e\x02\n" +
 	"\x0ePropertyFilter\x127\n" +
-	"\bproperty\x18\x01 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x132\x11^[a-zA-Z0-9_.-]+$R\bproperty\x12C\n" +
-	"\boperator\x18\x02 \x01(\x0e2\x1b.insights.v1.FilterOperatorB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\boperator\x12\x14\n" +
+	"\bproperty\x18\x01 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x132\x11^[a-zA-Z0-9_.-]+$R\bproperty\x12D\n" +
+	"\boperator\x18\x02 \x01(\x0e2\x1b.insights.v1.FilterOperatorB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\boperator\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\tR\x05value:w\xbaHt\x1ar\n" +
 	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a+this.operator in [5, 6] || this.value != ''\"/\n" +
 	"\tBreakdown\x12\"\n" +
