@@ -2,6 +2,7 @@ package insights
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
@@ -288,6 +289,30 @@ func filterClause(f *insightsv1.PropertyFilter) (string, []any, error) {
 		return fmt.Sprintf("%s != ''", prop), nil, nil
 	case insightsv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET:
 		return fmt.Sprintf("%s = ''", prop), nil, nil
+	case insightsv1.FilterOperator_FILTER_OPERATOR_LTE:
+		n, _ := strconv.ParseFloat(f.GetValue(), 64)
+		return fmt.Sprintf("toFloat64OrNull(%s) <= ?", prop), []any{n}, nil
+	case insightsv1.FilterOperator_FILTER_OPERATOR_GTE:
+		n, _ := strconv.ParseFloat(f.GetValue(), 64)
+		return fmt.Sprintf("toFloat64OrNull(%s) >= ?", prop), []any{n}, nil
+	case insightsv1.FilterOperator_FILTER_OPERATOR_LT:
+		n, _ := strconv.ParseFloat(f.GetValue(), 64)
+		return fmt.Sprintf("toFloat64OrNull(%s) < ?", prop), []any{n}, nil
+	case insightsv1.FilterOperator_FILTER_OPERATOR_GT:
+		n, _ := strconv.ParseFloat(f.GetValue(), 64)
+		return fmt.Sprintf("toFloat64OrNull(%s) > ?", prop), []any{n}, nil
+	case insightsv1.FilterOperator_FILTER_OPERATOR_IN:
+		args := make([]any, len(f.GetValues()))
+		for i, v := range f.GetValues() {
+			args[i] = v
+		}
+		return fmt.Sprintf("%s IN (%s)", prop, strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")), args, nil
+	case insightsv1.FilterOperator_FILTER_OPERATOR_NOT_IN:
+		args := make([]any, len(f.GetValues()))
+		for i, v := range f.GetValues() {
+			args[i] = v
+		}
+		return fmt.Sprintf("%s NOT IN (%s)", prop, strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")), args, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported filter operator: %v", f.GetOperator())
 	}

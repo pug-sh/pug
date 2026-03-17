@@ -62,7 +62,7 @@ func (s *server) Query(
 			rows, err := s.executor.QueryTrends(ctx, sql, args)
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to query trends", slogx.Error(err),
-				slog.String("projectID", principal.Project.ID))
+					slog.String("projectID", principal.Project.ID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			points := make([]*insightsv1.DataPoint, 0, len(rows))
@@ -87,7 +87,7 @@ func (s *server) Query(
 			rows, err := s.executor.QueryTrendsWithBreakdowns(ctx, sql, args, len(breakdowns))
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to query trends with breakdowns", slogx.Error(err),
-				slog.String("projectID", principal.Project.ID))
+					slog.String("projectID", principal.Project.ID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 

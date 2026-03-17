@@ -346,7 +346,7 @@ func TestFilterOperators(t *testing.T) {
 		op         insightsv1.FilterOperator
 		val        string
 		wantSQL    string
-		wantArgVal string
+		wantArgVal any
 		wantNoArg  bool
 	}{
 		{
@@ -391,6 +391,54 @@ func TestFilterOperators(t *testing.T) {
 			wantSQL:   "= ''",
 			wantNoArg: true,
 		},
+		{
+			name:       "lte",
+			op:         insightsv1.FilterOperator_FILTER_OPERATOR_LTE,
+			val:        "100",
+			wantSQL:    "<= ?",
+			wantArgVal: float64(100),
+		},
+		{
+			name:       "gte",
+			op:         insightsv1.FilterOperator_FILTER_OPERATOR_GTE,
+			val:        "5.5",
+			wantSQL:    ">= ?",
+			wantArgVal: float64(5.5),
+		},
+		{
+			name:       "lt",
+			op:         insightsv1.FilterOperator_FILTER_OPERATOR_LT,
+			val:        "100",
+			wantSQL:    "< ?",
+			wantArgVal: float64(100),
+		},
+		{
+			name:       "gt",
+			op:         insightsv1.FilterOperator_FILTER_OPERATOR_GT,
+			val:        "5.5",
+			wantSQL:    "> ?",
+			wantArgVal: float64(5.5),
+		},
+	}
+
+	inTests := []struct {
+		name    string
+		op      insightsv1.FilterOperator
+		values  []string
+		wantSQL string
+	}{
+		{
+			name:    "in",
+			op:      insightsv1.FilterOperator_FILTER_OPERATOR_IN,
+			values:  []string{"US", "CA", "GB"},
+			wantSQL: "IN (?, ?, ?)",
+		},
+		{
+			name:    "not_in",
+			op:      insightsv1.FilterOperator_FILTER_OPERATOR_NOT_IN,
+			values:  []string{"bot", "crawler"},
+			wantSQL: "NOT IN (?, ?)",
+		},
 	}
 
 	for _, tc := range tests {
@@ -410,6 +458,39 @@ func TestFilterOperators(t *testing.T) {
 				last := args[len(args)-1]
 				if last != tc.wantArgVal {
 					t.Errorf("expected last arg %q, got %v", tc.wantArgVal, last)
+				}
+			}
+		})
+	}
+
+	for _, tc := range inTests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &insightsv1.QueryRequest{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+				Events: []*insightsv1.EventQuery{
+					{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				},
+				Filters: []*insightsv1.PropertyFilter{
+					{Property: "country", Operator: tc.op, Values: tc.values},
+				},
+			}
+			sql, args, err := insights.BuildQuery(req, "proj_123")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(sql, tc.wantSQL) {
+				t.Errorf("expected %q in SQL, got: %s", tc.wantSQL, sql)
+			}
+			// last N args should be the values
+			n := len(tc.values)
+			if len(args) < n {
+				t.Fatalf("expected at least %d args, got %d: %v", n, len(args), args)
+			}
+			for i, want := range tc.values {
+				got := args[len(args)-n+i]
+				if got != want {
+					t.Errorf("arg[%d]: expected %q, got %v", i, want, got)
 				}
 			}
 		})

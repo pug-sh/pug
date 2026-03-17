@@ -189,18 +189,30 @@ const (
 	FilterOperator_FILTER_OPERATOR_NOT_CONTAINS FilterOperator = 4
 	FilterOperator_FILTER_OPERATOR_IS_SET       FilterOperator = 5
 	FilterOperator_FILTER_OPERATOR_IS_NOT_SET   FilterOperator = 6
+	FilterOperator_FILTER_OPERATOR_LTE          FilterOperator = 7
+	FilterOperator_FILTER_OPERATOR_GTE          FilterOperator = 8
+	FilterOperator_FILTER_OPERATOR_LT           FilterOperator = 9
+	FilterOperator_FILTER_OPERATOR_GT           FilterOperator = 10
+	FilterOperator_FILTER_OPERATOR_IN           FilterOperator = 11
+	FilterOperator_FILTER_OPERATOR_NOT_IN       FilterOperator = 12
 )
 
 // Enum value maps for FilterOperator.
 var (
 	FilterOperator_name = map[int32]string{
-		0: "FILTER_OPERATOR_UNSPECIFIED",
-		1: "FILTER_OPERATOR_EQUALS",
-		2: "FILTER_OPERATOR_NOT_EQUALS",
-		3: "FILTER_OPERATOR_CONTAINS",
-		4: "FILTER_OPERATOR_NOT_CONTAINS",
-		5: "FILTER_OPERATOR_IS_SET",
-		6: "FILTER_OPERATOR_IS_NOT_SET",
+		0:  "FILTER_OPERATOR_UNSPECIFIED",
+		1:  "FILTER_OPERATOR_EQUALS",
+		2:  "FILTER_OPERATOR_NOT_EQUALS",
+		3:  "FILTER_OPERATOR_CONTAINS",
+		4:  "FILTER_OPERATOR_NOT_CONTAINS",
+		5:  "FILTER_OPERATOR_IS_SET",
+		6:  "FILTER_OPERATOR_IS_NOT_SET",
+		7:  "FILTER_OPERATOR_LTE",
+		8:  "FILTER_OPERATOR_GTE",
+		9:  "FILTER_OPERATOR_LT",
+		10: "FILTER_OPERATOR_GT",
+		11: "FILTER_OPERATOR_IN",
+		12: "FILTER_OPERATOR_NOT_IN",
 	}
 	FilterOperator_value = map[string]int32{
 		"FILTER_OPERATOR_UNSPECIFIED":  0,
@@ -210,6 +222,12 @@ var (
 		"FILTER_OPERATOR_NOT_CONTAINS": 4,
 		"FILTER_OPERATOR_IS_SET":       5,
 		"FILTER_OPERATOR_IS_NOT_SET":   6,
+		"FILTER_OPERATOR_LTE":          7,
+		"FILTER_OPERATOR_GTE":          8,
+		"FILTER_OPERATOR_LT":           9,
+		"FILTER_OPERATOR_GT":           10,
+		"FILTER_OPERATOR_IN":           11,
+		"FILTER_OPERATOR_NOT_IN":       12,
 	}
 )
 
@@ -621,6 +639,7 @@ type PropertyFilter struct {
 	Property      string                 `protobuf:"bytes,1,opt,name=property" json:"property,omitempty"`
 	Operator      FilterOperator         `protobuf:"varint,2,opt,name=operator,enum=insights.v1.FilterOperator" json:"operator,omitempty"`
 	Value         string                 `protobuf:"bytes,3,opt,name=value" json:"value,omitempty"`
+	Values        []string               `protobuf:"bytes,4,rep,name=values" json:"values,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -674,6 +693,13 @@ func (x *PropertyFilter) GetValue() string {
 		return x.Value
 	}
 	return ""
+}
+
+func (x *PropertyFilter) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
 }
 
 type Breakdown struct {
@@ -886,12 +912,15 @@ const file_insights_v1_insights_proto_rawDesc = "" +
 	"EventQuery\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x125\n" +
 	"\afilters\x18\x02 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12K\n" +
-	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vaggregation\"\x95\x03\n" +
+	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vaggregation\"\xc4\t\n" +
 	"\x0ePropertyFilter\x127\n" +
 	"\bproperty\x18\x01 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x132\x11^[a-zA-Z0-9_.-]+$R\bproperty\x12D\n" +
 	"\boperator\x18\x02 \x01(\x0e2\x1b.insights.v1.FilterOperatorB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\boperator\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value:\xed\x01\xbaH\xe9\x01\x1a\xe6\x01\n" +
-	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a\x9e\x01this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET|| this.value != ''\"D\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value\x12\x16\n" +
+	"\x06values\x18\x04 \x03(\tR\x06values:\x84\b\xbaH\x80\b\x1a\xec\x02\n" +
+	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a\xa4\x02this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.value != ''\x1a\x96\x03\n" +
+	"&property_filter.numeric_value_required\x128value must be a valid number for lte/gte/lt/gt operators\x1a\xb1\x02!(this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_LTE|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_GTE|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_LT|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_GT)|| double(this.value) == double(this.value)\x1a\xf5\x01\n" +
+	"\x1fproperty_filter.values_required\x120values must not be empty for in/not_in operators\x1a\x9f\x01!(this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN)|| this.values.size() > 0\"D\n" +
 	"\tBreakdown\x127\n" +
 	"\bproperty\x18\x01 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x132\x11^[a-zA-Z0-9_.-]+$R\bproperty\"\x83\x02\n" +
 	"\x06Series\x12\x14\n" +
@@ -921,7 +950,7 @@ const file_insights_v1_insights_proto_rawDesc = "" +
 	"\x1cAGGREGATION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16AGGREGATION_TYPE_TOTAL\x10\x01\x12!\n" +
 	"\x1dAGGREGATION_TYPE_UNIQUE_USERS\x10\x02\x12!\n" +
-	"\x1dAGGREGATION_TYPE_PER_USER_AVG\x10\x03*\xe9\x01\n" +
+	"\x1dAGGREGATION_TYPE_PER_USER_AVG\x10\x03*\xff\x02\n" +
 	"\x0eFilterOperator\x12\x1f\n" +
 	"\x1bFILTER_OPERATOR_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16FILTER_OPERATOR_EQUALS\x10\x01\x12\x1e\n" +
@@ -929,7 +958,14 @@ const file_insights_v1_insights_proto_rawDesc = "" +
 	"\x18FILTER_OPERATOR_CONTAINS\x10\x03\x12 \n" +
 	"\x1cFILTER_OPERATOR_NOT_CONTAINS\x10\x04\x12\x1a\n" +
 	"\x16FILTER_OPERATOR_IS_SET\x10\x05\x12\x1e\n" +
-	"\x1aFILTER_OPERATOR_IS_NOT_SET\x10\x062\xa6\x01\n" +
+	"\x1aFILTER_OPERATOR_IS_NOT_SET\x10\x06\x12\x17\n" +
+	"\x13FILTER_OPERATOR_LTE\x10\a\x12\x17\n" +
+	"\x13FILTER_OPERATOR_GTE\x10\b\x12\x16\n" +
+	"\x12FILTER_OPERATOR_LT\x10\t\x12\x16\n" +
+	"\x12FILTER_OPERATOR_GT\x10\n" +
+	"\x12\x16\n" +
+	"\x12FILTER_OPERATOR_IN\x10\v\x12\x1a\n" +
+	"\x16FILTER_OPERATOR_NOT_IN\x10\f2\xa6\x01\n" +
 	"\x0fInsightsService\x12>\n" +
 	"\x05Query\x12\x19.insights.v1.QueryRequest\x1a\x1a.insights.v1.QueryResponse\x12S\n" +
 	"\fSegmentUsers\x12 .insights.v1.SegmentUsersRequest\x1a!.insights.v1.SegmentUsersResponseBMZFgithub.com/fivebitsio/cotton/internal/gen/proto/insights/v1;insightsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
