@@ -852,43 +852,47 @@ var File_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"\x1ainsights/v1/insights.proto\x12\vinsights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x97\x03\n" +
-	"\fQueryRequest\x12C\n" +
-	"\finsight_type\x18\x01 \x01(\x0e2\x18.insights.v1.InsightTypeB\x06\xbaH\x03\xc8\x01\x01R\vinsightType\x12=\n" +
+	"\x1ainsights/v1/insights.proto\x12\vinsights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb1\x03\n" +
+	"\fQueryRequest\x12H\n" +
+	"\finsight_type\x18\x01 \x01(\x0e2\x18.insights.v1.InsightTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vinsightType\x12=\n" +
 	"\n" +
-	"time_range\x18\x02 \x01(\v2\x16.insights.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x12:\n" +
-	"\vgranularity\x18\x03 \x01(\x0e2\x18.insights.v1.GranularityR\vgranularity\x12/\n" +
+	"time_range\x18\x02 \x01(\v2\x16.insights.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x12D\n" +
+	"\vgranularity\x18\x03 \x01(\x0e2\x18.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\vgranularity\x12/\n" +
 	"\x06events\x18\x04 \x03(\v2\x17.insights.v1.EventQueryR\x06events\x125\n" +
 	"\afilters\x18\x05 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x126\n" +
 	"\n" +
 	"breakdowns\x18\x06 \x03(\v2\x16.insights.v1.BreakdownR\n" +
-	"breakdowns\x12'\n" +
-	"\x0fbreakdown_limit\x18\a \x01(\x05R\x0ebreakdownLimit\"<\n" +
+	"breakdowns\x122\n" +
+	"\x0fbreakdown_limit\x18\a \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x0ebreakdownLimit\"<\n" +
 	"\rQueryResponse\x12+\n" +
-	"\x06series\x18\x01 \x03(\v2\x13.insights.v1.SeriesR\x06series\"\x8b\x02\n" +
+	"\x06series\x18\x01 \x03(\v2\x13.insights.v1.SeriesR\x06series\"\x8e\x02\n" +
 	"\x13SegmentUsersRequest\x12=\n" +
 	"\n" +
 	"time_range\x18\x01 \x01(\v2\x16.insights.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x129\n" +
 	"\x06events\x18\x02 \x03(\v2\x17.insights.v1.EventQueryB\b\xbaH\x05\x92\x01\x02\b\x01R\x06events\x125\n" +
-	"\afilters\x18\x03 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12$\n" +
-	"\tpage_size\x18\x04 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\bpageSize\x12\x1d\n" +
+	"\afilters\x18\x03 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12'\n" +
+	"\tpage_size\x18\x04 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x05 \x01(\tR\tpageToken\"a\n" +
 	"\x14SegmentUsersResponse\x12!\n" +
 	"\fdistinct_ids\x18\x01 \x03(\tR\vdistinctIds\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"w\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xdc\x01\n" +
 	"\tTimeRange\x126\n" +
 	"\x04from\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x04from\x122\n" +
-	"\x02to\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x02to\"\x97\x01\n" +
+	"\x02to\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x02to:c\xbaH`\x1a^\n" +
+	"\x19time_range.from_before_to\x12,time_range.from must be before time_range.to\x1a\x13this.from < this.to\"\xa1\x01\n" +
 	"\n" +
 	"EventQuery\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x125\n" +
-	"\afilters\x18\x02 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12>\n" +
-	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeR\vaggregation\"\x8d\x01\n" +
-	"\x0ePropertyFilter\x12\"\n" +
-	"\bproperty\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bproperty\x12A\n" +
-	"\boperator\x18\x02 \x01(\x0e2\x1b.insights.v1.FilterOperatorB\b\xbaH\x05\x82\x01\x02\x10\x01R\boperator\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value\"/\n" +
+	"\afilters\x18\x02 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12H\n" +
+	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\b\xbaH\x05\x82\x01\x02\x10\x01R\vaggregation\"\x9d\x02\n" +
+	"\x0ePropertyFilter\x127\n" +
+	"\bproperty\x18\x01 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x132\x11^[a-zA-Z0-9_.-]+$R\bproperty\x12C\n" +
+	"\boperator\x18\x02 \x01(\x0e2\x1b.insights.v1.FilterOperatorB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\boperator\x12\x14\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value:w\xbaHt\x1ar\n" +
+	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a+this.operator in [5, 6] || this.value != ''\"/\n" +
 	"\tBreakdown\x12\"\n" +
 	"\bproperty\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bproperty\"\x83\x02\n" +
 	"\x06Series\x12\x14\n" +

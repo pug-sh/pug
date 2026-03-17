@@ -42,26 +42,7 @@ func (s *server) Query(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	// Validate time range
-	tr := req.Msg.GetTimeRange()
-	if tr == nil || tr.GetFrom() == nil || tr.GetTo() == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("time_range with from and to is required"))
-	}
-	if !tr.GetFrom().AsTime().Before(tr.GetTo().AsTime()) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("time_range.from must be before time_range.to"))
-	}
-
-	// Validate insight type
 	insightType := req.Msg.GetInsightType()
-	if insightType != insightsv1.InsightType_INSIGHT_TYPE_TRENDS &&
-		insightType != insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("insight_type must be TRENDS or SEGMENTATION"))
-	}
-
-	// Validate upper bounds
-	if req.Msg.GetBreakdownLimit() < 0 || req.Msg.GetBreakdownLimit() > 100 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("breakdown_limit must be between 0 and 100"))
-	}
 
 	sql, args, err := coreinsights.BuildQuery(req.Msg, principal.Project.ID)
 	if err != nil {
@@ -170,20 +151,6 @@ func (s *server) SegmentUsers(
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	// Validate time range
-	tr := req.Msg.GetTimeRange()
-	if tr == nil || tr.GetFrom() == nil || tr.GetTo() == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("time_range with from and to is required"))
-	}
-	if !tr.GetFrom().AsTime().Before(tr.GetTo().AsTime()) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("time_range.from must be before time_range.to"))
-	}
-
-	// Validate page_size upper bound
-	if req.Msg.GetPageSize() > 1000 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("page_size must be <= 1000"))
 	}
 
 	sql, args, err := coreinsights.BuildSegmentUsersQuery(req.Msg, principal.Project.ID)
