@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 )
@@ -35,26 +38,47 @@ func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectPa
 	return nil
 }
 
-func randomHex(n int) string {
+func randomHex(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand failed: " + err.Error())
+		return "", fmt.Errorf("crypto/rand: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 // NewPrivateKey generates a 24-char private API key: "prv_" + 20 hex chars (80 bits of entropy).
-func NewPrivateKey() string { return "prv_" + randomHex(10) }
+func NewPrivateKey() (string, error) {
+	h, err := randomHex(10)
+	if err != nil {
+		return "", err
+	}
+	return "prv_" + h, nil
+}
 
 // NewPublicKey generates a 24-char public API key: "pub_" + 20 hex chars (80 bits of entropy).
-func NewPublicKey() string { return "pub_" + randomHex(10) }
+func NewPublicKey() (string, error) {
+	h, err := randomHex(10)
+	if err != nil {
+		return "", err
+	}
+	return "pub_" + h, nil
+}
 
-func (s *Service) CreateProject(ctx context.Context, customerID, displayName string) (dbwrite.Project, error) {
+func (s *Service) CreateProject(ctx context.Context, orgID, createdBy, displayName string) (dbwrite.Project, error) {
+	privKey, err := NewPrivateKey()
+	if err != nil {
+		return dbwrite.Project{}, err
+	}
+	pubKey, err := NewPublicKey()
+	if err != nil {
+		return dbwrite.Project{}, err
+	}
 	return s.write.CreateProject(ctx, dbwrite.CreateProjectParams{
 		ID:            xid.New().String(),
-		PrivateApiKey: NewPrivateKey(),
-		PublicApiKey:  NewPublicKey(),
-		CustomerID:    customerID,
+		PrivateApiKey: privKey,
+		PublicApiKey:  pubKey,
+		OrgID:         orgID,
+		CreatedBy:     createdBy,
 		DisplayName:   displayName,
 	})
 }
@@ -63,15 +87,22 @@ func (s *Service) GetProjectByID(ctx context.Context, id string) (dbread.Project
 	return s.read.GetProjectByID(ctx, id)
 }
 
-func (s *Service) GetProjectsByCustomerID(ctx context.Context, customerID string) ([]dbread.Project, error) {
-	return s.read.GetProjectsByCustomerID(ctx, customerID)
+func (s *Service) GetProjectsByOrgID(ctx context.Context, orgID string) ([]dbread.Project, error) {
+	return s.read.GetProjectsByOrgID(ctx, orgID)
 }
 
-func (s *Service) ProjectExistsForCustomer(ctx context.Context, projectID string, customerID string) (bool, error) {
-	return s.read.ProjectExistsForCustomer(ctx, dbread.ProjectExistsForCustomerParams{
+func (s *Service) ProjectExistsForOrgMember(ctx context.Context, projectID string, customerID string) (bool, error) {
+	_, err := s.read.GetProjectByIDAndOrgMember(ctx, dbread.GetProjectByIDAndOrgMemberParams{
 		ID:         projectID,
 		CustomerID: customerID,
 	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Service) UpdateProjectDisplayName(ctx context.Context, arg dbwrite.UpdateProjectDisplayNameParams) (dbwrite.Project, error) {

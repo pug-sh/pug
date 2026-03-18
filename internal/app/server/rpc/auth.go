@@ -128,7 +128,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 
 		// Optionally populate Project if x-project-id header is provided
 		if projectID := req.Header.Get(HeaderProjectID); projectID != "" {
-			project, err := queries.GetProjectByIDAndCustomerID(ctx, dbread.GetProjectByIDAndCustomerIDParams{
+			project, err := queries.GetProjectByIDAndOrgMember(ctx, dbread.GetProjectByIDAndOrgMemberParams{
 				ID:         projectID,
 				CustomerID: customerID,
 			})

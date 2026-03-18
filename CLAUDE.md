@@ -67,7 +67,7 @@ The backend follows a layered architecture with Connect RPC (HTTP/2):
 - **`internal/app/`** - CLI entry points using Cobra, split by feature (server, workers, dev, migrate)
   - `server/rpc/` - RPC handlers that map proto services to business logic
   - `workers/campaigns/`, `workers/devices/`, `workers/profiles/`, `workers/events/`, `workers/scheduler/` - NATS message consumers
-- **`internal/core/`** - Business logic layer with service and repo per domain (auth, campaigns, delivery, devices, profiles, projects)
+- **`internal/core/`** - Business logic layer with service and repo per domain (auth, campaigns, delivery, devices, orgs, profiles, projects)
 - **`internal/gen/`** - Generated code (do not edit manually)
   - `proto/` - Generated from .proto files via buf
   - `repo/dbread/`, `repo/dbwrite/` - Generated from SQL via sqlc
@@ -84,6 +84,14 @@ PostgreSQL uses read/write separation:
 - Query names: PascalCase with uppercase `ID` (e.g., `GetCampaignByID`, `GetProjectsByCustomerID`)
 - SQL syntax and identifiers: lowercase (e.g., `select * from campaigns where project_id = @project_id`)
 - Partial updates: use `coalesce(nullif(@field, ''), field)` to preserve existing values when empty
+
+### Org Hierarchy
+
+- **Org** is the top-level entity. Each customer belongs to one or more orgs via `org_members` (role: `admin` | `member`).
+- **Projects** belong to an org (`org_id`). A project is always created within an org context.
+- **Invitations** (`org_invitations`) are token-based, expire after 7 days, and transition from `pending` → `accepted`.
+- Admin-only operations: `UpdateDisplayName`, `RemoveMember`, `InviteMember`, `ListInvitations`. All other org endpoints require membership.
+- On sign-up, a default org and default project are created atomically in a single transaction.
 
 ### Proto/RPC
 

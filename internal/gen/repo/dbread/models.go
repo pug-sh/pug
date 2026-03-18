@@ -31,6 +31,31 @@ type Customer struct {
 	UpdateTime   pgtype.Timestamptz
 }
 
+type Org struct {
+	CreateTime  pgtype.Timestamptz
+	DisplayName string
+	ID          string
+	UpdateTime  pgtype.Timestamptz
+}
+
+type OrgInvitation struct {
+	CreateTime pgtype.Timestamptz
+	Email      string
+	ExpiresAt  pgtype.Timestamptz
+	ID         string
+	InviterID  string
+	OrgID      string
+	Status     string
+	Token      string
+}
+
+type OrgMember struct {
+	CreateTime pgtype.Timestamptz
+	CustomerID string
+	OrgID      string
+	Role       string
+}
+
 type Profile struct {
 	AutoProperties   map[string]any
 	CreateTime       pgtype.Timestamptz
@@ -55,10 +80,11 @@ type ProfileDevice struct {
 
 type Project struct {
 	CreateTime     pgtype.Timestamptz
-	CustomerID     string
+	CreatedBy      string
 	DisplayName    string
 	FcmServiceJson pgtype.Text
 	ID             string
+	OrgID          string
 	PrivateApiKey  string
 	PublicApiKey   string
 	UpdateTime     pgtype.Timestamptz

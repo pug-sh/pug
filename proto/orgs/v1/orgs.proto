@@ -1,0 +1,96 @@
+edition = "2023";
+package orgs.v1;
+
+import "buf/validate/validate.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1;orgsv1";
+
+service OrgsService {
+  rpc Get(GetRequest) returns (GetResponse) {}
+  rpc UpdateDisplayName(UpdateDisplayNameRequest) returns (UpdateDisplayNameResponse) {}
+  rpc ListMembers(ListMembersRequest) returns (ListMembersResponse) {}
+  rpc RemoveMember(RemoveMemberRequest) returns (RemoveMemberResponse) {}
+  rpc InviteMember(InviteMemberRequest) returns (InviteMemberResponse) {}
+  rpc AcceptInvite(AcceptInviteRequest) returns (AcceptInviteResponse) {}
+  rpc ListInvitations(ListInvitationsRequest) returns (ListInvitationsResponse) {}
+}
+
+message Org {
+  string display_name = 1;
+  string id = 2;
+}
+
+message OrgMember {
+  string customer_id = 1;
+  string display_name = 2;
+  string email = 3;
+  string org_id = 4;
+  string role = 5;
+}
+
+message OrgInvitation {
+  string email = 1;
+  string expires_at = 2;
+  string id = 3;
+  string org_id = 4;
+  string status = 5;
+  string token = 6;
+}
+
+message GetRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+}
+
+message GetResponse {
+  Org org = 1;
+}
+
+message UpdateDisplayNameRequest {
+  string display_name = 1 [(buf.validate.field).required = true];
+  string org_id = 2 [(buf.validate.field).required = true];
+}
+
+message UpdateDisplayNameResponse {
+  Org org = 1;
+}
+
+message ListMembersRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+}
+
+message ListMembersResponse {
+  repeated OrgMember members = 1;
+}
+
+message RemoveMemberRequest {
+  string customer_id = 1 [(buf.validate.field).required = true];
+  string org_id = 2 [(buf.validate.field).required = true];
+}
+
+message RemoveMemberResponse {}
+
+message InviteMemberRequest {
+  string email = 1 [(buf.validate.field).string.email = true];
+  string org_id = 2 [(buf.validate.field).required = true];
+}
+
+message InviteMemberResponse {
+  OrgInvitation invitation = 1;
+}
+
+message AcceptInviteRequest {
+  string token = 1 [(buf.validate.field).required = true];
+}
+
+message AcceptInviteResponse {
+  Org org = 1;
+}
+
+message ListInvitationsRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+}
+
+message ListInvitationsResponse {
+  repeated OrgInvitation invitations = 1;
+}
