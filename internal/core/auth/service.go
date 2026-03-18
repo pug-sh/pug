@@ -111,7 +111,6 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	if _, err = w.CreateProject(ctx, dbwrite.CreateProjectParams{
 		ID:            xid.New().String(),
 		OrgID:         orgID,
-		CreatedBy:     customerID,
 		DisplayName:   "default",
 		PrivateApiKey: privKey,
 		PublicApiKey:  pubKey,

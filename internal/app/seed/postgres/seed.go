@@ -75,7 +75,7 @@ func (s *Seeder) Run(ctx context.Context) error {
 
 	slog.InfoContext(ctx, "creating default project", slog.String("customer_id", customer.ID))
 
-	project, err := projectsSvc.CreateProject(ctx, org.ID, customer.ID, "default")
+	project, err := projectsSvc.CreateProject(ctx, org.ID, "default")
 	if err != nil {
 		return fmt.Errorf("failed to create project: %w", err)
 	}

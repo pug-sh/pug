@@ -9,86 +9,8 @@ import (
 	"context"
 )
 
-const getProjectAndCustomerByPrivateApiKey = `-- name: GetProjectAndCustomerByPrivateApiKey :one
-select projects.create_time, projects.created_by, projects.display_name, projects.fcm_service_json, projects.id, projects.org_id, projects.private_api_key, projects.public_api_key, projects.update_time, customers.create_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.update_time
-from projects
-join customers on customers.id = projects.created_by
-where projects.private_api_key = $1
-`
-
-type GetProjectAndCustomerByPrivateApiKeyRow struct {
-	Project  Project
-	Customer Customer
-}
-
-// NOTE: The customer data from this join is required by the Principal struct populated in
-// WithDualAuth, but is not accessed by downstream shared handler code. If Principal is
-// refactored to not require a Customer for API key auth, this query can be simplified
-// to select from projects only.
-func (q *Queries) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, privateApiKey string) (GetProjectAndCustomerByPrivateApiKeyRow, error) {
-	row := q.db.QueryRow(ctx, getProjectAndCustomerByPrivateApiKey, privateApiKey)
-	var i GetProjectAndCustomerByPrivateApiKeyRow
-	err := row.Scan(
-		&i.Project.CreateTime,
-		&i.Project.CreatedBy,
-		&i.Project.DisplayName,
-		&i.Project.FcmServiceJson,
-		&i.Project.ID,
-		&i.Project.OrgID,
-		&i.Project.PrivateApiKey,
-		&i.Project.PublicApiKey,
-		&i.Project.UpdateTime,
-		&i.Customer.CreateTime,
-		&i.Customer.DisplayName,
-		&i.Customer.Email,
-		&i.Customer.ID,
-		&i.Customer.PasswordHash,
-		&i.Customer.PictureUri,
-		&i.Customer.UpdateTime,
-	)
-	return i, err
-}
-
-const getProjectAndCustomerByPublicApiKey = `-- name: GetProjectAndCustomerByPublicApiKey :one
-select projects.create_time, projects.created_by, projects.display_name, projects.fcm_service_json, projects.id, projects.org_id, projects.private_api_key, projects.public_api_key, projects.update_time, customers.create_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.update_time
-from projects
-join customers on customers.id = projects.created_by
-where projects.public_api_key = $1
-`
-
-type GetProjectAndCustomerByPublicApiKeyRow struct {
-	Project  Project
-	Customer Customer
-}
-
-// NOTE: Same as above — the customer data is required by the Principal struct
-// populated in WithSDKAuth, but is not accessed by downstream SDK handler code.
-func (q *Queries) GetProjectAndCustomerByPublicApiKey(ctx context.Context, publicApiKey string) (GetProjectAndCustomerByPublicApiKeyRow, error) {
-	row := q.db.QueryRow(ctx, getProjectAndCustomerByPublicApiKey, publicApiKey)
-	var i GetProjectAndCustomerByPublicApiKeyRow
-	err := row.Scan(
-		&i.Project.CreateTime,
-		&i.Project.CreatedBy,
-		&i.Project.DisplayName,
-		&i.Project.FcmServiceJson,
-		&i.Project.ID,
-		&i.Project.OrgID,
-		&i.Project.PrivateApiKey,
-		&i.Project.PublicApiKey,
-		&i.Project.UpdateTime,
-		&i.Customer.CreateTime,
-		&i.Customer.DisplayName,
-		&i.Customer.Email,
-		&i.Customer.ID,
-		&i.Customer.PasswordHash,
-		&i.Customer.PictureUri,
-		&i.Customer.UpdateTime,
-	)
-	return i, err
-}
-
 const getProjectByID = `-- name: GetProjectByID :one
-select create_time, created_by, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where id = $1
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where id = $1
 `
 
 func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error) {
@@ -96,7 +18,6 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CreatedBy,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
@@ -109,7 +30,7 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 }
 
 const getProjectByIDAndOrgMember = `-- name: GetProjectByIDAndOrgMember :one
-select p.create_time, p.created_by, p.display_name, p.fcm_service_json, p.id, p.org_id, p.private_api_key, p.public_api_key, p.update_time
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.private_api_key, p.public_api_key, p.update_time
 from projects p
 join org_members om on om.org_id = p.org_id
 where p.id = $1 and om.customer_id = $2
@@ -125,7 +46,46 @@ func (q *Queries) GetProjectByIDAndOrgMember(ctx context.Context, arg GetProject
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CreatedBy,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.OrgID,
+		&i.PrivateApiKey,
+		&i.PublicApiKey,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const getProjectByPrivateApiKey = `-- name: GetProjectByPrivateApiKey :one
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where private_api_key = $1
+`
+
+func (q *Queries) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey string) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByPrivateApiKey, privateApiKey)
+	var i Project
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.OrgID,
+		&i.PrivateApiKey,
+		&i.PublicApiKey,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const getProjectByPublicApiKey = `-- name: GetProjectByPublicApiKey :one
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where public_api_key = $1
+`
+
+func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, publicApiKey string) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByPublicApiKey, publicApiKey)
+	var i Project
+	err := row.Scan(
+		&i.CreateTime,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
@@ -138,7 +98,7 @@ func (q *Queries) GetProjectByIDAndOrgMember(ctx context.Context, arg GetProject
 }
 
 const getProjectsByOrgID = `-- name: GetProjectsByOrgID :many
-select create_time, created_by, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where org_id = $1
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where org_id = $1
 `
 
 func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Project, error) {
@@ -152,7 +112,6 @@ func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Proje
 		var i Project
 		if err := rows.Scan(
 			&i.CreateTime,
-			&i.CreatedBy,
 			&i.DisplayName,
 			&i.FcmServiceJson,
 			&i.ID,

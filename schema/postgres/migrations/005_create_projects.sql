@@ -1,7 +1,6 @@
 -- +goose Up
 create table projects (
   create_time timestamptz not null default now(),
-  created_by char(20) not null references customers(id),
   display_name varchar(150) not null,
   fcm_service_json text,
   id char(20) primary key,

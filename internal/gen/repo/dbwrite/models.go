@@ -80,7 +80,6 @@ type ProfileDevice struct {
 
 type Project struct {
 	CreateTime     pgtype.Timestamptz
-	CreatedBy      string
 	DisplayName    string
 	FcmServiceJson pgtype.Text
 	ID             string

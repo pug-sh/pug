@@ -106,7 +106,7 @@ func (s *server) Create(
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
 	}
 
-	projectData, err := s.service.CreateProject(ctx, req.Msg.OrgId, principal.Customer.ID, req.Msg.DisplayName)
+	projectData, err := s.service.CreateProject(ctx, req.Msg.OrgId, req.Msg.DisplayName)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))

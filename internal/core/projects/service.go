@@ -64,7 +64,7 @@ func NewPublicKey() (string, error) {
 	return "pub_" + h, nil
 }
 
-func (s *Service) CreateProject(ctx context.Context, orgID, createdBy, displayName string) (dbwrite.Project, error) {
+func (s *Service) CreateProject(ctx context.Context, orgID, displayName string) (dbwrite.Project, error) {
 	privKey, err := NewPrivateKey()
 	if err != nil {
 		return dbwrite.Project{}, err
@@ -78,7 +78,6 @@ func (s *Service) CreateProject(ctx context.Context, orgID, createdBy, displayNa
 		PrivateApiKey: privKey,
 		PublicApiKey:  pubKey,
 		OrgID:         orgID,
-		CreatedBy:     createdBy,
 		DisplayName:   displayName,
 	})
 }

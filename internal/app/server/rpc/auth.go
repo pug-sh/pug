@@ -34,10 +34,10 @@ const (
 )
 
 // Principal represents the authenticated entity.
-// Customer is always set. Project is set for API key auth and JWT auth with x-project-id header.
+// Customer is set for JWT auth. Project is set for API key auth and JWT auth with x-project-id header.
 type Principal struct {
 	AuthType AuthType
-	Customer dbread.Customer
+	Customer *dbread.Customer
 	Project  *dbread.Project
 }
 
@@ -58,7 +58,7 @@ func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 			return nil, authn.Errorf("invalid API key")
 		}
 
-		row, err := repo.GetProjectAndCustomerByPublicApiKey(ctx, apiKey)
+		project, err := repo.GetProjectByPublicApiKey(ctx, apiKey)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, authn.Errorf("invalid API key")
@@ -69,8 +69,7 @@ func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 
 		return &Principal{
 			AuthType: AuthTypeAPIKey,
-			Customer: row.Customer,
-			Project:  &row.Project,
+			Project:  &project,
 		}, nil
 	}
 }
@@ -123,7 +122,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 
 		principal := &Principal{
 			AuthType: AuthTypeJWT,
-			Customer: customer,
+			Customer: &customer,
 		}
 
 		// Optionally populate Project if x-project-id header is provided
@@ -155,7 +154,7 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo *projects.Repo) a
 			if !strings.HasPrefix(apiKey, privateKeyPrefix) {
 				return nil, authn.Errorf("invalid API key")
 			}
-			row, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, apiKey)
+			project, err := repo.GetProjectByPrivateApiKey(ctx, apiKey)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					return nil, authn.Errorf("invalid API key")
@@ -165,8 +164,7 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo *projects.Repo) a
 			}
 			return &Principal{
 				AuthType: AuthTypeAPIKey,
-				Customer: row.Customer,
-				Project:  &row.Project,
+				Project:  &project,
 			}, nil
 		}
 		return jwtAuth(ctx, req)

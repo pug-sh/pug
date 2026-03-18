@@ -12,13 +12,12 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-insert into projects (created_by, display_name, id, org_id, private_api_key, public_api_key)
-values ($1, $2, $3, $4, $5, $6)
-returning create_time, created_by, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+insert into projects (display_name, id, org_id, private_api_key, public_api_key)
+values ($1, $2, $3, $4, $5)
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
 `
 
 type CreateProjectParams struct {
-	CreatedBy     string
 	DisplayName   string
 	ID            string
 	OrgID         string
@@ -28,7 +27,6 @@ type CreateProjectParams struct {
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
 	row := q.db.QueryRow(ctx, createProject,
-		arg.CreatedBy,
 		arg.DisplayName,
 		arg.ID,
 		arg.OrgID,
@@ -38,7 +36,6 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CreatedBy,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
@@ -53,7 +50,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 const deleteProject = `-- name: DeleteProject :one
 delete from projects
 where org_id = $1 and id = $2
-returning create_time, created_by, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
 `
 
 type DeleteProjectParams struct {
@@ -66,7 +63,6 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (P
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CreatedBy,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
@@ -82,7 +78,7 @@ const updateFCMServiceJSON = `-- name: UpdateFCMServiceJSON :one
 update projects
 set fcm_service_json = $1
 where org_id = $2 and id = $3
-returning create_time, created_by, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
 `
 
 type UpdateFCMServiceJSONParams struct {
@@ -96,7 +92,6 @@ func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMService
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CreatedBy,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
@@ -112,7 +107,7 @@ const updateProjectDisplayName = `-- name: UpdateProjectDisplayName :one
 update projects
 set display_name = $1
 where org_id = $2 and id = $3
-returning create_time, created_by, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
 `
 
 type UpdateProjectDisplayNameParams struct {
@@ -126,7 +121,6 @@ func (q *Queries) UpdateProjectDisplayName(ctx context.Context, arg UpdateProjec
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CreatedBy,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,

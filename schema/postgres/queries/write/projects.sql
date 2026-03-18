@@ -1,6 +1,6 @@
 -- name: CreateProject :one
-insert into projects (created_by, display_name, id, org_id, private_api_key, public_api_key)
-values (@created_by, @display_name, @id, @org_id, @private_api_key, @public_api_key)
+insert into projects (display_name, id, org_id, private_api_key, public_api_key)
+values (@display_name, @id, @org_id, @private_api_key, @public_api_key)
 returning *;
 
 -- name: DeleteProject :one
