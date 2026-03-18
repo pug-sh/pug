@@ -171,8 +171,8 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo *projects.Repo) a
 	}
 }
 
-// GetPrincipalFromContext extracts the Principal from context.
-func GetPrincipalFromContext(ctx context.Context) (*Principal, error) {
+// getPrincipalFromContext extracts the Principal from context.
+func getPrincipalFromContext(ctx context.Context) (*Principal, error) {
 	info := authn.GetInfo(ctx)
 
 	if principal, ok := info.(*Principal); ok {
@@ -182,10 +182,25 @@ func GetPrincipalFromContext(ctx context.Context) (*Principal, error) {
 	return nil, authn.Errorf("context value is not a Principal type: %T", info)
 }
 
+// MustGetPrincipalWithCustomer extracts the Principal and ensures Customer is set.
+// Use this for dashboard handlers that require JWT auth context.
+func MustGetPrincipalWithCustomer(ctx context.Context) (*Principal, error) {
+	principal, err := getPrincipalFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if principal.Customer == nil {
+		return nil, authn.Errorf("customer not set in principal")
+	}
+
+	return principal, nil
+}
+
 // MustGetPrincipalWithProject extracts the Principal and ensures Project is set.
 // Use this for SDK and shared handlers that require a project context.
 func MustGetPrincipalWithProject(ctx context.Context) (*Principal, error) {
-	principal, err := GetPrincipalFromContext(ctx)
+	principal, err := getPrincipalFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

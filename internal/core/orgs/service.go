@@ -174,7 +174,12 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID string) (d
 		return dbread.Org{}, err
 	}
 
-	return s.read.GetOrgByID(ctx, inv.OrgID)
+	org, err := s.read.GetOrgByID(ctx, inv.OrgID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("orgID", inv.OrgID))
+		return dbread.Org{}, err
+	}
+	return org, nil
 }
 
 func (s *Service) ListInvitations(ctx context.Context, orgID string) ([]dbread.OrgInvitation, error) {

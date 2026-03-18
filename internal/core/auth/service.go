@@ -32,7 +32,7 @@ type Service struct {
 	jwtKey []byte
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, _ *orgs.Service, _ *projects.Service) *Service {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
 	return &Service{
 		read:   dbread.New(pgRO),
 		write:  dbwrite.New(pgW),

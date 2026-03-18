@@ -34,13 +34,9 @@ func (s *server) Get(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	return connect.NewResponse(&projectsv1.GetResponse{Project: roToRPCMsg(*principal.Project)}), nil
@@ -55,7 +51,7 @@ func (s *server) BatchGet(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -92,7 +88,7 @@ func (s *server) Create(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -124,13 +120,9 @@ func (s *server) Delete(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	wParams := dbwrite.DeleteProjectParams{
@@ -158,13 +150,9 @@ func (s *server) UpdateDisplayName(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	wParams := dbwrite.UpdateProjectDisplayNameParams{OrgID: principal.Project.OrgID, DisplayName: req.Msg.DisplayName, ID: principal.Project.ID}
@@ -186,13 +174,9 @@ func (s *server) UpdateFCMServiceJSON(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
 	}
 
 	wParams := dbwrite.UpdateFCMServiceJSONParams{

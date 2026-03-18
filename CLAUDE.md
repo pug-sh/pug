@@ -93,6 +93,21 @@ PostgreSQL uses read/write separation:
 - Admin-only operations: `UpdateDisplayName`, `RemoveMember`, `InviteMember`, `ListInvitations`. All other org endpoints require membership.
 - On sign-up, a default org and default project are created atomically in a single transaction.
 
+### Auth & Principal
+
+RPC handlers authenticate via `connectrpc.com/authn` middleware. Three auth modes are supported:
+
+- **`WithJWTAuth`** — Dashboard auth. Sets `Principal.Customer` (always non-nil). Optionally sets `Principal.Project` if `x-project-id` header is provided and the customer is an org member.
+- **`WithSDKAuth`** — Public API key auth. Sets `Principal.Project` only. `Principal.Customer` is nil.
+- **`WithDualAuth`** — Private API key or JWT fallback. API key path sets `Principal.Project` only; JWT path behaves like `WithJWTAuth`.
+
+`Principal.Customer` is `*dbread.Customer` — it is nil for API key auth paths. Always use the appropriate extractor:
+
+- **`MustGetPrincipalWithCustomer`** — use in dashboard handlers that access `principal.Customer`. Returns `CodeUnauthenticated` if Customer is nil.
+- **`MustGetPrincipalWithProject`** — use in handlers that require a project context (`x-project-id` header). Returns `CodeUnauthenticated` if Project is nil.
+
+Never call `getPrincipalFromContext` directly in handlers.
+
 ### Proto/RPC
 
 Services defined in `proto/` directory. Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled.
@@ -109,3 +124,4 @@ Services defined in `proto/` directory. Generated code goes to `internal/gen/pro
 - Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change. A PostToolUse hook auto-runs `goimports` on every `.go` file edit.
 - Always use context-aware slog variants (`slog.InfoContext`, `slog.ErrorContext`, `slog.WarnContext`, `slog.DebugContext`) instead of `slog.Info`, `slog.Error`, etc.
 - Always use `slogx.Error(err)` (from `internal/slogx`) for logging errors. Never use `slog.Any("error", err)` or `slog.Any("err", err)`.
+- Never pass sentinel errors directly to `connect.NewError`. Always create an explicit client-facing message with `errors.New("...")`. Sentinel errors are internal and their strings must not leak to API consumers.

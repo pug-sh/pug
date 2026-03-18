@@ -29,7 +29,7 @@ func (s *server) Get(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -63,7 +63,7 @@ func (s *server) UpdateDisplayName(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -97,7 +97,7 @@ func (s *server) ListMembers(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -139,7 +139,7 @@ func (s *server) RemoveMember(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -151,6 +151,10 @@ func (s *server) RemoveMember(
 	}
 	if !isAdmin {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
+	}
+
+	if req.Msg.CustomerId == principal.Customer.ID {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("cannot remove yourself from an org"))
 	}
 
 	if err := s.service.RemoveMember(ctx, req.Msg.OrgId, req.Msg.CustomerId); err != nil {
@@ -169,7 +173,7 @@ func (s *server) InviteMember(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
@@ -200,18 +204,21 @@ func (s *server) AcceptInvite(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
 	org, err := s.service.AcceptInvite(ctx, req.Msg.Token, principal.Customer.ID)
 	if err != nil {
-		if errors.Is(err, coreorgs.ErrInviteNotPending) || errors.Is(err, coreorgs.ErrInviteExpired) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		if errors.Is(err, coreorgs.ErrInviteNotPending) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("invitation is no longer pending"))
+		}
+		if errors.Is(err, coreorgs.ErrInviteExpired) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("invitation has expired"))
 		}
 		if errors.Is(err, coreorgs.ErrAlreadyMember) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, err)
+			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("already a member of this org"))
 		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("invitation not found"))
@@ -231,7 +238,7 @@ func (s *server) ListInvitations(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}

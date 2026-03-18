@@ -67,7 +67,7 @@ func start(ctx context.Context, d *deps) error {
 
 	// Handlers
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
-		auth.NewServer(d.pgRo, d.pgW, d.jwtKey, orgsSvc, projectsSvc), handlerOpts)
+		auth.NewServer(d.pgRo, d.pgW, d.jwtKey), handlerOpts)
 	orgsPath, orgsHandler := orgsv1connect.NewOrgsServiceHandler(
 		orgsrpc.NewServer(orgsSvc), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
