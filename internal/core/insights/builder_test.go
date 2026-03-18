@@ -630,6 +630,36 @@ func TestUnsupportedFilterOperator(t *testing.T) {
 	}
 }
 
+func TestNumericFilterRejectsNonNumericValue(t *testing.T) {
+	operators := []insightsv1.FilterOperator{
+		insightsv1.FilterOperator_FILTER_OPERATOR_LTE,
+		insightsv1.FilterOperator_FILTER_OPERATOR_GTE,
+		insightsv1.FilterOperator_FILTER_OPERATOR_LT,
+		insightsv1.FilterOperator_FILTER_OPERATOR_GT,
+	}
+	for _, op := range operators {
+		t.Run(op.String(), func(t *testing.T) {
+			req := &insightsv1.QueryRequest{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+				Events: []*insightsv1.EventQuery{
+					{Kind: "click", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				},
+				Filters: []*insightsv1.PropertyFilter{
+					{Property: "score", Operator: op, Value: "not-a-number"},
+				},
+			}
+			_, _, err := insights.BuildQuery(req, "proj_123")
+			if err == nil {
+				t.Fatal("expected error for non-numeric value, got nil")
+			}
+			if !strings.Contains(err.Error(), "invalid numeric value") {
+				t.Errorf("expected 'invalid numeric value' in error, got: %v", err)
+			}
+		})
+	}
+}
+
 func TestMultipleCombinedFilters(t *testing.T) {
 	req := &insightsv1.QueryRequest{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
