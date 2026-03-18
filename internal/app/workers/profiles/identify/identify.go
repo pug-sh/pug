@@ -175,9 +175,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			return err
 		}
 
-		// :exec DELETE returns nil when zero rows match (profile already gone),
-		// so any error here is a genuine database failure.
-		if err := qtx.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
+		if _, err := qtx.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
 			ID:        profileID,
 			ProjectID: projectID,
 		}); err != nil {

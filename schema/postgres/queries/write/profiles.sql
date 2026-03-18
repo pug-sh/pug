@@ -1,4 +1,4 @@
--- name: DeleteProfileByIDAndProjectID :exec
+-- name: DeleteProfileByIDAndProjectID :execrows
 delete from profiles
 where id = @id and project_id = @project_id;
 

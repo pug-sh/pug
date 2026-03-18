@@ -22,8 +22,11 @@ import (
 var (
 	ErrAlreadyMember    = errors.New("already a member of this org")
 	ErrInviteExpired    = errors.New("invitation has expired")
+	ErrInviteNotFound   = errors.New("invitation not found")
 	ErrInviteNotPending = errors.New("invitation is not pending")
+	ErrInviteWrongEmail = errors.New("invitation was issued to a different email address")
 	ErrMemberNotFound   = errors.New("member not found")
+	ErrOrgNotFound      = errors.New("org not found")
 )
 
 const (
@@ -66,7 +69,14 @@ func (s *Service) AddMember(ctx context.Context, orgID, customerID, role string)
 }
 
 func (s *Service) GetOrgByID(ctx context.Context, id string) (dbread.Org, error) {
-	return s.read.GetOrgByID(ctx, id)
+	org, err := s.read.GetOrgByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbread.Org{}, ErrOrgNotFound
+		}
+		return dbread.Org{}, err
+	}
+	return org, nil
 }
 
 func (s *Service) GetOrgsByCustomerID(ctx context.Context, customerID string) ([]dbread.Org, error) {
@@ -74,10 +84,17 @@ func (s *Service) GetOrgsByCustomerID(ctx context.Context, customerID string) ([
 }
 
 func (s *Service) UpdateDisplayName(ctx context.Context, id, displayName string) (dbwrite.Org, error) {
-	return s.write.UpdateOrgDisplayName(ctx, dbwrite.UpdateOrgDisplayNameParams{
+	org, err := s.write.UpdateOrgDisplayName(ctx, dbwrite.UpdateOrgDisplayNameParams{
 		ID:          id,
 		DisplayName: displayName,
 	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbwrite.Org{}, ErrOrgNotFound
+		}
+		return dbwrite.Org{}, err
+	}
+	return org, nil
 }
 
 func (s *Service) IsOrgMember(ctx context.Context, orgID, customerID string) (bool, error) {
@@ -134,15 +151,19 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 	})
 }
 
-func (s *Service) AcceptInvite(ctx context.Context, token, customerID string) (dbread.Org, error) {
+func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerEmail string) (dbread.Org, error) {
 	inv, err := s.read.GetOrgInvitationByToken(ctx, token)
 	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			slog.ErrorContext(ctx, "failed to get org invitation by token", slogx.Error(err))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbread.Org{}, ErrInviteNotFound
 		}
+		slog.ErrorContext(ctx, "failed to get org invitation by token", slogx.Error(err))
 		return dbread.Org{}, err
 	}
 
+	if inv.Email != customerEmail {
+		return dbread.Org{}, ErrInviteWrongEmail
+	}
 	if inv.Status != InviteStatusPending {
 		return dbread.Org{}, ErrInviteNotPending
 	}
@@ -185,7 +206,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID string) (d
 		return dbread.Org{}, err
 	}
 
-	org, err := s.read.GetOrgByID(ctx, inv.OrgID)
+	org, err := s.GetOrgByID(ctx, inv.OrgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("orgID", inv.OrgID))
 		return dbread.Org{}, err

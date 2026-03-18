@@ -10,7 +10,6 @@ import (
 	coreorgs "github.com/fivebitsio/cotton/internal/core/orgs"
 	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/jackc/pgx/v5"
 )
 
 type server struct {
@@ -19,6 +18,33 @@ type server struct {
 
 func NewServer(service *coreorgs.Service) *server {
 	return &server{service: service}
+}
+
+func (s *server) List(
+	ctx context.Context,
+	_ *connect.Request[orgsv1.ListRequest],
+) (*connect.Response[orgsv1.ListResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	}
+
+	orgs, err := s.service.GetOrgsByCustomerID(ctx, principal.Customer.ID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to list orgs", slogx.Error(err), slog.String("customerID", principal.Customer.ID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	result := make([]*orgsv1.Org, 0, len(orgs))
+	for _, o := range orgs {
+		result = append(result, toRPCOrg(o))
+	}
+
+	return connect.NewResponse(&orgsv1.ListResponse{Orgs: result}), nil
 }
 
 func (s *server) Get(
@@ -45,7 +71,7 @@ func (s *server) Get(
 
 	org, err := s.service.GetOrgByID(ctx, req.Msg.OrgId)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, coreorgs.ErrOrgNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("org not found"))
 		}
 		slog.ErrorContext(ctx, "failed to get org", slogx.Error(err))
@@ -79,7 +105,7 @@ func (s *server) UpdateDisplayName(
 
 	org, err := s.service.UpdateDisplayName(ctx, req.Msg.OrgId, req.Msg.DisplayName)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, coreorgs.ErrOrgNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("org not found"))
 		}
 		slog.ErrorContext(ctx, "failed to update org", slogx.Error(err))
@@ -212,8 +238,11 @@ func (s *server) AcceptInvite(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	org, err := s.service.AcceptInvite(ctx, req.Msg.Token, principal.Customer.ID)
+	org, err := s.service.AcceptInvite(ctx, req.Msg.Token, principal.Customer.ID, principal.Customer.Email)
 	if err != nil {
+		if errors.Is(err, coreorgs.ErrInviteWrongEmail) {
+			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("invitation was issued to a different email address"))
+		}
 		if errors.Is(err, coreorgs.ErrInviteNotPending) {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("invitation is no longer pending"))
 		}
@@ -223,7 +252,7 @@ func (s *server) AcceptInvite(
 		if errors.Is(err, coreorgs.ErrAlreadyMember) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("already a member of this org"))
 		}
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, coreorgs.ErrInviteNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("invitation not found"))
 		}
 		slog.ErrorContext(ctx, "failed to accept invitation", slogx.Error(err))

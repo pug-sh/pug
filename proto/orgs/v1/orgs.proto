@@ -7,6 +7,7 @@ option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1;orgsv1";
 
 service OrgsService {
+  rpc List(ListRequest) returns (ListResponse) {}
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc UpdateDisplayName(UpdateDisplayNameRequest) returns (UpdateDisplayNameResponse) {}
   rpc ListMembers(ListMembersRequest) returns (ListMembersResponse) {}
@@ -36,6 +37,12 @@ message OrgInvitation {
   string org_id = 4;
   string status = 5;
   string token = 6;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated Org orgs = 1;
 }
 
 message GetRequest {

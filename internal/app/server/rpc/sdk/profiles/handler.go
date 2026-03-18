@@ -45,12 +45,16 @@ func (h *Handler) Delete(
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
 
-	if err := h.write.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
+	n, err := h.write.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
 		ID:        req.Msg.Id,
 		ProjectID: principal.Project.ID,
-	}); err != nil {
+	})
+	if err != nil {
 		slog.ErrorContext(ctx, "failed deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
+	}
+	if n == 0 {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 	}
 
 	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil
@@ -70,10 +74,10 @@ func (h *Handler) Get(
 		ProjectID: principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("failed to get profile"))
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 		}
+		slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
 	}
 
@@ -101,11 +105,10 @@ func (h *Handler) GetByExternalId(
 		ProjectID:  principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
-
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("failed to get profile"))
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 		}
+		slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
 	}
 

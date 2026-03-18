@@ -33,6 +33,8 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// OrgsServiceListProcedure is the fully-qualified name of the OrgsService's List RPC.
+	OrgsServiceListProcedure = "/orgs.v1.OrgsService/List"
 	// OrgsServiceGetProcedure is the fully-qualified name of the OrgsService's Get RPC.
 	OrgsServiceGetProcedure = "/orgs.v1.OrgsService/Get"
 	// OrgsServiceUpdateDisplayNameProcedure is the fully-qualified name of the OrgsService's
@@ -56,6 +58,7 @@ const (
 
 // OrgsServiceClient is a client for the orgs.v1.OrgsService service.
 type OrgsServiceClient interface {
+	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	UpdateDisplayName(context.Context, *connect.Request[v1.UpdateDisplayNameRequest]) (*connect.Response[v1.UpdateDisplayNameResponse], error)
 	ListMembers(context.Context, *connect.Request[v1.ListMembersRequest]) (*connect.Response[v1.ListMembersResponse], error)
@@ -76,6 +79,12 @@ func NewOrgsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 	baseURL = strings.TrimRight(baseURL, "/")
 	orgsServiceMethods := v1.File_orgs_v1_orgs_proto.Services().ByName("OrgsService").Methods()
 	return &orgsServiceClient{
+		list: connect.NewClient[v1.ListRequest, v1.ListResponse](
+			httpClient,
+			baseURL+OrgsServiceListProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("List")),
+			connect.WithClientOptions(opts...),
+		),
 		get: connect.NewClient[v1.GetRequest, v1.GetResponse](
 			httpClient,
 			baseURL+OrgsServiceGetProcedure,
@@ -123,6 +132,7 @@ func NewOrgsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // orgsServiceClient implements OrgsServiceClient.
 type orgsServiceClient struct {
+	list              *connect.Client[v1.ListRequest, v1.ListResponse]
 	get               *connect.Client[v1.GetRequest, v1.GetResponse]
 	updateDisplayName *connect.Client[v1.UpdateDisplayNameRequest, v1.UpdateDisplayNameResponse]
 	listMembers       *connect.Client[v1.ListMembersRequest, v1.ListMembersResponse]
@@ -130,6 +140,11 @@ type orgsServiceClient struct {
 	inviteMember      *connect.Client[v1.InviteMemberRequest, v1.InviteMemberResponse]
 	acceptInvite      *connect.Client[v1.AcceptInviteRequest, v1.AcceptInviteResponse]
 	listInvitations   *connect.Client[v1.ListInvitationsRequest, v1.ListInvitationsResponse]
+}
+
+// List calls orgs.v1.OrgsService.List.
+func (c *orgsServiceClient) List(ctx context.Context, req *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
+	return c.list.CallUnary(ctx, req)
 }
 
 // Get calls orgs.v1.OrgsService.Get.
@@ -169,6 +184,7 @@ func (c *orgsServiceClient) ListInvitations(ctx context.Context, req *connect.Re
 
 // OrgsServiceHandler is an implementation of the orgs.v1.OrgsService service.
 type OrgsServiceHandler interface {
+	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	UpdateDisplayName(context.Context, *connect.Request[v1.UpdateDisplayNameRequest]) (*connect.Response[v1.UpdateDisplayNameResponse], error)
 	ListMembers(context.Context, *connect.Request[v1.ListMembersRequest]) (*connect.Response[v1.ListMembersResponse], error)
@@ -185,6 +201,12 @@ type OrgsServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	orgsServiceMethods := v1.File_orgs_v1_orgs_proto.Services().ByName("OrgsService").Methods()
+	orgsServiceListHandler := connect.NewUnaryHandler(
+		OrgsServiceListProcedure,
+		svc.List,
+		connect.WithSchema(orgsServiceMethods.ByName("List")),
+		connect.WithHandlerOptions(opts...),
+	)
 	orgsServiceGetHandler := connect.NewUnaryHandler(
 		OrgsServiceGetProcedure,
 		svc.Get,
@@ -229,6 +251,8 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 	)
 	return "/orgs.v1.OrgsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case OrgsServiceListProcedure:
+			orgsServiceListHandler.ServeHTTP(w, r)
 		case OrgsServiceGetProcedure:
 			orgsServiceGetHandler.ServeHTTP(w, r)
 		case OrgsServiceUpdateDisplayNameProcedure:
@@ -251,6 +275,10 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 
 // UnimplementedOrgsServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedOrgsServiceHandler struct{}
+
+func (UnimplementedOrgsServiceHandler) List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("orgs.v1.OrgsService.List is not implemented"))
+}
 
 func (UnimplementedOrgsServiceHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("orgs.v1.OrgsService.Get is not implemented"))

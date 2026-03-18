@@ -13,7 +13,6 @@ import (
 	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/jackc/pgx/v5"
 )
 
 type server struct {
@@ -104,7 +103,7 @@ func (s *server) Create(
 
 	projectData, err := s.service.CreateProject(ctx, req.Msg.OrgId, req.Msg.DisplayName)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to create project", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -131,7 +130,7 @@ func (s *server) Delete(
 	}
 
 	if err := s.service.DeleteProject(ctx, wParams); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, projects.ErrProjectNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
 		}
 		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("orgId", principal.Project.OrgID), slog.String("id", principal.Project.ID))
@@ -158,7 +157,10 @@ func (s *server) UpdateDisplayName(
 	wParams := dbwrite.UpdateProjectDisplayNameParams{OrgID: principal.Project.OrgID, DisplayName: req.Msg.DisplayName, ID: principal.Project.ID}
 	projectData, err := s.service.UpdateProjectDisplayName(ctx, wParams)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.Any("params", wParams))
+		if errors.Is(err, projects.ErrProjectNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
+		}
+		slog.ErrorContext(ctx, "failed to update project display name", slogx.Error(err), slog.String("projectID", wParams.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -185,7 +187,10 @@ func (s *server) UpdateFCMServiceJSON(
 		ID:             principal.Project.ID,
 	}
 	if _, err := s.service.UpdateFCMServiceJSON(ctx, wParams); err != nil {
-		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.String("projectID", wParams.ID), slog.String("orgID", wParams.OrgID), slogx.Redacted("fcm_service_json", wParams.FcmServiceJson.String))
+		if errors.Is(err, projects.ErrProjectNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
+		}
+		slog.ErrorContext(ctx, "failed to update project FCM service JSON", slogx.Error(err), slog.String("projectID", wParams.ID), slog.String("orgID", wParams.OrgID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

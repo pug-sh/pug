@@ -9,7 +9,7 @@ import (
 	"context"
 )
 
-const deleteProfileByIDAndProjectID = `-- name: DeleteProfileByIDAndProjectID :exec
+const deleteProfileByIDAndProjectID = `-- name: DeleteProfileByIDAndProjectID :execrows
 delete from profiles
 where id = $1 and project_id = $2
 `
@@ -19,9 +19,12 @@ type DeleteProfileByIDAndProjectIDParams struct {
 	ProjectID string
 }
 
-func (q *Queries) DeleteProfileByIDAndProjectID(ctx context.Context, arg DeleteProfileByIDAndProjectIDParams) error {
-	_, err := q.db.Exec(ctx, deleteProfileByIDAndProjectID, arg.ID, arg.ProjectID)
-	return err
+func (q *Queries) DeleteProfileByIDAndProjectID(ctx context.Context, arg DeleteProfileByIDAndProjectIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProfileByIDAndProjectID, arg.ID, arg.ProjectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const mergeProfileProperties = `-- name: MergeProfileProperties :one

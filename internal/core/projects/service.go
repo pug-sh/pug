@@ -15,6 +15,8 @@ import (
 	"github.com/rs/xid"
 )
 
+var ErrProjectNotFound = errors.New("project not found")
+
 type Service struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
@@ -32,6 +34,9 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, repo *Repo) *Service {
 func (s *Service) DeleteProject(ctx context.Context, arg dbwrite.DeleteProjectParams) error {
 	project, err := s.write.DeleteProject(ctx, arg)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrProjectNotFound
+		}
 		return err
 	}
 	s.invalidateProject(ctx, project)
@@ -107,6 +112,9 @@ func (s *Service) ProjectExistsForOrgMember(ctx context.Context, projectID strin
 func (s *Service) UpdateProjectDisplayName(ctx context.Context, arg dbwrite.UpdateProjectDisplayNameParams) (dbwrite.Project, error) {
 	project, err := s.write.UpdateProjectDisplayName(ctx, arg)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbwrite.Project{}, ErrProjectNotFound
+		}
 		return project, err
 	}
 	s.invalidateProject(ctx, project)
@@ -116,6 +124,9 @@ func (s *Service) UpdateProjectDisplayName(ctx context.Context, arg dbwrite.Upda
 func (s *Service) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFCMServiceJSONParams) (dbwrite.Project, error) {
 	project, err := s.write.UpdateFCMServiceJSON(ctx, arg)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbwrite.Project{}, ErrProjectNotFound
+		}
 		return project, err
 	}
 	s.invalidateProject(ctx, project)
