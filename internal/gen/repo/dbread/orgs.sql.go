@@ -7,8 +7,6 @@ package dbread
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getOrgByID = `-- name: GetOrgByID :one
@@ -25,127 +23,6 @@ func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
 		&i.UpdateTime,
 	)
 	return i, err
-}
-
-const getOrgInvitationByToken = `-- name: GetOrgInvitationByToken :one
-select create_time, email, expires_at, id, inviter_id, org_id, status, token from org_invitations where token = $1
-`
-
-func (q *Queries) GetOrgInvitationByToken(ctx context.Context, token string) (OrgInvitation, error) {
-	row := q.db.QueryRow(ctx, getOrgInvitationByToken, token)
-	var i OrgInvitation
-	err := row.Scan(
-		&i.CreateTime,
-		&i.Email,
-		&i.ExpiresAt,
-		&i.ID,
-		&i.InviterID,
-		&i.OrgID,
-		&i.Status,
-		&i.Token,
-	)
-	return i, err
-}
-
-const getOrgInvitationsByOrgID = `-- name: GetOrgInvitationsByOrgID :many
-select create_time, email, expires_at, id, inviter_id, org_id, status, token from org_invitations
-where org_id = $1
-order by create_time desc
-`
-
-func (q *Queries) GetOrgInvitationsByOrgID(ctx context.Context, orgID string) ([]OrgInvitation, error) {
-	rows, err := q.db.Query(ctx, getOrgInvitationsByOrgID, orgID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []OrgInvitation
-	for rows.Next() {
-		var i OrgInvitation
-		if err := rows.Scan(
-			&i.CreateTime,
-			&i.Email,
-			&i.ExpiresAt,
-			&i.ID,
-			&i.InviterID,
-			&i.OrgID,
-			&i.Status,
-			&i.Token,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getOrgMemberRole = `-- name: GetOrgMemberRole :one
-select role from org_members where org_id = $1 and customer_id = $2
-`
-
-type GetOrgMemberRoleParams struct {
-	OrgID      string
-	CustomerID string
-}
-
-func (q *Queries) GetOrgMemberRole(ctx context.Context, arg GetOrgMemberRoleParams) (string, error) {
-	row := q.db.QueryRow(ctx, getOrgMemberRole, arg.OrgID, arg.CustomerID)
-	var role string
-	err := row.Scan(&role)
-	return role, err
-}
-
-const getOrgMembersByOrgID = `-- name: GetOrgMembersByOrgID :many
-select
-  om.customer_id,
-  om.create_time,
-  om.org_id,
-  om.role,
-  c.display_name,
-  c.email
-from org_members om
-join customers c on c.id = om.customer_id
-where om.org_id = $1
-order by om.create_time asc
-`
-
-type GetOrgMembersByOrgIDRow struct {
-	CustomerID  string
-	CreateTime  pgtype.Timestamptz
-	OrgID       string
-	Role        string
-	DisplayName string
-	Email       string
-}
-
-func (q *Queries) GetOrgMembersByOrgID(ctx context.Context, orgID string) ([]GetOrgMembersByOrgIDRow, error) {
-	rows, err := q.db.Query(ctx, getOrgMembersByOrgID, orgID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetOrgMembersByOrgIDRow
-	for rows.Next() {
-		var i GetOrgMembersByOrgIDRow
-		if err := rows.Scan(
-			&i.CustomerID,
-			&i.CreateTime,
-			&i.OrgID,
-			&i.Role,
-			&i.DisplayName,
-			&i.Email,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const getOrgsByCustomerID = `-- name: GetOrgsByCustomerID :many
@@ -179,23 +56,4 @@ func (q *Queries) GetOrgsByCustomerID(ctx context.Context, customerID string) ([
 		return nil, err
 	}
 	return items, nil
-}
-
-const isOrgMember = `-- name: IsOrgMember :one
-select exists(
-  select 1 from org_members
-  where org_id = $1 and customer_id = $2
-)
-`
-
-type IsOrgMemberParams struct {
-	OrgID      string
-	CustomerID string
-}
-
-func (q *Queries) IsOrgMember(ctx context.Context, arg IsOrgMemberParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isOrgMember, arg.OrgID, arg.CustomerID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
 }

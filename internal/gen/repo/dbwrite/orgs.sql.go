@@ -7,8 +7,6 @@ package dbwrite
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createOrg = `-- name: CreateOrg :one
@@ -34,82 +32,6 @@ func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, erro
 	return i, err
 }
 
-const createOrgInvitation = `-- name: CreateOrgInvitation :one
-insert into org_invitations (email, expires_at, id, inviter_id, org_id, token)
-values ($1, $2, $3, $4, $5, $6)
-returning create_time, email, expires_at, id, inviter_id, org_id, status, token
-`
-
-type CreateOrgInvitationParams struct {
-	Email     string
-	ExpiresAt pgtype.Timestamptz
-	ID        string
-	InviterID string
-	OrgID     string
-	Token     string
-}
-
-func (q *Queries) CreateOrgInvitation(ctx context.Context, arg CreateOrgInvitationParams) (OrgInvitation, error) {
-	row := q.db.QueryRow(ctx, createOrgInvitation,
-		arg.Email,
-		arg.ExpiresAt,
-		arg.ID,
-		arg.InviterID,
-		arg.OrgID,
-		arg.Token,
-	)
-	var i OrgInvitation
-	err := row.Scan(
-		&i.CreateTime,
-		&i.Email,
-		&i.ExpiresAt,
-		&i.ID,
-		&i.InviterID,
-		&i.OrgID,
-		&i.Status,
-		&i.Token,
-	)
-	return i, err
-}
-
-const createOrgMember = `-- name: CreateOrgMember :one
-insert into org_members (customer_id, org_id, role)
-values ($1, $2, $3)
-returning create_time, customer_id, org_id, role
-`
-
-type CreateOrgMemberParams struct {
-	CustomerID string
-	OrgID      string
-	Role       string
-}
-
-func (q *Queries) CreateOrgMember(ctx context.Context, arg CreateOrgMemberParams) (OrgMember, error) {
-	row := q.db.QueryRow(ctx, createOrgMember, arg.CustomerID, arg.OrgID, arg.Role)
-	var i OrgMember
-	err := row.Scan(
-		&i.CreateTime,
-		&i.CustomerID,
-		&i.OrgID,
-		&i.Role,
-	)
-	return i, err
-}
-
-const deleteOrgMember = `-- name: DeleteOrgMember :exec
-delete from org_members where org_id = $1 and customer_id = $2
-`
-
-type DeleteOrgMemberParams struct {
-	OrgID      string
-	CustomerID string
-}
-
-func (q *Queries) DeleteOrgMember(ctx context.Context, arg DeleteOrgMemberParams) error {
-	_, err := q.db.Exec(ctx, deleteOrgMember, arg.OrgID, arg.CustomerID)
-	return err
-}
-
 const updateOrgDisplayName = `-- name: UpdateOrgDisplayName :one
 update orgs set display_name = $1 where id = $2
 returning create_time, display_name, id, update_time
@@ -128,32 +50,6 @@ func (q *Queries) UpdateOrgDisplayName(ctx context.Context, arg UpdateOrgDisplay
 		&i.DisplayName,
 		&i.ID,
 		&i.UpdateTime,
-	)
-	return i, err
-}
-
-const updateOrgInvitationStatus = `-- name: UpdateOrgInvitationStatus :one
-update org_invitations set status = $1 where id = $2
-returning create_time, email, expires_at, id, inviter_id, org_id, status, token
-`
-
-type UpdateOrgInvitationStatusParams struct {
-	Status string
-	ID     string
-}
-
-func (q *Queries) UpdateOrgInvitationStatus(ctx context.Context, arg UpdateOrgInvitationStatusParams) (OrgInvitation, error) {
-	row := q.db.QueryRow(ctx, updateOrgInvitationStatus, arg.Status, arg.ID)
-	var i OrgInvitation
-	err := row.Scan(
-		&i.CreateTime,
-		&i.Email,
-		&i.ExpiresAt,
-		&i.ID,
-		&i.InviterID,
-		&i.OrgID,
-		&i.Status,
-		&i.Token,
 	)
 	return i, err
 }
