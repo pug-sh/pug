@@ -33,7 +33,7 @@ func (q *Queries) CreateOrgMember(ctx context.Context, arg CreateOrgMemberParams
 	return i, err
 }
 
-const deleteOrgMember = `-- name: DeleteOrgMember :exec
+const deleteOrgMember = `-- name: DeleteOrgMember :execrows
 delete from org_members where org_id = $1 and customer_id = $2
 `
 
@@ -42,7 +42,10 @@ type DeleteOrgMemberParams struct {
 	CustomerID string
 }
 
-func (q *Queries) DeleteOrgMember(ctx context.Context, arg DeleteOrgMemberParams) error {
-	_, err := q.db.Exec(ctx, deleteOrgMember, arg.OrgID, arg.CustomerID)
-	return err
+func (q *Queries) DeleteOrgMember(ctx context.Context, arg DeleteOrgMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOrgMember, arg.OrgID, arg.CustomerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

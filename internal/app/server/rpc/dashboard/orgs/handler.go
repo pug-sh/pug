@@ -158,7 +158,10 @@ func (s *server) RemoveMember(
 	}
 
 	if err := s.service.RemoveMember(ctx, req.Msg.OrgId, req.Msg.CustomerId); err != nil {
-		slog.ErrorContext(ctx, "failed to remove member", slogx.Error(err), slog.String("customerId", req.Msg.CustomerId))
+		if errors.Is(err, coreorgs.ErrMemberNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("member not found"))
+		}
+		slog.ErrorContext(ctx, "failed to remove member", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", req.Msg.CustomerId))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

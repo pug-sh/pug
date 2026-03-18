@@ -23,6 +23,7 @@ var (
 	ErrAlreadyMember    = errors.New("already a member of this org")
 	ErrInviteExpired    = errors.New("invitation has expired")
 	ErrInviteNotPending = errors.New("invitation is not pending")
+	ErrMemberNotFound   = errors.New("member not found")
 )
 
 const (
@@ -105,10 +106,17 @@ func (s *Service) ListMembers(ctx context.Context, orgID string) ([]dbread.GetOr
 }
 
 func (s *Service) RemoveMember(ctx context.Context, orgID, customerID string) error {
-	return s.write.DeleteOrgMember(ctx, dbwrite.DeleteOrgMemberParams{
+	n, err := s.write.DeleteOrgMember(ctx, dbwrite.DeleteOrgMemberParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
 	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrMemberNotFound
+	}
+	return nil
 }
 
 func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email string) (dbwrite.OrgInvitation, error) {
@@ -129,6 +137,9 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 func (s *Service) AcceptInvite(ctx context.Context, token, customerID string) (dbread.Org, error) {
 	inv, err := s.read.GetOrgInvitationByToken(ctx, token)
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "failed to get org invitation by token", slogx.Error(err))
+		}
 		return dbread.Org{}, err
 	}
 

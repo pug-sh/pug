@@ -3,5 +3,5 @@ insert into org_members (customer_id, org_id, role)
 values (@customer_id, @org_id, @role)
 returning *;
 
--- name: DeleteOrgMember :exec
+-- name: DeleteOrgMember :execrows
 delete from org_members where org_id = @org_id and customer_id = @customer_id;
