@@ -6,10 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/core/orgs"
 	"github.com/fivebitsio/cotton/internal/core/projects"
-	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -18,6 +16,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	ErrEmailAlreadyExists = errors.New("user with this email already exists")
+	ErrInvalidCredentials = errors.New("invalid credentials")
 )
 
 const (
@@ -41,31 +44,31 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
 	}
 }
 
-func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (*authv1.SignUpWithEmailResponse, error) {
+func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (string, error) {
 	_, err := s.read.GetCustomerByEmail(ctx, email)
 	if err == nil {
-		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("user with this email already exists"))
+		return "", ErrEmailAlreadyExists
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "failed to check existing customer", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to hash password", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
 	privKey, err := projects.NewPrivateKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 	pubKey, err := projects.NewPublicKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
 	customerID := xid.New().String()
@@ -74,7 +77,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin transaction", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
@@ -88,7 +91,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		PasswordHash: string(passwordHash),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to create customer", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
 	if _, err = w.CreateOrg(ctx, dbwrite.CreateOrgParams{
@@ -96,7 +99,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		DisplayName: "default",
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to create default org", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
 	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
@@ -105,7 +108,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		Role:       orgs.RoleAdmin,
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to add customer to default org", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
 	if _, err = w.CreateProject(ctx, dbwrite.CreateProjectParams{
@@ -116,49 +119,49 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		PublicApiKey:  pubKey,
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to create default project", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
 	if err = tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed to commit signup transaction", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
 	token, err := s.generateJWT(customerID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate JWT", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
-	return &authv1.SignUpWithEmailResponse{Token: token}, nil
+	return token, nil
 }
 
-func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (*authv1.SignInWithEmailResponse, error) {
+func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (string, error) {
 	customer, err := s.read.GetCustomerByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
+			return "", ErrInvalidCredentials
 		}
 		slog.ErrorContext(ctx, "failed to get customer by email", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte(password))
 	if err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
+			return "", ErrInvalidCredentials
 		}
 		slog.ErrorContext(ctx, "failed to compare password hash", slogx.Error(err), slog.String("customerID", customer.ID))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
 	token, err := s.generateJWT(customer.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate JWT", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return "", err
 	}
 
-	return &authv1.SignInWithEmailResponse{Token: token}, nil
+	return token, nil
 }
 
 type AdditionalClaims struct {
