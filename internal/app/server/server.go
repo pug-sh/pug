@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/grpcreflect"
 	"connectrpc.com/validate"
 	cottonrpc "github.com/fivebitsio/cotton/internal/app/server/rpc"
+	"github.com/fivebitsio/cotton/internal/app/server/rpc/dashboard/insights"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/dashboard/projects"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/public/auth"
 	devicesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/devices"
@@ -24,6 +25,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/devices/v1/devicesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/events/v1/eventsv1connect"
+	insightsv1connect "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1/insightsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -64,6 +66,8 @@ func start(ctx context.Context, d *deps) error {
 		auth.NewServer(d.pgRo, d.pgW, d.jwtKey, projectsSvc), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
 		projects.NewServer(projectsSvc), handlerOpts)
+	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
+		insights.NewServer(d.ch), handlerOpts)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
 		campaigns.NewServer(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
@@ -85,6 +89,7 @@ func start(ctx context.Context, d *deps) error {
 
 	// Dashboard only (CORS + JWT auth)
 	mux.Handle(projectsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
+	mux.Handle(insightsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(insightsHandler)))
 
 	// Shared: Dashboard + SDK (CORS + dual auth)
 	mux.Handle(campaignsPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(campaignsHandler)))
@@ -104,6 +109,7 @@ func start(ctx context.Context, d *deps) error {
 		eventsv1connect.EventsServiceName,
 		devicesv1connect.DevicesServiceName,
 		profilesv1connect.ProfilesServiceName,
+		insightsv1connect.InsightsServiceName,
 	}
 	reflector := grpcreflect.NewStaticReflector(services...)
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))

@@ -4,3 +4,4 @@ clients/
 __debug*
 /bin/
 pr-review.md
+.agents/

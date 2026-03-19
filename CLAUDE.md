@@ -91,7 +91,7 @@ Services defined in `proto/` directory. Generated code goes to `internal/gen/pro
 
 ### ClickHouse Events Table
 
-- **Engine:** `ReplacingMergeTree(insert_time)` — on merge, keeps the row with the highest `insert_time` per dedup key. Always query with `SELECT ... FINAL` to deduplicate at read time.
+- **Engine:** `ReplacingMergeTree(insert_time)` — on merge, keeps the row with the highest `insert_time` per dedup key. Use `SELECT ... FINAL` only when exact deduplication matters (e.g., single-user event history). Skip `FINAL` for aggregate analytics queries (trends, counts) where background merges provide eventual consistency and `FINAL` would hurt performance.
 - **Dedup key (ORDER BY):** `(project_id, toStartOfMinute(occur_time), kind, event_id)` — minute granularity matches the finest time resolution dashboards use (per-minute charts). Full-precision `occur_time` is stored in the column.
 - **Partitioning:** `PARTITION BY toYYYYMM(occur_time)` — ReplacingMergeTree **never** deduplicates across partitions.
 - **occur_time stability:** `occur_time` is required (enforced by proto validation). Clients must send a stable value on retries — a different value that crosses a minute boundary lands in a different sort-key bucket (dedup fails); if it crosses a month boundary it lands in a different partition (permanent duplicate).
