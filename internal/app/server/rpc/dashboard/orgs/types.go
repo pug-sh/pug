@@ -21,9 +21,13 @@ func toRPCOrgFromWrite(o dbwrite.Org) *orgsv1.Org {
 }
 
 func toRPCInvitation(inv dbwrite.OrgInvitation) *orgsv1.OrgInvitation {
+	var expiresAt string
+	if inv.ExpiresAt.Valid {
+		expiresAt = inv.ExpiresAt.Time.UTC().Format("2006-01-02T15:04:05Z")
+	}
 	return &orgsv1.OrgInvitation{
 		Email:     inv.Email,
-		ExpiresAt: inv.ExpiresAt.Time.UTC().Format("2006-01-02T15:04:05Z"),
+		ExpiresAt: expiresAt,
 		Id:        inv.ID,
 		OrgId:     inv.OrgID,
 		Status:    inv.Status,
@@ -32,9 +36,13 @@ func toRPCInvitation(inv dbwrite.OrgInvitation) *orgsv1.OrgInvitation {
 }
 
 func toRPCInvitationRO(inv dbread.OrgInvitation) *orgsv1.OrgInvitation {
+	var expiresAt string
+	if inv.ExpiresAt.Valid {
+		expiresAt = inv.ExpiresAt.Time.UTC().Format("2006-01-02T15:04:05Z")
+	}
 	return &orgsv1.OrgInvitation{
 		Email:     inv.Email,
-		ExpiresAt: inv.ExpiresAt.Time.UTC().Format("2006-01-02T15:04:05Z"),
+		ExpiresAt: expiresAt,
 		Id:        inv.ID,
 		OrgId:     inv.OrgID,
 		Status:    inv.Status,

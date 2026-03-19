@@ -12,6 +12,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -20,13 +21,14 @@ import (
 )
 
 var (
-	ErrAlreadyMember    = errors.New("already a member of this org")
-	ErrInviteExpired    = errors.New("invitation has expired")
-	ErrInviteNotFound   = errors.New("invitation not found")
-	ErrInviteNotPending = errors.New("invitation is not pending")
-	ErrInviteWrongEmail = errors.New("invitation was issued to a different email address")
-	ErrMemberNotFound   = errors.New("member not found")
-	ErrOrgNotFound      = errors.New("org not found")
+	ErrAlreadyMember        = errors.New("already a member of this org")
+	ErrInviteAlreadyPending = errors.New("a pending invitation already exists for this email")
+	ErrInviteExpired        = errors.New("invitation has expired")
+	ErrInviteNotFound       = errors.New("invitation not found")
+	ErrInviteNotPending     = errors.New("invitation is not pending")
+	ErrInviteWrongEmail     = errors.New("invitation was issued to a different email address")
+	ErrMemberNotFound       = errors.New("member not found")
+	ErrOrgNotFound          = errors.New("org not found")
 )
 
 const (
@@ -111,6 +113,7 @@ func (s *Service) IsOrgAdmin(ctx context.Context, orgID, customerID string) (boo
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			slog.DebugContext(ctx, "org admin check: customer is not a member", slog.String("orgID", orgID), slog.String("customerID", customerID))
 			return false, nil
 		}
 		return false, err
@@ -141,7 +144,7 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 	if err != nil {
 		return dbwrite.OrgInvitation{}, fmt.Errorf("generate invite token: %w", err)
 	}
-	return s.write.CreateOrgInvitation(ctx, dbwrite.CreateOrgInvitationParams{
+	inv, err := s.write.CreateOrgInvitation(ctx, dbwrite.CreateOrgInvitationParams{
 		ID:        xid.New().String(),
 		OrgID:     orgID,
 		InviterID: inviterID,
@@ -149,10 +152,27 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 		Token:     token,
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(inviteTTL), Valid: true},
 	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return dbwrite.OrgInvitation{}, ErrInviteAlreadyPending
+		}
+		return dbwrite.OrgInvitation{}, err
+	}
+	return inv, nil
 }
 
 func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerEmail string) (dbread.Org, error) {
-	inv, err := s.read.GetOrgInvitationByToken(ctx, token)
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin accept invite transaction", slogx.Error(err))
+		return dbread.Org{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	w := dbwrite.New(tx)
+
+	inv, err := w.GetOrgInvitationByTokenForUpdate(ctx, token)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dbread.Org{}, ErrInviteNotFound
@@ -171,22 +191,13 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		return dbread.Org{}, ErrInviteExpired
 	}
 
-	tx, err := s.pgW.Begin(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to begin accept invite transaction", slogx.Error(err))
-		return dbread.Org{}, err
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	w := dbwrite.New(tx)
-
 	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      inv.OrgID,
 		CustomerID: customerID,
 		Role:       RoleMember,
 	}); err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			return dbread.Org{}, ErrAlreadyMember
 		}
 		slog.ErrorContext(ctx, "failed to create org member on invite accept", slogx.Error(err))

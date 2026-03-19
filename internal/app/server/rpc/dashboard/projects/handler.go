@@ -35,7 +35,7 @@ func (s *server) Get(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	return connect.NewResponse(&projectsv1.GetResponse{Project: roToRPCMsg(*principal.Project)}), nil
@@ -52,12 +52,12 @@ func (s *server) BatchGet(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	isMember, err := s.orgsService.IsOrgMember(ctx, req.Msg.OrgId, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isMember {
@@ -89,12 +89,12 @@ func (s *server) Create(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	isMember, err := s.orgsService.IsOrgMember(ctx, req.Msg.OrgId, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isMember {
@@ -121,7 +121,7 @@ func (s *server) Delete(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	wParams := dbwrite.DeleteProjectParams{
@@ -151,7 +151,7 @@ func (s *server) UpdateDisplayName(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	wParams := dbwrite.UpdateProjectDisplayNameParams{OrgID: principal.Project.OrgID, DisplayName: req.Msg.DisplayName, ID: principal.Project.ID}
@@ -178,7 +178,7 @@ func (s *server) UpdateFCMServiceJSON(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	wParams := dbwrite.UpdateFCMServiceJSONParams{

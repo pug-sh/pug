@@ -39,7 +39,7 @@ func (s *server) Query(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	insightType := req.Msg.GetInsightType()
@@ -130,7 +130,7 @@ func (s *server) SegmentUsers(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	sql, args, err := coreinsights.BuildSegmentUsersQuery(req.Msg, principal.Project.ID)

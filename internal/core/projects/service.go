@@ -115,7 +115,7 @@ func (s *Service) UpdateProjectDisplayName(ctx context.Context, arg dbwrite.Upda
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dbwrite.Project{}, ErrProjectNotFound
 		}
-		return project, err
+		return dbwrite.Project{}, err
 	}
 	s.invalidateProject(ctx, project)
 	return project, nil
@@ -127,7 +127,7 @@ func (s *Service) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFC
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dbwrite.Project{}, ErrProjectNotFound
 		}
-		return project, err
+		return dbwrite.Project{}, err
 	}
 	s.invalidateProject(ctx, project)
 	return project, nil

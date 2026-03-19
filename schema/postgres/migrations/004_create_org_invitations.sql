@@ -10,6 +10,9 @@ create table org_invitations (
   token char(32) not null unique
 );
 
+create unique index org_invitations_org_email_pending
+  on org_invitations (org_id, email)
+  where status = 'pending';
 
 -- +goose Down
 drop table org_invitations;

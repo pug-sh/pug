@@ -30,7 +30,7 @@ func (s *server) List(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	orgs, err := s.service.GetOrgsByCustomerID(ctx, principal.Customer.ID)
@@ -57,12 +57,12 @@ func (s *server) Get(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	isMember, err := s.service.IsOrgMember(ctx, req.Msg.OrgId, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isMember {
@@ -91,12 +91,12 @@ func (s *server) UpdateDisplayName(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	isAdmin, err := s.service.IsOrgAdmin(ctx, req.Msg.OrgId, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isAdmin {
@@ -125,12 +125,12 @@ func (s *server) ListMembers(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	isMember, err := s.service.IsOrgMember(ctx, req.Msg.OrgId, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isMember {
@@ -167,12 +167,12 @@ func (s *server) RemoveMember(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	isAdmin, err := s.service.IsOrgAdmin(ctx, req.Msg.OrgId, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isAdmin {
@@ -204,12 +204,12 @@ func (s *server) InviteMember(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	isAdmin, err := s.service.IsOrgAdmin(ctx, req.Msg.OrgId, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isAdmin {
@@ -218,6 +218,9 @@ func (s *server) InviteMember(
 
 	inv, err := s.service.InviteMember(ctx, req.Msg.OrgId, principal.Customer.ID, req.Msg.Email)
 	if err != nil {
+		if errors.Is(err, coreorgs.ErrInviteAlreadyPending) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("a pending invitation already exists for this email"))
+		}
 		slog.ErrorContext(ctx, "failed to create invitation", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -235,7 +238,7 @@ func (s *server) AcceptInvite(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	org, err := s.service.AcceptInvite(ctx, req.Msg.Token, principal.Customer.ID, principal.Customer.Email)
@@ -272,12 +275,12 @@ func (s *server) ListInvitations(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	isAdmin, err := s.service.IsOrgAdmin(ctx, req.Msg.OrgId, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isAdmin {
