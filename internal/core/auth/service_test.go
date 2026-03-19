@@ -135,9 +135,9 @@ func TestAuthService(t *testing.T) {
 			t.Fatalf("GetExpirationTime: %v", err)
 		}
 		expectedExp := time.Now().Add(90 * 24 * time.Hour)
-		diff := exp.Time.Sub(expectedExp)
+		diff := exp.Sub(expectedExp)
 		if diff < -time.Minute || diff > time.Minute {
-			t.Errorf("expiry %v is not within 1 minute of expected %v", exp.Time, expectedExp)
+			t.Errorf("expiry %v is not within 1 minute of expected %v", exp, expectedExp)
 		}
 	})
 }
