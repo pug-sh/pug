@@ -47,8 +47,8 @@ func TestBasicTrends(t *testing.T) {
 	if !strings.Contains(sql, "toStartOfDay") {
 		t.Errorf("expected toStartOfDay in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "count(*)") {
-		t.Errorf("expected count(*) in SQL, got: %s", sql)
+	if !strings.Contains(sql, "toFloat64(count(*))") {
+		t.Errorf("expected toFloat64(count(*)) in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "GROUP BY") {
 		t.Errorf("expected GROUP BY in SQL, got: %s", sql)
@@ -89,8 +89,8 @@ func TestTrendsWithFilters(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(sql, "count(DISTINCT distinct_id)") {
-		t.Errorf("expected count(DISTINCT distinct_id) in SQL, got: %s", sql)
+	if !strings.Contains(sql, "toFloat64(count(DISTINCT distinct_id))") {
+		t.Errorf("expected toFloat64(count(DISTINCT distinct_id)) in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "ifNull(nullIf(auto_properties['country'], ''), custom_properties['country'])") {
 		t.Errorf("expected property resolution expression in SQL, got: %s", sql)
@@ -126,8 +126,8 @@ func TestSegmentation(t *testing.T) {
 	if strings.Contains(sql, "toStartOfDay") || strings.Contains(sql, "toStartOfHour") {
 		t.Errorf("segmentation should not have time bucketing, got: %s", sql)
 	}
-	if !strings.Contains(sql, "count(*)") {
-		t.Errorf("expected count(*) in SQL, got: %s", sql)
+	if !strings.Contains(sql, "toFloat64(count(*))") {
+		t.Errorf("expected toFloat64(count(*)) in SQL, got: %s", sql)
 	}
 
 	// args: projectID, from, to, kind

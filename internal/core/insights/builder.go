@@ -249,11 +249,11 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 func aggregationExpr(agg insightsv1.AggregationType) string {
 	switch agg {
 	case insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS:
-		return "count(DISTINCT distinct_id)"
+		return "toFloat64(count(DISTINCT distinct_id))"
 	case insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG:
 		return "if(count(DISTINCT distinct_id) = 0, 0, toFloat64(count(*)) / toFloat64(count(DISTINCT distinct_id)))"
 	default: // TOTAL and UNSPECIFIED
-		return "count(*)"
+		return "toFloat64(count(*))"
 	}
 }
 

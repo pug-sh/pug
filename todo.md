@@ -9,7 +9,7 @@
 - [x] ClickHouse executor (trends, trends with breakdowns, scalar, distinct IDs)
 - [x] Server deps — ClickHouse reader connection
 - [x] RPC handler wired with JWT dashboard auth
-- [ ] Smoke test against local infrastructure
+- [x] Integration test with testcontainers (trends, breakdowns, segmentation, filters, segment users)
 
 ## Aggregation Types
 
@@ -31,6 +31,10 @@
 
 - [ ] Behavioral segments — "did X but NOT Y"
 - [ ] Event frequency conditions — "did X more than N times"
+
+## Proto Cleanup
+
+- [ ] `Series.label` — user-editable series name. Requires saved dashboards/widgets persistence to store it.
 
 ## Multiple Event Queries
 
