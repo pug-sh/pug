@@ -932,6 +932,8 @@ github.com/testcontainers/testcontainers-go/modules/nats v0.41.0 h1:ONiEuMwUgOLL
 github.com/testcontainers/testcontainers-go/modules/nats v0.41.0/go.mod h1:XSx4gGxmUaj3EHx3+ySOjge3ZCfOeV6yq/SrNhoYmso=
 github.com/testcontainers/testcontainers-go/modules/postgres v0.41.0 h1:AOtFXssrDlLm84A2sTTR/AhvJiYbrIuCO59d+Ro9Tb0=
 github.com/testcontainers/testcontainers-go/modules/postgres v0.41.0/go.mod h1:k2a09UKhgSp6vNpliIY0QSgm4Hi7GXVTzWvWgUemu/8=
+github.com/testcontainers/testcontainers-go/modules/redis v0.41.0 h1:QlTSe4JGOnjr/37MXx0GqNLGa+8sKQst7lsn7uLjg8E=
+github.com/testcontainers/testcontainers-go/modules/redis v0.41.0/go.mod h1:5mDOIWrS/a+z8gBesXBQAAQtrqJrW2tUi9Tf46+/Luo=
 github.com/tetafro/godot v1.5.4 h1:u1ww+gqpRLiIA16yF2PV1CV1n/X3zhyezbNXC3E14Sg=
 github.com/tetafro/godot v1.5.4/go.mod h1:eOkMrVQurDui411nBY2FA05EYH01r14LuWY/NrVDVcU=
 github.com/tetratelabs/wazero v1.11.0 h1:+gKemEuKCTevU4d7ZTzlsvgd1uaToIDtlQlmNbwqYhA=
