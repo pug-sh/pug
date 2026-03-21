@@ -117,7 +117,7 @@ Services defined in `proto/` directory. Generated code goes to `internal/gen/pro
 Incoming events are enriched with auto-properties before being published to NATS:
 
 - **`internal/geo/`** — resolves geo properties (country, city, IP, etc.) from proxy-injected HTTP headers. `geo.Provider` is an interface; the Cloudflare implementation reads from `CF-Connecting-IP` and `CF-*` headers. Geo properties are **always overwritten** (CDN-injected values are trusted).
-- **`internal/useragent/`** — parses the `User-Agent` header using `ua-parser/uap-go` into properties: `browser`, `browserVersion`, `os`, `osVersion`, `device`. UA properties are only written if not already present in `event.AutoProperties` (client-supplied values win). Initialize once at startup via `useragent.NewParser()`.
+- **`internal/useragent/`** — parses the `User-Agent` header using `ua-parser/uap-go` into properties: `browser`, `browserVersion`, `os`, `osVersion`, `device`. Both `browserVersion` and `osVersion` use the major version only (e.g. `"17"` not `"17.2.1"`) to avoid analytics fragmentation. UA properties are only written if not already present in `event.AutoProperties` (client-supplied values win). Initialize once at startup via `useragent.NewParser()`.
 
 ### ClickHouse Events Table
 

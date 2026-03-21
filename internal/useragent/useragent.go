@@ -2,7 +2,6 @@ package useragent
 
 import (
 	"net/http"
-	"strings"
 
 	uaparser "github.com/ua-parser/uap-go/uaparser"
 )
@@ -53,8 +52,8 @@ func (p *Parser) Parse(h http.Header) Properties {
 	}
 	if client.Os.Family != "" && client.Os.Family != "Other" {
 		props[PropOS] = client.Os.Family
-		if v := osVersion(client.Os); v != "" {
-			props[PropOSVersion] = v
+		if client.Os.Major != "" {
+			props[PropOSVersion] = client.Os.Major
 		}
 	}
 	if client.Device.Family != "" && client.Device.Family != "Other" {
@@ -66,16 +65,4 @@ func (p *Parser) Parse(h http.Header) Properties {
 	}
 
 	return props
-}
-
-// osVersion builds a dot-joined version string from the Os fields, dropping trailing empty parts.
-func osVersion(os *uaparser.Os) string {
-	parts := []string{os.Major, os.Minor, os.Patch}
-	for i, p := range parts {
-		if p == "" {
-			parts = parts[:i]
-			break
-		}
-	}
-	return strings.Join(parts, ".")
 }
