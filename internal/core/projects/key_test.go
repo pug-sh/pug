@@ -9,7 +9,10 @@ import (
 var hexPattern = regexp.MustCompile(`^[0-9a-f]+$`)
 
 func TestNewPrivateKey(t *testing.T) {
-	key := NewPrivateKey()
+	key, err := NewPrivateKey()
+	if err != nil {
+		t.Fatalf("NewPrivateKey: %v", err)
+	}
 	if !strings.HasPrefix(key, "prv_") {
 		t.Errorf("private key %q does not start with prv_", key)
 	}
@@ -23,7 +26,10 @@ func TestNewPrivateKey(t *testing.T) {
 }
 
 func TestNewPublicKey(t *testing.T) {
-	key := NewPublicKey()
+	key, err := NewPublicKey()
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
 	if !strings.HasPrefix(key, "pub_") {
 		t.Errorf("public key %q does not start with pub_", key)
 	}
@@ -41,8 +47,14 @@ func TestKeyUniqueness(t *testing.T) {
 	seen := make(map[string]struct{}, n*2)
 
 	for i := 0; i < n; i++ {
-		prv := NewPrivateKey()
-		pub := NewPublicKey()
+		prv, err := NewPrivateKey()
+		if err != nil {
+			t.Fatalf("NewPrivateKey iteration %d: %v", i, err)
+		}
+		pub, err := NewPublicKey()
+		if err != nil {
+			t.Fatalf("NewPublicKey iteration %d: %v", i, err)
+		}
 		if _, exists := seen[prv]; exists {
 			t.Fatalf("duplicate private key on iteration %d: %s", i, prv)
 		}
@@ -55,13 +67,25 @@ func TestKeyUniqueness(t *testing.T) {
 }
 
 func TestKeysDiffer(t *testing.T) {
-	a := NewPrivateKey()
-	b := NewPrivateKey()
+	a, err := NewPrivateKey()
+	if err != nil {
+		t.Fatalf("NewPrivateKey: %v", err)
+	}
+	b, err := NewPrivateKey()
+	if err != nil {
+		t.Fatalf("NewPrivateKey: %v", err)
+	}
 	if a == b {
 		t.Errorf("two consecutive private keys are identical: %s", a)
 	}
-	c := NewPublicKey()
-	d := NewPublicKey()
+	c, err := NewPublicKey()
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
+	d, err := NewPublicKey()
+	if err != nil {
+		t.Fatalf("NewPublicKey: %v", err)
+	}
 	if c == d {
 		t.Errorf("two consecutive public keys are identical: %s", c)
 	}

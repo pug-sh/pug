@@ -18,7 +18,7 @@ func TestROToRPCMsg(t *testing.T) {
 			name: "converts all fields and excludes private key",
 			input: dbread.Project{
 				ID:             "proj_001",
-				CustomerID:     "cust_abc",
+				OrgID:          "org_abc",
 				DisplayName:    "My Project",
 				PublicApiKey:   "pub_key_123",
 				PrivateApiKey:  "secret_private_key",
@@ -29,7 +29,7 @@ func TestROToRPCMsg(t *testing.T) {
 			name: "handles empty FCM service JSON",
 			input: dbread.Project{
 				ID:             "proj_002",
-				CustomerID:     "cust_xyz",
+				OrgID:          "org_xyz",
 				DisplayName:    "Another Project",
 				PublicApiKey:   "pub_key_456",
 				PrivateApiKey:  "another_secret",
@@ -45,8 +45,8 @@ func TestROToRPCMsg(t *testing.T) {
 			if msg.Id != tt.input.ID {
 				t.Errorf("Id = %q, want %q", msg.Id, tt.input.ID)
 			}
-			if msg.CustomerId != tt.input.CustomerID {
-				t.Errorf("CustomerId = %q, want %q", msg.CustomerId, tt.input.CustomerID)
+			if msg.OrgId != tt.input.OrgID {
+				t.Errorf("OrgId = %q, want %q", msg.OrgId, tt.input.OrgID)
 			}
 			if msg.DisplayName != tt.input.DisplayName {
 				t.Errorf("DisplayName = %q, want %q", msg.DisplayName, tt.input.DisplayName)
@@ -73,7 +73,7 @@ func TestWToRPCMsg(t *testing.T) {
 			name: "converts all fields and excludes private key",
 			input: dbwrite.Project{
 				ID:             "proj_w01",
-				CustomerID:     "cust_w_abc",
+				OrgID:          "org_w_abc",
 				DisplayName:    "Write Project",
 				PublicApiKey:   "pub_w_key",
 				PrivateApiKey:  "priv_w_secret",
@@ -84,7 +84,7 @@ func TestWToRPCMsg(t *testing.T) {
 			name: "handles invalid FCM text",
 			input: dbwrite.Project{
 				ID:             "proj_w02",
-				CustomerID:     "cust_w_xyz",
+				OrgID:          "org_w_xyz",
 				DisplayName:    "Minimal Project",
 				PublicApiKey:   "pub_w_key2",
 				PrivateApiKey:  "priv_w_secret2",
@@ -100,8 +100,8 @@ func TestWToRPCMsg(t *testing.T) {
 			if msg.Id != tt.input.ID {
 				t.Errorf("Id = %q, want %q", msg.Id, tt.input.ID)
 			}
-			if msg.CustomerId != tt.input.CustomerID {
-				t.Errorf("CustomerId = %q, want %q", msg.CustomerId, tt.input.CustomerID)
+			if msg.OrgId != tt.input.OrgID {
+				t.Errorf("OrgId = %q, want %q", msg.OrgId, tt.input.OrgID)
 			}
 			if msg.DisplayName != tt.input.DisplayName {
 				t.Errorf("DisplayName = %q, want %q", msg.DisplayName, tt.input.DisplayName)
@@ -128,7 +128,7 @@ func TestWToRPCMsgWithPrivateKey(t *testing.T) {
 			name: "includes private key",
 			input: dbwrite.Project{
 				ID:             "proj_pk1",
-				CustomerID:     "cust_pk",
+				OrgID:          "org_pk",
 				DisplayName:    "Create Response Project",
 				PublicApiKey:   "pub_pk_key",
 				PrivateApiKey:  "the_private_key",
@@ -139,7 +139,7 @@ func TestWToRPCMsgWithPrivateKey(t *testing.T) {
 			name: "empty private key preserved",
 			input: dbwrite.Project{
 				ID:            "proj_pk2",
-				CustomerID:    "cust_pk2",
+				OrgID:         "org_pk2",
 				DisplayName:   "No Private Key",
 				PublicApiKey:  "pub_pk_key2",
 				PrivateApiKey: "",
@@ -154,8 +154,8 @@ func TestWToRPCMsgWithPrivateKey(t *testing.T) {
 			if msg.Id != tt.input.ID {
 				t.Errorf("Id = %q, want %q", msg.Id, tt.input.ID)
 			}
-			if msg.CustomerId != tt.input.CustomerID {
-				t.Errorf("CustomerId = %q, want %q", msg.CustomerId, tt.input.CustomerID)
+			if msg.OrgId != tt.input.OrgID {
+				t.Errorf("OrgId = %q, want %q", msg.OrgId, tt.input.OrgID)
 			}
 			if msg.DisplayName != tt.input.DisplayName {
 				t.Errorf("DisplayName = %q, want %q", msg.DisplayName, tt.input.DisplayName)
@@ -176,7 +176,7 @@ func TestWToRPCMsgWithPrivateKey(t *testing.T) {
 func TestWToRPCMsgWithPrivateKeyIncludesAllBaseFields(t *testing.T) {
 	p := dbwrite.Project{
 		ID:             "proj_cmp",
-		CustomerID:     "cust_cmp",
+		OrgID:          "org_cmp",
 		DisplayName:    "Compare",
 		PublicApiKey:   "pub_cmp",
 		PrivateApiKey:  "priv_cmp",
@@ -189,8 +189,8 @@ func TestWToRPCMsgWithPrivateKeyIncludesAllBaseFields(t *testing.T) {
 	if base.Id != full.Id {
 		t.Errorf("Id mismatch: base=%q full=%q", base.Id, full.Id)
 	}
-	if base.CustomerId != full.CustomerId {
-		t.Errorf("CustomerId mismatch: base=%q full=%q", base.CustomerId, full.CustomerId)
+	if base.OrgId != full.OrgId {
+		t.Errorf("OrgId mismatch: base=%q full=%q", base.OrgId, full.OrgId)
 	}
 	if base.DisplayName != full.DisplayName {
 		t.Errorf("DisplayName mismatch: base=%q full=%q", base.DisplayName, full.DisplayName)
