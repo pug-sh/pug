@@ -12,8 +12,14 @@ import (
 )
 
 const createOrgInvitation = `-- name: CreateOrgInvitation :one
+with check_member as (
+  select 1 from org_members om
+  join customers c on c.id = om.customer_id
+  where om.org_id = $5 and lower(c.email) = lower($1)
+)
 insert into org_invitations (email, expires_at, id, inviter_id, org_id, token)
-values ($1, $2, $3, $4, $5, $6)
+select $1, $2, $3, $4, $5, $6
+where not exists (select 1 from check_member)
 returning create_time, email, expires_at, id, inviter_id, org_id, status, token
 `
 
@@ -21,7 +27,7 @@ type CreateOrgInvitationParams struct {
 	Email     string
 	ExpiresAt pgtype.Timestamptz
 	ID        string
-	InviterID string
+	InviterID pgtype.Text
 	OrgID     string
 	Token     string
 }

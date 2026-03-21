@@ -43,7 +43,7 @@ type OrgInvitation struct {
 	Email      string
 	ExpiresAt  pgtype.Timestamptz
 	ID         string
-	InviterID  string
+	InviterID  pgtype.Text
 	OrgID      string
 	Status     string
 	Token      string

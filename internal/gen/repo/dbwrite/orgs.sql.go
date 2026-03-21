@@ -32,6 +32,22 @@ func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, erro
 	return i, err
 }
 
+const getOrgByID = `-- name: GetOrgByID :one
+select create_time, display_name, id, update_time from orgs where id = $1
+`
+
+func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
+	row := q.db.QueryRow(ctx, getOrgByID, id)
+	var i Org
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.ID,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const updateOrgDisplayName = `-- name: UpdateOrgDisplayName :one
 update orgs set display_name = $1 where id = $2
 returning create_time, display_name, id, update_time

@@ -618,9 +618,9 @@ const file_projects_v1_projects_proto_rawDesc = "" +
 	"\x0fBatchGetRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"D\n" +
 	"\x10BatchGetResponse\x120\n" +
-	"\bprojects\x18\x01 \x03(\v2\x14.projects.v1.ProjectR\bprojects\"Y\n" +
-	"\rCreateRequest\x12)\n" +
-	"\fdisplay_name\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdisplayName\x12\x1d\n" +
+	"\bprojects\x18\x01 \x03(\v2\x14.projects.v1.ProjectR\bprojects\"^\n" +
+	"\rCreateRequest\x12.\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12\x1d\n" +
 	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"@\n" +
 	"\x0eCreateResponse\x12.\n" +
 	"\aproject\x18\x01 \x01(\v2\x14.projects.v1.ProjectR\aproject\"\x0f\n" +
@@ -636,9 +636,9 @@ const file_projects_v1_projects_proto_rawDesc = "" +
 	"\x02id\x18\x03 \x01(\tR\x02id\x12\x15\n" +
 	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12&\n" +
 	"\x0fprivate_api_key\x18\x05 \x01(\tR\rprivateApiKey\x12$\n" +
-	"\x0epublic_api_key\x18\x06 \x01(\tR\fpublicApiKey\"E\n" +
-	"\x18UpdateDisplayNameRequest\x12)\n" +
-	"\fdisplay_name\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdisplayName\"K\n" +
+	"\x0epublic_api_key\x18\x06 \x01(\tR\fpublicApiKey\"J\n" +
+	"\x18UpdateDisplayNameRequest\x12.\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\"K\n" +
 	"\x19UpdateDisplayNameResponse\x12.\n" +
 	"\aproject\x18\x01 \x01(\v2\x14.projects.v1.ProjectR\aproject\"G\n" +
 	"\x1bUpdateFCMServiceJSONRequest\x12(\n" +

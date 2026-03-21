@@ -6,6 +6,18 @@ import "buf/validate/validate.proto";
 option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1;orgsv1";
 
+enum OrgRole {
+  ORG_ROLE_UNSPECIFIED = 0;
+  ORG_ROLE_ADMIN = 1;
+  ORG_ROLE_MEMBER = 2;
+}
+
+enum InvitationStatus {
+  INVITATION_STATUS_UNSPECIFIED = 0;
+  INVITATION_STATUS_PENDING = 1;
+  INVITATION_STATUS_ACCEPTED = 2;
+}
+
 service OrgsService {
   rpc List(ListRequest) returns (ListResponse) {}
   rpc Get(GetRequest) returns (GetResponse) {}
@@ -27,7 +39,7 @@ message OrgMember {
   string display_name = 2;
   string email = 3;
   string org_id = 4;
-  string role = 5;
+  OrgRole role = 5;
 }
 
 message OrgInvitation {
@@ -35,7 +47,7 @@ message OrgInvitation {
   string expires_at = 2;
   string id = 3;
   string org_id = 4;
-  string status = 5;
+  InvitationStatus status = 5;
   string token = 6;
 }
 
@@ -54,7 +66,10 @@ message GetResponse {
 }
 
 message UpdateDisplayNameRequest {
-  string display_name = 1 [(buf.validate.field).required = true];
+  string display_name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 150
+  ];
   string org_id = 2 [(buf.validate.field).required = true];
 }
 

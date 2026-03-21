@@ -22,6 +22,104 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type OrgRole int32
+
+const (
+	OrgRole_ORG_ROLE_UNSPECIFIED OrgRole = 0
+	OrgRole_ORG_ROLE_ADMIN       OrgRole = 1
+	OrgRole_ORG_ROLE_MEMBER      OrgRole = 2
+)
+
+// Enum value maps for OrgRole.
+var (
+	OrgRole_name = map[int32]string{
+		0: "ORG_ROLE_UNSPECIFIED",
+		1: "ORG_ROLE_ADMIN",
+		2: "ORG_ROLE_MEMBER",
+	}
+	OrgRole_value = map[string]int32{
+		"ORG_ROLE_UNSPECIFIED": 0,
+		"ORG_ROLE_ADMIN":       1,
+		"ORG_ROLE_MEMBER":      2,
+	}
+)
+
+func (x OrgRole) Enum() *OrgRole {
+	p := new(OrgRole)
+	*p = x
+	return p
+}
+
+func (x OrgRole) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OrgRole) Descriptor() protoreflect.EnumDescriptor {
+	return file_orgs_v1_orgs_proto_enumTypes[0].Descriptor()
+}
+
+func (OrgRole) Type() protoreflect.EnumType {
+	return &file_orgs_v1_orgs_proto_enumTypes[0]
+}
+
+func (x OrgRole) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OrgRole.Descriptor instead.
+func (OrgRole) EnumDescriptor() ([]byte, []int) {
+	return file_orgs_v1_orgs_proto_rawDescGZIP(), []int{0}
+}
+
+type InvitationStatus int32
+
+const (
+	InvitationStatus_INVITATION_STATUS_UNSPECIFIED InvitationStatus = 0
+	InvitationStatus_INVITATION_STATUS_PENDING     InvitationStatus = 1
+	InvitationStatus_INVITATION_STATUS_ACCEPTED    InvitationStatus = 2
+)
+
+// Enum value maps for InvitationStatus.
+var (
+	InvitationStatus_name = map[int32]string{
+		0: "INVITATION_STATUS_UNSPECIFIED",
+		1: "INVITATION_STATUS_PENDING",
+		2: "INVITATION_STATUS_ACCEPTED",
+	}
+	InvitationStatus_value = map[string]int32{
+		"INVITATION_STATUS_UNSPECIFIED": 0,
+		"INVITATION_STATUS_PENDING":     1,
+		"INVITATION_STATUS_ACCEPTED":    2,
+	}
+)
+
+func (x InvitationStatus) Enum() *InvitationStatus {
+	p := new(InvitationStatus)
+	*p = x
+	return p
+}
+
+func (x InvitationStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (InvitationStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_orgs_v1_orgs_proto_enumTypes[1].Descriptor()
+}
+
+func (InvitationStatus) Type() protoreflect.EnumType {
+	return &file_orgs_v1_orgs_proto_enumTypes[1]
+}
+
+func (x InvitationStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use InvitationStatus.Descriptor instead.
+func (InvitationStatus) EnumDescriptor() ([]byte, []int) {
+	return file_orgs_v1_orgs_proto_rawDescGZIP(), []int{1}
+}
+
 type Org struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DisplayName   string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
@@ -80,7 +178,7 @@ type OrgMember struct {
 	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
 	Email         string                 `protobuf:"bytes,3,opt,name=email" json:"email,omitempty"`
 	OrgId         string                 `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	Role          string                 `protobuf:"bytes,5,opt,name=role" json:"role,omitempty"`
+	Role          OrgRole                `protobuf:"varint,5,opt,name=role,enum=orgs.v1.OrgRole" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -143,11 +241,11 @@ func (x *OrgMember) GetOrgId() string {
 	return ""
 }
 
-func (x *OrgMember) GetRole() string {
+func (x *OrgMember) GetRole() OrgRole {
 	if x != nil {
 		return x.Role
 	}
-	return ""
+	return OrgRole_ORG_ROLE_UNSPECIFIED
 }
 
 type OrgInvitation struct {
@@ -156,7 +254,7 @@ type OrgInvitation struct {
 	ExpiresAt     string                 `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt" json:"expires_at,omitempty"`
 	Id            string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
 	OrgId         string                 `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	Status        string                 `protobuf:"bytes,5,opt,name=status" json:"status,omitempty"`
+	Status        InvitationStatus       `protobuf:"varint,5,opt,name=status,enum=orgs.v1.InvitationStatus" json:"status,omitempty"`
 	Token         string                 `protobuf:"bytes,6,opt,name=token" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -220,11 +318,11 @@ func (x *OrgInvitation) GetOrgId() string {
 	return ""
 }
 
-func (x *OrgInvitation) GetStatus() string {
+func (x *OrgInvitation) GetStatus() InvitationStatus {
 	if x != nil {
 		return x.Status
 	}
-	return ""
+	return InvitationStatus_INVITATION_STATUS_UNSPECIFIED
 }
 
 func (x *OrgInvitation) GetToken() string {
@@ -953,21 +1051,21 @@ const file_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x12orgs/v1/orgs.proto\x12\aorgs.v1\x1a\x1bbuf/validate/validate.proto\"8\n" +
 	"\x03Org\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\x90\x01\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\"\xa2\x01\n" +
 	"\tOrgMember\x12\x1f\n" +
 	"\vcustomer_id\x18\x01 \x01(\tR\n" +
 	"customerId\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x14\n" +
 	"\x05email\x18\x03 \x01(\tR\x05email\x12\x15\n" +
-	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12\x12\n" +
-	"\x04role\x18\x05 \x01(\tR\x04role\"\x99\x01\n" +
+	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12$\n" +
+	"\x04role\x18\x05 \x01(\x0e2\x10.orgs.v1.OrgRoleR\x04role\"\xb4\x01\n" +
 	"\rOrgInvitation\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1d\n" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\tR\texpiresAt\x12\x0e\n" +
 	"\x02id\x18\x03 \x01(\tR\x02id\x12\x15\n" +
-	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12\x16\n" +
-	"\x06status\x18\x05 \x01(\tR\x06status\x12\x14\n" +
+	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x121\n" +
+	"\x06status\x18\x05 \x01(\x0e2\x19.orgs.v1.InvitationStatusR\x06status\x12\x14\n" +
 	"\x05token\x18\x06 \x01(\tR\x05token\"\r\n" +
 	"\vListRequest\"0\n" +
 	"\fListResponse\x12 \n" +
@@ -976,9 +1074,9 @@ const file_orgs_v1_orgs_proto_rawDesc = "" +
 	"GetRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"-\n" +
 	"\vGetResponse\x12\x1e\n" +
-	"\x03org\x18\x01 \x01(\v2\f.orgs.v1.OrgR\x03org\"d\n" +
-	"\x18UpdateDisplayNameRequest\x12)\n" +
-	"\fdisplay_name\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdisplayName\x12\x1d\n" +
+	"\x03org\x18\x01 \x01(\v2\f.orgs.v1.OrgR\x03org\"i\n" +
+	"\x18UpdateDisplayNameRequest\x12.\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12\x1d\n" +
 	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\";\n" +
 	"\x19UpdateDisplayNameResponse\x12\x1e\n" +
 	"\x03org\x18\x01 \x01(\v2\f.orgs.v1.OrgR\x03org\"3\n" +
@@ -1005,7 +1103,15 @@ const file_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x16ListInvitationsRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"S\n" +
 	"\x17ListInvitationsResponse\x128\n" +
-	"\vinvitations\x18\x01 \x03(\v2\x16.orgs.v1.OrgInvitationR\vinvitations2\xe7\x04\n" +
+	"\vinvitations\x18\x01 \x03(\v2\x16.orgs.v1.OrgInvitationR\vinvitations*L\n" +
+	"\aOrgRole\x12\x18\n" +
+	"\x14ORG_ROLE_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eORG_ROLE_ADMIN\x10\x01\x12\x13\n" +
+	"\x0fORG_ROLE_MEMBER\x10\x02*t\n" +
+	"\x10InvitationStatus\x12!\n" +
+	"\x1dINVITATION_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19INVITATION_STATUS_PENDING\x10\x01\x12\x1e\n" +
+	"\x1aINVITATION_STATUS_ACCEPTED\x10\x022\xe7\x04\n" +
 	"\vOrgsService\x125\n" +
 	"\x04List\x12\x14.orgs.v1.ListRequest\x1a\x15.orgs.v1.ListResponse\"\x00\x122\n" +
 	"\x03Get\x12\x13.orgs.v1.GetRequest\x1a\x14.orgs.v1.GetResponse\"\x00\x12\\\n" +
@@ -1028,57 +1134,62 @@ func file_orgs_v1_orgs_proto_rawDescGZIP() []byte {
 	return file_orgs_v1_orgs_proto_rawDescData
 }
 
+var file_orgs_v1_orgs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_orgs_v1_orgs_proto_goTypes = []any{
-	(*Org)(nil),                       // 0: orgs.v1.Org
-	(*OrgMember)(nil),                 // 1: orgs.v1.OrgMember
-	(*OrgInvitation)(nil),             // 2: orgs.v1.OrgInvitation
-	(*ListRequest)(nil),               // 3: orgs.v1.ListRequest
-	(*ListResponse)(nil),              // 4: orgs.v1.ListResponse
-	(*GetRequest)(nil),                // 5: orgs.v1.GetRequest
-	(*GetResponse)(nil),               // 6: orgs.v1.GetResponse
-	(*UpdateDisplayNameRequest)(nil),  // 7: orgs.v1.UpdateDisplayNameRequest
-	(*UpdateDisplayNameResponse)(nil), // 8: orgs.v1.UpdateDisplayNameResponse
-	(*ListMembersRequest)(nil),        // 9: orgs.v1.ListMembersRequest
-	(*ListMembersResponse)(nil),       // 10: orgs.v1.ListMembersResponse
-	(*RemoveMemberRequest)(nil),       // 11: orgs.v1.RemoveMemberRequest
-	(*RemoveMemberResponse)(nil),      // 12: orgs.v1.RemoveMemberResponse
-	(*InviteMemberRequest)(nil),       // 13: orgs.v1.InviteMemberRequest
-	(*InviteMemberResponse)(nil),      // 14: orgs.v1.InviteMemberResponse
-	(*AcceptInviteRequest)(nil),       // 15: orgs.v1.AcceptInviteRequest
-	(*AcceptInviteResponse)(nil),      // 16: orgs.v1.AcceptInviteResponse
-	(*ListInvitationsRequest)(nil),    // 17: orgs.v1.ListInvitationsRequest
-	(*ListInvitationsResponse)(nil),   // 18: orgs.v1.ListInvitationsResponse
+	(OrgRole)(0),                      // 0: orgs.v1.OrgRole
+	(InvitationStatus)(0),             // 1: orgs.v1.InvitationStatus
+	(*Org)(nil),                       // 2: orgs.v1.Org
+	(*OrgMember)(nil),                 // 3: orgs.v1.OrgMember
+	(*OrgInvitation)(nil),             // 4: orgs.v1.OrgInvitation
+	(*ListRequest)(nil),               // 5: orgs.v1.ListRequest
+	(*ListResponse)(nil),              // 6: orgs.v1.ListResponse
+	(*GetRequest)(nil),                // 7: orgs.v1.GetRequest
+	(*GetResponse)(nil),               // 8: orgs.v1.GetResponse
+	(*UpdateDisplayNameRequest)(nil),  // 9: orgs.v1.UpdateDisplayNameRequest
+	(*UpdateDisplayNameResponse)(nil), // 10: orgs.v1.UpdateDisplayNameResponse
+	(*ListMembersRequest)(nil),        // 11: orgs.v1.ListMembersRequest
+	(*ListMembersResponse)(nil),       // 12: orgs.v1.ListMembersResponse
+	(*RemoveMemberRequest)(nil),       // 13: orgs.v1.RemoveMemberRequest
+	(*RemoveMemberResponse)(nil),      // 14: orgs.v1.RemoveMemberResponse
+	(*InviteMemberRequest)(nil),       // 15: orgs.v1.InviteMemberRequest
+	(*InviteMemberResponse)(nil),      // 16: orgs.v1.InviteMemberResponse
+	(*AcceptInviteRequest)(nil),       // 17: orgs.v1.AcceptInviteRequest
+	(*AcceptInviteResponse)(nil),      // 18: orgs.v1.AcceptInviteResponse
+	(*ListInvitationsRequest)(nil),    // 19: orgs.v1.ListInvitationsRequest
+	(*ListInvitationsResponse)(nil),   // 20: orgs.v1.ListInvitationsResponse
 }
 var file_orgs_v1_orgs_proto_depIdxs = []int32{
-	0,  // 0: orgs.v1.ListResponse.orgs:type_name -> orgs.v1.Org
-	0,  // 1: orgs.v1.GetResponse.org:type_name -> orgs.v1.Org
-	0,  // 2: orgs.v1.UpdateDisplayNameResponse.org:type_name -> orgs.v1.Org
-	1,  // 3: orgs.v1.ListMembersResponse.members:type_name -> orgs.v1.OrgMember
-	2,  // 4: orgs.v1.InviteMemberResponse.invitation:type_name -> orgs.v1.OrgInvitation
-	0,  // 5: orgs.v1.AcceptInviteResponse.org:type_name -> orgs.v1.Org
-	2,  // 6: orgs.v1.ListInvitationsResponse.invitations:type_name -> orgs.v1.OrgInvitation
-	3,  // 7: orgs.v1.OrgsService.List:input_type -> orgs.v1.ListRequest
-	5,  // 8: orgs.v1.OrgsService.Get:input_type -> orgs.v1.GetRequest
-	7,  // 9: orgs.v1.OrgsService.UpdateDisplayName:input_type -> orgs.v1.UpdateDisplayNameRequest
-	9,  // 10: orgs.v1.OrgsService.ListMembers:input_type -> orgs.v1.ListMembersRequest
-	11, // 11: orgs.v1.OrgsService.RemoveMember:input_type -> orgs.v1.RemoveMemberRequest
-	13, // 12: orgs.v1.OrgsService.InviteMember:input_type -> orgs.v1.InviteMemberRequest
-	15, // 13: orgs.v1.OrgsService.AcceptInvite:input_type -> orgs.v1.AcceptInviteRequest
-	17, // 14: orgs.v1.OrgsService.ListInvitations:input_type -> orgs.v1.ListInvitationsRequest
-	4,  // 15: orgs.v1.OrgsService.List:output_type -> orgs.v1.ListResponse
-	6,  // 16: orgs.v1.OrgsService.Get:output_type -> orgs.v1.GetResponse
-	8,  // 17: orgs.v1.OrgsService.UpdateDisplayName:output_type -> orgs.v1.UpdateDisplayNameResponse
-	10, // 18: orgs.v1.OrgsService.ListMembers:output_type -> orgs.v1.ListMembersResponse
-	12, // 19: orgs.v1.OrgsService.RemoveMember:output_type -> orgs.v1.RemoveMemberResponse
-	14, // 20: orgs.v1.OrgsService.InviteMember:output_type -> orgs.v1.InviteMemberResponse
-	16, // 21: orgs.v1.OrgsService.AcceptInvite:output_type -> orgs.v1.AcceptInviteResponse
-	18, // 22: orgs.v1.OrgsService.ListInvitations:output_type -> orgs.v1.ListInvitationsResponse
-	15, // [15:23] is the sub-list for method output_type
-	7,  // [7:15] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	0,  // 0: orgs.v1.OrgMember.role:type_name -> orgs.v1.OrgRole
+	1,  // 1: orgs.v1.OrgInvitation.status:type_name -> orgs.v1.InvitationStatus
+	2,  // 2: orgs.v1.ListResponse.orgs:type_name -> orgs.v1.Org
+	2,  // 3: orgs.v1.GetResponse.org:type_name -> orgs.v1.Org
+	2,  // 4: orgs.v1.UpdateDisplayNameResponse.org:type_name -> orgs.v1.Org
+	3,  // 5: orgs.v1.ListMembersResponse.members:type_name -> orgs.v1.OrgMember
+	4,  // 6: orgs.v1.InviteMemberResponse.invitation:type_name -> orgs.v1.OrgInvitation
+	2,  // 7: orgs.v1.AcceptInviteResponse.org:type_name -> orgs.v1.Org
+	4,  // 8: orgs.v1.ListInvitationsResponse.invitations:type_name -> orgs.v1.OrgInvitation
+	5,  // 9: orgs.v1.OrgsService.List:input_type -> orgs.v1.ListRequest
+	7,  // 10: orgs.v1.OrgsService.Get:input_type -> orgs.v1.GetRequest
+	9,  // 11: orgs.v1.OrgsService.UpdateDisplayName:input_type -> orgs.v1.UpdateDisplayNameRequest
+	11, // 12: orgs.v1.OrgsService.ListMembers:input_type -> orgs.v1.ListMembersRequest
+	13, // 13: orgs.v1.OrgsService.RemoveMember:input_type -> orgs.v1.RemoveMemberRequest
+	15, // 14: orgs.v1.OrgsService.InviteMember:input_type -> orgs.v1.InviteMemberRequest
+	17, // 15: orgs.v1.OrgsService.AcceptInvite:input_type -> orgs.v1.AcceptInviteRequest
+	19, // 16: orgs.v1.OrgsService.ListInvitations:input_type -> orgs.v1.ListInvitationsRequest
+	6,  // 17: orgs.v1.OrgsService.List:output_type -> orgs.v1.ListResponse
+	8,  // 18: orgs.v1.OrgsService.Get:output_type -> orgs.v1.GetResponse
+	10, // 19: orgs.v1.OrgsService.UpdateDisplayName:output_type -> orgs.v1.UpdateDisplayNameResponse
+	12, // 20: orgs.v1.OrgsService.ListMembers:output_type -> orgs.v1.ListMembersResponse
+	14, // 21: orgs.v1.OrgsService.RemoveMember:output_type -> orgs.v1.RemoveMemberResponse
+	16, // 22: orgs.v1.OrgsService.InviteMember:output_type -> orgs.v1.InviteMemberResponse
+	18, // 23: orgs.v1.OrgsService.AcceptInvite:output_type -> orgs.v1.AcceptInviteResponse
+	20, // 24: orgs.v1.OrgsService.ListInvitations:output_type -> orgs.v1.ListInvitationsResponse
+	17, // [17:25] is the sub-list for method output_type
+	9,  // [9:17] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_orgs_v1_orgs_proto_init() }
@@ -1091,13 +1202,14 @@ func file_orgs_v1_orgs_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orgs_v1_orgs_proto_rawDesc), len(file_orgs_v1_orgs_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      2,
 			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_orgs_v1_orgs_proto_goTypes,
 		DependencyIndexes: file_orgs_v1_orgs_proto_depIdxs,
+		EnumInfos:         file_orgs_v1_orgs_proto_enumTypes,
 		MessageInfos:      file_orgs_v1_orgs_proto_msgTypes,
 	}.Build()
 	File_orgs_v1_orgs_proto = out.File

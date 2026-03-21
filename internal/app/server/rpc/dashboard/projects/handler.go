@@ -92,17 +92,14 @@ func (s *server) Create(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	isMember, err := s.orgsService.IsOrgMember(ctx, req.Msg.OrgId, principal.Customer.ID)
+	projectData, err := s.service.CreateProjectAsAdmin(ctx, req.Msg.OrgId, principal.Customer.ID, req.Msg.DisplayName)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	if !isMember {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
-	}
-
-	projectData, err := s.service.CreateProject(ctx, req.Msg.OrgId, req.Msg.DisplayName)
-	if err != nil {
+		if errors.Is(err, projects.ErrAdminRequired) {
+			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
+		}
+		if errors.Is(err, projects.ErrProjectNameTaken) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("a project with this name already exists"))
+		}
 		slog.ErrorContext(ctx, "failed to create project", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

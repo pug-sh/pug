@@ -6,13 +6,15 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/fivebitsio/cotton/internal/core/orgs"
 	"github.com/fivebitsio/cotton/internal/core/projects"
+	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
@@ -45,15 +47,6 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte) *Service {
 }
 
 func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (string, error) {
-	_, err := s.read.GetCustomerByEmail(ctx, email)
-	if err == nil {
-		return "", ErrEmailAlreadyExists
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		slog.ErrorContext(ctx, "failed to check existing customer", slogx.Error(err))
-		return "", err
-	}
-
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to hash password", slogx.Error(err))
@@ -90,6 +83,10 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		PictureUri:   "",
 		PasswordHash: string(passwordHash),
 	}); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return "", ErrEmailAlreadyExists
+		}
 		slog.ErrorContext(ctx, "failed to create customer", slogx.Error(err))
 		return "", err
 	}
@@ -105,7 +102,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
-		Role:       orgs.RoleAdmin,
+		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to add customer to default org", slogx.Error(err))
 		return "", err

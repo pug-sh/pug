@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/fivebitsio/cotton/internal/core/orgs"
 	"github.com/fivebitsio/cotton/internal/core/projects"
+	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/jackc/pgx/v5"
@@ -90,7 +90,7 @@ func (s *Seeder) Run(ctx context.Context) error {
 	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      org.ID,
 		CustomerID: customer.ID,
-		Role:       orgs.RoleAdmin,
+		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
 	}); err != nil {
 		return fmt.Errorf("failed to add customer to org: %w", err)
 	}
@@ -110,7 +110,7 @@ func (s *Seeder) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to commit seed transaction: %w", err)
 	}
 
-	slog.InfoContext(ctx, "seed complete",
+	slog.DebugContext(ctx, "seed complete",
 		slog.String("customer_id", customer.ID),
 		slog.String("org_id", org.ID),
 		slog.String("project_id", project.ID),

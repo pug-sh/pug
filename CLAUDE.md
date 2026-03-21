@@ -81,15 +81,15 @@ PostgreSQL uses read/write separation:
 
 **sqlc conventions**:
 
-- Query names: PascalCase with uppercase `ID` (e.g., `GetCampaignByID`, `GetProjectsByCustomerID`)
+- Query names: PascalCase with uppercase `ID` (e.g., `GetCampaignByID`, `GetProjectsByOrgID`)
 - SQL syntax and identifiers: lowercase (e.g., `select * from campaigns where project_id = @project_id`)
 - Partial updates: use `coalesce(nullif(@field, ''), field)` to preserve existing values when empty
 
 ### Org Hierarchy
 
-- **Org** is the top-level entity. Each customer belongs to one or more orgs via `org_members` (role: `admin` | `member`).
+- **Org** is the top-level entity. Each customer belongs to one or more orgs via `org_members` (role: `ORG_ROLE_ADMIN` | `ORG_ROLE_MEMBER`).
 - **Projects** belong to an org (`org_id`). A project is always created within an org context.
-- **Invitations** (`org_invitations`) are token-based, expire after 7 days, and transition from `pending` → `accepted`.
+- **Invitations** (`org_invitations`) are token-based, expire after 7 days, and transition from `INVITATION_STATUS_PENDING` → `INVITATION_STATUS_ACCEPTED`. Expiry is checked at accept time, not via a status transition.
 - Admin-only operations: `UpdateDisplayName`, `RemoveMember`, `InviteMember`, `ListInvitations`. All other org endpoints require membership.
 - On sign-up, a default org and default project are created atomically in a single transaction.
 

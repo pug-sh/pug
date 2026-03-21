@@ -41,7 +41,8 @@ type Principal struct {
 	Project  *dbread.Project
 }
 
-// WithSDKAuth authenticates via public API key in the x-api-key header.
+// WithSDKAuth authenticates via public API key from the x-api-key header
+// or api_key query parameter (fallback for beacon requests).
 // Only accepts public keys — private keys are rejected.
 func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
@@ -75,7 +76,8 @@ func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 }
 
 // WithJWTAuth authenticates via JWT in the Authorization header.
-// Optionally accepts x-project-id header to populate Project.
+// Optionally accepts x-project-id header to populate Project; verifies the
+// customer is a member of the project's org via GetProjectByIDAndOrgMember.
 func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		authHeader := req.Header.Get("Authorization")

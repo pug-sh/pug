@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
+	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -27,17 +29,12 @@ var (
 	ErrInviteNotFound       = errors.New("invitation not found")
 	ErrInviteNotPending     = errors.New("invitation is not pending")
 	ErrInviteWrongEmail     = errors.New("invitation was issued to a different email address")
+	ErrLastAdmin            = errors.New("cannot remove the last admin")
 	ErrMemberNotFound       = errors.New("member not found")
 	ErrOrgNotFound          = errors.New("org not found")
 )
 
 const (
-	RoleAdmin  = "admin"
-	RoleMember = "member"
-
-	InviteStatusPending  = "pending"
-	InviteStatusAccepted = "accepted"
-
 	inviteTTL = 7 * 24 * time.Hour
 )
 
@@ -63,11 +60,19 @@ func (s *Service) CreateOrg(ctx context.Context, displayName string) (dbwrite.Or
 }
 
 func (s *Service) AddMember(ctx context.Context, orgID, customerID, role string) (dbwrite.OrgMember, error) {
-	return s.write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+	member, err := s.write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
 		Role:       role,
 	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return dbwrite.OrgMember{}, ErrAlreadyMember
+		}
+		return dbwrite.OrgMember{}, err
+	}
+	return member, nil
 }
 
 func (s *Service) GetOrgByID(ctx context.Context, id string) (dbread.Org, error) {
@@ -106,27 +111,29 @@ func (s *Service) IsOrgMember(ctx context.Context, orgID, customerID string) (bo
 	})
 }
 
-func (s *Service) IsOrgAdmin(ctx context.Context, orgID, customerID string) (bool, error) {
+func (s *Service) ListMembers(ctx context.Context, orgID string) ([]dbread.GetOrgMembersByOrgIDRow, error) {
+	return s.read.GetOrgMembersByOrgID(ctx, orgID)
+}
+
+func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (string, error) {
 	role, err := s.read.GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.DebugContext(ctx, "org admin check: customer is not a member", slog.String("orgID", orgID), slog.String("customerID", customerID))
-			return false, nil
+			return "", ErrMemberNotFound
 		}
-		return false, err
+		return "", err
 	}
-	return role == RoleAdmin, nil
+	return role, nil
 }
 
-func (s *Service) ListMembers(ctx context.Context, orgID string) ([]dbread.GetOrgMembersByOrgIDRow, error) {
-	return s.read.GetOrgMembersByOrgID(ctx, orgID)
-}
-
-func (s *Service) RemoveMember(ctx context.Context, orgID, customerID string) error {
-	n, err := s.write.DeleteOrgMember(ctx, dbwrite.DeleteOrgMemberParams{
+// RemoveMemberSafe atomically deletes a member, refusing to remove the last admin.
+// Returns ErrMemberNotFound if the member does not exist, or ErrLastAdmin if the
+// delete was blocked because the target is the only admin.
+func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string) error {
+	n, err := s.write.DeleteOrgMemberIfNotLastAdmin(ctx, dbwrite.DeleteOrgMemberIfNotLastAdminParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
 	})
@@ -134,7 +141,19 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, customerID string) er
 		return err
 	}
 	if n == 0 {
-		return ErrMemberNotFound
+		// Distinguish "member not found" from "last admin blocked": check if
+		// the member still exists. Use write pool to avoid read-replica lag.
+		_, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+			OrgID:      orgID,
+			CustomerID: customerID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrMemberNotFound
+			}
+			return err
+		}
+		return ErrLastAdmin
 	}
 	return nil
 }
@@ -147,12 +166,17 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 	inv, err := s.write.CreateOrgInvitation(ctx, dbwrite.CreateOrgInvitationParams{
 		ID:        xid.New().String(),
 		OrgID:     orgID,
-		InviterID: inviterID,
+		InviterID: pgtype.Text{String: inviterID, Valid: inviterID != ""},
 		Email:     email,
 		Token:     token,
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(inviteTTL), Valid: true},
 	})
 	if err != nil {
+		// The CTE checks org_members joined with customers by email. ErrNoRows means
+		// the INSERT was skipped because the email already belongs to an org member.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbwrite.OrgInvitation{}, ErrAlreadyMember
+		}
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			return dbwrite.OrgInvitation{}, ErrInviteAlreadyPending
@@ -181,10 +205,10 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		return dbread.Org{}, err
 	}
 
-	if inv.Email != customerEmail {
+	if !strings.EqualFold(inv.Email, customerEmail) {
 		return dbread.Org{}, ErrInviteWrongEmail
 	}
-	if inv.Status != InviteStatusPending {
+	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
 		return dbread.Org{}, ErrInviteNotPending
 	}
 	if time.Now().After(inv.ExpiresAt.Time) {
@@ -194,7 +218,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      inv.OrgID,
 		CustomerID: customerID,
-		Role:       RoleMember,
+		Role:       orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
 	}); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
@@ -206,7 +230,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 
 	if _, err := w.UpdateOrgInvitationStatus(ctx, dbwrite.UpdateOrgInvitationStatusParams{
 		ID:     inv.ID,
-		Status: InviteStatusAccepted,
+		Status: orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String(),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to update invitation status", slogx.Error(err))
 		return dbread.Org{}, err
@@ -217,12 +241,18 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		return dbread.Org{}, err
 	}
 
-	org, err := s.GetOrgByID(ctx, inv.OrgID)
+	// Read from write pool to avoid read-replica lag after the commit.
+	wOrg, err := s.write.GetOrgByID(ctx, inv.OrgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("orgID", inv.OrgID))
 		return dbread.Org{}, err
 	}
-	return org, nil
+	return dbread.Org{
+		ID:          wOrg.ID,
+		DisplayName: wOrg.DisplayName,
+		CreateTime:  wOrg.CreateTime,
+		UpdateTime:  wOrg.UpdateTime,
+	}, nil
 }
 
 func (s *Service) ListInvitations(ctx context.Context, orgID string) ([]dbread.OrgInvitation, error) {

@@ -49,3 +49,49 @@ func (q *Queries) DeleteOrgMember(ctx context.Context, arg DeleteOrgMemberParams
 	}
 	return result.RowsAffected(), nil
 }
+
+const deleteOrgMemberIfNotLastAdmin = `-- name: DeleteOrgMemberIfNotLastAdmin :execrows
+with target as (
+  select role from org_members
+  where org_id = $1 and customer_id = $2
+),
+admin_count as (
+  select count(*) as cnt from org_members
+  where org_id = $1 and role = 'ORG_ROLE_ADMIN'
+)
+delete from org_members om
+where om.org_id = $1 and om.customer_id = $2
+  and (
+    (select role from target) != 'ORG_ROLE_ADMIN'
+    or (select cnt from admin_count) > 1
+  )
+`
+
+type DeleteOrgMemberIfNotLastAdminParams struct {
+	OrgID      string
+	CustomerID string
+}
+
+func (q *Queries) DeleteOrgMemberIfNotLastAdmin(ctx context.Context, arg DeleteOrgMemberIfNotLastAdminParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOrgMemberIfNotLastAdmin, arg.OrgID, arg.CustomerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getOrgMemberRole = `-- name: GetOrgMemberRole :one
+select role from org_members where org_id = $1 and customer_id = $2
+`
+
+type GetOrgMemberRoleParams struct {
+	OrgID      string
+	CustomerID string
+}
+
+func (q *Queries) GetOrgMemberRole(ctx context.Context, arg GetOrgMemberRoleParams) (string, error) {
+	row := q.db.QueryRow(ctx, getOrgMemberRole, arg.OrgID, arg.CustomerID)
+	var role string
+	err := row.Scan(&role)
+	return role, err
+}

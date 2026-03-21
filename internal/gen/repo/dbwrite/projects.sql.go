@@ -47,6 +47,49 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 	return i, err
 }
 
+const createProjectAsAdmin = `-- name: CreateProjectAsAdmin :one
+with check_admin as (
+  select 1 from org_members
+  where org_id = $3 and customer_id = $6 and role = 'ORG_ROLE_ADMIN'
+)
+insert into projects (display_name, id, org_id, private_api_key, public_api_key)
+select $1, $2, $3, $4, $5
+where exists (select 1 from check_admin)
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+`
+
+type CreateProjectAsAdminParams struct {
+	DisplayName   string
+	ID            string
+	OrgID         string
+	PrivateApiKey string
+	PublicApiKey  string
+	CustomerID    string
+}
+
+func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsAdminParams) (Project, error) {
+	row := q.db.QueryRow(ctx, createProjectAsAdmin,
+		arg.DisplayName,
+		arg.ID,
+		arg.OrgID,
+		arg.PrivateApiKey,
+		arg.PublicApiKey,
+		arg.CustomerID,
+	)
+	var i Project
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.OrgID,
+		&i.PrivateApiKey,
+		&i.PublicApiKey,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const deleteProject = `-- name: DeleteProject :one
 delete from projects
 where org_id = $1 and id = $2

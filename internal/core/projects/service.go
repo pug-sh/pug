@@ -10,12 +10,19 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 )
 
-var ErrProjectNotFound = errors.New("project not found")
+var (
+	ErrAdminRequired    = errors.New("admin role required")
+	ErrProjectNotFound  = errors.New("project not found")
+	ErrProjectNameTaken = errors.New("a project with this name already exists in the org")
+)
 
 type Service struct {
 	read  *dbread.Queries
@@ -69,22 +76,66 @@ func NewPublicKey() (string, error) {
 	return "pub_" + h, nil
 }
 
-func (s *Service) CreateProject(ctx context.Context, orgID, displayName string) (dbwrite.Project, error) {
+func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, displayName string) (dbwrite.Project, error) {
 	privKey, err := NewPrivateKey()
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
 		return dbwrite.Project{}, err
 	}
 	pubKey, err := NewPublicKey()
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
 		return dbwrite.Project{}, err
 	}
-	return s.write.CreateProject(ctx, dbwrite.CreateProjectParams{
+	project, err := s.write.CreateProjectAsAdmin(ctx, dbwrite.CreateProjectAsAdminParams{
+		ID:            xid.New().String(),
+		PrivateApiKey: privKey,
+		PublicApiKey:  pubKey,
+		OrgID:         orgID,
+		CustomerID:    customerID,
+		DisplayName:   displayName,
+	})
+	if err != nil {
+		// The CTE checks org_members for admin role. ErrNoRows means the INSERT was
+		// skipped because no admin row exists for this org_id + customer_id.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbwrite.Project{}, ErrAdminRequired
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return dbwrite.Project{}, ErrProjectNameTaken
+		}
+		return dbwrite.Project{}, err
+	}
+	return project, nil
+}
+
+func (s *Service) CreateProject(ctx context.Context, orgID, displayName string) (dbwrite.Project, error) {
+	privKey, err := NewPrivateKey()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
+		return dbwrite.Project{}, err
+	}
+	pubKey, err := NewPublicKey()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
+		return dbwrite.Project{}, err
+	}
+	project, err := s.write.CreateProject(ctx, dbwrite.CreateProjectParams{
 		ID:            xid.New().String(),
 		PrivateApiKey: privKey,
 		PublicApiKey:  pubKey,
 		OrgID:         orgID,
 		DisplayName:   displayName,
 	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return dbwrite.Project{}, ErrProjectNameTaken
+		}
+		return dbwrite.Project{}, err
+	}
+	return project, nil
 }
 
 func (s *Service) GetProjectByID(ctx context.Context, id string) (dbread.Project, error) {

@@ -4,15 +4,15 @@ create table org_invitations (
   email varchar(255) not null,
   expires_at timestamptz not null,
   id char(20) primary key,
-  inviter_id char(20) not null references customers(id),
+  inviter_id char(20) references customers(id) on delete set null,
   org_id char(20) not null references orgs(id) on delete cascade,
-  status varchar(20) not null default 'pending',
+  status varchar(30) not null default 'INVITATION_STATUS_PENDING',
   token char(32) not null unique
 );
 
 create unique index org_invitations_org_email_pending
-  on org_invitations (org_id, email)
-  where status = 'pending';
+  on org_invitations (org_id, lower(email))
+  where status = 'INVITATION_STATUS_PENDING';
 
 -- +goose Down
 drop table org_invitations;
