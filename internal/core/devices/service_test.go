@@ -18,8 +18,8 @@ func TestDevicesService(t *testing.T) {
 
 	// Seed prerequisite data with raw SQL to avoid pgx/sqlc jsonb coalesce typing issues.
 	for _, q := range []string{
-		`INSERT INTO customers (id, email, display_name, password_hash, picture_uri) VALUES ('cust-dev', 'dev@test.com', 'Test', 'hash', '')`,
-		`INSERT INTO projects (id, private_api_key, public_api_key, customer_id, display_name) VALUES ('proj-dev', 'prv_devtest1234567890', 'pub_devtest1234567890', 'cust-dev', 'Dev')`,
+		`INSERT INTO orgs (id, display_name) VALUES ('org-dev', 'Dev Org')`,
+		`INSERT INTO projects (id, private_api_key, public_api_key, org_id, display_name) VALUES ('proj-dev', 'prv_devtest1234567890', 'pub_devtest1234567890', 'org-dev', 'Dev')`,
 		`INSERT INTO profiles (id, project_id, auto_properties, custom_properties) VALUES ('prof-1', 'proj-dev', '{}'::jsonb, '{}'::jsonb)`,
 		// Seed two devices via raw SQL with explicit jsonb casting.
 		`INSERT INTO profile_devices (id, platform, profile_id, project_id, properties, status, token) VALUES ('dev-1', 'android', 'prof-1', 'proj-dev', '{}'::jsonb, 'active', 'token-1')`,

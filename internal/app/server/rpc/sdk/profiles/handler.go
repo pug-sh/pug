@@ -42,15 +42,19 @@ func (h *Handler) Delete(
 ) (*connect.Response[profilesv1.DeleteResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	if err := h.write.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
+	n, err := h.write.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
 		ID:        req.Msg.Id,
 		ProjectID: principal.Project.ID,
-	}); err != nil {
+	})
+	if err != nil {
 		slog.ErrorContext(ctx, "failed deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
+	}
+	if n == 0 {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 	}
 
 	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil
@@ -62,7 +66,7 @@ func (h *Handler) Get(
 ) (*connect.Response[profilesv1.GetResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	p, err := h.read.GetProfileByIDAndProjectID(ctx, dbread.GetProfileByIDAndProjectIDParams{
@@ -70,10 +74,10 @@ func (h *Handler) Get(
 		ProjectID: principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("failed to get profile"))
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 		}
+		slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
 	}
 
@@ -93,7 +97,7 @@ func (h *Handler) GetByExternalId(
 ) (*connect.Response[profilesv1.GetByExternalIdResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	p, err := h.read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
@@ -101,11 +105,10 @@ func (h *Handler) GetByExternalId(
 		ProjectID:  principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
-
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("failed to get profile"))
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 		}
+		slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
 	}
 
@@ -125,7 +128,7 @@ func (h *Handler) List(
 ) (*connect.Response[profilesv1.ListResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	profilesList, err := h.read.GetProfilesByProjectID(ctx, principal.Project.ID)
@@ -154,7 +157,7 @@ func (h *Handler) Identify(
 ) (*connect.Response[profilesv1.IdentifyResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	msg := &profilesv1.ProfileIdentifyMessage{
@@ -183,7 +186,7 @@ func (h *Handler) Register(
 ) (*connect.Response[profilesv1.RegisterResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	msg := &profilesv1.ProfileRegisterMessage{

@@ -34,14 +34,15 @@ const (
 )
 
 // Principal represents the authenticated entity.
-// Customer is always set. Project is set for API key auth and JWT auth with x-project-id header.
+// Customer is set for JWT auth. Project is set for API key auth and JWT auth with x-project-id header.
 type Principal struct {
 	AuthType AuthType
-	Customer dbread.Customer
+	Customer *dbread.Customer
 	Project  *dbread.Project
 }
 
-// WithSDKAuth authenticates via public API key in the x-api-key header.
+// WithSDKAuth authenticates via public API key from the x-api-key header
+// or api_key query parameter (fallback for beacon requests).
 // Only accepts public keys — private keys are rejected.
 func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
@@ -58,7 +59,7 @@ func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 			return nil, authn.Errorf("invalid API key")
 		}
 
-		row, err := repo.GetProjectAndCustomerByPublicApiKey(ctx, apiKey)
+		project, err := repo.GetProjectByPublicApiKey(ctx, apiKey)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, authn.Errorf("invalid API key")
@@ -69,14 +70,14 @@ func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 
 		return &Principal{
 			AuthType: AuthTypeAPIKey,
-			Customer: row.Customer,
-			Project:  &row.Project,
+			Project:  &project,
 		}, nil
 	}
 }
 
 // WithJWTAuth authenticates via JWT in the Authorization header.
-// Optionally accepts x-project-id header to populate Project.
+// Optionally accepts x-project-id header to populate Project; verifies the
+// customer is a member of the project's org via GetProjectByIDAndOrgMember.
 func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		authHeader := req.Header.Get("Authorization")
@@ -123,12 +124,12 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 
 		principal := &Principal{
 			AuthType: AuthTypeJWT,
-			Customer: customer,
+			Customer: &customer,
 		}
 
 		// Optionally populate Project if x-project-id header is provided
 		if projectID := req.Header.Get(HeaderProjectID); projectID != "" {
-			project, err := queries.GetProjectByIDAndCustomerID(ctx, dbread.GetProjectByIDAndCustomerIDParams{
+			project, err := queries.GetProjectByIDAndOrgMember(ctx, dbread.GetProjectByIDAndOrgMemberParams{
 				ID:         projectID,
 				CustomerID: customerID,
 			})
@@ -155,7 +156,7 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo *projects.Repo) a
 			if !strings.HasPrefix(apiKey, privateKeyPrefix) {
 				return nil, authn.Errorf("invalid API key")
 			}
-			row, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, apiKey)
+			project, err := repo.GetProjectByPrivateApiKey(ctx, apiKey)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					return nil, authn.Errorf("invalid API key")
@@ -165,16 +166,15 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo *projects.Repo) a
 			}
 			return &Principal{
 				AuthType: AuthTypeAPIKey,
-				Customer: row.Customer,
-				Project:  &row.Project,
+				Project:  &project,
 			}, nil
 		}
 		return jwtAuth(ctx, req)
 	}
 }
 
-// GetPrincipalFromContext extracts the Principal from context.
-func GetPrincipalFromContext(ctx context.Context) (*Principal, error) {
+// getPrincipalFromContext extracts the Principal from context.
+func getPrincipalFromContext(ctx context.Context) (*Principal, error) {
 	info := authn.GetInfo(ctx)
 
 	if principal, ok := info.(*Principal); ok {
@@ -184,10 +184,25 @@ func GetPrincipalFromContext(ctx context.Context) (*Principal, error) {
 	return nil, authn.Errorf("context value is not a Principal type: %T", info)
 }
 
+// MustGetPrincipalWithCustomer extracts the Principal and ensures Customer is set.
+// Use this for dashboard handlers that require JWT auth context.
+func MustGetPrincipalWithCustomer(ctx context.Context) (*Principal, error) {
+	principal, err := getPrincipalFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if principal.Customer == nil {
+		return nil, authn.Errorf("customer not set in principal")
+	}
+
+	return principal, nil
+}
+
 // MustGetPrincipalWithProject extracts the Principal and ensures Project is set.
 // Use this for SDK and shared handlers that require a project context.
 func MustGetPrincipalWithProject(ctx context.Context) (*Principal, error) {
-	principal, err := GetPrincipalFromContext(ctx)
+	principal, err := getPrincipalFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

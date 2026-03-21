@@ -23,7 +23,8 @@ func TestProjectsService(t *testing.T) {
 	svc := projects.NewService(db.PgRO, db.PgW, nil)
 	ctx := context.Background()
 
-	// Create a customer first — projects have a foreign key to customers.
+	// Create a customer and org — projects belong to orgs, and membership
+	// checks require a customer in org_members.
 	write := dbwrite.New(db.PgW)
 	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
 		ID:           "cust-test",
@@ -36,12 +37,29 @@ func TestProjectsService(t *testing.T) {
 		t.Fatalf("CreateCustomer: %v", err)
 	}
 
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID:          "org-test",
+		DisplayName: "Test Org",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+
+	_, err = write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      org.ID,
+		CustomerID: customer.ID,
+		Role:       "ORG_ROLE_ADMIN",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
 	// Hold a reference to the project created in the first subtest so later
 	// subtests can use it.
 	var projectID string
 
 	t.Run("CreateProject", func(t *testing.T) {
-		proj, err := svc.CreateProject(ctx, customer.ID, "My Project")
+		proj, err := svc.CreateProject(ctx, org.ID, "My Project")
 		if err != nil {
 			t.Fatalf("CreateProject: %v", err)
 		}
@@ -53,8 +71,8 @@ func TestProjectsService(t *testing.T) {
 		if proj.DisplayName != "My Project" {
 			t.Errorf("DisplayName = %q, want %q", proj.DisplayName, "My Project")
 		}
-		if proj.CustomerID != customer.ID {
-			t.Errorf("CustomerID = %q, want %q", proj.CustomerID, customer.ID)
+		if proj.OrgID != org.ID {
+			t.Errorf("OrgID = %q, want %q", proj.OrgID, org.ID)
 		}
 		if !strings.HasPrefix(proj.PrivateApiKey, "prv_") {
 			t.Errorf("PrivateApiKey = %q, want prefix prv_", proj.PrivateApiKey)
@@ -86,42 +104,42 @@ func TestProjectsService(t *testing.T) {
 		}
 	})
 
-	t.Run("GetProjectsByCustomerID", func(t *testing.T) {
-		// Create a second project for the same customer.
-		_, err := svc.CreateProject(ctx, customer.ID, "Second Project")
+	t.Run("GetProjectsByOrgID", func(t *testing.T) {
+		// Create a second project for the same org.
+		_, err := svc.CreateProject(ctx, org.ID, "Second Project")
 		if err != nil {
 			t.Fatalf("CreateProject (second): %v", err)
 		}
 
-		list, err := svc.GetProjectsByCustomerID(ctx, customer.ID)
+		list, err := svc.GetProjectsByOrgID(ctx, org.ID)
 		if err != nil {
-			t.Fatalf("GetProjectsByCustomerID: %v", err)
+			t.Fatalf("GetProjectsByOrgID: %v", err)
 		}
 		if len(list) < 2 {
 			t.Fatalf("expected at least 2 projects, got %d", len(list))
 		}
 	})
 
-	t.Run("ProjectExistsForCustomer_true", func(t *testing.T) {
+	t.Run("ProjectExistsForOrgMember_true", func(t *testing.T) {
 		if projectID == "" {
 			t.Skip("skipping: CreateProject did not produce a project ID")
 		}
-		exists, err := svc.ProjectExistsForCustomer(ctx, projectID, customer.ID)
+		exists, err := svc.ProjectExistsForOrgMember(ctx, projectID, customer.ID)
 		if err != nil {
-			t.Fatalf("ProjectExistsForCustomer: %v", err)
+			t.Fatalf("ProjectExistsForOrgMember: %v", err)
 		}
 		if !exists {
-			t.Error("expected true for valid project+customer, got false")
+			t.Error("expected true for valid project+org member, got false")
 		}
 	})
 
-	t.Run("ProjectExistsForCustomer_wrong_customer", func(t *testing.T) {
+	t.Run("ProjectExistsForOrgMember_wrong_customer", func(t *testing.T) {
 		if projectID == "" {
 			t.Skip("skipping: CreateProject did not produce a project ID")
 		}
-		exists, err := svc.ProjectExistsForCustomer(ctx, projectID, "cust-nonexistent")
+		exists, err := svc.ProjectExistsForOrgMember(ctx, projectID, "cust-nonexistent")
 		if err != nil {
-			t.Fatalf("ProjectExistsForCustomer: %v", err)
+			t.Fatalf("ProjectExistsForOrgMember: %v", err)
 		}
 		if exists {
 			t.Error("expected false for wrong customer, got true")
@@ -134,7 +152,7 @@ func TestProjectsService(t *testing.T) {
 		}
 		updated, err := svc.UpdateProjectDisplayName(ctx, dbwrite.UpdateProjectDisplayNameParams{
 			ID:          projectID,
-			CustomerID:  customer.ID,
+			OrgID:       org.ID,
 			DisplayName: "Renamed Project",
 		})
 		if err != nil {
@@ -161,7 +179,7 @@ func TestProjectsService(t *testing.T) {
 		fcmJSON := `{"type":"service_account","project_id":"my-project"}`
 		updated, err := svc.UpdateFCMServiceJSON(ctx, dbwrite.UpdateFCMServiceJSONParams{
 			ID:             projectID,
-			CustomerID:     customer.ID,
+			OrgID:          org.ID,
 			FcmServiceJson: postgres.NewText(fcmJSON),
 		})
 		if err != nil {
@@ -177,14 +195,14 @@ func TestProjectsService(t *testing.T) {
 
 	t.Run("DeleteProject", func(t *testing.T) {
 		// Create a disposable project for deletion.
-		proj, err := svc.CreateProject(ctx, customer.ID, "To Delete")
+		proj, err := svc.CreateProject(ctx, org.ID, "To Delete")
 		if err != nil {
 			t.Fatalf("CreateProject (to delete): %v", err)
 		}
 
 		err = svc.DeleteProject(ctx, dbwrite.DeleteProjectParams{
-			ID:         proj.ID,
-			CustomerID: customer.ID,
+			ID:    proj.ID,
+			OrgID: org.ID,
 		})
 		if err != nil {
 			t.Fatalf("DeleteProject: %v", err)

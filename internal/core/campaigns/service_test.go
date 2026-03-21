@@ -24,21 +24,18 @@ func TestCampaignsService(t *testing.T) {
 	db := testutil.SetupPostgres(t)
 	ctx := context.Background()
 
-	// Create a customer and project — campaigns have a foreign key to projects.
+	// Create an org and project — campaigns have a foreign key to projects.
 	write := dbwrite.New(db.PgW)
-	_, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID:           "cust-camp-test-12345",
-		Email:        "campaigns@test.com",
-		DisplayName:  "Campaign Tester",
-		PasswordHash: "hash",
-		PictureUri:   "",
+	_, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID:          "org-camp-test",
+		DisplayName: "Campaign Org",
 	})
 	if err != nil {
-		t.Fatalf("CreateCustomer: %v", err)
+		t.Fatalf("CreateOrg: %v", err)
 	}
 
 	projectsSvc := projects.NewService(db.PgRO, db.PgW, nil)
-	project, err := projectsSvc.CreateProject(ctx, "cust-camp-test-12345", "Campaign Project")
+	project, err := projectsSvc.CreateProject(ctx, "org-camp-test", "Campaign Project")
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}

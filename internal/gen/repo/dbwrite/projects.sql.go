@@ -12,36 +12,77 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-insert into projects (customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key)
-values ($1, $2, $3, $4, $5, $6)
-returning create_time, customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key, update_time
+insert into projects (display_name, id, org_id, private_api_key, public_api_key)
+values ($1, $2, $3, $4, $5)
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
 `
 
 type CreateProjectParams struct {
-	CustomerID     string
-	DisplayName    string
-	FcmServiceJson pgtype.Text
-	ID             string
-	PrivateApiKey  string
-	PublicApiKey   string
+	DisplayName   string
+	ID            string
+	OrgID         string
+	PrivateApiKey string
+	PublicApiKey  string
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
 	row := q.db.QueryRow(ctx, createProject,
-		arg.CustomerID,
 		arg.DisplayName,
-		arg.FcmServiceJson,
 		arg.ID,
+		arg.OrgID,
 		arg.PrivateApiKey,
 		arg.PublicApiKey,
 	)
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
+		&i.OrgID,
+		&i.PrivateApiKey,
+		&i.PublicApiKey,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const createProjectAsAdmin = `-- name: CreateProjectAsAdmin :one
+with check_admin as (
+  select 1 from org_members
+  where org_id = $3 and customer_id = $6 and role = 'ORG_ROLE_ADMIN'
+)
+insert into projects (display_name, id, org_id, private_api_key, public_api_key)
+select $1, $2, $3, $4, $5
+where exists (select 1 from check_admin)
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+`
+
+type CreateProjectAsAdminParams struct {
+	DisplayName   string
+	ID            string
+	OrgID         string
+	PrivateApiKey string
+	PublicApiKey  string
+	CustomerID    string
+}
+
+func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsAdminParams) (Project, error) {
+	row := q.db.QueryRow(ctx, createProjectAsAdmin,
+		arg.DisplayName,
+		arg.ID,
+		arg.OrgID,
+		arg.PrivateApiKey,
+		arg.PublicApiKey,
+		arg.CustomerID,
+	)
+	var i Project
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
 		&i.UpdateTime,
@@ -51,24 +92,24 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 
 const deleteProject = `-- name: DeleteProject :one
 delete from projects
-where customer_id = $1 and id = $2
-returning create_time, customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key, update_time
+where org_id = $1 and id = $2
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
 `
 
 type DeleteProjectParams struct {
-	CustomerID string
-	ID         string
+	OrgID string
+	ID    string
 }
 
 func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (Project, error) {
-	row := q.db.QueryRow(ctx, deleteProject, arg.CustomerID, arg.ID)
+	row := q.db.QueryRow(ctx, deleteProject, arg.OrgID, arg.ID)
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
+		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
 		&i.UpdateTime,
@@ -79,25 +120,25 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (P
 const updateFCMServiceJSON = `-- name: UpdateFCMServiceJSON :one
 update projects
 set fcm_service_json = $1
-where customer_id = $2 and id = $3
-returning create_time, customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key, update_time
+where org_id = $2 and id = $3
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
 `
 
 type UpdateFCMServiceJSONParams struct {
 	FcmServiceJson pgtype.Text
-	CustomerID     string
+	OrgID          string
 	ID             string
 }
 
 func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMServiceJSONParams) (Project, error) {
-	row := q.db.QueryRow(ctx, updateFCMServiceJSON, arg.FcmServiceJson, arg.CustomerID, arg.ID)
+	row := q.db.QueryRow(ctx, updateFCMServiceJSON, arg.FcmServiceJson, arg.OrgID, arg.ID)
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
+		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
 		&i.UpdateTime,
@@ -108,25 +149,25 @@ func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMService
 const updateProjectDisplayName = `-- name: UpdateProjectDisplayName :one
 update projects
 set display_name = $1
-where customer_id = $2 and id = $3
-returning create_time, customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key, update_time
+where org_id = $2 and id = $3
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
 `
 
 type UpdateProjectDisplayNameParams struct {
 	DisplayName string
-	CustomerID  string
+	OrgID       string
 	ID          string
 }
 
 func (q *Queries) UpdateProjectDisplayName(ctx context.Context, arg UpdateProjectDisplayNameParams) (Project, error) {
-	row := q.db.QueryRow(ctx, updateProjectDisplayName, arg.DisplayName, arg.CustomerID, arg.ID)
+	row := q.db.QueryRow(ctx, updateProjectDisplayName, arg.DisplayName, arg.OrgID, arg.ID)
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
+		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
 		&i.UpdateTime,

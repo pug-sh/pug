@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/validate"
 	cottonrpc "github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/dashboard/insights"
+	orgsrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/dashboard/orgs"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/dashboard/projects"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/public/auth"
 	devicesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/devices"
@@ -19,6 +20,7 @@ import (
 	profilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/profiles"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/delivery"
+	coreorgs "github.com/fivebitsio/cotton/internal/core/orgs"
 	coreprojects "github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
@@ -26,6 +28,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/devices/v1/devicesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/events/v1/eventsv1connect"
 	insightsv1connect "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1/insightsv1connect"
+	orgsv1connect "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1/orgsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -52,6 +55,7 @@ func start(ctx context.Context, d *deps) error {
 
 	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
 	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
+	orgsSvc := coreorgs.NewService(d.pgRo, d.pgW)
 
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)
@@ -63,9 +67,11 @@ func start(ctx context.Context, d *deps) error {
 
 	// Handlers
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
-		auth.NewServer(d.pgRo, d.pgW, d.jwtKey, projectsSvc), handlerOpts)
+		auth.NewServer(d.pgRo, d.pgW, d.jwtKey), handlerOpts)
+	orgsPath, orgsHandler := orgsv1connect.NewOrgsServiceHandler(
+		orgsrpc.NewServer(orgsSvc), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-		projects.NewServer(projectsSvc), handlerOpts)
+		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
 		insights.NewServer(d.ch), handlerOpts)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
@@ -88,6 +94,7 @@ func start(ctx context.Context, d *deps) error {
 	mux.Handle(authPath, cottonrpc.WithCORS(d.corsOrigins, authHandler))
 
 	// Dashboard only (CORS + JWT auth)
+	mux.Handle(orgsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
 	mux.Handle(projectsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
 	mux.Handle(insightsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(insightsHandler)))
 
@@ -103,6 +110,7 @@ func start(ctx context.Context, d *deps) error {
 	// Reflection
 	services := []string{
 		authv1connect.AuthServiceName,
+		orgsv1connect.OrgsServiceName,
 		projectsv1connect.ProjectsServiceName,
 		campaignsv1connect.CampaignServiceName,
 		deliveryv1connect.DeliveryServiceName,

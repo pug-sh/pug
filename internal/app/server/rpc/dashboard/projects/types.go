@@ -9,10 +9,10 @@ import (
 // roToRPCMsg intentionally omits PrivateApiKey — it is only exposed once at creation time via wToRPCMsgWithPrivateKey.
 func roToRPCMsg(p dbread.Project) *projectsv1.Project {
 	return &projectsv1.Project{
-		CustomerId:     p.CustomerID,
 		DisplayName:    p.DisplayName,
 		FcmServiceJson: p.FcmServiceJson.String,
 		Id:             p.ID,
+		OrgId:          p.OrgID,
 		PublicApiKey:   p.PublicApiKey,
 	}
 }
@@ -20,10 +20,10 @@ func roToRPCMsg(p dbread.Project) *projectsv1.Project {
 // wToRPCMsg converts a write model to RPC message without the private key.
 func wToRPCMsg(p dbwrite.Project) *projectsv1.Project {
 	return &projectsv1.Project{
-		CustomerId:     p.CustomerID,
 		DisplayName:    p.DisplayName,
 		FcmServiceJson: p.FcmServiceJson.String,
 		Id:             p.ID,
+		OrgId:          p.OrgID,
 		PublicApiKey:   p.PublicApiKey,
 	}
 }

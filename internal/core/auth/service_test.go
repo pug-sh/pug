@@ -6,9 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/core/auth"
-	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/testutil"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -19,22 +17,21 @@ func TestAuthService(t *testing.T) {
 	}
 
 	db := testutil.SetupPostgres(t)
-	projectsSvc := projects.NewService(db.PgRO, db.PgW, nil)
 	jwtKey := []byte("test-secret-key-for-jwt")
-	svc := auth.NewService(db.PgRO, db.PgW, jwtKey, projectsSvc)
+	svc := auth.NewService(db.PgRO, db.PgW, jwtKey)
 	ctx := context.Background()
 
 	var signupToken string
 
 	t.Run("SignUpWithEmail", func(t *testing.T) {
-		resp, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123")
+		token, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123")
 		if err != nil {
 			t.Fatalf("SignUpWithEmail: %v", err)
 		}
-		if resp.Token == "" {
+		if token == "" {
 			t.Fatal("expected non-empty token")
 		}
-		signupToken = resp.Token
+		signupToken = token
 	})
 
 	t.Run("SignUpWithEmail_duplicate", func(t *testing.T) {
@@ -42,21 +39,17 @@ func TestAuthService(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for duplicate email")
 		}
-		var connectErr *connect.Error
-		if !errors.As(err, &connectErr) {
-			t.Fatalf("expected *connect.Error, got %T", err)
-		}
-		if connectErr.Code() != connect.CodeAlreadyExists {
-			t.Errorf("code = %v, want %v", connectErr.Code(), connect.CodeAlreadyExists)
+		if !errors.Is(err, auth.ErrEmailAlreadyExists) {
+			t.Errorf("expected ErrEmailAlreadyExists, got: %v", err)
 		}
 	})
 
 	t.Run("SignInWithEmail_valid", func(t *testing.T) {
-		resp, err := svc.SignInWithEmail(ctx, "test@example.com", "password123")
+		token, err := svc.SignInWithEmail(ctx, "test@example.com", "password123")
 		if err != nil {
 			t.Fatalf("SignInWithEmail: %v", err)
 		}
-		if resp.Token == "" {
+		if token == "" {
 			t.Fatal("expected non-empty token")
 		}
 	})
@@ -66,12 +59,8 @@ func TestAuthService(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for wrong password")
 		}
-		var connectErr *connect.Error
-		if !errors.As(err, &connectErr) {
-			t.Fatalf("expected *connect.Error, got %T", err)
-		}
-		if connectErr.Code() != connect.CodeUnauthenticated {
-			t.Errorf("code = %v, want %v", connectErr.Code(), connect.CodeUnauthenticated)
+		if !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Errorf("expected ErrInvalidCredentials, got: %v", err)
 		}
 	})
 
@@ -80,12 +69,8 @@ func TestAuthService(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for nonexistent email")
 		}
-		var connectErr *connect.Error
-		if !errors.As(err, &connectErr) {
-			t.Fatalf("expected *connect.Error, got %T", err)
-		}
-		if connectErr.Code() != connect.CodeUnauthenticated {
-			t.Errorf("code = %v, want %v", connectErr.Code(), connect.CodeUnauthenticated)
+		if !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Errorf("expected ErrInvalidCredentials, got: %v", err)
 		}
 	})
 

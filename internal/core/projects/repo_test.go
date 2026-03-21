@@ -20,18 +20,19 @@ func TestProjectsRepo(t *testing.T) {
 	rd := testutil.SetupRedis(t)
 	ctx := context.Background()
 
-	// Seed a customer.
+	// Seed an org — projects belong to orgs.
 	write := dbwrite.New(db.PgW)
-	_, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: "cust-repo", Email: "repo@test.com", DisplayName: "Repo Test", PasswordHash: "hash", PictureUri: "",
+	_, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID:          "org-repo",
+		DisplayName: "Repo Org",
 	})
 	if err != nil {
-		t.Fatalf("CreateCustomer: %v", err)
+		t.Fatalf("CreateOrg: %v", err)
 	}
 
 	// Use the service to create a project — generates proper xid (20-char) IDs and API keys.
 	svc := projects.NewService(db.PgRO, db.PgW, nil)
-	proj, err := svc.CreateProject(ctx, "cust-repo", "Repo Project")
+	proj, err := svc.CreateProject(ctx, "org-repo", "Repo Project")
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
@@ -43,47 +44,44 @@ func TestProjectsRepo(t *testing.T) {
 	repo := projects.NewRepo(queries, rd.Client)
 
 	t.Run("private key cache miss then hit", func(t *testing.T) {
-		row1, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, prvKey)
+		p1, err := repo.GetProjectByPrivateApiKey(ctx, prvKey)
 		if err != nil {
 			t.Fatalf("first call: %v", err)
 		}
-		if strings.TrimSpace(row1.Project.ID) != projectID {
-			t.Errorf("project ID = %q, want %q", row1.Project.ID, projectID)
+		if strings.TrimSpace(p1.ID) != projectID {
+			t.Errorf("project ID = %q, want %q", p1.ID, projectID)
 		}
 
-		row2, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, prvKey)
+		p2, err := repo.GetProjectByPrivateApiKey(ctx, prvKey)
 		if err != nil {
 			t.Fatalf("second call (cache hit): %v", err)
 		}
-		if row2.Project.ID != row1.Project.ID {
-			t.Errorf("cache hit returned different project ID: %q vs %q", row2.Project.ID, row1.Project.ID)
-		}
-		if row2.Customer.ID != row1.Customer.ID {
-			t.Errorf("cache hit returned different customer ID: %q vs %q", row2.Customer.ID, row1.Customer.ID)
+		if p2.ID != p1.ID {
+			t.Errorf("cache hit returned different project ID: %q vs %q", p2.ID, p1.ID)
 		}
 	})
 
 	t.Run("public key cache miss then hit", func(t *testing.T) {
-		row1, err := repo.GetProjectAndCustomerByPublicApiKey(ctx, pubKey)
+		p1, err := repo.GetProjectByPublicApiKey(ctx, pubKey)
 		if err != nil {
 			t.Fatalf("first call: %v", err)
 		}
-		if strings.TrimSpace(row1.Project.ID) != projectID {
-			t.Errorf("project ID = %q, want %q", row1.Project.ID, projectID)
+		if strings.TrimSpace(p1.ID) != projectID {
+			t.Errorf("project ID = %q, want %q", p1.ID, projectID)
 		}
 
-		row2, err := repo.GetProjectAndCustomerByPublicApiKey(ctx, pubKey)
+		p2, err := repo.GetProjectByPublicApiKey(ctx, pubKey)
 		if err != nil {
 			t.Fatalf("second call (cache hit): %v", err)
 		}
-		if row2.Project.ID != row1.Project.ID {
+		if p2.ID != p1.ID {
 			t.Errorf("cache hit returned different project ID")
 		}
 	})
 
 	t.Run("invalidate clears cache", func(t *testing.T) {
 		// Populate cache.
-		_, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, prvKey)
+		_, err := repo.GetProjectByPrivateApiKey(ctx, prvKey)
 		if err != nil {
 			t.Fatalf("populate cache: %v", err)
 		}
@@ -113,12 +111,12 @@ func TestProjectsRepo(t *testing.T) {
 			t.Fatalf("set corrupt cache: %v", err)
 		}
 
-		row, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, prvKey)
+		p, err := repo.GetProjectByPrivateApiKey(ctx, prvKey)
 		if err != nil {
 			t.Fatalf("call with corrupt cache: %v", err)
 		}
-		if strings.TrimSpace(row.Project.ID) != projectID {
-			t.Errorf("project ID = %q, want %q", row.Project.ID, projectID)
+		if strings.TrimSpace(p.ID) != projectID {
+			t.Errorf("project ID = %q, want %q", p.ID, projectID)
 		}
 
 		raw, err := rd.Client.Get(ctx, cacheKey).Result()
@@ -131,7 +129,7 @@ func TestProjectsRepo(t *testing.T) {
 	})
 
 	t.Run("nonexistent key returns error", func(t *testing.T) {
-		_, err := repo.GetProjectAndCustomerByPrivateApiKey(ctx, "prv_doesnotexist0000000")
+		_, err := repo.GetProjectByPrivateApiKey(ctx, "prv_doesnotexist0000000")
 		if err == nil {
 			t.Fatal("expected error for nonexistent key, got nil")
 		}

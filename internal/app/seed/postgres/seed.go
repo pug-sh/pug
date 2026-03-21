@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/fivebitsio/cotton/internal/core/projects"
+	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/jackc/pgx/v5"
@@ -30,8 +31,6 @@ func NewSeeder(deps *deps) *Seeder {
 
 func (s *Seeder) Run(ctx context.Context) error {
 	read := dbread.New(s.deps.pg)
-	write := dbwrite.New(s.deps.pg)
-	projectsSvc := projects.NewService(s.deps.pg, s.deps.pg, nil)
 
 	slog.InfoContext(ctx, "checking for existing test user")
 
@@ -51,7 +50,25 @@ func (s *Seeder) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+	privKey, err := projects.NewPrivateKey()
+	if err != nil {
+		return fmt.Errorf("failed to generate private api key: %w", err)
+	}
+
+	pubKey, err := projects.NewPublicKey()
+	if err != nil {
+		return fmt.Errorf("failed to generate public api key: %w", err)
+	}
+
+	tx, err := s.deps.pg.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	w := dbwrite.New(tx)
+
+	customer, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
 		ID:           xid.New().String(),
 		Email:        testEmail,
 		DisplayName:  testName,
@@ -62,15 +79,40 @@ func (s *Seeder) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to create customer: %w", err)
 	}
 
-	slog.InfoContext(ctx, "creating default project", slog.String("customer_id", customer.ID))
+	org, err := w.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID:          xid.New().String(),
+		DisplayName: "default",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create default org: %w", err)
+	}
 
-	project, err := projectsSvc.CreateProject(ctx, customer.ID, "default")
+	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      org.ID,
+		CustomerID: customer.ID,
+		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+	}); err != nil {
+		return fmt.Errorf("failed to add customer to org: %w", err)
+	}
+
+	project, err := w.CreateProject(ctx, dbwrite.CreateProjectParams{
+		ID:            xid.New().String(),
+		OrgID:         org.ID,
+		DisplayName:   "default",
+		PrivateApiKey: privKey,
+		PublicApiKey:  pubKey,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create project: %w", err)
 	}
 
-	slog.InfoContext(ctx, "seed complete",
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit seed transaction: %w", err)
+	}
+
+	slog.DebugContext(ctx, "seed complete",
 		slog.String("customer_id", customer.ID),
+		slog.String("org_id", org.ID),
 		slog.String("project_id", project.ID),
 		slog.String("public_api_key", project.PublicApiKey),
 		slog.String("private_api_key", project.PrivateApiKey),

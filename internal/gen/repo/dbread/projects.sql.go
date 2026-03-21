@@ -9,86 +9,8 @@ import (
 	"context"
 )
 
-const getProjectAndCustomerByPrivateApiKey = `-- name: GetProjectAndCustomerByPrivateApiKey :one
-select projects.create_time, projects.customer_id, projects.display_name, projects.fcm_service_json, projects.id, projects.private_api_key, projects.public_api_key, projects.update_time, customers.create_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.update_time
-from projects
-join customers on customers.id = projects.customer_id
-where projects.private_api_key = $1
-`
-
-type GetProjectAndCustomerByPrivateApiKeyRow struct {
-	Project  Project
-	Customer Customer
-}
-
-// NOTE: The customer data from this join is required by the Principal struct populated in
-// WithDualAuth, but is not accessed by downstream shared handler code. If Principal is
-// refactored to not require a Customer for API key auth, this query can be simplified
-// to select from projects only.
-func (q *Queries) GetProjectAndCustomerByPrivateApiKey(ctx context.Context, privateApiKey string) (GetProjectAndCustomerByPrivateApiKeyRow, error) {
-	row := q.db.QueryRow(ctx, getProjectAndCustomerByPrivateApiKey, privateApiKey)
-	var i GetProjectAndCustomerByPrivateApiKeyRow
-	err := row.Scan(
-		&i.Project.CreateTime,
-		&i.Project.CustomerID,
-		&i.Project.DisplayName,
-		&i.Project.FcmServiceJson,
-		&i.Project.ID,
-		&i.Project.PrivateApiKey,
-		&i.Project.PublicApiKey,
-		&i.Project.UpdateTime,
-		&i.Customer.CreateTime,
-		&i.Customer.DisplayName,
-		&i.Customer.Email,
-		&i.Customer.ID,
-		&i.Customer.PasswordHash,
-		&i.Customer.PictureUri,
-		&i.Customer.UpdateTime,
-	)
-	return i, err
-}
-
-const getProjectAndCustomerByPublicApiKey = `-- name: GetProjectAndCustomerByPublicApiKey :one
-select projects.create_time, projects.customer_id, projects.display_name, projects.fcm_service_json, projects.id, projects.private_api_key, projects.public_api_key, projects.update_time, customers.create_time, customers.display_name, customers.email, customers.id, customers.password_hash, customers.picture_uri, customers.update_time
-from projects
-join customers on customers.id = projects.customer_id
-where projects.public_api_key = $1
-`
-
-type GetProjectAndCustomerByPublicApiKeyRow struct {
-	Project  Project
-	Customer Customer
-}
-
-// NOTE: Same as above — the customer data is required by the Principal struct
-// populated in WithSDKAuth, but is not accessed by downstream SDK handler code.
-func (q *Queries) GetProjectAndCustomerByPublicApiKey(ctx context.Context, publicApiKey string) (GetProjectAndCustomerByPublicApiKeyRow, error) {
-	row := q.db.QueryRow(ctx, getProjectAndCustomerByPublicApiKey, publicApiKey)
-	var i GetProjectAndCustomerByPublicApiKeyRow
-	err := row.Scan(
-		&i.Project.CreateTime,
-		&i.Project.CustomerID,
-		&i.Project.DisplayName,
-		&i.Project.FcmServiceJson,
-		&i.Project.ID,
-		&i.Project.PrivateApiKey,
-		&i.Project.PublicApiKey,
-		&i.Project.UpdateTime,
-		&i.Customer.CreateTime,
-		&i.Customer.DisplayName,
-		&i.Customer.Email,
-		&i.Customer.ID,
-		&i.Customer.PasswordHash,
-		&i.Customer.PictureUri,
-		&i.Customer.UpdateTime,
-	)
-	return i, err
-}
-
 const getProjectByID = `-- name: GetProjectByID :one
-select create_time, customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key, update_time
-from projects
-where id = $1
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where id = $1
 `
 
 func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error) {
@@ -96,10 +18,10 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
+		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
 		&i.UpdateTime,
@@ -107,24 +29,27 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 	return i, err
 }
 
-const getProjectByIDAndCustomerID = `-- name: GetProjectByIDAndCustomerID :one
-select create_time, customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key, update_time from projects where id = $1 and customer_id = $2
+const getProjectByIDAndOrgMember = `-- name: GetProjectByIDAndOrgMember :one
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.private_api_key, p.public_api_key, p.update_time
+from projects p
+join org_members om on om.org_id = p.org_id
+where p.id = $1 and om.customer_id = $2
 `
 
-type GetProjectByIDAndCustomerIDParams struct {
+type GetProjectByIDAndOrgMemberParams struct {
 	ID         string
 	CustomerID string
 }
 
-func (q *Queries) GetProjectByIDAndCustomerID(ctx context.Context, arg GetProjectByIDAndCustomerIDParams) (Project, error) {
-	row := q.db.QueryRow(ctx, getProjectByIDAndCustomerID, arg.ID, arg.CustomerID)
+func (q *Queries) GetProjectByIDAndOrgMember(ctx context.Context, arg GetProjectByIDAndOrgMemberParams) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByIDAndOrgMember, arg.ID, arg.CustomerID)
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
-		&i.CustomerID,
 		&i.DisplayName,
 		&i.FcmServiceJson,
 		&i.ID,
+		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
 		&i.UpdateTime,
@@ -132,14 +57,52 @@ func (q *Queries) GetProjectByIDAndCustomerID(ctx context.Context, arg GetProjec
 	return i, err
 }
 
-const getProjectsByCustomerID = `-- name: GetProjectsByCustomerID :many
-select create_time, customer_id, display_name, fcm_service_json, id, private_api_key, public_api_key, update_time
-from projects
-where customer_id = $1
+const getProjectByPrivateApiKey = `-- name: GetProjectByPrivateApiKey :one
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where private_api_key = $1
 `
 
-func (q *Queries) GetProjectsByCustomerID(ctx context.Context, customerID string) ([]Project, error) {
-	rows, err := q.db.Query(ctx, getProjectsByCustomerID, customerID)
+func (q *Queries) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey string) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByPrivateApiKey, privateApiKey)
+	var i Project
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.OrgID,
+		&i.PrivateApiKey,
+		&i.PublicApiKey,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const getProjectByPublicApiKey = `-- name: GetProjectByPublicApiKey :one
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where public_api_key = $1
+`
+
+func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, publicApiKey string) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByPublicApiKey, publicApiKey)
+	var i Project
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.FcmServiceJson,
+		&i.ID,
+		&i.OrgID,
+		&i.PrivateApiKey,
+		&i.PublicApiKey,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const getProjectsByOrgID = `-- name: GetProjectsByOrgID :many
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where org_id = $1
+`
+
+func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Project, error) {
+	rows, err := q.db.Query(ctx, getProjectsByOrgID, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -149,10 +112,10 @@ func (q *Queries) GetProjectsByCustomerID(ctx context.Context, customerID string
 		var i Project
 		if err := rows.Scan(
 			&i.CreateTime,
-			&i.CustomerID,
 			&i.DisplayName,
 			&i.FcmServiceJson,
 			&i.ID,
+			&i.OrgID,
 			&i.PrivateApiKey,
 			&i.PublicApiKey,
 			&i.UpdateTime,
@@ -165,24 +128,4 @@ func (q *Queries) GetProjectsByCustomerID(ctx context.Context, customerID string
 		return nil, err
 	}
 	return items, nil
-}
-
-const projectExistsForCustomer = `-- name: ProjectExistsForCustomer :one
-select exists(
-  select 1
-  from projects
-  where id = $1 and customer_id = $2
-)
-`
-
-type ProjectExistsForCustomerParams struct {
-	ID         string
-	CustomerID string
-}
-
-func (q *Queries) ProjectExistsForCustomer(ctx context.Context, arg ProjectExistsForCustomerParams) (bool, error) {
-	row := q.db.QueryRow(ctx, projectExistsForCustomer, arg.ID, arg.CustomerID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
 }

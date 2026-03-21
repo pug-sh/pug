@@ -2,12 +2,12 @@ package projects
 
 import (
 	"context"
-	"log/slog"
-
 	"errors"
+	"log/slog"
 
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
+	"github.com/fivebitsio/cotton/internal/core/orgs"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
@@ -16,11 +16,12 @@ import (
 )
 
 type server struct {
-	service *projects.Service
+	service     *projects.Service
+	orgsService *orgs.Service
 }
 
-func NewServer(service *projects.Service) *server {
-	return &server{service: service}
+func NewServer(service *projects.Service, orgsService *orgs.Service) *server {
+	return &server{service: service, orgsService: orgsService}
 }
 
 // Get returns the project specified by x-project-id header.
@@ -32,47 +33,52 @@ func (s *server) Get(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	return connect.NewResponse(&projectsv1.GetResponse{Project: roToRPCMsg(*principal.Project)}), nil
 }
 
-// BatchGet returns all projects for the authenticated customer.
+// BatchGet returns all projects for the given org.
 func (s *server) BatchGet(
 	ctx context.Context,
-	_ *connect.Request[projectsv1.BatchGetRequest],
+	req *connect.Request[projectsv1.BatchGetRequest],
 ) (*connect.Response[projectsv1.BatchGetResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	projectsData, err := s.service.GetProjectsByCustomerID(ctx, principal.Customer.ID)
+	isMember, err := s.orgsService.IsOrgMember(ctx, req.Msg.OrgId, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("customerId", principal.Customer.ID))
+		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	if !isMember {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
+	}
+
+	projectsData, err := s.service.GetProjectsByOrgID(ctx, req.Msg.OrgId)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("orgId", req.Msg.OrgId))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	projects := make([]*projectsv1.Project, 0, len(projectsData))
+	result := make([]*projectsv1.Project, 0, len(projectsData))
 	for _, p := range projectsData {
-		projects = append(projects, roToRPCMsg(p))
+		result = append(result, roToRPCMsg(p))
 	}
 
-	return connect.NewResponse(&projectsv1.BatchGetResponse{Projects: projects}), nil
+	return connect.NewResponse(&projectsv1.BatchGetResponse{Projects: result}), nil
 }
 
-// Create creates a new project for the authenticated customer.
+// Create creates a new project in the given org.
 func (s *server) Create(
 	ctx context.Context,
 	req *connect.Request[projectsv1.CreateRequest],
@@ -81,14 +87,20 @@ func (s *server) Create(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	projectData, err := s.service.CreateProject(ctx, principal.Customer.ID, req.Msg.DisplayName)
+	projectData, err := s.service.CreateProjectAsAdmin(ctx, req.Msg.OrgId, principal.Customer.ID, req.Msg.DisplayName)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err))
+		if errors.Is(err, projects.ErrAdminRequired) {
+			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
+		}
+		if errors.Is(err, projects.ErrProjectNameTaken) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("a project with this name already exists"))
+		}
+		slog.ErrorContext(ctx, "failed to create project", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -104,22 +116,21 @@ func (s *server) Delete(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	wParams := dbwrite.DeleteProjectParams{
-		CustomerID: principal.Customer.ID,
-		ID:         principal.Project.ID,
+		OrgID: principal.Project.OrgID,
+		ID:    principal.Project.ID,
 	}
 
 	if err := s.service.DeleteProject(ctx, wParams); err != nil {
-		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("customerId", principal.Customer.ID), slog.String("id", principal.Project.ID))
+		if errors.Is(err, projects.ErrProjectNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
+		}
+		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("orgId", principal.Project.OrgID), slog.String("id", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -135,19 +146,18 @@ func (s *server) UpdateDisplayName(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
-	}
-
-	wParams := dbwrite.UpdateProjectDisplayNameParams{CustomerID: principal.Customer.ID, DisplayName: req.Msg.DisplayName, ID: principal.Project.ID}
+	wParams := dbwrite.UpdateProjectDisplayNameParams{OrgID: principal.Project.OrgID, DisplayName: req.Msg.DisplayName, ID: principal.Project.ID}
 	projectData, err := s.service.UpdateProjectDisplayName(ctx, wParams)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.Any("params", wParams))
+		if errors.Is(err, projects.ErrProjectNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
+		}
+		slog.ErrorContext(ctx, "failed to update project display name", slogx.Error(err), slog.String("projectID", wParams.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -163,22 +173,21 @@ func (s *server) UpdateFCMServiceJSON(
 		return nil, err
 	}
 
-	principal, err := rpc.GetPrincipalFromContext(ctx)
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	}
-
-	if principal.Project == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("x-project-id header is required"))
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	wParams := dbwrite.UpdateFCMServiceJSONParams{
-		CustomerID:     principal.Customer.ID,
+		OrgID:          principal.Project.OrgID,
 		FcmServiceJson: postgres.NewText(req.Msg.FcmServiceJson),
 		ID:             principal.Project.ID,
 	}
 	if _, err := s.service.UpdateFCMServiceJSON(ctx, wParams); err != nil {
-		slog.ErrorContext(ctx, "failed writing to db", slogx.Error(err), slog.String("projectID", wParams.ID), slog.String("customerID", wParams.CustomerID), slogx.Redacted("fcm_service_json", wParams.FcmServiceJson.String))
+		if errors.Is(err, projects.ErrProjectNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
+		}
+		slog.ErrorContext(ctx, "failed to update project FCM service JSON", slogx.Error(err), slog.String("projectID", wParams.ID), slog.String("orgID", wParams.OrgID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

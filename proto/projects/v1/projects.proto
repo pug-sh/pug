@@ -1,6 +1,8 @@
 edition = "2023";
 package projects.v1;
 
+import "buf/validate/validate.proto";
+
 option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1;projectsv1";
 
@@ -13,14 +15,20 @@ service ProjectsService {
   rpc UpdateFCMServiceJSON(UpdateFCMServiceJSONRequest) returns (UpdateFCMServiceJSONResponse) {}
 }
 
-message BatchGetRequest {}
+message BatchGetRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+}
 
 message BatchGetResponse {
   repeated Project projects = 1;
 }
 
 message CreateRequest {
-  string display_name = 1;
+  string display_name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 150
+  ];
+  string org_id = 2 [(buf.validate.field).required = true];
 }
 
 message CreateResponse {
@@ -38,16 +46,19 @@ message GetResponse {
 }
 
 message Project {
-  string customer_id = 1;
-  string display_name = 2;
-  string fcm_service_json = 3;
-  string id = 4;
+  string display_name = 1;
+  string fcm_service_json = 2;
+  string id = 3;
+  string org_id = 4;
   string private_api_key = 5;
   string public_api_key = 6;
 }
 
 message UpdateDisplayNameRequest {
-  string display_name = 1;
+  string display_name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 150
+  ];
 }
 
 message UpdateDisplayNameResponse {

@@ -7,6 +7,7 @@
 package projectsv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -23,6 +24,7 @@ const (
 
 type BatchGetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -55,6 +57,13 @@ func (x *BatchGetRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use BatchGetRequest.ProtoReflect.Descriptor instead.
 func (*BatchGetRequest) Descriptor() ([]byte, []int) {
 	return file_projects_v1_projects_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *BatchGetRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
 }
 
 type BatchGetResponse struct {
@@ -104,6 +113,7 @@ func (x *BatchGetResponse) GetProjects() []*Project {
 type CreateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DisplayName   string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	OrgId         string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -141,6 +151,13 @@ func (*CreateRequest) Descriptor() ([]byte, []int) {
 func (x *CreateRequest) GetDisplayName() string {
 	if x != nil {
 		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *CreateRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
 	}
 	return ""
 }
@@ -343,10 +360,10 @@ func (x *GetResponse) GetProject() *Project {
 
 type Project struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	CustomerId     string                 `protobuf:"bytes,1,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
-	DisplayName    string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	FcmServiceJson string                 `protobuf:"bytes,3,opt,name=fcm_service_json,json=fcmServiceJson" json:"fcm_service_json,omitempty"`
-	Id             string                 `protobuf:"bytes,4,opt,name=id" json:"id,omitempty"`
+	DisplayName    string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	FcmServiceJson string                 `protobuf:"bytes,2,opt,name=fcm_service_json,json=fcmServiceJson" json:"fcm_service_json,omitempty"`
+	Id             string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
+	OrgId          string                 `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	PrivateApiKey  string                 `protobuf:"bytes,5,opt,name=private_api_key,json=privateApiKey" json:"private_api_key,omitempty"`
 	PublicApiKey   string                 `protobuf:"bytes,6,opt,name=public_api_key,json=publicApiKey" json:"public_api_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -383,13 +400,6 @@ func (*Project) Descriptor() ([]byte, []int) {
 	return file_projects_v1_projects_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *Project) GetCustomerId() string {
-	if x != nil {
-		return x.CustomerId
-	}
-	return ""
-}
-
 func (x *Project) GetDisplayName() string {
 	if x != nil {
 		return x.DisplayName
@@ -407,6 +417,13 @@ func (x *Project) GetFcmServiceJson() string {
 func (x *Project) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *Project) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
 	}
 	return ""
 }
@@ -597,12 +614,14 @@ var File_projects_v1_projects_proto protoreflect.FileDescriptor
 
 const file_projects_v1_projects_proto_rawDesc = "" +
 	"\n" +
-	"\x1aprojects/v1/projects.proto\x12\vprojects.v1\"\x11\n" +
-	"\x0fBatchGetRequest\"D\n" +
+	"\x1aprojects/v1/projects.proto\x12\vprojects.v1\x1a\x1bbuf/validate/validate.proto\"0\n" +
+	"\x0fBatchGetRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"D\n" +
 	"\x10BatchGetResponse\x120\n" +
-	"\bprojects\x18\x01 \x03(\v2\x14.projects.v1.ProjectR\bprojects\"2\n" +
-	"\rCreateRequest\x12!\n" +
-	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\"@\n" +
+	"\bprojects\x18\x01 \x03(\v2\x14.projects.v1.ProjectR\bprojects\"^\n" +
+	"\rCreateRequest\x12.\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12\x1d\n" +
+	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"@\n" +
 	"\x0eCreateResponse\x12.\n" +
 	"\aproject\x18\x01 \x01(\v2\x14.projects.v1.ProjectR\aproject\"\x0f\n" +
 	"\rDeleteRequest\"\x10\n" +
@@ -610,17 +629,16 @@ const file_projects_v1_projects_proto_rawDesc = "" +
 	"\n" +
 	"GetRequest\"=\n" +
 	"\vGetResponse\x12.\n" +
-	"\aproject\x18\x01 \x01(\v2\x14.projects.v1.ProjectR\aproject\"\xd5\x01\n" +
-	"\aProject\x12\x1f\n" +
-	"\vcustomer_id\x18\x01 \x01(\tR\n" +
-	"customerId\x12!\n" +
-	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12(\n" +
-	"\x10fcm_service_json\x18\x03 \x01(\tR\x0efcmServiceJson\x12\x0e\n" +
-	"\x02id\x18\x04 \x01(\tR\x02id\x12&\n" +
+	"\aproject\x18\x01 \x01(\v2\x14.projects.v1.ProjectR\aproject\"\xcb\x01\n" +
+	"\aProject\x12!\n" +
+	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12(\n" +
+	"\x10fcm_service_json\x18\x02 \x01(\tR\x0efcmServiceJson\x12\x0e\n" +
+	"\x02id\x18\x03 \x01(\tR\x02id\x12\x15\n" +
+	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12&\n" +
 	"\x0fprivate_api_key\x18\x05 \x01(\tR\rprivateApiKey\x12$\n" +
-	"\x0epublic_api_key\x18\x06 \x01(\tR\fpublicApiKey\"=\n" +
-	"\x18UpdateDisplayNameRequest\x12!\n" +
-	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\"K\n" +
+	"\x0epublic_api_key\x18\x06 \x01(\tR\fpublicApiKey\"J\n" +
+	"\x18UpdateDisplayNameRequest\x12.\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\"K\n" +
 	"\x19UpdateDisplayNameResponse\x12.\n" +
 	"\aproject\x18\x01 \x01(\v2\x14.projects.v1.ProjectR\aproject\"G\n" +
 	"\x1bUpdateFCMServiceJSONRequest\x12(\n" +

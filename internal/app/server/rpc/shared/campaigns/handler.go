@@ -31,7 +31,7 @@ func (s *server) Get(
 ) (*connect.Response[campaignsv1.GetResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	campaign, err := s.service.GetCampaignByIDAndProjectID(ctx, req.Msg.Id, principal.Project.ID)
@@ -57,7 +57,7 @@ func (s *server) BatchGet(
 ) (*connect.Response[campaignsv1.BatchGetResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	projectID := principal.Project.ID
@@ -89,7 +89,7 @@ func (s *server) Create(
 ) (*connect.Response[campaignsv1.CreateResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	projectID := principal.Project.ID
@@ -136,7 +136,7 @@ func (s *server) Delete(
 ) (*connect.Response[campaignsv1.DeleteResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	projectID := principal.Project.ID
@@ -158,7 +158,7 @@ func (s *server) Update(
 ) (*connect.Response[campaignsv1.UpdateResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
 	// SQL uses COALESCE to preserve existing values for empty/null fields
