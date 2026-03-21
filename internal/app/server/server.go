@@ -34,6 +34,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/geo"
 	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/fivebitsio/cotton/internal/useragent"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -85,8 +86,9 @@ func start(ctx context.Context, d *deps) error {
 		devicesrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
 
 	geoProvider := geo.CloudflareProvider{}
+	uaParser := useragent.NewParser()
 	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(
-		eventsrpc.NewServer(d.nats.GetJetStream(), geoProvider), handlerOpts)
+		eventsrpc.NewServer(d.nats.GetJetStream(), geoProvider, uaParser), handlerOpts)
 
 	mux := http.NewServeMux()
 
