@@ -86,7 +86,10 @@ func start(ctx context.Context, d *deps) error {
 		devicesrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
 
 	geoProvider := geo.CloudflareProvider{}
-	uaParser := useragent.NewParser()
+	uaParser, err := useragent.NewParser()
+	if err != nil {
+		return err
+	}
 	eventsPath, eventsHandler := eventsv1connect.NewEventsServiceHandler(
 		eventsrpc.NewServer(d.nats.GetJetStream(), geoProvider, uaParser), handlerOpts)
 

@@ -85,7 +85,11 @@ func TestEnrichGeo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &Server{geoProvider: stubProvider{loc: tt.loc}, uaParser: useragent.NewParser()}
+			uaParser, err := useragent.NewParser()
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := &Server{geoProvider: stubProvider{loc: tt.loc}, uaParser: uaParser}
 			s.enrichGeo(context.Background(), http.Header{}, tt.events)
 
 			for _, event := range tt.events {
@@ -141,9 +145,9 @@ func assertProps(t *testing.T, event *eventsv1.Event, want map[string]string) {
 func TestEnrichUserAgent(t *testing.T) {
 	chromeProps := map[string]string{
 		useragent.PropBrowser:        "Chrome",
-		useragent.PropBrowserVersion: "118.0.0.0",
+		useragent.PropBrowserVersion: "118",
 		useragent.PropOS:             "Windows",
-		useragent.PropDevice:         "Desktop",
+		useragent.PropOSVersion:      "10",
 	}
 
 	tests := []struct {
@@ -153,7 +157,7 @@ func TestEnrichUserAgent(t *testing.T) {
 		want     map[string]string // expected auto-properties on each event (nil = no UA props)
 	}{
 		{
-			name:     "chrome desktop — all four props set",
+			name:     "chrome desktop — browser, os, osVersion set (no device for desktop)",
 			uaHeader: chromeWindowsUA,
 			events:   []*eventsv1.Event{{}},
 			want:     chromeProps,
@@ -177,9 +181,9 @@ func TestEnrichUserAgent(t *testing.T) {
 			want: map[string]string{
 				"custom":                     "value",
 				useragent.PropBrowser:        "Chrome",
-				useragent.PropBrowserVersion: "118.0.0.0",
+				useragent.PropBrowserVersion: "118",
 				useragent.PropOS:             "Windows",
-				useragent.PropDevice:         "Desktop",
+				useragent.PropOSVersion:      "10",
 			},
 		},
 		{
@@ -188,15 +192,20 @@ func TestEnrichUserAgent(t *testing.T) {
 			uaHeader: chromeWindowsUA,
 			events:   []*eventsv1.Event{{AutoProperties: map[string]string{useragent.PropDevice: "Mobile", useragent.PropOS: "iOS"}}},
 			want: map[string]string{
-				useragent.PropDevice:         "Mobile", // client value preserved
-				useragent.PropOS:             "iOS",    // client value preserved
+				useragent.PropDevice:         "Mobile",  // client value preserved
+				useragent.PropOS:             "iOS",     // client value preserved
 				useragent.PropBrowser:        "Chrome",
-				useragent.PropBrowserVersion: "118.0.0.0",
+				useragent.PropBrowserVersion: "118",
+				useragent.PropOSVersion:      "10",
 			},
 		},
 	}
 
-	s := &Server{geoProvider: stubProvider{}, uaParser: useragent.NewParser()}
+	uaParser, err := useragent.NewParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{geoProvider: stubProvider{}, uaParser: uaParser}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

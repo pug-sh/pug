@@ -2,15 +2,17 @@ package useragent
 
 import (
 	"net/http"
+	"strings"
 
-	ua "github.com/medama-io/go-useragent"
+	uaparser "github.com/ua-parser/uap-go/uaparser"
 )
 
-// Auto-property keys used by the UA parser.
+// Keys populated in the Properties map returned by Parse.
 const (
 	PropBrowser        = "browser"
 	PropBrowserVersion = "browserVersion"
 	PropOS             = "os"
+	PropOSVersion      = "osVersion"
 	PropDevice         = "device"
 )
 
@@ -20,36 +22,43 @@ type Properties map[string]string
 // Parser parses User-Agent headers into device properties.
 // Initialize once at application startup via NewParser.
 type Parser struct {
-	parser *ua.Parser
+	parser *uaparser.Parser
 }
 
 // NewParser creates a new Parser. Call once at startup.
-func NewParser() *Parser {
-	return &Parser{parser: ua.NewParser()}
+func NewParser() (*Parser, error) {
+	p, err := uaparser.New()
+	if err != nil {
+		return nil, err
+	}
+	return &Parser{parser: p}, nil
 }
 
 // Parse extracts device properties from the User-Agent request header.
-// Returns an empty map if the header is absent or unrecognised.
+// Returns nil if the header is absent.
 func (p *Parser) Parse(h http.Header) Properties {
 	uaStr := h.Get("User-Agent")
 	if uaStr == "" {
 		return nil
 	}
 
-	agent := p.parser.Parse(uaStr)
+	client := p.parser.Parse(uaStr)
 
-	props := make(Properties, 4)
-	if b := string(agent.Browser()); b != "" {
-		props[PropBrowser] = b
+	props := make(Properties, 5)
+	if client.UserAgent.Family != "" && client.UserAgent.Family != "Other" {
+		props[PropBrowser] = client.UserAgent.Family
+		if client.UserAgent.Major != "" {
+			props[PropBrowserVersion] = client.UserAgent.Major
+		}
 	}
-	if v := agent.BrowserVersion(); v != "" {
-		props[PropBrowserVersion] = v
+	if client.Os.Family != "" && client.Os.Family != "Other" {
+		props[PropOS] = client.Os.Family
+		if v := osVersion(client.Os); v != "" {
+			props[PropOSVersion] = v
+		}
 	}
-	if o := string(agent.OS()); o != "" {
-		props[PropOS] = o
-	}
-	if d := string(agent.Device()); d != "" {
-		props[PropDevice] = d
+	if client.Device.Family != "" && client.Device.Family != "Other" {
+		props[PropDevice] = client.Device.Family
 	}
 
 	if len(props) == 0 {
@@ -57,4 +66,16 @@ func (p *Parser) Parse(h http.Header) Properties {
 	}
 
 	return props
+}
+
+// osVersion builds a dot-joined version string from the Os fields, dropping trailing empty parts.
+func osVersion(os *uaparser.Os) string {
+	parts := []string{os.Major, os.Minor, os.Patch}
+	for i, p := range parts {
+		if p == "" {
+			parts = parts[:i]
+			break
+		}
+	}
+	return strings.Join(parts, ".")
 }
