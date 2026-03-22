@@ -51,7 +51,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	// crosses a month boundary it also lands in a different partition
 	// (PARTITION BY toYYYYMM(occur_time)), and ReplacingMergeTree never
 	// deduplicates across partitions, producing permanent duplicates.
-	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time)")
+	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id)")
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)))
 		return err
@@ -88,6 +88,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			e.AutoProperties,
 			e.CustomProperties,
 			e.OccurTime.AsTime(),
+			e.SessionId,
 		); err != nil {
 			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)), slog.String("event_id", e.EventId), slog.Int("event_index", i))
 			return natsworker.NewPermanentError(err).

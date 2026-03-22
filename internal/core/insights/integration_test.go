@@ -15,6 +15,24 @@ import (
 
 const testProjectID = "proj_integration"
 
+// Fixed UUIDs for deterministic test users.
+var (
+	userAlice   = uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000001")
+	userBob     = uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000002")
+	userCharlie = uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000003")
+	userU1      = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000001")
+	userU2      = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000002")
+	userU3      = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000003")
+	userU4      = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000004")
+	userU5      = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000005")
+	userU6      = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000006")
+	userU7      = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000007")
+	userU8      = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000008")
+	userU9      = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000009")
+	userU10     = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000010")
+	userU11     = uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000011")
+)
+
 func TestIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -363,17 +381,17 @@ func seedEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) 
 
 	type event struct {
 		day     int
-		user    string
+		user    uuid.UUID
 		country string
 	}
 
 	events := []event{
-		{1, "alice", "US"},
-		{1, "bob", "GB"},
-		{1, "charlie", "US"},
-		{2, "alice", "US"},
-		{2, "bob", "GB"},
-		{3, "alice", "US"},
+		{1, userAlice, "US"},
+		{1, userBob, "GB"},
+		{1, userCharlie, "US"},
+		{2, userAlice, "US"},
+		{2, userBob, "GB"},
+		{3, userAlice, "US"},
 	}
 
 	for _, e := range events {
@@ -404,15 +422,15 @@ func seedPurchases(t *testing.T, ctx context.Context, ch *testutil.TestClickHous
 	t.Helper()
 
 	type event struct {
-		user    string
+		user    uuid.UUID
 		country string
 	}
 
 	events := []event{
-		{"u1", "US"}, {"u2", "US"}, {"u3", "US"}, {"u4", "US"}, {"u5", "US"},
-		{"u6", "GB"}, {"u7", "GB"}, {"u8", "GB"},
-		{"u9", "FR"}, {"u10", "FR"},
-		{"u11", "JP"},
+		{userU1, "US"}, {userU2, "US"}, {userU3, "US"}, {userU4, "US"}, {userU5, "US"},
+		{userU6, "GB"}, {userU7, "GB"}, {userU8, "GB"},
+		{userU9, "FR"}, {userU10, "FR"},
+		{userU11, "JP"},
 	}
 
 	occurTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
