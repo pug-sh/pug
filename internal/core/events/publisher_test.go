@@ -50,7 +50,7 @@ func TestPublisher(t *testing.T) {
 		err := publisher.Publish(ctx, "proj-1", []*eventsv1.Event{
 			{
 				EventId:    uuid.NewString(),
-				DistinctId: uuid.NewString(),
+				DistinctId: "user-1",
 				SessionId:  uuid.NewString(),
 				Kind:       "page_view",
 				OccurTime:  timestamppb.Now(),
@@ -96,8 +96,8 @@ func TestPublisher(t *testing.T) {
 
 	t.Run("publish multiple events", func(t *testing.T) {
 		err := publisher.Publish(ctx, "proj-2", []*eventsv1.Event{
-			{EventId: uuid.NewString(), DistinctId: uuid.NewString(), SessionId: uuid.NewString(), Kind: "click", OccurTime: timestamppb.Now()},
-			{EventId: uuid.NewString(), DistinctId: uuid.NewString(), SessionId: uuid.NewString(), Kind: "purchase", OccurTime: timestamppb.Now()},
+			{EventId: uuid.NewString(), DistinctId: "user-1", SessionId: uuid.NewString(), Kind: "click", OccurTime: timestamppb.Now()},
+			{EventId: uuid.NewString(), DistinctId: "user-1", SessionId: uuid.NewString(), Kind: "purchase", OccurTime: timestamppb.Now()},
 		})
 		if err != nil {
 			t.Fatalf("Publish: %v", err)
@@ -106,7 +106,7 @@ func TestPublisher(t *testing.T) {
 
 	t.Run("empty project ID fails validation", func(t *testing.T) {
 		err := publisher.Publish(ctx, "", []*eventsv1.Event{
-			{EventId: uuid.NewString(), DistinctId: uuid.NewString(), SessionId: uuid.NewString(), Kind: "test", OccurTime: timestamppb.Now()},
+			{EventId: uuid.NewString(), DistinctId: "user-1", SessionId: uuid.NewString(), Kind: "test", OccurTime: timestamppb.Now()},
 		})
 		if err == nil {
 			t.Fatal("expected validation error for empty project ID, got nil")

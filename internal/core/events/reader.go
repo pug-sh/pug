@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/google/uuid"
+	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
 type Event struct {
 	AutoProperties   map[string]string
 	CustomProperties map[string]string
-	DistinctID       uuid.UUID
+	DistinctID       string
 	EventID          string
 	InsertTime       time.Time
 	Kind             string
@@ -33,13 +33,13 @@ func NewReader(ch driver.Conn) *Reader {
 
 // GetEventsByProfile returns all events for a profile, including events recorded
 // under any of its alias IDs (anonymous profiles that were merged into it).
-func (r *Reader) GetEventsByProfile(ctx context.Context, projectID string, profileID uuid.UUID) ([]Event, error) {
+func (r *Reader) GetEventsByProfile(ctx context.Context, projectID, profileID string) ([]Event, error) {
 	aliasIDs, err := r.getAliasIDs(ctx, projectID, profileID)
 	if err != nil {
 		return nil, fmt.Errorf("GetEventsByProfile: getAliasIDs failed for project %s: %w", projectID, err)
 	}
 
-	ids := append([]uuid.UUID{profileID}, aliasIDs...)
+	ids := append([]string{profileID}, aliasIDs...)
 
 	rows, err := r.ch.Query(ctx,
 		`SELECT auto_properties, custom_properties, distinct_id, event_id, insert_time, kind, occur_time, project_id, session_id
@@ -78,7 +78,7 @@ func (r *Reader) GetEventsByProfile(ctx context.Context, projectID string, profi
 	return events, rows.Err()
 }
 
-func (r *Reader) getAliasIDs(ctx context.Context, projectID string, profileID uuid.UUID) ([]uuid.UUID, error) {
+func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) ([]string, error) {
 	rows, err := r.ch.Query(ctx,
 		`SELECT alias_id FROM profile_aliases FINAL
 		 WHERE project_id = ? AND profile_id = ?`,
@@ -92,9 +92,9 @@ func (r *Reader) getAliasIDs(ctx context.Context, projectID string, profileID uu
 		}
 	}()
 
-	var ids []uuid.UUID
+	var ids []string
 	for rows.Next() {
-		var id uuid.UUID
+		var id string
 		if err := rows.Scan(&id); err != nil {
 			return nil, fmt.Errorf("getAliasIDs: scan failed for project %s profile %s: %w", projectID, profileID, err)
 		}

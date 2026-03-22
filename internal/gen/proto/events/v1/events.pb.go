@@ -263,12 +263,12 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x12BatchCreateRequest\x123\n" +
 	"\x06events\x18\x01 \x03(\v2\x10.events.v1.EventB\t\xbaH\x06\x92\x01\x03\x10\xe8\aR\x06events\"1\n" +
 	"\x13BatchCreateResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\rR\baccepted\"\x94\x04\n" +
+	"\baccepted\x18\x01 \x01(\rR\baccepted\"\x8f\x04\n" +
 	"\x05Event\x12&\n" +
 	"\bevent_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\aeventId\x12M\n" +
 	"\x0fauto_properties\x18\x02 \x03(\v2$.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12S\n" +
-	"\x11custom_properties\x18\x03 \x03(\v2&.events.v1.Event.CustomPropertiesEntryR\x10customProperties\x12,\n" +
-	"\vdistinct_id\x18\x04 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\n" +
+	"\x11custom_properties\x18\x03 \x03(\v2&.events.v1.Event.CustomPropertiesEntryR\x10customProperties\x12'\n" +
+	"\vdistinct_id\x18\x04 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"distinctId\x12\x1a\n" +
 	"\x04kind\x18\x05 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x04kind\x12A\n" +
 	"\n" +

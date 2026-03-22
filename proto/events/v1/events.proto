@@ -23,7 +23,7 @@ message Event {
   string event_id = 1 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
   map<string, string> auto_properties = 2;
   map<string, string> custom_properties = 3;
-  string distinct_id = 4 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
+  string distinct_id = 4 [(buf.validate.field).required = true];
   string kind = 5 [(buf.validate.field).required = true];
   google.protobuf.Timestamp occur_time = 6 [(buf.validate.field).required = true];
   string session_id = 7 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];

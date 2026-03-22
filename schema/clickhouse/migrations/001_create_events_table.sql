@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS events (
     auto_properties   Map(String, String),
     custom_properties Map(String, String),
-    distinct_id       UUID,
+    distinct_id       String,
     event_id          UUID,
     insert_time       DateTime64(3) DEFAULT now64(3),
     kind              LowCardinality(String),
