@@ -7,20 +7,20 @@ import (
 
 // Auto-property keys used by geo providers.
 const (
-	PropIP         = "ip"
-	PropContinent  = "continent"
-	PropCountry    = "country"
-	PropRegion     = "region"
-	PropCity       = "city"
-	PropPostalCode = "postalCode"
-	PropMetroCode  = "metroCode"
-	PropLatitude   = "latitude"
-	PropLongitude  = "longitude"
-	PropTimezone   = "timezone"
+	PropIP         = "$ip"
+	PropContinent  = "$continent"
+	PropCountry    = "$country"
+	PropRegion     = "$region"
+	PropCity       = "$city"
+	PropPostalCode = "$postalCode"
+	PropMetroCode  = "$metroCode"
+	PropLatitude   = "$latitude"
+	PropLongitude  = "$longitude"
+	PropTimezone   = "$timezone"
 )
 
 // Location is a set of geo properties resolved for a request.
-// Keys are auto-property names (e.g. "country", "city").
+// Keys are auto-property names (e.g. "$country", "$city").
 // Providers decide which keys to populate — different providers may
 // return different sets of keys.
 type Location map[string]string
