@@ -29,14 +29,13 @@ func (q *Queries) DeleteProfileByIDAndProjectID(ctx context.Context, arg DeleteP
 
 const mergeProfileProperties = `-- name: MergeProfileProperties :one
 update profiles
-set auto_properties = jsonb_shallow_merge(s.auto_properties, profiles.auto_properties),
-    custom_properties = jsonb_shallow_merge(s.custom_properties, profiles.custom_properties)
+set properties = jsonb_shallow_merge(s.properties, profiles.properties)
 from profiles s
 where s.id = $1
   and s.project_id = $2
   and profiles.id = $3
   and profiles.project_id = $2
-returning profiles.auto_properties, profiles.create_time, profiles.custom_properties, profiles.external_id, profiles.id, profiles.project_id, profiles.update_time
+returning profiles.create_time, profiles.external_id, profiles.id, profiles.properties, profiles.project_id, profiles.update_time
 `
 
 type MergeProfilePropertiesParams struct {
@@ -49,11 +48,10 @@ func (q *Queries) MergeProfileProperties(ctx context.Context, arg MergeProfilePr
 	row := q.db.QueryRow(ctx, mergeProfileProperties, arg.SourceID, arg.ProjectID, arg.TargetID)
 	var i Profile
 	err := row.Scan(
-		&i.AutoProperties,
 		&i.CreateTime,
-		&i.CustomProperties,
 		&i.ExternalID,
 		&i.ID,
+		&i.Properties,
 		&i.ProjectID,
 		&i.UpdateTime,
 	)
@@ -78,35 +76,27 @@ func (q *Queries) ReassignProfileDevices(ctx context.Context, arg ReassignProfil
 }
 
 const registerProfile = `-- name: RegisterProfile :one
-insert into profiles (auto_properties, custom_properties, id, project_id)
-values (coalesce($1, '{}'), coalesce($2, '{}'), $3, $4)
+insert into profiles (properties, id, project_id)
+values (coalesce($1, '{}'), $2, $3)
 on conflict (id, project_id) do update set
-  auto_properties = jsonb_shallow_merge(profiles.auto_properties, excluded.auto_properties),
-  custom_properties = jsonb_shallow_merge(profiles.custom_properties, excluded.custom_properties)
-returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
+  properties = jsonb_shallow_merge(profiles.properties, excluded.properties)
+returning create_time, external_id, id, properties, project_id, update_time
 `
 
 type RegisterProfileParams struct {
-	AutoProperties   interface{}
-	CustomProperties interface{}
-	ID               string
-	ProjectID        string
+	Properties interface{}
+	ID         string
+	ProjectID  string
 }
 
 func (q *Queries) RegisterProfile(ctx context.Context, arg RegisterProfileParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, registerProfile,
-		arg.AutoProperties,
-		arg.CustomProperties,
-		arg.ID,
-		arg.ProjectID,
-	)
+	row := q.db.QueryRow(ctx, registerProfile, arg.Properties, arg.ID, arg.ProjectID)
 	var i Profile
 	err := row.Scan(
-		&i.AutoProperties,
 		&i.CreateTime,
-		&i.CustomProperties,
 		&i.ExternalID,
 		&i.ID,
+		&i.Properties,
 		&i.ProjectID,
 		&i.UpdateTime,
 	)
@@ -117,7 +107,7 @@ const setProfileExternalID = `-- name: SetProfileExternalID :one
 update profiles
 set external_id = $1::text
 where id = $2 and project_id = $3
-returning auto_properties, create_time, custom_properties, external_id, id, project_id, update_time
+returning create_time, external_id, id, properties, project_id, update_time
 `
 
 type SetProfileExternalIDParams struct {
@@ -130,11 +120,10 @@ func (q *Queries) SetProfileExternalID(ctx context.Context, arg SetProfileExtern
 	row := q.db.QueryRow(ctx, setProfileExternalID, arg.ExternalID, arg.ID, arg.ProjectID)
 	var i Profile
 	err := row.Scan(
-		&i.AutoProperties,
 		&i.CreateTime,
-		&i.CustomProperties,
 		&i.ExternalID,
 		&i.ID,
+		&i.Properties,
 		&i.ProjectID,
 		&i.UpdateTime,
 	)

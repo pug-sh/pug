@@ -190,10 +190,9 @@ func (h *Handler) Register(
 	}
 
 	msg := &profilesv1.ProfileRegisterMessage{
-		AutoProperties:   req.Msg.GetAutoProperties(),
-		CustomProperties: req.Msg.GetCustomProperties(),
-		ProfileId:        req.Msg.GetProfileId(),
-		ProjectId:        principal.Project.ID,
+		Properties: req.Msg.GetProperties(),
+		ProfileId:  req.Msg.GetProfileId(),
+		ProjectId:  principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
@@ -211,35 +210,23 @@ func (h *Handler) Register(
 }
 
 func convertProfile(ctx context.Context, p dbread.Profile) (*profilesv1.Profile, error) {
-	autoPropertiesMap := p.AutoProperties
-	if autoPropertiesMap == nil {
-		autoPropertiesMap = make(map[string]any)
+	propertiesMap := p.Properties
+	if propertiesMap == nil {
+		propertiesMap = make(map[string]any)
 	}
-	autoProperties, err := structpb.NewStruct(autoPropertiesMap)
+	properties, err := structpb.NewStruct(propertiesMap)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed converting auto_properties to protobuf struct",
-			slogx.Error(err), slog.String("profileId", p.ID))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
-	}
-
-	customPropertiesMap := p.CustomProperties
-	if customPropertiesMap == nil {
-		customPropertiesMap = make(map[string]any)
-	}
-	customProperties, err := structpb.NewStruct(customPropertiesMap)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed converting custom_properties to protobuf struct",
+		slog.ErrorContext(ctx, "failed converting properties to protobuf struct",
 			slogx.Error(err), slog.String("profileId", p.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
 	}
 
 	return &profilesv1.Profile{
-		AutoProperties:   autoProperties,
-		CreateTime:       timestamppb.New(p.CreateTime.Time),
-		CustomProperties: customProperties,
-		ExternalId:       p.ExternalID.String,
-		Id:               p.ID,
-		ProjectId:        p.ProjectID,
-		UpdateTime:       timestamppb.New(p.UpdateTime.Time),
+		CreateTime: timestamppb.New(p.CreateTime.Time),
+		ExternalId: p.ExternalID.String,
+		Id:         p.ID,
+		Properties: properties,
+		ProjectId:  p.ProjectID,
+		UpdateTime: timestamppb.New(p.UpdateTime.Time),
 	}, nil
 }

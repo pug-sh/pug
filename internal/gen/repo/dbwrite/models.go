@@ -57,13 +57,12 @@ type OrgMember struct {
 }
 
 type Profile struct {
-	AutoProperties   map[string]any
-	CreateTime       pgtype.Timestamptz
-	CustomProperties map[string]any
-	ExternalID       pgtype.Text
-	ID               string
-	ProjectID        string
-	UpdateTime       pgtype.Timestamptz
+	CreateTime pgtype.Timestamptz
+	ExternalID pgtype.Text
+	ID         string
+	Properties map[string]any
+	ProjectID  string
+	UpdateTime pgtype.Timestamptz
 }
 
 type ProfileDevice struct {

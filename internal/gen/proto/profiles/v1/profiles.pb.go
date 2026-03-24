@@ -449,16 +449,15 @@ func (*IdentifyResponse) Descriptor() ([]byte, []int) {
 }
 
 type Profile struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	AutoProperties   *structpb.Struct       `protobuf:"bytes,1,opt,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty"`
-	CreateTime       *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
-	CustomProperties *structpb.Struct       `protobuf:"bytes,3,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
-	ExternalId       string                 `protobuf:"bytes,4,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	Id               string                 `protobuf:"bytes,5,opt,name=id" json:"id,omitempty"`
-	ProjectId        string                 `protobuf:"bytes,6,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	UpdateTime       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
+	ExternalId    string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	Id            string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
+	Properties    *structpb.Struct       `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,5,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Profile) Reset() {
@@ -491,23 +490,9 @@ func (*Profile) Descriptor() ([]byte, []int) {
 	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *Profile) GetAutoProperties() *structpb.Struct {
-	if x != nil {
-		return x.AutoProperties
-	}
-	return nil
-}
-
 func (x *Profile) GetCreateTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreateTime
-	}
-	return nil
-}
-
-func (x *Profile) GetCustomProperties() *structpb.Struct {
-	if x != nil {
-		return x.CustomProperties
 	}
 	return nil
 }
@@ -526,6 +511,13 @@ func (x *Profile) GetId() string {
 	return ""
 }
 
+func (x *Profile) GetProperties() *structpb.Struct {
+	if x != nil {
+		return x.Properties
+	}
+	return nil
+}
+
 func (x *Profile) GetProjectId() string {
 	if x != nil {
 		return x.ProjectId
@@ -541,12 +533,11 @@ func (x *Profile) GetUpdateTime() *timestamppb.Timestamp {
 }
 
 type RegisterRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	AutoProperties   *structpb.Struct       `protobuf:"bytes,1,opt,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty"`
-	CustomProperties *structpb.Struct       `protobuf:"bytes,2,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
-	ProfileId        string                 `protobuf:"bytes,3,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Properties    *structpb.Struct       `protobuf:"bytes,1,opt,name=properties" json:"properties,omitempty"`
+	ProfileId     string                 `protobuf:"bytes,2,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RegisterRequest) Reset() {
@@ -579,16 +570,9 @@ func (*RegisterRequest) Descriptor() ([]byte, []int) {
 	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *RegisterRequest) GetAutoProperties() *structpb.Struct {
+func (x *RegisterRequest) GetProperties() *structpb.Struct {
 	if x != nil {
-		return x.AutoProperties
-	}
-	return nil
-}
-
-func (x *RegisterRequest) GetCustomProperties() *structpb.Struct {
-	if x != nil {
-		return x.CustomProperties
+		return x.Properties
 	}
 	return nil
 }
@@ -637,13 +621,12 @@ func (*RegisterResponse) Descriptor() ([]byte, []int) {
 }
 
 type ProfileRegisterMessage struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	AutoProperties   *structpb.Struct       `protobuf:"bytes,1,opt,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty"`
-	CustomProperties *structpb.Struct       `protobuf:"bytes,2,opt,name=custom_properties,json=customProperties" json:"custom_properties,omitempty"`
-	ProfileId        string                 `protobuf:"bytes,3,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	ProjectId        string                 `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Properties    *structpb.Struct       `protobuf:"bytes,1,opt,name=properties" json:"properties,omitempty"`
+	ProfileId     string                 `protobuf:"bytes,2,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProfileRegisterMessage) Reset() {
@@ -676,16 +659,9 @@ func (*ProfileRegisterMessage) Descriptor() ([]byte, []int) {
 	return file_profiles_v1_profiles_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *ProfileRegisterMessage) GetAutoProperties() *structpb.Struct {
+func (x *ProfileRegisterMessage) GetProperties() *structpb.Struct {
 	if x != nil {
-		return x.AutoProperties
-	}
-	return nil
-}
-
-func (x *ProfileRegisterMessage) GetCustomProperties() *structpb.Struct {
-	if x != nil {
-		return x.CustomProperties
+		return x.Properties
 	}
 	return nil
 }
@@ -858,32 +834,35 @@ const file_profiles_v1_profiles_proto_rawDesc = "" +
 	"profile_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprofileId\x12(\n" +
 	"\vexternal_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"externalId\"\x12\n" +
-	"\x10IdentifyResponse\"\xdb\x02\n" +
-	"\aProfile\x12@\n" +
-	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12;\n" +
-	"\vcreate_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\x12D\n" +
-	"\x11custom_properties\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12\x1f\n" +
-	"\vexternal_id\x18\x04 \x01(\tR\n" +
+	"\x10IdentifyResponse\"\x8c\x02\n" +
+	"\aProfile\x12;\n" +
+	"\vcreate_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"createTime\x12\x1f\n" +
+	"\vexternal_id\x18\x02 \x01(\tR\n" +
 	"externalId\x12\x0e\n" +
-	"\x02id\x18\x05 \x01(\tR\x02id\x12\x1d\n" +
+	"\x02id\x18\x03 \x01(\tR\x02id\x127\n" +
 	"\n" +
-	"project_id\x18\x06 \x01(\tR\tprojectId\x12;\n" +
-	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\"\xc1\x01\n" +
-	"\x0fRegisterRequest\x12@\n" +
-	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12D\n" +
-	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12&\n" +
+	"properties\x18\x04 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"properties\x12\x1d\n" +
 	"\n" +
-	"profile_id\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprofileId\"\x12\n" +
-	"\x10RegisterResponse\"\xde\x01\n" +
-	"\x16ProfileRegisterMessage\x12@\n" +
-	"\x0fauto_properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x0eautoProperties\x12D\n" +
-	"\x11custom_properties\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x10customProperties\x12\x1d\n" +
+	"project_id\x18\x05 \x01(\tR\tprojectId\x12;\n" +
+	"\vupdate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"updateTime\"r\n" +
+	"\x0fRegisterRequest\x127\n" +
 	"\n" +
-	"profile_id\x18\x03 \x01(\tR\tprofileId\x12\x1d\n" +
+	"properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"properties\x12&\n" +
 	"\n" +
-	"project_id\x18\x04 \x01(\tR\tprojectId\"w\n" +
+	"profile_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprofileId\"\x12\n" +
+	"\x10RegisterResponse\"\x8f\x01\n" +
+	"\x16ProfileRegisterMessage\x127\n" +
+	"\n" +
+	"properties\x18\x01 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"properties\x12\x1d\n" +
+	"\n" +
+	"profile_id\x18\x02 \x01(\tR\tprofileId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId\"w\n" +
 	"\x16ProfileIdentifyMessage\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +
 	"externalId\x12\x1d\n" +
@@ -937,38 +916,35 @@ var file_profiles_v1_profiles_proto_goTypes = []any{
 	(*ProfileRegisterMessage)(nil),  // 13: profiles.v1.ProfileRegisterMessage
 	(*ProfileIdentifyMessage)(nil),  // 14: profiles.v1.ProfileIdentifyMessage
 	(*ProfileAliasMessage)(nil),     // 15: profiles.v1.ProfileAliasMessage
-	(*structpb.Struct)(nil),         // 16: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),   // 17: google.protobuf.Timestamp
+	(*timestamppb.Timestamp)(nil),   // 16: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),         // 17: google.protobuf.Struct
 }
 var file_profiles_v1_profiles_proto_depIdxs = []int32{
 	10, // 0: profiles.v1.GetByExternalIdResponse.profile:type_name -> profiles.v1.Profile
 	10, // 1: profiles.v1.GetResponse.profile:type_name -> profiles.v1.Profile
 	10, // 2: profiles.v1.ListResponse.profiles:type_name -> profiles.v1.Profile
-	16, // 3: profiles.v1.Profile.auto_properties:type_name -> google.protobuf.Struct
-	17, // 4: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
-	16, // 5: profiles.v1.Profile.custom_properties:type_name -> google.protobuf.Struct
-	17, // 6: profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
-	16, // 7: profiles.v1.RegisterRequest.auto_properties:type_name -> google.protobuf.Struct
-	16, // 8: profiles.v1.RegisterRequest.custom_properties:type_name -> google.protobuf.Struct
-	16, // 9: profiles.v1.ProfileRegisterMessage.auto_properties:type_name -> google.protobuf.Struct
-	16, // 10: profiles.v1.ProfileRegisterMessage.custom_properties:type_name -> google.protobuf.Struct
-	0,  // 11: profiles.v1.ProfilesService.Delete:input_type -> profiles.v1.DeleteRequest
-	4,  // 12: profiles.v1.ProfilesService.Get:input_type -> profiles.v1.GetRequest
-	2,  // 13: profiles.v1.ProfilesService.GetByExternalId:input_type -> profiles.v1.GetByExternalIdRequest
-	6,  // 14: profiles.v1.ProfilesService.List:input_type -> profiles.v1.ListRequest
-	8,  // 15: profiles.v1.ProfilesService.Identify:input_type -> profiles.v1.IdentifyRequest
-	11, // 16: profiles.v1.ProfilesService.Register:input_type -> profiles.v1.RegisterRequest
-	1,  // 17: profiles.v1.ProfilesService.Delete:output_type -> profiles.v1.DeleteResponse
-	5,  // 18: profiles.v1.ProfilesService.Get:output_type -> profiles.v1.GetResponse
-	3,  // 19: profiles.v1.ProfilesService.GetByExternalId:output_type -> profiles.v1.GetByExternalIdResponse
-	7,  // 20: profiles.v1.ProfilesService.List:output_type -> profiles.v1.ListResponse
-	9,  // 21: profiles.v1.ProfilesService.Identify:output_type -> profiles.v1.IdentifyResponse
-	12, // 22: profiles.v1.ProfilesService.Register:output_type -> profiles.v1.RegisterResponse
-	17, // [17:23] is the sub-list for method output_type
-	11, // [11:17] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	16, // 3: profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
+	17, // 4: profiles.v1.Profile.properties:type_name -> google.protobuf.Struct
+	16, // 5: profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
+	17, // 6: profiles.v1.RegisterRequest.properties:type_name -> google.protobuf.Struct
+	17, // 7: profiles.v1.ProfileRegisterMessage.properties:type_name -> google.protobuf.Struct
+	0,  // 8: profiles.v1.ProfilesService.Delete:input_type -> profiles.v1.DeleteRequest
+	4,  // 9: profiles.v1.ProfilesService.Get:input_type -> profiles.v1.GetRequest
+	2,  // 10: profiles.v1.ProfilesService.GetByExternalId:input_type -> profiles.v1.GetByExternalIdRequest
+	6,  // 11: profiles.v1.ProfilesService.List:input_type -> profiles.v1.ListRequest
+	8,  // 12: profiles.v1.ProfilesService.Identify:input_type -> profiles.v1.IdentifyRequest
+	11, // 13: profiles.v1.ProfilesService.Register:input_type -> profiles.v1.RegisterRequest
+	1,  // 14: profiles.v1.ProfilesService.Delete:output_type -> profiles.v1.DeleteResponse
+	5,  // 15: profiles.v1.ProfilesService.Get:output_type -> profiles.v1.GetResponse
+	3,  // 16: profiles.v1.ProfilesService.GetByExternalId:output_type -> profiles.v1.GetByExternalIdResponse
+	7,  // 17: profiles.v1.ProfilesService.List:output_type -> profiles.v1.ListResponse
+	9,  // 18: profiles.v1.ProfilesService.Identify:output_type -> profiles.v1.IdentifyResponse
+	12, // 19: profiles.v1.ProfilesService.Register:output_type -> profiles.v1.RegisterResponse
+	14, // [14:20] is the sub-list for method output_type
+	8,  // [8:14] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_profiles_v1_profiles_proto_init() }
