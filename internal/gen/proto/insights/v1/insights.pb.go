@@ -917,18 +917,18 @@ const file_insights_v1_insights_proto_rawDesc = "" +
 	"EventQuery\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x125\n" +
 	"\afilters\x18\x02 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12K\n" +
-	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vaggregation\"\xb3\v\n" +
-	"\x0ePropertyFilter\x127\n" +
-	"\bproperty\x18\x01 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x132\x11^[a-zA-Z0-9_.-]+$R\bproperty\x12D\n" +
+	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vaggregation\"\xb6\v\n" +
+	"\x0ePropertyFilter\x12:\n" +
+	"\bproperty\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\bproperty\x12D\n" +
 	"\boperator\x18\x02 \x01(\x0e2\x1b.insights.v1.FilterOperatorB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\boperator\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\tR\x05value\x12\x16\n" +
 	"\x06values\x18\x04 \x03(\tR\x06values:\xf3\t\xbaH\xef\t\x1a\xec\x02\n" +
 	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a\xa4\x02this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.value != ''\x1a\x96\x03\n" +
 	"&property_filter.numeric_value_required\x128value must be a valid number for lte/gte/lt/gt operators\x1a\xb1\x02!(this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_LTE|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_GTE|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_LT|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_GT)|| double(this.value) == double(this.value)\x1a\xf5\x01\n" +
 	"\x1fproperty_filter.values_required\x120values must not be empty for in/not_in operators\x1a\x9f\x01!(this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN)|| this.values.size() > 0\x1a\xec\x01\n" +
-	"\"property_filter.values_not_allowed\x12&values must be empty for this operator\x1a\x9d\x01this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.values.size() == 0\"D\n" +
-	"\tBreakdown\x127\n" +
-	"\bproperty\x18\x01 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x132\x11^[a-zA-Z0-9_.-]+$R\bproperty\"\x83\x02\n" +
+	"\"property_filter.values_not_allowed\x12&values must be empty for this operator\x1a\x9d\x01this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.values.size() == 0\"G\n" +
+	"\tBreakdown\x12:\n" +
+	"\bproperty\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\bproperty\"\x83\x02\n" +
 	"\x06Series\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x1d\n" +
 	"\n" +

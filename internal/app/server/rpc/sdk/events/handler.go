@@ -15,6 +15,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/events/v1/eventsv1connect"
 	"github.com/fivebitsio/cotton/internal/geo"
 	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/fivebitsio/cotton/internal/useragent"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -22,12 +23,14 @@ type Server struct {
 	eventsv1connect.UnimplementedEventsServiceHandler
 	publisher   *coreevents.Publisher
 	geoProvider geo.Provider
+	uaParser    *useragent.Parser
 }
 
-func NewServer(producer jetstream.JetStream, geoProvider geo.Provider) *Server {
+func NewServer(producer jetstream.JetStream, geoProvider geo.Provider, uaParser *useragent.Parser) *Server {
 	return &Server{
 		publisher:   coreevents.NewPublisher(producer),
 		geoProvider: geoProvider,
+		uaParser:    uaParser,
 	}
 }
 
@@ -54,6 +57,7 @@ func (s *Server) BatchCreate(
 	}
 
 	s.enrichGeo(ctx, req.Header(), events)
+	s.enrichUserAgent(ctx, req.Header(), events)
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events", slogx.Error(err))
@@ -63,6 +67,29 @@ func (s *Server) BatchCreate(
 	return connect.NewResponse(&eventsv1.BatchCreateResponse{
 		Accepted: uint32(len(events)),
 	}), nil
+}
+
+func (s *Server) enrichUserAgent(ctx context.Context, h http.Header, events []*eventsv1.Event) {
+	if s.uaParser == nil {
+		slog.WarnContext(ctx, "user-agent enrichment skipped: parser not initialized")
+		return
+	}
+	props := s.uaParser.Parse(h)
+	if len(props) == 0 {
+		slog.DebugContext(ctx, "user-agent enrichment skipped",
+			slog.Bool("header_present", h.Get("User-Agent") != ""))
+		return
+	}
+	for _, event := range events {
+		if event.AutoProperties == nil {
+			event.AutoProperties = make(map[string]string, len(props))
+		}
+		for k, v := range props {
+			if _, exists := event.AutoProperties[k]; !exists {
+				event.AutoProperties[k] = v
+			}
+		}
+	}
 }
 
 func (s *Server) enrichGeo(ctx context.Context, h http.Header, events []*eventsv1.Event) {

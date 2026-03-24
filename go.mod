@@ -29,6 +29,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/clickhouse v0.41.0
 	github.com/testcontainers/testcontainers-go/modules/nats v0.41.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.41.0
+	github.com/ua-parser/uap-go v0.0.0-20251207011819-db9adb27a0b8
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
 	golang.org/x/sync v0.20.0
@@ -209,6 +210,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0 // indirect
 	github.com/hashicorp/go-version v1.8.0 // indirect
+	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/hexops/gotextdiff v1.0.3 // indirect
