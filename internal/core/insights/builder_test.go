@@ -77,7 +77,7 @@ func TestTrendsWithFilters(t *testing.T) {
 		},
 		Filters: []*insightsv1.PropertyFilter{
 			{
-				Property: "country",
+				Property: "$country",
 				Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS,
 				Value:    "US",
 			},
@@ -92,7 +92,7 @@ func TestTrendsWithFilters(t *testing.T) {
 	if !strings.Contains(sql, "toFloat64(count(DISTINCT distinct_id))") {
 		t.Errorf("expected toFloat64(count(DISTINCT distinct_id)) in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "ifNull(nullIf(auto_properties['country'], ''), custom_properties['country'])") {
+	if !strings.Contains(sql, "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country'])") {
 		t.Errorf("expected property resolution expression in SQL, got: %s", sql)
 	}
 
@@ -219,7 +219,7 @@ func TestBuildTrendsQuery_WithBreakdown(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
-		Breakdowns:     []*insightsv1.Breakdown{{Property: "country"}},
+		Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
 		BreakdownLimit: 3,
 	}
 
@@ -277,8 +277,8 @@ func TestBuildTrendsQuery_MultipleBreakdowns(t *testing.T) {
 			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		Breakdowns: []*insightsv1.Breakdown{
-			{Property: "country"},
-			{Property: "city"},
+			{Property: "$country"},
+			{Property: "$city"},
 		},
 		BreakdownLimit: 5,
 	}
@@ -305,7 +305,7 @@ func TestBuildTrendsQuery_DefaultBreakdownLimit(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
-		Breakdowns:     []*insightsv1.Breakdown{{Property: "country"}},
+		Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
 		BreakdownLimit: 0,
 	}
 
@@ -336,7 +336,7 @@ func TestFilterOperators(t *testing.T) {
 				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
 			Filters: []*insightsv1.PropertyFilter{
-				{Property: "browser", Operator: op, Value: val},
+				{Property: "$browser", Operator: op, Value: val},
 			},
 		}
 	}
@@ -472,7 +472,7 @@ func TestFilterOperators(t *testing.T) {
 					{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
 				Filters: []*insightsv1.PropertyFilter{
-					{Property: "country", Operator: tc.op, Values: tc.values},
+					{Property: "$country", Operator: tc.op, Values: tc.values},
 				},
 			}
 			sql, args, err := insights.BuildQuery(req, "proj_123")
@@ -506,7 +506,7 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 		},
 		Filters: []*insightsv1.PropertyFilter{
 			{
-				Property: "country",
+				Property: "$country",
 				Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS,
 				Value:    "US",
 			},
@@ -528,7 +528,7 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 	if !strings.Contains(sql, "LIMIT ?") {
 		t.Errorf("expected LIMIT ? in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "ifNull(nullIf(auto_properties['country'], ''), custom_properties['country'])") {
+	if !strings.Contains(sql, "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country'])") {
 		t.Errorf("expected property filter expression in SQL, got: %s", sql)
 	}
 
@@ -617,7 +617,7 @@ func TestUnsupportedFilterOperator(t *testing.T) {
 			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		Filters: []*insightsv1.PropertyFilter{
-			{Property: "browser", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED, Value: "x"},
+			{Property: "$browser", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED, Value: "x"},
 		},
 	}
 
@@ -669,8 +669,8 @@ func TestMultipleCombinedFilters(t *testing.T) {
 			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		Filters: []*insightsv1.PropertyFilter{
-			{Property: "country", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
-			{Property: "browser", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "Chrome"},
+			{Property: "$country", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+			{Property: "$browser", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "Chrome"},
 			{Property: "age", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_GTE, Value: "18"},
 		},
 	}
@@ -747,7 +747,7 @@ func TestGroupBreakdownSeries(t *testing.T) {
 		{Time: mustTime("2024-01-01T00:00:00Z"), Breakdowns: []string{"US"}, Value: 3}, // duplicate key, appends to US
 	}
 
-	series := insights.GroupBreakdownSeries(rows, []string{"country"})
+	series := insights.GroupBreakdownSeries(rows, []string{"$country"})
 
 	// Should produce 2 series (US, GB) in insertion order
 	if len(series) != 2 {
@@ -755,7 +755,7 @@ func TestGroupBreakdownSeries(t *testing.T) {
 	}
 
 	// First series: US with 3 points
-	if series[0].Breakdown["country"] != "US" {
+	if series[0].Breakdown["$country"] != "US" {
 		t.Errorf("expected first series breakdown country=US, got %v", series[0].Breakdown)
 	}
 	if len(series[0].Points) != 3 {
@@ -763,7 +763,7 @@ func TestGroupBreakdownSeries(t *testing.T) {
 	}
 
 	// Second series: GB with 2 points
-	if series[1].Breakdown["country"] != "GB" {
+	if series[1].Breakdown["$country"] != "GB" {
 		t.Errorf("expected second series breakdown country=GB, got %v", series[1].Breakdown)
 	}
 	if len(series[1].Points) != 2 {

@@ -70,9 +70,14 @@ func (s *Server) BatchCreate(
 }
 
 func (s *Server) enrichUserAgent(ctx context.Context, h http.Header, events []*eventsv1.Event) {
+	if s.uaParser == nil {
+		slog.WarnContext(ctx, "user-agent enrichment skipped: parser not initialized")
+		return
+	}
 	props := s.uaParser.Parse(h)
 	if len(props) == 0 {
-		slog.DebugContext(ctx, "user-agent empty, skipping enrichment")
+		slog.DebugContext(ctx, "user-agent enrichment skipped",
+			slog.Bool("header_present", h.Get("User-Agent") != ""))
 		return
 	}
 	for _, event := range events {

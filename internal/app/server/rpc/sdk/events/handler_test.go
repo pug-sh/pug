@@ -85,11 +85,7 @@ func TestEnrichGeo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			uaParser, err := useragent.NewParser()
-		if err != nil {
-			t.Fatal(err)
-		}
-		s := &Server{geoProvider: stubProvider{loc: tt.loc}, uaParser: uaParser}
+			s := &Server{geoProvider: stubProvider{loc: tt.loc}}
 			s.enrichGeo(context.Background(), http.Header{}, tt.events)
 
 			for _, event := range tt.events {
@@ -177,9 +173,9 @@ func TestEnrichUserAgent(t *testing.T) {
 		{
 			name:     "preserves other auto-properties",
 			uaHeader: chromeWindowsUA,
-			events:   []*eventsv1.Event{{AutoProperties: map[string]string{"custom": "value"}}},
+			events:   []*eventsv1.Event{{AutoProperties: map[string]string{"$custom": "value"}}},
 			want: map[string]string{
-				"custom":                     "value",
+				"$custom":                    "value",
 				useragent.PropBrowser:        "Chrome",
 				useragent.PropBrowserVersion: "118",
 				useragent.PropOS:             "Windows",
@@ -192,8 +188,8 @@ func TestEnrichUserAgent(t *testing.T) {
 			uaHeader: chromeWindowsUA,
 			events:   []*eventsv1.Event{{AutoProperties: map[string]string{useragent.PropDevice: "Mobile", useragent.PropOS: "iOS"}}},
 			want: map[string]string{
-				useragent.PropDevice:         "Mobile",  // client value preserved
-				useragent.PropOS:             "iOS",     // client value preserved
+				useragent.PropDevice:         "Mobile", // client value preserved
+				useragent.PropOS:             "iOS",    // client value preserved
 				useragent.PropBrowser:        "Chrome",
 				useragent.PropBrowserVersion: "118",
 				useragent.PropOSVersion:      "10",
@@ -219,4 +215,36 @@ func TestEnrichUserAgent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEnrichGeoAndUserAgent(t *testing.T) {
+	uaParser, err := useragent.NewParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	loc := geo.Location{geo.PropCountry: "US", geo.PropCity: "San Francisco"}
+	s := &Server{geoProvider: stubProvider{loc: loc}, uaParser: uaParser}
+
+	events := []*eventsv1.Event{{AutoProperties: map[string]string{useragent.PropOS: "iOS"}}}
+
+	h := http.Header{}
+	h.Set("User-Agent", chromeWindowsUA)
+
+	// Same order as BatchCreate: geo first, then UA.
+	s.enrichGeo(context.Background(), h, events)
+	s.enrichUserAgent(context.Background(), h, events)
+
+	want := map[string]string{
+		// Geo props (always overwrite).
+		geo.PropCountry: "US",
+		geo.PropCity:    "San Francisco",
+		// UA props (skip existing keys — client-supplied OS preserved).
+		useragent.PropOS:             "iOS",
+		useragent.PropBrowser:        "Chrome",
+		useragent.PropBrowserVersion: "118",
+		useragent.PropOSVersion:      "10",
+	}
+
+	assertProps(t, events[0], want)
 }

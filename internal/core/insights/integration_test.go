@@ -113,7 +113,7 @@ func TestIntegration(t *testing.T) {
 			Events: []*insightsv1.EventQuery{
 				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
-			Breakdowns:     []*insightsv1.Breakdown{{Property: "country"}},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
 			BreakdownLimit: 10,
 		}
 
@@ -127,7 +127,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrendsWithBreakdowns: %v", err)
 		}
 
-		series := insights.GroupBreakdownSeries(rows, []string{"country"})
+		series := insights.GroupBreakdownSeries(rows, []string{"$country"})
 		if len(series) < 2 {
 			t.Fatalf("expected at least 2 breakdown series (US, GB), got %d", len(series))
 		}
@@ -172,7 +172,7 @@ func TestIntegration(t *testing.T) {
 				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
 			Filters: []*insightsv1.PropertyFilter{
-				{Property: "country", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+				{Property: "$country", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
 			},
 		}
 
@@ -288,7 +288,7 @@ func TestIntegration(t *testing.T) {
 			Events: []*insightsv1.EventQuery{
 				{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
-			Breakdowns:     []*insightsv1.Breakdown{{Property: "country"}},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
 			BreakdownLimit: 2, // Only top 2 countries, rest go to $others
 		}
 
@@ -302,7 +302,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrendsWithBreakdowns: %v", err)
 		}
 
-		series := insights.GroupBreakdownSeries(rows, []string{"country"})
+		series := insights.GroupBreakdownSeries(rows, []string{"$country"})
 
 		// Should have top 2 + $others = 3 series
 		if len(series) != 3 {
@@ -311,7 +311,7 @@ func TestIntegration(t *testing.T) {
 
 		hasOthers := false
 		for _, s := range series {
-			if s.Breakdown["country"] == "$others" {
+			if s.Breakdown["$country"] == "$others" {
 				hasOthers = true
 			}
 		}
@@ -385,7 +385,7 @@ func seedEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) 
 			"page_view",
 			e.user,
 			occurTime,
-			map[string]string{"country": e.country},
+			map[string]string{"$country": e.country},
 		)
 		if err != nil {
 			t.Fatalf("insert event: %v", err)
@@ -424,7 +424,7 @@ func seedPurchases(t *testing.T, ctx context.Context, ch *testutil.TestClickHous
 			"purchase",
 			e.user,
 			occurTime,
-			map[string]string{"country": e.country},
+			map[string]string{"$country": e.country},
 		)
 		if err != nil {
 			t.Fatalf("insert purchase event: %v", err)
