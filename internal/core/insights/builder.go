@@ -259,7 +259,7 @@ func aggregationExpr(agg insightsv1.AggregationType) string {
 
 // propertyExpr returns the ClickHouse expression to resolve a property.
 // It checks auto_properties first; if the value is empty or missing, it falls back to custom_properties.
-// Property name validation is enforced by proto validation (pattern: ^[a-zA-Z0-9_.-]+$).
+// Property name validation is enforced by proto validation (pattern: ^\$?[a-zA-Z0-9_.-]+$).
 func propertyExpr(name string) string {
 	return fmt.Sprintf("ifNull(nullIf(auto_properties['%s'], ''), custom_properties['%s'])", name, name)
 }

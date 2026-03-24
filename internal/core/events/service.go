@@ -9,8 +9,8 @@ import (
 
 const reservedPrefix = "cotton."
 
-// ValidateExternalEvents checks that SDK-submitted events don't use the
-// reserved "cotton." name prefix.
+// ValidateExternalEvents validates SDK-submitted events: no duplicate event IDs,
+// no reserved "cotton." kind prefix, and all auto_properties keys must start with '$'.
 func ValidateExternalEvents(events []*eventsv1.Event) error {
 	seen := make(map[string]struct{}, len(events))
 	for i, e := range events {
@@ -20,6 +20,11 @@ func ValidateExternalEvents(events []*eventsv1.Event) error {
 		seen[e.EventId] = struct{}{}
 		if strings.HasPrefix(e.Kind, reservedPrefix) {
 			return fmt.Errorf("event[%d]: kind %q uses reserved prefix %q", i, e.Kind, reservedPrefix)
+		}
+		for k := range e.AutoProperties {
+			if !strings.HasPrefix(k, "$") {
+				return fmt.Errorf("event[%d]: auto_properties key %q must start with '$'", i, k)
+			}
 		}
 	}
 	return nil

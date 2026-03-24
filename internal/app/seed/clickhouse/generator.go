@@ -63,11 +63,11 @@ func randomEvent(start, end time.Time) event {
 	devTypes := deviceTypes[platform]
 
 	autoProps := map[string]string{
-		"platform":    platform,
-		"os_version":  osVers[rand.IntN(len(osVers))],
-		"app_version": appVersions[rand.IntN(len(appVersions))],
-		"locale":      locales[rand.IntN(len(locales))],
-		"device_type": devTypes[rand.IntN(len(devTypes))],
+		"$platform":    platform,
+		"$os_version":  osVers[rand.IntN(len(osVers))],
+		"$app_version": appVersions[rand.IntN(len(appVersions))],
+		"$locale":      locales[rand.IntN(len(locales))],
+		"$device_type": devTypes[rand.IntN(len(devTypes))],
 	}
 
 	customProps := customPropsForKind(kind)

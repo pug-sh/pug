@@ -63,6 +63,32 @@ func TestValidateExternalEvents(t *testing.T) {
 			name:   "kind with cotton prefix but not cotton dot",
 			events: []*eventsv1.Event{{EventId: "e1", Kind: "cottoncandy"}},
 		},
+		{
+			name: "auto_properties with $ prefix — valid",
+			events: []*eventsv1.Event{{
+				EventId:        "e1",
+				Kind:           "page_view",
+				AutoProperties: map[string]string{"$browser": "Chrome", "$os": "Windows"},
+			}},
+		},
+		{
+			name: "auto_properties without $ prefix — rejected",
+			events: []*eventsv1.Event{{
+				EventId:        "e1",
+				Kind:           "page_view",
+				AutoProperties: map[string]string{"browser": "Chrome"},
+			}},
+			wantErr: "must start with '$'",
+		},
+		{
+			name: "auto_properties mixed valid and invalid keys",
+			events: []*eventsv1.Event{{
+				EventId:        "e1",
+				Kind:           "page_view",
+				AutoProperties: map[string]string{"$browser": "Chrome", "os": "Windows"},
+			}},
+			wantErr: "must start with '$'",
+		},
 	}
 
 	for _, tt := range tests {

@@ -129,14 +129,14 @@ message PropertyFilter {
       "|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN"
       "|| this.values.size() == 0"
   };
-  string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^[a-zA-Z0-9_.-]+$"}}];
+  string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
   FilterOperator operator = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
   string value = 3;
   repeated string values = 4;
 }
 
 message Breakdown {
-  string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^[a-zA-Z0-9_.-]+$"}}];
+  string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
 }
 
 // Series represents a single data series in a query response.
