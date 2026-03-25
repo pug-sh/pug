@@ -23,11 +23,12 @@ func TestEventsReader(t *testing.T) {
 	// Seed events for user-1.
 	for i, kind := range []string{"page_view", "purchase", "signup"} {
 		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			uuid.NewString(), "proj-1", "user-1", kind,
 			map[string]string{"$country": "US"},
 			map[string]string{},
 			now.Add(time.Duration(-i)*time.Minute),
+			uuid.NewString(),
 		)
 		if err != nil {
 			t.Fatalf("seed event %s: %v", kind, err)
@@ -36,11 +37,12 @@ func TestEventsReader(t *testing.T) {
 
 	// Seed events for anon-1 (will be aliased to user-1).
 	err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), "proj-1", "anon-1", "anonymous_action",
 		map[string]string{},
 		map[string]string{},
 		now.Add(-5*time.Minute),
+		uuid.NewString(),
 	)
 	if err != nil {
 		t.Fatalf("seed anon event: %v", err)
@@ -57,11 +59,12 @@ func TestEventsReader(t *testing.T) {
 
 	// Seed event for different project (should not appear).
 	err = ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), "proj-2", "user-1", "other_project_event",
 		map[string]string{},
 		map[string]string{},
 		now,
+		uuid.NewString(),
 	)
 	if err != nil {
 		t.Fatalf("seed other project event: %v", err)

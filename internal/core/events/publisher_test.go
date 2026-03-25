@@ -97,7 +97,7 @@ func TestPublisher(t *testing.T) {
 	t.Run("publish multiple events", func(t *testing.T) {
 		err := publisher.Publish(ctx, "proj-2", []*eventsv1.Event{
 			{EventId: uuid.NewString(), DistinctId: "user-1", SessionId: uuid.NewString(), Kind: "click", OccurTime: timestamppb.Now()},
-			{EventId: uuid.NewString(), DistinctId: "user-1", SessionId: uuid.NewString(), Kind: "purchase", OccurTime: timestamppb.Now()},
+			{EventId: uuid.NewString(), DistinctId: "user-2", SessionId: uuid.NewString(), Kind: "purchase", OccurTime: timestamppb.Now()},
 		})
 		if err != nil {
 			t.Fatalf("Publish: %v", err)

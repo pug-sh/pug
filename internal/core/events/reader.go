@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/google/uuid"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
@@ -20,7 +19,7 @@ type Event struct {
 	Kind             string
 	OccurTime        time.Time
 	ProjectID        string
-	SessionID        uuid.UUID
+	SessionID        string
 }
 
 type Reader struct {
@@ -75,7 +74,10 @@ func (r *Reader) GetEventsByProfile(ctx context.Context, projectID, profileID st
 		events = append(events, e)
 	}
 
-	return events, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("GetEventsByProfile: row iteration failed for project %s: %w", projectID, err)
+	}
+	return events, nil
 }
 
 func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) ([]string, error) {
@@ -101,5 +103,8 @@ func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) (
 		ids = append(ids, id)
 	}
 
-	return ids, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("getAliasIDs: row iteration failed for project %s profile %s: %w", projectID, profileID, err)
+	}
+	return ids, nil
 }

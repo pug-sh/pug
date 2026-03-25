@@ -50,6 +50,7 @@ const distinctIDPool = 10_000
 type event struct {
 	eventID          string
 	distinctID       string
+	sessionID        string
 	kind             string
 	occurTime        time.Time
 	autoProperties   map[string]string
@@ -78,6 +79,7 @@ func randomEvent(start, end time.Time) event {
 	return event{
 		eventID:          uuid.New().String(),
 		distinctID:       fmt.Sprintf("user-%05d", rand.IntN(distinctIDPool)),
+		sessionID:        uuid.New().String(),
 		kind:             kind,
 		occurTime:        occurTime,
 		autoProperties:   autoProps,
