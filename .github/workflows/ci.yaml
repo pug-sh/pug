@@ -10,8 +10,12 @@ env:
   GOMODCACHE: /home/runner/go/pkg/mod
   GOCACHE: /home/runner/.cache/go-build
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  setup:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -21,9 +25,7 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Restore Go cache
-        id: cache
-        uses: actions/cache@v5
+      - uses: actions/cache@v5
         with:
           path: |
             /home/runner/go/pkg/mod
@@ -32,57 +34,12 @@ jobs:
           restore-keys: go-
 
       - name: Download modules and compile tools
-        if: steps.cache.outputs.cache-hit != 'true'
         run: go mod download && go install tool
-
-  build:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - name: Restore Go cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            /home/runner/go/pkg/mod
-            /home/runner/.cache/go-build
-          key: go-${{ hashFiles('go.sum') }}
-          restore-keys: go-
-
-      - name: Build
-        run: make build
-
-  test:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - name: Restore Go cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            /home/runner/go/pkg/mod
-            /home/runner/.cache/go-build
-          key: go-${{ hashFiles('go.sum') }}
-          restore-keys: go-
 
       - name: Test
         run: make test
 
   lint:
-    needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -92,20 +49,21 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Restore Go cache
-        uses: actions/cache/restore@v5
+      - uses: actions/cache@v5
         with:
           path: |
             /home/runner/go/pkg/mod
             /home/runner/.cache/go-build
           key: go-${{ hashFiles('go.sum') }}
           restore-keys: go-
+
+      - name: Download modules and compile tools
+        run: go mod download && go install tool
 
       - name: Lint
         run: make lint
 
   drift:
-    needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -115,14 +73,16 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Restore Go cache
-        uses: actions/cache/restore@v5
+      - uses: actions/cache@v5
         with:
           path: |
             /home/runner/go/pkg/mod
             /home/runner/.cache/go-build
           key: go-${{ hashFiles('go.sum') }}
           restore-keys: go-
+
+      - name: Download modules and compile tools
+        run: go mod download && go install tool
 
       - name: Check sqlc drift
         run: make sqlc && git diff --exit-code internal/gen/repo/

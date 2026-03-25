@@ -19,6 +19,7 @@ type Event struct {
 	Kind             string
 	OccurTime        time.Time
 	ProjectID        string
+	SessionID        string
 }
 
 type Reader struct {
@@ -40,7 +41,7 @@ func (r *Reader) GetEventsByProfile(ctx context.Context, projectID, profileID st
 	ids := append([]string{profileID}, aliasIDs...)
 
 	rows, err := r.ch.Query(ctx,
-		`SELECT auto_properties, custom_properties, distinct_id, event_id, insert_time, kind, occur_time, project_id
+		`SELECT auto_properties, custom_properties, distinct_id, event_id, insert_time, kind, occur_time, project_id, session_id
 		 FROM events FINAL
 		 WHERE project_id = ? AND distinct_id IN ?
 		 ORDER BY occur_time DESC`,
@@ -66,13 +67,17 @@ func (r *Reader) GetEventsByProfile(ctx context.Context, projectID, profileID st
 			&e.Kind,
 			&e.OccurTime,
 			&e.ProjectID,
+			&e.SessionID,
 		); err != nil {
 			return nil, fmt.Errorf("GetEventsByProfile: scan failed for project %s: %w", projectID, err)
 		}
 		events = append(events, e)
 	}
 
-	return events, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("GetEventsByProfile: row iteration failed for project %s: %w", projectID, err)
+	}
+	return events, nil
 }
 
 func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) ([]string, error) {
@@ -98,5 +103,8 @@ func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) (
 		ids = append(ids, id)
 	}
 
-	return ids, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("getAliasIDs: row iteration failed for project %s profile %s: %w", projectID, profileID, err)
+	}
+	return ids, nil
 }
