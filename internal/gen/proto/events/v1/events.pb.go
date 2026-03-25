@@ -119,6 +119,7 @@ type Event struct {
 	DistinctId       string                 `protobuf:"bytes,4,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
 	Kind             string                 `protobuf:"bytes,5,opt,name=kind" json:"kind,omitempty"`
 	OccurTime        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
+	SessionId        string                 `protobuf:"bytes,7,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -195,6 +196,13 @@ func (x *Event) GetOccurTime() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Event) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
 type EventBatch struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Events        []*Event               `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
@@ -255,7 +263,7 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"\x12BatchCreateRequest\x123\n" +
 	"\x06events\x18\x01 \x03(\v2\x10.events.v1.EventB\t\xbaH\x06\x92\x01\x03\x10\xe8\aR\x06events\"1\n" +
 	"\x13BatchCreateResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\rR\baccepted\"\xe3\x03\n" +
+	"\baccepted\x18\x01 \x01(\rR\baccepted\"\x8f\x04\n" +
 	"\x05Event\x12&\n" +
 	"\bevent_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\aeventId\x12M\n" +
 	"\x0fauto_properties\x18\x02 \x03(\v2$.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12S\n" +
@@ -264,7 +272,9 @@ const file_events_v1_events_proto_rawDesc = "" +
 	"distinctId\x12\x1a\n" +
 	"\x04kind\x18\x05 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x04kind\x12A\n" +
 	"\n" +
-	"occur_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\toccurTime\x1aA\n" +
+	"occur_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\toccurTime\x12*\n" +
+	"\n" +
+	"session_id\x18\a \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\tsessionId\x1aA\n" +
 	"\x13AutoPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +

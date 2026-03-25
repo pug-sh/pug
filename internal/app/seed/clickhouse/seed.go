@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Seeder writes mock events directly into ClickHouse for a given project.
@@ -82,7 +84,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 
 func (s *Seeder) insertBatch(ctx context.Context, projectID string, start, end time.Time, size int) error {
 	batch, err := s.deps.ch.PrepareBatch(ctx,
-		"INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time)")
+		"INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id)")
 	if err != nil {
 		return err
 	}
@@ -97,6 +99,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, start, end t
 			e.autoProperties,
 			e.customProperties,
 			e.occurTime,
+			e.sessionID,
 		); err != nil {
 			return err
 		}
@@ -157,7 +160,7 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 		}
 
 		batch, err := s.deps.ch.PrepareBatch(ctx,
-			"INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time)")
+			"INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id)")
 		if err != nil {
 			return err
 		}
@@ -183,6 +186,7 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 				e.autoProperties,
 				e.customProperties,
 				e.occurTime,
+				uuid.NewString(),
 			); err != nil {
 				return err
 			}
