@@ -4,8 +4,7 @@ where id = @id and project_id = @project_id;
 
 -- name: MergeProfileProperties :one
 update profiles
-set auto_properties = jsonb_shallow_merge(s.auto_properties, profiles.auto_properties),
-    custom_properties = jsonb_shallow_merge(s.custom_properties, profiles.custom_properties)
+set properties = jsonb_shallow_merge(s.properties, profiles.properties)
 from profiles s
 where s.id = @source_id
   and s.project_id = @project_id
@@ -25,9 +24,8 @@ where id = @id and project_id = @project_id
 returning *;
 
 -- name: RegisterProfile :one
-insert into profiles (auto_properties, custom_properties, id, project_id)
-values (coalesce(@auto_properties, '{}'), coalesce(@custom_properties, '{}'), @id, @project_id)
+insert into profiles (properties, id, project_id)
+values (coalesce(@properties, '{}'), @id, @project_id)
 on conflict (id, project_id) do update set
-  auto_properties = jsonb_shallow_merge(profiles.auto_properties, excluded.auto_properties),
-  custom_properties = jsonb_shallow_merge(profiles.custom_properties, excluded.custom_properties)
+  properties = jsonb_shallow_merge(profiles.properties, excluded.properties)
 returning *;

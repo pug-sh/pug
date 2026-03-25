@@ -119,6 +119,10 @@ Incoming events are enriched with auto-properties before being published to NATS
 - **`internal/geo/`** — resolves geo properties (`$country`, `$city`, `$ip`, etc.) from proxy-injected HTTP headers. `geo.Provider` is an interface; the Cloudflare implementation reads from `CF-Connecting-IP` and `CF-*` headers. Geo properties are **always overwritten** (CDN-injected values are trusted).
 - **`internal/useragent/`** — parses the `User-Agent` header using `ua-parser/uap-go` into properties: `$browser`, `$browserVersion`, `$os`, `$osVersion`, `$device`. Both `browserVersion` and `osVersion` use the major version only (e.g. `"17"` not `"17.2.1"`) to avoid analytics fragmentation. UA properties are only written if not already present in `event.AutoProperties` (client-supplied values win). `$device` is only set when the parser identifies a specific device (e.g., "iPhone", "Pixel 8"); desktop browsers typically yield no `$device` property. The parser is initialized once at startup via `useragent.NewParser()` to avoid reloading regex definitions per request.
 
+### Profile Properties
+
+Profiles store properties as a single JSONB field (`properties`) rather than separate `auto_properties` and `custom_properties` fields. This simplifies the data model while preserving the ability to distinguish between auto-populated and custom properties at the application level through property naming conventions (e.g., `$` prefix for auto-properties).
+
 ### ClickHouse Events Table
 
 - **Engine:** `ReplacingMergeTree(insert_time)` — on merge, keeps the row with the highest `insert_time` per dedup key. Use `SELECT ... FINAL` only when exact deduplication matters (e.g., single-user event history). Skip `FINAL` for aggregate analytics queries (trends, counts) where background merges provide eventual consistency and `FINAL` would hurt performance.

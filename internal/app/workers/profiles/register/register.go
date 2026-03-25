@@ -91,20 +91,15 @@ func handleRegister(ctx context.Context, w *profiles.Worker, data []byte) error 
 			With("worker", "profile-register")
 	}
 
-	autoProps := msg.GetAutoProperties().AsMap()
-	if autoProps == nil {
-		autoProps = map[string]any{}
-	}
-	customProps := msg.GetCustomProperties().AsMap()
-	if customProps == nil {
-		customProps = map[string]any{}
+	props := msg.GetProperties().AsMap()
+	if props == nil {
+		props = map[string]any{}
 	}
 
 	if _, err := w.Write.RegisterProfile(ctx, dbwrite.RegisterProfileParams{
-		AutoProperties:   autoProps,
-		CustomProperties: customProps,
-		ID:               msg.GetProfileId(),
-		ProjectID:        msg.GetProjectId(),
+		Properties: props,
+		ID:         msg.GetProfileId(),
+		ProjectID:  msg.GetProjectId(),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to register profile", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
