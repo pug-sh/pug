@@ -1,0 +1,74 @@
+edition = "2023";
+package common.v1;
+
+import "buf/validate/validate.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1";
+
+enum FilterOperator {
+  FILTER_OPERATOR_UNSPECIFIED = 0;
+  FILTER_OPERATOR_EQUALS = 1;
+  FILTER_OPERATOR_NOT_EQUALS = 2;
+  FILTER_OPERATOR_CONTAINS = 3;
+  FILTER_OPERATOR_NOT_CONTAINS = 4;
+  FILTER_OPERATOR_IS_SET = 5;
+  FILTER_OPERATOR_IS_NOT_SET = 6;
+  FILTER_OPERATOR_LTE = 7;
+  FILTER_OPERATOR_GTE = 8;
+  FILTER_OPERATOR_LT = 9;
+  FILTER_OPERATOR_GT = 10;
+  FILTER_OPERATOR_IN = 11;
+  FILTER_OPERATOR_NOT_IN = 12;
+}
+
+message PropertyFilter {
+  option (buf.validate.message).cel = {
+    id: "property_filter.value_required"
+    message: "value is required for this operator"
+    expression:
+      "this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_SET"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN"
+      "|| this.value != ''"
+  };
+  option (buf.validate.message).cel = {
+    id: "property_filter.numeric_value_required"
+    message: "value must be a valid number for lte/gte/lt/gt operators"
+    expression:
+      "!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LTE"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GTE"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LT"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GT)"
+      "|| double(this.value) == double(this.value)"
+  };
+  option (buf.validate.message).cel = {
+    id: "property_filter.values_required"
+    message: "values must not be empty for in/not_in operators"
+    expression:
+      "!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN)"
+      "|| this.values.size() > 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "property_filter.values_not_allowed"
+    message: "values must be empty for this operator"
+    expression:
+      "this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN"
+      "|| this.values.size() == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "property_filter.value_not_allowed_for_set_operators"
+    message: "value must be empty for is_set/is_not_set operators"
+    expression:
+      "!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_SET"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET)"
+      "|| this.value == ''"
+  };
+  string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
+  FilterOperator operator = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
+  string value = 3;
+  repeated string values = 4;
+}

@@ -109,22 +109,15 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, start, end t
 }
 
 func (s *Seeder) resolveProjectID(ctx context.Context) (string, error) {
-	var customerID string
-	err := s.deps.pg.QueryRow(ctx, "SELECT id FROM customers ORDER BY create_time LIMIT 1").Scan(&customerID)
-	if err != nil {
-		return "", fmt.Errorf("no customers found: %w", err)
-	}
-
 	var projectID string
-	err = s.deps.pg.QueryRow(ctx,
-		"SELECT id FROM projects WHERE customer_id = $1 ORDER BY create_time LIMIT 1", customerID,
+	err := s.deps.pg.QueryRow(ctx,
+		"SELECT p.id FROM projects p JOIN org_members om ON om.org_id = p.org_id JOIN customers c ON c.id = om.customer_id ORDER BY p.create_time LIMIT 1",
 	).Scan(&projectID)
 	if err != nil {
-		return "", fmt.Errorf("no projects found for customer %s: %w", customerID, err)
+		return "", fmt.Errorf("no projects found: %w", err)
 	}
 
 	slog.InfoContext(ctx, "resolved target",
-		slog.String("customer_id", customerID),
 		slog.String("project_id", projectID),
 	)
 	return projectID, nil

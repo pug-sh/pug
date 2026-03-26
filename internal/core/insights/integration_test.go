@@ -9,12 +9,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/fivebitsio/cotton/internal/core/insights"
+	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
 	"github.com/fivebitsio/cotton/internal/testutil"
 )
 
 const testProjectID = "proj_integration"
-
 
 func TestIntegration(t *testing.T) {
 	if testing.Short() {
@@ -30,7 +30,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("trends_daily", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
-			TimeRange: &insightsv1.TimeRange{
+			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
@@ -68,7 +68,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("trends_unique_users", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
-			TimeRange: &insightsv1.TimeRange{
+			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
@@ -106,7 +106,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("trends_with_breakdown", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
-			TimeRange: &insightsv1.TimeRange{
+			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
@@ -137,7 +137,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("segmentation", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
-			TimeRange: &insightsv1.TimeRange{
+			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
@@ -165,15 +165,15 @@ func TestIntegration(t *testing.T) {
 	t.Run("segmentation_with_filter", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
-			TimeRange: &insightsv1.TimeRange{
+			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
 				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
-			Filters: []*insightsv1.PropertyFilter{
-				{Property: "$country", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+			Filters: []*commonv1.PropertyFilter{
+				{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
 			},
 		}
 
@@ -196,7 +196,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("per_user_avg", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
-			TimeRange: &insightsv1.TimeRange{
+			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
@@ -225,7 +225,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("segment_users_pagination", func(t *testing.T) {
-		tr := &insightsv1.TimeRange{
+		tr := &commonv1.TimeRange{
 			From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 			To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 		}
@@ -281,7 +281,7 @@ func TestIntegration(t *testing.T) {
 
 		req := &insightsv1.QueryRequest{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
-			TimeRange: &insightsv1.TimeRange{
+			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)),
 			},
@@ -323,7 +323,7 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("segment_users", func(t *testing.T) {
 		req := &insightsv1.SegmentUsersRequest{
-			TimeRange: &insightsv1.TimeRange{
+			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},

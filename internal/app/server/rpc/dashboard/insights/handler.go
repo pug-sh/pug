@@ -3,7 +3,6 @@ package insights
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 
 	"connectrpc.com/connect"
@@ -49,7 +48,7 @@ func (s *server) Query(
 		slog.WarnContext(ctx, "failed to build insights query", slogx.Error(err),
 			slog.String("projectID", principal.Project.ID),
 			slog.String("insightType", insightType.String()))
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 	}
 
 	var series []*insightsv1.Series
@@ -113,7 +112,7 @@ func (s *server) Query(
 
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument,
-			fmt.Errorf("unsupported insight type: %v", insightType))
+			errors.New("unsupported insight type"))
 	}
 
 	return connect.NewResponse(&insightsv1.QueryResponse{Series: series}), nil
@@ -137,7 +136,7 @@ func (s *server) SegmentUsers(
 	if err != nil {
 		slog.WarnContext(ctx, "failed to build segment users query", slogx.Error(err),
 			slog.String("projectID", principal.Project.ID))
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 	}
 
 	ids, err := s.executor.QueryDistinctIDs(ctx, sql, args)

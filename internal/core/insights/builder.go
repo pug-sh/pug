@@ -2,9 +2,9 @@ package insights
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
+	chfilters "github.com/fivebitsio/cotton/internal/core/clickhouse"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
 )
 
@@ -45,7 +45,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	}
 	var filterFrags []filterFrag
 	for _, f := range req.GetFilters() {
-		clause, fArgs, err := filterClause(f)
+		clause, fArgs, err := chfilters.FilterClause(f)
 		if err != nil {
 			return "", nil, err
 		}
@@ -79,7 +79,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			expr := propertyExpr(bd.GetProperty())
+			expr := chfilters.PropertyExpr(bd.GetProperty())
 			fmt.Fprintf(&sb, "%s AS breakdown_%d", expr, i)
 		}
 		sb.WriteString("\nFROM events\n")
@@ -106,7 +106,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	sb.WriteString("SELECT ")
 	fmt.Fprintf(&sb, "%s(occur_time) AS t", granFn)
 	for i, bd := range breakdowns {
-		expr := propertyExpr(bd.GetProperty())
+		expr := chfilters.PropertyExpr(bd.GetProperty())
 		fmt.Fprintf(&sb, ",\nif(%s IN (SELECT breakdown_%d FROM top_vals), %s, '$others') AS breakdown_%d",
 			expr, i, expr, i)
 	}
@@ -156,7 +156,7 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 
 	// Top-level filters
 	for _, f := range req.GetFilters() {
-		clause, filterArgs, err := filterClause(f)
+		clause, filterArgs, err := chfilters.FilterClause(f)
 		if err != nil {
 			return "", nil, err
 		}
@@ -190,7 +190,7 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 
 	// Top-level filters
 	for _, f := range req.GetFilters() {
-		clause, filterArgs, err := filterClause(f)
+		clause, filterArgs, err := chfilters.FilterClause(f)
 		if err != nil {
 			return "", nil, err
 		}
@@ -254,78 +254,5 @@ func aggregationExpr(agg insightsv1.AggregationType) string {
 		return "if(count(DISTINCT distinct_id) = 0, 0, toFloat64(count(*)) / toFloat64(count(DISTINCT distinct_id)))"
 	default: // TOTAL and UNSPECIFIED
 		return "toFloat64(count(*))"
-	}
-}
-
-// propertyExpr returns the ClickHouse expression to resolve a property.
-// It checks auto_properties first; if the value is empty or missing, it falls back to custom_properties.
-// Property name validation is enforced by proto validation (pattern: ^\$?[a-zA-Z0-9_.-]+$).
-func propertyExpr(name string) string {
-	return fmt.Sprintf("ifNull(nullIf(auto_properties['%s'], ''), custom_properties['%s'])", name, name)
-}
-
-// escapeLike escapes ClickHouse LIKE metacharacters in a value.
-func escapeLike(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `%`, `\%`)
-	s = strings.ReplaceAll(s, `_`, `\_`)
-	return s
-}
-
-// filterClause builds a single WHERE condition fragment for a PropertyFilter.
-func filterClause(f *insightsv1.PropertyFilter) (string, []any, error) {
-	prop := propertyExpr(f.GetProperty())
-
-	switch f.GetOperator() {
-	case insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS:
-		return fmt.Sprintf("%s = ?", prop), []any{f.GetValue()}, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS:
-		return fmt.Sprintf("%s != ?", prop), []any{f.GetValue()}, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_CONTAINS:
-		return fmt.Sprintf("%s LIKE ?", prop), []any{"%" + escapeLike(f.GetValue()) + "%"}, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS:
-		return fmt.Sprintf("%s NOT LIKE ?", prop), []any{"%" + escapeLike(f.GetValue()) + "%"}, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_IS_SET:
-		return fmt.Sprintf("%s != ''", prop), nil, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET:
-		return fmt.Sprintf("%s = ''", prop), nil, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_LTE:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return fmt.Sprintf("toFloat64OrNull(%s) <= ?", prop), []any{n}, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_GTE:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return fmt.Sprintf("toFloat64OrNull(%s) >= ?", prop), []any{n}, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_LT:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return fmt.Sprintf("toFloat64OrNull(%s) < ?", prop), []any{n}, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_GT:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return fmt.Sprintf("toFloat64OrNull(%s) > ?", prop), []any{n}, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_IN:
-		args := make([]any, len(f.GetValues()))
-		for i, v := range f.GetValues() {
-			args[i] = v
-		}
-		return fmt.Sprintf("%s IN (%s)", prop, strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")), args, nil
-	case insightsv1.FilterOperator_FILTER_OPERATOR_NOT_IN:
-		args := make([]any, len(f.GetValues()))
-		for i, v := range f.GetValues() {
-			args[i] = v
-		}
-		return fmt.Sprintf("%s NOT IN (%s)", prop, strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")), args, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported filter operator: %v", f.GetOperator())
 	}
 }

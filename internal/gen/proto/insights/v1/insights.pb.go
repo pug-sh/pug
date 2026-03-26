@@ -8,6 +8,7 @@ package insightsv1
 
 import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
+	v1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -179,92 +180,13 @@ func (AggregationType) EnumDescriptor() ([]byte, []int) {
 	return file_insights_v1_insights_proto_rawDescGZIP(), []int{2}
 }
 
-type FilterOperator int32
-
-const (
-	FilterOperator_FILTER_OPERATOR_UNSPECIFIED  FilterOperator = 0
-	FilterOperator_FILTER_OPERATOR_EQUALS       FilterOperator = 1
-	FilterOperator_FILTER_OPERATOR_NOT_EQUALS   FilterOperator = 2
-	FilterOperator_FILTER_OPERATOR_CONTAINS     FilterOperator = 3
-	FilterOperator_FILTER_OPERATOR_NOT_CONTAINS FilterOperator = 4
-	FilterOperator_FILTER_OPERATOR_IS_SET       FilterOperator = 5
-	FilterOperator_FILTER_OPERATOR_IS_NOT_SET   FilterOperator = 6
-	FilterOperator_FILTER_OPERATOR_LTE          FilterOperator = 7
-	FilterOperator_FILTER_OPERATOR_GTE          FilterOperator = 8
-	FilterOperator_FILTER_OPERATOR_LT           FilterOperator = 9
-	FilterOperator_FILTER_OPERATOR_GT           FilterOperator = 10
-	FilterOperator_FILTER_OPERATOR_IN           FilterOperator = 11
-	FilterOperator_FILTER_OPERATOR_NOT_IN       FilterOperator = 12
-)
-
-// Enum value maps for FilterOperator.
-var (
-	FilterOperator_name = map[int32]string{
-		0:  "FILTER_OPERATOR_UNSPECIFIED",
-		1:  "FILTER_OPERATOR_EQUALS",
-		2:  "FILTER_OPERATOR_NOT_EQUALS",
-		3:  "FILTER_OPERATOR_CONTAINS",
-		4:  "FILTER_OPERATOR_NOT_CONTAINS",
-		5:  "FILTER_OPERATOR_IS_SET",
-		6:  "FILTER_OPERATOR_IS_NOT_SET",
-		7:  "FILTER_OPERATOR_LTE",
-		8:  "FILTER_OPERATOR_GTE",
-		9:  "FILTER_OPERATOR_LT",
-		10: "FILTER_OPERATOR_GT",
-		11: "FILTER_OPERATOR_IN",
-		12: "FILTER_OPERATOR_NOT_IN",
-	}
-	FilterOperator_value = map[string]int32{
-		"FILTER_OPERATOR_UNSPECIFIED":  0,
-		"FILTER_OPERATOR_EQUALS":       1,
-		"FILTER_OPERATOR_NOT_EQUALS":   2,
-		"FILTER_OPERATOR_CONTAINS":     3,
-		"FILTER_OPERATOR_NOT_CONTAINS": 4,
-		"FILTER_OPERATOR_IS_SET":       5,
-		"FILTER_OPERATOR_IS_NOT_SET":   6,
-		"FILTER_OPERATOR_LTE":          7,
-		"FILTER_OPERATOR_GTE":          8,
-		"FILTER_OPERATOR_LT":           9,
-		"FILTER_OPERATOR_GT":           10,
-		"FILTER_OPERATOR_IN":           11,
-		"FILTER_OPERATOR_NOT_IN":       12,
-	}
-)
-
-func (x FilterOperator) Enum() *FilterOperator {
-	p := new(FilterOperator)
-	*p = x
-	return p
-}
-
-func (x FilterOperator) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (FilterOperator) Descriptor() protoreflect.EnumDescriptor {
-	return file_insights_v1_insights_proto_enumTypes[3].Descriptor()
-}
-
-func (FilterOperator) Type() protoreflect.EnumType {
-	return &file_insights_v1_insights_proto_enumTypes[3]
-}
-
-func (x FilterOperator) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use FilterOperator.Descriptor instead.
-func (FilterOperator) EnumDescriptor() ([]byte, []int) {
-	return file_insights_v1_insights_proto_rawDescGZIP(), []int{3}
-}
-
 type QueryRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	InsightType    InsightType            `protobuf:"varint,1,opt,name=insight_type,json=insightType,enum=insights.v1.InsightType" json:"insight_type,omitempty"`
-	TimeRange      *TimeRange             `protobuf:"bytes,2,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
+	TimeRange      *v1.TimeRange          `protobuf:"bytes,2,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
 	Granularity    Granularity            `protobuf:"varint,3,opt,name=granularity,enum=insights.v1.Granularity" json:"granularity,omitempty"`
 	Events         []*EventQuery          `protobuf:"bytes,4,rep,name=events" json:"events,omitempty"`
-	Filters        []*PropertyFilter      `protobuf:"bytes,5,rep,name=filters" json:"filters,omitempty"`
+	Filters        []*v1.PropertyFilter   `protobuf:"bytes,5,rep,name=filters" json:"filters,omitempty"`
 	Breakdowns     []*Breakdown           `protobuf:"bytes,6,rep,name=breakdowns" json:"breakdowns,omitempty"`
 	BreakdownLimit int32                  `protobuf:"varint,7,opt,name=breakdown_limit,json=breakdownLimit" json:"breakdown_limit,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -308,7 +230,7 @@ func (x *QueryRequest) GetInsightType() InsightType {
 	return InsightType_INSIGHT_TYPE_UNSPECIFIED
 }
 
-func (x *QueryRequest) GetTimeRange() *TimeRange {
+func (x *QueryRequest) GetTimeRange() *v1.TimeRange {
 	if x != nil {
 		return x.TimeRange
 	}
@@ -329,7 +251,7 @@ func (x *QueryRequest) GetEvents() []*EventQuery {
 	return nil
 }
 
-func (x *QueryRequest) GetFilters() []*PropertyFilter {
+func (x *QueryRequest) GetFilters() []*v1.PropertyFilter {
 	if x != nil {
 		return x.Filters
 	}
@@ -396,9 +318,9 @@ func (x *QueryResponse) GetSeries() []*Series {
 
 type SegmentUsersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TimeRange     *TimeRange             `protobuf:"bytes,1,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
+	TimeRange     *v1.TimeRange          `protobuf:"bytes,1,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
 	Events        []*EventQuery          `protobuf:"bytes,2,rep,name=events" json:"events,omitempty"`
-	Filters       []*PropertyFilter      `protobuf:"bytes,3,rep,name=filters" json:"filters,omitempty"`
+	Filters       []*v1.PropertyFilter   `protobuf:"bytes,3,rep,name=filters" json:"filters,omitempty"`
 	PageSize      int32                  `protobuf:"varint,4,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
 	PageToken     string                 `protobuf:"bytes,5,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -435,7 +357,7 @@ func (*SegmentUsersRequest) Descriptor() ([]byte, []int) {
 	return file_insights_v1_insights_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *SegmentUsersRequest) GetTimeRange() *TimeRange {
+func (x *SegmentUsersRequest) GetTimeRange() *v1.TimeRange {
 	if x != nil {
 		return x.TimeRange
 	}
@@ -449,7 +371,7 @@ func (x *SegmentUsersRequest) GetEvents() []*EventQuery {
 	return nil
 }
 
-func (x *SegmentUsersRequest) GetFilters() []*PropertyFilter {
+func (x *SegmentUsersRequest) GetFilters() []*v1.PropertyFilter {
 	if x != nil {
 		return x.Filters
 	}
@@ -522,62 +444,10 @@ func (x *SegmentUsersResponse) GetNextPageToken() string {
 	return ""
 }
 
-type TimeRange struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	From          *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=from" json:"from,omitempty"`
-	To            *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=to" json:"to,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TimeRange) Reset() {
-	*x = TimeRange{}
-	mi := &file_insights_v1_insights_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TimeRange) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TimeRange) ProtoMessage() {}
-
-func (x *TimeRange) ProtoReflect() protoreflect.Message {
-	mi := &file_insights_v1_insights_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TimeRange.ProtoReflect.Descriptor instead.
-func (*TimeRange) Descriptor() ([]byte, []int) {
-	return file_insights_v1_insights_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *TimeRange) GetFrom() *timestamppb.Timestamp {
-	if x != nil {
-		return x.From
-	}
-	return nil
-}
-
-func (x *TimeRange) GetTo() *timestamppb.Timestamp {
-	if x != nil {
-		return x.To
-	}
-	return nil
-}
-
 type EventQuery struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Kind          string                 `protobuf:"bytes,1,opt,name=kind" json:"kind,omitempty"`
-	Filters       []*PropertyFilter      `protobuf:"bytes,2,rep,name=filters" json:"filters,omitempty"`
+	Filters       []*v1.PropertyFilter   `protobuf:"bytes,2,rep,name=filters" json:"filters,omitempty"`
 	Aggregation   AggregationType        `protobuf:"varint,3,opt,name=aggregation,enum=insights.v1.AggregationType" json:"aggregation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -585,7 +455,7 @@ type EventQuery struct {
 
 func (x *EventQuery) Reset() {
 	*x = EventQuery{}
-	mi := &file_insights_v1_insights_proto_msgTypes[5]
+	mi := &file_insights_v1_insights_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -597,7 +467,7 @@ func (x *EventQuery) String() string {
 func (*EventQuery) ProtoMessage() {}
 
 func (x *EventQuery) ProtoReflect() protoreflect.Message {
-	mi := &file_insights_v1_insights_proto_msgTypes[5]
+	mi := &file_insights_v1_insights_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -610,7 +480,7 @@ func (x *EventQuery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventQuery.ProtoReflect.Descriptor instead.
 func (*EventQuery) Descriptor() ([]byte, []int) {
-	return file_insights_v1_insights_proto_rawDescGZIP(), []int{5}
+	return file_insights_v1_insights_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *EventQuery) GetKind() string {
@@ -620,7 +490,7 @@ func (x *EventQuery) GetKind() string {
 	return ""
 }
 
-func (x *EventQuery) GetFilters() []*PropertyFilter {
+func (x *EventQuery) GetFilters() []*v1.PropertyFilter {
 	if x != nil {
 		return x.Filters
 	}
@@ -634,74 +504,6 @@ func (x *EventQuery) GetAggregation() AggregationType {
 	return AggregationType_AGGREGATION_TYPE_UNSPECIFIED
 }
 
-type PropertyFilter struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Property      string                 `protobuf:"bytes,1,opt,name=property" json:"property,omitempty"`
-	Operator      FilterOperator         `protobuf:"varint,2,opt,name=operator,enum=insights.v1.FilterOperator" json:"operator,omitempty"`
-	Value         string                 `protobuf:"bytes,3,opt,name=value" json:"value,omitempty"`
-	Values        []string               `protobuf:"bytes,4,rep,name=values" json:"values,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PropertyFilter) Reset() {
-	*x = PropertyFilter{}
-	mi := &file_insights_v1_insights_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PropertyFilter) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PropertyFilter) ProtoMessage() {}
-
-func (x *PropertyFilter) ProtoReflect() protoreflect.Message {
-	mi := &file_insights_v1_insights_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PropertyFilter.ProtoReflect.Descriptor instead.
-func (*PropertyFilter) Descriptor() ([]byte, []int) {
-	return file_insights_v1_insights_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *PropertyFilter) GetProperty() string {
-	if x != nil {
-		return x.Property
-	}
-	return ""
-}
-
-func (x *PropertyFilter) GetOperator() FilterOperator {
-	if x != nil {
-		return x.Operator
-	}
-	return FilterOperator_FILTER_OPERATOR_UNSPECIFIED
-}
-
-func (x *PropertyFilter) GetValue() string {
-	if x != nil {
-		return x.Value
-	}
-	return ""
-}
-
-func (x *PropertyFilter) GetValues() []string {
-	if x != nil {
-		return x.Values
-	}
-	return nil
-}
-
 type Breakdown struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Property      string                 `protobuf:"bytes,1,opt,name=property" json:"property,omitempty"`
@@ -711,7 +513,7 @@ type Breakdown struct {
 
 func (x *Breakdown) Reset() {
 	*x = Breakdown{}
-	mi := &file_insights_v1_insights_proto_msgTypes[7]
+	mi := &file_insights_v1_insights_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -723,7 +525,7 @@ func (x *Breakdown) String() string {
 func (*Breakdown) ProtoMessage() {}
 
 func (x *Breakdown) ProtoReflect() protoreflect.Message {
-	mi := &file_insights_v1_insights_proto_msgTypes[7]
+	mi := &file_insights_v1_insights_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -736,7 +538,7 @@ func (x *Breakdown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Breakdown.ProtoReflect.Descriptor instead.
 func (*Breakdown) Descriptor() ([]byte, []int) {
-	return file_insights_v1_insights_proto_rawDescGZIP(), []int{7}
+	return file_insights_v1_insights_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Breakdown) GetProperty() string {
@@ -764,7 +566,7 @@ type Series struct {
 
 func (x *Series) Reset() {
 	*x = Series{}
-	mi := &file_insights_v1_insights_proto_msgTypes[8]
+	mi := &file_insights_v1_insights_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +578,7 @@ func (x *Series) String() string {
 func (*Series) ProtoMessage() {}
 
 func (x *Series) ProtoReflect() protoreflect.Message {
-	mi := &file_insights_v1_insights_proto_msgTypes[8]
+	mi := &file_insights_v1_insights_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +591,7 @@ func (x *Series) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Series.ProtoReflect.Descriptor instead.
 func (*Series) Descriptor() ([]byte, []int) {
-	return file_insights_v1_insights_proto_rawDescGZIP(), []int{8}
+	return file_insights_v1_insights_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Series) GetLabel() string {
@@ -837,7 +639,7 @@ type DataPoint struct {
 
 func (x *DataPoint) Reset() {
 	*x = DataPoint{}
-	mi := &file_insights_v1_insights_proto_msgTypes[9]
+	mi := &file_insights_v1_insights_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -849,7 +651,7 @@ func (x *DataPoint) String() string {
 func (*DataPoint) ProtoMessage() {}
 
 func (x *DataPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_insights_v1_insights_proto_msgTypes[9]
+	mi := &file_insights_v1_insights_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -862,7 +664,7 @@ func (x *DataPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DataPoint.ProtoReflect.Descriptor instead.
 func (*DataPoint) Descriptor() ([]byte, []int) {
-	return file_insights_v1_insights_proto_rawDescGZIP(), []int{9}
+	return file_insights_v1_insights_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DataPoint) GetTime() *timestamppb.Timestamp {
@@ -883,50 +685,37 @@ var File_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"\x1ainsights/v1/insights.proto\x12\vinsights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbe\x03\n" +
+	"\x1ainsights/v1/insights.proto\x12\vinsights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xba\x03\n" +
 	"\fQueryRequest\x12H\n" +
-	"\finsight_type\x18\x01 \x01(\x0e2\x18.insights.v1.InsightTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vinsightType\x12=\n" +
+	"\finsight_type\x18\x01 \x01(\x0e2\x18.insights.v1.InsightTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vinsightType\x12;\n" +
 	"\n" +
-	"time_range\x18\x02 \x01(\v2\x16.insights.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x12G\n" +
+	"time_range\x18\x02 \x01(\v2\x14.common.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x12G\n" +
 	"\vgranularity\x18\x03 \x01(\x0e2\x18.insights.v1.GranularityB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vgranularity\x12/\n" +
-	"\x06events\x18\x04 \x03(\v2\x17.insights.v1.EventQueryR\x06events\x125\n" +
-	"\afilters\x18\x05 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12@\n" +
+	"\x06events\x18\x04 \x03(\v2\x17.insights.v1.EventQueryR\x06events\x123\n" +
+	"\afilters\x18\x05 \x03(\v2\x19.common.v1.PropertyFilterR\afilters\x12@\n" +
 	"\n" +
 	"breakdowns\x18\x06 \x03(\v2\x16.insights.v1.BreakdownB\b\xbaH\x05\x92\x01\x02\x10\x05R\n" +
 	"breakdowns\x122\n" +
 	"\x0fbreakdown_limit\x18\a \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x0ebreakdownLimit\"<\n" +
 	"\rQueryResponse\x12+\n" +
-	"\x06series\x18\x01 \x03(\v2\x13.insights.v1.SeriesR\x06series\"\x8e\x02\n" +
-	"\x13SegmentUsersRequest\x12=\n" +
+	"\x06series\x18\x01 \x03(\v2\x13.insights.v1.SeriesR\x06series\"\x8a\x02\n" +
+	"\x13SegmentUsersRequest\x12;\n" +
 	"\n" +
-	"time_range\x18\x01 \x01(\v2\x16.insights.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x129\n" +
-	"\x06events\x18\x02 \x03(\v2\x17.insights.v1.EventQueryB\b\xbaH\x05\x92\x01\x02\b\x01R\x06events\x125\n" +
-	"\afilters\x18\x03 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12'\n" +
+	"time_range\x18\x01 \x01(\v2\x14.common.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x129\n" +
+	"\x06events\x18\x02 \x03(\v2\x17.insights.v1.EventQueryB\b\xbaH\x05\x92\x01\x02\b\x01R\x06events\x123\n" +
+	"\afilters\x18\x03 \x03(\v2\x19.common.v1.PropertyFilterR\afilters\x12'\n" +
 	"\tpage_size\x18\x04 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x05 \x01(\tR\tpageToken\"a\n" +
 	"\x14SegmentUsersResponse\x12!\n" +
 	"\fdistinct_ids\x18\x01 \x03(\tR\vdistinctIds\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xdc\x01\n" +
-	"\tTimeRange\x126\n" +
-	"\x04from\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x04from\x122\n" +
-	"\x02to\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x02to:c\xbaH`\x1a^\n" +
-	"\x19time_range.from_before_to\x12,time_range.from must be before time_range.to\x1a\x13this.from < this.to\"\xa4\x01\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xa2\x01\n" +
 	"\n" +
 	"EventQuery\x12\x12\n" +
-	"\x04kind\x18\x01 \x01(\tR\x04kind\x125\n" +
-	"\afilters\x18\x02 \x03(\v2\x1b.insights.v1.PropertyFilterR\afilters\x12K\n" +
-	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vaggregation\"\xb6\v\n" +
-	"\x0ePropertyFilter\x12:\n" +
-	"\bproperty\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\bproperty\x12D\n" +
-	"\boperator\x18\x02 \x01(\x0e2\x1b.insights.v1.FilterOperatorB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\boperator\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value\x12\x16\n" +
-	"\x06values\x18\x04 \x03(\tR\x06values:\xf3\t\xbaH\xef\t\x1a\xec\x02\n" +
-	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a\xa4\x02this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.value != ''\x1a\x96\x03\n" +
-	"&property_filter.numeric_value_required\x128value must be a valid number for lte/gte/lt/gt operators\x1a\xb1\x02!(this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_LTE|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_GTE|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_LT|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_GT)|| double(this.value) == double(this.value)\x1a\xf5\x01\n" +
-	"\x1fproperty_filter.values_required\x120values must not be empty for in/not_in operators\x1a\x9f\x01!(this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN)|| this.values.size() > 0\x1a\xec\x01\n" +
-	"\"property_filter.values_not_allowed\x12&values must be empty for this operator\x1a\x9d\x01this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == insights.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.values.size() == 0\"G\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x123\n" +
+	"\afilters\x18\x02 \x03(\v2\x19.common.v1.PropertyFilterR\afilters\x12K\n" +
+	"\vaggregation\x18\x03 \x01(\x0e2\x1c.insights.v1.AggregationTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vaggregation\"G\n" +
 	"\tBreakdown\x12:\n" +
 	"\bproperty\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\bproperty\"\x83\x02\n" +
 	"\x06Series\x12\x14\n" +
@@ -956,22 +745,7 @@ const file_insights_v1_insights_proto_rawDesc = "" +
 	"\x1cAGGREGATION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16AGGREGATION_TYPE_TOTAL\x10\x01\x12!\n" +
 	"\x1dAGGREGATION_TYPE_UNIQUE_USERS\x10\x02\x12!\n" +
-	"\x1dAGGREGATION_TYPE_PER_USER_AVG\x10\x03*\xff\x02\n" +
-	"\x0eFilterOperator\x12\x1f\n" +
-	"\x1bFILTER_OPERATOR_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16FILTER_OPERATOR_EQUALS\x10\x01\x12\x1e\n" +
-	"\x1aFILTER_OPERATOR_NOT_EQUALS\x10\x02\x12\x1c\n" +
-	"\x18FILTER_OPERATOR_CONTAINS\x10\x03\x12 \n" +
-	"\x1cFILTER_OPERATOR_NOT_CONTAINS\x10\x04\x12\x1a\n" +
-	"\x16FILTER_OPERATOR_IS_SET\x10\x05\x12\x1e\n" +
-	"\x1aFILTER_OPERATOR_IS_NOT_SET\x10\x06\x12\x17\n" +
-	"\x13FILTER_OPERATOR_LTE\x10\a\x12\x17\n" +
-	"\x13FILTER_OPERATOR_GTE\x10\b\x12\x16\n" +
-	"\x12FILTER_OPERATOR_LT\x10\t\x12\x16\n" +
-	"\x12FILTER_OPERATOR_GT\x10\n" +
-	"\x12\x16\n" +
-	"\x12FILTER_OPERATOR_IN\x10\v\x12\x1a\n" +
-	"\x16FILTER_OPERATOR_NOT_IN\x10\f2\xa6\x01\n" +
+	"\x1dAGGREGATION_TYPE_PER_USER_AVG\x10\x032\xa6\x01\n" +
 	"\x0fInsightsService\x12>\n" +
 	"\x05Query\x12\x19.insights.v1.QueryRequest\x1a\x1a.insights.v1.QueryResponse\x12S\n" +
 	"\fSegmentUsers\x12 .insights.v1.SegmentUsersRequest\x1a!.insights.v1.SegmentUsersResponseBMZFgithub.com/fivebitsio/cotton/internal/gen/proto/insights/v1;insightsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
@@ -988,54 +762,50 @@ func file_insights_v1_insights_proto_rawDescGZIP() []byte {
 	return file_insights_v1_insights_proto_rawDescData
 }
 
-var file_insights_v1_insights_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_insights_v1_insights_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_insights_v1_insights_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_insights_v1_insights_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_insights_v1_insights_proto_goTypes = []any{
 	(InsightType)(0),              // 0: insights.v1.InsightType
 	(Granularity)(0),              // 1: insights.v1.Granularity
 	(AggregationType)(0),          // 2: insights.v1.AggregationType
-	(FilterOperator)(0),           // 3: insights.v1.FilterOperator
-	(*QueryRequest)(nil),          // 4: insights.v1.QueryRequest
-	(*QueryResponse)(nil),         // 5: insights.v1.QueryResponse
-	(*SegmentUsersRequest)(nil),   // 6: insights.v1.SegmentUsersRequest
-	(*SegmentUsersResponse)(nil),  // 7: insights.v1.SegmentUsersResponse
-	(*TimeRange)(nil),             // 8: insights.v1.TimeRange
-	(*EventQuery)(nil),            // 9: insights.v1.EventQuery
-	(*PropertyFilter)(nil),        // 10: insights.v1.PropertyFilter
-	(*Breakdown)(nil),             // 11: insights.v1.Breakdown
-	(*Series)(nil),                // 12: insights.v1.Series
-	(*DataPoint)(nil),             // 13: insights.v1.DataPoint
-	nil,                           // 14: insights.v1.Series.BreakdownEntry
-	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
+	(*QueryRequest)(nil),          // 3: insights.v1.QueryRequest
+	(*QueryResponse)(nil),         // 4: insights.v1.QueryResponse
+	(*SegmentUsersRequest)(nil),   // 5: insights.v1.SegmentUsersRequest
+	(*SegmentUsersResponse)(nil),  // 6: insights.v1.SegmentUsersResponse
+	(*EventQuery)(nil),            // 7: insights.v1.EventQuery
+	(*Breakdown)(nil),             // 8: insights.v1.Breakdown
+	(*Series)(nil),                // 9: insights.v1.Series
+	(*DataPoint)(nil),             // 10: insights.v1.DataPoint
+	nil,                           // 11: insights.v1.Series.BreakdownEntry
+	(*v1.TimeRange)(nil),          // 12: common.v1.TimeRange
+	(*v1.PropertyFilter)(nil),     // 13: common.v1.PropertyFilter
+	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
 }
 var file_insights_v1_insights_proto_depIdxs = []int32{
 	0,  // 0: insights.v1.QueryRequest.insight_type:type_name -> insights.v1.InsightType
-	8,  // 1: insights.v1.QueryRequest.time_range:type_name -> insights.v1.TimeRange
+	12, // 1: insights.v1.QueryRequest.time_range:type_name -> common.v1.TimeRange
 	1,  // 2: insights.v1.QueryRequest.granularity:type_name -> insights.v1.Granularity
-	9,  // 3: insights.v1.QueryRequest.events:type_name -> insights.v1.EventQuery
-	10, // 4: insights.v1.QueryRequest.filters:type_name -> insights.v1.PropertyFilter
-	11, // 5: insights.v1.QueryRequest.breakdowns:type_name -> insights.v1.Breakdown
-	12, // 6: insights.v1.QueryResponse.series:type_name -> insights.v1.Series
-	8,  // 7: insights.v1.SegmentUsersRequest.time_range:type_name -> insights.v1.TimeRange
-	9,  // 8: insights.v1.SegmentUsersRequest.events:type_name -> insights.v1.EventQuery
-	10, // 9: insights.v1.SegmentUsersRequest.filters:type_name -> insights.v1.PropertyFilter
-	15, // 10: insights.v1.TimeRange.from:type_name -> google.protobuf.Timestamp
-	15, // 11: insights.v1.TimeRange.to:type_name -> google.protobuf.Timestamp
-	10, // 12: insights.v1.EventQuery.filters:type_name -> insights.v1.PropertyFilter
-	2,  // 13: insights.v1.EventQuery.aggregation:type_name -> insights.v1.AggregationType
-	3,  // 14: insights.v1.PropertyFilter.operator:type_name -> insights.v1.FilterOperator
-	14, // 15: insights.v1.Series.breakdown:type_name -> insights.v1.Series.BreakdownEntry
-	13, // 16: insights.v1.Series.points:type_name -> insights.v1.DataPoint
-	15, // 17: insights.v1.DataPoint.time:type_name -> google.protobuf.Timestamp
-	4,  // 18: insights.v1.InsightsService.Query:input_type -> insights.v1.QueryRequest
-	6,  // 19: insights.v1.InsightsService.SegmentUsers:input_type -> insights.v1.SegmentUsersRequest
-	5,  // 20: insights.v1.InsightsService.Query:output_type -> insights.v1.QueryResponse
-	7,  // 21: insights.v1.InsightsService.SegmentUsers:output_type -> insights.v1.SegmentUsersResponse
-	20, // [20:22] is the sub-list for method output_type
-	18, // [18:20] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	7,  // 3: insights.v1.QueryRequest.events:type_name -> insights.v1.EventQuery
+	13, // 4: insights.v1.QueryRequest.filters:type_name -> common.v1.PropertyFilter
+	8,  // 5: insights.v1.QueryRequest.breakdowns:type_name -> insights.v1.Breakdown
+	9,  // 6: insights.v1.QueryResponse.series:type_name -> insights.v1.Series
+	12, // 7: insights.v1.SegmentUsersRequest.time_range:type_name -> common.v1.TimeRange
+	7,  // 8: insights.v1.SegmentUsersRequest.events:type_name -> insights.v1.EventQuery
+	13, // 9: insights.v1.SegmentUsersRequest.filters:type_name -> common.v1.PropertyFilter
+	13, // 10: insights.v1.EventQuery.filters:type_name -> common.v1.PropertyFilter
+	2,  // 11: insights.v1.EventQuery.aggregation:type_name -> insights.v1.AggregationType
+	11, // 12: insights.v1.Series.breakdown:type_name -> insights.v1.Series.BreakdownEntry
+	10, // 13: insights.v1.Series.points:type_name -> insights.v1.DataPoint
+	14, // 14: insights.v1.DataPoint.time:type_name -> google.protobuf.Timestamp
+	3,  // 15: insights.v1.InsightsService.Query:input_type -> insights.v1.QueryRequest
+	5,  // 16: insights.v1.InsightsService.SegmentUsers:input_type -> insights.v1.SegmentUsersRequest
+	4,  // 17: insights.v1.InsightsService.Query:output_type -> insights.v1.QueryResponse
+	6,  // 18: insights.v1.InsightsService.SegmentUsers:output_type -> insights.v1.SegmentUsersResponse
+	17, // [17:19] is the sub-list for method output_type
+	15, // [15:17] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_insights_v1_insights_proto_init() }
@@ -1048,8 +818,8 @@ func file_insights_v1_insights_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_insights_v1_insights_proto_rawDesc), len(file_insights_v1_insights_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   11,
+			NumEnums:      3,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

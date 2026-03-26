@@ -18,10 +18,12 @@ import (
 	devicesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/devices"
 	eventsrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/events"
 	profilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/profiles"
+	activityrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/shared/activity"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/delivery"
 	coreorgs "github.com/fivebitsio/cotton/internal/core/orgs"
 	coreprojects "github.com/fivebitsio/cotton/internal/core/projects"
+	"github.com/fivebitsio/cotton/internal/gen/proto/activity/v1/activityv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
@@ -79,6 +81,8 @@ func start(ctx context.Context, d *deps) error {
 		campaigns.NewServer(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
 		delivery.NewServer(d.nats.GetJetStream()), handlerOpts)
+	activityPath, activityHandler := activityv1connect.NewActivityServiceHandler(
+		activityrpc.NewServer(d.ch), handlerOpts)
 	profilesPath, profilesHandler := profilesv1connect.NewProfilesServiceHandler(
 		profilesrpc.NewHandler(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 
@@ -106,6 +110,7 @@ func start(ctx context.Context, d *deps) error {
 	// Shared: Dashboard + SDK (CORS + dual auth)
 	mux.Handle(campaignsPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(campaignsHandler)))
 	mux.Handle(deliveryPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(deliveryHandler)))
+	mux.Handle(activityPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
 
 	// SDK only (API key auth, no CORS)
 	mux.Handle(devicesPath, sdkMW.Wrap(devicesHandler))
@@ -114,6 +119,7 @@ func start(ctx context.Context, d *deps) error {
 
 	// Reflection
 	services := []string{
+		activityv1connect.ActivityServiceName,
 		authv1connect.AuthServiceName,
 		orgsv1connect.OrgsServiceName,
 		projectsv1connect.ProjectsServiceName,
