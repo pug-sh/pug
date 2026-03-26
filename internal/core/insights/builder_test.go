@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
 
 	"github.com/fivebitsio/cotton/internal/core/insights"
@@ -20,8 +21,8 @@ func mustTime(s string) time.Time {
 	return t
 }
 
-func timeRange(from, to string) *insightsv1.TimeRange {
-	return &insightsv1.TimeRange{
+func timeRange(from, to string) *commonv1.TimeRange {
+	return &commonv1.TimeRange{
 		From: timestamppb.New(mustTime(from)),
 		To:   timestamppb.New(mustTime(to)),
 	}
@@ -75,10 +76,10 @@ func TestTrendsWithFilters(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
 		},
-		Filters: []*insightsv1.PropertyFilter{
+		Filters: []*commonv1.PropertyFilter{
 			{
 				Property: "$country",
-				Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+				Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
 				Value:    "US",
 			},
 		},
@@ -328,14 +329,14 @@ func TestBuildTrendsQuery_DefaultBreakdownLimit(t *testing.T) {
 
 // TestFilterOperators verifies each filter operator generates correct SQL.
 func TestFilterOperators(t *testing.T) {
-	baseReq := func(op insightsv1.FilterOperator, val string) *insightsv1.QueryRequest {
+	baseReq := func(op commonv1.FilterOperator, val string) *insightsv1.QueryRequest {
 		return &insightsv1.QueryRequest{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
 			TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 			Events: []*insightsv1.EventQuery{
 				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
-			Filters: []*insightsv1.PropertyFilter{
+			Filters: []*commonv1.PropertyFilter{
 				{Property: "$browser", Operator: op, Value: val},
 			},
 		}
@@ -343,7 +344,7 @@ func TestFilterOperators(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		op         insightsv1.FilterOperator
+		op         commonv1.FilterOperator
 		val        string
 		wantSQL    string
 		wantArgVal any
@@ -351,70 +352,70 @@ func TestFilterOperators(t *testing.T) {
 	}{
 		{
 			name:       "equals",
-			op:         insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+			op:         commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
 			val:        "Chrome",
 			wantSQL:    "= ?",
 			wantArgVal: "Chrome",
 		},
 		{
 			name:       "not_equals",
-			op:         insightsv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS,
+			op:         commonv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS,
 			val:        "Firefox",
 			wantSQL:    "!= ?",
 			wantArgVal: "Firefox",
 		},
 		{
 			name:       "contains",
-			op:         insightsv1.FilterOperator_FILTER_OPERATOR_CONTAINS,
+			op:         commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS,
 			val:        "rom",
 			wantSQL:    "LIKE ?",
 			wantArgVal: "%rom%",
 		},
 		{
 			name:       "not_contains",
-			op:         insightsv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS,
+			op:         commonv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS,
 			val:        "IE",
 			wantSQL:    "NOT LIKE ?",
 			wantArgVal: "%IE%",
 		},
 		{
 			name:      "is_set",
-			op:        insightsv1.FilterOperator_FILTER_OPERATOR_IS_SET,
+			op:        commonv1.FilterOperator_FILTER_OPERATOR_IS_SET,
 			val:       "",
 			wantSQL:   "!= ''",
 			wantNoArg: true,
 		},
 		{
 			name:      "is_not_set",
-			op:        insightsv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET,
+			op:        commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET,
 			val:       "",
 			wantSQL:   "= ''",
 			wantNoArg: true,
 		},
 		{
 			name:       "lte",
-			op:         insightsv1.FilterOperator_FILTER_OPERATOR_LTE,
+			op:         commonv1.FilterOperator_FILTER_OPERATOR_LTE,
 			val:        "100",
 			wantSQL:    "<= ?",
 			wantArgVal: float64(100),
 		},
 		{
 			name:       "gte",
-			op:         insightsv1.FilterOperator_FILTER_OPERATOR_GTE,
+			op:         commonv1.FilterOperator_FILTER_OPERATOR_GTE,
 			val:        "5.5",
 			wantSQL:    ">= ?",
 			wantArgVal: float64(5.5),
 		},
 		{
 			name:       "lt",
-			op:         insightsv1.FilterOperator_FILTER_OPERATOR_LT,
+			op:         commonv1.FilterOperator_FILTER_OPERATOR_LT,
 			val:        "100",
 			wantSQL:    "< ?",
 			wantArgVal: float64(100),
 		},
 		{
 			name:       "gt",
-			op:         insightsv1.FilterOperator_FILTER_OPERATOR_GT,
+			op:         commonv1.FilterOperator_FILTER_OPERATOR_GT,
 			val:        "5.5",
 			wantSQL:    "> ?",
 			wantArgVal: float64(5.5),
@@ -423,19 +424,19 @@ func TestFilterOperators(t *testing.T) {
 
 	inTests := []struct {
 		name    string
-		op      insightsv1.FilterOperator
+		op      commonv1.FilterOperator
 		values  []string
 		wantSQL string
 	}{
 		{
 			name:    "in",
-			op:      insightsv1.FilterOperator_FILTER_OPERATOR_IN,
+			op:      commonv1.FilterOperator_FILTER_OPERATOR_IN,
 			values:  []string{"US", "CA", "GB"},
 			wantSQL: "IN (?, ?, ?)",
 		},
 		{
 			name:    "not_in",
-			op:      insightsv1.FilterOperator_FILTER_OPERATOR_NOT_IN,
+			op:      commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN,
 			values:  []string{"bot", "crawler"},
 			wantSQL: "NOT IN (?, ?)",
 		},
@@ -471,7 +472,7 @@ func TestFilterOperators(t *testing.T) {
 				Events: []*insightsv1.EventQuery{
 					{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
-				Filters: []*insightsv1.PropertyFilter{
+				Filters: []*commonv1.PropertyFilter{
 					{Property: "$country", Operator: tc.op, Values: tc.values},
 				},
 			}
@@ -504,10 +505,10 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
-		Filters: []*insightsv1.PropertyFilter{
+		Filters: []*commonv1.PropertyFilter{
 			{
 				Property: "$country",
-				Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+				Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
 				Value:    "US",
 			},
 		},
@@ -616,8 +617,8 @@ func TestUnsupportedFilterOperator(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
-		Filters: []*insightsv1.PropertyFilter{
-			{Property: "$browser", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED, Value: "x"},
+		Filters: []*commonv1.PropertyFilter{
+			{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED, Value: "x"},
 		},
 	}
 
@@ -631,11 +632,11 @@ func TestUnsupportedFilterOperator(t *testing.T) {
 }
 
 func TestNumericFilterRejectsNonNumericValue(t *testing.T) {
-	operators := []insightsv1.FilterOperator{
-		insightsv1.FilterOperator_FILTER_OPERATOR_LTE,
-		insightsv1.FilterOperator_FILTER_OPERATOR_GTE,
-		insightsv1.FilterOperator_FILTER_OPERATOR_LT,
-		insightsv1.FilterOperator_FILTER_OPERATOR_GT,
+	operators := []commonv1.FilterOperator{
+		commonv1.FilterOperator_FILTER_OPERATOR_LTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_GTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_LT,
+		commonv1.FilterOperator_FILTER_OPERATOR_GT,
 	}
 	for _, op := range operators {
 		t.Run(op.String(), func(t *testing.T) {
@@ -645,7 +646,7 @@ func TestNumericFilterRejectsNonNumericValue(t *testing.T) {
 				Events: []*insightsv1.EventQuery{
 					{Kind: "click", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
-				Filters: []*insightsv1.PropertyFilter{
+				Filters: []*commonv1.PropertyFilter{
 					{Property: "score", Operator: op, Value: "not-a-number"},
 				},
 			}
@@ -668,10 +669,10 @@ func TestMultipleCombinedFilters(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
-		Filters: []*insightsv1.PropertyFilter{
-			{Property: "$country", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
-			{Property: "$browser", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "Chrome"},
-			{Property: "age", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_GTE, Value: "18"},
+		Filters: []*commonv1.PropertyFilter{
+			{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+			{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "Chrome"},
+			{Property: "age", Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE, Value: "18"},
 		},
 	}
 
@@ -799,8 +800,8 @@ func TestContainsEscapesLIKEMetacharacters(t *testing.T) {
 				Events: []*insightsv1.EventQuery{
 					{Kind: "click", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
-				Filters: []*insightsv1.PropertyFilter{
-					{Property: "url", Operator: insightsv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: tc.val},
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: tc.val},
 				},
 			}
 

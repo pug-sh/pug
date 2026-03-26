@@ -21,6 +21,7 @@ func WithCORS(allowedOrigins []string, connectHandler http.Handler) http.Handler
 		AllowedHeaders: append(
 			connectcors.AllowedHeaders(),
 			"Authorization",
+			"X-Project-Id",
 		),
 		AllowedMethods: append(connectcors.AllowedMethods(), http.MethodOptions),
 		AllowedOrigins: allowedOrigins,

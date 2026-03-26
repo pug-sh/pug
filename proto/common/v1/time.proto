@@ -1,0 +1,18 @@
+edition = "2023";
+package common.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1";
+
+message TimeRange {
+  option (buf.validate.message).cel = {
+    id: "time_range.from_before_to"
+    message: "time_range.from must be before time_range.to"
+    expression: "this.from < this.to"
+  };
+  google.protobuf.Timestamp from = 1 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp to = 2 [(buf.validate.field).required = true];
+}

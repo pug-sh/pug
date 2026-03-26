@@ -112,6 +112,8 @@ Never call `getPrincipalFromContext` directly in handlers.
 
 Services defined in `proto/` directory. Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled.
 
+**Validation:** Prefer `buf/validate` (protovalidate) annotations in `.proto` files over hand-written Go validation code. The `validate.NewInterceptor()` in the server enforces all proto annotations before handlers run. Use CEL expressions for cross-field constraints (e.g., `this.from < this.to`, operator-dependent required fields). Only add Go-side validation as defense-in-depth for public functions in shared packages that may be called outside the RPC chain.
+
 ### Event Enrichment
 
 Incoming events are enriched with auto-properties before being published to NATS:
