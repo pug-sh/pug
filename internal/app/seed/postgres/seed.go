@@ -268,7 +268,7 @@ func (s *Seeder) seedMerges(ctx context.Context, projectID string, identifiedIDs
 			continue
 		}
 
-		anonID := "anon-" + xid.New().String()
+		anonID := xid.New().String()
 
 		// Create the anonymous profile with minimal auto-properties
 		if _, err := w.RegisterProfile(ctx, dbwrite.RegisterProfileParams{
@@ -283,7 +283,7 @@ func (s *Seeder) seedMerges(ctx context.Context, projectID string, identifiedIDs
 
 		// Give the anon profile a device (simulates SDK-registered device pre-identify)
 		platform := devicePlatforms[rand.IntN(len(devicePlatforms))]
-		deviceID := "dev-anon-" + xid.New().String()
+		deviceID := xid.New().String()
 		if _, err := w.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 			ID:         deviceID,
 			Platform:   platform,

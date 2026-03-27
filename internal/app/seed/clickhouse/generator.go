@@ -217,15 +217,15 @@ type event struct {
 	customProperties map[string]string
 }
 
-// buildEventPool pre-generates all events for all sessions.
+// buildSessionPool pre-generates all sessions for the pool.
 // Each session gets a journey (ordered event sequence); events are spread
-// evenly across the session window. Returns a flat pool that insertBatch
-// samples from randomly.
-func buildEventPool(start, end time.Time) []event {
+// evenly across the session window. Event IDs and session IDs are left empty —
+// they are assigned fresh on each use via randomSessionFromPool.
+func buildSessionPool(start, end time.Time) [][]event {
 	platforms := []string{"ios", "android", "web"}
 	totalMs := end.Sub(start).Milliseconds()
 
-	var pool []event
+	pool := make([][]event, 0, sessionPoolSize)
 
 	for range sessionPoolSize {
 		platform := platforms[rand.IntN(len(platforms))]
@@ -236,7 +236,6 @@ func buildEventPool(start, end time.Time) []event {
 			sessionEnd = end
 		}
 
-		sessionID := uuid.New().String()
 		distinctID := fmt.Sprintf("user-%05d", rand.IntN(distinctIDPool))
 		stableProps := buildSessionProps(platform)
 
@@ -250,6 +249,7 @@ func buildEventPool(start, end time.Time) []event {
 		windowMs := sessionEnd.Sub(sessionStart).Milliseconds()
 		stepMs := windowMs / int64(n)
 
+		sess := make([]event, 0, n)
 		for i, kind := range j.steps {
 			occurTime := sessionStart.Add(time.Duration(int64(i)*stepMs+rand.Int64N(max(stepMs, 1))) * time.Millisecond)
 			if occurTime.After(sessionEnd) {
@@ -261,19 +261,32 @@ func buildEventPool(start, end time.Time) []event {
 				addPerEventWebProps(autoProps, i == 0)
 			}
 
-			pool = append(pool, event{
-				eventID:          uuid.New().String(),
+			sess = append(sess, event{
 				distinctID:       distinctID,
-				sessionID:        sessionID,
 				kind:             kind,
 				occurTime:        occurTime,
 				autoProperties:   autoProps,
 				customProperties: customPropsForKind(kind),
 			})
 		}
+		pool = append(pool, sess)
 	}
 
 	return pool
+}
+
+// randomSessionFromPool picks a random session from the pool and returns it
+// with a fresh session_id and fresh event_ids assigned to every event.
+func randomSessionFromPool(pool [][]event) []event {
+	src := pool[rand.IntN(len(pool))]
+	sessionID := uuid.New().String()
+	out := make([]event, len(src))
+	for i, e := range src {
+		e.eventID = uuid.New().String()
+		e.sessionID = sessionID
+		out[i] = e
+	}
+	return out
 }
 
 func pickJourney(platform string) journey {
@@ -355,9 +368,6 @@ func copyProps(src map[string]string) map[string]string {
 	return dst
 }
 
-func randomEventFromPool(pool []event) event {
-	return pool[rand.IntN(len(pool))]
-}
 
 func customPropsForKind(kind string) map[string]string {
 	switch kind {
