@@ -13,7 +13,7 @@ import (
 
 const saveProfileDevice = `-- name: SaveProfileDevice :one
 insert into profile_devices (id, platform, profile_id, project_id, properties, status, token)
-values ($1, $2, $3, $4, coalesce($5, '{}'), $6, nullif($7, ''))
+values ($1, $2, $3, $4, coalesce($5::jsonb, '{}'), $6, nullif($7, ''))
 on conflict (project_id, id) do update set
   platform = excluded.platform,
   properties = jsonb_shallow_merge(profile_devices.properties, excluded.properties),
@@ -27,7 +27,7 @@ type SaveProfileDeviceParams struct {
 	Platform   string
 	ProfileID  string
 	ProjectID  string
-	Properties interface{}
+	Properties map[string]any
 	Status     string
 	Token      interface{}
 }

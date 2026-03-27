@@ -77,14 +77,14 @@ func (q *Queries) ReassignProfileDevices(ctx context.Context, arg ReassignProfil
 
 const registerProfile = `-- name: RegisterProfile :one
 insert into profiles (properties, id, project_id)
-values (coalesce($1, '{}'), $2, $3)
+values (coalesce($1::jsonb, '{}'), $2, $3)
 on conflict (id, project_id) do update set
   properties = jsonb_shallow_merge(profiles.properties, excluded.properties)
 returning create_time, external_id, id, properties, project_id, update_time
 `
 
 type RegisterProfileParams struct {
-	Properties interface{}
+	Properties map[string]any
 	ID         string
 	ProjectID  string
 }
