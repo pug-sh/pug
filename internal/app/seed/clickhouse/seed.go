@@ -47,6 +47,10 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 	end := time.Now().AddDate(0, 1, 0)
 	start := end.AddDate(0, -4, 0)
 
+	slog.InfoContext(ctx, "building event pool")
+	eventPool := buildEventPool(start, end)
+	slog.InfoContext(ctx, "event pool ready", slog.Int("pool_size", len(eventPool)))
+
 	var inserted int64
 	startTime := time.Now()
 
@@ -60,7 +64,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 
 		size := min(int64(batchSize), count-inserted)
 
-		if err := s.insertBatch(ctx, projectID, start, end, int(size)); err != nil {
+		if err := s.insertBatch(ctx, projectID, eventPool, int(size)); err != nil {
 			return fmt.Errorf("batch insert failed at offset %d: %w", inserted, err)
 		}
 
@@ -82,7 +86,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 	return nil
 }
 
-func (s *Seeder) insertBatch(ctx context.Context, projectID string, start, end time.Time, size int) error {
+func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool []event, size int) error {
 	batch, err := s.deps.ch.PrepareBatch(ctx,
 		"INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id)")
 	if err != nil {
@@ -90,7 +94,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, start, end t
 	}
 
 	for range size {
-		e := randomEvent(start, end)
+		e := randomEventFromPool(pool)
 		if err := batch.Append(
 			e.eventID,
 			projectID,
