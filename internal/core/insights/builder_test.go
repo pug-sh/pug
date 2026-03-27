@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1"
 
 	"github.com/fivebitsio/cotton/internal/core/insights"
 )

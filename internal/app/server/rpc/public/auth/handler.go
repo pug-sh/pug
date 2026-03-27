@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	coreauth "github.com/fivebitsio/cotton/internal/core/auth"
-	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/auth/v1"
+	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/public/auth/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

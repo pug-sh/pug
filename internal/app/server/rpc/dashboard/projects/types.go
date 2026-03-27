@@ -1,7 +1,7 @@
 package projects
 
 import (
-	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
+	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 )

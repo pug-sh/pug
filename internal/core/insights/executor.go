@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

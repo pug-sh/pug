@@ -1,0 +1,30 @@
+edition = "2023";
+package public.auth.v1;
+
+import "buf/validate/validate.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/public/auth/v1;authv1";
+
+service AuthService {
+  rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
+  rpc SignUpWithEmail(SignUpWithEmailRequest) returns (SignUpWithEmailResponse) {}
+}
+
+message SignInWithEmailRequest {
+  string email = 1 [(buf.validate.field).string.email = true];
+  string password = 2 [(buf.validate.field).required = true];
+}
+
+message SignInWithEmailResponse {
+  string token = 1;
+}
+
+message SignUpWithEmailRequest {
+  string email = 1 [(buf.validate.field).string.email = true];
+  string password = 2 [(buf.validate.field).required = true];
+}
+
+message SignUpWithEmailResponse {
+  string token = 1;
+}

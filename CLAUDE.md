@@ -110,9 +110,17 @@ Never call `getPrincipalFromContext` directly in handlers.
 
 ### Proto/RPC
 
-Services defined in `proto/` directory. Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled.
+Services defined in `proto/` directory, organized by auth boundary (`public/`, `sdk/`, `dashboard/`, `shared/`). Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled. Profiles is split into `ProfilesSDKService` (sdk — Register, Identify) and `ProfilesService` (shared — Get, GetByExternalId, List, Delete). SDK profiles uses Go import alias `sdkprofilesv1` to avoid collision with shared `profilesv1`.
 
 **Validation:** Prefer `buf/validate` (protovalidate) annotations in `.proto` files over hand-written Go validation code. The `validate.NewInterceptor()` in the server enforces all proto annotations before handlers run. Use CEL expressions for cross-field constraints (e.g., `this.from < this.to`, operator-dependent required fields). Only add Go-side validation as defense-in-depth for public functions in shared packages that may be called outside the RPC chain.
+
+**Proto directory layout mirrors the handler auth boundary:**
+
+- **`proto/public/`** — no auth (e.g., auth service)
+- **`proto/sdk/`** — public API key only. Write-only — never expose read endpoints or return sensitive data (any end user can extract the key from client apps).
+- **`proto/dashboard/`** — JWT only (e.g., orgs, projects, insights)
+- **`proto/shared/`** — private API key or JWT (e.g., campaigns, delivery, profiles read/delete)
+- **`proto/common/v1/`** — shared message types with no service definitions, accessible from any auth level. Only put types here if they are needed across auth boundaries. If a message is only used behind private key + JWT, it belongs in `shared/`.
 
 ### Event Enrichment
 

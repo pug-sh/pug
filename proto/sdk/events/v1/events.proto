@@ -1,0 +1,35 @@
+edition = "2023";
+package sdk.events.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1;eventsv1";
+
+service EventsService {
+  rpc BatchCreate(BatchCreateRequest) returns (BatchCreateResponse);
+}
+
+message BatchCreateRequest {
+  repeated Event events = 1 [(buf.validate.field).repeated.max_items = 1000];
+}
+
+message BatchCreateResponse {
+  uint32 accepted = 1;
+}
+
+message Event {
+  string event_id = 1 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
+  map<string, string> auto_properties = 2;
+  map<string, string> custom_properties = 3;
+  string distinct_id = 4 [(buf.validate.field).required = true];
+  string kind = 5 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp occur_time = 6 [(buf.validate.field).required = true];
+  string session_id = 7 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
+}
+
+message EventBatch {
+  repeated Event events = 1;
+  string project_id = 2 [(buf.validate.field).required = true];
+}

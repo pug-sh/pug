@@ -9,7 +9,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
-	deliveryv1 "github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1"
+	deliveryv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/delivery/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"

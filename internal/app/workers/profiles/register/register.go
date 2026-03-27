@@ -18,7 +18,7 @@ import (
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
 
-	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1"
+	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
@@ -84,7 +84,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 }
 
 func handleRegister(ctx context.Context, w *profiles.Worker, data []byte) error {
-	msg := &profilesv1.ProfileRegisterMessage{}
+	msg := &sdkprofilesv1.ProfileRegisterMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal register message", slogx.Error(err))
 		return natsworker.NewPermanentError(err).

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
+	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
 )
 
 func TestValidateExternalEvents(t *testing.T) {

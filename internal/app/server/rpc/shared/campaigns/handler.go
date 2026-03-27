@@ -11,7 +11,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/campaigns"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
-	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
+	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
-	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1"
+	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 )

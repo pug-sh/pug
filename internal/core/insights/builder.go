@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	chfilters "github.com/fivebitsio/cotton/internal/core/clickhouse"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1"
 )
 
 const DefaultPageSize int32 = 100

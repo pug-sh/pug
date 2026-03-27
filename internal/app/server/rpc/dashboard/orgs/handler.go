@@ -9,7 +9,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreorgs "github.com/fivebitsio/cotton/internal/core/orgs"
-	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1"
+	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 

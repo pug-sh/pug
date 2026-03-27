@@ -10,7 +10,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/orgs"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
-	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
+	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )

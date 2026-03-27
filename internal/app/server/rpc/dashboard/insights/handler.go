@@ -9,8 +9,8 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1"
-	"github.com/fivebitsio/cotton/internal/gen/proto/insights/v1/insightsv1connect"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1"
+	"github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1/insightsv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

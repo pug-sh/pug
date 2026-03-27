@@ -7,7 +7,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
+	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"google.golang.org/protobuf/proto"
 )

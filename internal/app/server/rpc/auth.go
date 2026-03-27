@@ -189,10 +189,12 @@ func getPrincipalFromContext(ctx context.Context) (*Principal, error) {
 func MustGetPrincipalWithCustomer(ctx context.Context) (*Principal, error) {
 	principal, err := getPrincipalFromContext(ctx)
 	if err != nil {
+		slog.DebugContext(ctx, "principal extraction failed", slogx.Error(err))
 		return nil, err
 	}
 
 	if principal.Customer == nil {
+		slog.DebugContext(ctx, "customer not set in principal")
 		return nil, authn.Errorf("customer not set in principal")
 	}
 
@@ -204,10 +206,12 @@ func MustGetPrincipalWithCustomer(ctx context.Context) (*Principal, error) {
 func MustGetPrincipalWithProject(ctx context.Context) (*Principal, error) {
 	principal, err := getPrincipalFromContext(ctx)
 	if err != nil {
+		slog.DebugContext(ctx, "principal extraction failed", slogx.Error(err))
 		return nil, err
 	}
 
 	if principal.Project == nil {
+		slog.DebugContext(ctx, "project not set in principal")
 		return nil, authn.Errorf("project not set in principal")
 	}
 
