@@ -245,17 +245,132 @@ func buildSessionPool(start, end time.Time) [][]event {
 	return pool
 }
 
+// sessionWindow tracks a single session's time range and platform for overlap detection.
+type sessionWindow struct {
+	start    time.Time
+	end      time.Time
+	platform string
+}
+
+// userSessionTracker records assigned session windows per user so that overlapping
+// sessions can be detected and assigned a different platform.
+type userSessionTracker struct {
+	sessions map[string][]sessionWindow
+}
+
+func newUserSessionTracker() *userSessionTracker {
+	return &userSessionTracker{sessions: make(map[string][]sessionWindow)}
+}
+
+// overlappingPlatforms returns the set of platforms already occupying [start, end]
+// for the given user.
+func (t *userSessionTracker) overlappingPlatforms(distinctID string, start, end time.Time) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range t.sessions[distinctID] {
+		if start.Before(w.end) && end.After(w.start) {
+			out[w.platform] = true
+		}
+	}
+	return out
+}
+
+func (t *userSessionTracker) register(distinctID, platform string, start, end time.Time) {
+	t.sessions[distinctID] = append(t.sessions[distinctID], sessionWindow{start, end, platform})
+}
+
+// buildSession constructs a fresh session for the given user, platform, and time window.
+// Used when an overlapping session needs to be rebuilt on a different platform.
+func buildSession(distinctID, platform string, sessionStart, sessionEnd time.Time) []event {
+	stableProps := buildSessionProps(platform)
+	j := pickJourney(platform)
+	n := len(j.steps)
+	if n == 0 {
+		return nil
+	}
+	windowMs := sessionEnd.Sub(sessionStart).Milliseconds()
+	stepMs := windowMs / int64(n)
+	sess := make([]event, 0, n)
+	for i, kind := range j.steps {
+		occurTime := sessionStart.Add(time.Duration(int64(i)*stepMs+rand.Int64N(max(stepMs, 1))) * time.Millisecond)
+		if occurTime.After(sessionEnd) {
+			occurTime = sessionEnd
+		}
+		autoProps := copyProps(stableProps)
+		if platform == "web" {
+			addPerEventWebProps(autoProps, i == 0)
+		}
+		sess = append(sess, event{
+			distinctID:       distinctID,
+			kind:             kind,
+			occurTime:        occurTime,
+			autoProperties:   autoProps,
+			customProperties: customPropsForKind(kind),
+		})
+	}
+	return sess
+}
+
 // randomSessionFromPool picks a random session from the pool and returns it
-// with a fresh session_id and fresh event_ids assigned to every event.
-func randomSessionFromPool(pool [][]event) []event {
+// with a fresh session_id, fresh event_ids, and a new random start time within
+// [start, end]. Re-anchoring prevents clustering when pool sessions are reused
+// across many insertions (same pool entry → same occur_times → same user gets
+// N identical notification_received at T, then N notification_clicked at T+step).
+// If the re-anchored session would overlap an existing session for the same user
+// on the same platform, the session is rebuilt on a different platform so
+// concurrent sessions always represent different devices.
+func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSessionTracker) []event {
 	src := pool[rand.IntN(len(pool))]
+
+	firstTime := src[0].occurTime
+	lastTime := src[len(src)-1].occurTime
+	sessionDuration := lastTime.Sub(firstTime)
+	available := end.Sub(start) - sessionDuration
+
+	var newStart time.Time
+	if available > 0 {
+		newStart = start.Add(time.Duration(rand.Int64N(available.Milliseconds())) * time.Millisecond)
+	} else {
+		newStart = start
+	}
+	newEnd := newStart.Add(sessionDuration)
+	offset := newStart.Sub(firstTime)
+
+	distinctID := src[0].distinctID
+	platform := src[0].autoProperties["$platform"]
+
+	// If this window overlaps an existing session for the same user on the same platform,
+	// rebuild on a different platform (a user can use multiple devices simultaneously,
+	// but not the same device twice).
+	if occupied := tracker.overlappingPlatforms(distinctID, newStart, newEnd); occupied[platform] {
+		var alt []string
+		for _, p := range []string{"ios", "android", "web"} {
+			if !occupied[p] {
+				alt = append(alt, p)
+			}
+		}
+		if len(alt) > 0 {
+			platform = alt[rand.IntN(len(alt))]
+			sess := buildSession(distinctID, platform, newStart, newEnd)
+			sessionID := uuid.New().String()
+			for i := range sess {
+				sess[i].eventID = uuid.New().String()
+				sess[i].sessionID = sessionID
+			}
+			tracker.register(distinctID, platform, newStart, newEnd)
+			return sess
+		}
+	}
+
+	tracker.register(distinctID, platform, newStart, newEnd)
+
 	sessionID := uuid.New().String()
 	out := make([]event, len(src))
 	for i, e := range src {
 		e.eventID = uuid.New().String()
 		e.sessionID = sessionID
+		e.occurTime = e.occurTime.Add(offset)
 		e.autoProperties = copyProps(e.autoProperties)
-		e.customProperties = copyProps(e.customProperties)
+		e.customProperties = customPropsForKind(e.kind)
 		out[i] = e
 	}
 	return out
