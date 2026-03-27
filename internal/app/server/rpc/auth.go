@@ -43,13 +43,16 @@ type Principal struct {
 
 // WithSDKAuth authenticates via API key from the x-api-key header
 // or api_key query parameter (fallback for beacon requests).
-// Accepts both public keys (pub_) and private keys (prv_).
+// Beacon requests (query param) only accept public keys (pub_); private keys (prv_) require the header.
 func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		apiKey := req.Header.Get(HeaderAPIKey)
 		// Fallback to query param for beacon requests, which cannot set headers.
 		if apiKey == "" {
 			apiKey = req.URL.Query().Get(QueryAPIKey)
+			if apiKey != "" && !strings.HasPrefix(apiKey, publicKeyPrefix) {
+				return nil, authn.Errorf("beacon requests only support public API keys")
+			}
 		}
 		if apiKey == "" {
 			return nil, authn.Errorf("x-api-key header not present")
