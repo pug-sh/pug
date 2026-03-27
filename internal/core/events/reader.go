@@ -255,8 +255,7 @@ type ActivityFeedParams struct {
 }
 
 // GetActivityFeed returns a paginated, filtered list of events for a profile.
-// It resolves alias IDs (merged anonymous profiles) and uses SELECT FINAL for
-// exact deduplication. Pagination is cursor-based on (occur_time DESC, event_id DESC).
+// It resolves alias IDs (merged anonymous profiles). Pagination is cursor-based on (occur_time DESC, event_id DESC).
 // PageSize defaults to 100 and is capped at 1000. A nil returned cursor means no more pages.
 //
 // ProjectID and DistinctID are required. At the RPC boundary these are guaranteed by
@@ -273,7 +272,7 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 	var sb strings.Builder
 	var args []any
 
-	sb.WriteString("SELECT " + eventColumns + "\nFROM events FINAL\nWHERE project_id = ? AND distinct_id IN ?\n")
+	sb.WriteString("SELECT " + eventColumns + "\nFROM events\nWHERE project_id = ? AND distinct_id IN ?\n")
 	args = append(args, params.ProjectID, ids)
 
 	if params.Kind != "" {
