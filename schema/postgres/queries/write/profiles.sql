@@ -25,7 +25,7 @@ returning *;
 
 -- name: RegisterProfile :one
 insert into profiles (properties, id, project_id)
-values (coalesce(@properties, '{}'), @id, @project_id)
+values (coalesce(@properties::jsonb, '{}'), @id, @project_id)
 on conflict (id, project_id) do update set
   properties = jsonb_shallow_merge(profiles.properties, excluded.properties)
 returning *;
