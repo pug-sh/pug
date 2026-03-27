@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"strings"
 
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1"
@@ -35,80 +36,24 @@ func (s *Seeder) Run(ctx context.Context) error {
 
 	slog.InfoContext(ctx, "checking for existing test user")
 
-	_, err := read.GetCustomerByEmail(ctx, testEmail)
-	if err == nil {
-		slog.InfoContext(ctx, "test user already exists, skipping seed")
-		return nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	customer, err := read.GetCustomerByEmail(ctx, testEmail)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("failed to check existing user: %w", err)
 	}
 
-	slog.InfoContext(ctx, "creating test user", slog.String("email", testEmail))
-
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
-	}
-
-	privKey, err := projects.NewPrivateKey()
-	if err != nil {
-		return fmt.Errorf("failed to generate private api key: %w", err)
-	}
-
-	pubKey, err := projects.NewPublicKey()
-	if err != nil {
-		return fmt.Errorf("failed to generate public api key: %w", err)
-	}
-
-	tx, err := s.deps.pg.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	w := dbwrite.New(tx)
-
-	customer, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID:           xid.New().String(),
-		Email:        testEmail,
-		DisplayName:  testName,
-		PasswordHash: string(passwordHash),
-		PictureUri:   "",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create customer: %w", err)
-	}
-
-	org, err := w.CreateOrg(ctx, dbwrite.CreateOrgParams{
-		ID:          xid.New().String(),
-		DisplayName: "default",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create default org: %w", err)
-	}
-
-	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID:      org.ID,
-		CustomerID: customer.ID,
-		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
-	}); err != nil {
-		return fmt.Errorf("failed to add customer to org: %w", err)
-	}
-
-	project, err := w.CreateProject(ctx, dbwrite.CreateProjectParams{
-		ID:            xid.New().String(),
-		OrgID:         org.ID,
-		DisplayName:   "default",
-		PrivateApiKey: privKey,
-		PublicApiKey:  pubKey,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create project: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit seed transaction: %w", err)
+	var project dbread.Project
+	if err == nil {
+		slog.InfoContext(ctx, "test user already exists, resolving project")
+		project, err = s.resolveProject(ctx, read, customer.ID)
+		if err != nil {
+			return err
+		}
+	} else {
+		slog.InfoContext(ctx, "creating test user", slog.String("email", testEmail))
+		project, err = s.seedCustomerOrgProject(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	identifiedIDs, err := s.seedProfiles(ctx, project.ID)
@@ -125,14 +70,99 @@ func (s *Seeder) Run(ctx context.Context) error {
 	}
 
 	slog.DebugContext(ctx, "seed complete",
-		slog.String("customer_id", customer.ID),
-		slog.String("org_id", org.ID),
 		slog.String("project_id", project.ID),
 		slog.String("public_api_key", project.PublicApiKey),
 		slog.String("private_api_key", project.PrivateApiKey),
 	)
 
 	return nil
+}
+
+func (s *Seeder) resolveProject(ctx context.Context, read *dbread.Queries, customerID string) (dbread.Project, error) {
+	orgs, err := read.GetOrgsByCustomerID(ctx, customerID)
+	if err != nil || len(orgs) == 0 {
+		return dbread.Project{}, fmt.Errorf("no orgs found for customer %s: %w", customerID, err)
+	}
+	projects, err := read.GetProjectsByOrgID(ctx, orgs[0].ID)
+	if err != nil || len(projects) == 0 {
+		return dbread.Project{}, fmt.Errorf("no projects found for org %s: %w", orgs[0].ID, err)
+	}
+	return projects[0], nil
+}
+
+func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, error) {
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	privKey, err := projects.NewPrivateKey()
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to generate private api key: %w", err)
+	}
+
+	pubKey, err := projects.NewPublicKey()
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to generate public api key: %w", err)
+	}
+
+	tx, err := s.deps.pg.Begin(ctx)
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	w := dbwrite.New(tx)
+
+	customer, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           xid.New().String(),
+		Email:        testEmail,
+		DisplayName:  testName,
+		PasswordHash: string(passwordHash),
+		PictureUri:   "",
+	})
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to create customer: %w", err)
+	}
+
+	org, err := w.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID:          xid.New().String(),
+		DisplayName: "default",
+	})
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to create default org: %w", err)
+	}
+
+	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      org.ID,
+		CustomerID: customer.ID,
+		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+	}); err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to add customer to org: %w", err)
+	}
+
+	p, err := w.CreateProject(ctx, dbwrite.CreateProjectParams{
+		ID:            xid.New().String(),
+		OrgID:         org.ID,
+		DisplayName:   "default",
+		PrivateApiKey: privKey,
+		PublicApiKey:  pubKey,
+	})
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to create project: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to commit seed transaction: %w", err)
+	}
+
+	return dbread.Project{
+		ID:            p.ID,
+		OrgID:         p.OrgID,
+		DisplayName:   p.DisplayName,
+		PrivateApiKey: p.PrivateApiKey,
+		PublicApiKey:  p.PublicApiKey,
+	}, nil
 }
 
 const profileCount = 10_000
@@ -180,7 +210,7 @@ func randomProperties(i int) map[string]any {
 
 	if rand.Float32() < 0.70 {
 		props["email"] = fmt.Sprintf("%s.%s%d@%s",
-			lowerASCII(first), lowerASCII(last), i%1000,
+			strings.ToLower(first), strings.ToLower(last), i%1000,
 			emailDomains[rand.IntN(len(emailDomains))],
 		)
 	}
@@ -197,17 +227,6 @@ func randomProperties(i int) map[string]any {
 	}
 
 	return props
-}
-
-// lowerASCII lowercases ASCII letters only (avoids unicode import for a simple seed helper).
-func lowerASCII(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if c >= 'A' && c <= 'Z' {
-			b[i] = c + 32
-		}
-	}
-	return string(b)
 }
 
 func (s *Seeder) seedProfiles(ctx context.Context, projectID string) ([]string, error) {
@@ -256,7 +275,8 @@ func (s *Seeder) seedProfiles(ctx context.Context, projectID string) ([]string, 
 // seedMerges simulates the identify-time merge flow for ~30% of identified profiles.
 // For each chosen profile, an anonymous profile is created with some properties,
 // given a device, merged into the identified profile, devices reassigned, then deleted —
-// matching exactly what the identify worker does in production.
+// mirroring the core merge steps from the identify worker (merge properties,
+// reassign devices, delete source).
 func (s *Seeder) seedMerges(ctx context.Context, projectID string, identifiedIDs []string) error {
 	slog.InfoContext(ctx, "seeding profile merges", slog.Int("eligible", len(identifiedIDs)))
 
@@ -382,12 +402,14 @@ func (s *Seeder) seedDevices(ctx context.Context, projectID string) error {
 
 	for i := range profileCount {
 		profileID := fmt.Sprintf("user-%05d", i)
-		// 1-3 devices per profile, weighted toward 1
+		// 1-3 devices per profile (~55% get 1, ~35% get 2, ~10% get 3)
 		numDevices := 1
-		if rand.Float32() < 0.35 {
-			numDevices = 2
-		} else if rand.Float32() < 0.10 {
+		r := rand.Float32()
+		switch {
+		case r < 0.10:
 			numDevices = 3
+		case r < 0.45:
+			numDevices = 2
 		}
 
 		for d := range numDevices {

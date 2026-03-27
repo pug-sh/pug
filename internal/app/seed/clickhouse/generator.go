@@ -8,26 +8,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// --- event kinds ---
-
-var customEventKinds = []string{
-	"purchase",
-	"add_to_cart",
-	"checkout_started",
-	"checkout_completed",
-	"login",
-	"logout",
-	"signup",
-	"profile_updated",
-	"search",
-	"video_play",
-	"video_pause",
-	"share",
-	"error_occurred",
-}
-
-// --- platform data ---
-
 var osNames = map[string]string{
 	"ios":     "iOS",
 	"android": "Android",
@@ -51,8 +31,6 @@ var mobileDevices = map[string][]string{
 
 var appVersions = []string{"1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0"}
 var locales = []string{"en-US", "en-GB", "pt-BR", "de-DE", "fr-FR", "es-ES", "ja-JP"}
-
-// --- geo data ---
 
 type geoEntry struct {
 	continent  string
@@ -101,8 +79,6 @@ var geoPool = []geoEntry{
 	{"Asia", "Singapore", "Central", "Singapore", "018956", "Asia/Singapore", "1.3521", "103.8198"},
 }
 
-// --- web page data ---
-
 var pages = []string{"/", "/home", "/products", "/cart", "/checkout", "/profile", "/search", "/about", "/pricing", "/blog"}
 var pageTitles = map[string]string{
 	"/":         "Home",
@@ -117,7 +93,7 @@ var pageTitles = map[string]string{
 	"/blog":     "Blog",
 }
 var referrers = []string{
-	"", "", "", "", // most events have no referrer
+	"", "", "", "", // empty strings reduce referrer frequency
 	"https://google.com",
 	"https://www.google.com",
 	"https://twitter.com",
@@ -142,8 +118,6 @@ var screenSizes = [][2]string{
 var sdkVersion = "0.1.0"
 var cssTags = []string{"BUTTON", "A", "DIV", "SPAN", "INPUT", "LABEL", "LI"}
 
-// --- journeys ---
-
 // journey defines an ordered sequence of event kinds for a session.
 // Steps are executed in order; timestamps are spread across the session window.
 type journey struct {
@@ -152,7 +126,7 @@ type journey struct {
 
 // Web journeys model realistic user behaviour on a web app.
 var webJourneys = []journey{
-	// browse (most common)
+	// browse
 	{[]string{"page_view", "scroll", "click", "page_view", "scroll"}},
 	{[]string{"page_view", "scroll", "page_view", "click", "scroll", "page_view"}},
 	// checkout funnel
@@ -169,7 +143,7 @@ var webJourneys = []journey{
 	{[]string{"page_view", "scroll", "video_play", "video_pause"}},
 	// notification-driven
 	{[]string{"notification_received", "notification_clicked", "page_view", "click"}},
-	// frustration (low weight — appears once in the pool)
+	// frustration
 	{[]string{"page_view", "click", "dead_click", "rage_click"}},
 }
 
@@ -194,8 +168,6 @@ var mobileJourneys = []journey{
 	{[]string{"app_open", "page_view", "scroll", "share", "app_close"}},
 }
 
-// --- pool constants ---
-
 const (
 	distinctIDPool  = 10_000
 	sessionPoolSize = 50_000
@@ -204,8 +176,6 @@ const (
 	minSessionMs = 60_000
 	maxSessionMs = 30 * 60_000
 )
-
-// --- event struct ---
 
 type event struct {
 	eventID          string
@@ -219,8 +189,8 @@ type event struct {
 
 // buildSessionPool pre-generates all sessions for the pool.
 // Each session gets a journey (ordered event sequence); events are spread
-// evenly across the session window. Event IDs and session IDs are left empty —
-// they are assigned fresh on each use via randomSessionFromPool.
+// across the session window with jitter. Event IDs and session IDs are left
+// empty — they are assigned fresh on each use via randomSessionFromPool.
 func buildSessionPool(start, end time.Time) [][]event {
 	platforms := []string{"ios", "android", "web"}
 	totalMs := end.Sub(start).Milliseconds()
@@ -284,6 +254,8 @@ func randomSessionFromPool(pool [][]event) []event {
 	for i, e := range src {
 		e.eventID = uuid.New().String()
 		e.sessionID = sessionID
+		e.autoProperties = copyProps(e.autoProperties)
+		e.customProperties = copyProps(e.customProperties)
 		out[i] = e
 	}
 	return out
@@ -322,7 +294,7 @@ func buildSessionProps(platform string) map[string]string {
 			props["$mobile"] = "false"
 		}
 
-		// UTM params — only ~15% of sessions are acquisition (first event carries them)
+		// UTM params — only ~15% of sessions are acquisition sessions
 		if rand.Float32() < 0.15 {
 			props["$utmSource"] = utmSources[rand.IntN(len(utmSources))]
 			props["$utmMedium"] = utmMediums[rand.IntN(len(utmMediums))]
@@ -367,7 +339,6 @@ func copyProps(src map[string]string) map[string]string {
 	}
 	return dst
 }
-
 
 func customPropsForKind(kind string) map[string]string {
 	switch kind {

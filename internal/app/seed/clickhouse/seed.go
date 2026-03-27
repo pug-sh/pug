@@ -96,7 +96,11 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]eve
 
 	inserted := 0
 	for inserted < size {
-		for _, e := range randomSessionFromPool(pool) {
+		sess := randomSessionFromPool(pool)
+		for _, e := range sess {
+			if inserted >= size {
+				break
+			}
 			if err := batch.Append(
 				e.eventID,
 				projectID,
