@@ -41,9 +41,9 @@ type Principal struct {
 	Project  *dbread.Project
 }
 
-// WithSDKAuth authenticates via public API key from the x-api-key header
+// WithSDKAuth authenticates via API key from the x-api-key header
 // or api_key query parameter (fallback for beacon requests).
-// Only accepts public keys — private keys are rejected.
+// Accepts both public keys (pub_) and private keys (prv_).
 func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		apiKey := req.Header.Get(HeaderAPIKey)
@@ -55,16 +55,21 @@ func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
 			return nil, authn.Errorf("x-api-key header not present")
 		}
 
-		if !strings.HasPrefix(apiKey, publicKeyPrefix) {
+		var project dbread.Project
+		var err error
+		switch {
+		case strings.HasPrefix(apiKey, publicKeyPrefix):
+			project, err = repo.GetProjectByPublicApiKey(ctx, apiKey)
+		case strings.HasPrefix(apiKey, privateKeyPrefix):
+			project, err = repo.GetProjectByPrivateApiKey(ctx, apiKey)
+		default:
 			return nil, authn.Errorf("invalid API key")
 		}
-
-		project, err := repo.GetProjectByPublicApiKey(ctx, apiKey)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, authn.Errorf("invalid API key")
 			}
-			slog.ErrorContext(ctx, "error querying project by public API key", slogx.Error(err))
+			slog.ErrorContext(ctx, "error querying project by API key", slogx.Error(err))
 			return nil, authn.Errorf("failed to validate API key")
 		}
 

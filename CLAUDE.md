@@ -98,7 +98,7 @@ PostgreSQL uses read/write separation:
 RPC handlers authenticate via `connectrpc.com/authn` middleware. Three auth modes are supported:
 
 - **`WithJWTAuth`** — Dashboard auth. Sets `Principal.Customer` (always non-nil). Optionally sets `Principal.Project` if `x-project-id` header is provided and the customer is an org member.
-- **`WithSDKAuth`** — Public API key auth. Sets `Principal.Project` only. `Principal.Customer` is nil.
+- **`WithSDKAuth`** — API key auth (public or private key). Sets `Principal.Project` only. `Principal.Customer` is nil.
 - **`WithDualAuth`** — Private API key or JWT fallback. API key path sets `Principal.Project` only; JWT path behaves like `WithJWTAuth`.
 
 `Principal.Customer` is `*dbread.Customer` — it is nil for API key auth paths. Always use the appropriate extractor:

@@ -35,10 +35,8 @@ func TestGetActivityFeed(t *testing.T) {
 		{"page_view", -3 * time.Minute, sessionB},
 		{"logout", -4 * time.Minute, sessionB},
 	}
-	var eventIDs []string
 	for _, se := range seedEvents {
 		eid := uuid.NewString()
-		eventIDs = append(eventIDs, eid)
 		err := ch.Conn.Exec(ctx,
 			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			eid, "proj-1", "user-1", se.kind,
