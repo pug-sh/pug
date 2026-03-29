@@ -9,6 +9,8 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 )
 
+// toRPCOrg and toRPCOrgFromWrite must be kept in sync — they convert
+// the read and write models to the same proto message.
 func toRPCOrg(o dbread.Org) *orgsv1.Org {
 	return &orgsv1.Org{
 		DisplayName: o.DisplayName,

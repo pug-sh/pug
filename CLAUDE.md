@@ -117,7 +117,7 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
 **Proto directory layout mirrors the handler auth boundary:**
 
 - **`proto/public/`** — no auth (e.g., auth service)
-- **`proto/sdk/`** — public API key only. Write-only — never expose read endpoints or return sensitive data (any end user can extract the key from client apps).
+- **`proto/sdk/`** — API key auth (public or private). Write-only — never expose read endpoints or return sensitive data. Public keys are extractable from client apps, so SDK endpoints must assume an untrusted caller regardless of key type.
 - **`proto/dashboard/`** — JWT only (e.g., orgs, projects, insights)
 - **`proto/shared/`** — private API key or JWT (e.g., campaigns, delivery, profiles read/delete)
 - **`proto/common/v1/`** — shared message types with no service definitions, accessible from any auth level. Only put types here if they are needed across auth boundaries. If a message is only used behind private key + JWT, it belongs in `shared/`.

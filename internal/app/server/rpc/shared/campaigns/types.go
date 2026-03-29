@@ -9,6 +9,8 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 )
 
+// wToRPCMsg and roToRPCMsg must be kept in sync — they convert
+// the write and read models to the same proto message.
 func wToRPCMsg(c dbwrite.Campaign) (*campaignsv1.Campaign, error) {
 	notificationData, err := json.Marshal(c.NotificationData)
 	if err != nil {

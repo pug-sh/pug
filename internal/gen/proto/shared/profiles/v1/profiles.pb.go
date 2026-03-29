@@ -7,6 +7,7 @@
 package profilesv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -447,18 +448,18 @@ var File_shared_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"!shared/profiles/v1/profiles.proto\x12\x12shared.profiles.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x1f\n" +
-	"\rDeleteRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x10\n" +
-	"\x0eDeleteResponse\"9\n" +
-	"\x16GetByExternalIdRequest\x12\x1f\n" +
-	"\vexternal_id\x18\x01 \x01(\tR\n" +
+	"!shared/profiles/v1/profiles.proto\x12\x12shared.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"(\n" +
+	"\rDeleteRequest\x12\x17\n" +
+	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\"\x10\n" +
+	"\x0eDeleteResponse\"B\n" +
+	"\x16GetByExternalIdRequest\x12(\n" +
+	"\vexternal_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"externalId\"P\n" +
 	"\x17GetByExternalIdResponse\x125\n" +
-	"\aprofile\x18\x01 \x01(\v2\x1b.shared.profiles.v1.ProfileR\aprofile\"\x1c\n" +
+	"\aprofile\x18\x01 \x01(\v2\x1b.shared.profiles.v1.ProfileR\aprofile\"%\n" +
 	"\n" +
-	"GetRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"D\n" +
+	"GetRequest\x12\x17\n" +
+	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\"D\n" +
 	"\vGetResponse\x125\n" +
 	"\aprofile\x18\x01 \x01(\v2\x1b.shared.profiles.v1.ProfileR\aprofile\"\r\n" +
 	"\vListRequest\"G\n" +

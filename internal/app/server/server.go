@@ -64,8 +64,8 @@ func start(ctx context.Context, d *deps) error {
 
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)
-	// - SDK: API key auth only (for SDK-only services)
-	// - Shared: Dual auth - accepts either JWT or API key (for services accessible from both)
+	// - SDK: API key auth (public or private, no JWT fallback) for SDK-only services
+	// - Shared: Dual auth - private API key or JWT fallback (for services accessible from both)
 	dashboardMW := authn.NewMiddleware(cottonrpc.WithJWTAuth(d.jwtKey, queriesRo))
 	sdkMW := authn.NewMiddleware(cottonrpc.WithSDKAuth(projectsRepo))
 	sharedMW := authn.NewMiddleware(cottonrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo))
@@ -117,7 +117,7 @@ func start(ctx context.Context, d *deps) error {
 	mux.Handle(projectsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
 	mux.Handle(insightsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(insightsHandler)))
 
-	// Shared: Dashboard + SDK (CORS + dual auth)
+	// Shared: Dashboard + private API key (CORS + dual auth)
 	mux.Handle(campaignsPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(campaignsHandler)))
 	mux.Handle(deliveryPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(deliveryHandler)))
 	mux.Handle(activityPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
