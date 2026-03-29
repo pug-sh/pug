@@ -20,8 +20,8 @@ func NewSeeder(deps *deps) *Seeder {
 	return &Seeder{deps: deps}
 }
 
-// Run fetches the first customer and their first project from PostgreSQL,
-// then inserts count events into ClickHouse in batches of batchSize.
+// Run resolves the earliest project from PostgreSQL, then inserts count events
+// into ClickHouse in batches of batchSize.
 // If file is provided, it imports from that CSV instead of generating random data.
 // If truncate is true (the default), the events table is cleared before inserting.
 func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file string, truncate bool) error {
@@ -45,6 +45,8 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE events"); err != nil {
 			return fmt.Errorf("truncate failed: %w", err)
 		}
+	} else {
+		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
 	}
 
 	end := time.Now().AddDate(0, 1, 0)
@@ -150,6 +152,8 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE events"); err != nil {
 			return fmt.Errorf("truncate failed: %w", err)
 		}
+	} else {
+		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
 	}
 
 	reader, err := newRees46Reader(file)

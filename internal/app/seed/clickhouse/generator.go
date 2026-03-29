@@ -207,37 +207,10 @@ func buildSessionPool(start, end time.Time) [][]event {
 		}
 
 		distinctID := fmt.Sprintf("user-%05d", rand.IntN(distinctIDPool))
-		stableProps := buildSessionProps(platform)
 
-		j := pickJourney(platform)
-		n := len(j.steps)
-		if n == 0 {
+		sess := buildSession(distinctID, platform, sessionStart, sessionEnd)
+		if sess == nil {
 			continue
-		}
-
-		// spread events evenly across the session window
-		windowMs := sessionEnd.Sub(sessionStart).Milliseconds()
-		stepMs := windowMs / int64(n)
-
-		sess := make([]event, 0, n)
-		for i, kind := range j.steps {
-			occurTime := sessionStart.Add(time.Duration(int64(i)*stepMs+rand.Int64N(max(stepMs, 1))) * time.Millisecond)
-			if occurTime.After(sessionEnd) {
-				occurTime = sessionEnd
-			}
-
-			autoProps := copyProps(stableProps)
-			if platform == "web" {
-				addPerEventWebProps(autoProps, i == 0)
-			}
-
-			sess = append(sess, event{
-				distinctID:       distinctID,
-				kind:             kind,
-				occurTime:        occurTime,
-				autoProperties:   autoProps,
-				customProperties: customPropsForKind(kind),
-			})
 		}
 		pool = append(pool, sess)
 	}
@@ -262,8 +235,8 @@ func newUserSessionTracker() *userSessionTracker {
 	return &userSessionTracker{sessions: make(map[string][]sessionWindow)}
 }
 
-// overlappingPlatforms returns the set of platforms already occupying [start, end]
-// for the given user.
+// overlappingPlatforms returns the set of platforms that have sessions overlapping
+// the given time range for the user.
 func (t *userSessionTracker) overlappingPlatforms(distinctID string, start, end time.Time) map[string]bool {
 	out := map[string]bool{}
 	for _, w := range t.sessions[distinctID] {
@@ -275,11 +248,12 @@ func (t *userSessionTracker) overlappingPlatforms(distinctID string, start, end 
 }
 
 func (t *userSessionTracker) register(distinctID, platform string, start, end time.Time) {
-	t.sessions[distinctID] = append(t.sessions[distinctID], sessionWindow{start, end, platform})
+	t.sessions[distinctID] = append(t.sessions[distinctID], sessionWindow{start: start, end: end, platform: platform})
 }
 
-// buildSession constructs a fresh session for the given user, platform, and time window.
-// Used when an overlapping session needs to be rebuilt on a different platform.
+// buildSession constructs a session (a slice of events) for the given user, platform,
+// and time window. Used both during pool initialization and when an overlapping session
+// needs to be rebuilt on a different platform.
 func buildSession(distinctID, platform string, sessionStart, sessionEnd time.Time) []event {
 	stableProps := buildSessionProps(platform)
 	j := pickJourney(platform)
@@ -311,13 +285,16 @@ func buildSession(distinctID, platform string, sessionStart, sessionEnd time.Tim
 }
 
 // randomSessionFromPool picks a random session from the pool and returns it
-// with a fresh session_id, fresh event_ids, and a new random start time within
-// [start, end]. Re-anchoring prevents clustering when pool sessions are reused
-// across many insertions (same pool entry → same occur_times → same user gets
-// N identical notification_received at T, then N notification_clicked at T+step).
+// with a fresh session_id, fresh event_ids, and a new random start time so the
+// session fits within [start, end] when possible (if the session is longer than
+// the window it is pinned to start and may extend past end). Re-anchoring
+// prevents clustering when pool sessions are reused across many insertions
+// (same pool entry → same occur_times → same user gets N identical
+// notification_received at T, then N notification_clicked at T+step).
 // If the re-anchored session would overlap an existing session for the same user
 // on the same platform, the session is rebuilt on a different platform so
-// concurrent sessions always represent different devices.
+// concurrent sessions represent different platforms. When all three platforms are
+// already occupied the overlap is tolerated — this is rare with 10k+ users.
 func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSessionTracker) []event {
 	src := pool[rand.IntN(len(pool))]
 
@@ -327,8 +304,8 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 	available := end.Sub(start) - sessionDuration
 
 	var newStart time.Time
-	if available > 0 {
-		newStart = start.Add(time.Duration(rand.Int64N(available.Milliseconds())) * time.Millisecond)
+	if ms := available.Milliseconds(); ms > 0 {
+		newStart = start.Add(time.Duration(rand.Int64N(ms)) * time.Millisecond)
 	} else {
 		newStart = start
 	}
@@ -339,8 +316,9 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 	platform := src[0].autoProperties["$platform"]
 
 	// If this window overlaps an existing session for the same user on the same platform,
-	// rebuild on a different platform (a user can use multiple devices simultaneously,
-	// but not the same device twice).
+	// try to rebuild on a different platform (a user can use multiple platforms simultaneously,
+	// but not the same platform twice). When all three platforms are already occupied or
+	// buildSession returns empty, fall through to the normal pool-copy path.
 	if occupied := tracker.overlappingPlatforms(distinctID, newStart, newEnd); occupied[platform] {
 		var alt []string
 		for _, p := range []string{"ios", "android", "web"} {
@@ -349,15 +327,16 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 			}
 		}
 		if len(alt) > 0 {
-			platform = alt[rand.IntN(len(alt))]
-			sess := buildSession(distinctID, platform, newStart, newEnd)
-			sessionID := uuid.New().String()
-			for i := range sess {
-				sess[i].eventID = uuid.New().String()
-				sess[i].sessionID = sessionID
+			altPlatform := alt[rand.IntN(len(alt))]
+			if sess := buildSession(distinctID, altPlatform, newStart, newEnd); len(sess) > 0 {
+				sessionID := uuid.New().String()
+				for i := range sess {
+					sess[i].eventID = uuid.New().String()
+					sess[i].sessionID = sessionID
+				}
+				tracker.register(distinctID, altPlatform, newStart, newEnd)
+				return sess
 			}
-			tracker.register(distinctID, platform, newStart, newEnd)
-			return sess
 		}
 	}
 
