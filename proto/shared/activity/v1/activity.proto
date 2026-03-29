@@ -16,8 +16,7 @@ service ActivityService {
   // Resolves profile aliases so merged anonymous events are included.
   rpc GetActivityFeed(GetActivityFeedRequest) returns (GetActivityFeedResponse);
   // GetEventExplorer returns a paginated, filterable list of events across all users
-  // in a project. Does not resolve aliases or use FINAL (eventual consistency is acceptable
-  // for broad exploration queries).
+  // in a project. Does not resolve aliases.
   rpc GetEventExplorer(GetEventExplorerRequest) returns (GetEventExplorerResponse);
 }
 
