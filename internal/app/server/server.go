@@ -84,8 +84,8 @@ func start(ctx context.Context, d *deps) error {
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
 		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
 	profilesRepo := coreprofiles.NewRepo(queriesRo)
-	insightsSvc := coreinsights.NewService(d.ch, d.redis.Unwrap(), profilesRepo)
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
+	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap(), profilesRepo)
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
 		insights.NewServer(insightsSvc, insightsExecutor), handlerOpts)
 

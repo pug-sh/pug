@@ -64,6 +64,8 @@ select distinct key
 from profiles,
      jsonb_object_keys(properties) as key
 where project_id = $1
+order by key asc
+limit 1000
 `
 
 func (q *Queries) GetProfilePropertyKeys(ctx context.Context, projectID string) ([]pgtype.Text, error) {

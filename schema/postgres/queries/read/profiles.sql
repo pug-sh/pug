@@ -21,4 +21,6 @@ limit @page_size;
 select distinct key
 from profiles,
      jsonb_object_keys(properties) as key
-where project_id = @project_id;
+where project_id = @project_id
+order by key asc
+limit 1000;

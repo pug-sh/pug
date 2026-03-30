@@ -3,10 +3,10 @@ package insights
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -24,9 +24,9 @@ type Service struct {
 	profiles *profiles.Repo
 }
 
-func NewService(ch driver.Conn, redis *redis.Client, profiles *profiles.Repo) *Service {
+func NewService(executor *Executor, redis *redis.Client, profiles *profiles.Repo) *Service {
 	return &Service{
-		executor: NewExecutor(ch),
+		executor: executor,
 		redis:    redis,
 		profiles: profiles,
 	}
@@ -36,17 +36,16 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 	cacheKey := "filterschema:" + projectID
 
 	cached, cacheErr := s.redis.Get(ctx, cacheKey).Bytes()
-	if cacheErr != nil && !errors.Is(cacheErr, redis.Nil) {
+	if cacheErr == nil {
+		var resp insightsv1.GetFilterSchemaResponse
+		if proto.Unmarshal(cached, &resp) == nil {
+			return &resp, nil
+		}
+		slog.WarnContext(ctx, "failed to unmarshal cached filter schema, evicting", slog.String("projectID", projectID))
+		s.redis.Del(ctx, cacheKey)
+	} else if !errors.Is(cacheErr, redis.Nil) {
 		slog.WarnContext(ctx, "redis get failed for filter schema cache", slogx.Error(cacheErr),
 			slog.String("projectID", projectID))
-	} else if cacheErr == nil {
-		var resp insightsv1.GetFilterSchemaResponse
-		if unmarshalErr := proto.Unmarshal(cached, &resp); unmarshalErr == nil {
-			return &resp, nil
-		} else {
-			slog.WarnContext(ctx, "failed to unmarshal cached filter schema, falling through", slogx.Error(unmarshalErr),
-				slog.String("projectID", projectID))
-		}
 	}
 
 	var eventNames []string
@@ -54,27 +53,42 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 	var customPropKeys []string
 	var profileProps []string
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 
 	eg.Go(func() error {
+		sql, args := BuildEventNamesQuery(projectID)
 		var err error
-		eventNames, err = s.queryEventNames(ctx, projectID)
-		return err
+		eventNames, err = s.executor.QueryDistinctIDs(egCtx, sql, args)
+		if err != nil {
+			return fmt.Errorf("query event names: %w", err)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		sql, args := BuildAutoPropertyKeysQuery(projectID)
+		var err error
+		autoPropKeys, err = s.executor.QueryDistinctIDs(egCtx, sql, args)
+		if err != nil {
+			return fmt.Errorf("query auto property keys: %w", err)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		sql, args := BuildCustomPropertyKeysQuery(projectID)
+		var err error
+		customPropKeys, err = s.executor.QueryDistinctIDs(egCtx, sql, args)
+		if err != nil {
+			return fmt.Errorf("query custom property keys: %w", err)
+		}
+		return nil
 	})
 	eg.Go(func() error {
 		var err error
-		autoPropKeys, err = s.queryAutoPropertyKeys(ctx, projectID)
-		return err
-	})
-	eg.Go(func() error {
-		var err error
-		customPropKeys, err = s.queryCustomPropertyKeys(ctx, projectID)
-		return err
-	})
-	eg.Go(func() error {
-		var err error
-		profileProps, err = s.profiles.GetPropertyKeys(ctx, projectID)
-		return err
+		profileProps, err = s.profiles.GetPropertyKeys(egCtx, projectID)
+		if err != nil {
+			return fmt.Errorf("query profile property keys: %w", err)
+		}
+		return nil
 	})
 
 	if err := eg.Wait(); err != nil {
@@ -88,30 +102,13 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 		ProfilePropertyKeys: profileProps,
 	}
 
-	if data, marshalErr := proto.Marshal(resp); marshalErr != nil {
-		slog.WarnContext(ctx, "failed to marshal filter schema for cache", slogx.Error(marshalErr),
+	if data, err := proto.Marshal(resp); err != nil {
+		slog.ErrorContext(ctx, "failed to marshal filter schema for cache", slogx.Error(err),
 			slog.String("projectID", projectID))
-	} else {
-		if err := s.redis.Set(ctx, cacheKey, data, schemaCacheTTL).Err(); err != nil {
-			slog.WarnContext(ctx, "failed to cache filter schema", slogx.Error(err),
-				slog.String("projectID", projectID))
-		}
+	} else if err := s.redis.Set(ctx, cacheKey, data, schemaCacheTTL).Err(); err != nil {
+		slog.ErrorContext(ctx, "failed to cache filter schema", slogx.Error(err),
+			slog.String("projectID", projectID))
 	}
 
 	return resp, nil
-}
-
-func (s *Service) queryEventNames(ctx context.Context, projectID string) ([]string, error) {
-	sql, args := BuildEventNamesQuery(projectID)
-	return s.executor.QueryDistinctIDs(ctx, sql, args)
-}
-
-func (s *Service) queryAutoPropertyKeys(ctx context.Context, projectID string) ([]string, error) {
-	sql, args := BuildAutoPropertyKeysQuery(projectID)
-	return s.executor.QueryDistinctIDs(ctx, sql, args)
-}
-
-func (s *Service) queryCustomPropertyKeys(ctx context.Context, projectID string) ([]string, error) {
-	sql, args := BuildCustomPropertyKeysQuery(projectID)
-	return s.executor.QueryDistinctIDs(ctx, sql, args)
 }
