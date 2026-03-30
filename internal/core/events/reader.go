@@ -63,13 +63,10 @@ func NewReader(ch driver.Conn) *Reader {
 }
 
 
-// getAliasIDs returns all alias IDs for a profile. FINAL is required here:
-// without it, unmerged alias updates could return stale mappings, causing
-// events to be fetched for the wrong profile.
+// getAliasIDs returns all alias IDs for a profile.
 func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) ([]string, error) {
 	rows, err := r.ch.Query(ctx,
-		`SELECT alias_id FROM profile_aliases FINAL
-		 WHERE project_id = ? AND profile_id = ?`,
+		`SELECT alias_id FROM profile_aliases WHERE project_id = ? AND profile_id = ?`,
 		projectID, profileID)
 	if err != nil {
 		return nil, fmt.Errorf("getAliasIDs: query failed for project %s profile %s: %w", projectID, profileID, err)
