@@ -20,17 +20,18 @@ func NewSeeder(deps *deps) *Seeder {
 	return &Seeder{deps: deps}
 }
 
-// Run fetches the first customer and their first project from PostgreSQL,
-// then inserts count events into ClickHouse in batches of batchSize.
+// Run resolves the earliest project from PostgreSQL, then inserts count events
+// into ClickHouse in batches of batchSize.
 // If file is provided, it imports from that CSV instead of generating random data.
-func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file string) error {
+// If truncate is true (the default), the events table is cleared before inserting.
+func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file string, truncate bool) error {
 	projectID, err := s.resolveProjectID(ctx)
 	if err != nil {
 		return err
 	}
 
 	if file != "" {
-		return s.runFromCSV(ctx, projectID, file, batchSize)
+		return s.runFromCSV(ctx, projectID, file, batchSize, truncate)
 	}
 
 	slog.InfoContext(ctx, "seeding events",
@@ -39,9 +40,13 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		slog.Int("batch_size", batchSize),
 	)
 
-	slog.InfoContext(ctx, "truncating events table")
-	if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE events"); err != nil {
-		return fmt.Errorf("truncate failed: %w", err)
+	if truncate {
+		slog.InfoContext(ctx, "truncating events table")
+		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE events"); err != nil {
+			return fmt.Errorf("truncate failed: %w", err)
+		}
+	} else {
+		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
 	}
 
 	end := time.Now().AddDate(0, 1, 0)
@@ -51,6 +56,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 	sessionPool := buildSessionPool(start, end)
 	slog.InfoContext(ctx, "session pool ready", slog.Int("pool_size", len(sessionPool)))
 
+	tracker := newUserSessionTracker()
 	var inserted int64
 	startTime := time.Now()
 
@@ -64,7 +70,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 
 		size := min(int64(batchSize), count-inserted)
 
-		n, err := s.insertBatch(ctx, projectID, sessionPool, int(size))
+		n, err := s.insertBatch(ctx, projectID, sessionPool, int(size), start, end, tracker)
 		if err != nil {
 			return fmt.Errorf("batch insert failed at offset %d: %w", inserted, err)
 		}
@@ -87,7 +93,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 	return nil
 }
 
-func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]event, size int) (int, error) {
+func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]event, size int, start, end time.Time, tracker *userSessionTracker) (int, error) {
 	batch, err := s.deps.ch.PrepareBatch(ctx,
 		"INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id)")
 	if err != nil {
@@ -96,8 +102,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]eve
 
 	inserted := 0
 	for inserted < size {
-		sess := randomSessionFromPool(pool)
-		for _, e := range sess {
+		for _, e := range randomSessionFromPool(pool, start, end, tracker) {
 			if inserted >= size {
 				break
 			}
@@ -135,16 +140,20 @@ func (s *Seeder) resolveProjectID(ctx context.Context) (string, error) {
 	return projectID, nil
 }
 
-func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSize int) error {
+func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSize int, truncate bool) error {
 	slog.InfoContext(ctx, "importing from CSV",
 		slog.String("project_id", projectID),
 		slog.String("file", file),
 		slog.Int("batch_size", batchSize),
 	)
 
-	slog.InfoContext(ctx, "truncating events table")
-	if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE events"); err != nil {
-		return fmt.Errorf("truncate failed: %w", err)
+	if truncate {
+		slog.InfoContext(ctx, "truncating events table")
+		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE events"); err != nil {
+			return fmt.Errorf("truncate failed: %w", err)
+		}
+	} else {
+		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
 	}
 
 	reader, err := newRees46Reader(file)
@@ -213,12 +222,12 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 }
 
 // Run is the CLI entry point. It wires dependencies and delegates to Seeder.
-func Run(ctx context.Context, count int64, batchSize int, file string) error {
+func Run(ctx context.Context, count int64, batchSize int, file string, truncate bool) error {
 	d, err := newDeps(ctx)
 	if err != nil {
 		return err
 	}
 	defer d.close(ctx)
 
-	return NewSeeder(d).Run(ctx, count, batchSize, file)
+	return NewSeeder(d).Run(ctx, count, batchSize, file, truncate)
 }

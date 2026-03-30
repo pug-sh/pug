@@ -44,39 +44,42 @@ type geoEntry struct {
 }
 
 // geoPool is a curated set of realistic locations with weighted distribution
-// (higher-traffic countries appear more times).
+// (higher-traffic countries appear more times). Continent and country values
+// use the same codes Cloudflare sends in CF-IPContinent and CF-IPCountry
+// headers (two-letter continent codes, ISO 3166-1 alpha-2 country codes).
 var geoPool = []geoEntry{
 	// United States (highest weight)
-	{"Americas", "United States", "California", "San Francisco", "94105", "America/Los_Angeles", "37.7749", "-122.4194"},
-	{"Americas", "United States", "California", "Los Angeles", "90001", "America/Los_Angeles", "34.0522", "-118.2437"},
-	{"Americas", "United States", "New York", "New York City", "10001", "America/New_York", "40.7128", "-74.0060"},
-	{"Americas", "United States", "Texas", "Austin", "78701", "America/Chicago", "30.2672", "-97.7431"},
-	{"Americas", "United States", "Washington", "Seattle", "98101", "America/Los_Angeles", "47.6062", "-122.3321"},
-	{"Americas", "United States", "Illinois", "Chicago", "60601", "America/Chicago", "41.8781", "-87.6298"},
+	{"NA", "US", "California", "San Francisco", "94105", "America/Los_Angeles", "37.7749", "-122.4194"},
+	{"NA", "US", "California", "Los Angeles", "90001", "America/Los_Angeles", "34.0522", "-118.2437"},
+	{"NA", "US", "New York", "New York City", "10001", "America/New_York", "40.7128", "-74.0060"},
+	{"NA", "US", "Texas", "Austin", "78701", "America/Chicago", "30.2672", "-97.7431"},
+	{"NA", "US", "Washington", "Seattle", "98101", "America/Los_Angeles", "47.6062", "-122.3321"},
+	{"NA", "US", "Illinois", "Chicago", "60601", "America/Chicago", "41.8781", "-87.6298"},
 	// United Kingdom
-	{"Europe", "United Kingdom", "England", "London", "EC1A", "Europe/London", "51.5074", "-0.1278"},
-	{"Europe", "United Kingdom", "England", "Manchester", "M1", "Europe/London", "53.4808", "-2.2426"},
+	{"EU", "GB", "England", "London", "EC1A", "Europe/London", "51.5074", "-0.1278"},
+	{"EU", "GB", "England", "Manchester", "M1", "Europe/London", "53.4808", "-2.2426"},
 	// Germany
-	{"Europe", "Germany", "Bavaria", "Munich", "80331", "Europe/Berlin", "48.1351", "11.5820"},
-	{"Europe", "Germany", "Berlin", "Berlin", "10115", "Europe/Berlin", "52.5200", "13.4050"},
+	{"EU", "DE", "Bavaria", "Munich", "80331", "Europe/Berlin", "48.1351", "11.5820"},
+	{"EU", "DE", "Berlin", "Berlin", "10115", "Europe/Berlin", "52.5200", "13.4050"},
 	// France
-	{"Europe", "France", "Île-de-France", "Paris", "75001", "Europe/Paris", "48.8566", "2.3522"},
+	{"EU", "FR", "Île-de-France", "Paris", "75001", "Europe/Paris", "48.8566", "2.3522"},
 	// Brazil
-	{"Americas", "Brazil", "São Paulo", "São Paulo", "01310", "America/Sao_Paulo", "-23.5505", "-46.6333"},
-	{"Americas", "Brazil", "Rio de Janeiro", "Rio de Janeiro", "20040", "America/Sao_Paulo", "-22.9068", "-43.1729"},
+	{"SA", "BR", "São Paulo", "São Paulo", "01310", "America/Sao_Paulo", "-23.5505", "-46.6333"},
+	{"SA", "BR", "Rio de Janeiro", "Rio de Janeiro", "20040", "America/Sao_Paulo", "-22.9068", "-43.1729"},
 	// India
-	{"Asia", "India", "Maharashtra", "Mumbai", "400001", "Asia/Kolkata", "19.0760", "72.8777"},
-	{"Asia", "India", "Karnataka", "Bengaluru", "560001", "Asia/Kolkata", "12.9716", "77.5946"},
+	{"AS", "IN", "Maharashtra", "Mumbai", "400001", "Asia/Kolkata", "19.0760", "72.8777"},
+	{"AS", "IN", "Karnataka", "Bengaluru", "560001", "Asia/Kolkata", "12.9716", "77.5946"},
+	{"AS", "IN", "Bihar", "Purnia", "854301", "Asia/Kolkata", "25.7771", "87.4753"},
 	// Japan
-	{"Asia", "Japan", "Tokyo", "Tokyo", "100-0001", "Asia/Tokyo", "35.6762", "139.6503"},
+	{"AS", "JP", "Tokyo", "Tokyo", "100-0001", "Asia/Tokyo", "35.6762", "139.6503"},
 	// Australia
-	{"Oceania", "Australia", "New South Wales", "Sydney", "2000", "Australia/Sydney", "-33.8688", "151.2093"},
+	{"OC", "AU", "New South Wales", "Sydney", "2000", "Australia/Sydney", "-33.8688", "151.2093"},
 	// Canada
-	{"Americas", "Canada", "Ontario", "Toronto", "M5H", "America/Toronto", "43.6510", "-79.3470"},
+	{"NA", "CA", "Ontario", "Toronto", "M5H", "America/Toronto", "43.6510", "-79.3470"},
 	// Netherlands
-	{"Europe", "Netherlands", "North Holland", "Amsterdam", "1012", "Europe/Amsterdam", "52.3676", "4.9041"},
+	{"EU", "NL", "North Holland", "Amsterdam", "1012", "Europe/Amsterdam", "52.3676", "4.9041"},
 	// Singapore
-	{"Asia", "Singapore", "Central", "Singapore", "018956", "Asia/Singapore", "1.3521", "103.8198"},
+	{"AS", "SG", "Central", "Singapore", "018956", "Asia/Singapore", "1.3521", "103.8198"},
 }
 
 var pages = []string{"/", "/home", "/products", "/cart", "/checkout", "/profile", "/search", "/about", "/pricing", "/blog"}
@@ -207,37 +210,10 @@ func buildSessionPool(start, end time.Time) [][]event {
 		}
 
 		distinctID := fmt.Sprintf("user-%05d", rand.IntN(distinctIDPool))
-		stableProps := buildSessionProps(platform)
 
-		j := pickJourney(platform)
-		n := len(j.steps)
-		if n == 0 {
+		sess := buildSession(distinctID, platform, sessionStart, sessionEnd)
+		if sess == nil {
 			continue
-		}
-
-		// spread events evenly across the session window
-		windowMs := sessionEnd.Sub(sessionStart).Milliseconds()
-		stepMs := windowMs / int64(n)
-
-		sess := make([]event, 0, n)
-		for i, kind := range j.steps {
-			occurTime := sessionStart.Add(time.Duration(int64(i)*stepMs+rand.Int64N(max(stepMs, 1))) * time.Millisecond)
-			if occurTime.After(sessionEnd) {
-				occurTime = sessionEnd
-			}
-
-			autoProps := copyProps(stableProps)
-			if platform == "web" {
-				addPerEventWebProps(autoProps, i == 0)
-			}
-
-			sess = append(sess, event{
-				distinctID:       distinctID,
-				kind:             kind,
-				occurTime:        occurTime,
-				autoProperties:   autoProps,
-				customProperties: customPropsForKind(kind),
-			})
 		}
 		pool = append(pool, sess)
 	}
@@ -245,17 +221,138 @@ func buildSessionPool(start, end time.Time) [][]event {
 	return pool
 }
 
+// sessionWindow tracks a single session's time range and platform for overlap detection.
+type sessionWindow struct {
+	start    time.Time
+	end      time.Time
+	platform string
+}
+
+// userSessionTracker records assigned session windows per user so that overlapping
+// sessions can be detected and assigned a different platform.
+type userSessionTracker struct {
+	sessions map[string][]sessionWindow
+}
+
+func newUserSessionTracker() *userSessionTracker {
+	return &userSessionTracker{sessions: make(map[string][]sessionWindow)}
+}
+
+// overlappingPlatforms returns the set of platforms that have sessions overlapping
+// the given time range for the user.
+func (t *userSessionTracker) overlappingPlatforms(distinctID string, start, end time.Time) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range t.sessions[distinctID] {
+		if start.Before(w.end) && end.After(w.start) {
+			out[w.platform] = true
+		}
+	}
+	return out
+}
+
+func (t *userSessionTracker) register(distinctID, platform string, start, end time.Time) {
+	t.sessions[distinctID] = append(t.sessions[distinctID], sessionWindow{start: start, end: end, platform: platform})
+}
+
+// buildSession constructs a session (a slice of events) for the given user, platform,
+// and time window. Used both during pool initialization and when an overlapping session
+// needs to be rebuilt on a different platform.
+func buildSession(distinctID, platform string, sessionStart, sessionEnd time.Time) []event {
+	stableProps := buildSessionProps(platform)
+	j := pickJourney(platform)
+	n := len(j.steps)
+	if n == 0 {
+		return nil
+	}
+	windowMs := sessionEnd.Sub(sessionStart).Milliseconds()
+	stepMs := windowMs / int64(n)
+	sess := make([]event, 0, n)
+	for i, kind := range j.steps {
+		occurTime := sessionStart.Add(time.Duration(int64(i)*stepMs+rand.Int64N(max(stepMs, 1))) * time.Millisecond)
+		if occurTime.After(sessionEnd) {
+			occurTime = sessionEnd
+		}
+		autoProps := copyProps(stableProps)
+		if platform == "web" {
+			addPerEventWebProps(autoProps, i == 0)
+		}
+		sess = append(sess, event{
+			distinctID:       distinctID,
+			kind:             kind,
+			occurTime:        occurTime,
+			autoProperties:   autoProps,
+			customProperties: customPropsForKind(kind),
+		})
+	}
+	return sess
+}
+
 // randomSessionFromPool picks a random session from the pool and returns it
-// with a fresh session_id and fresh event_ids assigned to every event.
-func randomSessionFromPool(pool [][]event) []event {
+// with a fresh session_id, fresh event_ids, and a new random start time so the
+// session fits within [start, end] when possible (if the session is longer than
+// the window it is pinned to start and may extend past end). Re-anchoring
+// prevents clustering when pool sessions are reused across many insertions
+// (same pool entry → same occur_times → same user gets N identical
+// notification_received at T, then N notification_clicked at T+step).
+// If the re-anchored session would overlap an existing session for the same user
+// on the same platform, the session is rebuilt on a different platform so
+// concurrent sessions represent different platforms. When all three platforms are
+// already occupied the overlap is tolerated — this is rare with 10k+ users.
+func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSessionTracker) []event {
 	src := pool[rand.IntN(len(pool))]
+
+	firstTime := src[0].occurTime
+	lastTime := src[len(src)-1].occurTime
+	sessionDuration := lastTime.Sub(firstTime)
+	available := end.Sub(start) - sessionDuration
+
+	var newStart time.Time
+	if ms := available.Milliseconds(); ms > 0 {
+		newStart = start.Add(time.Duration(rand.Int64N(ms)) * time.Millisecond)
+	} else {
+		newStart = start
+	}
+	newEnd := newStart.Add(sessionDuration)
+	offset := newStart.Sub(firstTime)
+
+	distinctID := src[0].distinctID
+	platform := src[0].autoProperties["$platform"]
+
+	// If this window overlaps an existing session for the same user on the same platform,
+	// try to rebuild on a different platform (a user can use multiple platforms simultaneously,
+	// but not the same platform twice). When all three platforms are already occupied or
+	// buildSession returns empty, fall through to the normal pool-copy path.
+	if occupied := tracker.overlappingPlatforms(distinctID, newStart, newEnd); occupied[platform] {
+		var alt []string
+		for _, p := range []string{"ios", "android", "web"} {
+			if !occupied[p] {
+				alt = append(alt, p)
+			}
+		}
+		if len(alt) > 0 {
+			altPlatform := alt[rand.IntN(len(alt))]
+			if sess := buildSession(distinctID, altPlatform, newStart, newEnd); len(sess) > 0 {
+				sessionID := uuid.New().String()
+				for i := range sess {
+					sess[i].eventID = uuid.New().String()
+					sess[i].sessionID = sessionID
+				}
+				tracker.register(distinctID, altPlatform, newStart, newEnd)
+				return sess
+			}
+		}
+	}
+
+	tracker.register(distinctID, platform, newStart, newEnd)
+
 	sessionID := uuid.New().String()
 	out := make([]event, len(src))
 	for i, e := range src {
 		e.eventID = uuid.New().String()
 		e.sessionID = sessionID
+		e.occurTime = e.occurTime.Add(offset)
 		e.autoProperties = copyProps(e.autoProperties)
-		e.customProperties = copyProps(e.customProperties)
+		e.customProperties = customPropsForKind(e.kind)
 		out[i] = e
 	}
 	return out

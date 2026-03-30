@@ -198,8 +198,9 @@ var clickhouseSeedCmd = &cobra.Command{
 		count, _ := cmd.Flags().GetInt64("count")
 		batchSize, _ := cmd.Flags().GetInt("batch")
 		file, _ := cmd.Flags().GetString("file")
+		truncate, _ := cmd.Flags().GetBool("truncate")
 
-		if err := chseed.Run(ctx, count, batchSize, file); err != nil {
+		if err := chseed.Run(ctx, count, batchSize, file, truncate); err != nil {
 			slog.ErrorContext(ctx, "seed error", slogx.Error(err))
 			os.Exit(1)
 		}
@@ -260,6 +261,7 @@ func init() {
 	clickhouseSeedCmd.Flags().Int64P("count", "c", 10_000_000, "total number of events to generate (used when no file provided)")
 	clickhouseSeedCmd.Flags().IntP("batch", "b", 10_000, "number of events per ClickHouse batch")
 	clickhouseSeedCmd.Flags().StringP("file", "f", "", "CSV file to import (REES46 format: event_time,order_id,product_id,category_id,category_code,brand,price,user_id)")
+	clickhouseSeedCmd.Flags().Bool("truncate", true, "truncate events table before seeding")
 
 	clickhouseCmd := &cobra.Command{
 		Use:   "clickhouse",
