@@ -39,7 +39,8 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	// which collapses rows with identical ORDER BY keys during background
 	// merges, keeping the row with the highest insert_time. The ORDER BY key is:
 	//   (project_id, toStartOfMinute(occur_time), kind, event_id)
-	// Queries use SELECT ... FINAL to force this collapsing at read time.
+	// Background merges collapse duplicates asynchronously; read queries rely
+	// on eventual consistency rather than SELECT ... FINAL.
 	//
 	// As long as clients send the same occur_time on retries, the ORDER BY
 	// key is identical and the retry is safely deduplicated regardless of

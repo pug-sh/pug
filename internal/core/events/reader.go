@@ -63,10 +63,10 @@ func NewReader(ch driver.Conn) *Reader {
 }
 
 
+// getAliasIDs returns all alias IDs for a profile.
 func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) ([]string, error) {
 	rows, err := r.ch.Query(ctx,
-		`SELECT alias_id FROM profile_aliases FINAL
-		 WHERE project_id = ? AND profile_id = ?`,
+		`SELECT alias_id FROM profile_aliases WHERE project_id = ? AND profile_id = ?`,
 		projectID, profileID)
 	if err != nil {
 		return nil, fmt.Errorf("getAliasIDs: query failed for project %s profile %s: %w", projectID, profileID, err)
@@ -145,9 +145,7 @@ type EventExplorerParams struct {
 }
 
 // GetEventExplorer returns a paginated, filtered list of events across all users in a project.
-// Unlike GetActivityFeed, it does not resolve aliases and does not use FINAL — background
-// merges provide eventual consistency, which is acceptable for broad exploration queries.
-// Pagination is cursor-based on (occur_time DESC, event_id DESC).
+// It does not resolve aliases. Pagination is cursor-based on (occur_time DESC, event_id DESC).
 // PageSize defaults to 100 and is capped at 1000. A nil returned cursor means no more pages.
 func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParams) ([]Event, *ActivityFeedCursor, error) {
 	var sb strings.Builder
@@ -255,8 +253,8 @@ type ActivityFeedParams struct {
 }
 
 // GetActivityFeed returns a paginated, filtered list of events for a profile.
-// It resolves alias IDs (merged anonymous profiles) and uses SELECT FINAL for
-// exact deduplication. Pagination is cursor-based on (occur_time DESC, event_id DESC).
+// It resolves alias IDs (merged anonymous profiles). Background merges provide
+// sufficient deduplication; FINAL is not needed. Pagination is cursor-based on (occur_time DESC, event_id DESC).
 // PageSize defaults to 100 and is capped at 1000. A nil returned cursor means no more pages.
 //
 // ProjectID and DistinctID are required. At the RPC boundary these are guaranteed by
@@ -273,7 +271,7 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 	var sb strings.Builder
 	var args []any
 
-	sb.WriteString("SELECT " + eventColumns + "\nFROM events FINAL\nWHERE project_id = ? AND distinct_id IN ?\n")
+	sb.WriteString("SELECT " + eventColumns + "\nFROM events\nWHERE project_id = ? AND distinct_id IN ?\n")
 	args = append(args, params.ProjectID, ids)
 
 	if params.Kind != "" {
