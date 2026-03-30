@@ -48,7 +48,7 @@ const (
 type ProfilesServiceClient interface {
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
-	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
+	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.ServerStreamForClient[v1.ListResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 }
 
@@ -109,8 +109,8 @@ func (c *profilesServiceClient) GetByExternalId(ctx context.Context, req *connec
 }
 
 // List calls shared.profiles.v1.ProfilesService.List.
-func (c *profilesServiceClient) List(ctx context.Context, req *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
-	return c.list.CallUnary(ctx, req)
+func (c *profilesServiceClient) List(ctx context.Context, req *connect.Request[v1.ListRequest]) (*connect.ServerStreamForClient[v1.ListResponse], error) {
+	return c.list.CallServerStream(ctx, req)
 }
 
 // Delete calls shared.profiles.v1.ProfilesService.Delete.
@@ -122,7 +122,7 @@ func (c *profilesServiceClient) Delete(ctx context.Context, req *connect.Request
 type ProfilesServiceHandler interface {
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
-	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
+	List(context.Context, *connect.Request[v1.ListRequest], *connect.ServerStream[v1.ListResponse]) error
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 }
 
@@ -145,7 +145,7 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 		connect.WithSchema(profilesServiceMethods.ByName("GetByExternalId")),
 		connect.WithHandlerOptions(opts...),
 	)
-	profilesServiceListHandler := connect.NewUnaryHandler(
+	profilesServiceListHandler := connect.NewServerStreamHandler(
 		ProfilesServiceListProcedure,
 		svc.List,
 		connect.WithSchema(profilesServiceMethods.ByName("List")),
@@ -184,8 +184,8 @@ func (UnimplementedProfilesServiceHandler) GetByExternalId(context.Context, *con
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.profiles.v1.ProfilesService.GetByExternalId is not implemented"))
 }
 
-func (UnimplementedProfilesServiceHandler) List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.profiles.v1.ProfilesService.List is not implemented"))
+func (UnimplementedProfilesServiceHandler) List(context.Context, *connect.Request[v1.ListRequest], *connect.ServerStream[v1.ListResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("shared.profiles.v1.ProfilesService.List is not implemented"))
 }
 
 func (UnimplementedProfilesServiceHandler) Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error) {

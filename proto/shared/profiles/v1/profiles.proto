@@ -11,7 +11,7 @@ option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/prof
 service ProfilesService {
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
-  rpc List(ListRequest) returns (ListResponse) {}
+  rpc List(ListRequest) returns (stream ListResponse) {}
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
 }
 
@@ -37,10 +37,18 @@ message GetResponse {
   Profile profile = 1;
 }
 
-message ListRequest {}
+message ListRequest {
+  Cursor cursor = 1;
+}
+
+message Cursor {
+  google.protobuf.Timestamp cursor_time = 1;
+  string cursor_id = 2;
+}
 
 message ListResponse {
   repeated Profile profiles = 1;
+  Cursor cursor = 2;
 }
 
 message Profile {

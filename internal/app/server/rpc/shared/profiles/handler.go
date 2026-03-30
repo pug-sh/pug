@@ -13,6 +13,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -117,33 +118,77 @@ func (s *Server) GetByExternalId(
 	}), nil
 }
 
+const pageSize = 100
+
 func (s *Server) List(
 	ctx context.Context,
-	_ *connect.Request[profilesv1.ListRequest],
-) (*connect.Response[profilesv1.ListResponse], error) {
+	req *connect.Request[profilesv1.ListRequest],
+	stream *connect.ServerStream[profilesv1.ListResponse],
+) error {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	profilesList, err := s.read.GetProfilesByProjectID(ctx, principal.Project.ID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed listing profiles", slogx.Error(err), slog.String("projectId", principal.Project.ID))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
+	var cursorTime pgtype.Timestamptz
+	var cursorID string
+	hasCursor := false
+
+	if req.Msg.GetCursor() != nil {
+		cursorTime = pgtype.Timestamptz{Time: req.Msg.GetCursor().GetCursorTime().AsTime(), Valid: true}
+		cursorID = req.Msg.GetCursor().GetCursorId()
+		hasCursor = true
 	}
 
-	pbProfiles := make([]*profilesv1.Profile, len(profilesList))
-	for i, p := range profilesList {
-		pbProfile, err := convertProfile(ctx, p)
+	for {
+		profilesList, err := s.read.GetProfilesByProjectID(ctx, dbread.GetProfilesByProjectIDParams{
+			ProjectID:  principal.Project.ID,
+			HasCursor:  hasCursor,
+			CursorTime: cursorTime,
+			CursorID:   cursorID,
+			PageSize:   pageSize,
+		})
 		if err != nil {
-			return nil, err
+			slog.ErrorContext(ctx, "failed listing profiles", slogx.Error(err), slog.String("projectId", principal.Project.ID))
+			return connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
 		}
-		pbProfiles[i] = pbProfile
+
+		if len(profilesList) == 0 {
+			break
+		}
+
+		for _, p := range profilesList {
+			pbProfile, err := convertProfile(ctx, p)
+			if err != nil {
+				return err
+			}
+
+			cursorTime = p.CreateTime
+			cursorID = p.ID
+
+			if err := stream.Send(&profilesv1.ListResponse{
+				Profiles: []*profilesv1.Profile{pbProfile},
+				Cursor: &profilesv1.Cursor{
+					CursorTime: timestamppb.New(cursorTime.Time),
+					CursorId:   cursorID,
+				},
+			}); err != nil {
+				slog.ErrorContext(ctx, "failed sending profile stream", slogx.Error(err))
+				return connect.NewError(connect.CodeInternal, errors.New("failed to stream profiles"))
+			}
+		}
+
+		last := profilesList[len(profilesList)-1]
+		cursorTime = last.CreateTime
+		cursorID = last.ID
+		hasCursor = true
+
+		if len(profilesList) < pageSize {
+			break
+		}
 	}
 
-	return connect.NewResponse(&profilesv1.ListResponse{
-		Profiles: pbProfiles,
-	}), nil
+	return nil
 }
 
 func convertProfile(ctx context.Context, p dbread.Profile) (*profilesv1.Profile, error) {
