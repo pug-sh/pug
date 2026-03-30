@@ -59,6 +59,33 @@ func (q *Queries) GetProfileByProjectAndExternalID(ctx context.Context, arg GetP
 	return i, err
 }
 
+const getProfilePropertyKeys = `-- name: GetProfilePropertyKeys :many
+select distinct key
+from profiles,
+     jsonb_object_keys(properties) as key
+where project_id = $1
+`
+
+func (q *Queries) GetProfilePropertyKeys(ctx context.Context, projectID string) ([]pgtype.Text, error) {
+	rows, err := q.db.Query(ctx, getProfilePropertyKeys, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.Text
+	for rows.Next() {
+		var key pgtype.Text
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		items = append(items, key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProfilesByProjectID = `-- name: GetProfilesByProjectID :many
 select create_time, external_id, id, properties, project_id, update_time from profiles
 where project_id = $1

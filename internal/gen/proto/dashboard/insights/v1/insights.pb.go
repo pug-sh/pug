@@ -681,6 +681,110 @@ func (x *DataPoint) GetValue() float64 {
 	return 0
 }
 
+type GetFilterSchemaRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetFilterSchemaRequest) Reset() {
+	*x = GetFilterSchemaRequest{}
+	mi := &file_dashboard_insights_v1_insights_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFilterSchemaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFilterSchemaRequest) ProtoMessage() {}
+
+func (x *GetFilterSchemaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_insights_v1_insights_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFilterSchemaRequest.ProtoReflect.Descriptor instead.
+func (*GetFilterSchemaRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_insights_v1_insights_proto_rawDescGZIP(), []int{8}
+}
+
+type GetFilterSchemaResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	EventNames          []string               `protobuf:"bytes,1,rep,name=event_names,json=eventNames" json:"event_names,omitempty"`
+	AutoPropertyKeys    []string               `protobuf:"bytes,2,rep,name=auto_property_keys,json=autoPropertyKeys" json:"auto_property_keys,omitempty"`
+	CustomPropertyKeys  []string               `protobuf:"bytes,3,rep,name=custom_property_keys,json=customPropertyKeys" json:"custom_property_keys,omitempty"`
+	ProfilePropertyKeys []string               `protobuf:"bytes,4,rep,name=profile_property_keys,json=profilePropertyKeys" json:"profile_property_keys,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *GetFilterSchemaResponse) Reset() {
+	*x = GetFilterSchemaResponse{}
+	mi := &file_dashboard_insights_v1_insights_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFilterSchemaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFilterSchemaResponse) ProtoMessage() {}
+
+func (x *GetFilterSchemaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_insights_v1_insights_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFilterSchemaResponse.ProtoReflect.Descriptor instead.
+func (*GetFilterSchemaResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_insights_v1_insights_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetFilterSchemaResponse) GetEventNames() []string {
+	if x != nil {
+		return x.EventNames
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetAutoPropertyKeys() []string {
+	if x != nil {
+		return x.AutoPropertyKeys
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetCustomPropertyKeys() []string {
+	if x != nil {
+		return x.CustomPropertyKeys
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetProfilePropertyKeys() []string {
+	if x != nil {
+		return x.ProfilePropertyKeys
+	}
+	return nil
+}
+
 var File_dashboard_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_dashboard_insights_v1_insights_proto_rawDesc = "" +
@@ -730,7 +834,14 @@ const file_dashboard_insights_v1_insights_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Q\n" +
 	"\tDataPoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value*c\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"\x18\n" +
+	"\x16GetFilterSchemaRequest\"\xce\x01\n" +
+	"\x17GetFilterSchemaResponse\x12\x1f\n" +
+	"\vevent_names\x18\x01 \x03(\tR\n" +
+	"eventNames\x12,\n" +
+	"\x12auto_property_keys\x18\x02 \x03(\tR\x10autoPropertyKeys\x120\n" +
+	"\x14custom_property_keys\x18\x03 \x03(\tR\x12customPropertyKeys\x122\n" +
+	"\x15profile_property_keys\x18\x04 \x03(\tR\x13profilePropertyKeys*c\n" +
 	"\vInsightType\x12\x1c\n" +
 	"\x18INSIGHT_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13INSIGHT_TYPE_TRENDS\x10\x01\x12\x1d\n" +
@@ -745,10 +856,11 @@ const file_dashboard_insights_v1_insights_proto_rawDesc = "" +
 	"\x1cAGGREGATION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16AGGREGATION_TYPE_TOTAL\x10\x01\x12!\n" +
 	"\x1dAGGREGATION_TYPE_UNIQUE_USERS\x10\x02\x12!\n" +
-	"\x1dAGGREGATION_TYPE_PER_USER_AVG\x10\x032\xce\x01\n" +
+	"\x1dAGGREGATION_TYPE_PER_USER_AVG\x10\x032\xc0\x02\n" +
 	"\x0fInsightsService\x12R\n" +
 	"\x05Query\x12#.dashboard.insights.v1.QueryRequest\x1a$.dashboard.insights.v1.QueryResponse\x12g\n" +
-	"\fSegmentUsers\x12*.dashboard.insights.v1.SegmentUsersRequest\x1a+.dashboard.insights.v1.SegmentUsersResponseBWZPgithub.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1;insightsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\fSegmentUsers\x12*.dashboard.insights.v1.SegmentUsersRequest\x1a+.dashboard.insights.v1.SegmentUsersResponse\x12p\n" +
+	"\x0fGetFilterSchema\x12-.dashboard.insights.v1.GetFilterSchemaRequest\x1a..dashboard.insights.v1.GetFilterSchemaResponseBWZPgithub.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1;insightsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_insights_v1_insights_proto_rawDescOnce sync.Once
@@ -763,46 +875,50 @@ func file_dashboard_insights_v1_insights_proto_rawDescGZIP() []byte {
 }
 
 var file_dashboard_insights_v1_insights_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_dashboard_insights_v1_insights_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_dashboard_insights_v1_insights_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_dashboard_insights_v1_insights_proto_goTypes = []any{
-	(InsightType)(0),              // 0: dashboard.insights.v1.InsightType
-	(Granularity)(0),              // 1: dashboard.insights.v1.Granularity
-	(AggregationType)(0),          // 2: dashboard.insights.v1.AggregationType
-	(*QueryRequest)(nil),          // 3: dashboard.insights.v1.QueryRequest
-	(*QueryResponse)(nil),         // 4: dashboard.insights.v1.QueryResponse
-	(*SegmentUsersRequest)(nil),   // 5: dashboard.insights.v1.SegmentUsersRequest
-	(*SegmentUsersResponse)(nil),  // 6: dashboard.insights.v1.SegmentUsersResponse
-	(*EventQuery)(nil),            // 7: dashboard.insights.v1.EventQuery
-	(*Breakdown)(nil),             // 8: dashboard.insights.v1.Breakdown
-	(*Series)(nil),                // 9: dashboard.insights.v1.Series
-	(*DataPoint)(nil),             // 10: dashboard.insights.v1.DataPoint
-	nil,                           // 11: dashboard.insights.v1.Series.BreakdownEntry
-	(*v1.TimeRange)(nil),          // 12: common.v1.TimeRange
-	(*v1.PropertyFilter)(nil),     // 13: common.v1.PropertyFilter
-	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
+	(InsightType)(0),                // 0: dashboard.insights.v1.InsightType
+	(Granularity)(0),                // 1: dashboard.insights.v1.Granularity
+	(AggregationType)(0),            // 2: dashboard.insights.v1.AggregationType
+	(*QueryRequest)(nil),            // 3: dashboard.insights.v1.QueryRequest
+	(*QueryResponse)(nil),           // 4: dashboard.insights.v1.QueryResponse
+	(*SegmentUsersRequest)(nil),     // 5: dashboard.insights.v1.SegmentUsersRequest
+	(*SegmentUsersResponse)(nil),    // 6: dashboard.insights.v1.SegmentUsersResponse
+	(*EventQuery)(nil),              // 7: dashboard.insights.v1.EventQuery
+	(*Breakdown)(nil),               // 8: dashboard.insights.v1.Breakdown
+	(*Series)(nil),                  // 9: dashboard.insights.v1.Series
+	(*DataPoint)(nil),               // 10: dashboard.insights.v1.DataPoint
+	(*GetFilterSchemaRequest)(nil),  // 11: dashboard.insights.v1.GetFilterSchemaRequest
+	(*GetFilterSchemaResponse)(nil), // 12: dashboard.insights.v1.GetFilterSchemaResponse
+	nil,                             // 13: dashboard.insights.v1.Series.BreakdownEntry
+	(*v1.TimeRange)(nil),            // 14: common.v1.TimeRange
+	(*v1.PropertyFilter)(nil),       // 15: common.v1.PropertyFilter
+	(*timestamppb.Timestamp)(nil),   // 16: google.protobuf.Timestamp
 }
 var file_dashboard_insights_v1_insights_proto_depIdxs = []int32{
 	0,  // 0: dashboard.insights.v1.QueryRequest.insight_type:type_name -> dashboard.insights.v1.InsightType
-	12, // 1: dashboard.insights.v1.QueryRequest.time_range:type_name -> common.v1.TimeRange
+	14, // 1: dashboard.insights.v1.QueryRequest.time_range:type_name -> common.v1.TimeRange
 	1,  // 2: dashboard.insights.v1.QueryRequest.granularity:type_name -> dashboard.insights.v1.Granularity
 	7,  // 3: dashboard.insights.v1.QueryRequest.events:type_name -> dashboard.insights.v1.EventQuery
-	13, // 4: dashboard.insights.v1.QueryRequest.filters:type_name -> common.v1.PropertyFilter
+	15, // 4: dashboard.insights.v1.QueryRequest.filters:type_name -> common.v1.PropertyFilter
 	8,  // 5: dashboard.insights.v1.QueryRequest.breakdowns:type_name -> dashboard.insights.v1.Breakdown
 	9,  // 6: dashboard.insights.v1.QueryResponse.series:type_name -> dashboard.insights.v1.Series
-	12, // 7: dashboard.insights.v1.SegmentUsersRequest.time_range:type_name -> common.v1.TimeRange
+	14, // 7: dashboard.insights.v1.SegmentUsersRequest.time_range:type_name -> common.v1.TimeRange
 	7,  // 8: dashboard.insights.v1.SegmentUsersRequest.events:type_name -> dashboard.insights.v1.EventQuery
-	13, // 9: dashboard.insights.v1.SegmentUsersRequest.filters:type_name -> common.v1.PropertyFilter
-	13, // 10: dashboard.insights.v1.EventQuery.filters:type_name -> common.v1.PropertyFilter
+	15, // 9: dashboard.insights.v1.SegmentUsersRequest.filters:type_name -> common.v1.PropertyFilter
+	15, // 10: dashboard.insights.v1.EventQuery.filters:type_name -> common.v1.PropertyFilter
 	2,  // 11: dashboard.insights.v1.EventQuery.aggregation:type_name -> dashboard.insights.v1.AggregationType
-	11, // 12: dashboard.insights.v1.Series.breakdown:type_name -> dashboard.insights.v1.Series.BreakdownEntry
+	13, // 12: dashboard.insights.v1.Series.breakdown:type_name -> dashboard.insights.v1.Series.BreakdownEntry
 	10, // 13: dashboard.insights.v1.Series.points:type_name -> dashboard.insights.v1.DataPoint
-	14, // 14: dashboard.insights.v1.DataPoint.time:type_name -> google.protobuf.Timestamp
+	16, // 14: dashboard.insights.v1.DataPoint.time:type_name -> google.protobuf.Timestamp
 	3,  // 15: dashboard.insights.v1.InsightsService.Query:input_type -> dashboard.insights.v1.QueryRequest
 	5,  // 16: dashboard.insights.v1.InsightsService.SegmentUsers:input_type -> dashboard.insights.v1.SegmentUsersRequest
-	4,  // 17: dashboard.insights.v1.InsightsService.Query:output_type -> dashboard.insights.v1.QueryResponse
-	6,  // 18: dashboard.insights.v1.InsightsService.SegmentUsers:output_type -> dashboard.insights.v1.SegmentUsersResponse
-	17, // [17:19] is the sub-list for method output_type
-	15, // [15:17] is the sub-list for method input_type
+	11, // 17: dashboard.insights.v1.InsightsService.GetFilterSchema:input_type -> dashboard.insights.v1.GetFilterSchemaRequest
+	4,  // 18: dashboard.insights.v1.InsightsService.Query:output_type -> dashboard.insights.v1.QueryResponse
+	6,  // 19: dashboard.insights.v1.InsightsService.SegmentUsers:output_type -> dashboard.insights.v1.SegmentUsersResponse
+	12, // 20: dashboard.insights.v1.InsightsService.GetFilterSchema:output_type -> dashboard.insights.v1.GetFilterSchemaResponse
+	18, // [18:21] is the sub-list for method output_type
+	15, // [15:18] is the sub-list for method input_type
 	15, // [15:15] is the sub-list for extension type_name
 	15, // [15:15] is the sub-list for extension extendee
 	0,  // [0:15] is the sub-list for field type_name
@@ -819,7 +935,7 @@ func file_dashboard_insights_v1_insights_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_insights_v1_insights_proto_rawDesc), len(file_dashboard_insights_v1_insights_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   9,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -16,3 +16,9 @@ where project_id = @project_id
   )
 order by create_time desc, id desc
 limit @page_size;
+
+-- name: GetProfilePropertyKeys :many
+select distinct key
+from profiles,
+     jsonb_object_keys(properties) as key
+where project_id = @project_id;

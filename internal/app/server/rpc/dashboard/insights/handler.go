@@ -6,24 +6,26 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1/insightsv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type server struct {
+	service  *coreinsights.Service
 	executor *coreinsights.Executor
 	insightsv1connect.UnimplementedInsightsServiceHandler
 }
 
-// NewServer creates a new InsightsService handler backed by the given ClickHouse connection.
-func NewServer(ch driver.Conn) *server {
+// NewServer creates a new InsightsService handler.
+func NewServer(service *coreinsights.Service, executor *coreinsights.Executor) *server {
 	return &server{
-		executor: coreinsights.NewExecutor(ch),
+		service:  service,
+		executor: executor,
 	}
 }
 
@@ -161,4 +163,29 @@ func (s *server) SegmentUsers(
 		DistinctIds:   ids,
 		NextPageToken: nextPageToken,
 	}), nil
+}
+
+func (s *server) GetFilterSchema(
+	ctx context.Context,
+	req *connect.Request[insightsv1.GetFilterSchemaRequest],
+) (*connect.Response[insightsv1.GetFilterSchemaResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	projectID := principal.Project.ID
+
+	schema, err := s.service.GetFilterSchema(ctx, projectID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get filter schema", slogx.Error(err),
+			slog.String("projectID", projectID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(schema), nil
 }

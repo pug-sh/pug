@@ -220,6 +220,27 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 	return sb.String(), args, nil
 }
 
+// BuildEventNamesQuery returns a query for all distinct event kinds in a project.
+func BuildEventNamesQuery(projectID string) (string, []any) {
+	sql := "SELECT DISTINCT kind\nFROM events\nWHERE project_id = ?\nORDER BY kind ASC\nLIMIT 1000"
+	return sql, []any{projectID}
+}
+
+// BuildAutoPropertyKeysQuery returns a query for distinct auto_property keys for a project.
+func BuildAutoPropertyKeysQuery(projectID string) (string, []any) {
+	return buildPropertyKeysQuery(projectID, "auto_properties")
+}
+
+// BuildCustomPropertyKeysQuery returns a query for distinct custom_property keys for a project.
+func BuildCustomPropertyKeysQuery(projectID string) (string, []any) {
+	return buildPropertyKeysQuery(projectID, "custom_properties")
+}
+
+func buildPropertyKeysQuery(projectID, column string) (string, []any) {
+	sql := "SELECT DISTINCT arrayJoin(mapKeys(" + column + ")) AS key\nFROM events\nWHERE project_id = ?\nAND notEmpty(" + column + ")\nORDER BY key ASC\nLIMIT 500"
+	return sql, []any{projectID}
+}
+
 // granularityFunc returns the ClickHouse time-bucketing function name for the given granularity.
 func granularityFunc(g insightsv1.Granularity) string {
 	switch g {
