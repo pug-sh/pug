@@ -47,8 +47,7 @@ type ActivityServiceClient interface {
 	// Resolves profile aliases so merged anonymous events are included.
 	GetActivityFeed(context.Context, *connect.Request[v1.GetActivityFeedRequest]) (*connect.Response[v1.GetActivityFeedResponse], error)
 	// GetEventExplorer returns a paginated, filterable list of events across all users
-	// in a project. Does not resolve aliases or use FINAL (eventual consistency is acceptable
-	// for broad exploration queries).
+	// in a project. Does not resolve aliases.
 	GetEventExplorer(context.Context, *connect.Request[v1.GetEventExplorerRequest]) (*connect.Response[v1.GetEventExplorerResponse], error)
 }
 
@@ -100,8 +99,7 @@ type ActivityServiceHandler interface {
 	// Resolves profile aliases so merged anonymous events are included.
 	GetActivityFeed(context.Context, *connect.Request[v1.GetActivityFeedRequest]) (*connect.Response[v1.GetActivityFeedResponse], error)
 	// GetEventExplorer returns a paginated, filterable list of events across all users
-	// in a project. Does not resolve aliases or use FINAL (eventual consistency is acceptable
-	// for broad exploration queries).
+	// in a project. Does not resolve aliases.
 	GetEventExplorer(context.Context, *connect.Request[v1.GetEventExplorerRequest]) (*connect.Response[v1.GetEventExplorerResponse], error)
 }
 
