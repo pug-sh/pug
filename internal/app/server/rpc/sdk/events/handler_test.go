@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
+	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
 	"github.com/fivebitsio/cotton/internal/geo"
 	"github.com/fivebitsio/cotton/internal/useragent"
 )

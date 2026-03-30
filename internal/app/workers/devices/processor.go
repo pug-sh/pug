@@ -13,7 +13,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/devices"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
-	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/devices/v1"
+	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"connectrpc.com/authn"
-	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/golang-jwt/jwt/v5"
@@ -41,32 +40,54 @@ type Principal struct {
 	Project  *dbread.Project
 }
 
-// WithSDKAuth authenticates via public API key from the x-api-key header
+// projectKeyLookup abstracts API key → project resolution for auth functions.
+// Implementations must return pgx.ErrNoRows when no project matches the key.
+type projectKeyLookup interface {
+	GetProjectByPublicApiKey(ctx context.Context, key string) (dbread.Project, error)
+	GetProjectByPrivateApiKey(ctx context.Context, key string) (dbread.Project, error)
+}
+
+// WithSDKAuth authenticates via API key from the x-api-key header
 // or api_key query parameter (fallback for beacon requests).
-// Only accepts public keys — private keys are rejected.
-func WithSDKAuth(repo *projects.Repo) authn.AuthFunc {
+// Accepts both public (pub_) and private (prv_) keys. Public keys are accepted
+// via header or query parameter; private keys are header-only.
+// Unlike WithDualAuth, there is no JWT fallback — Customer is always nil.
+func WithSDKAuth(repo projectKeyLookup) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		apiKey := req.Header.Get(HeaderAPIKey)
 		// Fallback to query param for beacon requests, which cannot set headers.
 		if apiKey == "" {
 			apiKey = req.URL.Query().Get(QueryAPIKey)
+			if apiKey != "" && !strings.HasPrefix(apiKey, publicKeyPrefix) {
+				return nil, authn.Errorf("beacon requests only support public API keys")
+			}
 		}
 		if apiKey == "" {
 			return nil, authn.Errorf("x-api-key header not present")
 		}
 
-		if !strings.HasPrefix(apiKey, publicKeyPrefix) {
+		var project dbread.Project
+		var err error
+		var keyType string
+		switch {
+		case strings.HasPrefix(apiKey, publicKeyPrefix):
+			keyType = "public"
+			project, err = repo.GetProjectByPublicApiKey(ctx, apiKey)
+		case strings.HasPrefix(apiKey, privateKeyPrefix):
+			keyType = "private"
+			project, err = repo.GetProjectByPrivateApiKey(ctx, apiKey)
+		default:
 			return nil, authn.Errorf("invalid API key")
 		}
-
-		project, err := repo.GetProjectByPublicApiKey(ctx, apiKey)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, authn.Errorf("invalid API key")
 			}
-			slog.ErrorContext(ctx, "error querying project by public API key", slogx.Error(err))
+			slog.ErrorContext(ctx, "error querying project by API key", slogx.Error(err))
 			return nil, authn.Errorf("failed to validate API key")
 		}
+
+		slog.DebugContext(ctx, "SDK auth succeeded", slog.String("keyType", keyType), slog.String("projectID", project.ID))
 
 		return &Principal{
 			AuthType: AuthTypeAPIKey,
@@ -148,7 +169,8 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 }
 
 // WithDualAuth authenticates via private API key if x-api-key header is present; otherwise falls back to JWT.
-func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo *projects.Repo) authn.AuthFunc {
+// Unlike WithSDKAuth, this only accepts private keys (not public) and falls back to JWT, populating Customer.
+func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup) authn.AuthFunc {
 	jwtAuth := WithJWTAuth(jwtKey, queries)
 
 	return func(ctx context.Context, req *http.Request) (any, error) {
@@ -189,10 +211,12 @@ func getPrincipalFromContext(ctx context.Context) (*Principal, error) {
 func MustGetPrincipalWithCustomer(ctx context.Context) (*Principal, error) {
 	principal, err := getPrincipalFromContext(ctx)
 	if err != nil {
+		slog.DebugContext(ctx, "principal extraction failed", slogx.Error(err))
 		return nil, err
 	}
 
 	if principal.Customer == nil {
+		slog.DebugContext(ctx, "customer not set in principal")
 		return nil, authn.Errorf("customer not set in principal")
 	}
 
@@ -204,10 +228,12 @@ func MustGetPrincipalWithCustomer(ctx context.Context) (*Principal, error) {
 func MustGetPrincipalWithProject(ctx context.Context) (*Principal, error) {
 	principal, err := getPrincipalFromContext(ctx)
 	if err != nil {
+		slog.DebugContext(ctx, "principal extraction failed", slogx.Error(err))
 		return nil, err
 	}
 
 	if principal.Project == nil {
+		slog.DebugContext(ctx, "project not set in principal")
 		return nil, authn.Errorf("project not set in principal")
 	}
 

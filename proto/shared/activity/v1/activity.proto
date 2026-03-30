@@ -1,0 +1,81 @@
+edition = "2023";
+package shared.activity.v1;
+
+import "buf/validate/validate.proto";
+import "common/v1/filters.proto";
+import "common/v1/time.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1;activityv1";
+
+// ActivityService provides paginated access to raw event data.
+service ActivityService {
+  // GetActivityFeed returns a paginated, filterable list of events for a user profile.
+  // Resolves profile aliases so merged anonymous events are included.
+  rpc GetActivityFeed(GetActivityFeedRequest) returns (GetActivityFeedResponse);
+  // GetEventExplorer returns a paginated, filterable list of events across all users
+  // in a project. Does not resolve aliases or use FINAL (eventual consistency is acceptable
+  // for broad exploration queries).
+  rpc GetEventExplorer(GetEventExplorerRequest) returns (GetEventExplorerResponse);
+}
+
+message GetActivityFeedRequest {
+  // Required. The profile ID to fetch events for.
+  string distinct_id = 1 [(buf.validate.field).string.min_len = 1];
+  // Optional. Filter by event type (e.g., "page_view"). Empty means all kinds.
+  string kind = 2;
+  // Optional. Filter by session. Empty means all sessions.
+  string session_id = 3;
+  // Optional. Restrict to events within this time window.
+  common.v1.TimeRange time_range = 4;
+  // Optional. Filter by event properties (auto or custom).
+  repeated common.v1.PropertyFilter property_filters = 5;
+  // 0 means server default (100). Max 1000.
+  int32 page_size = 6 [(buf.validate.field).int32 = {gte: 0, lte: 1000}];
+  // Opaque cursor from a previous response's next_page_token. Empty for the first page.
+  string page_token = 7;
+}
+
+message ActivityEvent {
+  string event_id = 1;
+  string kind = 2;
+  string distinct_id = 3;
+  google.protobuf.Timestamp occur_time = 4;
+  // May be empty if no session was active.
+  string session_id = 5;
+  // System-enriched properties (geo, user-agent, etc.).
+  google.protobuf.Struct auto_properties = 6;
+  // Client-supplied custom properties.
+  google.protobuf.Struct custom_properties = 7;
+}
+
+message GetActivityFeedResponse {
+  repeated ActivityEvent events = 1;
+  // Empty when there are no more pages.
+  string next_page_token = 2;
+}
+
+message GetEventExplorerRequest {
+  // Optional. Filter to a specific user. Empty means all users.
+  string distinct_id = 1;
+  // Optional. Filter by event type. Empty means all kinds.
+  string kind = 2;
+  // Optional. Filter by session. Empty means all sessions.
+  string session_id = 3;
+  // Optional. Restrict to events within this time window.
+  common.v1.TimeRange time_range = 4;
+  // Optional. Filter by event properties (auto or custom).
+  repeated common.v1.PropertyFilter property_filters = 5;
+  // 0 means server default (100). Max 1000.
+  int32 page_size = 6 [(buf.validate.field).int32 = {gte: 0, lte: 1000}];
+  // Opaque cursor from a previous response's next_page_token. Empty for the first page.
+  string page_token = 7;
+}
+
+message GetEventExplorerResponse {
+  repeated ActivityEvent events = 1;
+  // Empty when there are no more pages.
+  string next_page_token = 2;
+}

@@ -17,22 +17,24 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/public/auth"
 	devicesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/devices"
 	eventsrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/events"
-	profilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/profiles"
+	sdkprofilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/profiles"
 	activityrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/shared/activity"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/campaigns"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/delivery"
+	sharedprofilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/shared/profiles"
 	coreorgs "github.com/fivebitsio/cotton/internal/core/orgs"
 	coreprojects "github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/gen/proto/activity/v1/activityv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/auth/v1/authv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/campaigns/v1/campaignsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/delivery/v1/deliveryv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/devices/v1/devicesv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/events/v1/eventsv1connect"
-	insightsv1connect "github.com/fivebitsio/cotton/internal/gen/proto/insights/v1/insightsv1connect"
-	orgsv1connect "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1/orgsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1/profilesv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/projects/v1/projectsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1/insightsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/public/auth/v1/authv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1/devicesv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1/eventsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1/activityv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1/campaignsv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/shared/delivery/v1/deliveryv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/geo"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -62,33 +64,41 @@ func start(ctx context.Context, d *deps) error {
 
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)
-	// - SDK: API key auth only (for SDK-only services)
-	// - Shared: Dual auth - accepts either JWT or API key (for services accessible from both)
+	// - SDK: API key auth (public or private, no JWT fallback) for SDK-only services
+	// - Shared: Dual auth - private API key or JWT fallback (for services accessible from both)
 	dashboardMW := authn.NewMiddleware(cottonrpc.WithJWTAuth(d.jwtKey, queriesRo))
 	sdkMW := authn.NewMiddleware(cottonrpc.WithSDKAuth(projectsRepo))
 	sharedMW := authn.NewMiddleware(cottonrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo))
 
-	// Handlers
+	// Handlers — grouped by auth boundary
+
+	// Public
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
 		auth.NewServer(d.pgRo, d.pgW, d.jwtKey), handlerOpts)
+
+	// Dashboard
 	orgsPath, orgsHandler := orgsv1connect.NewOrgsServiceHandler(
 		orgsrpc.NewServer(orgsSvc), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
 		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
 		insights.NewServer(d.ch), handlerOpts)
+
+	// Shared
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
 		campaigns.NewServer(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
 		delivery.NewServer(d.nats.GetJetStream()), handlerOpts)
 	activityPath, activityHandler := activityv1connect.NewActivityServiceHandler(
 		activityrpc.NewServer(d.ch), handlerOpts)
-	profilesPath, profilesHandler := profilesv1connect.NewProfilesServiceHandler(
-		profilesrpc.NewHandler(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
+	sharedProfilesPath, sharedProfilesHandler := profilesv1connect.NewProfilesServiceHandler(
+		sharedprofilesrpc.NewServer(d.pgRo, d.pgW), handlerOpts)
 
+	// SDK
 	devicesPath, devicesHandler := devicesv1connect.NewDevicesServiceHandler(
 		devicesrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
-
+	sdkProfilesPath, sdkProfilesHandler := sdkprofilesv1connect.NewProfilesSDKServiceHandler(
+		sdkprofilesrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
 	geoProvider := geo.CloudflareProvider{}
 	uaParser, err := useragent.NewParser()
 	if err != nil {
@@ -107,28 +117,34 @@ func start(ctx context.Context, d *deps) error {
 	mux.Handle(projectsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
 	mux.Handle(insightsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(insightsHandler)))
 
-	// Shared: Dashboard + SDK (CORS + dual auth)
+	// Shared: Dashboard + private API key (CORS + dual auth)
 	mux.Handle(campaignsPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(campaignsHandler)))
 	mux.Handle(deliveryPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(deliveryHandler)))
 	mux.Handle(activityPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
+	mux.Handle(sharedProfilesPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
 
 	// SDK only (API key auth, no CORS)
 	mux.Handle(devicesPath, sdkMW.Wrap(devicesHandler))
-	mux.Handle(profilesPath, sdkMW.Wrap(profilesHandler))
+	mux.Handle(sdkProfilesPath, sdkMW.Wrap(sdkProfilesHandler))
 	mux.Handle(eventsPath, sdkMW.Wrap(eventsHandler))
 
 	// Reflection
 	services := []string{
-		activityv1connect.ActivityServiceName,
+		// Public
 		authv1connect.AuthServiceName,
+		// Dashboard
 		orgsv1connect.OrgsServiceName,
 		projectsv1connect.ProjectsServiceName,
+		insightsv1connect.InsightsServiceName,
+		// Shared
 		campaignsv1connect.CampaignServiceName,
 		deliveryv1connect.DeliveryServiceName,
-		eventsv1connect.EventsServiceName,
-		devicesv1connect.DevicesServiceName,
+		activityv1connect.ActivityServiceName,
 		profilesv1connect.ProfilesServiceName,
-		insightsv1connect.InsightsServiceName,
+		// SDK
+		devicesv1connect.DevicesServiceName,
+		sdkprofilesv1connect.ProfilesSDKServiceName,
+		eventsv1connect.EventsServiceName,
 	}
 	reflector := grpcreflect.NewStaticReflector(services...)
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))

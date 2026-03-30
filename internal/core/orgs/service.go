@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1"
+	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"

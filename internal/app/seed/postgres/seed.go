@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/fivebitsio/cotton/internal/core/projects"
-	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/orgs/v1"
+	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/jackc/pgx/v5"

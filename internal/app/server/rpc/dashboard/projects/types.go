@@ -1,11 +1,13 @@
 package projects
 
 import (
-	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/projects/v1"
+	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 )
 
+// roToRPCMsg and wToRPCMsg must be kept in sync — they convert
+// the read and write models to the same proto message.
 // roToRPCMsg intentionally omits PrivateApiKey — it is only exposed once at creation time via wToRPCMsgWithPrivateKey.
 func roToRPCMsg(p dbread.Project) *projectsv1.Project {
 	return &projectsv1.Project{

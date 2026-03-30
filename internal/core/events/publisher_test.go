@@ -8,7 +8,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/events"
 	natsdep "github.com/fivebitsio/cotton/internal/deps/nats"
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/events/v1"
+	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
 	"github.com/fivebitsio/cotton/internal/testutil"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"

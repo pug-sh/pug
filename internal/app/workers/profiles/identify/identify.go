@@ -16,7 +16,7 @@ import (
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
 
-	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/profiles/v1"
+	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -83,7 +83,7 @@ func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsw
 }
 
 func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natsworker.NATSClient, data []byte) error {
-	msg := &profilesv1.ProfileIdentifyMessage{}
+	msg := &sdkprofilesv1.ProfileIdentifyMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal identify message", slogx.Error(err))
 		return natsworker.NewPermanentError(err).
@@ -195,7 +195,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 	// Publish alias message for ClickHouse tracking only when a merge occurred
 	if mergedIntoProfileID != "" {
-		aliasMsg := &profilesv1.ProfileAliasMessage{
+		aliasMsg := &sdkprofilesv1.ProfileAliasMessage{
 			AliasId:    profileID,
 			ProfileId:  mergedIntoProfileID,
 			ExternalId: externalID,

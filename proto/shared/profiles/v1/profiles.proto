@@ -1,0 +1,53 @@
+edition = "2023";
+package shared.profiles.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1;profilesv1";
+
+service ProfilesService {
+  rpc Get(GetRequest) returns (GetResponse) {}
+  rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
+  rpc List(ListRequest) returns (ListResponse) {}
+  rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+}
+
+message DeleteRequest {
+  string id = 1 [(buf.validate.field).string = {min_len: 1}];
+}
+
+message DeleteResponse {}
+
+message GetByExternalIdRequest {
+  string external_id = 1 [(buf.validate.field).string = {min_len: 1}];
+}
+
+message GetByExternalIdResponse {
+  Profile profile = 1;
+}
+
+message GetRequest {
+  string id = 1 [(buf.validate.field).string = {min_len: 1}];
+}
+
+message GetResponse {
+  Profile profile = 1;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated Profile profiles = 1;
+}
+
+message Profile {
+  google.protobuf.Timestamp create_time = 1;
+  string external_id = 2;
+  string id = 3;
+  google.protobuf.Struct properties = 4;
+  string project_id = 5;
+  google.protobuf.Timestamp update_time = 6;
+}
