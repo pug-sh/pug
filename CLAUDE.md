@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cotton is a push notification platform built with Go, using PostgreSQL, ClickHouse, and NATS for data storage and messaging.
+Cotton is an events ingestion platform built with Go, using PostgreSQL, ClickHouse, and NATS for data storage and messaging. It also provides push notification capabilities (campaigns, delivery, devices).
 
 ## Build & Run Commands
 
