@@ -180,7 +180,7 @@ func (s *server) GetFilterSchema(
 
 	projectID := principal.Project.ID
 
-	schema, err := s.service.GetFilterSchema(ctx, projectID)
+	schema, err := s.service.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind())
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get filter schema", slogx.Error(err),
 			slog.String("projectID", projectID))
@@ -205,7 +205,7 @@ func (s *server) GetPropertyValues(
 
 	projectID := principal.Project.ID
 
-	values, err := s.service.GetPropertyValues(ctx, projectID, req.Msg.PropertyKey, req.Msg.Source)
+	values, err := s.service.GetPropertyValues(ctx, projectID, req.Msg.PropertyKey, req.Msg.EventKind, req.Msg.Source)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get property values", slogx.Error(err),
 			slog.String("projectID", projectID),

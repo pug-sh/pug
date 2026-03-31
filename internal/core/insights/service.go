@@ -38,8 +38,11 @@ func NewService(executor *Executor, redis *redis.Client, profiles *profiles.Repo
 	}
 }
 
-func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insightsv1.GetFilterSchemaResponse, error) {
+func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind string) (*insightsv1.GetFilterSchemaResponse, error) {
 	cacheKey := "filterschema:" + projectID
+	if eventKind != "" {
+		cacheKey += ":" + eventKind
+	}
 
 	cached, cacheErr := s.redis.Get(ctx, cacheKey).Bytes()
 	if cacheErr == nil {
@@ -71,7 +74,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 		return nil
 	})
 	eg.Go(func() error {
-		sql, args := BuildAutoPropertyKeysQuery(projectID)
+		sql, args := BuildAutoPropertyKeysQuery(projectID, eventKind)
 		var err error
 		autoPropKeys, err = s.executor.QueryEventNameMetas(egCtx, sql, args)
 		if err != nil {
@@ -80,7 +83,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 		return nil
 	})
 	eg.Go(func() error {
-		sql, args := BuildCustomPropertyKeysQuery(projectID)
+		sql, args := BuildCustomPropertyKeysQuery(projectID, eventKind)
 		var err error
 		customPropKeys, err = s.executor.QueryEventNameMetas(egCtx, sql, args)
 		if err != nil {
@@ -134,8 +137,8 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 	return resp, nil
 }
 
-func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey string, source insightsv1.PropertySource) ([]string, error) {
-	cacheKey := fmt.Sprintf("propvalues:%s:%d:%s", projectID, source, propertyKey)
+func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey, eventKind string, source insightsv1.PropertySource) ([]string, error) {
+	cacheKey := fmt.Sprintf("propvalues:%s:%d:%s:%s", projectID, source, propertyKey, eventKind)
 
 	cached, cacheErr := s.redis.Get(ctx, cacheKey).Result()
 	if cacheErr == nil {
@@ -153,10 +156,10 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey 
 
 	switch source {
 	case insightsv1.PropertySource_PROPERTY_SOURCE_AUTO:
-		sql, args := BuildPropertyValuesQuery(projectID, propertyKey, "auto_properties")
+		sql, args := BuildPropertyValuesQuery(projectID, propertyKey, "auto_properties", eventKind)
 		values, err = s.executor.QueryDistinctIDs(ctx, sql, args)
 	case insightsv1.PropertySource_PROPERTY_SOURCE_CUSTOM:
-		sql, args := BuildPropertyValuesQuery(projectID, propertyKey, "custom_properties")
+		sql, args := BuildPropertyValuesQuery(projectID, propertyKey, "custom_properties", eventKind)
 		values, err = s.executor.QueryDistinctIDs(ctx, sql, args)
 	case insightsv1.PropertySource_PROPERTY_SOURCE_PROFILE:
 		values, err = s.profiles.GetPropertyValues(ctx, projectID, propertyKey)

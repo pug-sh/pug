@@ -222,7 +222,17 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 
 // BuildPropertyValuesQuery returns a query for distinct values of a property key over the last
 // 30 days. Uses DISTINCT + LIMIT for early exit — no full aggregation, no insert overhead.
-func BuildPropertyValuesQuery(projectID, propertyKey, mapCol string) (string, []any) {
+func BuildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) (string, []any) {
+	if eventKind != "" {
+		sql := `SELECT DISTINCT ` + mapCol + `[?] AS value
+FROM events
+WHERE project_id = ?
+AND kind = ?
+AND occur_time >= now() - INTERVAL 30 DAY
+AND ` + mapCol + `[?] != ''
+LIMIT 10`
+		return sql, []any{propertyKey, projectID, eventKind, propertyKey}
+	}
 	sql := `SELECT DISTINCT ` + mapCol + `[?] AS value
 FROM events
 WHERE project_id = ?
@@ -243,17 +253,30 @@ LIMIT 1000`
 	return sql, []any{projectID}
 }
 
-// BuildAutoPropertyKeysQuery returns a query against property_keys_mv for auto_property keys.
-func BuildAutoPropertyKeysQuery(projectID string) (string, []any) {
-	return buildPropertyKeysQuery(projectID, "auto")
+// BuildAutoPropertyKeysQuery returns a query against property_keys for auto_property keys,
+// optionally scoped to a specific event kind.
+func BuildAutoPropertyKeysQuery(projectID, eventKind string) (string, []any) {
+	return buildPropertyKeysQuery(projectID, "auto", eventKind)
 }
 
-// BuildCustomPropertyKeysQuery returns a query against property_keys_mv for custom_property keys.
-func BuildCustomPropertyKeysQuery(projectID string) (string, []any) {
-	return buildPropertyKeysQuery(projectID, "custom")
+// BuildCustomPropertyKeysQuery returns a query against property_keys for custom_property keys,
+// optionally scoped to a specific event kind.
+func BuildCustomPropertyKeysQuery(projectID, eventKind string) (string, []any) {
+	return buildPropertyKeysQuery(projectID, "custom", eventKind)
 }
 
-func buildPropertyKeysQuery(projectID, mapType string) (string, []any) {
+func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any) {
+	if eventKind != "" {
+		sql := `SELECT key, countMerge(event_count) AS count, maxMerge(last_seen) AS last_seen
+FROM property_keys
+WHERE project_id = ?
+AND map_type = ?
+AND kind = ?
+GROUP BY key
+ORDER BY count DESC
+LIMIT 500`
+		return sql, []any{projectID, mapType, eventKind}
+	}
 	sql := `SELECT key, countMerge(event_count) AS count, maxMerge(last_seen) AS last_seen
 FROM property_keys
 WHERE project_id = ?

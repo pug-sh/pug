@@ -737,6 +737,7 @@ type GetPropertyValuesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PropertyKey   string                 `protobuf:"bytes,1,opt,name=property_key,json=propertyKey" json:"property_key,omitempty"`
 	Source        PropertySource         `protobuf:"varint,2,opt,name=source,enum=dashboard.insights.v1.PropertySource" json:"source,omitempty"`
+	EventKind     string                 `protobuf:"bytes,3,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -785,6 +786,13 @@ func (x *GetPropertyValuesRequest) GetSource() PropertySource {
 	return PropertySource_PROPERTY_SOURCE_UNSPECIFIED
 }
 
+func (x *GetPropertyValuesRequest) GetEventKind() string {
+	if x != nil {
+		return x.EventKind
+	}
+	return ""
+}
+
 type GetPropertyValuesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Values        []string               `protobuf:"bytes,1,rep,name=values" json:"values,omitempty"`
@@ -831,6 +839,7 @@ func (x *GetPropertyValuesResponse) GetValues() []string {
 
 type GetFilterSchemaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventKind     string                 `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -863,6 +872,13 @@ func (x *GetFilterSchemaRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetFilterSchemaRequest.ProtoReflect.Descriptor instead.
 func (*GetFilterSchemaRequest) Descriptor() ([]byte, []int) {
 	return file_dashboard_insights_v1_insights_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetFilterSchemaRequest) GetEventKind() string {
+	if x != nil {
+		return x.EventKind
+	}
+	return ""
 }
 
 type EventNameMeta struct {
@@ -1102,13 +1118,17 @@ const file_dashboard_insights_v1_insights_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Q\n" +
 	"\tDataPoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\"\xa9\x01\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"\xc8\x01\n" +
 	"\x18GetPropertyValuesRequest\x12A\n" +
 	"\fproperty_key\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\vpropertyKey\x12J\n" +
-	"\x06source\x18\x02 \x01(\x0e2%.dashboard.insights.v1.PropertySourceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06source\"3\n" +
+	"\x06source\x18\x02 \x01(\x0e2%.dashboard.insights.v1.PropertySourceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06source\x12\x1d\n" +
+	"\n" +
+	"event_kind\x18\x03 \x01(\tR\teventKind\"3\n" +
 	"\x19GetPropertyValuesResponse\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values\"\x18\n" +
-	"\x16GetFilterSchemaRequest\"w\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values\"7\n" +
+	"\x16GetFilterSchemaRequest\x12\x1d\n" +
+	"\n" +
+	"event_kind\x18\x01 \x01(\tR\teventKind\"w\n" +
 	"\rEventNameMeta\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x04R\x05count\x12<\n" +
