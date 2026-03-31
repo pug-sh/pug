@@ -118,6 +118,8 @@ func (s *Server) GetByExternalId(
 	}), nil
 }
 
+// pageSize is the server-controlled batch size for streaming profile pages.
+// Not configurable by the client — there is no page_size field in the proto request.
 const pageSize = 100
 
 func (s *Server) List(
@@ -134,13 +136,21 @@ func (s *Server) List(
 	var cursorID string
 	hasCursor := false
 
-	if req.Msg.GetCursor() != nil {
-		cursorTime = pgtype.Timestamptz{Time: req.Msg.GetCursor().GetCursorTime().AsTime(), Valid: true}
-		cursorID = req.Msg.GetCursor().GetCursorId()
+	if token := req.Msg.GetPageToken(); token != "" {
+		cursor, err := decodeProfileListCursor(token)
+		if err != nil {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
+		}
+		cursorTime = pgtype.Timestamptz{Time: cursor.CreateTime, Valid: true}
+		cursorID = cursor.ID
 		hasCursor = true
 	}
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		profilesList, err := s.read.GetProfilesByProjectID(ctx, dbread.GetProfilesByProjectIDParams{
 			ProjectID:  principal.Project.ID,
 			HasCursor:  hasCursor,
@@ -149,7 +159,15 @@ func (s *Server) List(
 			PageSize:   pageSize,
 		})
 		if err != nil {
-			slog.ErrorContext(ctx, "failed listing profiles", slogx.Error(err), slog.String("projectId", principal.Project.ID))
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			slog.ErrorContext(ctx, "failed listing profiles",
+				slogx.Error(err),
+				slog.String("projectId", principal.Project.ID),
+				slog.Bool("hasCursor", hasCursor),
+				slog.String("cursorId", cursorID),
+				slog.Time("cursorTime", cursorTime.Time))
 			return connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
 		}
 
@@ -157,31 +175,41 @@ func (s *Server) List(
 			break
 		}
 
+		pbProfiles := make([]*profilesv1.Profile, 0, len(profilesList))
 		for _, p := range profilesList {
 			pbProfile, err := convertProfile(ctx, p)
 			if err != nil {
 				return err
 			}
-
-			cursorTime = p.CreateTime
-			cursorID = p.ID
-
-			if err := stream.Send(&profilesv1.ListResponse{
-				Profiles: []*profilesv1.Profile{pbProfile},
-				Cursor: &profilesv1.Cursor{
-					CursorTime: timestamppb.New(cursorTime.Time),
-					CursorId:   cursorID,
-				},
-			}); err != nil {
-				slog.ErrorContext(ctx, "failed sending profile stream", slogx.Error(err))
-				return connect.NewError(connect.CodeInternal, errors.New("failed to stream profiles"))
-			}
+			pbProfiles = append(pbProfiles, pbProfile)
 		}
 
 		last := profilesList[len(profilesList)-1]
 		cursorTime = last.CreateTime
 		cursorID = last.ID
 		hasCursor = true
+
+		nextPageToken := ""
+		if len(profilesList) == pageSize {
+			cursor := &profileListCursor{CreateTime: last.CreateTime.Time, ID: last.ID}
+			nextPageToken, err = cursor.encode()
+			if err != nil {
+				slog.ErrorContext(ctx, "failed encoding page token", slogx.Error(err))
+				return connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
+			}
+		}
+
+		if err := stream.Send(&profilesv1.ListResponse{
+			Profiles:      pbProfiles,
+			NextPageToken: nextPageToken,
+		}); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			slog.ErrorContext(ctx, "failed sending profile stream", slogx.Error(err),
+				slog.String("projectId", principal.Project.ID))
+			return connect.NewError(connect.CodeInternal, errors.New("failed to stream profiles"))
+		}
 
 		if len(profilesList) < pageSize {
 			break
