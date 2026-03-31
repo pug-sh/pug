@@ -11,7 +11,7 @@ option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/prof
 service ProfilesService {
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
-  rpc List(ListRequest) returns (ListResponse) {}
+  rpc List(ListRequest) returns (stream ListResponse) {}
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
 }
 
@@ -37,10 +37,15 @@ message GetResponse {
   Profile profile = 1;
 }
 
-message ListRequest {}
+message ListRequest {
+  // Opaque cursor from a previous response's next_page_token. Empty for the first page.
+  string page_token = 1;
+}
 
 message ListResponse {
   repeated Profile profiles = 1;
+  // Empty when there are no more pages.
+  string next_page_token = 2;
 }
 
 message Profile {

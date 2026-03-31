@@ -281,7 +281,9 @@ func (x *GetResponse) GetProfile() *Profile {
 }
 
 type ListRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
+	PageToken     string `protobuf:"bytes,1,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -316,9 +318,18 @@ func (*ListRequest) Descriptor() ([]byte, []int) {
 	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{6}
 }
 
+func (x *ListRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profiles      []*Profile             `protobuf:"bytes,1,rep,name=profiles" json:"profiles,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Profiles []*Profile             `protobuf:"bytes,1,rep,name=profiles" json:"profiles,omitempty"`
+	// Empty when there are no more pages.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -358,6 +369,13 @@ func (x *ListResponse) GetProfiles() []*Profile {
 		return x.Profiles
 	}
 	return nil
+}
+
+func (x *ListResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type Profile struct {
@@ -461,10 +479,13 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"GetRequest\x12\x17\n" +
 	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\"D\n" +
 	"\vGetResponse\x125\n" +
-	"\aprofile\x18\x01 \x01(\v2\x1b.shared.profiles.v1.ProfileR\aprofile\"\r\n" +
-	"\vListRequest\"G\n" +
+	"\aprofile\x18\x01 \x01(\v2\x1b.shared.profiles.v1.ProfileR\aprofile\",\n" +
+	"\vListRequest\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x01 \x01(\tR\tpageToken\"o\n" +
 	"\fListResponse\x127\n" +
-	"\bprofiles\x18\x01 \x03(\v2\x1b.shared.profiles.v1.ProfileR\bprofiles\"\x8c\x02\n" +
+	"\bprofiles\x18\x01 \x03(\v2\x1b.shared.profiles.v1.ProfileR\bprofiles\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8c\x02\n" +
 	"\aProfile\x12;\n" +
 	"\vcreate_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12\x1f\n" +
@@ -477,11 +498,11 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x05 \x01(\tR\tprojectId\x12;\n" +
 	"\vupdate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime2\xe9\x02\n" +
+	"updateTime2\xeb\x02\n" +
 	"\x0fProfilesService\x12H\n" +
 	"\x03Get\x12\x1e.shared.profiles.v1.GetRequest\x1a\x1f.shared.profiles.v1.GetResponse\"\x00\x12l\n" +
-	"\x0fGetByExternalId\x12*.shared.profiles.v1.GetByExternalIdRequest\x1a+.shared.profiles.v1.GetByExternalIdResponse\"\x00\x12K\n" +
-	"\x04List\x12\x1f.shared.profiles.v1.ListRequest\x1a .shared.profiles.v1.ListResponse\"\x00\x12Q\n" +
+	"\x0fGetByExternalId\x12*.shared.profiles.v1.GetByExternalIdRequest\x1a+.shared.profiles.v1.GetByExternalIdResponse\"\x00\x12M\n" +
+	"\x04List\x12\x1f.shared.profiles.v1.ListRequest\x1a .shared.profiles.v1.ListResponse\"\x000\x01\x12Q\n" +
 	"\x06Delete\x12!.shared.profiles.v1.DeleteRequest\x1a\".shared.profiles.v1.DeleteResponse\"\x00BTZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1;profilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (

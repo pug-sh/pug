@@ -13,6 +13,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -117,33 +118,105 @@ func (s *Server) GetByExternalId(
 	}), nil
 }
 
+// pageSize is the server-controlled batch size for streaming profile pages.
+// Not configurable by the client — there is no page_size field in the proto request.
+const pageSize = 100
+
 func (s *Server) List(
 	ctx context.Context,
-	_ *connect.Request[profilesv1.ListRequest],
-) (*connect.Response[profilesv1.ListResponse], error) {
+	req *connect.Request[profilesv1.ListRequest],
+	stream *connect.ServerStream[profilesv1.ListResponse],
+) error {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	profilesList, err := s.read.GetProfilesByProjectID(ctx, principal.Project.ID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed listing profiles", slogx.Error(err), slog.String("projectId", principal.Project.ID))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
-	}
+	var cursorTime pgtype.Timestamptz
+	var cursorID string
+	hasCursor := false
 
-	pbProfiles := make([]*profilesv1.Profile, len(profilesList))
-	for i, p := range profilesList {
-		pbProfile, err := convertProfile(ctx, p)
+	if token := req.Msg.GetPageToken(); token != "" {
+		cursor, err := decodeProfileListCursor(token)
 		if err != nil {
-			return nil, err
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
 		}
-		pbProfiles[i] = pbProfile
+		cursorTime = pgtype.Timestamptz{Time: cursor.CreateTime, Valid: true}
+		cursorID = cursor.ID
+		hasCursor = true
 	}
 
-	return connect.NewResponse(&profilesv1.ListResponse{
-		Profiles: pbProfiles,
-	}), nil
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		profilesList, err := s.read.GetProfilesByProjectID(ctx, dbread.GetProfilesByProjectIDParams{
+			ProjectID:  principal.Project.ID,
+			HasCursor:  hasCursor,
+			CursorTime: cursorTime,
+			CursorID:   cursorID,
+			PageSize:   pageSize,
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			slog.ErrorContext(ctx, "failed listing profiles",
+				slogx.Error(err),
+				slog.String("projectId", principal.Project.ID),
+				slog.Bool("hasCursor", hasCursor),
+				slog.String("cursorId", cursorID),
+				slog.Time("cursorTime", cursorTime.Time))
+			return connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
+		}
+
+		if len(profilesList) == 0 {
+			break
+		}
+
+		pbProfiles := make([]*profilesv1.Profile, 0, len(profilesList))
+		for _, p := range profilesList {
+			pbProfile, err := convertProfile(ctx, p)
+			if err != nil {
+				return err
+			}
+			pbProfiles = append(pbProfiles, pbProfile)
+		}
+
+		last := profilesList[len(profilesList)-1]
+		cursorTime = last.CreateTime
+		cursorID = last.ID
+		hasCursor = true
+
+		nextPageToken := ""
+		if len(profilesList) == pageSize {
+			cursor := &profileListCursor{CreateTime: last.CreateTime.Time, ID: last.ID}
+			nextPageToken, err = cursor.encode()
+			if err != nil {
+				slog.ErrorContext(ctx, "failed encoding page token", slogx.Error(err))
+				return connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
+			}
+		}
+
+		if err := stream.Send(&profilesv1.ListResponse{
+			Profiles:      pbProfiles,
+			NextPageToken: nextPageToken,
+		}); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			slog.ErrorContext(ctx, "failed sending profile stream", slogx.Error(err),
+				slog.String("projectId", principal.Project.ID))
+			return connect.NewError(connect.CodeInternal, errors.New("failed to stream profiles"))
+		}
+
+		if len(profilesList) < pageSize {
+			break
+		}
+	}
+
+	return nil
 }
 
 func convertProfile(ctx context.Context, p dbread.Profile) (*profilesv1.Profile, error) {

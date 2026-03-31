@@ -7,6 +7,8 @@ package dbread
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getProfileByIDAndProjectID = `-- name: GetProfileByIDAndProjectID :one
@@ -60,10 +62,31 @@ func (q *Queries) GetProfileByProjectAndExternalID(ctx context.Context, arg GetP
 const getProfilesByProjectID = `-- name: GetProfilesByProjectID :many
 select create_time, external_id, id, properties, project_id, update_time from profiles
 where project_id = $1
+  and (
+    $2::bool = false
+    or create_time < $3
+    or (create_time = $3 and id < $4)
+  )
+order by create_time desc, id desc
+limit $5
 `
 
-func (q *Queries) GetProfilesByProjectID(ctx context.Context, projectID string) ([]Profile, error) {
-	rows, err := q.db.Query(ctx, getProfilesByProjectID, projectID)
+type GetProfilesByProjectIDParams struct {
+	ProjectID  string
+	HasCursor  bool
+	CursorTime pgtype.Timestamptz
+	CursorID   string
+	PageSize   int32
+}
+
+func (q *Queries) GetProfilesByProjectID(ctx context.Context, arg GetProfilesByProjectIDParams) ([]Profile, error) {
+	rows, err := q.db.Query(ctx, getProfilesByProjectID,
+		arg.ProjectID,
+		arg.HasCursor,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}

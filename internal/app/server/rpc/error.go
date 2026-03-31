@@ -9,28 +9,47 @@ import (
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
-func ErrorInterceptor() connect.UnaryInterceptorFunc {
-	return func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			resp, err := next(ctx, req)
-			if err == nil {
-				return resp, nil
-			}
+func ErrorInterceptor() connect.Interceptor {
+	return &errorInterceptor{}
+}
 
-			if connectErr, ok := errors.AsType[*connect.Error](err); ok {
-				return resp, connectErr
-			}
+type errorInterceptor struct{}
 
-			// Let Connect RPC map context errors to the correct codes
-			if ctx.Err() != nil {
-				return resp, ctx.Err()
-			}
-
-			// Non-connect error - log and sanitize
-			slog.ErrorContext(ctx, "unhandled error",
-				slog.String("procedure", req.Spec().Procedure),
-				slogx.Error(err))
-			return resp, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-		}
+func (i *errorInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		resp, err := next(ctx, req)
+		return resp, sanitizeError(ctx, req.Spec().Procedure, err)
 	}
+}
+
+func (i *errorInterceptor) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return next
+}
+
+func (i *errorInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
+		err := next(ctx, conn)
+		return sanitizeError(ctx, conn.Spec().Procedure, err)
+	}
+}
+
+func sanitizeError(ctx context.Context, procedure string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if connectErr, ok := errors.AsType[*connect.Error](err); ok {
+		return connectErr
+	}
+
+	// Let Connect RPC map context errors to the correct codes
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Non-connect error - log and sanitize
+	slog.ErrorContext(ctx, "unhandled error",
+		slog.String("procedure", procedure),
+		slogx.Error(err))
+	return connect.NewError(connect.CodeInternal, errors.New("internal error"))
 }

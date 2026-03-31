@@ -3,5 +3,5 @@ clients/
 .env
 __debug*
 /bin/
-pr-review.md
+pr-*review.md
 .agents/
