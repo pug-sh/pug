@@ -198,7 +198,22 @@ var clickhouseSeedCmd = &cobra.Command{
 		count, _ := cmd.Flags().GetInt64("count")
 		batchSize, _ := cmd.Flags().GetInt("batch")
 		file, _ := cmd.Flags().GetString("file")
-		truncate, _ := cmd.Flags().GetBool("truncate")
+		noReset, _ := cmd.Flags().GetBool("no-reset")
+
+		truncate := true
+		if !noReset {
+			slog.InfoContext(ctx, "rolling back all clickhouse migrations")
+			if err := clickhouse.Down(ctx, 0); err != nil {
+				slog.ErrorContext(ctx, "migrate down error", slogx.Error(err))
+				os.Exit(1)
+			}
+			slog.InfoContext(ctx, "applying all clickhouse migrations")
+			if err := clickhouse.Up(ctx, 0); err != nil {
+				slog.ErrorContext(ctx, "migrate up error", slogx.Error(err))
+				os.Exit(1)
+			}
+			truncate = false
+		}
 
 		if err := chseed.Run(ctx, count, batchSize, file, truncate); err != nil {
 			slog.ErrorContext(ctx, "seed error", slogx.Error(err))
@@ -216,6 +231,20 @@ var postgresSeedCmd = &cobra.Command{
 
 		if err := godotenv.Load(); err != nil {
 			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
+		}
+
+		noReset, _ := cmd.Flags().GetBool("no-reset")
+		if !noReset {
+			slog.InfoContext(ctx, "rolling back all postgres migrations")
+			if err := postgres.Down(ctx, 0); err != nil {
+				slog.ErrorContext(ctx, "migrate down error", slogx.Error(err))
+				os.Exit(1)
+			}
+			slog.InfoContext(ctx, "applying all postgres migrations")
+			if err := postgres.Up(ctx, 0); err != nil {
+				slog.ErrorContext(ctx, "migrate up error", slogx.Error(err))
+				os.Exit(1)
+			}
 		}
 
 		if err := pgseed.Run(ctx); err != nil {
@@ -261,7 +290,8 @@ func init() {
 	clickhouseSeedCmd.Flags().Int64P("count", "c", 10_000_000, "total number of events to generate (used when no file provided)")
 	clickhouseSeedCmd.Flags().IntP("batch", "b", 10_000, "number of events per ClickHouse batch")
 	clickhouseSeedCmd.Flags().StringP("file", "f", "", "CSV file to import (REES46 format: event_time,order_id,product_id,category_id,category_code,brand,price,user_id)")
-	clickhouseSeedCmd.Flags().Bool("truncate", true, "truncate events table before seeding")
+	clickhouseSeedCmd.Flags().Bool("no-reset", false, "skip migrate down/up; truncate events table instead")
+	postgresSeedCmd.Flags().Bool("no-reset", false, "skip migrate down/up before seeding")
 
 	clickhouseCmd := &cobra.Command{
 		Use:   "clickhouse",
