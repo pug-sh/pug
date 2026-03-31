@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	schemaCacheTTL = 5 * time.Minute
-	valuesCacheTTL = 10 * time.Minute
+	schemaCacheTTL          = 5 * time.Minute
+	valuesCacheTTL          = 10 * time.Minute
+	valuesExhaustedCacheTTL = 1 * time.Hour
 )
 
 type Service struct {
@@ -166,8 +167,12 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey 
 		return nil, fmt.Errorf("query property values: %w", err)
 	}
 
+	ttl := valuesCacheTTL
+	if len(values) < 10 {
+		ttl = valuesExhaustedCacheTTL
+	}
 	cached = strings.Join(values, "\n")
-	if err := s.redis.Set(ctx, cacheKey, cached, valuesCacheTTL).Err(); err != nil {
+	if err := s.redis.Set(ctx, cacheKey, cached, ttl).Err(); err != nil {
 		slog.ErrorContext(ctx, "failed to cache property values", slogx.Error(err),
 			slog.String("projectID", projectID), slog.String("key", propertyKey))
 	}
