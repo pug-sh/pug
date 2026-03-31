@@ -41,6 +41,9 @@ const (
 	// InsightsServiceGetFilterSchemaProcedure is the fully-qualified name of the InsightsService's
 	// GetFilterSchema RPC.
 	InsightsServiceGetFilterSchemaProcedure = "/dashboard.insights.v1.InsightsService/GetFilterSchema"
+	// InsightsServiceGetPropertyValuesProcedure is the fully-qualified name of the InsightsService's
+	// GetPropertyValues RPC.
+	InsightsServiceGetPropertyValuesProcedure = "/dashboard.insights.v1.InsightsService/GetPropertyValues"
 )
 
 // InsightsServiceClient is a client for the dashboard.insights.v1.InsightsService service.
@@ -48,6 +51,7 @@ type InsightsServiceClient interface {
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
 	SegmentUsers(context.Context, *connect.Request[v1.SegmentUsersRequest]) (*connect.Response[v1.SegmentUsersResponse], error)
 	GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error)
+	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 }
 
 // NewInsightsServiceClient constructs a client for the dashboard.insights.v1.InsightsService
@@ -79,14 +83,21 @@ func NewInsightsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(insightsServiceMethods.ByName("GetFilterSchema")),
 			connect.WithClientOptions(opts...),
 		),
+		getPropertyValues: connect.NewClient[v1.GetPropertyValuesRequest, v1.GetPropertyValuesResponse](
+			httpClient,
+			baseURL+InsightsServiceGetPropertyValuesProcedure,
+			connect.WithSchema(insightsServiceMethods.ByName("GetPropertyValues")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // insightsServiceClient implements InsightsServiceClient.
 type insightsServiceClient struct {
-	query           *connect.Client[v1.QueryRequest, v1.QueryResponse]
-	segmentUsers    *connect.Client[v1.SegmentUsersRequest, v1.SegmentUsersResponse]
-	getFilterSchema *connect.Client[v1.GetFilterSchemaRequest, v1.GetFilterSchemaResponse]
+	query             *connect.Client[v1.QueryRequest, v1.QueryResponse]
+	segmentUsers      *connect.Client[v1.SegmentUsersRequest, v1.SegmentUsersResponse]
+	getFilterSchema   *connect.Client[v1.GetFilterSchemaRequest, v1.GetFilterSchemaResponse]
+	getPropertyValues *connect.Client[v1.GetPropertyValuesRequest, v1.GetPropertyValuesResponse]
 }
 
 // Query calls dashboard.insights.v1.InsightsService.Query.
@@ -104,11 +115,17 @@ func (c *insightsServiceClient) GetFilterSchema(ctx context.Context, req *connec
 	return c.getFilterSchema.CallUnary(ctx, req)
 }
 
+// GetPropertyValues calls dashboard.insights.v1.InsightsService.GetPropertyValues.
+func (c *insightsServiceClient) GetPropertyValues(ctx context.Context, req *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error) {
+	return c.getPropertyValues.CallUnary(ctx, req)
+}
+
 // InsightsServiceHandler is an implementation of the dashboard.insights.v1.InsightsService service.
 type InsightsServiceHandler interface {
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
 	SegmentUsers(context.Context, *connect.Request[v1.SegmentUsersRequest]) (*connect.Response[v1.SegmentUsersResponse], error)
 	GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error)
+	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 }
 
 // NewInsightsServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -136,6 +153,12 @@ func NewInsightsServiceHandler(svc InsightsServiceHandler, opts ...connect.Handl
 		connect.WithSchema(insightsServiceMethods.ByName("GetFilterSchema")),
 		connect.WithHandlerOptions(opts...),
 	)
+	insightsServiceGetPropertyValuesHandler := connect.NewUnaryHandler(
+		InsightsServiceGetPropertyValuesProcedure,
+		svc.GetPropertyValues,
+		connect.WithSchema(insightsServiceMethods.ByName("GetPropertyValues")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.insights.v1.InsightsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case InsightsServiceQueryProcedure:
@@ -144,6 +167,8 @@ func NewInsightsServiceHandler(svc InsightsServiceHandler, opts ...connect.Handl
 			insightsServiceSegmentUsersHandler.ServeHTTP(w, r)
 		case InsightsServiceGetFilterSchemaProcedure:
 			insightsServiceGetFilterSchemaHandler.ServeHTTP(w, r)
+		case InsightsServiceGetPropertyValuesProcedure:
+			insightsServiceGetPropertyValuesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -163,4 +188,8 @@ func (UnimplementedInsightsServiceHandler) SegmentUsers(context.Context, *connec
 
 func (UnimplementedInsightsServiceHandler) GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.insights.v1.InsightsService.GetFilterSchema is not implemented"))
+}
+
+func (UnimplementedInsightsServiceHandler) GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.insights.v1.InsightsService.GetPropertyValues is not implemented"))
 }

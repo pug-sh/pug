@@ -88,6 +88,41 @@ func (q *Queries) GetProfilePropertyKeys(ctx context.Context, projectID string) 
 	return items, nil
 }
 
+const getProfilePropertyValues = `-- name: GetProfilePropertyValues :many
+select distinct properties->>$1::text as value
+from profiles
+where project_id = $2
+  and properties->>$1::text is not null
+  and properties->>$1::text != ''
+order by value asc
+limit 10
+`
+
+type GetProfilePropertyValuesParams struct {
+	PropertyKey string
+	ProjectID   string
+}
+
+func (q *Queries) GetProfilePropertyValues(ctx context.Context, arg GetProfilePropertyValuesParams) ([]interface{}, error) {
+	rows, err := q.db.Query(ctx, getProfilePropertyValues, arg.PropertyKey, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []interface{}
+	for rows.Next() {
+		var value interface{}
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		items = append(items, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProfilesByProjectID = `-- name: GetProfilesByProjectID :many
 select create_time, external_id, id, properties, project_id, update_time from profiles
 where project_id = $1

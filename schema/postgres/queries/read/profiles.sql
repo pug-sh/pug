@@ -24,3 +24,12 @@ from profiles,
 where project_id = @project_id
 order by key asc
 limit 1000;
+
+-- name: GetProfilePropertyValues :many
+select distinct properties->>sqlc.arg(property_key)::text as value
+from profiles
+where project_id = @project_id
+  and properties->>sqlc.arg(property_key)::text is not null
+  and properties->>sqlc.arg(property_key)::text != ''
+order by value asc
+limit 10;

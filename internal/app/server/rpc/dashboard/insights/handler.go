@@ -189,3 +189,29 @@ func (s *server) GetFilterSchema(
 
 	return connect.NewResponse(schema), nil
 }
+
+func (s *server) GetPropertyValues(
+	ctx context.Context,
+	req *connect.Request[insightsv1.GetPropertyValuesRequest],
+) (*connect.Response[insightsv1.GetPropertyValuesResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	projectID := principal.Project.ID
+
+	values, err := s.service.GetPropertyValues(ctx, projectID, req.Msg.PropertyKey, req.Msg.Source)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get property values", slogx.Error(err),
+			slog.String("projectID", projectID),
+			slog.String("propertyKey", req.Msg.PropertyKey))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&insightsv1.GetPropertyValuesResponse{Values: values}), nil
+}

@@ -220,25 +220,48 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 	return sb.String(), args, nil
 }
 
-// BuildEventNamesQuery returns a query for all distinct event kinds in a project.
+// BuildPropertyValuesQuery returns a query for distinct values of a property key over the last
+// 30 days. Uses DISTINCT + LIMIT for early exit — no full aggregation, no insert overhead.
+func BuildPropertyValuesQuery(projectID, propertyKey, mapCol string) (string, []any) {
+	sql := `SELECT DISTINCT ` + mapCol + `[?] AS value
+FROM events
+WHERE project_id = ?
+AND occur_time >= now() - INTERVAL 30 DAY
+AND ` + mapCol + `[?] != ''
+LIMIT 10`
+	return sql, []any{propertyKey, projectID, propertyKey}
+}
+
+// BuildEventNamesQuery returns a query against event_names_mv for event names with count and last_seen.
 func BuildEventNamesQuery(projectID string) (string, []any) {
-	sql := "SELECT DISTINCT kind\nFROM events\nWHERE project_id = ?\nORDER BY kind ASC\nLIMIT 1000"
+	sql := `SELECT kind, countMerge(event_count) AS count, maxMerge(last_seen) AS last_seen
+FROM event_names
+WHERE project_id = ?
+GROUP BY kind
+ORDER BY count DESC
+LIMIT 1000`
 	return sql, []any{projectID}
 }
 
-// BuildAutoPropertyKeysQuery returns a query for distinct auto_property keys for a project.
+// BuildAutoPropertyKeysQuery returns a query against property_keys_mv for auto_property keys.
 func BuildAutoPropertyKeysQuery(projectID string) (string, []any) {
-	return buildPropertyKeysQuery(projectID, "auto_properties")
+	return buildPropertyKeysQuery(projectID, "auto")
 }
 
-// BuildCustomPropertyKeysQuery returns a query for distinct custom_property keys for a project.
+// BuildCustomPropertyKeysQuery returns a query against property_keys_mv for custom_property keys.
 func BuildCustomPropertyKeysQuery(projectID string) (string, []any) {
-	return buildPropertyKeysQuery(projectID, "custom_properties")
+	return buildPropertyKeysQuery(projectID, "custom")
 }
 
-func buildPropertyKeysQuery(projectID, column string) (string, []any) {
-	sql := "SELECT DISTINCT arrayJoin(mapKeys(" + column + ")) AS key\nFROM events\nWHERE project_id = ?\nAND notEmpty(" + column + ")\nORDER BY key ASC\nLIMIT 500"
-	return sql, []any{projectID}
+func buildPropertyKeysQuery(projectID, mapType string) (string, []any) {
+	sql := `SELECT key, countMerge(event_count) AS count, maxMerge(last_seen) AS last_seen
+FROM property_keys
+WHERE project_id = ?
+AND map_type = ?
+GROUP BY key
+ORDER BY count DESC
+LIMIT 500`
+	return sql, []any{projectID, mapType}
 }
 
 // granularityFunc returns the ClickHouse time-bucketing function name for the given granularity.

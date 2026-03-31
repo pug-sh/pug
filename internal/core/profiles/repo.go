@@ -25,3 +25,20 @@ func (r *Repo) GetPropertyKeys(ctx context.Context, projectID string) ([]string,
 	}
 	return result, nil
 }
+
+func (r *Repo) GetPropertyValues(ctx context.Context, projectID, propertyKey string) ([]string, error) {
+	rows, err := r.queries.GetProfilePropertyValues(ctx, dbread.GetProfilePropertyValuesParams{
+		ProjectID:   projectID,
+		PropertyKey: propertyKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(rows))
+	for _, v := range rows {
+		if s, ok := v.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result, nil
+}

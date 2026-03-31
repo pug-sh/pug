@@ -5,18 +5,23 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/fivebitsio/cotton/internal/core/profiles"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
-const schemaCacheTTL = 5 * time.Minute
+const (
+	schemaCacheTTL = 5 * time.Minute
+	valuesCacheTTL = 10 * time.Minute
+)
 
 type Service struct {
 	executor *Executor
@@ -48,9 +53,9 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 			slog.String("projectID", projectID))
 	}
 
-	var eventNames []string
-	var autoPropKeys []string
-	var customPropKeys []string
+	var eventMetas []EventNameMeta
+	var autoPropKeys []EventNameMeta
+	var customPropKeys []EventNameMeta
 	var profileProps []string
 
 	eg, egCtx := errgroup.WithContext(ctx)
@@ -58,7 +63,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 	eg.Go(func() error {
 		sql, args := BuildEventNamesQuery(projectID)
 		var err error
-		eventNames, err = s.executor.QueryDistinctIDs(egCtx, sql, args)
+		eventMetas, err = s.executor.QueryEventNameMetas(egCtx, sql, args)
 		if err != nil {
 			return fmt.Errorf("query event names: %w", err)
 		}
@@ -67,7 +72,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 	eg.Go(func() error {
 		sql, args := BuildAutoPropertyKeysQuery(projectID)
 		var err error
-		autoPropKeys, err = s.executor.QueryDistinctIDs(egCtx, sql, args)
+		autoPropKeys, err = s.executor.QueryEventNameMetas(egCtx, sql, args)
 		if err != nil {
 			return fmt.Errorf("query auto property keys: %w", err)
 		}
@@ -76,7 +81,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 	eg.Go(func() error {
 		sql, args := BuildCustomPropertyKeysQuery(projectID)
 		var err error
-		customPropKeys, err = s.executor.QueryDistinctIDs(egCtx, sql, args)
+		customPropKeys, err = s.executor.QueryEventNameMetas(egCtx, sql, args)
 		if err != nil {
 			return fmt.Errorf("query custom property keys: %w", err)
 		}
@@ -95,10 +100,25 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 		return nil, err
 	}
 
+	toEventMetas := func(rows []EventNameMeta) []*insightsv1.EventNameMeta {
+		out := make([]*insightsv1.EventNameMeta, len(rows))
+		for i, m := range rows {
+			out[i] = &insightsv1.EventNameMeta{Name: m.Kind, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
+		}
+		return out
+	}
+	toPropKeyMetas := func(rows []EventNameMeta) []*insightsv1.PropertyKeyMeta {
+		out := make([]*insightsv1.PropertyKeyMeta, len(rows))
+		for i, m := range rows {
+			out[i] = &insightsv1.PropertyKeyMeta{Name: m.Kind, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
+		}
+		return out
+	}
+
 	resp := &insightsv1.GetFilterSchemaResponse{
-		EventNames:          eventNames,
-		AutoPropertyKeys:    autoPropKeys,
-		CustomPropertyKeys:  customPropKeys,
+		Events:              toEventMetas(eventMetas),
+		AutoPropertyKeys:    toPropKeyMetas(autoPropKeys),
+		CustomPropertyKeys:  toPropKeyMetas(customPropKeys),
 		ProfilePropertyKeys: profileProps,
 	}
 
@@ -111,4 +131,46 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID string) (*insig
 	}
 
 	return resp, nil
+}
+
+func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey string, source insightsv1.PropertySource) ([]string, error) {
+	cacheKey := fmt.Sprintf("propvalues:%s:%d:%s", projectID, source, propertyKey)
+
+	cached, cacheErr := s.redis.Get(ctx, cacheKey).Result()
+	if cacheErr == nil {
+		if cached == "" {
+			return nil, nil
+		}
+		return strings.Split(cached, "\n"), nil
+	} else if !errors.Is(cacheErr, redis.Nil) {
+		slog.WarnContext(ctx, "redis get failed for property values cache", slogx.Error(cacheErr),
+			slog.String("projectID", projectID), slog.String("key", propertyKey))
+	}
+
+	var values []string
+	var err error
+
+	switch source {
+	case insightsv1.PropertySource_PROPERTY_SOURCE_AUTO:
+		sql, args := BuildPropertyValuesQuery(projectID, propertyKey, "auto_properties")
+		values, err = s.executor.QueryDistinctIDs(ctx, sql, args)
+	case insightsv1.PropertySource_PROPERTY_SOURCE_CUSTOM:
+		sql, args := BuildPropertyValuesQuery(projectID, propertyKey, "custom_properties")
+		values, err = s.executor.QueryDistinctIDs(ctx, sql, args)
+	case insightsv1.PropertySource_PROPERTY_SOURCE_PROFILE:
+		values, err = s.profiles.GetPropertyValues(ctx, projectID, propertyKey)
+	default:
+		return nil, fmt.Errorf("unsupported property source: %v", source)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query property values: %w", err)
+	}
+
+	cached = strings.Join(values, "\n")
+	if err := s.redis.Set(ctx, cacheKey, cached, valuesCacheTTL).Err(); err != nil {
+		slog.ErrorContext(ctx, "failed to cache property values", slogx.Error(err),
+			slog.String("projectID", projectID), slog.String("key", propertyKey))
+	}
+
+	return values, nil
 }

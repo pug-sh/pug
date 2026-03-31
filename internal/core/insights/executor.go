@@ -122,6 +122,40 @@ func (e *Executor) QueryScalar(ctx context.Context, sql string, args []any) (flo
 	return value, nil
 }
 
+// EventNameMeta holds count and recency metadata for a single event kind.
+type EventNameMeta struct {
+	Kind     string
+	Count    uint64
+	LastSeen time.Time
+}
+
+// QueryEventNameMetas executes an event names query against event_names_mv and returns rows of
+// (kind, count, last_seen).
+func (e *Executor) QueryEventNameMetas(ctx context.Context, sql string, args []any) ([]EventNameMeta, error) {
+	rows, err := e.ch.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+		}
+	}()
+
+	var result []EventNameMeta
+	for rows.Next() {
+		var row EventNameMeta
+		if err := rows.Scan(&row.Kind, &row.Count, &row.LastSeen); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // QueryDistinctIDs executes a query and returns a list of string values (distinct user IDs).
 func (e *Executor) QueryDistinctIDs(ctx context.Context, sql string, args []any) ([]string, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
