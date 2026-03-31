@@ -49,6 +49,9 @@ func Down(ctx context.Context, num int) error {
 	defer func() { _ = db.Close() }()
 
 	if num == 0 {
+		if err := pruneOrphanedVersions(ctx, db, dir); err != nil {
+			return err
+		}
 		for {
 			current, err := goose.GetDBVersionContext(ctx, db)
 			if err != nil {
@@ -73,6 +76,41 @@ func Down(ctx context.Context, num int) error {
 
 	slog.InfoContext(ctx, "rolled back migrations", slog.Int("rolledBackMigrations", num))
 	return nil
+}
+
+// pruneOrphanedVersions removes applied version entries from goose_db_version
+// that have no corresponding migration file in dir. This handles the case where
+// migration files were deleted or are on a different branch, allowing Down to
+// proceed normally from the highest available version.
+func pruneOrphanedVersions(ctx context.Context, db *sql.DB, dir string) error {
+	migrations, err := goose.CollectMigrations(dir, 0, goose.MaxVersion)
+	if err != nil {
+		return err
+	}
+
+	var maxAvailable int64
+	for _, m := range migrations {
+		if m.Version > maxAvailable {
+			maxAvailable = m.Version
+		}
+	}
+
+	current, err := goose.GetDBVersionContext(ctx, db)
+	if err != nil {
+		return err
+	}
+
+	if current <= maxAvailable {
+		return nil
+	}
+
+	slog.InfoContext(ctx, "pruning orphaned migration versions",
+		slog.Int64("db_version", current),
+		slog.Int64("max_available", maxAvailable),
+	)
+	_, err = db.ExecContext(ctx,
+		"DELETE FROM goose_db_version WHERE version_id > $1", maxAvailable)
+	return err
 }
 
 func setup(ctx context.Context) (*sql.DB, string, error) {
