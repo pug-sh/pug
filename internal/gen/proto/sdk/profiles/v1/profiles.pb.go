@@ -319,74 +319,6 @@ func (x *ProfileIdentifyMessage) GetProjectId() string {
 	return ""
 }
 
-type ProfileAliasMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AliasId       string                 `protobuf:"bytes,1,opt,name=alias_id,json=aliasId" json:"alias_id,omitempty"`
-	ProfileId     string                 `protobuf:"bytes,2,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	ExternalId    string                 `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ProfileAliasMessage) Reset() {
-	*x = ProfileAliasMessage{}
-	mi := &file_sdk_profiles_v1_profiles_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ProfileAliasMessage) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ProfileAliasMessage) ProtoMessage() {}
-
-func (x *ProfileAliasMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_profiles_v1_profiles_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ProfileAliasMessage.ProtoReflect.Descriptor instead.
-func (*ProfileAliasMessage) Descriptor() ([]byte, []int) {
-	return file_sdk_profiles_v1_profiles_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *ProfileAliasMessage) GetAliasId() string {
-	if x != nil {
-		return x.AliasId
-	}
-	return ""
-}
-
-func (x *ProfileAliasMessage) GetProfileId() string {
-	if x != nil {
-		return x.ProfileId
-	}
-	return ""
-}
-
-func (x *ProfileAliasMessage) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
-	}
-	return ""
-}
-
-func (x *ProfileAliasMessage) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
-	}
-	return ""
-}
-
 var File_sdk_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
@@ -419,15 +351,7 @@ const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
 	"profile_id\x18\x02 \x01(\tR\tprofileId\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x03 \x01(\tR\tprojectId\"\x8f\x01\n" +
-	"\x13ProfileAliasMessage\x12\x19\n" +
-	"\balias_id\x18\x01 \x01(\tR\aaliasId\x12\x1d\n" +
-	"\n" +
-	"profile_id\x18\x02 \x01(\tR\tprofileId\x12\x1f\n" +
-	"\vexternal_id\x18\x03 \x01(\tR\n" +
-	"externalId\x12\x1d\n" +
-	"\n" +
-	"project_id\x18\x04 \x01(\tR\tprojectId2\xb6\x01\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId2\xb6\x01\n" +
 	"\x12ProfilesSDKService\x12O\n" +
 	"\bRegister\x12 .sdk.profiles.v1.RegisterRequest\x1a!.sdk.profiles.v1.RegisterResponse\x12O\n" +
 	"\bIdentify\x12 .sdk.profiles.v1.IdentifyRequest\x1a!.sdk.profiles.v1.IdentifyResponseBTZMgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
@@ -444,7 +368,7 @@ func file_sdk_profiles_v1_profiles_proto_rawDescGZIP() []byte {
 	return file_sdk_profiles_v1_profiles_proto_rawDescData
 }
 
-var file_sdk_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_sdk_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_sdk_profiles_v1_profiles_proto_goTypes = []any{
 	(*IdentifyRequest)(nil),        // 0: sdk.profiles.v1.IdentifyRequest
 	(*IdentifyResponse)(nil),       // 1: sdk.profiles.v1.IdentifyResponse
@@ -452,12 +376,11 @@ var file_sdk_profiles_v1_profiles_proto_goTypes = []any{
 	(*RegisterResponse)(nil),       // 3: sdk.profiles.v1.RegisterResponse
 	(*ProfileRegisterMessage)(nil), // 4: sdk.profiles.v1.ProfileRegisterMessage
 	(*ProfileIdentifyMessage)(nil), // 5: sdk.profiles.v1.ProfileIdentifyMessage
-	(*ProfileAliasMessage)(nil),    // 6: sdk.profiles.v1.ProfileAliasMessage
-	(*structpb.Struct)(nil),        // 7: google.protobuf.Struct
+	(*structpb.Struct)(nil),        // 6: google.protobuf.Struct
 }
 var file_sdk_profiles_v1_profiles_proto_depIdxs = []int32{
-	7, // 0: sdk.profiles.v1.RegisterRequest.properties:type_name -> google.protobuf.Struct
-	7, // 1: sdk.profiles.v1.ProfileRegisterMessage.properties:type_name -> google.protobuf.Struct
+	6, // 0: sdk.profiles.v1.RegisterRequest.properties:type_name -> google.protobuf.Struct
+	6, // 1: sdk.profiles.v1.ProfileRegisterMessage.properties:type_name -> google.protobuf.Struct
 	2, // 2: sdk.profiles.v1.ProfilesSDKService.Register:input_type -> sdk.profiles.v1.RegisterRequest
 	0, // 3: sdk.profiles.v1.ProfilesSDKService.Identify:input_type -> sdk.profiles.v1.IdentifyRequest
 	3, // 4: sdk.profiles.v1.ProfilesSDKService.Register:output_type -> sdk.profiles.v1.RegisterResponse
@@ -480,7 +403,7 @@ func file_sdk_profiles_v1_profiles_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sdk_profiles_v1_profiles_proto_rawDesc), len(file_sdk_profiles_v1_profiles_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

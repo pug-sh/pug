@@ -10,16 +10,17 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
+	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
-
-	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func Run(ctx context.Context) error {
@@ -120,16 +121,25 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 	qtx := w.Write.WithTx(tx)
 
-	var mergedIntoProfileID string
+	var (
+		mergedIntoProfileID string
+		// upsertProfile holds the target profile data to publish after commit.
+		upsertID         string
+		upsertExtID      string
+		upsertProperties map[string]any
+		// deletedProfileID is set in the merge case to soft-delete the source in CH.
+		deletedProfileID string
+	)
 
 	switch {
 	case errors.Is(lookupErr, pgx.ErrNoRows):
 		// No profile with this external_id — assign it to the anonymous profile.
-		if _, err = qtx.SetProfileExternalID(ctx, dbwrite.SetProfileExternalIDParams{
+		updated, err := qtx.SetProfileExternalID(ctx, dbwrite.SetProfileExternalIDParams{
 			ExternalID: externalID,
 			ID:         profileID,
 			ProjectID:  projectID,
-		}); err != nil {
+		})
+		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				slog.WarnContext(ctx, "profile not found when setting external ID, will retry",
 					slog.String("profileId", profileID), slog.String("externalId", externalID))
@@ -139,6 +149,9 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 				slog.String("profileId", profileID), slog.String("externalId", externalID))
 			return err
 		}
+		upsertID = updated.ID
+		upsertExtID = updated.ExternalID.String
+		upsertProperties = updated.Properties
 
 	default:
 		// Already identified — skip to avoid self-merge and deletion.
@@ -147,22 +160,31 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		}
 
 		// Different profile owns this external_id — merge anonymous into existing.
-		if _, err = qtx.MergeProfileProperties(ctx, dbwrite.MergeProfilePropertiesParams{
+		merged, err := qtx.MergeProfileProperties(ctx, dbwrite.MergeProfilePropertiesParams{
 			SourceID:  profileID,
 			TargetID:  existing.ID,
 			ProjectID: projectID,
-		}); err != nil {
+		})
+		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				// ErrNoRows means either the source or target profile no longer exists.
 				// Most likely the source was already merged on a previous attempt.
 				// Continue with device reassignment to ensure no devices are orphaned.
 				slog.WarnContext(ctx, "profile missing during merge, continuing with device reassignment",
 					slog.String("sourceId", profileID), slog.String("targetId", existing.ID))
+				// Fall back to pre-merge snapshot of the target.
+				upsertID = existing.ID
+				upsertExtID = existing.ExternalID.String
+				upsertProperties = existing.Properties
 			} else {
 				slog.ErrorContext(ctx, "failed merging profile properties", slogx.Error(err),
 					slog.String("sourceId", profileID), slog.String("targetId", existing.ID))
 				return err
 			}
+		} else {
+			upsertID = merged.ID
+			upsertExtID = merged.ExternalID.String
+			upsertProperties = merged.Properties
 		}
 
 		if err := qtx.ReassignProfileDevices(ctx, dbwrite.ReassignProfileDevicesParams{
@@ -184,8 +206,8 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			return err
 		}
 
-		// Track which profile we merged into for alias recording
 		mergedIntoProfileID = existing.ID
+		deletedProfileID = profileID
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -193,9 +215,21 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		return err
 	}
 
-	// Publish alias message for ClickHouse tracking only when a merge occurred
+	// Publish upsert for the target profile.
+	if err := publishUpsert(ctx, natsClient, upsertID, projectID, upsertExtID, upsertProperties, false); err != nil {
+		return err
+	}
+
+	// Soft-delete the source profile in CH when a merge occurred.
+	if deletedProfileID != "" {
+		if err := publishUpsert(ctx, natsClient, deletedProfileID, projectID, "", nil, true); err != nil {
+			return err
+		}
+	}
+
+	// Publish alias message only when a merge occurred.
 	if mergedIntoProfileID != "" {
-		aliasMsg := &sdkprofilesv1.ProfileAliasMessage{
+		aliasMsg := &workerprofilesv1.ProfileAliasMessage{
 			AliasId:    profileID,
 			ProfileId:  mergedIntoProfileID,
 			ExternalId: externalID,
@@ -204,11 +238,51 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 		aliasData, err := proto.Marshal(aliasMsg)
 		if err != nil {
+			slog.ErrorContext(ctx, "failed marshalling alias message", slogx.Error(err),
+				slog.String("aliasId", profileID), slog.String("profileId", mergedIntoProfileID))
 			return fmt.Errorf("marshal alias message after committed merge: %w", err)
 		}
 		if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
+			slog.ErrorContext(ctx, "failed publishing alias message", slogx.Error(err),
+				slog.String("aliasId", profileID), slog.String("profileId", mergedIntoProfileID))
 			return fmt.Errorf("publish alias after committed merge: %w", err)
 		}
+	}
+
+	return nil
+}
+
+func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profileID, projectID, externalID string, properties map[string]any, isDeleted bool) error {
+	if properties == nil {
+		properties = map[string]any{}
+	}
+
+	propsStruct, err := structpb.NewStruct(properties)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed converting profile properties to struct", slogx.Error(err),
+			slog.String("profileId", profileID))
+		return fmt.Errorf("convert profile properties to struct: %w", err)
+	}
+
+	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
+		ProfileId:  profileID,
+		ProjectId:  projectID,
+		ExternalId: externalID,
+		Properties: propsStruct,
+		IsDeleted:  isDeleted,
+	}
+
+	upsertData, err := proto.Marshal(upsertMsg)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed marshalling profile upsert message", slogx.Error(err),
+			slog.String("profileId", profileID))
+		return fmt.Errorf("marshal profile upsert message: %w", err)
+	}
+
+	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, upsertData); err != nil {
+		slog.ErrorContext(ctx, "failed publishing profile upsert", slogx.Error(err),
+			slog.String("profileId", profileID))
+		return fmt.Errorf("publish profile upsert: %w", err)
 	}
 
 	return nil

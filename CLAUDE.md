@@ -39,6 +39,7 @@ make infra-down
 ./bin/cotton worker profile register
 ./bin/cotton worker profile identify
 ./bin/cotton worker profile alias
+./bin/cotton worker profile upsert
 ./bin/cotton worker scheduler
 ```
 
