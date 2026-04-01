@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -27,14 +26,14 @@ type Server struct {
 	profilesv1connect.UnimplementedProfilesServiceHandler
 	read     *dbread.Queries
 	write    *dbwrite.Queries
-	producer jetstream.JetStream
+	producer *natsdeps.NATSClient
 }
 
-func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, js jetstream.JetStream) *Server {
+func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nats *natsdeps.NATSClient) *Server {
 	return &Server{
 		read:     dbread.New(pgRO),
 		write:    dbwrite.New(pgW),
-		producer: js,
+		producer: nats,
 	}
 }
 
@@ -68,12 +67,9 @@ func (s *Server) Delete(
 	if err != nil {
 		slog.ErrorContext(ctx, "failed marshalling profile delete upsert message", slogx.Error(err),
 			slog.String("profileId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
-	}
-	if _, err = s.producer.Publish(ctx, natsdeps.ProfileUpsertSubject, upsertData); err != nil {
+	} else if err = s.producer.Publish(ctx, natsdeps.ProfileUpsertSubject, upsertData); err != nil {
 		slog.ErrorContext(ctx, "failed publishing profile delete to NATS", slogx.Error(err),
 			slog.String("profileId", req.Msg.Id))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 
 	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil

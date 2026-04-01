@@ -154,9 +154,10 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		upsertProperties = updated.Properties
 
 	default:
-		// Already identified — skip to avoid self-merge and deletion.
+		// Already identified — skip merge and deletion but still sync current state to ClickHouse
+		// (handles retries where PG succeeded but a prior NATS publish failed).
 		if existing.ID == profileID {
-			return nil
+			return publishUpsert(ctx, natsClient, existing.ID, projectID, existing.ExternalID.String, existing.Properties, false)
 		}
 
 		// Different profile owns this external_id — merge anonymous into existing.
@@ -215,6 +216,15 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		return err
 	}
 
+	slog.InfoContext(ctx, "identify transaction committed",
+		slog.String("profileId", upsertID),
+		slog.String("deletedProfileId", deletedProfileID),
+		slog.String("mergedIntoProfileId", mergedIntoProfileID))
+
+	if upsertID == "" {
+		return nil
+	}
+
 	// Publish upsert for the target profile.
 	if err := publishUpsert(ctx, natsClient, upsertID, projectID, upsertExtID, upsertProperties, false); err != nil {
 		return err
@@ -261,7 +271,9 @@ func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profi
 	if err != nil {
 		slog.ErrorContext(ctx, "failed converting profile properties to struct", slogx.Error(err),
 			slog.String("profileId", profileID))
-		return fmt.Errorf("convert profile properties to struct: %w", err)
+		return natsworker.NewPermanentError(err).
+			With("worker", "profile-identify").
+			With("profile_id", profileID)
 	}
 
 	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{

@@ -106,7 +106,10 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 	sent := false
 	defer func() {
 		if !sent {
-			_ = batch.Abort()
+			if err := batch.Abort(); err != nil {
+				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err),
+					slog.String("profileId", msg.GetProfileId()))
+			}
 		}
 	}()
 

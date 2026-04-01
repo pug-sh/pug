@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
@@ -103,41 +104,59 @@ func handleRegister(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		ProjectID:  msg.GetProjectId(),
 	})
 	if err != nil {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			// Profile already exists — likely a retry after PG succeeded but NATS publish failed.
+			// Re-read so we can still sync to ClickHouse.
+			slog.InfoContext(ctx, "profile already registered, re-syncing to ClickHouse",
+				slog.String("profileId", msg.GetProfileId()))
+			existing, readErr := w.Read.GetProfileByIDAndProjectID(ctx, dbread.GetProfileByIDAndProjectIDParams{
+				ID:        msg.GetProfileId(),
+				ProjectID: msg.GetProjectId(),
+			})
+			if readErr != nil {
+				slog.ErrorContext(ctx, "failed reading existing profile after unique violation", slogx.Error(readErr),
+					slog.String("profileId", msg.GetProfileId()))
+				return natsworker.NewPermanentError(readErr).
+					With("worker", "profile-register").
+					With("profile_id", msg.GetProfileId())
+			}
+			return publishRegisterUpsert(ctx, natsClient, existing.ID, existing.ProjectID, existing.ExternalID.String, existing.Properties)
+		}
 		slog.ErrorContext(ctx, "failed to register profile", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return natsworker.NewPermanentError(err).
-				With("worker", "profile-register").
-				With("profile_id", msg.GetProfileId()).
-				With("project_id", msg.GetProjectId())
-		}
 		return err
 	}
 
-	propsStruct, err := structpb.NewStruct(profile.Properties)
+	return publishRegisterUpsert(ctx, natsClient, profile.ID, profile.ProjectID, profile.ExternalID.String, profile.Properties)
+}
+
+func publishRegisterUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profileID, projectID, externalID string, properties map[string]any) error {
+	propsStruct, err := structpb.NewStruct(properties)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed converting profile properties to struct", slogx.Error(err),
-			slog.String("profileId", profile.ID))
-		return fmt.Errorf("convert profile properties to struct: %w", err)
+			slog.String("profileId", profileID))
+		return natsworker.NewPermanentError(err).
+			With("worker", "profile-register").
+			With("profile_id", profileID)
 	}
 
 	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
-		ProfileId:  profile.ID,
-		ProjectId:  profile.ProjectID,
-		ExternalId: profile.ExternalID.String,
+		ProfileId:  profileID,
+		ProjectId:  projectID,
+		ExternalId: externalID,
 		Properties: propsStruct,
 	}
 
 	upsertData, err := proto.Marshal(upsertMsg)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed marshalling profile upsert message", slogx.Error(err),
-			slog.String("profileId", profile.ID))
+			slog.String("profileId", profileID))
 		return fmt.Errorf("marshal profile upsert message: %w", err)
 	}
 
 	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, upsertData); err != nil {
 		slog.ErrorContext(ctx, "failed publishing profile upsert", slogx.Error(err),
-			slog.String("profileId", profile.ID))
+			slog.String("profileId", profileID))
 		return fmt.Errorf("publish profile upsert: %w", err)
 	}
 

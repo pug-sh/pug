@@ -92,7 +92,7 @@ func start(ctx context.Context, d *deps) error {
 	activityPath, activityHandler := activityv1connect.NewActivityServiceHandler(
 		activityrpc.NewServer(d.ch), handlerOpts)
 	sharedProfilesPath, sharedProfilesHandler := profilesv1connect.NewProfilesServiceHandler(
-		sharedprofilesrpc.NewServer(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
+		sharedprofilesrpc.NewServer(d.pgRo, d.pgW, d.nats), handlerOpts)
 
 	// SDK
 	devicesPath, devicesHandler := devicesv1connect.NewDevicesServiceHandler(
