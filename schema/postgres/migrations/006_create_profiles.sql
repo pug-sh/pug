@@ -14,6 +14,7 @@ create trigger update_timestamp before
 update on profiles for each row execute procedure moddatetime(update_time);
 
 create index idx_profiles_properties on profiles using gin (properties);
+create index idx_profiles_project_create_time on profiles (project_id, create_time desc, id desc);
 
 -- +goose Down
 drop table if exists profiles;
