@@ -216,6 +216,64 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 	return sb.String(), args, nil
 }
 
+// writeEventCondition appends event kind and per-event filter conditions to sb/args.
+// Single event: AND kind = ? [AND per-event filters...].
+// Multiple events: AND ((kind=? AND ...) OR (kind=? AND ...) ...).
+func writeEventCondition(sb *strings.Builder, args *[]any, events []*insightsv1.EventQuery) error {
+	if len(events) == 0 {
+		return nil
+	}
+	if len(events) == 1 {
+		ev := events[0]
+		if ev.GetKind() != "" {
+			sb.WriteString("AND kind = ?\n")
+			*args = append(*args, ev.GetKind())
+		}
+		for _, f := range ev.GetFilters() {
+			clause, fArgs, err := chfilters.FilterClause(f)
+			if err != nil {
+				return err
+			}
+			sb.WriteString("AND ")
+			sb.WriteString(clause)
+			sb.WriteString("\n")
+			*args = append(*args, fArgs...)
+		}
+		return nil
+	}
+	// Multiple events: OR-join each event's conditions.
+	sb.WriteString("AND (\n")
+	for i, ev := range events {
+		if i > 0 {
+			sb.WriteString("OR ")
+		}
+		sb.WriteString("(")
+		var parts []string
+		var evArgs []any
+		if ev.GetKind() != "" {
+			parts = append(parts, "kind = ?")
+			evArgs = append(evArgs, ev.GetKind())
+		}
+		for _, f := range ev.GetFilters() {
+			clause, fArgs, err := chfilters.FilterClause(f)
+			if err != nil {
+				return err
+			}
+			parts = append(parts, clause)
+			evArgs = append(evArgs, fArgs...)
+		}
+		if len(parts) > 0 {
+			sb.WriteString(strings.Join(parts, " AND "))
+		} else {
+			sb.WriteString("1=1")
+		}
+		sb.WriteString(")\n")
+		*args = append(*args, evArgs...)
+	}
+	sb.WriteString(")\n")
+	return nil
+}
+
 // BuildSegmentUsersQuery builds a ClickHouse SQL query and args from a SegmentUsersRequest.
 // The generated query returns a paginated, cursor-keyed list of distinct user IDs.
 func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID string) (string, []any, error) {
@@ -229,12 +287,6 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 	sb.WriteString("WHERE project_id = ?\nAND occur_time >= ?\nAND occur_time < ?\n")
 	args = append(args, projectID, req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
 
-	// Optional kind filter
-	if len(req.GetEvents()) > 0 && req.GetEvents()[0].GetKind() != "" {
-		sb.WriteString("AND kind = ?\n")
-		args = append(args, req.GetEvents()[0].GetKind())
-	}
-
 	// Top-level filters
 	for _, f := range req.GetFilters() {
 		clause, filterArgs, err := chfilters.FilterClause(f)
@@ -245,6 +297,11 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 		sb.WriteString(clause)
 		sb.WriteString("\n")
 		args = append(args, filterArgs...)
+	}
+
+	// Event condition (kind + per-event filters, OR-joined for multiple events)
+	if err := writeEventCondition(&sb, &args, req.GetEvents()); err != nil {
+		return "", nil, err
 	}
 
 	// Cursor pagination

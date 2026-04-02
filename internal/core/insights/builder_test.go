@@ -576,18 +576,56 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 		t.Errorf("expected property filter expression in SQL, got: %s", sql)
 	}
 
-	// args: projectID, from, to, kind, filter_value, limit
+	// args: projectID, from, to, filter_value, kind, limit
 	if len(args) != 6 {
-		t.Errorf("expected 6 args (projectID, from, to, kind, filter_value, limit), got %d: %v", len(args), args)
+		t.Errorf("expected 6 args (projectID, from, to, filter_value, kind, limit), got %d: %v", len(args), args)
 	}
 	if args[0] != "proj_123" {
 		t.Errorf("expected first arg to be 'proj_123', got %v", args[0])
 	}
-	if args[4] != "US" {
-		t.Errorf("expected filter arg to be 'US', got %v", args[4])
+	if args[3] != "US" {
+		t.Errorf("expected filter arg to be 'US', got %v", args[3])
 	}
 	if args[5] != int32(50) {
 		t.Errorf("expected limit arg to be int32(50), got %v", args[5])
+	}
+}
+
+// TestBuildSegmentUsersQuery_MultiEvent verifies OR-joined event conditions for multiple events.
+func TestBuildSegmentUsersQuery_MultiEvent(t *testing.T) {
+	req := &insightsv1.SegmentUsersRequest{
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Events: []*insightsv1.EventQuery{
+			{
+				Kind:        "purchase",
+				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+				},
+			},
+			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+		},
+		PageSize: 50,
+	}
+
+	sql, args, err := insights.BuildSegmentUsersQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(sql, "AND (\n") {
+		t.Errorf("expected OR-joined event condition in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "OR ") {
+		t.Errorf("expected OR between events in SQL, got: %s", sql)
+	}
+
+	// args: projectID, from, to, "US" (per-event filter), "purchase", "page_view", limit
+	if len(args) != 7 {
+		t.Errorf("expected 7 args, got %d: %v", len(args), args)
+	}
+	if args[6] != int32(50) {
+		t.Errorf("expected limit arg to be int32(50), got %v", args[6])
 	}
 }
 
