@@ -180,58 +180,6 @@ func (AggregationType) EnumDescriptor() ([]byte, []int) {
 	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{2}
 }
 
-type PropertySource int32
-
-const (
-	PropertySource_PROPERTY_SOURCE_UNSPECIFIED PropertySource = 0
-	PropertySource_PROPERTY_SOURCE_AUTO        PropertySource = 1
-	PropertySource_PROPERTY_SOURCE_CUSTOM      PropertySource = 2
-	PropertySource_PROPERTY_SOURCE_PROFILE     PropertySource = 3
-)
-
-// Enum value maps for PropertySource.
-var (
-	PropertySource_name = map[int32]string{
-		0: "PROPERTY_SOURCE_UNSPECIFIED",
-		1: "PROPERTY_SOURCE_AUTO",
-		2: "PROPERTY_SOURCE_CUSTOM",
-		3: "PROPERTY_SOURCE_PROFILE",
-	}
-	PropertySource_value = map[string]int32{
-		"PROPERTY_SOURCE_UNSPECIFIED": 0,
-		"PROPERTY_SOURCE_AUTO":        1,
-		"PROPERTY_SOURCE_CUSTOM":      2,
-		"PROPERTY_SOURCE_PROFILE":     3,
-	}
-)
-
-func (x PropertySource) Enum() *PropertySource {
-	p := new(PropertySource)
-	*p = x
-	return p
-}
-
-func (x PropertySource) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (PropertySource) Descriptor() protoreflect.EnumDescriptor {
-	return file_shared_insights_v1_insights_proto_enumTypes[3].Descriptor()
-}
-
-func (PropertySource) Type() protoreflect.EnumType {
-	return &file_shared_insights_v1_insights_proto_enumTypes[3]
-}
-
-func (x PropertySource) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use PropertySource.Descriptor instead.
-func (PropertySource) EnumDescriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{3}
-}
-
 type QueryRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	InsightType    InsightType            `protobuf:"varint,1,opt,name=insight_type,json=insightType,enum=shared.insights.v1.InsightType" json:"insight_type,omitempty"`
@@ -736,7 +684,7 @@ func (x *DataPoint) GetValue() float64 {
 type GetPropertyValuesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PropertyKey   string                 `protobuf:"bytes,1,opt,name=property_key,json=propertyKey" json:"property_key,omitempty"`
-	Source        PropertySource         `protobuf:"varint,2,opt,name=source,enum=shared.insights.v1.PropertySource" json:"source,omitempty"`
+	Source        v1.PropertySource      `protobuf:"varint,2,opt,name=source,enum=common.v1.PropertySource" json:"source,omitempty"`
 	EventKind     string                 `protobuf:"bytes,3,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -779,11 +727,11 @@ func (x *GetPropertyValuesRequest) GetPropertyKey() string {
 	return ""
 }
 
-func (x *GetPropertyValuesRequest) GetSource() PropertySource {
+func (x *GetPropertyValuesRequest) GetSource() v1.PropertySource {
 	if x != nil {
 		return x.Source
 	}
-	return PropertySource_PROPERTY_SOURCE_UNSPECIFIED
+	return v1.PropertySource(0)
 }
 
 func (x *GetPropertyValuesRequest) GetEventKind() string {
@@ -881,131 +829,11 @@ func (x *GetFilterSchemaRequest) GetEventKind() string {
 	return ""
 }
 
-type EventNameMeta struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	Count         uint64                 `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
-	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EventNameMeta) Reset() {
-	*x = EventNameMeta{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EventNameMeta) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EventNameMeta) ProtoMessage() {}
-
-func (x *EventNameMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EventNameMeta.ProtoReflect.Descriptor instead.
-func (*EventNameMeta) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *EventNameMeta) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *EventNameMeta) GetCount() uint64 {
-	if x != nil {
-		return x.Count
-	}
-	return 0
-}
-
-func (x *EventNameMeta) GetLastSeenAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.LastSeenAt
-	}
-	return nil
-}
-
-type PropertyKeyMeta struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	Count         uint64                 `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
-	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PropertyKeyMeta) Reset() {
-	*x = PropertyKeyMeta{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PropertyKeyMeta) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PropertyKeyMeta) ProtoMessage() {}
-
-func (x *PropertyKeyMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PropertyKeyMeta.ProtoReflect.Descriptor instead.
-func (*PropertyKeyMeta) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *PropertyKeyMeta) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *PropertyKeyMeta) GetCount() uint64 {
-	if x != nil {
-		return x.Count
-	}
-	return 0
-}
-
-func (x *PropertyKeyMeta) GetLastSeenAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.LastSeenAt
-	}
-	return nil
-}
-
 type GetFilterSchemaResponse struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
-	Events              []*EventNameMeta       `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
-	AutoPropertyKeys    []*PropertyKeyMeta     `protobuf:"bytes,2,rep,name=auto_property_keys,json=autoPropertyKeys" json:"auto_property_keys,omitempty"`
-	CustomPropertyKeys  []*PropertyKeyMeta     `protobuf:"bytes,3,rep,name=custom_property_keys,json=customPropertyKeys" json:"custom_property_keys,omitempty"`
+	Events              []*v1.EventNameMeta    `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
+	AutoPropertyKeys    []*v1.PropertyKeyMeta  `protobuf:"bytes,2,rep,name=auto_property_keys,json=autoPropertyKeys" json:"auto_property_keys,omitempty"`
+	CustomPropertyKeys  []*v1.PropertyKeyMeta  `protobuf:"bytes,3,rep,name=custom_property_keys,json=customPropertyKeys" json:"custom_property_keys,omitempty"`
 	ProfilePropertyKeys []string               `protobuf:"bytes,4,rep,name=profile_property_keys,json=profilePropertyKeys" json:"profile_property_keys,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
@@ -1013,7 +841,7 @@ type GetFilterSchemaResponse struct {
 
 func (x *GetFilterSchemaResponse) Reset() {
 	*x = GetFilterSchemaResponse{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[13]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1025,7 +853,7 @@ func (x *GetFilterSchemaResponse) String() string {
 func (*GetFilterSchemaResponse) ProtoMessage() {}
 
 func (x *GetFilterSchemaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[13]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1038,24 +866,24 @@ func (x *GetFilterSchemaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFilterSchemaResponse.ProtoReflect.Descriptor instead.
 func (*GetFilterSchemaResponse) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{13}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *GetFilterSchemaResponse) GetEvents() []*EventNameMeta {
+func (x *GetFilterSchemaResponse) GetEvents() []*v1.EventNameMeta {
 	if x != nil {
 		return x.Events
 	}
 	return nil
 }
 
-func (x *GetFilterSchemaResponse) GetAutoPropertyKeys() []*PropertyKeyMeta {
+func (x *GetFilterSchemaResponse) GetAutoPropertyKeys() []*v1.PropertyKeyMeta {
 	if x != nil {
 		return x.AutoPropertyKeys
 	}
 	return nil
 }
 
-func (x *GetFilterSchemaResponse) GetCustomPropertyKeys() []*PropertyKeyMeta {
+func (x *GetFilterSchemaResponse) GetCustomPropertyKeys() []*v1.PropertyKeyMeta {
 	if x != nil {
 		return x.CustomPropertyKeys
 	}
@@ -1073,7 +901,7 @@ var File_shared_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd6\x03\n" +
+	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd6\x03\n" +
 	"\fQueryRequest\x12O\n" +
 	"\finsight_type\x18\x01 \x01(\x0e2\x1f.shared.insights.v1.InsightTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vinsightType\x12;\n" +
 	"\n" +
@@ -1118,31 +946,21 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Q\n" +
 	"\tDataPoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\"\xc5\x01\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"\xbc\x01\n" +
 	"\x18GetPropertyValuesRequest\x12A\n" +
-	"\fproperty_key\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\vpropertyKey\x12G\n" +
-	"\x06source\x18\x02 \x01(\x0e2\".shared.insights.v1.PropertySourceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06source\x12\x1d\n" +
+	"\fproperty_key\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\vpropertyKey\x12>\n" +
+	"\x06source\x18\x02 \x01(\x0e2\x19.common.v1.PropertySourceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06source\x12\x1d\n" +
 	"\n" +
 	"event_kind\x18\x03 \x01(\tR\teventKind\"3\n" +
 	"\x19GetPropertyValuesResponse\x12\x16\n" +
 	"\x06values\x18\x01 \x03(\tR\x06values\"7\n" +
 	"\x16GetFilterSchemaRequest\x12\x1d\n" +
 	"\n" +
-	"event_kind\x18\x01 \x01(\tR\teventKind\"w\n" +
-	"\rEventNameMeta\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x04R\x05count\x12<\n" +
-	"\flast_seen_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"lastSeenAt\"y\n" +
-	"\x0fPropertyKeyMeta\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x04R\x05count\x12<\n" +
-	"\flast_seen_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"lastSeenAt\"\xb2\x02\n" +
-	"\x17GetFilterSchemaResponse\x129\n" +
-	"\x06events\x18\x01 \x03(\v2!.shared.insights.v1.EventNameMetaR\x06events\x12Q\n" +
-	"\x12auto_property_keys\x18\x02 \x03(\v2#.shared.insights.v1.PropertyKeyMetaR\x10autoPropertyKeys\x12U\n" +
-	"\x14custom_property_keys\x18\x03 \x03(\v2#.shared.insights.v1.PropertyKeyMetaR\x12customPropertyKeys\x122\n" +
+	"event_kind\x18\x01 \x01(\tR\teventKind\"\x97\x02\n" +
+	"\x17GetFilterSchemaResponse\x120\n" +
+	"\x06events\x18\x01 \x03(\v2\x18.common.v1.EventNameMetaR\x06events\x12H\n" +
+	"\x12auto_property_keys\x18\x02 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x10autoPropertyKeys\x12L\n" +
+	"\x14custom_property_keys\x18\x03 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x12customPropertyKeys\x122\n" +
 	"\x15profile_property_keys\x18\x04 \x03(\tR\x13profilePropertyKeys*c\n" +
 	"\vInsightType\x12\x1c\n" +
 	"\x18INSIGHT_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -1158,12 +976,7 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x1cAGGREGATION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16AGGREGATION_TYPE_TOTAL\x10\x01\x12!\n" +
 	"\x1dAGGREGATION_TYPE_UNIQUE_USERS\x10\x02\x12!\n" +
-	"\x1dAGGREGATION_TYPE_PER_USER_AVG\x10\x03*\x84\x01\n" +
-	"\x0ePropertySource\x12\x1f\n" +
-	"\x1bPROPERTY_SOURCE_UNSPECIFIED\x10\x00\x12\x18\n" +
-	"\x14PROPERTY_SOURCE_AUTO\x10\x01\x12\x1a\n" +
-	"\x16PROPERTY_SOURCE_CUSTOM\x10\x02\x12\x1b\n" +
-	"\x17PROPERTY_SOURCE_PROFILE\x10\x032\xa0\x03\n" +
+	"\x1dAGGREGATION_TYPE_PER_USER_AVG\x10\x032\xa0\x03\n" +
 	"\x0fInsightsService\x12L\n" +
 	"\x05Query\x12 .shared.insights.v1.QueryRequest\x1a!.shared.insights.v1.QueryResponse\x12a\n" +
 	"\fSegmentUsers\x12'.shared.insights.v1.SegmentUsersRequest\x1a(.shared.insights.v1.SegmentUsersResponse\x12j\n" +
@@ -1182,67 +995,65 @@ func file_shared_insights_v1_insights_proto_rawDescGZIP() []byte {
 	return file_shared_insights_v1_insights_proto_rawDescData
 }
 
-var file_shared_insights_v1_insights_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_shared_insights_v1_insights_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_shared_insights_v1_insights_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_shared_insights_v1_insights_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_shared_insights_v1_insights_proto_goTypes = []any{
 	(InsightType)(0),                  // 0: shared.insights.v1.InsightType
 	(Granularity)(0),                  // 1: shared.insights.v1.Granularity
 	(AggregationType)(0),              // 2: shared.insights.v1.AggregationType
-	(PropertySource)(0),               // 3: shared.insights.v1.PropertySource
-	(*QueryRequest)(nil),              // 4: shared.insights.v1.QueryRequest
-	(*QueryResponse)(nil),             // 5: shared.insights.v1.QueryResponse
-	(*SegmentUsersRequest)(nil),       // 6: shared.insights.v1.SegmentUsersRequest
-	(*SegmentUsersResponse)(nil),      // 7: shared.insights.v1.SegmentUsersResponse
-	(*EventQuery)(nil),                // 8: shared.insights.v1.EventQuery
-	(*Breakdown)(nil),                 // 9: shared.insights.v1.Breakdown
-	(*Series)(nil),                    // 10: shared.insights.v1.Series
-	(*DataPoint)(nil),                 // 11: shared.insights.v1.DataPoint
-	(*GetPropertyValuesRequest)(nil),  // 12: shared.insights.v1.GetPropertyValuesRequest
-	(*GetPropertyValuesResponse)(nil), // 13: shared.insights.v1.GetPropertyValuesResponse
-	(*GetFilterSchemaRequest)(nil),    // 14: shared.insights.v1.GetFilterSchemaRequest
-	(*EventNameMeta)(nil),             // 15: shared.insights.v1.EventNameMeta
-	(*PropertyKeyMeta)(nil),           // 16: shared.insights.v1.PropertyKeyMeta
-	(*GetFilterSchemaResponse)(nil),   // 17: shared.insights.v1.GetFilterSchemaResponse
-	nil,                               // 18: shared.insights.v1.Series.BreakdownEntry
-	(*v1.TimeRange)(nil),              // 19: common.v1.TimeRange
-	(*v1.PropertyFilter)(nil),         // 20: common.v1.PropertyFilter
-	(*timestamppb.Timestamp)(nil),     // 21: google.protobuf.Timestamp
+	(*QueryRequest)(nil),              // 3: shared.insights.v1.QueryRequest
+	(*QueryResponse)(nil),             // 4: shared.insights.v1.QueryResponse
+	(*SegmentUsersRequest)(nil),       // 5: shared.insights.v1.SegmentUsersRequest
+	(*SegmentUsersResponse)(nil),      // 6: shared.insights.v1.SegmentUsersResponse
+	(*EventQuery)(nil),                // 7: shared.insights.v1.EventQuery
+	(*Breakdown)(nil),                 // 8: shared.insights.v1.Breakdown
+	(*Series)(nil),                    // 9: shared.insights.v1.Series
+	(*DataPoint)(nil),                 // 10: shared.insights.v1.DataPoint
+	(*GetPropertyValuesRequest)(nil),  // 11: shared.insights.v1.GetPropertyValuesRequest
+	(*GetPropertyValuesResponse)(nil), // 12: shared.insights.v1.GetPropertyValuesResponse
+	(*GetFilterSchemaRequest)(nil),    // 13: shared.insights.v1.GetFilterSchemaRequest
+	(*GetFilterSchemaResponse)(nil),   // 14: shared.insights.v1.GetFilterSchemaResponse
+	nil,                               // 15: shared.insights.v1.Series.BreakdownEntry
+	(*v1.TimeRange)(nil),              // 16: common.v1.TimeRange
+	(*v1.PropertyFilter)(nil),         // 17: common.v1.PropertyFilter
+	(*timestamppb.Timestamp)(nil),     // 18: google.protobuf.Timestamp
+	(v1.PropertySource)(0),            // 19: common.v1.PropertySource
+	(*v1.EventNameMeta)(nil),          // 20: common.v1.EventNameMeta
+	(*v1.PropertyKeyMeta)(nil),        // 21: common.v1.PropertyKeyMeta
 }
 var file_shared_insights_v1_insights_proto_depIdxs = []int32{
 	0,  // 0: shared.insights.v1.QueryRequest.insight_type:type_name -> shared.insights.v1.InsightType
-	19, // 1: shared.insights.v1.QueryRequest.time_range:type_name -> common.v1.TimeRange
+	16, // 1: shared.insights.v1.QueryRequest.time_range:type_name -> common.v1.TimeRange
 	1,  // 2: shared.insights.v1.QueryRequest.granularity:type_name -> shared.insights.v1.Granularity
-	8,  // 3: shared.insights.v1.QueryRequest.events:type_name -> shared.insights.v1.EventQuery
-	20, // 4: shared.insights.v1.QueryRequest.filters:type_name -> common.v1.PropertyFilter
-	9,  // 5: shared.insights.v1.QueryRequest.breakdowns:type_name -> shared.insights.v1.Breakdown
-	10, // 6: shared.insights.v1.QueryResponse.series:type_name -> shared.insights.v1.Series
-	19, // 7: shared.insights.v1.SegmentUsersRequest.time_range:type_name -> common.v1.TimeRange
-	8,  // 8: shared.insights.v1.SegmentUsersRequest.events:type_name -> shared.insights.v1.EventQuery
-	20, // 9: shared.insights.v1.SegmentUsersRequest.filters:type_name -> common.v1.PropertyFilter
-	20, // 10: shared.insights.v1.EventQuery.filters:type_name -> common.v1.PropertyFilter
+	7,  // 3: shared.insights.v1.QueryRequest.events:type_name -> shared.insights.v1.EventQuery
+	17, // 4: shared.insights.v1.QueryRequest.filters:type_name -> common.v1.PropertyFilter
+	8,  // 5: shared.insights.v1.QueryRequest.breakdowns:type_name -> shared.insights.v1.Breakdown
+	9,  // 6: shared.insights.v1.QueryResponse.series:type_name -> shared.insights.v1.Series
+	16, // 7: shared.insights.v1.SegmentUsersRequest.time_range:type_name -> common.v1.TimeRange
+	7,  // 8: shared.insights.v1.SegmentUsersRequest.events:type_name -> shared.insights.v1.EventQuery
+	17, // 9: shared.insights.v1.SegmentUsersRequest.filters:type_name -> common.v1.PropertyFilter
+	17, // 10: shared.insights.v1.EventQuery.filters:type_name -> common.v1.PropertyFilter
 	2,  // 11: shared.insights.v1.EventQuery.aggregation:type_name -> shared.insights.v1.AggregationType
-	18, // 12: shared.insights.v1.Series.breakdown:type_name -> shared.insights.v1.Series.BreakdownEntry
-	11, // 13: shared.insights.v1.Series.points:type_name -> shared.insights.v1.DataPoint
-	21, // 14: shared.insights.v1.DataPoint.time:type_name -> google.protobuf.Timestamp
-	3,  // 15: shared.insights.v1.GetPropertyValuesRequest.source:type_name -> shared.insights.v1.PropertySource
-	21, // 16: shared.insights.v1.EventNameMeta.last_seen_at:type_name -> google.protobuf.Timestamp
-	21, // 17: shared.insights.v1.PropertyKeyMeta.last_seen_at:type_name -> google.protobuf.Timestamp
-	15, // 18: shared.insights.v1.GetFilterSchemaResponse.events:type_name -> shared.insights.v1.EventNameMeta
-	16, // 19: shared.insights.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> shared.insights.v1.PropertyKeyMeta
-	16, // 20: shared.insights.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> shared.insights.v1.PropertyKeyMeta
-	4,  // 21: shared.insights.v1.InsightsService.Query:input_type -> shared.insights.v1.QueryRequest
-	6,  // 22: shared.insights.v1.InsightsService.SegmentUsers:input_type -> shared.insights.v1.SegmentUsersRequest
-	14, // 23: shared.insights.v1.InsightsService.GetFilterSchema:input_type -> shared.insights.v1.GetFilterSchemaRequest
-	12, // 24: shared.insights.v1.InsightsService.GetPropertyValues:input_type -> shared.insights.v1.GetPropertyValuesRequest
-	5,  // 25: shared.insights.v1.InsightsService.Query:output_type -> shared.insights.v1.QueryResponse
-	7,  // 26: shared.insights.v1.InsightsService.SegmentUsers:output_type -> shared.insights.v1.SegmentUsersResponse
-	17, // 27: shared.insights.v1.InsightsService.GetFilterSchema:output_type -> shared.insights.v1.GetFilterSchemaResponse
-	13, // 28: shared.insights.v1.InsightsService.GetPropertyValues:output_type -> shared.insights.v1.GetPropertyValuesResponse
-	25, // [25:29] is the sub-list for method output_type
-	21, // [21:25] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	15, // 12: shared.insights.v1.Series.breakdown:type_name -> shared.insights.v1.Series.BreakdownEntry
+	10, // 13: shared.insights.v1.Series.points:type_name -> shared.insights.v1.DataPoint
+	18, // 14: shared.insights.v1.DataPoint.time:type_name -> google.protobuf.Timestamp
+	19, // 15: shared.insights.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
+	20, // 16: shared.insights.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
+	21, // 17: shared.insights.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
+	21, // 18: shared.insights.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
+	3,  // 19: shared.insights.v1.InsightsService.Query:input_type -> shared.insights.v1.QueryRequest
+	5,  // 20: shared.insights.v1.InsightsService.SegmentUsers:input_type -> shared.insights.v1.SegmentUsersRequest
+	13, // 21: shared.insights.v1.InsightsService.GetFilterSchema:input_type -> shared.insights.v1.GetFilterSchemaRequest
+	11, // 22: shared.insights.v1.InsightsService.GetPropertyValues:input_type -> shared.insights.v1.GetPropertyValuesRequest
+	4,  // 23: shared.insights.v1.InsightsService.Query:output_type -> shared.insights.v1.QueryResponse
+	6,  // 24: shared.insights.v1.InsightsService.SegmentUsers:output_type -> shared.insights.v1.SegmentUsersResponse
+	14, // 25: shared.insights.v1.InsightsService.GetFilterSchema:output_type -> shared.insights.v1.GetFilterSchemaResponse
+	12, // 26: shared.insights.v1.InsightsService.GetPropertyValues:output_type -> shared.insights.v1.GetPropertyValuesResponse
+	23, // [23:27] is the sub-list for method output_type
+	19, // [19:23] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_shared_insights_v1_insights_proto_init() }
@@ -1255,8 +1066,8 @@ func file_shared_insights_v1_insights_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_shared_insights_v1_insights_proto_rawDesc), len(file_shared_insights_v1_insights_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   15,
+			NumEnums:      3,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

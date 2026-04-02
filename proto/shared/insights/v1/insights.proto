@@ -2,6 +2,7 @@ edition = "2023";
 package shared.insights.v1;
 
 import "buf/validate/validate.proto";
+import "common/v1/filter_schema.proto";
 import "common/v1/filters.proto";
 import "common/v1/time.proto";
 import "google/protobuf/timestamp.proto";
@@ -93,41 +94,22 @@ message DataPoint {
 }
 
 message GetPropertyValuesRequest {
-  string property_key   = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
-  PropertySource source = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
-  string event_kind     = 3;
+  string property_key            = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
+  common.v1.PropertySource source = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
+  string event_kind              = 3;
 }
 
 message GetPropertyValuesResponse {
   repeated string values = 1;
 }
 
-enum PropertySource {
-  PROPERTY_SOURCE_UNSPECIFIED = 0;
-  PROPERTY_SOURCE_AUTO        = 1;
-  PROPERTY_SOURCE_CUSTOM      = 2;
-  PROPERTY_SOURCE_PROFILE     = 3;
-}
-
 message GetFilterSchemaRequest {
   string event_kind = 1;
 }
 
-message EventNameMeta {
-  string name                            = 1;
-  uint64 count                           = 2;
-  google.protobuf.Timestamp last_seen_at = 3;
-}
-
-message PropertyKeyMeta {
-  string name                            = 1;
-  uint64 count                           = 2;
-  google.protobuf.Timestamp last_seen_at = 3;
-}
-
 message GetFilterSchemaResponse {
-  repeated EventNameMeta   events               = 1;
-  repeated PropertyKeyMeta auto_property_keys   = 2;
-  repeated PropertyKeyMeta custom_property_keys = 3;
-  repeated string          profile_property_keys = 4;
+  repeated common.v1.EventNameMeta   events               = 1;
+  repeated common.v1.PropertyKeyMeta auto_property_keys   = 2;
+  repeated common.v1.PropertyKeyMeta custom_property_keys = 3;
+  repeated string                    profile_property_keys = 4;
 }

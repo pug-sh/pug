@@ -39,6 +39,12 @@ const (
 	// ActivityServiceGetEventExplorerProcedure is the fully-qualified name of the ActivityService's
 	// GetEventExplorer RPC.
 	ActivityServiceGetEventExplorerProcedure = "/shared.activity.v1.ActivityService/GetEventExplorer"
+	// ActivityServiceGetFilterSchemaProcedure is the fully-qualified name of the ActivityService's
+	// GetFilterSchema RPC.
+	ActivityServiceGetFilterSchemaProcedure = "/shared.activity.v1.ActivityService/GetFilterSchema"
+	// ActivityServiceGetPropertyValuesProcedure is the fully-qualified name of the ActivityService's
+	// GetPropertyValues RPC.
+	ActivityServiceGetPropertyValuesProcedure = "/shared.activity.v1.ActivityService/GetPropertyValues"
 )
 
 // ActivityServiceClient is a client for the shared.activity.v1.ActivityService service.
@@ -49,6 +55,10 @@ type ActivityServiceClient interface {
 	// GetEventExplorer returns a paginated, filterable list of events across all users
 	// in a project. Does not resolve aliases.
 	GetEventExplorer(context.Context, *connect.Request[v1.GetEventExplorerRequest]) (*connect.Response[v1.GetEventExplorerResponse], error)
+	// GetFilterSchema returns event names, property keys, and profile property keys for filter UIs.
+	GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error)
+	// GetPropertyValues returns distinct values for a given property key.
+	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 }
 
 // NewActivityServiceClient constructs a client for the shared.activity.v1.ActivityService service.
@@ -74,13 +84,27 @@ func NewActivityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(activityServiceMethods.ByName("GetEventExplorer")),
 			connect.WithClientOptions(opts...),
 		),
+		getFilterSchema: connect.NewClient[v1.GetFilterSchemaRequest, v1.GetFilterSchemaResponse](
+			httpClient,
+			baseURL+ActivityServiceGetFilterSchemaProcedure,
+			connect.WithSchema(activityServiceMethods.ByName("GetFilterSchema")),
+			connect.WithClientOptions(opts...),
+		),
+		getPropertyValues: connect.NewClient[v1.GetPropertyValuesRequest, v1.GetPropertyValuesResponse](
+			httpClient,
+			baseURL+ActivityServiceGetPropertyValuesProcedure,
+			connect.WithSchema(activityServiceMethods.ByName("GetPropertyValues")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // activityServiceClient implements ActivityServiceClient.
 type activityServiceClient struct {
-	getActivityFeed  *connect.Client[v1.GetActivityFeedRequest, v1.GetActivityFeedResponse]
-	getEventExplorer *connect.Client[v1.GetEventExplorerRequest, v1.GetEventExplorerResponse]
+	getActivityFeed   *connect.Client[v1.GetActivityFeedRequest, v1.GetActivityFeedResponse]
+	getEventExplorer  *connect.Client[v1.GetEventExplorerRequest, v1.GetEventExplorerResponse]
+	getFilterSchema   *connect.Client[v1.GetFilterSchemaRequest, v1.GetFilterSchemaResponse]
+	getPropertyValues *connect.Client[v1.GetPropertyValuesRequest, v1.GetPropertyValuesResponse]
 }
 
 // GetActivityFeed calls shared.activity.v1.ActivityService.GetActivityFeed.
@@ -93,6 +117,16 @@ func (c *activityServiceClient) GetEventExplorer(ctx context.Context, req *conne
 	return c.getEventExplorer.CallUnary(ctx, req)
 }
 
+// GetFilterSchema calls shared.activity.v1.ActivityService.GetFilterSchema.
+func (c *activityServiceClient) GetFilterSchema(ctx context.Context, req *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error) {
+	return c.getFilterSchema.CallUnary(ctx, req)
+}
+
+// GetPropertyValues calls shared.activity.v1.ActivityService.GetPropertyValues.
+func (c *activityServiceClient) GetPropertyValues(ctx context.Context, req *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error) {
+	return c.getPropertyValues.CallUnary(ctx, req)
+}
+
 // ActivityServiceHandler is an implementation of the shared.activity.v1.ActivityService service.
 type ActivityServiceHandler interface {
 	// GetActivityFeed returns a paginated, filterable list of events for a user profile.
@@ -101,6 +135,10 @@ type ActivityServiceHandler interface {
 	// GetEventExplorer returns a paginated, filterable list of events across all users
 	// in a project. Does not resolve aliases.
 	GetEventExplorer(context.Context, *connect.Request[v1.GetEventExplorerRequest]) (*connect.Response[v1.GetEventExplorerResponse], error)
+	// GetFilterSchema returns event names, property keys, and profile property keys for filter UIs.
+	GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error)
+	// GetPropertyValues returns distinct values for a given property key.
+	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 }
 
 // NewActivityServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -122,12 +160,28 @@ func NewActivityServiceHandler(svc ActivityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(activityServiceMethods.ByName("GetEventExplorer")),
 		connect.WithHandlerOptions(opts...),
 	)
+	activityServiceGetFilterSchemaHandler := connect.NewUnaryHandler(
+		ActivityServiceGetFilterSchemaProcedure,
+		svc.GetFilterSchema,
+		connect.WithSchema(activityServiceMethods.ByName("GetFilterSchema")),
+		connect.WithHandlerOptions(opts...),
+	)
+	activityServiceGetPropertyValuesHandler := connect.NewUnaryHandler(
+		ActivityServiceGetPropertyValuesProcedure,
+		svc.GetPropertyValues,
+		connect.WithSchema(activityServiceMethods.ByName("GetPropertyValues")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/shared.activity.v1.ActivityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ActivityServiceGetActivityFeedProcedure:
 			activityServiceGetActivityFeedHandler.ServeHTTP(w, r)
 		case ActivityServiceGetEventExplorerProcedure:
 			activityServiceGetEventExplorerHandler.ServeHTTP(w, r)
+		case ActivityServiceGetFilterSchemaProcedure:
+			activityServiceGetFilterSchemaHandler.ServeHTTP(w, r)
+		case ActivityServiceGetPropertyValuesProcedure:
+			activityServiceGetPropertyValuesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -143,4 +197,12 @@ func (UnimplementedActivityServiceHandler) GetActivityFeed(context.Context, *con
 
 func (UnimplementedActivityServiceHandler) GetEventExplorer(context.Context, *connect.Request[v1.GetEventExplorerRequest]) (*connect.Response[v1.GetEventExplorerResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.activity.v1.ActivityService.GetEventExplorer is not implemented"))
+}
+
+func (UnimplementedActivityServiceHandler) GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.activity.v1.ActivityService.GetFilterSchema is not implemented"))
+}
+
+func (UnimplementedActivityServiceHandler) GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.activity.v1.ActivityService.GetPropertyValues is not implemented"))
 }

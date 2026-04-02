@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/fivebitsio/cotton/internal/core/profiles"
+	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
@@ -104,17 +105,17 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		return nil, err
 	}
 
-	toEventMetas := func(rows []EventNameMeta) []*insightsv1.EventNameMeta {
-		out := make([]*insightsv1.EventNameMeta, len(rows))
+	toEventMetas := func(rows []EventNameMeta) []*commonv1.EventNameMeta {
+		out := make([]*commonv1.EventNameMeta, len(rows))
 		for i, m := range rows {
-			out[i] = &insightsv1.EventNameMeta{Name: m.Kind, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
+			out[i] = &commonv1.EventNameMeta{Name: m.Kind, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
 		}
 		return out
 	}
-	toPropKeyMetas := func(rows []EventNameMeta) []*insightsv1.PropertyKeyMeta {
-		out := make([]*insightsv1.PropertyKeyMeta, len(rows))
+	toPropKeyMetas := func(rows []EventNameMeta) []*commonv1.PropertyKeyMeta {
+		out := make([]*commonv1.PropertyKeyMeta, len(rows))
 		for i, m := range rows {
-			out[i] = &insightsv1.PropertyKeyMeta{Name: m.Kind, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
+			out[i] = &commonv1.PropertyKeyMeta{Name: m.Kind, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
 		}
 		return out
 	}
@@ -137,7 +138,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	return resp, nil
 }
 
-func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey, eventKind string, source insightsv1.PropertySource) ([]string, error) {
+func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey, eventKind string, source commonv1.PropertySource) ([]string, error) {
 	cacheKey := fmt.Sprintf("propvalues:%s:%d:%s:%s", projectID, source, propertyKey, eventKind)
 
 	cached, cacheErr := s.redis.Get(ctx, cacheKey).Result()
@@ -155,13 +156,13 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	var err error
 
 	switch source {
-	case insightsv1.PropertySource_PROPERTY_SOURCE_AUTO:
+	case commonv1.PropertySource_PROPERTY_SOURCE_AUTO:
 		sql, args := BuildPropertyValuesQuery(projectID, propertyKey, "auto_properties", eventKind)
 		values, err = s.executor.QueryDistinctIDs(ctx, sql, args)
-	case insightsv1.PropertySource_PROPERTY_SOURCE_CUSTOM:
+	case commonv1.PropertySource_PROPERTY_SOURCE_CUSTOM:
 		sql, args := BuildPropertyValuesQuery(projectID, propertyKey, "custom_properties", eventKind)
 		values, err = s.executor.QueryDistinctIDs(ctx, sql, args)
-	case insightsv1.PropertySource_PROPERTY_SOURCE_PROFILE:
+	case commonv1.PropertySource_PROPERTY_SOURCE_PROFILE:
 		values, err = s.profiles.GetPropertyValues(ctx, projectID, propertyKey)
 	default:
 		return nil, fmt.Errorf("unsupported property source: %v", source)
