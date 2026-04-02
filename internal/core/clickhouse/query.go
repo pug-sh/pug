@@ -12,6 +12,21 @@ type Condition struct {
 	err  error
 }
 
+// SQL returns the condition SQL fragment.
+func (c Condition) SQL() string {
+	return c.sql
+}
+
+// Args returns positional args for this condition.
+func (c Condition) Args() []any {
+	return c.args
+}
+
+// IsZero reports whether the condition is a zero-value (should be skipped).
+func (c Condition) IsZero() bool {
+	return c.isZero()
+}
+
 // isZero reports whether the condition is a zero-value (should be skipped).
 func (c Condition) isZero() bool {
 	return c.sql == "" && c.err == nil

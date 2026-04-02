@@ -18,6 +18,8 @@ func BuildQuery(req *insightsv1.QueryRequest, projectID string) (string, []any, 
 		return buildTrends(req, projectID)
 	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
 		return buildSegmentation(req, projectID)
+	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
+		return buildFunnel(req, projectID)
 	default:
 		return "", nil, fmt.Errorf("unsupported insight type: %v", req.GetInsightType())
 	}
@@ -161,6 +163,68 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 		Build()
 }
 
+func buildFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
+	steps := req.GetEvents()
+	if len(steps) == 0 {
+		return "", nil, fmt.Errorf("funnel requires at least one event step")
+	}
+
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	if err != nil {
+		return "", nil, err
+	}
+
+	stepQueries := make([]*chq.Query, 0, len(steps))
+	for i, step := range steps {
+		stepCond, err := buildFunnelStepCondition(step, i)
+		if err != nil {
+			return "", nil, err
+		}
+
+		fromTable := "events e"
+		conds := []chq.Condition{
+			chq.Eq("e.project_id", projectID),
+			chq.Gte("e.occur_time", req.GetTimeRange().GetFrom().AsTime()),
+			chq.Lt("e.occur_time", req.GetTimeRange().GetTo().AsTime()),
+			chq.RawCond(stepCond.SQL(), stepCond.Args()...),
+		}
+
+		if !topLevelFilterCond.IsZero() {
+			conds = append(conds, chq.RawCond(topLevelFilterCond.SQL(), topLevelFilterCond.Args()...))
+		}
+
+		if i > 0 {
+			fromTable = fmt.Sprintf("events e INNER JOIN step_%d prev ON e.distinct_id = prev.distinct_id", i-1)
+			conds = append(conds, chq.RawCond("e.occur_time >= prev.step_time"))
+		}
+
+		stepQuery := chq.NewQuery().
+			Select("e.distinct_id", "min(e.occur_time) AS step_time").
+			From(fromTable).
+			Where(conds...).
+			GroupBy("e.distinct_id")
+
+		stepQueries = append(stepQueries, stepQuery)
+	}
+
+	unionQueries := make([]*chq.Query, 0, len(steps))
+	for i := range steps {
+		query := chq.NewQuery()
+		for j := 0; j <= i; j++ {
+			query.With(fmt.Sprintf("step_%d", j), stepQueries[j])
+		}
+		unionQueries = append(unionQueries, query.
+			Select(
+				fmt.Sprintf("CAST(%d AS Int64) AS step_index", i),
+				fmt.Sprintf("%s AS event_kind", sqlStringLiteral(steps[i].GetEvent().GetKind())),
+				"toFloat64(count(*)) AS value",
+			).
+			From(fmt.Sprintf("step_%d", i)))
+	}
+
+	return chq.UnionAll(unionQueries...).OrderBy("step_index ASC").Build()
+}
+
 // buildEventCondition extracts EventFilter from each EventQuery and delegates
 // to clickhouse.EventCondition for SQL generation.
 func buildEventCondition(events []*insightsv1.EventQuery) (chq.Condition, error) {
@@ -169,6 +233,24 @@ func buildEventCondition(events []*insightsv1.EventQuery) (chq.Condition, error)
 		filters[i] = ev.GetEvent()
 	}
 	return chq.EventCondition(filters)
+}
+
+func buildFunnelStepCondition(step *insightsv1.EventQuery, idx int) (chq.Condition, error) {
+	if step == nil {
+		return chq.Condition{}, fmt.Errorf("funnel step[%d]: event is required", idx)
+	}
+	cond, err := buildEventCondition([]*insightsv1.EventQuery{step})
+	if err != nil {
+		return chq.Condition{}, fmt.Errorf("funnel step[%d]: %w", idx, err)
+	}
+	if cond.IsZero() {
+		return chq.Condition{}, fmt.Errorf("funnel step[%d]: empty event filter", idx)
+	}
+	return cond, nil
+}
+
+func sqlStringLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "\\'") + "'"
 }
 
 // BuildSegmentUsersQuery builds a ClickHouse SQL query and args from a SegmentUsersRequest.

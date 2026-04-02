@@ -21,6 +21,13 @@ type TrendRow struct {
 	Value      float64
 }
 
+// FunnelRow is a single funnel step aggregate.
+type FunnelRow struct {
+	StepIndex int64
+	EventKind string
+	Value     float64
+}
+
 // Executor runs pre-built ClickHouse queries and scans the results.
 type Executor struct {
 	ch driver.Conn
@@ -141,6 +148,32 @@ func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any
 			return nil, err
 		}
 		result = append(result, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// QueryFunnel executes a funnel query and returns rows of (step_index, event_kind, value).
+func (e *Executor) QueryFunnel(ctx context.Context, sql string, args []any) ([]FunnelRow, error) {
+	rows, err := e.ch.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+		}
+	}()
+
+	var result []FunnelRow
+	for rows.Next() {
+		var row FunnelRow
+		if err := rows.Scan(&row.StepIndex, &row.EventKind, &row.Value); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

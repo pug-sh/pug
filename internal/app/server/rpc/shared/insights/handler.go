@@ -28,7 +28,7 @@ func NewServer(service *coreinsights.Service, executor *coreinsights.Executor) *
 	}
 }
 
-// Query handles analytics queries for trends and segmentation insight types.
+// Query handles analytics queries for trends, segmentation, and funnel insight types.
 func (s *server) Query(
 	ctx context.Context,
 	req *connect.Request[insightsv1.QueryRequest],
@@ -80,6 +80,20 @@ func (s *server) Query(
 			{
 				Total: value,
 			},
+		}
+	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
+		rows, err := s.executor.QueryFunnel(ctx, sql, args)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to query funnel", slogx.Error(err),
+				slog.String("projectID", principal.Project.ID))
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
+		series = make([]*insightsv1.Series, 0, len(rows))
+		for _, row := range rows {
+			series = append(series, &insightsv1.Series{
+				EventKind: row.EventKind,
+				Total:     row.Value,
+			})
 		}
 
 	default:

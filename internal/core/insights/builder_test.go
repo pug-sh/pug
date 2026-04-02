@@ -142,6 +142,60 @@ func TestSegmentation(t *testing.T) {
 	}
 }
 
+func TestFunnel(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "page_view"}},
+			{Event: &commonv1.EventFilter{Kind: "purchase"}},
+		},
+	}
+
+	sql, args, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(sql, "WITH step_0 AS") {
+		t.Errorf("expected step_0 CTE in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "WITH step_0 AS") || !strings.Contains(sql, "step_1 AS") {
+		t.Errorf("expected step_0 and step_1 CTEs in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "INNER JOIN step_0 prev") {
+		t.Errorf("expected join with previous step in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "ORDER BY step_index ASC") {
+		t.Errorf("expected step ordering in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "'page_view' AS event_kind") || !strings.Contains(sql, "'purchase' AS event_kind") {
+		t.Errorf("expected step labels in SQL, got: %s", sql)
+	}
+
+	// Subquery args are cumulative across funnel steps:
+	// step_0 output has step_0 args (4),
+	// step_1 output has step_0+step_1 args (8).
+	if len(args) != 12 {
+		t.Errorf("expected 12 args for 2-step funnel, got %d: %v", len(args), args)
+	}
+}
+
+func TestFunnelRequiresAtLeastOneStep(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+	}
+
+	_, _, err := insights.BuildQuery(req, "proj_123")
+	if err == nil {
+		t.Fatal("expected error for funnel with no events, got nil")
+	}
+	if !strings.Contains(err.Error(), "funnel requires at least one event step") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 // TestAllEvents verifies that an empty events list generates no kind filter (3 args).
 func TestAllEvents(t *testing.T) {
 	req := &insightsv1.QueryRequest{

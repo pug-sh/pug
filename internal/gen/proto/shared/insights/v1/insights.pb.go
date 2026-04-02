@@ -30,6 +30,7 @@ const (
 	InsightType_INSIGHT_TYPE_UNSPECIFIED  InsightType = 0
 	InsightType_INSIGHT_TYPE_TRENDS       InsightType = 1
 	InsightType_INSIGHT_TYPE_SEGMENTATION InsightType = 2
+	InsightType_INSIGHT_TYPE_FUNNEL       InsightType = 3
 )
 
 // Enum value maps for InsightType.
@@ -38,11 +39,13 @@ var (
 		0: "INSIGHT_TYPE_UNSPECIFIED",
 		1: "INSIGHT_TYPE_TRENDS",
 		2: "INSIGHT_TYPE_SEGMENTATION",
+		3: "INSIGHT_TYPE_FUNNEL",
 	}
 	InsightType_value = map[string]int32{
 		"INSIGHT_TYPE_UNSPECIFIED":  0,
 		"INSIGHT_TYPE_TRENDS":       1,
 		"INSIGHT_TYPE_SEGMENTATION": 2,
+		"INSIGHT_TYPE_FUNNEL":       3,
 	}
 )
 
@@ -666,6 +669,7 @@ func (x *Breakdown) GetProperty() string {
 // For TRENDS without breakdowns: event_kind + points are set.
 // For TRENDS with breakdowns: breakdown + points are set.
 // For SEGMENTATION: total is set.
+// For FUNNEL: event_kind + total are set (one series per step).
 type Series struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Label         string                 `protobuf:"bytes,1,opt,name=label" json:"label,omitempty"` // Reserved for future use.
@@ -1078,11 +1082,12 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x06events\x18\x01 \x03(\v2\x18.common.v1.EventNameMetaR\x06events\x12H\n" +
 	"\x12auto_property_keys\x18\x02 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x10autoPropertyKeys\x12L\n" +
 	"\x14custom_property_keys\x18\x03 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x12customPropertyKeys\x122\n" +
-	"\x15profile_property_keys\x18\x04 \x03(\tR\x13profilePropertyKeys*c\n" +
+	"\x15profile_property_keys\x18\x04 \x03(\tR\x13profilePropertyKeys*|\n" +
 	"\vInsightType\x12\x1c\n" +
 	"\x18INSIGHT_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13INSIGHT_TYPE_TRENDS\x10\x01\x12\x1d\n" +
-	"\x19INSIGHT_TYPE_SEGMENTATION\x10\x02*\x82\x01\n" +
+	"\x19INSIGHT_TYPE_SEGMENTATION\x10\x02\x12\x17\n" +
+	"\x13INSIGHT_TYPE_FUNNEL\x10\x03*\x82\x01\n" +
 	"\vGranularity\x12\x1b\n" +
 	"\x17GRANULARITY_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10GRANULARITY_HOUR\x10\x01\x12\x13\n" +
