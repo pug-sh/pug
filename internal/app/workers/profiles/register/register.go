@@ -18,6 +18,7 @@ import (
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -120,17 +121,17 @@ func handleRegister(ctx context.Context, w *profiles.Worker, natsClient *natswor
 					With("worker", "profile-register").
 					With("profile_id", msg.GetProfileId())
 			}
-			return publishRegisterUpsert(ctx, natsClient, existing.ID, existing.ProjectID, existing.ExternalID.String, existing.Properties)
+			return publishRegisterUpsert(ctx, natsClient, existing.ID, existing.ProjectID, existing.ExternalID.String, existing.Properties, existing.CreateTime.Time, existing.UpdateTime.Time)
 		}
 		slog.ErrorContext(ctx, "failed to register profile", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
 		return err
 	}
 
-	return publishRegisterUpsert(ctx, natsClient, profile.ID, profile.ProjectID, profile.ExternalID.String, profile.Properties)
+	return publishRegisterUpsert(ctx, natsClient, profile.ID, profile.ProjectID, profile.ExternalID.String, profile.Properties, profile.CreateTime.Time, profile.UpdateTime.Time)
 }
 
-func publishRegisterUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profileID, projectID, externalID string, properties map[string]any) error {
+func publishRegisterUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profileID, projectID, externalID string, properties map[string]any, createTime, updateTime time.Time) error {
 	propsStruct, err := structpb.NewStruct(properties)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed converting profile properties to struct", slogx.Error(err),
@@ -145,6 +146,8 @@ func publishRegisterUpsert(ctx context.Context, natsClient *natsworker.NATSClien
 		ProjectId:  projectID,
 		ExternalId: externalID,
 		Properties: propsStruct,
+		CreateTime: timestamppb.New(createTime),
+		UpdateTime: timestamppb.New(updateTime),
 	}
 
 	upsertData, err := proto.Marshal(upsertMsg)

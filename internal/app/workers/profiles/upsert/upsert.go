@@ -96,7 +96,10 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 		isDeleted = 1
 	}
 
-	batch, err := ch.PrepareBatch(ctx, "INSERT INTO profiles (id, project_id, external_id, properties, is_deleted)")
+	createTime := msg.GetCreateTime().AsTime()
+	updateTime := msg.GetUpdateTime().AsTime()
+
+	batch, err := ch.PrepareBatch(ctx, "INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time)")
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
@@ -113,7 +116,7 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 		}
 	}()
 
-	if err := batch.Append(msg.GetProfileId(), msg.GetProjectId(), msg.GetExternalId(), string(propsJSON), isDeleted); err != nil {
+	if err := batch.Append(msg.GetProfileId(), msg.GetProjectId(), msg.GetExternalId(), string(propsJSON), isDeleted, createTime, updateTime); err != nil {
 		slog.ErrorContext(ctx, "failed to append profile to batch", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
 		return natsworker.NewPermanentError(err).

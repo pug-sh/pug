@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
@@ -58,10 +59,12 @@ func (s *Server) Delete(
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 	}
 
+	now := timestamppb.New(time.Now())
 	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
-		ProfileId: req.Msg.Id,
-		ProjectId: principal.Project.ID,
-		IsDeleted: true,
+		ProfileId:  req.Msg.Id,
+		ProjectId:  principal.Project.ID,
+		IsDeleted:  true,
+		UpdateTime: now,
 	}
 	upsertData, err := proto.Marshal(upsertMsg)
 	if err != nil {

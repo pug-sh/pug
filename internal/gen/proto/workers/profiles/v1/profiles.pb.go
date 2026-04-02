@@ -10,6 +10,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -97,6 +98,8 @@ type ProfileUpsertMessage struct {
 	ExternalId    string                 `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	Properties    *structpb.Struct       `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
 	IsDeleted     bool                   `protobuf:"varint,5,opt,name=is_deleted,json=isDeleted" json:"is_deleted,omitempty"`
+	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
+	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -166,11 +169,25 @@ func (x *ProfileUpsertMessage) GetIsDeleted() bool {
 	return false
 }
 
+func (x *ProfileUpsertMessage) GetCreateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreateTime
+	}
+	return nil
+}
+
+func (x *ProfileUpsertMessage) GetUpdateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdateTime
+	}
+	return nil
+}
+
 var File_workers_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_workers_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\"workers/profiles/v1/profiles.proto\x12\x13workers.profiles.v1\x1a\x1cgoogle/protobuf/struct.proto\"\x8f\x01\n" +
+	"\"workers/profiles/v1/profiles.proto\x12\x13workers.profiles.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8f\x01\n" +
 	"\x13ProfileAliasMessage\x12\x19\n" +
 	"\balias_id\x18\x01 \x01(\tR\aaliasId\x12\x1d\n" +
 	"\n" +
@@ -178,7 +195,7 @@ const file_workers_profiles_v1_profiles_proto_rawDesc = "" +
 	"\vexternal_id\x18\x03 \x01(\tR\n" +
 	"externalId\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x04 \x01(\tR\tprojectId\"\xcd\x01\n" +
+	"project_id\x18\x04 \x01(\tR\tprojectId\"\xc7\x02\n" +
 	"\x14ProfileUpsertMessage\x12\x1d\n" +
 	"\n" +
 	"profile_id\x18\x01 \x01(\tR\tprofileId\x12\x1d\n" +
@@ -190,7 +207,11 @@ const file_workers_profiles_v1_profiles_proto_rawDesc = "" +
 	"properties\x18\x04 \x01(\v2\x17.google.protobuf.StructR\n" +
 	"properties\x12\x1d\n" +
 	"\n" +
-	"is_deleted\x18\x05 \x01(\bR\tisDeletedB[ZTgithub.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1;workerprofilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"is_deleted\x18\x05 \x01(\bR\tisDeleted\x12;\n" +
+	"\vcreate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"createTime\x12;\n" +
+	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"updateTimeB[ZTgithub.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1;workerprofilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_workers_profiles_v1_profiles_proto_rawDescOnce sync.Once
@@ -206,17 +227,20 @@ func file_workers_profiles_v1_profiles_proto_rawDescGZIP() []byte {
 
 var file_workers_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_workers_profiles_v1_profiles_proto_goTypes = []any{
-	(*ProfileAliasMessage)(nil),  // 0: workers.profiles.v1.ProfileAliasMessage
-	(*ProfileUpsertMessage)(nil), // 1: workers.profiles.v1.ProfileUpsertMessage
-	(*structpb.Struct)(nil),      // 2: google.protobuf.Struct
+	(*ProfileAliasMessage)(nil),   // 0: workers.profiles.v1.ProfileAliasMessage
+	(*ProfileUpsertMessage)(nil),  // 1: workers.profiles.v1.ProfileUpsertMessage
+	(*structpb.Struct)(nil),       // 2: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
 }
 var file_workers_profiles_v1_profiles_proto_depIdxs = []int32{
 	2, // 0: workers.profiles.v1.ProfileUpsertMessage.properties:type_name -> google.protobuf.Struct
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 1: workers.profiles.v1.ProfileUpsertMessage.create_time:type_name -> google.protobuf.Timestamp
+	3, // 2: workers.profiles.v1.ProfileUpsertMessage.update_time:type_name -> google.protobuf.Timestamp
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_workers_profiles_v1_profiles_proto_init() }

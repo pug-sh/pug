@@ -21,6 +21,7 @@ import (
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func Run(ctx context.Context) error {
@@ -127,6 +128,8 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		upsertID         string
 		upsertExtID      string
 		upsertProperties map[string]any
+		upsertCreateTime time.Time
+		upsertUpdateTime time.Time
 		// deletedProfileID is set in the merge case to soft-delete the source in CH.
 		deletedProfileID string
 	)
@@ -152,12 +155,14 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		upsertID = updated.ID
 		upsertExtID = updated.ExternalID.String
 		upsertProperties = updated.Properties
+		upsertCreateTime = updated.CreateTime.Time
+		upsertUpdateTime = updated.UpdateTime.Time
 
 	default:
 		// Already identified — skip merge and deletion but still sync current state to ClickHouse
 		// (handles retries where PG succeeded but a prior NATS publish failed).
 		if existing.ID == profileID {
-			return publishUpsert(ctx, natsClient, existing.ID, projectID, existing.ExternalID.String, existing.Properties, false)
+			return publishUpsert(ctx, natsClient, existing.ID, projectID, existing.ExternalID.String, existing.Properties, false, existing.CreateTime.Time, existing.UpdateTime.Time)
 		}
 
 		// Different profile owns this external_id — merge anonymous into existing.
@@ -177,6 +182,8 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 				upsertID = existing.ID
 				upsertExtID = existing.ExternalID.String
 				upsertProperties = existing.Properties
+				upsertCreateTime = existing.CreateTime.Time
+				upsertUpdateTime = existing.UpdateTime.Time
 			} else {
 				slog.ErrorContext(ctx, "failed merging profile properties", slogx.Error(err),
 					slog.String("sourceId", profileID), slog.String("targetId", existing.ID))
@@ -186,6 +193,8 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			upsertID = merged.ID
 			upsertExtID = merged.ExternalID.String
 			upsertProperties = merged.Properties
+			upsertCreateTime = merged.CreateTime.Time
+			upsertUpdateTime = merged.UpdateTime.Time
 		}
 
 		if err := qtx.ReassignProfileDevices(ctx, dbwrite.ReassignProfileDevicesParams{
@@ -226,13 +235,13 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	}
 
 	// Publish upsert for the target profile.
-	if err := publishUpsert(ctx, natsClient, upsertID, projectID, upsertExtID, upsertProperties, false); err != nil {
+	if err := publishUpsert(ctx, natsClient, upsertID, projectID, upsertExtID, upsertProperties, false, upsertCreateTime, upsertUpdateTime); err != nil {
 		return err
 	}
 
 	// Soft-delete the source profile in CH when a merge occurred.
 	if deletedProfileID != "" {
-		if err := publishUpsert(ctx, natsClient, deletedProfileID, projectID, "", nil, true); err != nil {
+		if err := publishUpsert(ctx, natsClient, deletedProfileID, projectID, "", nil, true, time.Time{}, time.Time{}); err != nil {
 			return err
 		}
 	}
@@ -262,7 +271,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	return nil
 }
 
-func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profileID, projectID, externalID string, properties map[string]any, isDeleted bool) error {
+func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profileID, projectID, externalID string, properties map[string]any, isDeleted bool, createTime, updateTime time.Time) error {
 	if properties == nil {
 		properties = map[string]any{}
 	}
@@ -282,6 +291,8 @@ func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profi
 		ExternalId: externalID,
 		Properties: propsStruct,
 		IsDeleted:  isDeleted,
+		CreateTime: timestamppb.New(createTime),
+		UpdateTime: timestamppb.New(updateTime),
 	}
 
 	upsertData, err := proto.Marshal(upsertMsg)
