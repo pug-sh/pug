@@ -61,9 +61,12 @@ func (q *Queries) GetProfileByProjectAndExternalID(ctx context.Context, arg GetP
 
 const getProfilePropertyKeys = `-- name: GetProfilePropertyKeys :many
 select distinct key
-from profiles,
-     jsonb_object_keys(properties) as key
-where project_id = $1
+from (
+    select properties from profiles
+    where project_id = $1
+    limit 10000
+) sub,
+     jsonb_object_keys(sub.properties) as key
 order by key asc
 limit 1000
 `

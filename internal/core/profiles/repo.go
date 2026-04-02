@@ -11,6 +11,9 @@ type Repo struct {
 }
 
 func NewRepo(queries *dbread.Queries) *Repo {
+	if queries == nil {
+		panic("profiles: queries is nil")
+	}
 	return &Repo{queries: queries}
 }
 

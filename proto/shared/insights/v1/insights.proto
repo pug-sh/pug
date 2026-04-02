@@ -96,7 +96,7 @@ message DataPoint {
 message GetPropertyValuesRequest {
   string property_key            = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
   common.v1.PropertySource source = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
-  string event_kind              = 3;
+  string event_kind              = 3 [(buf.validate.field) = {string: {pattern: "^[a-zA-Z0-9_.-]*$"}}];
 }
 
 message GetPropertyValuesResponse {
@@ -104,7 +104,7 @@ message GetPropertyValuesResponse {
 }
 
 message GetFilterSchemaRequest {
-  string event_kind = 1;
+  string event_kind = 1 [(buf.validate.field) = {string: {pattern: "^[a-zA-Z0-9_.-]*$"}}];
 }
 
 message GetFilterSchemaResponse {

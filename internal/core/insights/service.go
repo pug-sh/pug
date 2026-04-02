@@ -32,6 +32,15 @@ type Service struct {
 }
 
 func NewService(executor *Executor, redis *redis.Client, profiles *profiles.Repo) *Service {
+	if executor == nil {
+		panic("insights: executor is nil")
+	}
+	if redis == nil {
+		panic("insights: redis is nil")
+	}
+	if profiles == nil {
+		panic("insights: profiles is nil")
+	}
 	return &Service{
 		executor: executor,
 		redis:    redis,
@@ -136,7 +145,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		slog.ErrorContext(ctx, "failed to marshal filter schema for cache", slogx.Error(err),
 			slog.String("projectID", projectID))
 	} else if err := s.redis.Set(ctx, cacheKey, data, schemaCacheTTL).Err(); err != nil {
-		slog.ErrorContext(ctx, "failed to cache filter schema", slogx.Error(err),
+		slog.WarnContext(ctx, "failed to cache filter schema", slogx.Error(err),
 			slog.String("projectID", projectID))
 	}
 
@@ -170,10 +179,10 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	switch source {
 	case commonv1.PropertySource_PROPERTY_SOURCE_AUTO:
 		sql, args := BuildAutoPropertyValuesQuery(projectID, propertyKey, eventKind)
-		values, err = s.executor.QueryDistinctIDs(ctx, sql, args)
+		values, err = s.executor.QueryStringColumn(ctx, sql, args)
 	case commonv1.PropertySource_PROPERTY_SOURCE_CUSTOM:
 		sql, args := BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind)
-		values, err = s.executor.QueryDistinctIDs(ctx, sql, args)
+		values, err = s.executor.QueryStringColumn(ctx, sql, args)
 	case commonv1.PropertySource_PROPERTY_SOURCE_PROFILE:
 		values, err = s.profiles.GetPropertyValues(ctx, projectID, propertyKey)
 	default:
@@ -191,7 +200,7 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 		slog.ErrorContext(ctx, "failed to marshal property values for cache", slogx.Error(err),
 			slog.String("projectID", projectID), slog.String("key", propertyKey))
 	} else if err := s.redis.Set(ctx, cacheKey, data, ttl).Err(); err != nil {
-		slog.ErrorContext(ctx, "failed to cache property values", slogx.Error(err),
+		slog.WarnContext(ctx, "failed to cache property values", slogx.Error(err),
 			slog.String("projectID", projectID), slog.String("key", propertyKey))
 	}
 

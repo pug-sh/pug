@@ -122,8 +122,8 @@ func (e *Executor) QueryAggregateKeys(ctx context.Context, sql string, args []an
 	return result, nil
 }
 
-// QueryDistinctIDs executes a query and returns a list of string values (distinct user IDs).
-func (e *Executor) QueryDistinctIDs(ctx context.Context, sql string, args []any) ([]string, error) {
+// QueryStringColumn executes a query and returns a list of string values from the first column.
+func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any) ([]string, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
@@ -165,6 +165,9 @@ func GroupSeries(rows []TrendRow, properties []string) []*insightsv1.Series {
 	entriesByKey := map[seriesKey]*seriesEntry{}
 
 	for _, r := range rows {
+		if len(properties) > 0 && len(r.Breakdowns) < len(properties) {
+			return nil
+		}
 		key := seriesKey{eventKind: r.EventKind, breakdown: fmt.Sprintf("%q", r.Breakdowns)}
 		if _, ok := entriesByKey[key]; !ok {
 			orderedKeys = append(orderedKeys, key)

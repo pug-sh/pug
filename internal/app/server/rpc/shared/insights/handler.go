@@ -111,7 +111,7 @@ func (s *server) SegmentUsers(
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 	}
 
-	ids, err := s.executor.QueryDistinctIDs(ctx, sql, args)
+	ids, err := s.executor.QueryStringColumn(ctx, sql, args)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to query distinct IDs", slogx.Error(err),
 			slog.String("projectID", principal.Project.ID))

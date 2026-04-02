@@ -241,9 +241,9 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BuildSegmentUsersQuery page1: %v", err)
 		}
-		page1, err := executor.QueryDistinctIDs(ctx, sql1, args1)
+		page1, err := executor.QueryStringColumn(ctx, sql1, args1)
 		if err != nil {
-			t.Fatalf("QueryDistinctIDs page1: %v", err)
+			t.Fatalf("QueryStringColumn page1: %v", err)
 		}
 		if len(page1) != 2 {
 			t.Fatalf("expected 2 IDs on page 1, got %d: %v", len(page1), page1)
@@ -257,9 +257,9 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BuildSegmentUsersQuery page2: %v", err)
 		}
-		page2, err := executor.QueryDistinctIDs(ctx, sql2, args2)
+		page2, err := executor.QueryStringColumn(ctx, sql2, args2)
 		if err != nil {
-			t.Fatalf("QueryDistinctIDs page2: %v", err)
+			t.Fatalf("QueryStringColumn page2: %v", err)
 		}
 		if len(page2) != 1 {
 			t.Fatalf("expected 1 ID on page 2, got %d: %v", len(page2), page2)
@@ -377,9 +377,9 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildSegmentUsersQuery: %v", err)
 		}
 
-		ids, err := executor.QueryDistinctIDs(ctx, sql, args)
+		ids, err := executor.QueryStringColumn(ctx, sql, args)
 		if err != nil {
-			t.Fatalf("QueryDistinctIDs: %v", err)
+			t.Fatalf("QueryStringColumn: %v", err)
 		}
 
 		// 3 distinct users: alice, bob, charlie
