@@ -2,6 +2,7 @@ edition = "2023";
 package shared.activity.v1;
 
 import "buf/validate/validate.proto";
+import "common/v1/filter_schema.proto";
 import "common/v1/filters.proto";
 import "common/v1/time.proto";
 import "google/protobuf/struct.proto";
@@ -18,6 +19,10 @@ service ActivityService {
   // GetEventExplorer returns a paginated, filterable list of events across all users
   // in a project. Does not resolve aliases.
   rpc GetEventExplorer(GetEventExplorerRequest) returns (GetEventExplorerResponse);
+  // GetFilterSchema returns event names, property keys, and profile property keys for filter UIs.
+  rpc GetFilterSchema(GetFilterSchemaRequest) returns (GetFilterSchemaResponse);
+  // GetPropertyValues returns distinct values for a given property key.
+  rpc GetPropertyValues(GetPropertyValuesRequest) returns (GetPropertyValuesResponse);
 }
 
 message GetActivityFeedRequest {
@@ -77,4 +82,25 @@ message GetEventExplorerResponse {
   repeated ActivityEvent events = 1;
   // Empty when there are no more pages.
   string next_page_token = 2;
+}
+
+message GetFilterSchemaRequest {
+  string event_kind = 1 [(buf.validate.field) = {string: {pattern: "^[a-zA-Z0-9_.-]*$"}}];
+}
+
+message GetFilterSchemaResponse {
+  repeated common.v1.EventNameMeta   events               = 1;
+  repeated common.v1.PropertyKeyMeta auto_property_keys   = 2;
+  repeated common.v1.PropertyKeyMeta custom_property_keys = 3;
+  repeated string                    profile_property_keys = 4;
+}
+
+message GetPropertyValuesRequest {
+  string property_key            = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
+  common.v1.PropertySource source = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
+  string event_kind              = 3 [(buf.validate.field) = {string: {pattern: "^[a-zA-Z0-9_.-]*$"}}];
+}
+
+message GetPropertyValuesResponse {
+  repeated string values = 1;
 }

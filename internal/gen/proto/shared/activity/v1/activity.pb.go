@@ -424,11 +424,227 @@ func (x *GetEventExplorerResponse) GetNextPageToken() string {
 	return ""
 }
 
+type GetFilterSchemaRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventKind     string                 `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetFilterSchemaRequest) Reset() {
+	*x = GetFilterSchemaRequest{}
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFilterSchemaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFilterSchemaRequest) ProtoMessage() {}
+
+func (x *GetFilterSchemaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFilterSchemaRequest.ProtoReflect.Descriptor instead.
+func (*GetFilterSchemaRequest) Descriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetFilterSchemaRequest) GetEventKind() string {
+	if x != nil {
+		return x.EventKind
+	}
+	return ""
+}
+
+type GetFilterSchemaResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Events              []*v1.EventNameMeta    `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
+	AutoPropertyKeys    []*v1.PropertyKeyMeta  `protobuf:"bytes,2,rep,name=auto_property_keys,json=autoPropertyKeys" json:"auto_property_keys,omitempty"`
+	CustomPropertyKeys  []*v1.PropertyKeyMeta  `protobuf:"bytes,3,rep,name=custom_property_keys,json=customPropertyKeys" json:"custom_property_keys,omitempty"`
+	ProfilePropertyKeys []string               `protobuf:"bytes,4,rep,name=profile_property_keys,json=profilePropertyKeys" json:"profile_property_keys,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *GetFilterSchemaResponse) Reset() {
+	*x = GetFilterSchemaResponse{}
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFilterSchemaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFilterSchemaResponse) ProtoMessage() {}
+
+func (x *GetFilterSchemaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFilterSchemaResponse.ProtoReflect.Descriptor instead.
+func (*GetFilterSchemaResponse) Descriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetFilterSchemaResponse) GetEvents() []*v1.EventNameMeta {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetAutoPropertyKeys() []*v1.PropertyKeyMeta {
+	if x != nil {
+		return x.AutoPropertyKeys
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetCustomPropertyKeys() []*v1.PropertyKeyMeta {
+	if x != nil {
+		return x.CustomPropertyKeys
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetProfilePropertyKeys() []string {
+	if x != nil {
+		return x.ProfilePropertyKeys
+	}
+	return nil
+}
+
+type GetPropertyValuesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PropertyKey   string                 `protobuf:"bytes,1,opt,name=property_key,json=propertyKey" json:"property_key,omitempty"`
+	Source        v1.PropertySource      `protobuf:"varint,2,opt,name=source,enum=common.v1.PropertySource" json:"source,omitempty"`
+	EventKind     string                 `protobuf:"bytes,3,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPropertyValuesRequest) Reset() {
+	*x = GetPropertyValuesRequest{}
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPropertyValuesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPropertyValuesRequest) ProtoMessage() {}
+
+func (x *GetPropertyValuesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPropertyValuesRequest.ProtoReflect.Descriptor instead.
+func (*GetPropertyValuesRequest) Descriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetPropertyValuesRequest) GetPropertyKey() string {
+	if x != nil {
+		return x.PropertyKey
+	}
+	return ""
+}
+
+func (x *GetPropertyValuesRequest) GetSource() v1.PropertySource {
+	if x != nil {
+		return x.Source
+	}
+	return v1.PropertySource(0)
+}
+
+func (x *GetPropertyValuesRequest) GetEventKind() string {
+	if x != nil {
+		return x.EventKind
+	}
+	return ""
+}
+
+type GetPropertyValuesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Values        []string               `protobuf:"bytes,1,rep,name=values" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPropertyValuesResponse) Reset() {
+	*x = GetPropertyValuesResponse{}
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPropertyValuesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPropertyValuesResponse) ProtoMessage() {}
+
+func (x *GetPropertyValuesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPropertyValuesResponse.ProtoReflect.Descriptor instead.
+func (*GetPropertyValuesResponse) Descriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetPropertyValuesResponse) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
 var File_shared_activity_v1_activity_proto protoreflect.FileDescriptor
 
 const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\n" +
-	"!shared/activity/v1/activity.proto\x12\x12shared.activity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb8\x02\n" +
+	"!shared/activity/v1/activity.proto\x12\x12shared.activity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb8\x02\n" +
 	"\x16GetActivityFeedRequest\x12(\n" +
 	"\vdistinct_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"distinctId\x12\x12\n" +
@@ -471,10 +687,27 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"page_token\x18\a \x01(\tR\tpageToken\"}\n" +
 	"\x18GetEventExplorerResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xec\x01\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"Q\n" +
+	"\x16GetFilterSchemaRequest\x127\n" +
+	"\n" +
+	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"\x97\x02\n" +
+	"\x17GetFilterSchemaResponse\x120\n" +
+	"\x06events\x18\x01 \x03(\v2\x18.common.v1.EventNameMetaR\x06events\x12H\n" +
+	"\x12auto_property_keys\x18\x02 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x10autoPropertyKeys\x12L\n" +
+	"\x14custom_property_keys\x18\x03 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x12customPropertyKeys\x122\n" +
+	"\x15profile_property_keys\x18\x04 \x03(\tR\x13profilePropertyKeys\"\xd6\x01\n" +
+	"\x18GetPropertyValuesRequest\x12A\n" +
+	"\fproperty_key\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\vpropertyKey\x12>\n" +
+	"\x06source\x18\x02 \x01(\x0e2\x19.common.v1.PropertySourceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06source\x127\n" +
+	"\n" +
+	"event_kind\x18\x03 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"3\n" +
+	"\x19GetPropertyValuesResponse\x12\x16\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values2\xca\x03\n" +
 	"\x0fActivityService\x12j\n" +
 	"\x0fGetActivityFeed\x12*.shared.activity.v1.GetActivityFeedRequest\x1a+.shared.activity.v1.GetActivityFeedResponse\x12m\n" +
-	"\x10GetEventExplorer\x12+.shared.activity.v1.GetEventExplorerRequest\x1a,.shared.activity.v1.GetEventExplorerResponseBTZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1;activityv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x10GetEventExplorer\x12+.shared.activity.v1.GetEventExplorerRequest\x1a,.shared.activity.v1.GetEventExplorerResponse\x12j\n" +
+	"\x0fGetFilterSchema\x12*.shared.activity.v1.GetFilterSchemaRequest\x1a+.shared.activity.v1.GetFilterSchemaResponse\x12p\n" +
+	"\x11GetPropertyValues\x12,.shared.activity.v1.GetPropertyValuesRequest\x1a-.shared.activity.v1.GetPropertyValuesResponseBTZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1;activityv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_shared_activity_v1_activity_proto_rawDescOnce sync.Once
@@ -488,37 +721,52 @@ func file_shared_activity_v1_activity_proto_rawDescGZIP() []byte {
 	return file_shared_activity_v1_activity_proto_rawDescData
 }
 
-var file_shared_activity_v1_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_shared_activity_v1_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_shared_activity_v1_activity_proto_goTypes = []any{
-	(*GetActivityFeedRequest)(nil),   // 0: shared.activity.v1.GetActivityFeedRequest
-	(*ActivityEvent)(nil),            // 1: shared.activity.v1.ActivityEvent
-	(*GetActivityFeedResponse)(nil),  // 2: shared.activity.v1.GetActivityFeedResponse
-	(*GetEventExplorerRequest)(nil),  // 3: shared.activity.v1.GetEventExplorerRequest
-	(*GetEventExplorerResponse)(nil), // 4: shared.activity.v1.GetEventExplorerResponse
-	(*v1.TimeRange)(nil),             // 5: common.v1.TimeRange
-	(*v1.PropertyFilter)(nil),        // 6: common.v1.PropertyFilter
-	(*timestamppb.Timestamp)(nil),    // 7: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),          // 8: google.protobuf.Struct
+	(*GetActivityFeedRequest)(nil),    // 0: shared.activity.v1.GetActivityFeedRequest
+	(*ActivityEvent)(nil),             // 1: shared.activity.v1.ActivityEvent
+	(*GetActivityFeedResponse)(nil),   // 2: shared.activity.v1.GetActivityFeedResponse
+	(*GetEventExplorerRequest)(nil),   // 3: shared.activity.v1.GetEventExplorerRequest
+	(*GetEventExplorerResponse)(nil),  // 4: shared.activity.v1.GetEventExplorerResponse
+	(*GetFilterSchemaRequest)(nil),    // 5: shared.activity.v1.GetFilterSchemaRequest
+	(*GetFilterSchemaResponse)(nil),   // 6: shared.activity.v1.GetFilterSchemaResponse
+	(*GetPropertyValuesRequest)(nil),  // 7: shared.activity.v1.GetPropertyValuesRequest
+	(*GetPropertyValuesResponse)(nil), // 8: shared.activity.v1.GetPropertyValuesResponse
+	(*v1.TimeRange)(nil),              // 9: common.v1.TimeRange
+	(*v1.PropertyFilter)(nil),         // 10: common.v1.PropertyFilter
+	(*timestamppb.Timestamp)(nil),     // 11: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),           // 12: google.protobuf.Struct
+	(*v1.EventNameMeta)(nil),          // 13: common.v1.EventNameMeta
+	(*v1.PropertyKeyMeta)(nil),        // 14: common.v1.PropertyKeyMeta
+	(v1.PropertySource)(0),            // 15: common.v1.PropertySource
 }
 var file_shared_activity_v1_activity_proto_depIdxs = []int32{
-	5,  // 0: shared.activity.v1.GetActivityFeedRequest.time_range:type_name -> common.v1.TimeRange
-	6,  // 1: shared.activity.v1.GetActivityFeedRequest.property_filters:type_name -> common.v1.PropertyFilter
-	7,  // 2: shared.activity.v1.ActivityEvent.occur_time:type_name -> google.protobuf.Timestamp
-	8,  // 3: shared.activity.v1.ActivityEvent.auto_properties:type_name -> google.protobuf.Struct
-	8,  // 4: shared.activity.v1.ActivityEvent.custom_properties:type_name -> google.protobuf.Struct
+	9,  // 0: shared.activity.v1.GetActivityFeedRequest.time_range:type_name -> common.v1.TimeRange
+	10, // 1: shared.activity.v1.GetActivityFeedRequest.property_filters:type_name -> common.v1.PropertyFilter
+	11, // 2: shared.activity.v1.ActivityEvent.occur_time:type_name -> google.protobuf.Timestamp
+	12, // 3: shared.activity.v1.ActivityEvent.auto_properties:type_name -> google.protobuf.Struct
+	12, // 4: shared.activity.v1.ActivityEvent.custom_properties:type_name -> google.protobuf.Struct
 	1,  // 5: shared.activity.v1.GetActivityFeedResponse.events:type_name -> shared.activity.v1.ActivityEvent
-	5,  // 6: shared.activity.v1.GetEventExplorerRequest.time_range:type_name -> common.v1.TimeRange
-	6,  // 7: shared.activity.v1.GetEventExplorerRequest.property_filters:type_name -> common.v1.PropertyFilter
+	9,  // 6: shared.activity.v1.GetEventExplorerRequest.time_range:type_name -> common.v1.TimeRange
+	10, // 7: shared.activity.v1.GetEventExplorerRequest.property_filters:type_name -> common.v1.PropertyFilter
 	1,  // 8: shared.activity.v1.GetEventExplorerResponse.events:type_name -> shared.activity.v1.ActivityEvent
-	0,  // 9: shared.activity.v1.ActivityService.GetActivityFeed:input_type -> shared.activity.v1.GetActivityFeedRequest
-	3,  // 10: shared.activity.v1.ActivityService.GetEventExplorer:input_type -> shared.activity.v1.GetEventExplorerRequest
-	2,  // 11: shared.activity.v1.ActivityService.GetActivityFeed:output_type -> shared.activity.v1.GetActivityFeedResponse
-	4,  // 12: shared.activity.v1.ActivityService.GetEventExplorer:output_type -> shared.activity.v1.GetEventExplorerResponse
-	11, // [11:13] is the sub-list for method output_type
-	9,  // [9:11] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	13, // 9: shared.activity.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
+	14, // 10: shared.activity.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
+	14, // 11: shared.activity.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
+	15, // 12: shared.activity.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
+	0,  // 13: shared.activity.v1.ActivityService.GetActivityFeed:input_type -> shared.activity.v1.GetActivityFeedRequest
+	3,  // 14: shared.activity.v1.ActivityService.GetEventExplorer:input_type -> shared.activity.v1.GetEventExplorerRequest
+	5,  // 15: shared.activity.v1.ActivityService.GetFilterSchema:input_type -> shared.activity.v1.GetFilterSchemaRequest
+	7,  // 16: shared.activity.v1.ActivityService.GetPropertyValues:input_type -> shared.activity.v1.GetPropertyValuesRequest
+	2,  // 17: shared.activity.v1.ActivityService.GetActivityFeed:output_type -> shared.activity.v1.GetActivityFeedResponse
+	4,  // 18: shared.activity.v1.ActivityService.GetEventExplorer:output_type -> shared.activity.v1.GetEventExplorerResponse
+	6,  // 19: shared.activity.v1.ActivityService.GetFilterSchema:output_type -> shared.activity.v1.GetFilterSchemaResponse
+	8,  // 20: shared.activity.v1.ActivityService.GetPropertyValues:output_type -> shared.activity.v1.GetPropertyValuesResponse
+	17, // [17:21] is the sub-list for method output_type
+	13, // [13:17] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_shared_activity_v1_activity_proto_init() }
@@ -532,7 +780,7 @@ func file_shared_activity_v1_activity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_shared_activity_v1_activity_proto_rawDesc), len(file_shared_activity_v1_activity_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
