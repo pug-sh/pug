@@ -10,8 +10,8 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1"
-	"github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1/insightsv1connect"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 

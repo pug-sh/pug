@@ -1,5 +1,5 @@
 edition = "2023";
-package dashboard.insights.v1;
+package shared.insights.v1;
 
 import "buf/validate/validate.proto";
 import "common/v1/filters.proto";
@@ -7,7 +7,7 @@ import "common/v1/time.proto";
 import "google/protobuf/timestamp.proto";
 
 option features.field_presence = IMPLICIT;
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1;insightsv1";
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1;insightsv1";
 
 service InsightsService {
   rpc Query(QueryRequest) returns (QueryResponse);
