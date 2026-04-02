@@ -58,7 +58,17 @@ func (s *server) Query(
 	switch insightType {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
 		breakdowns := req.Msg.GetBreakdowns()
-		if len(breakdowns) == 0 {
+		events := req.Msg.GetEvents()
+		if len(events) > 1 && len(breakdowns) == 0 {
+			// Multi-event trends: one series per event kind.
+			rows, err := s.executor.QueryMultiEventTrends(ctx, sql, args)
+			if err != nil {
+				slog.ErrorContext(ctx, "failed to query multi-event trends", slogx.Error(err),
+					slog.String("projectID", principal.Project.ID))
+				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+			}
+			series = coreinsights.GroupMultiEventSeries(rows)
+		} else if len(breakdowns) == 0 {
 			// Simple trends: one series of (time, value) points
 			rows, err := s.executor.QueryTrends(ctx, sql, args)
 			if err != nil {
@@ -74,8 +84,8 @@ func (s *server) Query(
 				})
 			}
 			eventKind := ""
-			if len(req.Msg.GetEvents()) > 0 {
-				eventKind = req.Msg.GetEvents()[0].GetKind()
+			if len(events) > 0 {
+				eventKind = events[0].GetKind()
 			}
 			series = []*insightsv1.Series{
 				{

@@ -161,6 +161,49 @@ func TestAllEvents(t *testing.T) {
 	}
 }
 
+// TestMultiEventTrends verifies UNION ALL is generated for multiple events with one series per event.
+func TestMultiEventTrends(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+		Events: []*insightsv1.EventQuery{
+			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
+		},
+	}
+
+	sql, args, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(sql, "UNION ALL") {
+		t.Errorf("expected UNION ALL in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "kind AS event_kind") {
+		t.Errorf("expected 'kind AS event_kind' in SQL, got: %s", sql)
+	}
+	// Event kinds are passed as args, not inlined.
+	if args[3] != "page_view" {
+		t.Errorf("expected first event kind arg to be 'page_view', got %v", args[3])
+	}
+	if args[7] != "purchase" {
+		t.Errorf("expected second event kind arg to be 'purchase', got %v", args[7])
+	}
+	if !strings.Contains(sql, "toFloat64(count(*))") {
+		t.Errorf("expected total aggregation for page_view in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "toFloat64(count(DISTINCT distinct_id))") {
+		t.Errorf("expected unique users aggregation for purchase in SQL, got: %s", sql)
+	}
+
+	// args: (projectID, from, to, kind) x2 — no top-level filters
+	if len(args) != 8 {
+		t.Errorf("expected 8 args (4 per event), got %d: %v", len(args), args)
+	}
+}
+
 // TestPerUserAvg verifies the toFloat64 division expression is used.
 func TestPerUserAvg(t *testing.T) {
 	req := &insightsv1.QueryRequest{

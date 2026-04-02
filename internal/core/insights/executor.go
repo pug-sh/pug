@@ -182,6 +182,62 @@ func (e *Executor) QueryDistinctIDs(ctx context.Context, sql string, args []any)
 	return result, nil
 }
 
+// MultiEventTrendRow is a single time-bucketed aggregate value tagged with the event kind.
+type MultiEventTrendRow struct {
+	Time      time.Time
+	EventKind string
+	Value     float64
+}
+
+// QueryMultiEventTrends executes a UNION ALL trends query and returns rows of (time, event_kind, value).
+func (e *Executor) QueryMultiEventTrends(ctx context.Context, sql string, args []any) ([]MultiEventTrendRow, error) {
+	rows, err := e.ch.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+		}
+	}()
+
+	var result []MultiEventTrendRow
+	for rows.Next() {
+		var row MultiEventTrendRow
+		if err := rows.Scan(&row.Time, &row.EventKind, &row.Value); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// GroupMultiEventSeries groups MultiEventTrendRow results into one Series per event kind.
+func GroupMultiEventSeries(rows []MultiEventTrendRow) []*insightsv1.Series {
+	var orderedKinds []string
+	pointsByKind := map[string][]*insightsv1.DataPoint{}
+	for _, r := range rows {
+		if _, ok := pointsByKind[r.EventKind]; !ok {
+			orderedKinds = append(orderedKinds, r.EventKind)
+		}
+		pointsByKind[r.EventKind] = append(pointsByKind[r.EventKind], &insightsv1.DataPoint{
+			Time:  timestamppb.New(r.Time),
+			Value: r.Value,
+		})
+	}
+	series := make([]*insightsv1.Series, 0, len(orderedKinds))
+	for _, k := range orderedKinds {
+		series = append(series, &insightsv1.Series{
+			EventKind: k,
+			Points:    pointsByKind[k],
+		})
+	}
+	return series
+}
+
 // GroupBreakdownSeries groups BreakdownTrendRow results into Series, keyed by
 // their breakdown values. The properties slice provides the property name for
 // each breakdown dimension. Insertion order is preserved.
