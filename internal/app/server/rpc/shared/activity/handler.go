@@ -10,7 +10,6 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/events"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	activityv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1/activityv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -29,21 +28,6 @@ func NewServer(ch driver.Conn, insightsService *coreinsights.Service) *server {
 		eventsReader:    events.NewReader(ch),
 		insightsService: insightsService,
 	}
-}
-
-// normalizeEventFilters converts the deprecated kind field into a single-element
-// EventFilter slice when the new events field is empty. Logs at debug level when
-// both are set (events takes precedence).
-func normalizeEventFilters(ctx context.Context, eventFilters []*commonv1.EventFilter, deprecatedKind string) []*commonv1.EventFilter {
-	if len(eventFilters) == 0 && deprecatedKind != "" {
-		return []*commonv1.EventFilter{{Kind: deprecatedKind}}
-	}
-	if len(eventFilters) > 0 && deprecatedKind != "" {
-		slog.DebugContext(ctx, "ignoring deprecated kind field because events field is set",
-			slog.String("kind", deprecatedKind),
-			slog.Int("eventFilterCount", len(eventFilters)))
-	}
-	return eventFilters
 }
 
 func (s *server) GetActivityFeed(
@@ -65,7 +49,7 @@ func (s *server) GetActivityFeed(
 		SessionID:       req.Msg.GetSessionId(),
 		TimeRange:       req.Msg.GetTimeRange(),
 		PropertyFilters: req.Msg.GetPropertyFilters(),
-		EventFilters:    normalizeEventFilters(ctx, req.Msg.GetEvents(), req.Msg.GetKind()),
+		EventFilters:    req.Msg.GetEvents(),
 		PageSize:        req.Msg.GetPageSize(),
 	}
 
@@ -89,7 +73,6 @@ func (s *server) GetActivityFeed(
 			slogx.Error(err),
 			slog.String("projectID", principal.Project.ID),
 			slog.String("distinctID", req.Msg.GetDistinctId()),
-			slog.String("kind", req.Msg.GetKind()),
 			slog.String("sessionID", req.Msg.GetSessionId()),
 			slog.Int("filterCount", len(req.Msg.GetPropertyFilters())),
 			slog.Int("eventFilterCount", len(req.Msg.GetEvents())))
@@ -139,7 +122,7 @@ func (s *server) GetEventExplorer(
 		SessionID:       req.Msg.GetSessionId(),
 		TimeRange:       req.Msg.GetTimeRange(),
 		PropertyFilters: req.Msg.GetPropertyFilters(),
-		EventFilters:    normalizeEventFilters(ctx, req.Msg.GetEvents(), req.Msg.GetKind()),
+		EventFilters:    req.Msg.GetEvents(),
 		PageSize:        req.Msg.GetPageSize(),
 	}
 
@@ -163,7 +146,6 @@ func (s *server) GetEventExplorer(
 			slogx.Error(err),
 			slog.String("projectID", principal.Project.ID),
 			slog.String("distinctID", req.Msg.GetDistinctId()),
-			slog.String("kind", req.Msg.GetKind()),
 			slog.String("sessionID", req.Msg.GetSessionId()),
 			slog.Int("filterCount", len(req.Msg.GetPropertyFilters())),
 			slog.Int("eventFilterCount", len(req.Msg.GetEvents())))

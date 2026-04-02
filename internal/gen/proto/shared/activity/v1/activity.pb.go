@@ -29,23 +29,18 @@ type GetActivityFeedRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Required. The profile ID to fetch events for.
 	DistinctId string `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
-	// Deprecated: use events instead. Filter by a single event type. Empty means all kinds.
-	//
-	// Deprecated: Marked as deprecated in shared/activity/v1/activity.proto.
-	Kind string `protobuf:"bytes,2,opt,name=kind" json:"kind,omitempty"`
 	// Optional. Filter by session. Empty means all sessions.
-	SessionId string `protobuf:"bytes,3,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
+	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	// Optional. Restrict to events within this time window.
-	TimeRange *v1.TimeRange `protobuf:"bytes,4,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
+	TimeRange *v1.TimeRange `protobuf:"bytes,3,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
 	// Optional. Filter by event properties (auto or custom).
-	PropertyFilters []*v1.PropertyFilter `protobuf:"bytes,5,rep,name=property_filters,json=propertyFilters" json:"property_filters,omitempty"`
+	PropertyFilters []*v1.PropertyFilter `protobuf:"bytes,4,rep,name=property_filters,json=propertyFilters" json:"property_filters,omitempty"`
 	// 0 means server default (100). Max 1000.
-	PageSize int32 `protobuf:"varint,6,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
+	PageSize int32 `protobuf:"varint,5,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
 	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
-	PageToken string `protobuf:"bytes,7,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	PageToken string `protobuf:"bytes,6,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional. Filter by multiple event types with per-event property filters.
-	// When set, takes precedence over the singular kind field.
-	Events        []*v1.EventFilter `protobuf:"bytes,8,rep,name=events" json:"events,omitempty"`
+	Events        []*v1.EventFilter `protobuf:"bytes,7,rep,name=events" json:"events,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -83,14 +78,6 @@ func (*GetActivityFeedRequest) Descriptor() ([]byte, []int) {
 func (x *GetActivityFeedRequest) GetDistinctId() string {
 	if x != nil {
 		return x.DistinctId
-	}
-	return ""
-}
-
-// Deprecated: Marked as deprecated in shared/activity/v1/activity.proto.
-func (x *GetActivityFeedRequest) GetKind() string {
-	if x != nil {
-		return x.Kind
 	}
 	return ""
 }
@@ -289,23 +276,18 @@ type GetEventExplorerRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Optional. Filter to a specific user. Empty means all users.
 	DistinctId string `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
-	// Deprecated: use events instead. Filter by a single event type. Empty means all kinds.
-	//
-	// Deprecated: Marked as deprecated in shared/activity/v1/activity.proto.
-	Kind string `protobuf:"bytes,2,opt,name=kind" json:"kind,omitempty"`
 	// Optional. Filter by session. Empty means all sessions.
-	SessionId string `protobuf:"bytes,3,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
+	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	// Optional. Restrict to events within this time window.
-	TimeRange *v1.TimeRange `protobuf:"bytes,4,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
+	TimeRange *v1.TimeRange `protobuf:"bytes,3,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
 	// Optional. Filter by event properties (auto or custom).
-	PropertyFilters []*v1.PropertyFilter `protobuf:"bytes,5,rep,name=property_filters,json=propertyFilters" json:"property_filters,omitempty"`
+	PropertyFilters []*v1.PropertyFilter `protobuf:"bytes,4,rep,name=property_filters,json=propertyFilters" json:"property_filters,omitempty"`
 	// 0 means server default (100). Max 1000.
-	PageSize int32 `protobuf:"varint,6,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
+	PageSize int32 `protobuf:"varint,5,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
 	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
-	PageToken string `protobuf:"bytes,7,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	PageToken string `protobuf:"bytes,6,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional. Filter by multiple event types with per-event property filters.
-	// When set, takes precedence over the singular kind field.
-	Events        []*v1.EventFilter `protobuf:"bytes,8,rep,name=events" json:"events,omitempty"`
+	Events        []*v1.EventFilter `protobuf:"bytes,7,rep,name=events" json:"events,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -343,14 +325,6 @@ func (*GetEventExplorerRequest) Descriptor() ([]byte, []int) {
 func (x *GetEventExplorerRequest) GetDistinctId() string {
 	if x != nil {
 		return x.DistinctId
-	}
-	return ""
-}
-
-// Deprecated: Marked as deprecated in shared/activity/v1/activity.proto.
-func (x *GetEventExplorerRequest) GetKind() string {
-	if x != nil {
-		return x.Kind
 	}
 	return ""
 }
@@ -670,21 +644,20 @@ var File_shared_activity_v1_activity_proto protoreflect.FileDescriptor
 
 const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\n" +
-	"!shared/activity/v1/activity.proto\x12\x12shared.activity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x03\n" +
+	"!shared/activity/v1/activity.proto\x12\x12shared.activity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xde\x02\n" +
 	"\x16GetActivityFeedRequest\x12(\n" +
 	"\vdistinct_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
-	"distinctId\x12.\n" +
-	"\x04kind\x18\x02 \x01(\tB\x1a\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$\x18\x01R\x04kind\x12\x1d\n" +
+	"distinctId\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\x123\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x123\n" +
 	"\n" +
-	"time_range\x18\x04 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12D\n" +
-	"\x10property_filters\x18\x05 \x03(\v2\x19.common.v1.PropertyFilterR\x0fpropertyFilters\x12'\n" +
-	"\tpage_size\x18\x06 \x01(\x05B\n" +
+	"time_range\x18\x03 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12D\n" +
+	"\x10property_filters\x18\x04 \x03(\v2\x19.common.v1.PropertyFilterR\x0fpropertyFilters\x12'\n" +
+	"\tpage_size\x18\x05 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\a \x01(\tR\tpageToken\x128\n" +
-	"\x06events\x18\b \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events\"\xc1\x02\n" +
+	"page_token\x18\x06 \x01(\tR\tpageToken\x128\n" +
+	"\x06events\x18\a \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events\"\xc1\x02\n" +
 	"\rActivityEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1f\n" +
@@ -698,21 +671,20 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\x11custom_properties\x18\a \x01(\v2\x17.google.protobuf.StructR\x10customProperties\"|\n" +
 	"\x17GetActivityFeedResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x86\x03\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xd6\x02\n" +
 	"\x17GetEventExplorerRequest\x12\x1f\n" +
 	"\vdistinct_id\x18\x01 \x01(\tR\n" +
-	"distinctId\x12.\n" +
-	"\x04kind\x18\x02 \x01(\tB\x1a\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$\x18\x01R\x04kind\x12\x1d\n" +
+	"distinctId\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\x123\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x123\n" +
 	"\n" +
-	"time_range\x18\x04 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12D\n" +
-	"\x10property_filters\x18\x05 \x03(\v2\x19.common.v1.PropertyFilterR\x0fpropertyFilters\x12'\n" +
-	"\tpage_size\x18\x06 \x01(\x05B\n" +
+	"time_range\x18\x03 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12D\n" +
+	"\x10property_filters\x18\x04 \x03(\v2\x19.common.v1.PropertyFilterR\x0fpropertyFilters\x12'\n" +
+	"\tpage_size\x18\x05 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\a \x01(\tR\tpageToken\x128\n" +
-	"\x06events\x18\b \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events\"}\n" +
+	"page_token\x18\x06 \x01(\tR\tpageToken\x128\n" +
+	"\x06events\x18\a \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events\"}\n" +
 	"\x18GetEventExplorerResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"Q\n" +
