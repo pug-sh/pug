@@ -122,16 +122,16 @@ func (e *Executor) QueryScalar(ctx context.Context, sql string, args []any) (flo
 	return value, nil
 }
 
-// EventNameMeta holds count and recency metadata for a single event kind.
-type EventNameMeta struct {
-	Kind     string
+// AggregateKeyMeta holds count and recency metadata for a key (event kind or property key).
+type AggregateKeyMeta struct {
+	Key      string
 	Count    uint64
 	LastSeen time.Time
 }
 
-// QueryEventNameMetas executes an event names query against event_names_mv and returns rows of
-// (kind, count, last_seen).
-func (e *Executor) QueryEventNameMetas(ctx context.Context, sql string, args []any) ([]EventNameMeta, error) {
+// QueryAggregateKeys executes a query against event_names or property_keys and returns rows of
+// (kind/key, count, last_seen).
+func (e *Executor) QueryAggregateKeys(ctx context.Context, sql string, args []any) ([]AggregateKeyMeta, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
@@ -142,10 +142,10 @@ func (e *Executor) QueryEventNameMetas(ctx context.Context, sql string, args []a
 		}
 	}()
 
-	var result []EventNameMeta
+	var result []AggregateKeyMeta
 	for rows.Next() {
-		var row EventNameMeta
-		if err := rows.Scan(&row.Kind, &row.Count, &row.LastSeen); err != nil {
+		var row AggregateKeyMeta
+		if err := rows.Scan(&row.Key, &row.Count, &row.LastSeen); err != nil {
 			return nil, err
 		}
 		result = append(result, row)

@@ -495,13 +495,14 @@ func TestFilterOperators(t *testing.T) {
 				t.Errorf("expected %q in SQL, got: %s", tc.wantSQL, sql)
 			}
 			if !tc.wantNoArg {
-				// last arg should be the filter value
-				if len(args) == 0 {
-					t.Fatalf("expected args but got none")
+				// Filter arg comes before event kind arg (writeEventCondition appends kind last).
+				// args layout: projectID, from, to, filterValue..., kind
+				if len(args) < 2 {
+					t.Fatalf("expected at least 2 args but got %d", len(args))
 				}
-				last := args[len(args)-1]
-				if last != tc.wantArgVal {
-					t.Errorf("expected last arg %q, got %v", tc.wantArgVal, last)
+				filterArg := args[len(args)-2]
+				if filterArg != tc.wantArgVal {
+					t.Errorf("expected filter arg %q, got %v", tc.wantArgVal, filterArg)
 				}
 			}
 		})
@@ -526,13 +527,14 @@ func TestFilterOperators(t *testing.T) {
 			if !strings.Contains(sql, tc.wantSQL) {
 				t.Errorf("expected %q in SQL, got: %s", tc.wantSQL, sql)
 			}
-			// last N args should be the values
+			// Filter value args come before the event kind arg (writeEventCondition appends kind last).
+			// args layout: projectID, from, to, filterValues..., kind
 			n := len(tc.values)
-			if len(args) < n {
-				t.Fatalf("expected at least %d args, got %d: %v", n, len(args), args)
+			if len(args) < n+1 {
+				t.Fatalf("expected at least %d args, got %d: %v", n+1, len(args), args)
 			}
 			for i, want := range tc.values {
-				got := args[len(args)-n+i]
+				got := args[len(args)-1-n+i]
 				if got != want {
 					t.Errorf("arg[%d]: expected %q, got %v", i, want, got)
 				}
@@ -891,10 +893,187 @@ func TestContainsEscapesLIKEMetacharacters(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			last := args[len(args)-1]
-			if last != tc.wantArg {
-				t.Errorf("expected LIKE arg %q, got %q", tc.wantArg, last)
+			// Filter arg comes before event kind arg (writeEventCondition appends kind last).
+			filterArg := args[len(args)-2]
+			if filterArg != tc.wantArg {
+				t.Errorf("expected LIKE arg %q, got %q", tc.wantArg, filterArg)
 			}
 		})
+	}
+}
+
+func TestBuildAutoPropertyValuesQuery(t *testing.T) {
+	t.Run("with_event_kind", func(t *testing.T) {
+		sql, args := insights.BuildAutoPropertyValuesQuery("proj_1", "$browser", "page_view")
+		if !strings.Contains(sql, "auto_properties") {
+			t.Error("expected auto_properties in SQL")
+		}
+		if !strings.Contains(sql, "kind = ?") {
+			t.Error("expected kind filter in SQL")
+		}
+		if len(args) != 4 {
+			t.Fatalf("expected 4 args, got %d: %v", len(args), args)
+		}
+		// args: propertyKey, projectID, eventKind, propertyKey
+		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "page_view" || args[3] != "$browser" {
+			t.Errorf("unexpected args: %v", args)
+		}
+	})
+
+	t.Run("without_event_kind", func(t *testing.T) {
+		sql, args := insights.BuildAutoPropertyValuesQuery("proj_1", "$browser", "")
+		if !strings.Contains(sql, "auto_properties") {
+			t.Error("expected auto_properties in SQL")
+		}
+		if strings.Contains(sql, "kind = ?") {
+			t.Error("should not have kind filter when eventKind is empty")
+		}
+		if len(args) != 3 {
+			t.Fatalf("expected 3 args, got %d: %v", len(args), args)
+		}
+		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "$browser" {
+			t.Errorf("unexpected args: %v", args)
+		}
+	})
+
+	t.Run("custom_variant", func(t *testing.T) {
+		sql, _ := insights.BuildCustomPropertyValuesQuery("proj_1", "plan", "")
+		if !strings.Contains(sql, "custom_properties") {
+			t.Error("expected custom_properties in SQL")
+		}
+		if strings.Contains(sql, "auto_properties") {
+			t.Error("should not contain auto_properties")
+		}
+	})
+}
+
+func TestBuildEventNamesQuery(t *testing.T) {
+	sql, args := insights.BuildEventNamesQuery("proj_1")
+	if !strings.Contains(sql, "event_names") {
+		t.Error("expected event_names table in SQL")
+	}
+	if !strings.Contains(sql, "countMerge(event_count)") {
+		t.Error("expected countMerge in SQL")
+	}
+	if !strings.Contains(sql, "maxMerge(last_seen)") {
+		t.Error("expected maxMerge in SQL")
+	}
+	if len(args) != 1 || args[0] != "proj_1" {
+		t.Errorf("expected [proj_1], got %v", args)
+	}
+}
+
+func TestBuildPropertyKeysQuery(t *testing.T) {
+	t.Run("auto_with_kind", func(t *testing.T) {
+		sql, args := insights.BuildAutoPropertyKeysQuery("proj_1", "page_view")
+		if !strings.Contains(sql, "map_type = ?") {
+			t.Error("expected map_type filter")
+		}
+		if !strings.Contains(sql, "kind = ?") {
+			t.Error("expected kind filter")
+		}
+		if len(args) != 3 {
+			t.Fatalf("expected 3 args, got %d", len(args))
+		}
+		if args[1] != "auto" {
+			t.Errorf("expected map_type 'auto', got %v", args[1])
+		}
+	})
+
+	t.Run("custom_without_kind", func(t *testing.T) {
+		sql, args := insights.BuildCustomPropertyKeysQuery("proj_1", "")
+		if strings.Contains(sql, "kind = ?") {
+			t.Error("should not have kind filter when empty")
+		}
+		if len(args) != 2 {
+			t.Fatalf("expected 2 args, got %d", len(args))
+		}
+		if args[1] != "custom" {
+			t.Errorf("expected map_type 'custom', got %v", args[1])
+		}
+	})
+}
+
+func TestGroupMultiEventSeries(t *testing.T) {
+	rows := []insights.MultiEventTrendRow{
+		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "page_view", Value: 10},
+		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 3},
+		{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EventKind: "page_view", Value: 15},
+		{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 5},
+	}
+
+	series := insights.GroupMultiEventSeries(rows)
+
+	if len(series) != 2 {
+		t.Fatalf("expected 2 series, got %d", len(series))
+	}
+	// Insertion order preserved: page_view first
+	if series[0].EventKind != "page_view" {
+		t.Errorf("expected first series 'page_view', got %q", series[0].EventKind)
+	}
+	if series[1].EventKind != "purchase" {
+		t.Errorf("expected second series 'purchase', got %q", series[1].EventKind)
+	}
+	if len(series[0].Points) != 2 {
+		t.Errorf("expected 2 points for page_view, got %d", len(series[0].Points))
+	}
+	if series[0].Points[0].Value != 10 || series[0].Points[1].Value != 15 {
+		t.Errorf("unexpected page_view values: %v, %v", series[0].Points[0].Value, series[0].Points[1].Value)
+	}
+	if series[1].Points[0].Value != 3 || series[1].Points[1].Value != 5 {
+		t.Errorf("unexpected purchase values: %v, %v", series[1].Points[0].Value, series[1].Points[1].Value)
+	}
+}
+
+func TestGroupMultiEventSeries_Empty(t *testing.T) {
+	series := insights.GroupMultiEventSeries(nil)
+	if len(series) != 0 {
+		t.Errorf("expected 0 series for nil input, got %d", len(series))
+	}
+}
+
+func TestMultiEventTrendsWithFilters(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+		Filters: []*commonv1.PropertyFilter{
+			{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+		},
+		Events: []*insightsv1.EventQuery{
+			{
+				Kind:        "page_view",
+				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "/blog"},
+				},
+			},
+			{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
+		},
+	}
+
+	sql, args, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(sql, "UNION ALL") {
+		t.Error("expected UNION ALL in SQL")
+	}
+	// Top-level filter should appear in both sub-queries.
+	// PropertyExpr references the key twice (auto_properties['$country'], custom_properties['$country']),
+	// so 2 sub-queries × 2 refs = 4.
+	if strings.Count(sql, "$country") != 4 {
+		t.Errorf("expected top-level filter in both sub-queries (4 refs), got %d", strings.Count(sql, "$country"))
+	}
+	// Per-event filter only in first sub-query (2 refs from PropertyExpr).
+	if strings.Count(sql, "'url'") != 2 {
+		t.Errorf("expected per-event filter in one sub-query (2 refs), got %d", strings.Count(sql, "'url'"))
+	}
+	// Verify we have args for both sub-queries' top-level + per-event filters
+	// Sub1: projectID, from, to, kind, $country=US, url LIKE %/blog%
+	// Sub2: projectID, from, to, kind, $country=US
+	if len(args) != 11 {
+		t.Errorf("expected 11 args, got %d: %v", len(args), args)
 	}
 }

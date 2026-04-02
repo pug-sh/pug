@@ -195,12 +195,6 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 	sb.WriteString("WHERE project_id = ?\nAND occur_time >= ?\nAND occur_time < ?\n")
 	args = append(args, projectID, req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
 
-	// Optional kind filter
-	if len(req.GetEvents()) > 0 && req.GetEvents()[0].GetKind() != "" {
-		sb.WriteString("AND kind = ?\n")
-		args = append(args, req.GetEvents()[0].GetKind())
-	}
-
 	// Top-level filters
 	for _, f := range req.GetFilters() {
 		clause, filterArgs, err := chfilters.FilterClause(f)
@@ -211,6 +205,11 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 		sb.WriteString(clause)
 		sb.WriteString("\n")
 		args = append(args, filterArgs...)
+	}
+
+	// Event condition (kind + per-event filters, OR-joined for multiple events)
+	if err := writeEventCondition(&sb, &args, req.GetEvents()); err != nil {
+		return "", nil, err
 	}
 
 	return sb.String(), args, nil
@@ -326,7 +325,16 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 
 // BuildPropertyValuesQuery returns a query for distinct values of a property key over the last
 // 30 days. Uses DISTINCT + LIMIT for early exit — no full aggregation, no insert overhead.
-func BuildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) (string, []any) {
+func BuildAutoPropertyValuesQuery(projectID, propertyKey, eventKind string) (string, []any) {
+	return buildPropertyValuesQuery(projectID, propertyKey, "auto_properties", eventKind)
+}
+
+// BuildCustomPropertyValuesQuery returns a query for distinct custom property values.
+func BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind string) (string, []any) {
+	return buildPropertyValuesQuery(projectID, propertyKey, "custom_properties", eventKind)
+}
+
+func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) (string, []any) {
 	if eventKind != "" {
 		sql := `SELECT DISTINCT ` + mapCol + `[?] AS value
 FROM events
@@ -346,7 +354,7 @@ LIMIT 10`
 	return sql, []any{propertyKey, projectID, propertyKey}
 }
 
-// BuildEventNamesQuery returns a query against event_names_mv for event names with count and last_seen.
+// BuildEventNamesQuery returns a query against event_names for event names with count and last_seen.
 func BuildEventNamesQuery(projectID string) (string, []any) {
 	sql := `SELECT kind, countMerge(event_count) AS count, maxMerge(last_seen) AS last_seen
 FROM event_names

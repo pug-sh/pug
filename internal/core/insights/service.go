@@ -2,10 +2,10 @@ package insights
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -45,22 +45,27 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		cacheKey += ":" + eventKind
 	}
 
-	cached, cacheErr := s.redis.Get(ctx, cacheKey).Bytes()
+	cachedSchema, cacheErr := s.redis.Get(ctx, cacheKey).Bytes()
 	if cacheErr == nil {
 		var resp insightsv1.GetFilterSchemaResponse
-		if proto.Unmarshal(cached, &resp) == nil {
+		if err := proto.Unmarshal(cachedSchema, &resp); err != nil {
+			slog.WarnContext(ctx, "failed to unmarshal cached filter schema, evicting",
+				slogx.Error(err), slog.String("projectID", projectID))
+			if delErr := s.redis.Del(ctx, cacheKey).Err(); delErr != nil {
+				slog.WarnContext(ctx, "failed to evict corrupt filter schema cache",
+					slogx.Error(delErr), slog.String("projectID", projectID))
+			}
+		} else {
 			return &resp, nil
 		}
-		slog.WarnContext(ctx, "failed to unmarshal cached filter schema, evicting", slog.String("projectID", projectID))
-		s.redis.Del(ctx, cacheKey)
 	} else if !errors.Is(cacheErr, redis.Nil) {
 		slog.WarnContext(ctx, "redis get failed for filter schema cache", slogx.Error(cacheErr),
 			slog.String("projectID", projectID))
 	}
 
-	var eventMetas []EventNameMeta
-	var autoPropKeys []EventNameMeta
-	var customPropKeys []EventNameMeta
+	var eventMetas []AggregateKeyMeta
+	var autoPropKeys []AggregateKeyMeta
+	var customPropKeys []AggregateKeyMeta
 	var profileProps []string
 
 	eg, egCtx := errgroup.WithContext(ctx)
@@ -68,7 +73,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	eg.Go(func() error {
 		sql, args := BuildEventNamesQuery(projectID)
 		var err error
-		eventMetas, err = s.executor.QueryEventNameMetas(egCtx, sql, args)
+		eventMetas, err = s.executor.QueryAggregateKeys(egCtx, sql, args)
 		if err != nil {
 			return fmt.Errorf("query event names: %w", err)
 		}
@@ -77,7 +82,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	eg.Go(func() error {
 		sql, args := BuildAutoPropertyKeysQuery(projectID, eventKind)
 		var err error
-		autoPropKeys, err = s.executor.QueryEventNameMetas(egCtx, sql, args)
+		autoPropKeys, err = s.executor.QueryAggregateKeys(egCtx, sql, args)
 		if err != nil {
 			return fmt.Errorf("query auto property keys: %w", err)
 		}
@@ -86,7 +91,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	eg.Go(func() error {
 		sql, args := BuildCustomPropertyKeysQuery(projectID, eventKind)
 		var err error
-		customPropKeys, err = s.executor.QueryEventNameMetas(egCtx, sql, args)
+		customPropKeys, err = s.executor.QueryAggregateKeys(egCtx, sql, args)
 		if err != nil {
 			return fmt.Errorf("query custom property keys: %w", err)
 		}
@@ -105,17 +110,17 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		return nil, err
 	}
 
-	toEventMetas := func(rows []EventNameMeta) []*commonv1.EventNameMeta {
+	toEventMetas := func(rows []AggregateKeyMeta) []*commonv1.EventNameMeta {
 		out := make([]*commonv1.EventNameMeta, len(rows))
 		for i, m := range rows {
-			out[i] = &commonv1.EventNameMeta{Name: m.Kind, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
+			out[i] = &commonv1.EventNameMeta{Name: m.Key, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
 		}
 		return out
 	}
-	toPropKeyMetas := func(rows []EventNameMeta) []*commonv1.PropertyKeyMeta {
+	toPropKeyMetas := func(rows []AggregateKeyMeta) []*commonv1.PropertyKeyMeta {
 		out := make([]*commonv1.PropertyKeyMeta, len(rows))
 		for i, m := range rows {
-			out[i] = &commonv1.PropertyKeyMeta{Name: m.Kind, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
+			out[i] = &commonv1.PropertyKeyMeta{Name: m.Key, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
 		}
 		return out
 	}
@@ -139,14 +144,21 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 }
 
 func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey, eventKind string, source commonv1.PropertySource) ([]string, error) {
-	cacheKey := fmt.Sprintf("propvalues:%s:%d:%s:%s", projectID, source, propertyKey, eventKind)
+	cacheKey := fmt.Sprintf("propvalues:%s:%s:%s:%s", projectID, source.String(), propertyKey, eventKind)
 
-	cached, cacheErr := s.redis.Get(ctx, cacheKey).Result()
+	cached, cacheErr := s.redis.Get(ctx, cacheKey).Bytes()
 	if cacheErr == nil {
-		if cached == "" {
-			return nil, nil
+		var vals []string
+		if err := json.Unmarshal(cached, &vals); err != nil {
+			slog.WarnContext(ctx, "failed to unmarshal cached property values, evicting",
+				slogx.Error(err), slog.String("projectID", projectID), slog.String("key", propertyKey))
+			if delErr := s.redis.Del(ctx, cacheKey).Err(); delErr != nil {
+				slog.WarnContext(ctx, "failed to evict corrupt property values cache",
+					slogx.Error(delErr), slog.String("projectID", projectID))
+			}
+		} else {
+			return vals, nil
 		}
-		return strings.Split(cached, "\n"), nil
 	} else if !errors.Is(cacheErr, redis.Nil) {
 		slog.WarnContext(ctx, "redis get failed for property values cache", slogx.Error(cacheErr),
 			slog.String("projectID", projectID), slog.String("key", propertyKey))
@@ -157,10 +169,10 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 
 	switch source {
 	case commonv1.PropertySource_PROPERTY_SOURCE_AUTO:
-		sql, args := BuildPropertyValuesQuery(projectID, propertyKey, "auto_properties", eventKind)
+		sql, args := BuildAutoPropertyValuesQuery(projectID, propertyKey, eventKind)
 		values, err = s.executor.QueryDistinctIDs(ctx, sql, args)
 	case commonv1.PropertySource_PROPERTY_SOURCE_CUSTOM:
-		sql, args := BuildPropertyValuesQuery(projectID, propertyKey, "custom_properties", eventKind)
+		sql, args := BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind)
 		values, err = s.executor.QueryDistinctIDs(ctx, sql, args)
 	case commonv1.PropertySource_PROPERTY_SOURCE_PROFILE:
 		values, err = s.profiles.GetPropertyValues(ctx, projectID, propertyKey)
@@ -175,8 +187,10 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	if len(values) < 10 {
 		ttl = valuesExhaustedCacheTTL
 	}
-	cached = strings.Join(values, "\n")
-	if err := s.redis.Set(ctx, cacheKey, cached, ttl).Err(); err != nil {
+	if data, err := json.Marshal(values); err != nil {
+		slog.ErrorContext(ctx, "failed to marshal property values for cache", slogx.Error(err),
+			slog.String("projectID", projectID), slog.String("key", propertyKey))
+	} else if err := s.redis.Set(ctx, cacheKey, data, ttl).Err(); err != nil {
 		slog.ErrorContext(ctx, "failed to cache property values", slogx.Error(err),
 			slog.String("projectID", projectID), slog.String("key", propertyKey))
 	}

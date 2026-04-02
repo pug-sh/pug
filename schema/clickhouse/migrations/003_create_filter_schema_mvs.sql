@@ -1,6 +1,8 @@
 -- +goose Up
 
 -- Stores per-project event name counts and last seen times, fed by events inserts.
+-- Columns store partial aggregate states (AggregatingMergeTree). Query with
+-- countMerge(event_count) and maxMerge(last_seen), not plain count/max.
 CREATE TABLE IF NOT EXISTS event_names (
     project_id  String,
     kind        LowCardinality(String),
@@ -19,6 +21,8 @@ FROM events
 GROUP BY project_id, kind;
 
 -- Stores per-project property key counts and last seen times, fed by events inserts.
+-- Columns store partial aggregate states (AggregatingMergeTree). Query with
+-- countMerge(event_count) and maxMerge(last_seen), not plain count/max.
 CREATE TABLE IF NOT EXISTS property_keys (
     project_id  String,
     map_type    LowCardinality(String),

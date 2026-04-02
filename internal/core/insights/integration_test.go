@@ -321,6 +321,45 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("multi_event_trends", func(t *testing.T) {
+		// Uses seed data: page_view (Jan 1-3) and purchase (Jan 1 only, from seedPurchases)
+		req := &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Events: []*insightsv1.EventQuery{
+				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			},
+		}
+
+		sql, args, err := insights.BuildQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildQuery: %v", err)
+		}
+
+		rows, err := executor.QueryMultiEventTrends(ctx, sql, args)
+		if err != nil {
+			t.Fatalf("QueryMultiEventTrends: %v", err)
+		}
+
+		series := insights.GroupMultiEventSeries(rows)
+		if len(series) != 2 {
+			t.Fatalf("expected 2 series (page_view, purchase), got %d", len(series))
+		}
+
+		kindSet := map[string]bool{}
+		for _, s := range series {
+			kindSet[s.EventKind] = true
+		}
+		if !kindSet["page_view"] || !kindSet["purchase"] {
+			t.Errorf("expected both page_view and purchase series, got kinds: %v", kindSet)
+		}
+	})
+
 	t.Run("segment_users", func(t *testing.T) {
 		req := &insightsv1.SegmentUsersRequest{
 			TimeRange: &commonv1.TimeRange{
