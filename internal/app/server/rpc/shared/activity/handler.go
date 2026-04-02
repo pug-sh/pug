@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/events"
+	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
 	activityv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1/activityv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -18,11 +19,15 @@ import (
 
 type server struct {
 	activityv1connect.UnimplementedActivityServiceHandler
-	eventsReader *events.Reader
+	eventsReader    *events.Reader
+	insightsService *coreinsights.Service
 }
 
-func NewServer(ch driver.Conn) *server {
-	return &server{eventsReader: events.NewReader(ch)}
+func NewServer(ch driver.Conn, insightsService *coreinsights.Service) *server {
+	return &server{
+		eventsReader:    events.NewReader(ch),
+		insightsService: insightsService,
+	}
 }
 
 func (s *server) GetActivityFeed(
@@ -210,4 +215,60 @@ func mapToStruct(m map[string]string) (*structpb.Struct, error) {
 		fields[k] = v
 	}
 	return structpb.NewStruct(fields)
+}
+
+func (s *server) GetFilterSchema(
+	ctx context.Context,
+	req *connect.Request[activityv1.GetFilterSchemaRequest],
+) (*connect.Response[activityv1.GetFilterSchemaResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	projectID := principal.Project.ID
+
+	schema, err := s.insightsService.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind())
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get filter schema", slogx.Error(err),
+			slog.String("projectID", projectID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&activityv1.GetFilterSchemaResponse{
+		Events:              schema.GetEvents(),
+		AutoPropertyKeys:    schema.GetAutoPropertyKeys(),
+		CustomPropertyKeys:  schema.GetCustomPropertyKeys(),
+		ProfilePropertyKeys: schema.GetProfilePropertyKeys(),
+	}), nil
+}
+
+func (s *server) GetPropertyValues(
+	ctx context.Context,
+	req *connect.Request[activityv1.GetPropertyValuesRequest],
+) (*connect.Response[activityv1.GetPropertyValuesResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	projectID := principal.Project.ID
+
+	values, err := s.insightsService.GetPropertyValues(ctx, projectID, req.Msg.GetPropertyKey(), req.Msg.GetEventKind(), req.Msg.GetSource())
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get property values", slogx.Error(err),
+			slog.String("projectID", projectID),
+			slog.String("propertyKey", req.Msg.GetPropertyKey()))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&activityv1.GetPropertyValuesResponse{Values: values}), nil
 }

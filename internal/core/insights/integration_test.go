@@ -10,7 +10,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/insights"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/testutil"
 )
 
@@ -45,7 +45,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args)
+		rows, err := executor.QueryTrends(ctx, sql, args, 0)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -83,7 +83,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args)
+		rows, err := executor.QueryTrends(ctx, sql, args, 0)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -123,12 +123,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrendsWithBreakdowns(ctx, sql, args, 1)
+		rows, err := executor.QueryTrends(ctx, sql, args, 1)
 		if err != nil {
-			t.Fatalf("QueryTrendsWithBreakdowns: %v", err)
+			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series := insights.GroupBreakdownSeries(rows, []string{"$country"})
+		series := insights.GroupSeries(rows, []string{"$country"})
 		if len(series) < 2 {
 			t.Fatalf("expected at least 2 breakdown series (US, GB), got %d", len(series))
 		}
@@ -211,7 +211,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args)
+		rows, err := executor.QueryTrends(ctx, sql, args, 0)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -241,9 +241,9 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BuildSegmentUsersQuery page1: %v", err)
 		}
-		page1, err := executor.QueryDistinctIDs(ctx, sql1, args1)
+		page1, err := executor.QueryStringColumn(ctx, sql1, args1)
 		if err != nil {
-			t.Fatalf("QueryDistinctIDs page1: %v", err)
+			t.Fatalf("QueryStringColumn page1: %v", err)
 		}
 		if len(page1) != 2 {
 			t.Fatalf("expected 2 IDs on page 1, got %d: %v", len(page1), page1)
@@ -257,9 +257,9 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BuildSegmentUsersQuery page2: %v", err)
 		}
-		page2, err := executor.QueryDistinctIDs(ctx, sql2, args2)
+		page2, err := executor.QueryStringColumn(ctx, sql2, args2)
 		if err != nil {
-			t.Fatalf("QueryDistinctIDs page2: %v", err)
+			t.Fatalf("QueryStringColumn page2: %v", err)
 		}
 		if len(page2) != 1 {
 			t.Fatalf("expected 1 ID on page 2, got %d: %v", len(page2), page2)
@@ -298,12 +298,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrendsWithBreakdowns(ctx, sql, args, 1)
+		rows, err := executor.QueryTrends(ctx, sql, args, 1)
 		if err != nil {
-			t.Fatalf("QueryTrendsWithBreakdowns: %v", err)
+			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series := insights.GroupBreakdownSeries(rows, []string{"$country"})
+		series := insights.GroupSeries(rows, []string{"$country"})
 
 		// Should have top 2 + $others = 3 series
 		if len(series) != 3 {
@@ -318,6 +318,45 @@ func TestIntegration(t *testing.T) {
 		}
 		if !hasOthers {
 			t.Error("expected $others bucket in breakdown series")
+		}
+	})
+
+	t.Run("multi_event_trends", func(t *testing.T) {
+		// Uses seed data: page_view (Jan 1-3) and purchase (Jan 1 only, from seedPurchases)
+		req := &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Events: []*insightsv1.EventQuery{
+				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			},
+		}
+
+		sql, args, err := insights.BuildQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildQuery: %v", err)
+		}
+
+		rows, err := executor.QueryTrends(ctx, sql, args, 0)
+		if err != nil {
+			t.Fatalf("QueryTrends: %v", err)
+		}
+
+		series := insights.GroupSeries(rows, nil)
+		if len(series) != 2 {
+			t.Fatalf("expected 2 series (page_view, purchase), got %d", len(series))
+		}
+
+		kindSet := map[string]bool{}
+		for _, s := range series {
+			kindSet[s.EventKind] = true
+		}
+		if !kindSet["page_view"] || !kindSet["purchase"] {
+			t.Errorf("expected both page_view and purchase series, got kinds: %v", kindSet)
 		}
 	})
 
@@ -338,9 +377,9 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildSegmentUsersQuery: %v", err)
 		}
 
-		ids, err := executor.QueryDistinctIDs(ctx, sql, args)
+		ids, err := executor.QueryStringColumn(ctx, sql, args)
 		if err != nil {
-			t.Fatalf("QueryDistinctIDs: %v", err)
+			t.Fatalf("QueryStringColumn: %v", err)
 		}
 
 		// 3 distinct users: alice, bob, charlie

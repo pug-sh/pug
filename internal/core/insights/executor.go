@@ -7,20 +7,16 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// TrendRow is a single time-bucketed aggregate value.
+// TrendRow is a single time-bucketed aggregate value with event kind and optional breakdowns.
+// All trends queries (single-event, multi-event, with/without breakdowns) produce this row type.
 type TrendRow struct {
-	Time  time.Time
-	Value float64
-}
-
-// BreakdownTrendRow is a single time-bucketed aggregate value with breakdown dimensions.
-type BreakdownTrendRow struct {
 	Time       time.Time
+	EventKind  string
 	Breakdowns []string
 	Value      float64
 }
@@ -35,8 +31,9 @@ func NewExecutor(ch driver.Conn) *Executor {
 	return &Executor{ch: ch}
 }
 
-// QueryTrends executes a trends query and returns rows of (time, value).
-func (e *Executor) QueryTrends(ctx context.Context, sql string, args []any) ([]TrendRow, error) {
+// QueryTrends executes a trends query and returns rows of (time, event_kind, [breakdown_0..N], value).
+// numBreakdowns indicates how many breakdown columns to scan between event_kind and value.
+func (e *Executor) QueryTrends(ctx context.Context, sql string, args []any, numBreakdowns int) ([]TrendRow, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
@@ -49,44 +46,13 @@ func (e *Executor) QueryTrends(ctx context.Context, sql string, args []any) ([]T
 
 	var result []TrendRow
 	for rows.Next() {
-		var row TrendRow
-		if err := rows.Scan(&row.Time, &row.Value); err != nil {
-			return nil, err
-		}
-		result = append(result, row)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-// QueryTrendsWithBreakdowns executes a trends query with N breakdown columns and returns rows of
-// (time, breakdown_0, ..., breakdown_N-1, value).
-func (e *Executor) QueryTrendsWithBreakdowns(ctx context.Context, sql string, args []any, numBreakdowns int) ([]BreakdownTrendRow, error) {
-	rows, err := e.ch.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
-		}
-	}()
-
-	var result []BreakdownTrendRow
-	for rows.Next() {
-		row := BreakdownTrendRow{
-			Breakdowns: make([]string, numBreakdowns),
-		}
-		// Build scan targets: time, breakdown_0..N-1, value
-		dest := make([]any, 0, 2+numBreakdowns)
-		dest = append(dest, &row.Time)
+		row := TrendRow{Breakdowns: make([]string, numBreakdowns)}
+		dest := make([]any, 0, 3+numBreakdowns)
+		dest = append(dest, &row.Time, &row.EventKind)
 		for i := range row.Breakdowns {
 			dest = append(dest, &row.Breakdowns[i])
 		}
 		dest = append(dest, &row.Value)
-
 		if err := rows.Scan(dest...); err != nil {
 			return nil, err
 		}
@@ -122,8 +88,42 @@ func (e *Executor) QueryScalar(ctx context.Context, sql string, args []any) (flo
 	return value, nil
 }
 
-// QueryDistinctIDs executes a query and returns a list of string values (distinct user IDs).
-func (e *Executor) QueryDistinctIDs(ctx context.Context, sql string, args []any) ([]string, error) {
+// AggregateKeyMeta holds count and recency metadata for a key (event kind or property key).
+type AggregateKeyMeta struct {
+	Key      string
+	Count    uint64
+	LastSeen time.Time
+}
+
+// QueryAggregateKeys executes a query against event_names or property_keys and returns rows of
+// (kind/key, count, last_seen).
+func (e *Executor) QueryAggregateKeys(ctx context.Context, sql string, args []any) ([]AggregateKeyMeta, error) {
+	rows, err := e.ch.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+		}
+	}()
+
+	var result []AggregateKeyMeta
+	for rows.Next() {
+		var row AggregateKeyMeta
+		if err := rows.Scan(&row.Key, &row.Count, &row.LastSeen); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// QueryStringColumn executes a query and returns a list of string values from the first column.
+func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any) ([]string, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
@@ -148,26 +148,34 @@ func (e *Executor) QueryDistinctIDs(ctx context.Context, sql string, args []any)
 	return result, nil
 }
 
-// GroupBreakdownSeries groups BreakdownTrendRow results into Series, keyed by
-// their breakdown values. The properties slice provides the property name for
-// each breakdown dimension. Insertion order is preserved.
-func GroupBreakdownSeries(rows []BreakdownTrendRow, properties []string) []*insightsv1.Series {
+// GroupSeries groups TrendRow results into Series, keyed by (event_kind, breakdown_tuple).
+// The properties slice provides the property name for each breakdown dimension.
+// Insertion order is preserved.
+func GroupSeries(rows []TrendRow, properties []string) []*insightsv1.Series {
+	type seriesKey struct {
+		eventKind string
+		breakdown string
+	}
 	type seriesEntry struct {
+		eventKind string
 		breakdown map[string]string
 		points    []*insightsv1.DataPoint
 	}
-	var orderedKeys []string
-	entriesByKey := map[string]*seriesEntry{}
+	var orderedKeys []seriesKey
+	entriesByKey := map[seriesKey]*seriesEntry{}
 
 	for _, r := range rows {
-		key := fmt.Sprintf("%q", r.Breakdowns)
+		if len(properties) > 0 && len(r.Breakdowns) < len(properties) {
+			return nil
+		}
+		key := seriesKey{eventKind: r.EventKind, breakdown: fmt.Sprintf("%q", r.Breakdowns)}
 		if _, ok := entriesByKey[key]; !ok {
 			orderedKeys = append(orderedKeys, key)
 			bd := make(map[string]string, len(properties))
 			for i, prop := range properties {
 				bd[prop] = r.Breakdowns[i]
 			}
-			entriesByKey[key] = &seriesEntry{breakdown: bd}
+			entriesByKey[key] = &seriesEntry{eventKind: r.EventKind, breakdown: bd}
 		}
 		entriesByKey[key].points = append(entriesByKey[key].points, &insightsv1.DataPoint{
 			Time:  timestamppb.New(r.Time),
@@ -178,10 +186,14 @@ func GroupBreakdownSeries(rows []BreakdownTrendRow, properties []string) []*insi
 	series := make([]*insightsv1.Series, 0, len(orderedKeys))
 	for _, k := range orderedKeys {
 		e := entriesByKey[k]
-		series = append(series, &insightsv1.Series{
-			Breakdown: e.breakdown,
+		s := &insightsv1.Series{
+			EventKind: e.eventKind,
 			Points:    e.points,
-		})
+		}
+		if len(e.breakdown) > 0 {
+			s.Breakdown = e.breakdown
+		}
+		series = append(series, s)
 	}
 	return series
 }

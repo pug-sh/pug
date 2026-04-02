@@ -6,24 +6,25 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1"
-	"github.com/fivebitsio/cotton/internal/gen/proto/dashboard/insights/v1/insightsv1connect"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type server struct {
+	service  *coreinsights.Service
 	executor *coreinsights.Executor
 	insightsv1connect.UnimplementedInsightsServiceHandler
 }
 
-// NewServer creates a new InsightsService handler backed by the given ClickHouse connection.
-func NewServer(ch driver.Conn) *server {
+// NewServer creates a new InsightsService handler.
+func NewServer(service *coreinsights.Service, executor *coreinsights.Executor) *server {
 	return &server{
-		executor: coreinsights.NewExecutor(ch),
+		service:  service,
+		executor: executor,
 	}
 }
 
@@ -56,46 +57,17 @@ func (s *server) Query(
 	switch insightType {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
 		breakdowns := req.Msg.GetBreakdowns()
-		if len(breakdowns) == 0 {
-			// Simple trends: one series of (time, value) points
-			rows, err := s.executor.QueryTrends(ctx, sql, args)
-			if err != nil {
-				slog.ErrorContext(ctx, "failed to query trends", slogx.Error(err),
-					slog.String("projectID", principal.Project.ID))
-				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-			}
-			points := make([]*insightsv1.DataPoint, 0, len(rows))
-			for _, r := range rows {
-				points = append(points, &insightsv1.DataPoint{
-					Time:  timestamppb.New(r.Time),
-					Value: r.Value,
-				})
-			}
-			eventKind := ""
-			if len(req.Msg.GetEvents()) > 0 {
-				eventKind = req.Msg.GetEvents()[0].GetKind()
-			}
-			series = []*insightsv1.Series{
-				{
-					EventKind: eventKind,
-					Points:    points,
-				},
-			}
-		} else {
-			// Breakdown trends: group rows into Series by their breakdown tuple
-			rows, err := s.executor.QueryTrendsWithBreakdowns(ctx, sql, args, len(breakdowns))
-			if err != nil {
-				slog.ErrorContext(ctx, "failed to query trends with breakdowns", slogx.Error(err),
-					slog.String("projectID", principal.Project.ID))
-				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-			}
-
-			properties := make([]string, len(breakdowns))
-			for i, bk := range breakdowns {
-				properties[i] = bk.GetProperty()
-			}
-			series = coreinsights.GroupBreakdownSeries(rows, properties)
+		properties := make([]string, len(breakdowns))
+		for i, bk := range breakdowns {
+			properties[i] = bk.GetProperty()
 		}
+		rows, err := s.executor.QueryTrends(ctx, sql, args, len(breakdowns))
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to query trends", slogx.Error(err),
+				slog.String("projectID", principal.Project.ID))
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
+		series = coreinsights.GroupSeries(rows, properties)
 
 	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
 		value, err := s.executor.QueryScalar(ctx, sql, args)
@@ -139,7 +111,7 @@ func (s *server) SegmentUsers(
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 	}
 
-	ids, err := s.executor.QueryDistinctIDs(ctx, sql, args)
+	ids, err := s.executor.QueryStringColumn(ctx, sql, args)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to query distinct IDs", slogx.Error(err),
 			slog.String("projectID", principal.Project.ID))
@@ -161,4 +133,55 @@ func (s *server) SegmentUsers(
 		DistinctIds:   ids,
 		NextPageToken: nextPageToken,
 	}), nil
+}
+
+func (s *server) GetFilterSchema(
+	ctx context.Context,
+	req *connect.Request[insightsv1.GetFilterSchemaRequest],
+) (*connect.Response[insightsv1.GetFilterSchemaResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	projectID := principal.Project.ID
+
+	schema, err := s.service.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind())
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get filter schema", slogx.Error(err),
+			slog.String("projectID", projectID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(schema), nil
+}
+
+func (s *server) GetPropertyValues(
+	ctx context.Context,
+	req *connect.Request[insightsv1.GetPropertyValuesRequest],
+) (*connect.Response[insightsv1.GetPropertyValuesResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	projectID := principal.Project.ID
+
+	values, err := s.service.GetPropertyValues(ctx, projectID, req.Msg.PropertyKey, req.Msg.EventKind, req.Msg.Source)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get property values", slogx.Error(err),
+			slog.String("projectID", projectID),
+			slog.String("propertyKey", req.Msg.PropertyKey))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&insightsv1.GetPropertyValuesResponse{Values: values}), nil
 }
