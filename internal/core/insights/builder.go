@@ -27,7 +27,12 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	breakdowns := req.GetBreakdowns()
 	events := req.GetEvents()
 
-	// Pre-build top-level filter fragments — reused across both paths below.
+	// Normalize: empty events → single unfiltered event with default aggregation.
+	if len(events) == 0 {
+		events = []*insightsv1.EventQuery{{Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL}}
+	}
+
+	// Pre-build top-level filter fragments — reused in CTE and every sub-query.
 	type filterFrag struct {
 		clause string
 		fArgs  []any
@@ -41,87 +46,17 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 		filterFrags = append(filterFrags, filterFrag{clause, fArgs})
 	}
 
-	// Multi-event trends without breakdowns: UNION ALL, one sub-query per event.
-	if len(events) > 1 && len(breakdowns) == 0 {
-		var sb strings.Builder
-		var args []any
-		for i, ev := range events {
-			if i > 0 {
-				sb.WriteString("\nUNION ALL\n")
-			}
-			agg := ev.GetAggregation()
-			if agg == insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED {
-				agg = insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
-			}
-			fmt.Fprintf(&sb, "SELECT %s(occur_time) AS t,\nkind AS event_kind,\n%s AS value\nFROM events\n",
-				granFn, aggregationExpr(agg))
-			sb.WriteString("WHERE project_id = ?\nAND occur_time >= ?\nAND occur_time < ?\n")
-			args = append(args, projectID, req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
-			if ev.GetKind() != "" {
-				sb.WriteString("AND kind = ?\n")
-				args = append(args, ev.GetKind())
-			}
-			for _, ff := range filterFrags {
-				sb.WriteString("AND ")
-				sb.WriteString(ff.clause)
-				sb.WriteString("\n")
-				args = append(args, ff.fArgs...)
-			}
-			for _, f := range ev.GetFilters() {
-				clause, fArgs, err := chfilters.FilterClause(f)
-				if err != nil {
-					return "", nil, err
-				}
-				sb.WriteString("AND ")
-				sb.WriteString(clause)
-				sb.WriteString("\n")
-				args = append(args, fArgs...)
-			}
-			sb.WriteString("GROUP BY t, event_kind\n")
-		}
-		sb.WriteString("ORDER BY t ASC, event_kind ASC")
-		return sb.String(), args, nil
-	}
-
-	// Single-event (or breakdown) path.
-	aggExpr := aggregationExpr(aggregationType(req))
-
 	var sb strings.Builder
 	var args []any
 
-	// Build WHERE clause args (used in both CTE and main query when breakdowns present).
-	var whereArgs []any
-	whereArgs = append(whereArgs, projectID, req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
-	hasKind := len(events) > 0 && events[0].GetKind() != ""
-	if hasKind {
-		whereArgs = append(whereArgs, events[0].GetKind())
-	}
-	for _, ff := range filterFrags {
-		whereArgs = append(whereArgs, ff.fArgs...)
-	}
-
-	// writeWhere writes the WHERE block (args already accumulated in whereArgs).
-	writeWhere := func(w *strings.Builder) {
-		w.WriteString("WHERE project_id = ?\nAND occur_time >= ?\nAND occur_time < ?\n")
-		if hasKind {
-			w.WriteString("AND kind = ?\n")
-		}
-		for _, ff := range filterFrags {
-			w.WriteString("AND ")
-			w.WriteString(ff.clause)
-			w.WriteString("\n")
-		}
-	}
-
-	// CTE for top-N breakdown values.
+	// CTE for top-N breakdown values (shared across all event sub-queries).
 	if len(breakdowns) > 0 {
 		limit := req.GetBreakdownLimit()
 		if limit == 0 {
 			limit = 10
 		}
 
-		sb.WriteString("WITH top_vals AS (\n")
-		sb.WriteString("SELECT ")
+		sb.WriteString("WITH top_vals AS (\nSELECT ")
 		for i, bd := range breakdowns {
 			if i > 0 {
 				sb.WriteString(", ")
@@ -129,9 +64,17 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 			expr := chfilters.PropertyExpr(bd.GetProperty())
 			fmt.Fprintf(&sb, "%s AS breakdown_%d", expr, i)
 		}
-		sb.WriteString("\nFROM events\n")
-		writeWhere(&sb)
-		// GROUP BY breakdown columns in CTE
+		sb.WriteString("\nFROM events\nWHERE project_id = ?\nAND occur_time >= ?\nAND occur_time < ?\n")
+		args = append(args, projectID, req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
+		for _, ff := range filterFrags {
+			sb.WriteString("AND ")
+			sb.WriteString(ff.clause)
+			sb.WriteString("\n")
+			args = append(args, ff.fArgs...)
+		}
+		if err := writeEventCondition(&sb, &args, events); err != nil {
+			return "", nil, err
+		}
 		sb.WriteString("GROUP BY ")
 		for i := range breakdowns {
 			if i > 0 {
@@ -139,44 +82,66 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 			}
 			fmt.Fprintf(&sb, "breakdown_%d", i)
 		}
-		sb.WriteString("\n")
-		sb.WriteString("ORDER BY count(*) DESC\n")
-		sb.WriteString("LIMIT ?\n")
-		sb.WriteString(")\n")
-
-		// CTE args: WHERE args + limit
-		args = append(args, whereArgs...)
+		sb.WriteString("\nORDER BY count(*) DESC\nLIMIT ?\n)\n")
 		args = append(args, limit)
 	}
 
-	// Main SELECT clause
-	sb.WriteString("SELECT ")
-	fmt.Fprintf(&sb, "%s(occur_time) AS t", granFn)
-	for i, bd := range breakdowns {
-		expr := chfilters.PropertyExpr(bd.GetProperty())
-		fmt.Fprintf(&sb, ",\nif(%s IN (SELECT breakdown_%d FROM top_vals), %s, '$others') AS breakdown_%d",
-			expr, i, expr, i)
+	// Build one sub-query per event, joined with UNION ALL.
+	for i, ev := range events {
+		if i > 0 {
+			sb.WriteString("\nUNION ALL\n")
+		}
+
+		agg := ev.GetAggregation()
+		if agg == insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED {
+			agg = insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
+		}
+
+		// SELECT
+		fmt.Fprintf(&sb, "SELECT %s(occur_time) AS t,\nkind AS event_kind", granFn)
+		for j, bd := range breakdowns {
+			expr := chfilters.PropertyExpr(bd.GetProperty())
+			fmt.Fprintf(&sb, ",\nif(%s IN (SELECT breakdown_%d FROM top_vals), %s, '$others') AS breakdown_%d",
+				expr, j, expr, j)
+		}
+		fmt.Fprintf(&sb, ",\n%s AS value\nFROM events\n", aggregationExpr(agg))
+
+		// WHERE
+		sb.WriteString("WHERE project_id = ?\nAND occur_time >= ?\nAND occur_time < ?\n")
+		args = append(args, projectID, req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
+		if ev.GetKind() != "" {
+			sb.WriteString("AND kind = ?\n")
+			args = append(args, ev.GetKind())
+		}
+		for _, ff := range filterFrags {
+			sb.WriteString("AND ")
+			sb.WriteString(ff.clause)
+			sb.WriteString("\n")
+			args = append(args, ff.fArgs...)
+		}
+		for _, f := range ev.GetFilters() {
+			clause, fArgs, err := chfilters.FilterClause(f)
+			if err != nil {
+				return "", nil, err
+			}
+			sb.WriteString("AND ")
+			sb.WriteString(clause)
+			sb.WriteString("\n")
+			args = append(args, fArgs...)
+		}
+
+		// GROUP BY
+		sb.WriteString("GROUP BY t, event_kind")
+		for j := range breakdowns {
+			fmt.Fprintf(&sb, ", breakdown_%d", j)
+		}
+		sb.WriteString("\n")
 	}
-	fmt.Fprintf(&sb, ",\n%s AS value\n", aggExpr)
-	sb.WriteString("FROM events\n")
 
-	// WHERE clause (main query)
-	writeWhere(&sb)
-
-	// Main query args
-	args = append(args, whereArgs...)
-
-	// GROUP BY
-	sb.WriteString("GROUP BY t")
-	for i := range breakdowns {
-		fmt.Fprintf(&sb, ", breakdown_%d", i)
-	}
-	sb.WriteString("\n")
-
-	// ORDER BY
-	sb.WriteString("ORDER BY t ASC")
-	for i := range breakdowns {
-		fmt.Fprintf(&sb, ", breakdown_%d ASC", i)
+	// ORDER BY (applies to the full UNION ALL result).
+	sb.WriteString("ORDER BY t ASC, event_kind ASC")
+	for j := range breakdowns {
+		fmt.Fprintf(&sb, ", breakdown_%d ASC", j)
 	}
 
 	return sb.String(), args, nil

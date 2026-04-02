@@ -45,7 +45,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args)
+		rows, err := executor.QueryTrends(ctx, sql, args, 0)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -83,7 +83,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args)
+		rows, err := executor.QueryTrends(ctx, sql, args, 0)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -123,12 +123,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrendsWithBreakdowns(ctx, sql, args, 1)
+		rows, err := executor.QueryTrends(ctx, sql, args, 1)
 		if err != nil {
-			t.Fatalf("QueryTrendsWithBreakdowns: %v", err)
+			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series := insights.GroupBreakdownSeries(rows, []string{"$country"})
+		series := insights.GroupSeries(rows, []string{"$country"})
 		if len(series) < 2 {
 			t.Fatalf("expected at least 2 breakdown series (US, GB), got %d", len(series))
 		}
@@ -211,7 +211,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args)
+		rows, err := executor.QueryTrends(ctx, sql, args, 0)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -298,12 +298,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrendsWithBreakdowns(ctx, sql, args, 1)
+		rows, err := executor.QueryTrends(ctx, sql, args, 1)
 		if err != nil {
-			t.Fatalf("QueryTrendsWithBreakdowns: %v", err)
+			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series := insights.GroupBreakdownSeries(rows, []string{"$country"})
+		series := insights.GroupSeries(rows, []string{"$country"})
 
 		// Should have top 2 + $others = 3 series
 		if len(series) != 3 {
@@ -341,12 +341,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildQuery: %v", err)
 		}
 
-		rows, err := executor.QueryMultiEventTrends(ctx, sql, args)
+		rows, err := executor.QueryTrends(ctx, sql, args, 0)
 		if err != nil {
-			t.Fatalf("QueryMultiEventTrends: %v", err)
+			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series := insights.GroupMultiEventSeries(rows)
+		series := insights.GroupSeries(rows, nil)
 		if len(series) != 2 {
 			t.Fatalf("expected 2 series (page_view, purchase), got %d", len(series))
 		}

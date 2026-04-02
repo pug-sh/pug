@@ -822,39 +822,32 @@ func TestGranularityHourAndMonth(t *testing.T) {
 	}
 }
 
-func TestGroupBreakdownSeries(t *testing.T) {
-	rows := []insights.BreakdownTrendRow{
-		{Time: mustTime("2024-01-01T00:00:00Z"), Breakdowns: []string{"US"}, Value: 10},
-		{Time: mustTime("2024-01-02T00:00:00Z"), Breakdowns: []string{"US"}, Value: 20},
-		{Time: mustTime("2024-01-01T00:00:00Z"), Breakdowns: []string{"GB"}, Value: 5},
-		{Time: mustTime("2024-01-02T00:00:00Z"), Breakdowns: []string{"GB"}, Value: 8},
-		{Time: mustTime("2024-01-01T00:00:00Z"), Breakdowns: []string{"US"}, Value: 3}, // duplicate key, appends to US
+func TestGroupSeries_Breakdowns(t *testing.T) {
+	rows := []insights.TrendRow{
+		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 10},
+		{Time: mustTime("2024-01-02T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 20},
+		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"GB"}, Value: 5},
+		{Time: mustTime("2024-01-02T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"GB"}, Value: 8},
+		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 3},
 	}
 
-	series := insights.GroupBreakdownSeries(rows, []string{"$country"})
+	series := insights.GroupSeries(rows, []string{"$country"})
 
-	// Should produce 2 series (US, GB) in insertion order
 	if len(series) != 2 {
 		t.Fatalf("expected 2 series, got %d", len(series))
 	}
-
-	// First series: US with 3 points
 	if series[0].Breakdown["$country"] != "US" {
 		t.Errorf("expected first series breakdown country=US, got %v", series[0].Breakdown)
 	}
 	if len(series[0].Points) != 3 {
 		t.Errorf("expected 3 points for US, got %d", len(series[0].Points))
 	}
-
-	// Second series: GB with 2 points
 	if series[1].Breakdown["$country"] != "GB" {
 		t.Errorf("expected second series breakdown country=GB, got %v", series[1].Breakdown)
 	}
 	if len(series[1].Points) != 2 {
 		t.Errorf("expected 2 points for GB, got %d", len(series[1].Points))
 	}
-
-	// Verify values
 	if series[0].Points[0].Value != 10 {
 		t.Errorf("expected first US point value=10, got %v", series[0].Points[0].Value)
 	}
@@ -994,20 +987,19 @@ func TestBuildPropertyKeysQuery(t *testing.T) {
 	})
 }
 
-func TestGroupMultiEventSeries(t *testing.T) {
-	rows := []insights.MultiEventTrendRow{
+func TestGroupSeries_MultiEvent(t *testing.T) {
+	rows := []insights.TrendRow{
 		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "page_view", Value: 10},
 		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 3},
 		{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EventKind: "page_view", Value: 15},
 		{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 5},
 	}
 
-	series := insights.GroupMultiEventSeries(rows)
+	series := insights.GroupSeries(rows, nil)
 
 	if len(series) != 2 {
 		t.Fatalf("expected 2 series, got %d", len(series))
 	}
-	// Insertion order preserved: page_view first
 	if series[0].EventKind != "page_view" {
 		t.Errorf("expected first series 'page_view', got %q", series[0].EventKind)
 	}
@@ -1025,8 +1017,8 @@ func TestGroupMultiEventSeries(t *testing.T) {
 	}
 }
 
-func TestGroupMultiEventSeries_Empty(t *testing.T) {
-	series := insights.GroupMultiEventSeries(nil)
+func TestGroupSeries_Empty(t *testing.T) {
+	series := insights.GroupSeries(nil, nil)
 	if len(series) != 0 {
 		t.Errorf("expected 0 series for nil input, got %d", len(series))
 	}
