@@ -1,6 +1,7 @@
 package clickhouse_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/fivebitsio/cotton/internal/core/clickhouse"
@@ -292,5 +293,188 @@ func TestFilterClause_Unsupported(t *testing.T) {
 	_, _, err := clickhouse.FilterClause(f)
 	if err == nil {
 		t.Fatal("expected error for unsupported operator")
+	}
+}
+
+func TestWriteEventFilterCondition_Empty(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+	sb.WriteString("SELECT 1")
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sb.String() != "SELECT 1" {
+		t.Errorf("expected no change to builder, got: %s", sb.String())
+	}
+	if len(args) != 0 {
+		t.Errorf("expected no args, got: %v", args)
+	}
+}
+
+func TestWriteEventFilterCondition_SingleKindOnly(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+		{Kind: "page_view"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(sb.String(), "AND kind = ?") {
+		t.Errorf("expected kind clause, got: %s", sb.String())
+	}
+	if len(args) != 1 || args[0] != "page_view" {
+		t.Errorf("expected [page_view], got: %v", args)
+	}
+}
+
+func TestWriteEventFilterCondition_SingleWithFilters(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+		{
+			Kind: "purchase",
+			Filters: []*commonv1.PropertyFilter{
+				{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := sb.String()
+	if !strings.Contains(sql, "AND kind = ?") {
+		t.Errorf("expected kind clause, got: %s", sql)
+	}
+	if !strings.Contains(sql, "= ?") {
+		t.Errorf("expected filter clause, got: %s", sql)
+	}
+	if len(args) != 2 {
+		t.Errorf("expected 2 args (kind + filter value), got %d: %v", len(args), args)
+	}
+}
+
+func TestWriteEventFilterCondition_SingleFiltersOnly(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+		{
+			Filters: []*commonv1.PropertyFilter{
+				{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "/blog"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := sb.String()
+	if strings.Contains(sql, "kind") {
+		t.Errorf("expected no kind clause when kind is empty, got: %s", sql)
+	}
+	if !strings.Contains(sql, "LIKE ?") {
+		t.Errorf("expected LIKE filter clause, got: %s", sql)
+	}
+	if len(args) != 1 {
+		t.Errorf("expected 1 arg, got %d: %v", len(args), args)
+	}
+}
+
+func TestWriteEventFilterCondition_SingleEmptyFilter(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+	sb.WriteString("SELECT 1")
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+		{},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Empty EventFilter with no kind and no filters: no-op for single event path.
+	if sb.String() != "SELECT 1" {
+		t.Errorf("expected no change for empty EventFilter, got: %s", sb.String())
+	}
+	if len(args) != 0 {
+		t.Errorf("expected no args, got: %v", args)
+	}
+}
+
+func TestWriteEventFilterCondition_MultipleEvents(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+		{Kind: "page_view"},
+		{Kind: "purchase"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := sb.String()
+	if !strings.Contains(sql, "AND (\n") {
+		t.Errorf("expected OR-joined block, got: %s", sql)
+	}
+	if !strings.Contains(sql, "OR ") {
+		t.Errorf("expected OR separator, got: %s", sql)
+	}
+	if strings.Count(sql, "kind = ?") != 2 {
+		t.Errorf("expected 2 kind clauses, got: %s", sql)
+	}
+	if len(args) != 2 {
+		t.Errorf("expected 2 args, got %d: %v", len(args), args)
+	}
+}
+
+func TestWriteEventFilterCondition_MultipleWithEmptyFilter(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+		{Kind: "page_view"},
+		{}, // empty kind and filters → error
+	})
+	if err == nil {
+		t.Fatal("expected error for empty EventFilter in multi-event list")
+	}
+	if !strings.Contains(err.Error(), "event[1]") {
+		t.Errorf("expected error to include event index, got: %v", err)
+	}
+}
+
+func TestWriteEventFilterCondition_ErrorPropagation(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+		{
+			Filters: []*commonv1.PropertyFilter{
+				{Property: "x", Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for unsupported operator")
+	}
+}
+
+func TestWriteEventFilterCondition_MultiEventErrorPropagation(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+		{Kind: "page_view"},
+		{
+			Filters: []*commonv1.PropertyFilter{
+				{Property: "x", Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for unsupported operator in multi-event path")
 	}
 }

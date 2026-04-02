@@ -29,7 +29,9 @@ type GetActivityFeedRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Required. The profile ID to fetch events for.
 	DistinctId string `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
-	// Optional. Filter by event type (e.g., "page_view"). Empty means all kinds.
+	// Deprecated: use events instead. Filter by a single event type. Empty means all kinds.
+	//
+	// Deprecated: Marked as deprecated in shared/activity/v1/activity.proto.
 	Kind string `protobuf:"bytes,2,opt,name=kind" json:"kind,omitempty"`
 	// Optional. Filter by session. Empty means all sessions.
 	SessionId string `protobuf:"bytes,3,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
@@ -40,7 +42,10 @@ type GetActivityFeedRequest struct {
 	// 0 means server default (100). Max 1000.
 	PageSize int32 `protobuf:"varint,6,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
 	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
-	PageToken     string `protobuf:"bytes,7,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	PageToken string `protobuf:"bytes,7,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	// Optional. Filter by multiple event types with per-event property filters.
+	// When set, takes precedence over the singular kind field.
+	Events        []*v1.EventFilter `protobuf:"bytes,8,rep,name=events" json:"events,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -82,6 +87,7 @@ func (x *GetActivityFeedRequest) GetDistinctId() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in shared/activity/v1/activity.proto.
 func (x *GetActivityFeedRequest) GetKind() string {
 	if x != nil {
 		return x.Kind
@@ -122,6 +128,13 @@ func (x *GetActivityFeedRequest) GetPageToken() string {
 		return x.PageToken
 	}
 	return ""
+}
+
+func (x *GetActivityFeedRequest) GetEvents() []*v1.EventFilter {
+	if x != nil {
+		return x.Events
+	}
+	return nil
 }
 
 type ActivityEvent struct {
@@ -276,7 +289,9 @@ type GetEventExplorerRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Optional. Filter to a specific user. Empty means all users.
 	DistinctId string `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
-	// Optional. Filter by event type. Empty means all kinds.
+	// Deprecated: use events instead. Filter by a single event type. Empty means all kinds.
+	//
+	// Deprecated: Marked as deprecated in shared/activity/v1/activity.proto.
 	Kind string `protobuf:"bytes,2,opt,name=kind" json:"kind,omitempty"`
 	// Optional. Filter by session. Empty means all sessions.
 	SessionId string `protobuf:"bytes,3,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
@@ -287,7 +302,10 @@ type GetEventExplorerRequest struct {
 	// 0 means server default (100). Max 1000.
 	PageSize int32 `protobuf:"varint,6,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
 	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
-	PageToken     string `protobuf:"bytes,7,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	PageToken string `protobuf:"bytes,7,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	// Optional. Filter by multiple event types with per-event property filters.
+	// When set, takes precedence over the singular kind field.
+	Events        []*v1.EventFilter `protobuf:"bytes,8,rep,name=events" json:"events,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -329,6 +347,7 @@ func (x *GetEventExplorerRequest) GetDistinctId() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in shared/activity/v1/activity.proto.
 func (x *GetEventExplorerRequest) GetKind() string {
 	if x != nil {
 		return x.Kind
@@ -369,6 +388,13 @@ func (x *GetEventExplorerRequest) GetPageToken() string {
 		return x.PageToken
 	}
 	return ""
+}
+
+func (x *GetEventExplorerRequest) GetEvents() []*v1.EventFilter {
+	if x != nil {
+		return x.Events
+	}
+	return nil
 }
 
 type GetEventExplorerResponse struct {
@@ -644,11 +670,11 @@ var File_shared_activity_v1_activity_proto protoreflect.FileDescriptor
 
 const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\n" +
-	"!shared/activity/v1/activity.proto\x12\x12shared.activity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb8\x02\n" +
+	"!shared/activity/v1/activity.proto\x12\x12shared.activity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x03\n" +
 	"\x16GetActivityFeedRequest\x12(\n" +
 	"\vdistinct_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
-	"distinctId\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1d\n" +
+	"distinctId\x12.\n" +
+	"\x04kind\x18\x02 \x01(\tB\x1a\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$\x18\x01R\x04kind\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x03 \x01(\tR\tsessionId\x123\n" +
 	"\n" +
@@ -657,7 +683,8 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\tpage_size\x18\x06 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\a \x01(\tR\tpageToken\"\xc1\x02\n" +
+	"page_token\x18\a \x01(\tR\tpageToken\x128\n" +
+	"\x06events\x18\b \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events\"\xc1\x02\n" +
 	"\rActivityEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1f\n" +
@@ -671,11 +698,11 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\x11custom_properties\x18\a \x01(\v2\x17.google.protobuf.StructR\x10customProperties\"|\n" +
 	"\x17GetActivityFeedResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xb0\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x86\x03\n" +
 	"\x17GetEventExplorerRequest\x12\x1f\n" +
 	"\vdistinct_id\x18\x01 \x01(\tR\n" +
-	"distinctId\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1d\n" +
+	"distinctId\x12.\n" +
+	"\x04kind\x18\x02 \x01(\tB\x1a\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$\x18\x01R\x04kind\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x03 \x01(\tR\tsessionId\x123\n" +
 	"\n" +
@@ -684,7 +711,8 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\tpage_size\x18\x06 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\a \x01(\tR\tpageToken\"}\n" +
+	"page_token\x18\a \x01(\tR\tpageToken\x128\n" +
+	"\x06events\x18\b \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events\"}\n" +
 	"\x18GetEventExplorerResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"Q\n" +
@@ -734,39 +762,42 @@ var file_shared_activity_v1_activity_proto_goTypes = []any{
 	(*GetPropertyValuesResponse)(nil), // 8: shared.activity.v1.GetPropertyValuesResponse
 	(*v1.TimeRange)(nil),              // 9: common.v1.TimeRange
 	(*v1.PropertyFilter)(nil),         // 10: common.v1.PropertyFilter
-	(*timestamppb.Timestamp)(nil),     // 11: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),           // 12: google.protobuf.Struct
-	(*v1.EventNameMeta)(nil),          // 13: common.v1.EventNameMeta
-	(*v1.PropertyKeyMeta)(nil),        // 14: common.v1.PropertyKeyMeta
-	(v1.PropertySource)(0),            // 15: common.v1.PropertySource
+	(*v1.EventFilter)(nil),            // 11: common.v1.EventFilter
+	(*timestamppb.Timestamp)(nil),     // 12: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),           // 13: google.protobuf.Struct
+	(*v1.EventNameMeta)(nil),          // 14: common.v1.EventNameMeta
+	(*v1.PropertyKeyMeta)(nil),        // 15: common.v1.PropertyKeyMeta
+	(v1.PropertySource)(0),            // 16: common.v1.PropertySource
 }
 var file_shared_activity_v1_activity_proto_depIdxs = []int32{
 	9,  // 0: shared.activity.v1.GetActivityFeedRequest.time_range:type_name -> common.v1.TimeRange
 	10, // 1: shared.activity.v1.GetActivityFeedRequest.property_filters:type_name -> common.v1.PropertyFilter
-	11, // 2: shared.activity.v1.ActivityEvent.occur_time:type_name -> google.protobuf.Timestamp
-	12, // 3: shared.activity.v1.ActivityEvent.auto_properties:type_name -> google.protobuf.Struct
-	12, // 4: shared.activity.v1.ActivityEvent.custom_properties:type_name -> google.protobuf.Struct
-	1,  // 5: shared.activity.v1.GetActivityFeedResponse.events:type_name -> shared.activity.v1.ActivityEvent
-	9,  // 6: shared.activity.v1.GetEventExplorerRequest.time_range:type_name -> common.v1.TimeRange
-	10, // 7: shared.activity.v1.GetEventExplorerRequest.property_filters:type_name -> common.v1.PropertyFilter
-	1,  // 8: shared.activity.v1.GetEventExplorerResponse.events:type_name -> shared.activity.v1.ActivityEvent
-	13, // 9: shared.activity.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
-	14, // 10: shared.activity.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
-	14, // 11: shared.activity.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
-	15, // 12: shared.activity.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
-	0,  // 13: shared.activity.v1.ActivityService.GetActivityFeed:input_type -> shared.activity.v1.GetActivityFeedRequest
-	3,  // 14: shared.activity.v1.ActivityService.GetEventExplorer:input_type -> shared.activity.v1.GetEventExplorerRequest
-	5,  // 15: shared.activity.v1.ActivityService.GetFilterSchema:input_type -> shared.activity.v1.GetFilterSchemaRequest
-	7,  // 16: shared.activity.v1.ActivityService.GetPropertyValues:input_type -> shared.activity.v1.GetPropertyValuesRequest
-	2,  // 17: shared.activity.v1.ActivityService.GetActivityFeed:output_type -> shared.activity.v1.GetActivityFeedResponse
-	4,  // 18: shared.activity.v1.ActivityService.GetEventExplorer:output_type -> shared.activity.v1.GetEventExplorerResponse
-	6,  // 19: shared.activity.v1.ActivityService.GetFilterSchema:output_type -> shared.activity.v1.GetFilterSchemaResponse
-	8,  // 20: shared.activity.v1.ActivityService.GetPropertyValues:output_type -> shared.activity.v1.GetPropertyValuesResponse
-	17, // [17:21] is the sub-list for method output_type
-	13, // [13:17] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	11, // 2: shared.activity.v1.GetActivityFeedRequest.events:type_name -> common.v1.EventFilter
+	12, // 3: shared.activity.v1.ActivityEvent.occur_time:type_name -> google.protobuf.Timestamp
+	13, // 4: shared.activity.v1.ActivityEvent.auto_properties:type_name -> google.protobuf.Struct
+	13, // 5: shared.activity.v1.ActivityEvent.custom_properties:type_name -> google.protobuf.Struct
+	1,  // 6: shared.activity.v1.GetActivityFeedResponse.events:type_name -> shared.activity.v1.ActivityEvent
+	9,  // 7: shared.activity.v1.GetEventExplorerRequest.time_range:type_name -> common.v1.TimeRange
+	10, // 8: shared.activity.v1.GetEventExplorerRequest.property_filters:type_name -> common.v1.PropertyFilter
+	11, // 9: shared.activity.v1.GetEventExplorerRequest.events:type_name -> common.v1.EventFilter
+	1,  // 10: shared.activity.v1.GetEventExplorerResponse.events:type_name -> shared.activity.v1.ActivityEvent
+	14, // 11: shared.activity.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
+	15, // 12: shared.activity.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
+	15, // 13: shared.activity.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
+	16, // 14: shared.activity.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
+	0,  // 15: shared.activity.v1.ActivityService.GetActivityFeed:input_type -> shared.activity.v1.GetActivityFeedRequest
+	3,  // 16: shared.activity.v1.ActivityService.GetEventExplorer:input_type -> shared.activity.v1.GetEventExplorerRequest
+	5,  // 17: shared.activity.v1.ActivityService.GetFilterSchema:input_type -> shared.activity.v1.GetFilterSchemaRequest
+	7,  // 18: shared.activity.v1.ActivityService.GetPropertyValues:input_type -> shared.activity.v1.GetPropertyValuesRequest
+	2,  // 19: shared.activity.v1.ActivityService.GetActivityFeed:output_type -> shared.activity.v1.GetActivityFeedResponse
+	4,  // 20: shared.activity.v1.ActivityService.GetEventExplorer:output_type -> shared.activity.v1.GetEventExplorerResponse
+	6,  // 21: shared.activity.v1.ActivityService.GetFilterSchema:output_type -> shared.activity.v1.GetFilterSchemaResponse
+	8,  // 22: shared.activity.v1.ActivityService.GetPropertyValues:output_type -> shared.activity.v1.GetPropertyValuesResponse
+	19, // [19:23] is the sub-list for method output_type
+	15, // [15:19] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_shared_activity_v1_activity_proto_init() }

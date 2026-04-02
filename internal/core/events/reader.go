@@ -136,10 +136,10 @@ func DecodeActivityFeedCursor(token string) (*ActivityFeedCursor, error) {
 type EventExplorerParams struct {
 	ProjectID       string
 	DistinctID      string
-	Kind            string
 	SessionID       string
 	TimeRange       *commonv1.TimeRange
 	PropertyFilters []*commonv1.PropertyFilter
+	EventFilters    []*commonv1.EventFilter
 	PageSize        int32
 	PageToken       *ActivityFeedCursor
 }
@@ -159,9 +159,8 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 		args = append(args, params.DistinctID)
 	}
 
-	if params.Kind != "" {
-		sb.WriteString("AND kind = ?\n")
-		args = append(args, params.Kind)
+	if err := chfilters.WriteEventFilterCondition(&sb, &args, params.EventFilters); err != nil {
+		return nil, nil, fmt.Errorf("GetEventExplorer: %w: %w", ErrInvalidFilter, err)
 	}
 
 	if params.SessionID != "" {
@@ -244,10 +243,10 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 type ActivityFeedParams struct {
 	ProjectID       string
 	DistinctID      string
-	Kind            string
 	SessionID       string
 	TimeRange       *commonv1.TimeRange
 	PropertyFilters []*commonv1.PropertyFilter
+	EventFilters    []*commonv1.EventFilter
 	PageSize        int32
 	PageToken       *ActivityFeedCursor
 }
@@ -274,9 +273,8 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 	sb.WriteString("SELECT " + eventColumns + "\nFROM events\nWHERE project_id = ? AND distinct_id IN ?\n")
 	args = append(args, params.ProjectID, ids)
 
-	if params.Kind != "" {
-		sb.WriteString("AND kind = ?\n")
-		args = append(args, params.Kind)
+	if err := chfilters.WriteEventFilterCondition(&sb, &args, params.EventFilters); err != nil {
+		return nil, nil, fmt.Errorf("GetActivityFeed: %w: %w", ErrInvalidFilter, err)
 	}
 
 	if params.SessionID != "" {

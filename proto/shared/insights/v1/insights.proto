@@ -66,9 +66,8 @@ enum AggregationType {
 }
 
 message EventQuery {
-  string kind = 1;
-  repeated common.v1.PropertyFilter filters = 2;
-  AggregationType aggregation = 3 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
+  common.v1.EventFilter event = 1;
+  AggregationType aggregation = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
 }
 
 message Breakdown {

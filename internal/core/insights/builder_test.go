@@ -35,7 +35,7 @@ func TestBasicTrends(t *testing.T) {
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 		Events: []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 	}
 
@@ -74,7 +74,7 @@ func TestTrendsWithFilters(t *testing.T) {
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 		Events: []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
 		},
 		Filters: []*commonv1.PropertyFilter{
 			{
@@ -112,7 +112,7 @@ func TestSegmentation(t *testing.T) {
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Events: []*insightsv1.EventQuery{
-			{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 	}
 
@@ -168,8 +168,8 @@ func TestMultiEventTrends(t *testing.T) {
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 		Events: []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
-			{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
 		},
 	}
 
@@ -211,7 +211,7 @@ func TestPerUserAvg(t *testing.T) {
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_WEEK,
 		Events: []*insightsv1.EventQuery{
-			{Kind: "add_to_cart", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG},
+			{Event: &commonv1.EventFilter{Kind: "add_to_cart"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG},
 		},
 	}
 
@@ -240,7 +240,7 @@ func TestGranularityDefault(t *testing.T) {
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_UNSPECIFIED,
 		Events: []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 	}
 
@@ -261,7 +261,7 @@ func TestBuildTrendsQuery_WithBreakdown(t *testing.T) {
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 		Events: []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
 		BreakdownLimit: 3,
@@ -318,7 +318,7 @@ func TestBuildTrendsQuery_MultipleBreakdowns(t *testing.T) {
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 		Events: []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		Breakdowns: []*insightsv1.Breakdown{
 			{Property: "$country"},
@@ -347,7 +347,7 @@ func TestBuildTrendsQuery_DefaultBreakdownLimit(t *testing.T) {
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 		Events: []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
 		BreakdownLimit: 0,
@@ -377,7 +377,7 @@ func TestFilterOperators(t *testing.T) {
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
 			TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 			Events: []*insightsv1.EventQuery{
-				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
 			Filters: []*commonv1.PropertyFilter{
 				{Property: "$browser", Operator: op, Value: val},
@@ -514,7 +514,7 @@ func TestFilterOperators(t *testing.T) {
 				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
 				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 				Events: []*insightsv1.EventQuery{
-					{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+					{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
 				Filters: []*commonv1.PropertyFilter{
 					{Property: "$country", Operator: tc.op, Values: tc.values},
@@ -548,7 +548,7 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 	req := &insightsv1.SegmentUsersRequest{
 		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Events: []*insightsv1.EventQuery{
-			{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		Filters: []*commonv1.PropertyFilter{
 			{
@@ -599,13 +599,15 @@ func TestBuildSegmentUsersQuery_MultiEvent(t *testing.T) {
 		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Events: []*insightsv1.EventQuery{
 			{
-				Kind:        "purchase",
-				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
-				Filters: []*commonv1.PropertyFilter{
-					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+				Event: &commonv1.EventFilter{
+					Kind: "purchase",
+					Filters: []*commonv1.PropertyFilter{
+						{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+					},
 				},
+				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
 			},
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		PageSize: 50,
 	}
@@ -636,7 +638,7 @@ func TestBuildSegmentUsersQuery_WithPageToken(t *testing.T) {
 	req := &insightsv1.SegmentUsersRequest{
 		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Events: []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		PageToken: "user_abc",
 		PageSize:  0, // should default to 100
@@ -698,7 +700,7 @@ func TestUnsupportedFilterOperator(t *testing.T) {
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Events: []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		Filters: []*commonv1.PropertyFilter{
 			{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED, Value: "x"},
@@ -727,7 +729,7 @@ func TestNumericFilterRejectsNonNumericValue(t *testing.T) {
 				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
 				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 				Events: []*insightsv1.EventQuery{
-					{Kind: "click", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+					{Event: &commonv1.EventFilter{Kind: "click"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
 				Filters: []*commonv1.PropertyFilter{
 					{Property: "score", Operator: op, Value: "not-a-number"},
@@ -750,7 +752,7 @@ func TestMultipleCombinedFilters(t *testing.T) {
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 		Events: []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
 		Filters: []*commonv1.PropertyFilter{
 			{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
@@ -807,7 +809,7 @@ func TestGranularityHourAndMonth(t *testing.T) {
 				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 				Granularity: tc.granularity,
 				Events: []*insightsv1.EventQuery{
-					{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+					{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
 			}
 
@@ -874,7 +876,7 @@ func TestContainsEscapesLIKEMetacharacters(t *testing.T) {
 				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
 				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 				Events: []*insightsv1.EventQuery{
-					{Kind: "click", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+					{Event: &commonv1.EventFilter{Kind: "click"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
 				Filters: []*commonv1.PropertyFilter{
 					{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: tc.val},
@@ -1034,13 +1036,15 @@ func TestMultiEventTrendsWithFilters(t *testing.T) {
 		},
 		Events: []*insightsv1.EventQuery{
 			{
-				Kind:        "page_view",
-				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
-				Filters: []*commonv1.PropertyFilter{
-					{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "/blog"},
+				Event: &commonv1.EventFilter{
+					Kind: "page_view",
+					Filters: []*commonv1.PropertyFilter{
+						{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "/blog"},
+					},
 				},
+				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
 			},
-			{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
+			{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
 		},
 	}
 

@@ -36,7 +36,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 			Events: []*insightsv1.EventQuery{
-				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
 		}
 
@@ -74,7 +74,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 			Events: []*insightsv1.EventQuery{
-				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
 			},
 		}
 
@@ -112,7 +112,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 			Events: []*insightsv1.EventQuery{
-				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
 			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
 			BreakdownLimit: 10,
@@ -142,7 +142,7 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
 		}
 
@@ -170,7 +170,7 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
 			Filters: []*commonv1.PropertyFilter{
 				{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
@@ -202,7 +202,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 			Events: []*insightsv1.EventQuery{
-				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG},
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG},
 			},
 		}
 
@@ -230,7 +230,7 @@ func TestIntegration(t *testing.T) {
 			To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 		}
 		events := []*insightsv1.EventQuery{
-			{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		}
 
 		// First page: size 2
@@ -287,7 +287,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 			Events: []*insightsv1.EventQuery{
-				{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
 			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
 			BreakdownLimit: 2, // Only top 2 countries, rest go to $others
@@ -331,8 +331,8 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 			Events: []*insightsv1.EventQuery{
-				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
-				{Kind: "purchase", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
 		}
 
@@ -367,7 +367,7 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Kind: "page_view", Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
 			PageSize: 100,
 		}

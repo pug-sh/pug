@@ -72,3 +72,10 @@ message PropertyFilter {
   string value = 3;
   repeated string values = 4;
 }
+
+// EventFilter selects events by kind with optional per-event property filters.
+// Used across activity feeds, event explorer, and insights queries.
+message EventFilter {
+  string kind = 1 [(buf.validate.field).string = {pattern: "^[a-zA-Z0-9_.-]*$"}];
+  repeated PropertyFilter filters = 2;
+}

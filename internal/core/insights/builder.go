@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	chfilters "github.com/fivebitsio/cotton/internal/core/clickhouse"
+	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 )
 
@@ -29,7 +30,9 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 
 	// Normalize: empty events → single unfiltered event with default aggregation.
 	if len(events) == 0 {
-		events = []*insightsv1.EventQuery{{Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL}}
+		events = []*insightsv1.EventQuery{{
+			Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
+		}}
 	}
 
 	// Pre-build top-level filter fragments — reused in CTE and every sub-query.
@@ -109,9 +112,9 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 		// WHERE
 		sb.WriteString("WHERE project_id = ?\nAND occur_time >= ?\nAND occur_time < ?\n")
 		args = append(args, projectID, req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
-		if ev.GetKind() != "" {
+		if ev.GetEvent().GetKind() != "" {
 			sb.WriteString("AND kind = ?\n")
-			args = append(args, ev.GetKind())
+			args = append(args, ev.GetEvent().GetKind())
 		}
 		for _, ff := range filterFrags {
 			sb.WriteString("AND ")
@@ -119,7 +122,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 			sb.WriteString("\n")
 			args = append(args, ff.fArgs...)
 		}
-		for _, f := range ev.GetFilters() {
+		for _, f := range ev.GetEvent().GetFilters() {
 			clause, fArgs, err := chfilters.FilterClause(f)
 			if err != nil {
 				return "", nil, err
@@ -180,62 +183,14 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 	return sb.String(), args, nil
 }
 
-// writeEventCondition appends event kind and per-event filter conditions to sb/args.
-// Single event: AND kind = ? [AND per-event filters...].
-// Multiple events: AND ((kind=? AND ...) OR (kind=? AND ...) ...).
+// writeEventCondition extracts EventFilter from each EventQuery and delegates
+// to chfilters.WriteEventFilterCondition for the actual SQL generation.
 func writeEventCondition(sb *strings.Builder, args *[]any, events []*insightsv1.EventQuery) error {
-	if len(events) == 0 {
-		return nil
-	}
-	if len(events) == 1 {
-		ev := events[0]
-		if ev.GetKind() != "" {
-			sb.WriteString("AND kind = ?\n")
-			*args = append(*args, ev.GetKind())
-		}
-		for _, f := range ev.GetFilters() {
-			clause, fArgs, err := chfilters.FilterClause(f)
-			if err != nil {
-				return err
-			}
-			sb.WriteString("AND ")
-			sb.WriteString(clause)
-			sb.WriteString("\n")
-			*args = append(*args, fArgs...)
-		}
-		return nil
-	}
-	// Multiple events: OR-join each event's conditions.
-	sb.WriteString("AND (\n")
+	filters := make([]*commonv1.EventFilter, len(events))
 	for i, ev := range events {
-		if i > 0 {
-			sb.WriteString("OR ")
-		}
-		sb.WriteString("(")
-		var parts []string
-		var evArgs []any
-		if ev.GetKind() != "" {
-			parts = append(parts, "kind = ?")
-			evArgs = append(evArgs, ev.GetKind())
-		}
-		for _, f := range ev.GetFilters() {
-			clause, fArgs, err := chfilters.FilterClause(f)
-			if err != nil {
-				return err
-			}
-			parts = append(parts, clause)
-			evArgs = append(evArgs, fArgs...)
-		}
-		if len(parts) > 0 {
-			sb.WriteString(strings.Join(parts, " AND "))
-		} else {
-			sb.WriteString("1=1")
-		}
-		sb.WriteString(")\n")
-		*args = append(*args, evArgs...)
+		filters[i] = ev.GetEvent()
 	}
-	sb.WriteString(")\n")
-	return nil
+	return chfilters.WriteEventFilterCondition(sb, args, filters)
 }
 
 // BuildSegmentUsersQuery builds a ClickHouse SQL query and args from a SegmentUsersRequest.

@@ -120,11 +120,10 @@ func TestGetActivityFeed(t *testing.T) {
 	})
 
 	t.Run("filters by kind", func(t *testing.T) {
-		kind := "page_view"
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
 			ProjectID:  "proj-1",
 			DistinctID: "user-1",
-			Kind:       kind,
+			EventFilters:     []*commonv1.EventFilter{{Kind: "page_view"}},
 			PageSize:   100,
 		})
 		if err != nil {
@@ -432,11 +431,10 @@ func TestGetActivityFeed(t *testing.T) {
 	t.Run("combined filters", func(t *testing.T) {
 		// kind=page_view + sessionA + time range covering first 2 events + $country=US
 		// Only the first page_view (now, sessionA) matches all criteria
-		kind := "page_view"
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
 			ProjectID:  "proj-1",
 			DistinctID: "user-1",
-			Kind:       kind,
+			EventFilters:     []*commonv1.EventFilter{{Kind: "page_view"}},
 			SessionID:  sessionA,
 			PageSize:   100,
 			TimeRange: &commonv1.TimeRange{
@@ -460,6 +458,54 @@ func TestGetActivityFeed(t *testing.T) {
 		}
 		if evts[0].Kind != "page_view" {
 			t.Errorf("expected kind page_view, got %s", evts[0].Kind)
+		}
+	})
+
+	t.Run("multi-event filters", func(t *testing.T) {
+		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+			ProjectID:  "proj-1",
+			DistinctID: "user-1",
+			EventFilters: []*commonv1.EventFilter{
+				{Kind: "page_view"},
+				{Kind: "purchase"},
+			},
+			PageSize: 100,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityFeed: %v", err)
+		}
+		// 2 page_view + 1 purchase = 3
+		if len(evts) != 3 {
+			t.Fatalf("expected 3 events for multi-event filter, got %d", len(evts))
+		}
+		for _, e := range evts {
+			if e.Kind != "page_view" && e.Kind != "purchase" {
+				t.Errorf("unexpected kind %s", e.Kind)
+			}
+		}
+	})
+
+	t.Run("multi-event with per-event filters", func(t *testing.T) {
+		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+			ProjectID:  "proj-1",
+			DistinctID: "user-1",
+			EventFilters: []*commonv1.EventFilter{
+				{
+					Kind: "page_view",
+					Filters: []*commonv1.PropertyFilter{
+						{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+					},
+				},
+				{Kind: "signup"},
+			},
+			PageSize: 100,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityFeed: %v", err)
+		}
+		// 2 page_view (all have $country=US) + 1 signup = 3
+		if len(evts) != 3 {
+			t.Fatalf("expected 3 events, got %d", len(evts))
 		}
 	})
 }
@@ -626,10 +672,9 @@ func TestGetEventExplorer(t *testing.T) {
 	})
 
 	t.Run("filters by kind", func(t *testing.T) {
-		kind := "page_view"
 		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
 			ProjectID: "proj-1",
-			Kind:      kind,
+			EventFilters:    []*commonv1.EventFilter{{Kind: "page_view"}},
 			PageSize:  100,
 		})
 		if err != nil {
@@ -747,10 +792,9 @@ func TestGetEventExplorer(t *testing.T) {
 	})
 
 	t.Run("combined filters", func(t *testing.T) {
-		kind := "page_view"
 		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
 			ProjectID: "proj-1",
-			Kind:      kind,
+			EventFilters:    []*commonv1.EventFilter{{Kind: "page_view"}},
 			SessionID: sessionA,
 			PageSize:  100,
 			TimeRange: &commonv1.TimeRange{
@@ -771,6 +815,53 @@ func TestGetEventExplorer(t *testing.T) {
 		// page_view + sessionA + time range (now to now-90s) + $country=US = user-1 page_view only
 		if len(evts) != 1 {
 			t.Fatalf("expected 1 event with combined filters, got %d", len(evts))
+		}
+	})
+
+	t.Run("multi-event filters", func(t *testing.T) {
+		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
+			ProjectID: "proj-1",
+			EventFilters: []*commonv1.EventFilter{
+				{Kind: "page_view"},
+				{Kind: "purchase"},
+			},
+			PageSize: 100,
+		})
+		if err != nil {
+			t.Fatalf("GetEventExplorer: %v", err)
+		}
+		// 3 page_view (one per user) + 1 purchase = 4
+		if len(evts) != 4 {
+			t.Fatalf("expected 4 events for multi-event filter, got %d", len(evts))
+		}
+		for _, e := range evts {
+			if e.Kind != "page_view" && e.Kind != "purchase" {
+				t.Errorf("unexpected kind %s", e.Kind)
+			}
+		}
+	})
+
+	t.Run("multi-event with per-event filters", func(t *testing.T) {
+		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
+			ProjectID: "proj-1",
+			EventFilters: []*commonv1.EventFilter{
+				{
+					Kind: "page_view",
+					Filters: []*commonv1.PropertyFilter{
+						{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+					},
+				},
+				{Kind: "signup"},
+			},
+			PageSize: 100,
+		})
+		if err != nil {
+			t.Fatalf("GetEventExplorer: %v", err)
+		}
+		// page_view with $country=US: user-1 (US) + user-3 (US) = 2. user-2 has $country=DE, excluded.
+		// signup: user-2 = 1. Total = 3.
+		if len(evts) != 3 {
+			t.Fatalf("expected 3 events, got %d", len(evts))
 		}
 	})
 }

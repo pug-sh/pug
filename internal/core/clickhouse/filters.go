@@ -90,3 +90,63 @@ func FilterClause(f *commonv1.PropertyFilter) (string, []any, error) {
 		return "", nil, fmt.Errorf("unsupported filter operator: %v", f.GetOperator())
 	}
 }
+
+// WriteEventFilterCondition appends OR-joined event kind + per-event filter
+// conditions to sb/args. No-op when events is empty.
+// Single event:   AND kind = ? [AND per-event filters...]
+// Multiple events: AND ((kind=? AND ...) OR (kind=? AND ...))
+//
+// On error, the state of sb and args is undefined; callers must not use them.
+func WriteEventFilterCondition(sb *strings.Builder, args *[]any, events []*commonv1.EventFilter) error {
+	if len(events) == 0 {
+		return nil
+	}
+	if len(events) == 1 {
+		ev := events[0]
+		if ev.GetKind() != "" {
+			sb.WriteString("AND kind = ?\n")
+			*args = append(*args, ev.GetKind())
+		}
+		for _, f := range ev.GetFilters() {
+			clause, fArgs, err := FilterClause(f)
+			if err != nil {
+				return fmt.Errorf("event filter: %w", err)
+			}
+			sb.WriteString("AND ")
+			sb.WriteString(clause)
+			sb.WriteString("\n")
+			*args = append(*args, fArgs...)
+		}
+		return nil
+	}
+	// Multiple events: OR-join each event's conditions.
+	sb.WriteString("AND (\n")
+	for i, ev := range events {
+		if i > 0 {
+			sb.WriteString("OR ")
+		}
+		var parts []string
+		var evArgs []any
+		if ev.GetKind() != "" {
+			parts = append(parts, "kind = ?")
+			evArgs = append(evArgs, ev.GetKind())
+		}
+		for _, f := range ev.GetFilters() {
+			clause, fArgs, err := FilterClause(f)
+			if err != nil {
+				return fmt.Errorf("event[%d]: %w", i, err)
+			}
+			parts = append(parts, clause)
+			evArgs = append(evArgs, fArgs...)
+		}
+		if len(parts) == 0 {
+			return fmt.Errorf("event[%d]: empty event filter in multi-event query", i)
+		}
+		sb.WriteString("(")
+		sb.WriteString(strings.Join(parts, " AND "))
+		sb.WriteString(")\n")
+		*args = append(*args, evArgs...)
+	}
+	sb.WriteString(")\n")
+	return nil
+}

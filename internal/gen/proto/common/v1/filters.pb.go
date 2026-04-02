@@ -169,6 +169,60 @@ func (x *PropertyFilter) GetValues() []string {
 	return nil
 }
 
+// EventFilter selects events by kind with optional per-event property filters.
+// Used across activity feeds, event explorer, and insights queries.
+type EventFilter struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind" json:"kind,omitempty"`
+	Filters       []*PropertyFilter      `protobuf:"bytes,2,rep,name=filters" json:"filters,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EventFilter) Reset() {
+	*x = EventFilter{}
+	mi := &file_common_v1_filters_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EventFilter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventFilter) ProtoMessage() {}
+
+func (x *EventFilter) ProtoReflect() protoreflect.Message {
+	mi := &file_common_v1_filters_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EventFilter.ProtoReflect.Descriptor instead.
+func (*EventFilter) Descriptor() ([]byte, []int) {
+	return file_common_v1_filters_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *EventFilter) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *EventFilter) GetFilters() []*PropertyFilter {
+	if x != nil {
+		return x.Filters
+	}
+	return nil
+}
+
 var File_common_v1_filters_proto protoreflect.FileDescriptor
 
 const file_common_v1_filters_proto_rawDesc = "" +
@@ -183,7 +237,10 @@ const file_common_v1_filters_proto_rawDesc = "" +
 	"&property_filter.numeric_value_required\x128value must be a valid number for lte/gte/lt/gt operators\x1a\xa9\x02!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LTE|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GTE|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LT|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GT)|| double(this.value) == double(this.value)\x1a\xf1\x01\n" +
 	"\x1fproperty_filter.values_required\x120values must not be empty for in/not_in operators\x1a\x9b\x01!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN)|| this.values.size() > 0\x1a\xe8\x01\n" +
 	"\"property_filter.values_not_allowed\x12&values must be empty for this operator\x1a\x99\x01this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.values.size() == 0\x1a\x8a\x02\n" +
-	"3property_filter.value_not_allowed_for_set_operators\x123value must be empty for is_set/is_not_set operators\x1a\x9d\x01!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET)|| this.value == ''*\xff\x02\n" +
+	"3property_filter.value_not_allowed_for_set_operators\x123value must be empty for is_set/is_not_set operators\x1a\x9d\x01!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET)|| this.value == ''\"p\n" +
+	"\vEventFilter\x12,\n" +
+	"\x04kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\x04kind\x123\n" +
+	"\afilters\x18\x02 \x03(\v2\x19.common.v1.PropertyFilterR\afilters*\xff\x02\n" +
 	"\x0eFilterOperator\x12\x1f\n" +
 	"\x1bFILTER_OPERATOR_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16FILTER_OPERATOR_EQUALS\x10\x01\x12\x1e\n" +
@@ -213,18 +270,20 @@ func file_common_v1_filters_proto_rawDescGZIP() []byte {
 }
 
 var file_common_v1_filters_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_common_v1_filters_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_common_v1_filters_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_common_v1_filters_proto_goTypes = []any{
 	(FilterOperator)(0),    // 0: common.v1.FilterOperator
 	(*PropertyFilter)(nil), // 1: common.v1.PropertyFilter
+	(*EventFilter)(nil),    // 2: common.v1.EventFilter
 }
 var file_common_v1_filters_proto_depIdxs = []int32{
 	0, // 0: common.v1.PropertyFilter.operator:type_name -> common.v1.FilterOperator
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1, // 1: common.v1.EventFilter.filters:type_name -> common.v1.PropertyFilter
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_common_v1_filters_proto_init() }
@@ -238,7 +297,7 @@ func file_common_v1_filters_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_v1_filters_proto_rawDesc), len(file_common_v1_filters_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

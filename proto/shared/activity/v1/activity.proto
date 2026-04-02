@@ -28,8 +28,8 @@ service ActivityService {
 message GetActivityFeedRequest {
   // Required. The profile ID to fetch events for.
   string distinct_id = 1 [(buf.validate.field).string.min_len = 1];
-  // Optional. Filter by event type (e.g., "page_view"). Empty means all kinds.
-  string kind = 2;
+  // Deprecated: use events instead. Filter by a single event type. Empty means all kinds.
+  string kind = 2 [deprecated = true, (buf.validate.field).string = {pattern: "^[a-zA-Z0-9_.-]*$"}];
   // Optional. Filter by session. Empty means all sessions.
   string session_id = 3;
   // Optional. Restrict to events within this time window.
@@ -40,6 +40,9 @@ message GetActivityFeedRequest {
   int32 page_size = 6 [(buf.validate.field).int32 = {gte: 0, lte: 1000}];
   // Opaque cursor from a previous response's next_page_token. Empty for the first page.
   string page_token = 7;
+  // Optional. Filter by multiple event types with per-event property filters.
+  // When set, takes precedence over the singular kind field.
+  repeated common.v1.EventFilter events = 8 [(buf.validate.field).repeated.max_items = 50];
 }
 
 message ActivityEvent {
@@ -64,8 +67,8 @@ message GetActivityFeedResponse {
 message GetEventExplorerRequest {
   // Optional. Filter to a specific user. Empty means all users.
   string distinct_id = 1;
-  // Optional. Filter by event type. Empty means all kinds.
-  string kind = 2;
+  // Deprecated: use events instead. Filter by a single event type. Empty means all kinds.
+  string kind = 2 [deprecated = true, (buf.validate.field).string = {pattern: "^[a-zA-Z0-9_.-]*$"}];
   // Optional. Filter by session. Empty means all sessions.
   string session_id = 3;
   // Optional. Restrict to events within this time window.
@@ -76,6 +79,9 @@ message GetEventExplorerRequest {
   int32 page_size = 6 [(buf.validate.field).int32 = {gte: 0, lte: 1000}];
   // Opaque cursor from a previous response's next_page_token. Empty for the first page.
   string page_token = 7;
+  // Optional. Filter by multiple event types with per-event property filters.
+  // When set, takes precedence over the singular kind field.
+  repeated common.v1.EventFilter events = 8 [(buf.validate.field).repeated.max_items = 50];
 }
 
 message GetEventExplorerResponse {
