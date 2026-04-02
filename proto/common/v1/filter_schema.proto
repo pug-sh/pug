@@ -1,0 +1,26 @@
+edition = "2023";
+package common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1";
+
+enum PropertySource {
+  PROPERTY_SOURCE_UNSPECIFIED = 0;
+  PROPERTY_SOURCE_AUTO        = 1;
+  PROPERTY_SOURCE_CUSTOM      = 2;
+  PROPERTY_SOURCE_PROFILE     = 3;
+}
+
+message EventNameMeta {
+  string name                            = 1;
+  uint64 count                           = 2;
+  google.protobuf.Timestamp last_seen_at = 3;
+}
+
+message PropertyKeyMeta {
+  string name                            = 1;
+  uint64 count                           = 2;
+  google.protobuf.Timestamp last_seen_at = 3;
+}
