@@ -36,17 +36,9 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	}
 
 	// Pre-build top-level filter fragments — reused in CTE and every sub-query.
-	type filterFrag struct {
-		clause string
-		fArgs  []any
-	}
-	var filterFrags []filterFrag
-	for _, f := range req.GetFilters() {
-		clause, fArgs, err := chfilters.FilterClause(f)
-		if err != nil {
-			return "", nil, err
-		}
-		filterFrags = append(filterFrags, filterFrag{clause, fArgs})
+	filterFrags, err := buildTopLevelFilterFrags(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	if err != nil {
+		return "", nil, err
 	}
 
 	var sb strings.Builder
@@ -164,15 +156,15 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 	args = append(args, projectID, req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
 
 	// Top-level filters
-	for _, f := range req.GetFilters() {
-		clause, filterArgs, err := chfilters.FilterClause(f)
-		if err != nil {
-			return "", nil, err
-		}
+	filterFrags, err := buildTopLevelFilterFrags(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	if err != nil {
+		return "", nil, err
+	}
+	for _, ff := range filterFrags {
 		sb.WriteString("AND ")
-		sb.WriteString(clause)
+		sb.WriteString(ff.clause)
 		sb.WriteString("\n")
-		args = append(args, filterArgs...)
+		args = append(args, ff.fArgs...)
 	}
 
 	// Event condition (kind + per-event filters, OR-joined for multiple events)
@@ -207,15 +199,15 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 	args = append(args, projectID, req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime())
 
 	// Top-level filters
-	for _, f := range req.GetFilters() {
-		clause, filterArgs, err := chfilters.FilterClause(f)
-		if err != nil {
-			return "", nil, err
-		}
+	filterFrags, err := buildTopLevelFilterFrags(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	if err != nil {
+		return "", nil, err
+	}
+	for _, ff := range filterFrags {
 		sb.WriteString("AND ")
-		sb.WriteString(clause)
+		sb.WriteString(ff.clause)
 		sb.WriteString("\n")
-		args = append(args, filterArgs...)
+		args = append(args, ff.fArgs...)
 	}
 
 	// Event condition (kind + per-event filters, OR-joined for multiple events)
@@ -272,6 +264,73 @@ AND occur_time >= now() - INTERVAL 30 DAY
 AND ` + mapCol + `[?] != ''
 LIMIT 10`
 	return sql, []any{propertyKey, projectID, propertyKey}
+}
+
+type filterFrag struct {
+	clause string
+	fArgs  []any
+}
+
+func buildTopLevelFilterFrags(
+	groups []*insightsv1.FilterGroup,
+	groupsOp insightsv1.LogicalOperator,
+) ([]filterFrag, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+
+	groupClause, groupArgs, err := buildFilterGroupsClause(groups, groupsOp)
+	if err != nil {
+		return nil, err
+	}
+	return []filterFrag{{clause: groupClause, fArgs: groupArgs}}, nil
+}
+
+func buildFilterGroupsClause(groups []*insightsv1.FilterGroup, groupsOp insightsv1.LogicalOperator) (string, []any, error) {
+	joinGroups := logicalJoin(groupsOp)
+
+	groupClauses := make([]string, 0, len(groups))
+	var args []any
+	for i, g := range groups {
+		clause, gArgs, err := buildSingleFilterGroupClause(g)
+		if err != nil {
+			return "", nil, fmt.Errorf("filter_groups[%d]: %w", i, err)
+		}
+		groupClauses = append(groupClauses, clause)
+		args = append(args, gArgs...)
+	}
+
+	return "(" + strings.Join(groupClauses, " "+joinGroups+" ") + ")", args, nil
+}
+
+func buildSingleFilterGroupClause(group *insightsv1.FilterGroup) (string, []any, error) {
+	if len(group.GetFilters()) == 0 {
+		return "", nil, fmt.Errorf("group must contain at least one filter")
+	}
+
+	joinFilters := logicalJoin(group.GetOperator())
+	parts := make([]string, 0, len(group.GetFilters()))
+	var args []any
+
+	for j, f := range group.GetFilters() {
+		clause, fArgs, err := chfilters.FilterClause(f)
+		if err != nil {
+			return "", nil, fmt.Errorf("filters[%d]: %w", j, err)
+		}
+		parts = append(parts, clause)
+		args = append(args, fArgs...)
+	}
+
+	return "(" + strings.Join(parts, " "+joinFilters+" ") + ")", args, nil
+}
+
+func logicalJoin(op insightsv1.LogicalOperator) string {
+	switch op {
+	case insightsv1.LogicalOperator_LOGICAL_OPERATOR_OR:
+		return "OR"
+	default:
+		return "AND"
+	}
 }
 
 // BuildEventNamesQuery returns a query against event_names for event names with count and last_seen.

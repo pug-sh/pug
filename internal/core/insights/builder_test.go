@@ -76,11 +76,16 @@ func TestTrendsWithFilters(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
 		},
-		Filters: []*commonv1.PropertyFilter{
+		FilterGroups: []*insightsv1.FilterGroup{
 			{
-				Property: "$country",
-				Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-				Value:    "US",
+				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Filters: []*commonv1.PropertyFilter{
+					{
+						Property: "$country",
+						Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+						Value:    "US",
+					},
+				},
 			},
 		},
 	}
@@ -379,8 +384,13 @@ func TestFilterOperators(t *testing.T) {
 			Events: []*insightsv1.EventQuery{
 				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
-			Filters: []*commonv1.PropertyFilter{
-				{Property: "$browser", Operator: op, Value: val},
+			FilterGroups: []*insightsv1.FilterGroup{
+				{
+					Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+					Filters: []*commonv1.PropertyFilter{
+						{Property: "$browser", Operator: op, Value: val},
+					},
+				},
 			},
 		}
 	}
@@ -516,8 +526,13 @@ func TestFilterOperators(t *testing.T) {
 				Events: []*insightsv1.EventQuery{
 					{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
-				Filters: []*commonv1.PropertyFilter{
-					{Property: "$country", Operator: tc.op, Values: tc.values},
+				FilterGroups: []*insightsv1.FilterGroup{
+					{
+						Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+						Filters: []*commonv1.PropertyFilter{
+							{Property: "$country", Operator: tc.op, Values: tc.values},
+						},
+					},
 				},
 			}
 			sql, args, err := insights.BuildQuery(req, "proj_123")
@@ -550,11 +565,16 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
-		Filters: []*commonv1.PropertyFilter{
+		FilterGroups: []*insightsv1.FilterGroup{
 			{
-				Property: "$country",
-				Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-				Value:    "US",
+				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Filters: []*commonv1.PropertyFilter{
+					{
+						Property: "$country",
+						Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+						Value:    "US",
+					},
+				},
 			},
 		},
 		PageSize: 50,
@@ -679,6 +699,100 @@ func TestBuildSegmentUsersQuery_WithPageToken(t *testing.T) {
 	}
 }
 
+func TestFilterGroups_Query_ORBetween_ANDWithin(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+		},
+		FilterGroupsOperator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_OR,
+		FilterGroups: []*insightsv1.FilterGroup{
+			{
+				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+					{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "Chrome"},
+				},
+			},
+			{
+				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "IN"},
+					{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "Safari"},
+				},
+			},
+		},
+	}
+
+	sql, args, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(sql, "AND ((") {
+		t.Errorf("expected grouped top-level filter clause in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, ") OR (") {
+		t.Errorf("expected OR between filter groups in SQL, got: %s", sql)
+	}
+	if len(args) != 8 {
+		t.Fatalf("expected 8 args (projectID, from, to, 4 filter values, kind), got %d: %v", len(args), args)
+	}
+}
+
+func TestFilterGroups_SegmentUsers_ORWithinGroup(t *testing.T) {
+	req := &insightsv1.SegmentUsersRequest{
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+		},
+		FilterGroups: []*insightsv1.FilterGroup{
+			{
+				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_OR,
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "IN"},
+				},
+			},
+		},
+		PageSize: 10,
+	}
+
+	sql, args, err := insights.BuildSegmentUsersQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(sql, " OR ") {
+		t.Errorf("expected OR within filter group in SQL, got: %s", sql)
+	}
+	if len(args) != 7 {
+		t.Fatalf("expected 7 args (projectID, from, to, 2 filter values, kind, limit), got %d: %v", len(args), args)
+	}
+}
+
+func TestFilterGroups_EmptyGroupReturnsError(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+		},
+		FilterGroups: []*insightsv1.FilterGroup{
+			{},
+		},
+	}
+
+	_, _, err := insights.BuildQuery(req, "proj_123")
+	if err == nil {
+		t.Fatal("expected error for empty filter group, got nil")
+	}
+	if !strings.Contains(err.Error(), "filter_groups[0]") {
+		t.Fatalf("expected error to mention filter_groups[0], got: %v", err)
+	}
+}
+
 func TestUnsupportedInsightType(t *testing.T) {
 	req := &insightsv1.QueryRequest{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_UNSPECIFIED,
@@ -702,8 +816,13 @@ func TestUnsupportedFilterOperator(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
-		Filters: []*commonv1.PropertyFilter{
-			{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED, Value: "x"},
+		FilterGroups: []*insightsv1.FilterGroup{
+			{
+				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED, Value: "x"},
+				},
+			},
 		},
 	}
 
@@ -731,8 +850,13 @@ func TestNumericFilterRejectsNonNumericValue(t *testing.T) {
 				Events: []*insightsv1.EventQuery{
 					{Event: &commonv1.EventFilter{Kind: "click"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
-				Filters: []*commonv1.PropertyFilter{
-					{Property: "score", Operator: op, Value: "not-a-number"},
+				FilterGroups: []*insightsv1.FilterGroup{
+					{
+						Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+						Filters: []*commonv1.PropertyFilter{
+							{Property: "score", Operator: op, Value: "not-a-number"},
+						},
+					},
 				},
 			}
 			_, _, err := insights.BuildQuery(req, "proj_123")
@@ -754,10 +878,15 @@ func TestMultipleCombinedFilters(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
-		Filters: []*commonv1.PropertyFilter{
-			{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
-			{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "Chrome"},
-			{Property: "age", Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE, Value: "18"},
+		FilterGroups: []*insightsv1.FilterGroup{
+			{
+				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+					{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "Chrome"},
+					{Property: "age", Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE, Value: "18"},
+				},
+			},
 		},
 	}
 
@@ -878,8 +1007,13 @@ func TestContainsEscapesLIKEMetacharacters(t *testing.T) {
 				Events: []*insightsv1.EventQuery{
 					{Event: &commonv1.EventFilter{Kind: "click"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 				},
-				Filters: []*commonv1.PropertyFilter{
-					{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: tc.val},
+				FilterGroups: []*insightsv1.FilterGroup{
+					{
+						Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+						Filters: []*commonv1.PropertyFilter{
+							{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: tc.val},
+						},
+					},
 				},
 			}
 
@@ -1031,8 +1165,13 @@ func TestMultiEventTrendsWithFilters(t *testing.T) {
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
-		Filters: []*commonv1.PropertyFilter{
-			{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+		FilterGroups: []*insightsv1.FilterGroup{
+			{
+				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+				},
+			},
 		},
 		Events: []*insightsv1.EventQuery{
 			{

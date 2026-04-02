@@ -172,8 +172,13 @@ func TestIntegration(t *testing.T) {
 			Events: []*insightsv1.EventQuery{
 				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 			},
-			Filters: []*commonv1.PropertyFilter{
-				{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+			FilterGroups: []*insightsv1.FilterGroup{
+				{
+					Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+					Filters: []*commonv1.PropertyFilter{
+						{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+					},
+				},
 			},
 		}
 
