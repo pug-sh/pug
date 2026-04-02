@@ -291,13 +291,13 @@ func TestBuildTrendsQuery_WithBreakdown(t *testing.T) {
 	// breakdown limit 3 should appear as an arg
 	found := false
 	for _, a := range args {
-		if a == int32(3) {
+		if a == int64(3) {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected breakdown limit int32(3) in args, got: %v", args)
+		t.Errorf("expected breakdown limit int64(3) in args, got: %v", args)
 	}
 
 	// WHERE args must be duplicated: CTE uses same WHERE as main query.
@@ -345,7 +345,7 @@ func TestBuildTrendsQuery_MultipleBreakdowns(t *testing.T) {
 	}
 }
 
-// TestBuildTrendsQuery_DefaultBreakdownLimit verifies BreakdownLimit=0 defaults to int32(10).
+// TestBuildTrendsQuery_DefaultBreakdownLimit verifies BreakdownLimit=0 defaults to int64(10).
 func TestBuildTrendsQuery_DefaultBreakdownLimit(t *testing.T) {
 	req := &insightsv1.QueryRequest{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
@@ -365,13 +365,13 @@ func TestBuildTrendsQuery_DefaultBreakdownLimit(t *testing.T) {
 
 	found := false
 	for _, a := range args {
-		if a == int32(10) {
+		if a == int64(10) {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected default breakdown limit int32(10) in args, got: %v", args)
+		t.Errorf("expected default breakdown limit int64(10) in args, got: %v", args)
 	}
 }
 
@@ -608,8 +608,8 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 	if args[3] != "US" {
 		t.Errorf("expected filter arg to be 'US', got %v", args[3])
 	}
-	if args[5] != int32(50) {
-		t.Errorf("expected limit arg to be int32(50), got %v", args[5])
+	if args[5] != int64(50) {
+		t.Errorf("expected limit arg to be int64(50), got %v", args[5])
 	}
 }
 
@@ -648,8 +648,8 @@ func TestBuildSegmentUsersQuery_MultiEvent(t *testing.T) {
 	if len(args) != 7 {
 		t.Errorf("expected 7 args, got %d: %v", len(args), args)
 	}
-	if args[6] != int32(50) {
-		t.Errorf("expected limit arg to be int32(50), got %v", args[6])
+	if args[6] != int64(50) {
+		t.Errorf("expected limit arg to be int64(50), got %v", args[6])
 	}
 }
 
@@ -681,7 +681,7 @@ func TestBuildSegmentUsersQuery_WithPageToken(t *testing.T) {
 			if v == "user_abc" {
 				cursorIdx = i
 			}
-		case int32:
+		case int64:
 			if v == 100 {
 				limitIdx = i
 			}
@@ -692,7 +692,7 @@ func TestBuildSegmentUsersQuery_WithPageToken(t *testing.T) {
 		t.Errorf("cursor token 'user_abc' not found in args: %v", args)
 	}
 	if limitIdx == 0 {
-		t.Errorf("default page_size 100 (int32) not found in args: %v", args)
+		t.Errorf("default page_size 100 (int64) not found in args: %v", args)
 	}
 	if cursorIdx > limitIdx {
 		t.Errorf("cursor arg (idx %d) should come before limit arg (idx %d)", cursorIdx, limitIdx)
@@ -1033,40 +1033,49 @@ func TestContainsEscapesLIKEMetacharacters(t *testing.T) {
 
 func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 	t.Run("with_event_kind", func(t *testing.T) {
-		sql, args := insights.BuildAutoPropertyValuesQuery("proj_1", "$browser", "page_view")
+		sql, args, err := insights.BuildAutoPropertyValuesQuery("proj_1", "$browser", "page_view")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if !strings.Contains(sql, "auto_properties") {
 			t.Error("expected auto_properties in SQL")
 		}
 		if !strings.Contains(sql, "kind = ?") {
 			t.Error("expected kind filter in SQL")
 		}
-		if len(args) != 4 {
-			t.Fatalf("expected 4 args, got %d: %v", len(args), args)
+		if len(args) != 5 {
+			t.Fatalf("expected 5 args, got %d: %v", len(args), args)
 		}
-		// args: propertyKey, projectID, eventKind, propertyKey
-		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "page_view" || args[3] != "$browser" {
+		// args: propertyKey, projectID, eventKind, propertyKey, limit
+		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "page_view" || args[3] != "$browser" || args[4] != int64(10) {
 			t.Errorf("unexpected args: %v", args)
 		}
 	})
 
 	t.Run("without_event_kind", func(t *testing.T) {
-		sql, args := insights.BuildAutoPropertyValuesQuery("proj_1", "$browser", "")
+		sql, args, err := insights.BuildAutoPropertyValuesQuery("proj_1", "$browser", "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if !strings.Contains(sql, "auto_properties") {
 			t.Error("expected auto_properties in SQL")
 		}
 		if strings.Contains(sql, "kind = ?") {
 			t.Error("should not have kind filter when eventKind is empty")
 		}
-		if len(args) != 3 {
-			t.Fatalf("expected 3 args, got %d: %v", len(args), args)
+		if len(args) != 4 {
+			t.Fatalf("expected 4 args, got %d: %v", len(args), args)
 		}
-		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "$browser" {
+		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "$browser" || args[3] != int64(10) {
 			t.Errorf("unexpected args: %v", args)
 		}
 	})
 
 	t.Run("custom_variant", func(t *testing.T) {
-		sql, _ := insights.BuildCustomPropertyValuesQuery("proj_1", "plan", "")
+		sql, _, err := insights.BuildCustomPropertyValuesQuery("proj_1", "plan", "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if !strings.Contains(sql, "custom_properties") {
 			t.Error("expected custom_properties in SQL")
 		}
@@ -1087,8 +1096,11 @@ func TestBuildEventNamesQuery(t *testing.T) {
 	if !strings.Contains(sql, "maxMerge(last_seen)") {
 		t.Error("expected maxMerge in SQL")
 	}
-	if len(args) != 1 || args[0] != "proj_1" {
-		t.Errorf("expected [proj_1], got %v", args)
+	if len(args) != 2 || args[0] != "proj_1" {
+		t.Errorf("expected [proj_1, 1000], got %v", args)
+	}
+	if len(args) != 2 || args[1] != int64(1000) {
+		t.Errorf("expected limit arg int64(1000), got %v", args)
 	}
 }
 
@@ -1101,11 +1113,14 @@ func TestBuildPropertyKeysQuery(t *testing.T) {
 		if !strings.Contains(sql, "kind = ?") {
 			t.Error("expected kind filter")
 		}
-		if len(args) != 3 {
-			t.Fatalf("expected 3 args, got %d", len(args))
+		if len(args) != 4 {
+			t.Fatalf("expected 4 args, got %d", len(args))
 		}
 		if args[1] != "auto" {
 			t.Errorf("expected map_type 'auto', got %v", args[1])
+		}
+		if args[3] != int64(500) {
+			t.Errorf("expected limit 500, got %v", args[3])
 		}
 	})
 
@@ -1114,11 +1129,14 @@ func TestBuildPropertyKeysQuery(t *testing.T) {
 		if strings.Contains(sql, "kind = ?") {
 			t.Error("should not have kind filter when empty")
 		}
-		if len(args) != 2 {
-			t.Fatalf("expected 2 args, got %d", len(args))
+		if len(args) != 3 {
+			t.Fatalf("expected 3 args, got %d", len(args))
 		}
 		if args[1] != "custom" {
 			t.Errorf("expected map_type 'custom', got %v", args[1])
+		}
+		if args[2] != int64(500) {
+			t.Errorf("expected limit 500, got %v", args[2])
 		}
 	})
 }

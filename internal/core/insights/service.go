@@ -178,10 +178,16 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 
 	switch source {
 	case commonv1.PropertySource_PROPERTY_SOURCE_AUTO:
-		sql, args := BuildAutoPropertyValuesQuery(projectID, propertyKey, eventKind)
+		sql, args, buildErr := BuildAutoPropertyValuesQuery(projectID, propertyKey, eventKind)
+		if buildErr != nil {
+			return nil, fmt.Errorf("build property values query: %w", buildErr)
+		}
 		values, err = s.executor.QueryStringColumn(ctx, sql, args)
 	case commonv1.PropertySource_PROPERTY_SOURCE_CUSTOM:
-		sql, args := BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind)
+		sql, args, buildErr := BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind)
+		if buildErr != nil {
+			return nil, fmt.Errorf("build property values query: %w", buildErr)
+		}
 		values, err = s.executor.QueryStringColumn(ctx, sql, args)
 	case commonv1.PropertySource_PROPERTY_SOURCE_PROFILE:
 		values, err = s.profiles.GetPropertyValues(ctx, projectID, propertyKey)

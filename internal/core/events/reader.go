@@ -7,11 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	chfilters "github.com/fivebitsio/cotton/internal/core/clickhouse"
+	chq "github.com/fivebitsio/cotton/internal/core/clickhouse"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
@@ -62,12 +61,18 @@ func NewReader(ch driver.Conn) *Reader {
 	return &Reader{ch: ch}
 }
 
-
 // getAliasIDs returns all alias IDs for a profile.
 func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) ([]string, error) {
-	rows, err := r.ch.Query(ctx,
-		`SELECT alias_id FROM profile_aliases WHERE project_id = ? AND profile_id = ?`,
-		projectID, profileID)
+	sql, args, err := chq.NewQuery().
+		Select("alias_id").
+		From("profile_aliases").
+		Where(chq.Eq("project_id", projectID), chq.Eq("profile_id", profileID)).
+		Build()
+	if err != nil {
+		return nil, fmt.Errorf("getAliasIDs: build query for project %s profile %s: %w", projectID, profileID, err)
+	}
+
+	rows, err := r.ch.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("getAliasIDs: query failed for project %s profile %s: %w", projectID, profileID, err)
 	}
@@ -148,50 +153,47 @@ type EventExplorerParams struct {
 // It does not resolve aliases. Pagination is cursor-based on (occur_time DESC, event_id DESC).
 // PageSize defaults to 100 and is capped at 1000. A nil returned cursor means no more pages.
 func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParams) ([]Event, *ActivityFeedCursor, error) {
-	var sb strings.Builder
-	var args []any
-
-	sb.WriteString("SELECT " + eventColumns + "\nFROM events\nWHERE project_id = ?\n")
-	args = append(args, params.ProjectID)
-
-	if params.DistinctID != "" {
-		sb.WriteString("AND distinct_id = ?\n")
-		args = append(args, params.DistinctID)
-	}
-
-	if err := chfilters.WriteEventFilterCondition(&sb, &args, params.EventFilters); err != nil {
+	eventCond, err := chq.EventCondition(params.EventFilters)
+	if err != nil {
 		return nil, nil, fmt.Errorf("GetEventExplorer: %w: %w", ErrInvalidFilter, err)
 	}
 
-	if params.SessionID != "" {
-		sb.WriteString("AND session_id = ?\n")
-		args = append(args, params.SessionID)
-	}
+	q := chq.NewQuery().
+		Select(eventColumns).
+		From("events").
+		Where(
+			chq.Eq("project_id", params.ProjectID),
+			chq.When(params.DistinctID != "", chq.Eq("distinct_id", params.DistinctID)),
+			eventCond,
+			chq.When(params.SessionID != "", chq.Eq("session_id", params.SessionID)),
+		)
 
 	// NOTE: From/To are guaranteed non-nil by proto validation (required fields + validate interceptor).
 	// If called outside the RPC chain, callers must ensure From and To are set.
 	if params.TimeRange != nil {
-		sb.WriteString("AND occur_time >= ? AND occur_time < ?\n")
-		args = append(args, params.TimeRange.GetFrom().AsTime(), params.TimeRange.GetTo().AsTime())
+		q.Where(
+			chq.Gte("occur_time", params.TimeRange.GetFrom().AsTime()),
+			chq.Lt("occur_time", params.TimeRange.GetTo().AsTime()),
+		)
 	}
 
 	for _, f := range params.PropertyFilters {
-		clause, filterArgs, err := chfilters.FilterClause(f)
+		cond, err := chq.PropertyCondition(f)
 		if err != nil {
 			return nil, nil, fmt.Errorf("GetEventExplorer: %w: %w", ErrInvalidFilter, err)
 		}
-		sb.WriteString("AND ")
-		sb.WriteString(clause)
-		sb.WriteString("\n")
-		args = append(args, filterArgs...)
+		q.Where(cond)
 	}
 
 	if params.PageToken != nil {
-		sb.WriteString("AND (occur_time < ? OR (occur_time = ? AND event_id < ?))\n")
-		args = append(args, params.PageToken.OccurTime, params.PageToken.OccurTime, params.PageToken.EventID)
+		q.Where(chq.Or(
+			chq.Lt("occur_time", params.PageToken.OccurTime),
+			chq.And(
+				chq.Eq("occur_time", params.PageToken.OccurTime),
+				chq.Lt("event_id", params.PageToken.EventID),
+			),
+		))
 	}
-
-	sb.WriteString("ORDER BY occur_time DESC, event_id DESC\n")
 
 	pageSize := params.PageSize
 	if pageSize <= 0 {
@@ -200,10 +202,13 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 	if pageSize > MaxPageSize {
 		pageSize = MaxPageSize
 	}
-	sb.WriteString("LIMIT ?")
-	args = append(args, pageSize)
 
-	rows, err := r.ch.Query(ctx, sb.String(), args...)
+	sql, args, err := q.OrderBy("occur_time DESC", "event_id DESC").Limit(int64(pageSize)).Build()
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetEventExplorer: build query failed for project %s: %w", params.ProjectID, err)
+	}
+
+	rows, err := r.ch.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetEventExplorer: query failed for project %s: %w", params.ProjectID, err)
 	}
@@ -267,46 +272,48 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 
 	ids := append([]string{params.DistinctID}, aliasIDs...)
 
-	var sb strings.Builder
-	var args []any
-
-	sb.WriteString("SELECT " + eventColumns + "\nFROM events\nWHERE project_id = ? AND distinct_id IN ?\n")
-	args = append(args, params.ProjectID, ids)
-
-	if err := chfilters.WriteEventFilterCondition(&sb, &args, params.EventFilters); err != nil {
+	eventCond, err := chq.EventCondition(params.EventFilters)
+	if err != nil {
 		return nil, nil, fmt.Errorf("GetActivityFeed: %w: %w", ErrInvalidFilter, err)
 	}
 
-	if params.SessionID != "" {
-		sb.WriteString("AND session_id = ?\n")
-		args = append(args, params.SessionID)
-	}
+	q := chq.NewQuery().
+		Select(eventColumns).
+		From("events").
+		Where(
+			chq.Eq("project_id", params.ProjectID),
+			chq.RawCond("distinct_id IN ?", ids),
+			eventCond,
+			chq.When(params.SessionID != "", chq.Eq("session_id", params.SessionID)),
+		)
 
 	// NOTE: From/To are guaranteed non-nil by proto validation (required fields + validate interceptor).
 	// If called outside the RPC chain, callers must ensure From and To are set — nil values
 	// silently resolve to epoch time (1970-01-01) via protobuf's AsTime() nil-receiver behavior.
 	if params.TimeRange != nil {
-		sb.WriteString("AND occur_time >= ? AND occur_time < ?\n")
-		args = append(args, params.TimeRange.GetFrom().AsTime(), params.TimeRange.GetTo().AsTime())
+		q.Where(
+			chq.Gte("occur_time", params.TimeRange.GetFrom().AsTime()),
+			chq.Lt("occur_time", params.TimeRange.GetTo().AsTime()),
+		)
 	}
 
 	for _, f := range params.PropertyFilters {
-		clause, filterArgs, err := chfilters.FilterClause(f)
+		cond, err := chq.PropertyCondition(f)
 		if err != nil {
 			return nil, nil, fmt.Errorf("GetActivityFeed: %w: %w", ErrInvalidFilter, err)
 		}
-		sb.WriteString("AND ")
-		sb.WriteString(clause)
-		sb.WriteString("\n")
-		args = append(args, filterArgs...)
+		q.Where(cond)
 	}
 
 	if params.PageToken != nil {
-		sb.WriteString("AND (occur_time < ? OR (occur_time = ? AND event_id < ?))\n")
-		args = append(args, params.PageToken.OccurTime, params.PageToken.OccurTime, params.PageToken.EventID)
+		q.Where(chq.Or(
+			chq.Lt("occur_time", params.PageToken.OccurTime),
+			chq.And(
+				chq.Eq("occur_time", params.PageToken.OccurTime),
+				chq.Lt("event_id", params.PageToken.EventID),
+			),
+		))
 	}
-
-	sb.WriteString("ORDER BY occur_time DESC, event_id DESC\n")
 
 	pageSize := params.PageSize
 	if pageSize <= 0 {
@@ -315,10 +322,13 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 	if pageSize > MaxPageSize {
 		pageSize = MaxPageSize
 	}
-	sb.WriteString("LIMIT ?")
-	args = append(args, pageSize)
 
-	rows, err := r.ch.Query(ctx, sb.String(), args...)
+	sql, args, err := q.OrderBy("occur_time DESC", "event_id DESC").Limit(int64(pageSize)).Build()
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetActivityFeed: build query failed for project %s: %w", params.ProjectID, err)
+	}
+
+	rows, err := r.ch.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetActivityFeed: query failed for project %s: %w", params.ProjectID, err)
 	}
