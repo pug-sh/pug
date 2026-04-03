@@ -9,6 +9,7 @@ const (
 	ProfileRegisterSubject = "profiles.register"
 	ProfileIdentifySubject = "profiles.identify"
 	ProfileAliasSubject    = "profiles.alias"
+	ProfileUpsertSubject   = "profiles.upsert"
 
 	// Campaign subjects
 	CampaignScheduledSubject = "campaigns.scheduled"
@@ -28,4 +29,5 @@ const (
 	DLQProfilesRegisterSubject = "dlq.profiles.register"
 	DLQProfilesIdentifySubject = "dlq.profiles.identify"
 	DLQProfilesAliasSubject    = "dlq.profiles.alias"
+	DLQProfilesUpsertSubject   = "dlq.profiles.upsert"
 )

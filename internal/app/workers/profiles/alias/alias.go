@@ -13,7 +13,7 @@ import (
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
 
-	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
+	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
@@ -70,7 +70,7 @@ func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NAT
 }
 
 func handleAlias(ctx context.Context, ch driver.Conn, data []byte) error {
-	msg := &sdkprofilesv1.ProfileAliasMessage{}
+	msg := &workerprofilesv1.ProfileAliasMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal alias message", slogx.Error(err))
 		return natsworker.NewPermanentError(err).

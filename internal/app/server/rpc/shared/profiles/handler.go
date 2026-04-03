@@ -4,31 +4,37 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
+	natsdeps "github.com/fivebitsio/cotton/internal/deps/nats"
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1/profilesv1connect"
+	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Server struct {
 	profilesv1connect.UnimplementedProfilesServiceHandler
-	read  *dbread.Queries
-	write *dbwrite.Queries
+	read     *dbread.Queries
+	write    *dbwrite.Queries
+	producer *natsdeps.NATSClient
 }
 
-func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Server {
+func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nats *natsdeps.NATSClient) *Server {
 	return &Server{
-		read:  dbread.New(pgRO),
-		write: dbwrite.New(pgW),
+		read:     dbread.New(pgRO),
+		write:    dbwrite.New(pgW),
+		producer: nats,
 	}
 }
 
@@ -51,6 +57,22 @@ func (s *Server) Delete(
 	}
 	if n == 0 {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
+	}
+
+	now := timestamppb.New(time.Now())
+	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
+		ProfileId:  req.Msg.Id,
+		ProjectId:  principal.Project.ID,
+		IsDeleted:  true,
+		UpdateTime: now,
+	}
+	upsertData, err := proto.Marshal(upsertMsg)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed marshalling profile delete upsert message", slogx.Error(err),
+			slog.String("profileId", req.Msg.Id))
+	} else if err = s.producer.Publish(ctx, natsdeps.ProfileUpsertSubject, upsertData); err != nil {
+		slog.ErrorContext(ctx, "failed publishing profile delete to NATS", slogx.Error(err),
+			slog.String("profileId", req.Msg.Id))
 	}
 
 	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil
