@@ -19,6 +19,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/alias"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/identify"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/register"
+	"github.com/fivebitsio/cotton/internal/app/workers/profiles/upsert"
 	"github.com/fivebitsio/cotton/internal/app/workers/scheduler"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
@@ -113,6 +114,12 @@ var profileAliasCmd = &cobra.Command{
 	Run:   run(alias.Run),
 }
 
+var profileUpsertCmd = &cobra.Command{
+	Use:   "upsert",
+	Short: "Start the profile upsert worker",
+	Run:   run(upsert.Run),
+}
+
 var deviceCmd = &cobra.Command{
 	Use:   "device",
 	Short: "Start the device worker",
@@ -155,6 +162,7 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return register.Run(ctx) })
 		g.Go(func() error { return identify.Run(ctx) })
 		g.Go(func() error { return alias.Run(ctx) })
+		g.Go(func() error { return upsert.Run(ctx) })
 		g.Go(func() error { return scheduler.Run(ctx) })
 		g.Go(func() error { return server.Run(ctx) })
 
@@ -258,6 +266,7 @@ func init() {
 	profileCmd.AddCommand(profileRegisterCmd)
 	profileCmd.AddCommand(profileIdentifyCmd)
 	profileCmd.AddCommand(profileAliasCmd)
+	profileCmd.AddCommand(profileUpsertCmd)
 	workerCmd.AddCommand(profileCmd)
 	workerCmd.AddCommand(deviceCmd)
 	workerCmd.AddCommand(campaignCmd)

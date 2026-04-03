@@ -1,0 +1,25 @@
+edition = "2023";
+package workers.profiles.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1;workerprofilesv1";
+
+message ProfileAliasMessage {
+  string alias_id    = 1;
+  string profile_id  = 2;
+  string external_id = 3;
+  string project_id  = 4;
+}
+
+message ProfileUpsertMessage {
+  string                    profile_id  = 1;
+  string                    project_id  = 2;
+  string                    external_id = 3;
+  google.protobuf.Struct    properties  = 4;
+  bool                      is_deleted  = 5;
+  google.protobuf.Timestamp create_time = 6;
+  google.protobuf.Timestamp update_time = 7;
+}

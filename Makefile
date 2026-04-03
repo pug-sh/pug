@@ -74,6 +74,7 @@ build:
 	go build -o bin/cotton-worker-profile-register ./cmd/workers/profile/register
 	go build -o bin/cotton-worker-profile-identify ./cmd/workers/profile/identify
 	go build -o bin/cotton-worker-profile-alias ./cmd/workers/profile/alias
+	go build -o bin/cotton-worker-profile-upsert ./cmd/workers/profile/upsert
 	go build -o bin/cotton-worker-scheduler ./cmd/workers/scheduler
 
 .PHONY: test
