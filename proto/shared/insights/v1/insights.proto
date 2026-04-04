@@ -59,6 +59,7 @@ enum InsightType {
   INSIGHT_TYPE_TRENDS = 1;
   INSIGHT_TYPE_SEGMENTATION = 2;
   INSIGHT_TYPE_FUNNEL = 3;
+  INSIGHT_TYPE_RETENTION = 4;
 }
 
 enum Granularity {
@@ -102,6 +103,7 @@ message Breakdown {
 // For TRENDS with breakdowns: breakdown + points are set.
 // For SEGMENTATION: total is set.
 // For FUNNEL: event_kind + total are set (one series per step).
+// For RETENTION: breakdown["cohort"] + points are set (one series per cohort).
 message Series {
   string label = 1; // Reserved for future use.
   string event_kind = 2;
