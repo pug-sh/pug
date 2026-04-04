@@ -196,6 +196,61 @@ func TestFunnelRequiresAtLeastOneStep(t *testing.T) {
 	}
 }
 
+func TestRetention(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "signup"}},
+			{Event: &commonv1.EventFilter{Kind: "session"}},
+		},
+	}
+
+	sql, args, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(sql, "WITH cohorts AS") {
+		t.Errorf("expected cohorts CTE in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "cohort_sizes AS") {
+		t.Errorf("expected cohort_sizes CTE in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "retained AS") {
+		t.Errorf("expected retained CTE in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "(r.retained_users * 100.0) / cs.cohort_size") {
+		t.Errorf("expected retention percentage expression in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "cs.cohort_size") {
+		t.Errorf("expected cohort size selected in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "ORDER BY r.cohort_time ASC, r.t ASC") {
+		t.Errorf("expected deterministic retention ordering, got: %s", sql)
+	}
+	if len(args) != 8 {
+		t.Errorf("expected 8 args for retention query, got %d: %v", len(args), args)
+	}
+}
+
+func TestRetentionRequiresAtLeastOneEvent(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+	}
+
+	_, _, err := insights.BuildQuery(req, "proj_123")
+	if err == nil {
+		t.Fatal("expected error for retention with no events, got nil")
+	}
+	if !strings.Contains(err.Error(), "retention requires at least one event") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 // TestAllEvents verifies that an empty events list generates no kind filter (3 args).
 func TestAllEvents(t *testing.T) {
 	req := &insightsv1.QueryRequest{
@@ -1229,6 +1284,49 @@ func TestGroupSeries_Empty(t *testing.T) {
 	series := insights.GroupSeries(nil, nil)
 	if len(series) != 0 {
 		t.Errorf("expected 0 series for nil input, got %d", len(series))
+	}
+}
+
+func TestGroupRetentionSeries(t *testing.T) {
+	rows := []insights.RetentionRow{
+			{
+				CohortTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				Time:       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				Value:      100,
+				CohortSize: 10,
+			},
+			{
+				CohortTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				Time:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+				Value:      50,
+				CohortSize: 10,
+			},
+			{
+				CohortTime: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+				Time:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+				Value:      100,
+				CohortSize: 5,
+			},
+		}
+
+	series := insights.GroupRetentionSeries(rows)
+	if len(series) != 2 {
+		t.Fatalf("expected 2 cohort series, got %d", len(series))
+	}
+	if series[0].Breakdown["cohort"] != "2024-01-01T00:00:00Z" {
+		t.Errorf("unexpected first cohort label: %q", series[0].Breakdown["cohort"])
+	}
+	if len(series[0].Points) != 2 {
+		t.Errorf("expected 2 points for first cohort, got %d", len(series[0].Points))
+	}
+	if series[0].Points[1].Value != 50 {
+		t.Errorf("unexpected retained value: %v", series[0].Points[1].Value)
+	}
+	if series[0].Total != 10 {
+		t.Errorf("unexpected first cohort total: %v", series[0].Total)
+	}
+	if series[1].Total != 5 {
+		t.Errorf("unexpected second cohort total: %v", series[1].Total)
 	}
 }
 

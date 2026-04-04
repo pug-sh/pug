@@ -132,6 +132,17 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
   - Between groups, conditions are combined using `filter_groups_operator` (`AND` by default when unspecified).
 - Per-event filters remain on `EventQuery.event.filters` and are independent of top-level filter groups.
 
+### Retention Insight
+
+- `shared.insights.v1.InsightType` supports `INSIGHT_TYPE_RETENTION`.
+- Retention query semantics in `QueryRequest.events`:
+  - `events[0]` = cohort/start event (required)
+  - `events[1]` = return event (optional; defaults to `events[0]` when omitted)
+- Retention responses reuse `QueryResponse.series`:
+  - one series per cohort bucket
+  - `series.breakdown["cohort"]` stores the cohort timestamp (RFC3339)
+  - `series.points[].value` is retention percentage (`0..100`) across time buckets
+
 ### Event Enrichment
 
 Incoming events are enriched with auto-properties before being published to NATS:

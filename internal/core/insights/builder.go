@@ -20,6 +20,8 @@ func BuildQuery(req *insightsv1.QueryRequest, projectID string) (string, []any, 
 		return buildSegmentation(req, projectID)
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
 		return buildFunnel(req, projectID)
+	case insightsv1.InsightType_INSIGHT_TYPE_RETENTION:
+		return buildRetention(req, projectID)
 	default:
 		return "", nil, fmt.Errorf("unsupported insight type: %v", req.GetInsightType())
 	}
@@ -223,6 +225,93 @@ func buildFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	}
 
 	return chq.UnionAll(unionQueries...).OrderBy("step_index ASC").Build()
+}
+
+func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
+	events := req.GetEvents()
+	if len(events) == 0 {
+		return "", nil, fmt.Errorf("retention requires at least one event")
+	}
+
+	startEvent := events[0]
+	returnEvent := startEvent
+	if len(events) > 1 {
+		returnEvent = events[1]
+	}
+
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	if err != nil {
+		return "", nil, err
+	}
+
+	startCond, err := buildEventCondition([]*insightsv1.EventQuery{startEvent})
+	if err != nil {
+		return "", nil, fmt.Errorf("retention start event: %w", err)
+	}
+	if startCond.IsZero() {
+		return "", nil, fmt.Errorf("retention start event: empty event filter")
+	}
+
+	returnCond, err := buildEventCondition([]*insightsv1.EventQuery{returnEvent})
+	if err != nil {
+		return "", nil, fmt.Errorf("retention return event: %w", err)
+	}
+	if returnCond.IsZero() {
+		return "", nil, fmt.Errorf("retention return event: empty event filter")
+	}
+
+	granFn := granularityFunc(req.GetGranularity())
+	from := req.GetTimeRange().GetFrom().AsTime()
+	to := req.GetTimeRange().GetTo().AsTime()
+
+	cohorts := chq.NewQuery().
+		Select("distinct_id", fmt.Sprintf("min(%s(occur_time)) AS cohort_time", granFn)).
+		From("events").
+		Where(
+			chq.Eq("project_id", projectID),
+			chq.Gte("occur_time", from),
+			chq.Lt("occur_time", to),
+			chq.RawCond(startCond.SQL(), startCond.Args()...),
+			topLevelFilterCond,
+		).
+		GroupBy("distinct_id")
+
+	cohortSizes := chq.NewQuery().
+		Select("cohort_time", "toFloat64(count(*)) AS cohort_size").
+		From("cohorts").
+		GroupBy("cohort_time")
+
+	retained := chq.NewQuery().
+		Select(
+			"c.cohort_time",
+			fmt.Sprintf("%s(e.occur_time) AS t", granFn),
+			"toFloat64(count(DISTINCT e.distinct_id)) AS retained_users",
+		).
+		From("cohorts c INNER JOIN events e ON e.distinct_id = c.distinct_id").
+		Where(
+			chq.Eq("e.project_id", projectID),
+			chq.Gte("e.occur_time", from),
+			chq.Lt("e.occur_time", to),
+			chq.RawCond("e.occur_time >= c.cohort_time"),
+			chq.RawCond(returnCond.SQL(), returnCond.Args()...),
+			topLevelFilterCond,
+		).
+		GroupBy("c.cohort_time", "t")
+
+	return chq.NewQuery().
+		With("cohorts", cohorts).
+		With("cohort_sizes", cohortSizes).
+		With("retained", retained).
+		Select(
+			"r.cohort_time",
+			"r.t",
+			"if(cs.cohort_size = 0, 0, (r.retained_users * 100.0) / cs.cohort_size) AS value",
+			"cs.cohort_size",
+		).
+		From("retained r INNER JOIN cohort_sizes cs ON r.cohort_time = cs.cohort_time").
+		Where(chq.RawCond("r.t >= r.cohort_time")).
+		OrderBy("r.cohort_time ASC", "r.t ASC").
+		Build()
 }
 
 // buildEventCondition extracts EventFilter from each EventQuery and delegates

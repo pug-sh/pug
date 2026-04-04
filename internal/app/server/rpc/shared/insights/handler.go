@@ -95,6 +95,14 @@ func (s *server) Query(
 				Total:     row.Value,
 			})
 		}
+	case insightsv1.InsightType_INSIGHT_TYPE_RETENTION:
+		rows, err := s.executor.QueryRetention(ctx, sql, args)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to query retention", slogx.Error(err),
+				slog.String("projectID", principal.Project.ID))
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
+		series = coreinsights.GroupRetentionSeries(rows)
 
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument,

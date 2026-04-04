@@ -28,6 +28,14 @@ type FunnelRow struct {
 	Value     float64
 }
 
+// RetentionRow is a single retention aggregate for one cohort bucket and time bucket.
+type RetentionRow struct {
+	CohortTime time.Time
+	Time       time.Time
+	Value      float64
+	CohortSize float64
+}
+
 // Executor runs pre-built ClickHouse queries and scans the results.
 type Executor struct {
 	ch driver.Conn
@@ -181,6 +189,32 @@ func (e *Executor) QueryFunnel(ctx context.Context, sql string, args []any) ([]F
 	return result, nil
 }
 
+// QueryRetention executes a retention query and returns rows of (cohort_time, time, value, cohort_size).
+func (e *Executor) QueryRetention(ctx context.Context, sql string, args []any) ([]RetentionRow, error) {
+	rows, err := e.ch.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+		}
+	}()
+
+	var result []RetentionRow
+	for rows.Next() {
+		var row RetentionRow
+		if err := rows.Scan(&row.CohortTime, &row.Time, &row.Value, &row.CohortSize); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // GroupSeries groups TrendRow results into Series, keyed by (event_kind, breakdown_tuple).
 // The properties slice provides the property name for each breakdown dimension.
 // Insertion order is preserved.
@@ -229,4 +263,32 @@ func GroupSeries(rows []TrendRow, properties []string) []*insightsv1.Series {
 		series = append(series, s)
 	}
 	return series
+}
+
+// GroupRetentionSeries groups retention rows into one series per cohort.
+func GroupRetentionSeries(rows []RetentionRow) []*insightsv1.Series {
+	seriesByCohort := map[time.Time]*insightsv1.Series{}
+	order := make([]time.Time, 0)
+
+	for _, row := range rows {
+		if _, ok := seriesByCohort[row.CohortTime]; !ok {
+			order = append(order, row.CohortTime)
+			seriesByCohort[row.CohortTime] = &insightsv1.Series{
+				Breakdown: map[string]string{
+					"cohort": row.CohortTime.Format(time.RFC3339),
+				},
+				Total: row.CohortSize,
+			}
+		}
+		seriesByCohort[row.CohortTime].Points = append(seriesByCohort[row.CohortTime].Points, &insightsv1.DataPoint{
+			Time:  timestamppb.New(row.Time),
+			Value: row.Value,
+		})
+	}
+
+	out := make([]*insightsv1.Series, 0, len(order))
+	for _, cohort := range order {
+		out = append(out, seriesByCohort[cohort])
+	}
+	return out
 }
