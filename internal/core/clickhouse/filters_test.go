@@ -292,6 +292,26 @@ func TestFilterClause_Unsupported(t *testing.T) {
 	}
 }
 
+func TestEventCondition_NilSlice(t *testing.T) {
+	cond, err := clickhouse.EventCondition(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cond.IsZero() {
+		t.Errorf("expected zero Condition for nil input, got SQL: %s", cond.SQL())
+	}
+}
+
+func TestEventCondition_EmptySlice(t *testing.T) {
+	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cond.IsZero() {
+		t.Errorf("expected zero Condition for empty input, got SQL: %s", cond.SQL())
+	}
+}
+
 func TestEventCondition_SingleKindOnly(t *testing.T) {
 	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{{Kind: "page_view"}})
 	if err != nil {

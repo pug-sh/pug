@@ -286,7 +286,13 @@ type UnionQuery struct {
 }
 
 // UnionAll creates a new UnionQuery from the given queries.
+// Panics if any query is nil — pass non-nil *Query values or guard with a nil check before calling.
 func UnionAll(queries ...*Query) *UnionQuery {
+	for i, q := range queries {
+		if q == nil {
+			panic(fmt.Sprintf("clickhouse: UnionAll called with nil query at index %d", i))
+		}
+	}
 	return &UnionQuery{queries: queries}
 }
 

@@ -91,13 +91,22 @@ func (x *ProfileAliasMessage) GetProjectId() string {
 	return ""
 }
 
+// ProfileUpsertMessage is published to profiles.upsert by register, identify,
+// and delete handlers to sync profile state to ClickHouse.
+// The upsert worker writes all fields into a ReplacingMergeTree keyed by (project_id, profile_id).
 type ProfileUpsertMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProfileId     string                 `protobuf:"bytes,1,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	ExternalId    string                 `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	Properties    *structpb.Struct       `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
-	IsDeleted     bool                   `protobuf:"varint,5,opt,name=is_deleted,json=isDeleted" json:"is_deleted,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProfileId string                 `protobuf:"bytes,1,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	ProjectId string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	// May be empty for anonymous profiles that have not been identified yet.
+	ExternalId string `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	// JSONB profile properties. Empty struct for deletes.
+	Properties *structpb.Struct `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
+	// When true, this message represents a soft-delete in ClickHouse.
+	// The upsert worker maps this to a UInt8 is_deleted column (1 = deleted).
+	// properties, external_id, create_time, and update_time may be zero-valued for deletes.
+	IsDeleted bool `protobuf:"varint,5,opt,name=is_deleted,json=isDeleted" json:"is_deleted,omitempty"`
+	// PostgreSQL row timestamps. Zero-valued for soft-delete messages.
 	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
 	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
 	unknownFields protoimpl.UnknownFields

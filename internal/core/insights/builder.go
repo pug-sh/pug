@@ -15,37 +15,56 @@ const DefaultPageSize int32 = 100
 
 // TrendsQuery is the compiled SQL for a trends insight.
 type TrendsQuery struct {
-	SQL           string
-	Args          []any
-	NumBreakdowns int
-	Properties    []string // breakdown property names for GroupSeries
+	sql           string
+	args          []any
+	numBreakdowns int
+	properties    []string // breakdown property names for GroupSeries
 }
+
+func (q TrendsQuery) SQL() string      { return q.sql }
+func (q TrendsQuery) Args() []any      { return q.args }
+func (q TrendsQuery) NumBreakdowns() int { return q.numBreakdowns }
+func (q TrendsQuery) Properties() []string { return q.properties }
 
 // ScalarQuery is the compiled SQL for a single-value query (segmentation).
 type ScalarQuery struct {
-	SQL  string
-	Args []any
+	sql  string
+	args []any
 }
+
+func (q ScalarQuery) SQL() string { return q.sql }
+func (q ScalarQuery) Args() []any { return q.args }
 
 // FunnelQuery is the compiled SQL for funnel step counts (no timing).
 type FunnelQuery struct {
-	SQL  string
-	Args []any
+	sql  string
+	args []any
 }
+
+func (q FunnelQuery) SQL() string { return q.sql }
+func (q FunnelQuery) Args() []any { return q.args }
 
 // FunnelTimingQuery is the compiled SQL for per-user funnel event arrays.
 type FunnelTimingQuery struct {
-	SQL       string
-	Args      []any
-	Kinds     []string // step event kinds for ComputeFunnelTiming
-	WindowSec int64    // conversion window for ComputeFunnelTiming
+	sql       string
+	args      []any
+	kinds     []string // step event kinds for ComputeFunnelTiming
+	windowSec int64    // conversion window for ComputeFunnelTiming
 }
+
+func (q FunnelTimingQuery) SQL() string    { return q.sql }
+func (q FunnelTimingQuery) Args() []any    { return q.args }
+func (q FunnelTimingQuery) Kinds() []string { return q.kinds }
+func (q FunnelTimingQuery) WindowSec() int64 { return q.windowSec }
 
 // RetentionQuery is the compiled SQL for retention cohort analysis.
 type RetentionQuery struct {
-	SQL  string
-	Args []any
+	sql  string
+	args []any
 }
+
+func (q RetentionQuery) SQL() string { return q.sql }
+func (q RetentionQuery) Args() []any { return q.args }
 
 // BuildTrendsQuery builds a trends insight query with breakdown metadata.
 func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
@@ -58,7 +77,7 @@ func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQue
 	for i, bk := range breakdowns {
 		properties[i] = bk.GetProperty()
 	}
-	return TrendsQuery{SQL: sql, Args: args, NumBreakdowns: len(breakdowns), Properties: properties}, nil
+	return TrendsQuery{sql: sql, args: args, numBreakdowns: len(breakdowns), properties: properties}, nil
 }
 
 // BuildSegmentationQuery builds a segmentation insight query.
@@ -67,7 +86,7 @@ func BuildSegmentationQuery(req *insightsv1.QueryRequest, projectID string) (Sca
 	if err != nil {
 		return ScalarQuery{}, err
 	}
-	return ScalarQuery{SQL: sql, Args: args}, nil
+	return ScalarQuery{sql: sql, args: args}, nil
 }
 
 // BuildFunnelCountsQuery builds a funnel step-counts query using windowFunnel().
@@ -76,7 +95,7 @@ func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	if err != nil {
 		return FunnelQuery{}, err
 	}
-	return FunnelQuery{SQL: sql, Args: args}, nil
+	return FunnelQuery{sql: sql, args: args}, nil
 }
 
 // BuildFunnelTimingQuery builds a funnel query for per-user event arrays with timing metadata.
@@ -90,7 +109,7 @@ func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	for i, s := range steps {
 		kinds[i] = s.GetEvent().GetKind()
 	}
-	return FunnelTimingQuery{SQL: sql, Args: args, Kinds: kinds, WindowSec: EffectiveWindowSec(req)}, nil
+	return FunnelTimingQuery{sql: sql, args: args, kinds: kinds, windowSec: EffectiveWindowSec(req)}, nil
 }
 
 // BuildRetentionQuery builds a retention cohort analysis query.
@@ -99,7 +118,7 @@ func BuildRetentionQuery(req *insightsv1.QueryRequest, projectID string) (Retent
 	if err != nil {
 		return RetentionQuery{}, err
 	}
-	return RetentionQuery{SQL: sql, Args: args}, nil
+	return RetentionQuery{sql: sql, args: args}, nil
 }
 
 // BuildQuery builds a ClickHouse SQL query and positional args from a QueryRequest.
@@ -320,7 +339,9 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (st
 		q := chq.NewQuery().
 			Select(
 				fmt.Sprintf("CAST(%d AS Int64) AS step_index", i),
-				fmt.Sprintf("%s AS event_kind", sqlStringLiteral(step.GetEvent().GetKind())),
+			).
+			SelectExpr("CAST(? AS String) AS event_kind", step.GetEvent().GetKind()).
+			Select(
 				fmt.Sprintf("toFloat64(countIf(level >= %d)) AS value", i+1),
 				"toFloat64(0) AS avg_time_seconds",
 			).
@@ -534,10 +555,6 @@ func buildFunnelStepCondition(step *insightsv1.EventQuery, idx int) (chq.Conditi
 	return cond, nil
 }
 
-func sqlStringLiteral(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "\\'") + "'"
-}
-
 // BuildSegmentUsersQuery builds a ClickHouse SQL query and args from a SegmentUsersRequest.
 // The generated query returns a paginated, cursor-keyed list of distinct user IDs.
 func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID string) (string, []any, error) {
@@ -584,6 +601,8 @@ func BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind string) (s
 	return buildPropertyValuesQuery(projectID, propertyKey, "custom_properties", eventKind)
 }
 
+// buildPropertyValuesQuery returns distinct values from mapCol for the given key over the last 30 days.
+// LIMIT 100 must match the cache exhaustion threshold in service.go's GetPropertyValues.
 func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) (string, []any, error) {
 	selectExpr := mapCol + `[?] AS value`
 	propertyNotEmptyClause := mapCol + `[?] != ''`
@@ -605,7 +624,7 @@ func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) 
 // alias is an optional table alias prefix for column references (empty = no prefix).
 func buildTopLevelFilterCondition(
 	groups []*insightsv1.FilterGroup,
-	groupsOp insightsv1.LogicalOperator,
+	groupsOp commonv1.LogicalOperator,
 	alias string,
 ) (chq.Condition, error) {
 	if len(groups) == 0 {
@@ -619,7 +638,7 @@ func buildTopLevelFilterCondition(
 	return chq.RawCond(groupClause, groupArgs...), nil
 }
 
-func buildFilterGroupsClause(groups []*insightsv1.FilterGroup, groupsOp insightsv1.LogicalOperator, alias string) (string, []any, error) {
+func buildFilterGroupsClause(groups []*insightsv1.FilterGroup, groupsOp commonv1.LogicalOperator, alias string) (string, []any, error) {
 	joinGroups := logicalJoin(groupsOp)
 
 	groupClauses := make([]string, 0, len(groups))
@@ -657,9 +676,9 @@ func buildSingleFilterGroupClause(group *insightsv1.FilterGroup, alias string) (
 	return "(" + strings.Join(parts, " "+joinFilters+" ") + ")", args, nil
 }
 
-func logicalJoin(op insightsv1.LogicalOperator) string {
+func logicalJoin(op commonv1.LogicalOperator) string {
 	switch op {
-	case insightsv1.LogicalOperator_LOGICAL_OPERATOR_OR:
+	case commonv1.LogicalOperator_LOGICAL_OPERATOR_OR:
 		return "OR"
 	default:
 		return "AND"

@@ -101,6 +101,57 @@ func (FilterOperator) EnumDescriptor() ([]byte, []int) {
 	return file_common_v1_filters_proto_rawDescGZIP(), []int{0}
 }
 
+// LogicalOperator defines how conditions are combined.
+// Defaults to AND when unspecified.
+type LogicalOperator int32
+
+const (
+	LogicalOperator_LOGICAL_OPERATOR_UNSPECIFIED LogicalOperator = 0
+	LogicalOperator_LOGICAL_OPERATOR_AND         LogicalOperator = 1
+	LogicalOperator_LOGICAL_OPERATOR_OR          LogicalOperator = 2
+)
+
+// Enum value maps for LogicalOperator.
+var (
+	LogicalOperator_name = map[int32]string{
+		0: "LOGICAL_OPERATOR_UNSPECIFIED",
+		1: "LOGICAL_OPERATOR_AND",
+		2: "LOGICAL_OPERATOR_OR",
+	}
+	LogicalOperator_value = map[string]int32{
+		"LOGICAL_OPERATOR_UNSPECIFIED": 0,
+		"LOGICAL_OPERATOR_AND":         1,
+		"LOGICAL_OPERATOR_OR":          2,
+	}
+)
+
+func (x LogicalOperator) Enum() *LogicalOperator {
+	p := new(LogicalOperator)
+	*p = x
+	return p
+}
+
+func (x LogicalOperator) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LogicalOperator) Descriptor() protoreflect.EnumDescriptor {
+	return file_common_v1_filters_proto_enumTypes[1].Descriptor()
+}
+
+func (LogicalOperator) Type() protoreflect.EnumType {
+	return &file_common_v1_filters_proto_enumTypes[1]
+}
+
+func (x LogicalOperator) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LogicalOperator.Descriptor instead.
+func (LogicalOperator) EnumDescriptor() ([]byte, []int) {
+	return file_common_v1_filters_proto_rawDescGZIP(), []int{1}
+}
+
 type PropertyFilter struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Property      string                 `protobuf:"bytes,1,opt,name=property" json:"property,omitempty"`
@@ -255,7 +306,11 @@ const file_common_v1_filters_proto_rawDesc = "" +
 	"\x12FILTER_OPERATOR_GT\x10\n" +
 	"\x12\x16\n" +
 	"\x12FILTER_OPERATOR_IN\x10\v\x12\x1a\n" +
-	"\x16FILTER_OPERATOR_NOT_IN\x10\fBIZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x16FILTER_OPERATOR_NOT_IN\x10\f*f\n" +
+	"\x0fLogicalOperator\x12 \n" +
+	"\x1cLOGICAL_OPERATOR_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14LOGICAL_OPERATOR_AND\x10\x01\x12\x17\n" +
+	"\x13LOGICAL_OPERATOR_OR\x10\x02BIZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_filters_proto_rawDescOnce sync.Once
@@ -269,16 +324,17 @@ func file_common_v1_filters_proto_rawDescGZIP() []byte {
 	return file_common_v1_filters_proto_rawDescData
 }
 
-var file_common_v1_filters_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_common_v1_filters_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_common_v1_filters_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_common_v1_filters_proto_goTypes = []any{
 	(FilterOperator)(0),    // 0: common.v1.FilterOperator
-	(*PropertyFilter)(nil), // 1: common.v1.PropertyFilter
-	(*EventFilter)(nil),    // 2: common.v1.EventFilter
+	(LogicalOperator)(0),   // 1: common.v1.LogicalOperator
+	(*PropertyFilter)(nil), // 2: common.v1.PropertyFilter
+	(*EventFilter)(nil),    // 3: common.v1.EventFilter
 }
 var file_common_v1_filters_proto_depIdxs = []int32{
 	0, // 0: common.v1.PropertyFilter.operator:type_name -> common.v1.FilterOperator
-	1, // 1: common.v1.EventFilter.filters:type_name -> common.v1.PropertyFilter
+	2, // 1: common.v1.EventFilter.filters:type_name -> common.v1.PropertyFilter
 	2, // [2:2] is the sub-list for method output_type
 	2, // [2:2] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
@@ -296,7 +352,7 @@ func file_common_v1_filters_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_v1_filters_proto_rawDesc), len(file_common_v1_filters_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,

@@ -176,7 +176,9 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 				// ErrNoRows means either the source or target profile no longer exists.
 				// Most likely the source was already merged on a previous attempt.
 				// Continue with device reassignment to ensure no devices are orphaned.
-				slog.WarnContext(ctx, "profile missing during merge, continuing with device reassignment",
+				// ClickHouse upsert uses the pre-merge snapshot — may be stale if the
+				// target was concurrently updated, but eventual consistency reconciles.
+				slog.WarnContext(ctx, "profile missing during merge, using pre-merge snapshot for CH sync",
 					slog.String("sourceId", profileID), slog.String("targetId", existing.ID))
 				// Fall back to pre-merge snapshot of the target.
 				upsertID = existing.ID
@@ -231,9 +233,9 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		slog.String("mergedIntoProfileId", mergedIntoProfileID))
 
 	if upsertID == "" {
-		slog.WarnContext(ctx, "upsertID is unexpectedly empty after committed identify transaction",
+		slog.ErrorContext(ctx, "upsertID is unexpectedly empty after committed identify transaction",
 			slog.String("profileId", profileID), slog.String("externalId", externalID))
-		return nil
+		return fmt.Errorf("upsertID is empty after committed identify transaction for profile %s", profileID)
 	}
 
 	// Publish upsert for the target profile.
@@ -261,7 +263,9 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		if err != nil {
 			slog.ErrorContext(ctx, "failed marshalling alias message", slogx.Error(err),
 				slog.String("aliasId", profileID), slog.String("profileId", mergedIntoProfileID))
-			return fmt.Errorf("marshal alias message after committed merge: %w", err)
+			return natsworker.NewPermanentError(err).
+				With("worker", "profile-identify").
+				With("profile_id", profileID)
 		}
 		if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
 			slog.ErrorContext(ctx, "failed publishing alias message", slogx.Error(err),
@@ -301,7 +305,9 @@ func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profi
 	if err != nil {
 		slog.ErrorContext(ctx, "failed marshalling profile upsert message", slogx.Error(err),
 			slog.String("profileId", profileID))
-		return fmt.Errorf("marshal profile upsert message: %w", err)
+		return natsworker.NewPermanentError(err).
+			With("worker", "profile-identify").
+			With("profile_id", profileID)
 	}
 
 	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, upsertData); err != nil {

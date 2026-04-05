@@ -128,7 +128,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(rows, q.Properties)
+		series, err := insights.GroupSeries(rows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -177,7 +177,7 @@ func TestIntegration(t *testing.T) {
 			},
 			FilterGroups: []*insightsv1.FilterGroup{
 				{
-					Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 					Filters: []*commonv1.PropertyFilter{
 						{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
 					},
@@ -311,7 +311,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(rows, q.Properties)
+		series, err := insights.GroupSeries(rows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -357,7 +357,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(rows, q.Properties)
+		series, err := insights.GroupSeries(rows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -401,6 +401,232 @@ func TestIntegration(t *testing.T) {
 			t.Errorf("expected 3 distinct users, got %d: %v", len(ids), ids)
 		}
 	})
+
+	t.Run("funnel_counts", func(t *testing.T) {
+		seedFunnelEvents(t, ctx, ch)
+
+		req := &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 2, 8, 0, 0, 0, 0, time.UTC)),
+			},
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: "sign_up"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "add_to_cart"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			},
+		}
+
+		q, err := insights.BuildFunnelCountsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelCountsQuery: %v", err)
+		}
+
+		rows, err := executor.QueryFunnel(ctx, q)
+		if err != nil {
+			t.Fatalf("QueryFunnel: %v", err)
+		}
+
+		if len(rows) != 3 {
+			t.Fatalf("expected 3 funnel steps, got %d", len(rows))
+		}
+		// Seed: 3 sign_ups, 2 add_to_carts, 1 purchase
+		if rows[0].Value != 3 {
+			t.Errorf("step 0 (sign_up): expected 3 users, got %v", rows[0].Value)
+		}
+		if rows[1].Value != 2 {
+			t.Errorf("step 1 (add_to_cart): expected 2 users, got %v", rows[1].Value)
+		}
+		if rows[2].Value != 1 {
+			t.Errorf("step 2 (purchase): expected 1 user, got %v", rows[2].Value)
+		}
+	})
+
+	t.Run("funnel_timing", func(t *testing.T) {
+		// Uses same seed data from funnel_counts.
+		req := &insightsv1.QueryRequest{
+			InsightType:      insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			IncludeStepTiming: true,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 2, 8, 0, 0, 0, 0, time.UTC)),
+			},
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: "sign_up"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "add_to_cart"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			},
+		}
+
+		q, err := insights.BuildFunnelTimingQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelTimingQuery: %v", err)
+		}
+
+		users, err := executor.QueryFunnelUserEvents(ctx, q)
+		if err != nil {
+			t.Fatalf("QueryFunnelUserEvents: %v", err)
+		}
+
+		rows, err := insights.ComputeFunnelTiming(users, q.Kinds(), q.WindowSec())
+		if err != nil {
+			t.Fatalf("ComputeFunnelTiming: %v", err)
+		}
+
+		if len(rows) != 3 {
+			t.Fatalf("expected 3 funnel steps, got %d", len(rows))
+		}
+		if rows[0].Value != 3 {
+			t.Errorf("step 0 (sign_up): expected 3 users, got %v", rows[0].Value)
+		}
+		if rows[1].Value != 2 {
+			t.Errorf("step 1 (add_to_cart): expected 2 users, got %v", rows[1].Value)
+		}
+		if rows[2].Value != 1 {
+			t.Errorf("step 2 (purchase): expected 1 user, got %v", rows[2].Value)
+		}
+		// Step 1 avg time should be positive (sign_up → add_to_cart gap).
+		if rows[1].AvgConvertSeconds <= 0 {
+			t.Errorf("step 1 avg time should be > 0, got %v", rows[1].AvgConvertSeconds)
+		}
+	})
+
+	t.Run("retention", func(t *testing.T) {
+		seedRetentionEvents(t, ctx, ch)
+
+		req := &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 3, 8, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: "sign_up"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: "login"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			},
+		}
+
+		q, err := insights.BuildRetentionQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildRetentionQuery: %v", err)
+		}
+
+		rows, err := executor.QueryRetention(ctx, q)
+		if err != nil {
+			t.Fatalf("QueryRetention: %v", err)
+		}
+
+		cohorts := insights.GroupRetentionCohorts(rows)
+		// At least 1 cohort (Mar 1 sign_ups).
+		if len(cohorts) == 0 {
+			t.Fatal("expected at least 1 retention cohort")
+		}
+		// First cohort should have day-0 retention = 100%.
+		if cohorts[0].Points[0].Value != 100 {
+			t.Errorf("expected 100%% day-0 retention, got %v", cohorts[0].Points[0].Value)
+		}
+		// Cohort size should match seeded sign_ups.
+		if cohorts[0].CohortSize != 3 {
+			t.Errorf("expected cohort size 3, got %v", cohorts[0].CohortSize)
+		}
+	})
+}
+
+// seedFunnelEvents inserts events for funnel integration tests.
+//
+// Layout (all Feb 2024, project_id = testProjectID):
+//
+//	alice:   sign_up (Feb 1 10:00) → add_to_cart (Feb 1 11:00) → purchase (Feb 1 12:00)
+//	bob:     sign_up (Feb 1 10:00) → add_to_cart (Feb 1 14:00)
+//	charlie: sign_up (Feb 1 10:00)
+//
+// Funnel: 3 → 2 → 1
+func seedFunnelEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
+	t.Helper()
+
+	type event struct {
+		user string
+		kind string
+		hour int
+	}
+
+	events := []event{
+		{"alice", "sign_up", 10},
+		{"alice", "add_to_cart", 11},
+		{"alice", "purchase", 12},
+		{"bob", "sign_up", 10},
+		{"bob", "add_to_cart", 14},
+		{"charlie", "sign_up", 10},
+	}
+
+	for _, e := range events {
+		occurTime := time.Date(2024, 2, 1, e.hour, 0, 0, 0, time.UTC)
+		err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+			testProjectID,
+			uuid.New().String(),
+			e.kind,
+			e.user,
+			occurTime,
+			map[string]string{},
+		)
+		if err != nil {
+			t.Fatalf("insert funnel event: %v", err)
+		}
+	}
+}
+
+// seedRetentionEvents inserts events for retention integration tests.
+//
+// Layout (all Mar 2024, project_id = testProjectID):
+//
+//	Mar 1: alice, bob, charlie sign_up (10:00)
+//	Mar 1: alice, bob, charlie login (12:00) — day-0 return, all 3 = 100%
+//	Mar 2: alice, bob login — day-1 return, 2/3 ≈ 66.7%
+//	Mar 3: alice login — day-2 return, 1/3 ≈ 33.3%
+func seedRetentionEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
+	t.Helper()
+
+	type event struct {
+		user string
+		kind string
+		day  int
+		hour int
+	}
+
+	events := []event{
+		// Cohort entry: all 3 sign up on Mar 1.
+		{"alice", "sign_up", 1, 10},
+		{"bob", "sign_up", 1, 10},
+		{"charlie", "sign_up", 1, 10},
+		// Day-0 returns: all 3 login on Mar 1 (after sign_up).
+		{"alice", "login", 1, 12},
+		{"bob", "login", 1, 12},
+		{"charlie", "login", 1, 12},
+		// Day-1 returns: alice and bob login.
+		{"alice", "login", 2, 12},
+		{"bob", "login", 2, 12},
+		// Day-2 return: alice only.
+		{"alice", "login", 3, 12},
+	}
+
+	for _, e := range events {
+		occurTime := time.Date(2024, 3, e.day, e.hour, 0, 0, 0, time.UTC)
+		err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+			testProjectID,
+			uuid.New().String(),
+			e.kind,
+			e.user,
+			occurTime,
+			map[string]string{},
+		)
+		if err != nil {
+			t.Fatalf("insert retention event: %v", err)
+		}
+	}
 }
 
 // seedEvents inserts a deterministic set of events for integration testing.

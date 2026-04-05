@@ -78,7 +78,7 @@ func TestTrendsWithFilters(t *testing.T) {
 		},
 		FilterGroups: []*insightsv1.FilterGroup{
 			{
-				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 				Filters: []*commonv1.PropertyFilter{
 					{
 						Property: "$country",
@@ -173,13 +173,14 @@ func TestFunnel(t *testing.T) {
 	if !strings.Contains(sql, "ORDER BY step_index ASC") {
 		t.Errorf("expected step ordering in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "'page_view' AS event_kind") || !strings.Contains(sql, "'purchase' AS event_kind") {
-		t.Errorf("expected step labels in SQL, got: %s", sql)
+	if !strings.Contains(sql, "CAST(? AS String) AS event_kind") {
+		t.Errorf("expected parameterized event_kind in SQL, got: %s", sql)
 	}
 
 	// windowFunnel CTE args: step conditions (page_view, purchase) + WHERE (project_id, from, to)
-	if len(args) != 5 {
-		t.Errorf("expected 5 args for 2-step windowFunnel, got %d: %v", len(args), args)
+	// + outer UNION ALL: parameterized event_kind labels (page_view, purchase)
+	if len(args) != 7 {
+		t.Errorf("expected 7 args for 2-step windowFunnel, got %d: %v", len(args), args)
 	}
 }
 
@@ -617,7 +618,7 @@ func TestFilterOperators(t *testing.T) {
 			},
 			FilterGroups: []*insightsv1.FilterGroup{
 				{
-					Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 					Filters: []*commonv1.PropertyFilter{
 						{Property: "$browser", Operator: op, Value: val},
 					},
@@ -759,7 +760,7 @@ func TestFilterOperators(t *testing.T) {
 				},
 				FilterGroups: []*insightsv1.FilterGroup{
 					{
-						Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+						Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 						Filters: []*commonv1.PropertyFilter{
 							{Property: "$country", Operator: tc.op, Values: tc.values},
 						},
@@ -798,7 +799,7 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 		},
 		FilterGroups: []*insightsv1.FilterGroup{
 			{
-				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 				Filters: []*commonv1.PropertyFilter{
 					{
 						Property: "$country",
@@ -937,17 +938,17 @@ func TestFilterGroups_Query_ORBetween_ANDWithin(t *testing.T) {
 		Events: []*insightsv1.EventQuery{
 			{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
 		},
-		FilterGroupsOperator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_OR,
+		FilterGroupsOperator: commonv1.LogicalOperator_LOGICAL_OPERATOR_OR,
 		FilterGroups: []*insightsv1.FilterGroup{
 			{
-				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 				Filters: []*commonv1.PropertyFilter{
 					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
 					{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "Chrome"},
 				},
 			},
 			{
-				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 				Filters: []*commonv1.PropertyFilter{
 					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "IN"},
 					{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "Safari"},
@@ -980,7 +981,7 @@ func TestFilterGroups_SegmentUsers_ORWithinGroup(t *testing.T) {
 		},
 		FilterGroups: []*insightsv1.FilterGroup{
 			{
-				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_OR,
+				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_OR,
 				Filters: []*commonv1.PropertyFilter{
 					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
 					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "IN"},
@@ -1045,7 +1046,7 @@ func TestUnsupportedFilterOperator(t *testing.T) {
 		},
 		FilterGroups: []*insightsv1.FilterGroup{
 			{
-				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 				Filters: []*commonv1.PropertyFilter{
 					{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED, Value: "x"},
 				},
@@ -1077,7 +1078,7 @@ func TestNumericFilterRejectsNonNumericValue(t *testing.T) {
 				},
 				FilterGroups: []*insightsv1.FilterGroup{
 					{
-						Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+						Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 						Filters: []*commonv1.PropertyFilter{
 							{Property: "score", Operator: op, Value: "not-a-number"},
 						},
@@ -1103,7 +1104,7 @@ func TestMultipleCombinedFilters(t *testing.T) {
 		},
 		FilterGroups: []*insightsv1.FilterGroup{
 			{
-				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 				Filters: []*commonv1.PropertyFilter{
 					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
 					{Property: "$browser", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "Chrome"},
@@ -1235,7 +1236,7 @@ func TestContainsEscapesLIKEMetacharacters(t *testing.T) {
 				},
 				FilterGroups: []*insightsv1.FilterGroup{
 					{
-						Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+						Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 						Filters: []*commonv1.PropertyFilter{
 							{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: tc.val},
 						},
@@ -1419,7 +1420,7 @@ func TestGroupSeries_Empty(t *testing.T) {
 	}
 }
 
-func TestGroupRetentionSeries(t *testing.T) {
+func TestGroupRetentionCohorts(t *testing.T) {
 	rows := []insights.RetentionRow{
 		{
 			CohortTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -1441,24 +1442,24 @@ func TestGroupRetentionSeries(t *testing.T) {
 		},
 	}
 
-	series := insights.GroupRetentionSeries(rows)
-	if len(series) != 2 {
-		t.Fatalf("expected 2 cohort series, got %d", len(series))
+	cohorts := insights.GroupRetentionCohorts(rows)
+	if len(cohorts) != 2 {
+		t.Fatalf("expected 2 cohorts, got %d", len(cohorts))
 	}
-	if series[0].Breakdown["cohort"] != "2024-01-01T00:00:00Z" {
-		t.Errorf("unexpected first cohort label: %q", series[0].Breakdown["cohort"])
+	if cohorts[0].Cohort != "2024-01-01T00:00:00Z" {
+		t.Errorf("unexpected first cohort label: %q", cohorts[0].Cohort)
 	}
-	if len(series[0].Points) != 2 {
-		t.Errorf("expected 2 points for first cohort, got %d", len(series[0].Points))
+	if len(cohorts[0].Points) != 2 {
+		t.Errorf("expected 2 points for first cohort, got %d", len(cohorts[0].Points))
 	}
-	if series[0].Points[1].Value != 50 {
-		t.Errorf("unexpected retained value: %v", series[0].Points[1].Value)
+	if cohorts[0].Points[1].Value != 50 {
+		t.Errorf("unexpected retained value: %v", cohorts[0].Points[1].Value)
 	}
-	if series[0].Total != 10 {
-		t.Errorf("unexpected first cohort total: %v", series[0].Total)
+	if cohorts[0].CohortSize != 10 {
+		t.Errorf("unexpected first cohort size: %v", cohorts[0].CohortSize)
 	}
-	if series[1].Total != 5 {
-		t.Errorf("unexpected second cohort total: %v", series[1].Total)
+	if cohorts[1].CohortSize != 5 {
+		t.Errorf("unexpected second cohort size: %v", cohorts[1].CohortSize)
 	}
 }
 
@@ -1469,7 +1470,7 @@ func TestMultiEventTrendsWithFilters(t *testing.T) {
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 		FilterGroups: []*insightsv1.FilterGroup{
 			{
-				Operator: insightsv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
 				Filters: []*commonv1.PropertyFilter{
 					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
 				},
@@ -1627,6 +1628,100 @@ func TestSingleEventRetention(t *testing.T) {
 	}
 	if kindCount != 2 {
 		t.Errorf("expected 2 'login' kind args (start + return), got %d", kindCount)
+	}
+}
+
+func TestGroupRetentionCohorts_Empty(t *testing.T) {
+	cohorts := insights.GroupRetentionCohorts(nil)
+	if len(cohorts) != 0 {
+		t.Errorf("expected 0 cohorts for nil input, got %d", len(cohorts))
+	}
+	cohorts = insights.GroupRetentionCohorts([]insights.RetentionRow{})
+	if len(cohorts) != 0 {
+		t.Errorf("expected 0 cohorts for empty input, got %d", len(cohorts))
+	}
+}
+
+func TestRetentionWithFilterGroups(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "sign_up"}},
+			{Event: &commonv1.EventFilter{Kind: "login"}},
+		},
+		FilterGroups: []*insightsv1.FilterGroup{
+			{
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+				},
+			},
+		},
+	}
+
+	sql, _, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Filter group should appear in both cohorts and retained CTEs.
+	if strings.Count(sql, "$country") < 4 {
+		t.Errorf("expected filter group refs in both cohorts and retained CTEs (>=4), got %d", strings.Count(sql, "$country"))
+	}
+
+	// The retained CTE conditions must use the "e." alias.
+	if !strings.Contains(sql, "e.auto_properties['$country']") {
+		t.Errorf("expected aliased filter group in retained CTE (e.auto_properties), got:\n%s", sql)
+	}
+}
+
+func TestFunnelWithPerStepFilters(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Events: []*insightsv1.EventQuery{
+			{
+				Event: &commonv1.EventFilter{
+					Kind: "page_view",
+					Filters: []*commonv1.PropertyFilter{
+						{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "/pricing"},
+					},
+				},
+				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
+			},
+			{
+				Event: &commonv1.EventFilter{
+					Kind: "purchase",
+					Filters: []*commonv1.PropertyFilter{
+						{Property: "$amount", Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE, Value: "100"},
+					},
+				},
+				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
+			},
+		},
+	}
+
+	sql, args, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Per-step filters should be combined with kind via AND in windowFunnel conditions.
+	if !strings.Contains(sql, "windowFunnel") {
+		t.Error("expected windowFunnel in SQL")
+	}
+	// Step 0: kind = ? AND url LIKE ?
+	if !strings.Contains(sql, "'url'") {
+		t.Errorf("expected per-step filter for url, got:\n%s", sql)
+	}
+	// Step 1: kind = ? AND $amount >= ?
+	if !strings.Contains(sql, "'$amount'") {
+		t.Errorf("expected per-step filter for $amount, got:\n%s", sql)
+	}
+	// Args: projectID, from, to + windowFunnel step args (kind1, url_like, kind2, amount) = 7
+	if len(args) < 7 {
+		t.Errorf("expected at least 7 args (project + time + step conditions), got %d: %v", len(args), args)
 	}
 }
 

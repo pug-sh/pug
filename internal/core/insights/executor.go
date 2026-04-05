@@ -52,7 +52,7 @@ func NewExecutor(ch driver.Conn) *Executor {
 
 // QueryTrends executes a trends query and returns rows of (time, event_kind, [breakdown_0..N], value).
 func (e *Executor) QueryTrends(ctx context.Context, q TrendsQuery) ([]TrendRow, error) {
-	rows, err := e.ch.Query(ctx, q.SQL, q.Args...)
+	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("QueryTrends: %w", err)
 	}
@@ -64,8 +64,8 @@ func (e *Executor) QueryTrends(ctx context.Context, q TrendsQuery) ([]TrendRow, 
 
 	var result []TrendRow
 	for rows.Next() {
-		row := TrendRow{Breakdowns: make([]string, q.NumBreakdowns)}
-		dest := make([]any, 0, 3+q.NumBreakdowns)
+		row := TrendRow{Breakdowns: make([]string, q.NumBreakdowns())}
+		dest := make([]any, 0, 3+q.NumBreakdowns())
 		dest = append(dest, &row.Time, &row.EventKind)
 		for i := range row.Breakdowns {
 			dest = append(dest, &row.Breakdowns[i])
@@ -84,7 +84,7 @@ func (e *Executor) QueryTrends(ctx context.Context, q TrendsQuery) ([]TrendRow, 
 
 // QueryScalar executes a query that returns a single float64 value.
 func (e *Executor) QueryScalar(ctx context.Context, q ScalarQuery) (float64, error) {
-	rows, err := e.ch.Query(ctx, q.SQL, q.Args...)
+	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return 0, fmt.Errorf("QueryScalar: %w", err)
 	}
@@ -169,7 +169,7 @@ func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any
 // QueryFunnel executes a funnel query and returns rows of
 // (step_index, event_kind, value, avg_time_seconds).
 func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow, error) {
-	rows, err := e.ch.Query(ctx, q.SQL, q.Args...)
+	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("QueryFunnel: %w", err)
 	}
@@ -196,7 +196,7 @@ func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow,
 // QueryFunnelUserEvents executes the array-based funnel query and returns per-user
 // event arrays for Go-side step matching and timing computation.
 func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuery) ([]FunnelUserEvents, error) {
-	rows, err := e.ch.Query(ctx, q.SQL, q.Args...)
+	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("QueryFunnelUserEvents: %w", err)
 	}
@@ -222,7 +222,7 @@ func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuer
 
 // QueryRetention executes a retention query and returns rows of (cohort_time, time, value, cohort_size).
 func (e *Executor) QueryRetention(ctx context.Context, q RetentionQuery) ([]RetentionRow, error) {
-	rows, err := e.ch.Query(ctx, q.SQL, q.Args...)
+	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("QueryRetention: %w", err)
 	}
@@ -246,10 +246,10 @@ func (e *Executor) QueryRetention(ctx context.Context, q RetentionQuery) ([]Rete
 	return result, nil
 }
 
-// GroupSeries groups TrendRow results into Series, keyed by (event_kind, breakdown_tuple).
+// GroupSeries groups TrendRow results into TrendSeries, keyed by (event_kind, breakdown_tuple).
 // The properties slice provides the property name for each breakdown dimension.
 // Insertion order is preserved.
-func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.Series, error) {
+func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSeries, error) {
 	type seriesKey struct {
 		eventKind string
 		breakdown string
@@ -281,10 +281,10 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.Series, er
 		})
 	}
 
-	series := make([]*insightsv1.Series, 0, len(orderedKeys))
+	series := make([]*insightsv1.TrendSeries, 0, len(orderedKeys))
 	for _, k := range orderedKeys {
 		e := entriesByKey[k]
-		s := &insightsv1.Series{
+		s := &insightsv1.TrendSeries{
 			EventKind: e.eventKind,
 			Points:    e.points,
 		}
@@ -296,30 +296,28 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.Series, er
 	return series, nil
 }
 
-// GroupRetentionSeries groups retention rows into one series per cohort.
-func GroupRetentionSeries(rows []RetentionRow) []*insightsv1.Series {
-	seriesByCohort := map[time.Time]*insightsv1.Series{}
+// GroupRetentionCohorts groups retention rows into one RetentionCohort per cohort bucket.
+func GroupRetentionCohorts(rows []RetentionRow) []*insightsv1.RetentionCohort {
+	cohortMap := map[time.Time]*insightsv1.RetentionCohort{}
 	order := make([]time.Time, 0)
 
 	for _, row := range rows {
-		if _, ok := seriesByCohort[row.CohortTime]; !ok {
+		if _, ok := cohortMap[row.CohortTime]; !ok {
 			order = append(order, row.CohortTime)
-			seriesByCohort[row.CohortTime] = &insightsv1.Series{
-				Breakdown: map[string]string{
-					"cohort": row.CohortTime.Format(time.RFC3339),
-				},
-				Total: row.CohortSize,
+			cohortMap[row.CohortTime] = &insightsv1.RetentionCohort{
+				Cohort:     row.CohortTime.Format(time.RFC3339),
+				CohortSize: row.CohortSize,
 			}
 		}
-		seriesByCohort[row.CohortTime].Points = append(seriesByCohort[row.CohortTime].Points, &insightsv1.DataPoint{
+		cohortMap[row.CohortTime].Points = append(cohortMap[row.CohortTime].Points, &insightsv1.DataPoint{
 			Time:  timestamppb.New(row.Time),
 			Value: row.Value,
 		})
 	}
 
-	out := make([]*insightsv1.Series, 0, len(order))
+	out := make([]*insightsv1.RetentionCohort, 0, len(order))
 	for _, cohort := range order {
-		out = append(out, seriesByCohort[cohort])
+		out = append(out, cohortMap[cohort])
 	}
 	return out
 }

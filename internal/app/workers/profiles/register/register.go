@@ -154,7 +154,9 @@ func publishRegisterUpsert(ctx context.Context, natsClient *natsworker.NATSClien
 	if err != nil {
 		slog.ErrorContext(ctx, "failed marshalling profile upsert message", slogx.Error(err),
 			slog.String("profileId", profileID))
-		return fmt.Errorf("marshal profile upsert message: %w", err)
+		return natsworker.NewPermanentError(err).
+			With("worker", "profile-register").
+			With("profile_id", profileID)
 	}
 
 	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, upsertData); err != nil {

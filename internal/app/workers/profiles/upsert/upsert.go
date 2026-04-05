@@ -27,7 +27,11 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = chDB.Close(ctx) }()
+	defer func() {
+		if err := chDB.Close(ctx); err != nil {
+			slog.WarnContext(ctx, "failed to close ClickHouse connection", slogx.Error(err))
+		}
+	}()
 
 	natsClient, err := natsworker.New(ctx)
 	if err != nil {
@@ -124,10 +128,12 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 			With("profile_id", msg.GetProfileId())
 	}
 
+	// Send errors are kept retryable: most failures are transient (network, server overload).
+	// Permanent schema-mismatch errors are rare and bounded by MaxDeliver.
 	if err := batch.Send(); err != nil {
 		slog.ErrorContext(ctx, "failed to send profile batch to ClickHouse", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
-		return err
+		return fmt.Errorf("send profile batch: %w", err)
 	}
 	sent = true
 

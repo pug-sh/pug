@@ -16,14 +16,19 @@ message ProfileAliasMessage {
 
 // ProfileUpsertMessage is published to profiles.upsert by register, identify,
 // and delete handlers to sync profile state to ClickHouse.
+// The upsert worker writes all fields into a ReplacingMergeTree keyed by (project_id, profile_id).
 message ProfileUpsertMessage {
   string                    profile_id  = 1;
   string                    project_id  = 2;
+  // May be empty for anonymous profiles that have not been identified yet.
   string                    external_id = 3;
+  // JSONB profile properties. Empty struct for deletes.
   google.protobuf.Struct    properties  = 4;
   // When true, this message represents a soft-delete in ClickHouse.
-  // properties, create_time, and update_time may be zero-valued for deletes.
+  // The upsert worker maps this to a UInt8 is_deleted column (1 = deleted).
+  // properties, external_id, create_time, and update_time may be zero-valued for deletes.
   bool                      is_deleted  = 5;
+  // PostgreSQL row timestamps. Zero-valued for soft-delete messages.
   google.protobuf.Timestamp create_time = 6;
   google.protobuf.Timestamp update_time = 7;
 }

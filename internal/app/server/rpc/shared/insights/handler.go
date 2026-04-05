@@ -44,7 +44,7 @@ func (s *server) Query(
 
 	projectID := principal.Project.ID
 
-	var series []*insightsv1.Series
+	resp := &insightsv1.QueryResponse{}
 
 	switch req.Msg.GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
@@ -60,11 +60,14 @@ func (s *server) Query(
 				slog.String("projectID", projectID))
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		series, err = coreinsights.GroupSeries(rows, q.Properties)
+		series, err := coreinsights.GroupSeries(rows, q.Properties())
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to group trend series", slogx.Error(err),
 				slog.String("projectID", projectID))
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
+		resp.Result = &insightsv1.QueryResponse_Trends{
+			Trends: &insightsv1.TrendsResult{Series: series},
 		}
 
 	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
@@ -80,7 +83,9 @@ func (s *server) Query(
 				slog.String("projectID", projectID))
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		series = []*insightsv1.Series{{Total: value}}
+		resp.Result = &insightsv1.QueryResponse_Segmentation{
+			Segmentation: &insightsv1.SegmentationResult{Total: value},
+		}
 
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
 		var funnelRows []coreinsights.FunnelRow
@@ -97,7 +102,7 @@ func (s *server) Query(
 					slog.String("projectID", projectID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
-			funnelRows, err = coreinsights.ComputeFunnelTiming(users, q.Kinds, q.WindowSec)
+			funnelRows, err = coreinsights.ComputeFunnelTiming(users, q.Kinds(), q.WindowSec())
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to compute funnel timing", slogx.Error(err),
 					slog.String("projectID", projectID))
@@ -117,13 +122,16 @@ func (s *server) Query(
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 		}
-		series = make([]*insightsv1.Series, 0, len(funnelRows))
+		steps := make([]*insightsv1.FunnelStep, 0, len(funnelRows))
 		for _, row := range funnelRows {
-			series = append(series, &insightsv1.Series{
+			steps = append(steps, &insightsv1.FunnelStep{
 				EventKind:               row.EventKind,
 				Total:                   row.Value,
 				AvgTimeToConvertSeconds: row.AvgConvertSeconds,
 			})
+		}
+		resp.Result = &insightsv1.QueryResponse_Funnel{
+			Funnel: &insightsv1.FunnelResult{Steps: steps},
 		}
 
 	case insightsv1.InsightType_INSIGHT_TYPE_RETENTION:
@@ -139,14 +147,16 @@ func (s *server) Query(
 				slog.String("projectID", projectID))
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		series = coreinsights.GroupRetentionSeries(rows)
+		resp.Result = &insightsv1.QueryResponse_Retention{
+			Retention: &insightsv1.RetentionResult{Cohorts: coreinsights.GroupRetentionCohorts(rows)},
+		}
 
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument,
 			errors.New("unsupported insight type"))
 	}
 
-	return connect.NewResponse(&insightsv1.QueryResponse{Series: series}), nil
+	return connect.NewResponse(resp), nil
 }
 
 // SegmentUsers returns a paginated list of distinct user IDs matching the given filters.
