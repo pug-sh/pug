@@ -322,7 +322,7 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (st
 	windowSec := EffectiveWindowSec(req)
 
 	windowFunnelExpr := fmt.Sprintf(
-		"windowFunnel(%d)(occur_time, %s) AS level",
+		"windowFunnel(%d)(toDateTime(occur_time), %s) AS level",
 		windowSec, strings.Join(stepExprs, ", "),
 	)
 

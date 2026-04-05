@@ -42,6 +42,10 @@
 - [x] Support overlaying multiple event lines on one chart (UNION ALL with per-event aggregation)
 - [x] Per-event filters (`EventQuery.event.filters`) — handled via `EventCondition`
 
+## Error Handling
+
+- [ ] Standardized error codes/subcodes — currently all internal errors return a generic `{"code":"internal","message":"internal error"}` with no machine-readable subcode. Consider a structured error model (e.g., `code` + `subcode` + `detail`) so the client can distinguish between ClickHouse query failures, invalid filter expressions, timeout errors, etc. and surface actionable feedback in the UI.
+
 ## Code Quality
 
 - [ ] Log errors at source — executor `Query*` methods wrap errors with `fmt.Errorf` but don't log; handlers log downstream. Move logging into executor, remove duplicate logging from handlers.
