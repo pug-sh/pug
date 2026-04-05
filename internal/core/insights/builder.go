@@ -165,7 +165,18 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 		Build()
 }
 
+// buildFunnel dispatches to either windowFunnel (fast counts) or CTE chain (with step timing).
 func buildFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
+	if req.GetIncludeStepTiming() {
+		return buildFunnelWithTiming(req, projectID)
+	}
+	return buildFunnelWindowFunnel(req, projectID)
+}
+
+// buildFunnelWindowFunnel generates a funnel counts query using ClickHouse's windowFunnel() aggregate.
+// windowFunnel scans the events table once and returns the deepest step reached per user
+// within the conversion window. The outer UNION ALL computes cumulative counts per step.
+func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	steps := req.GetEvents()
 	if len(steps) == 0 {
 		return "", nil, fmt.Errorf("funnel requires at least one event step")
@@ -176,55 +187,125 @@ func buildFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any,
 		return "", nil, err
 	}
 
-	stepQueries := make([]*chq.Query, 0, len(steps))
+	// Build step conditions for windowFunnel boolean expressions.
+	stepExprs := make([]string, len(steps))
+	var stepArgs []any
 	for i, step := range steps {
-		stepCond, err := buildFunnelStepCondition(step, i)
+		cond, err := buildFunnelStepCondition(step, i)
 		if err != nil {
 			return "", nil, err
 		}
-
-		fromTable := "events e"
-		conds := []chq.Condition{
-			chq.Eq("e.project_id", projectID),
-			chq.Gte("e.occur_time", req.GetTimeRange().GetFrom().AsTime()),
-			chq.Lt("e.occur_time", req.GetTimeRange().GetTo().AsTime()),
-			chq.RawCond(stepCond.SQL(), stepCond.Args()...),
-		}
-
-		if !topLevelFilterCond.IsZero() {
-			conds = append(conds, chq.RawCond(topLevelFilterCond.SQL(), topLevelFilterCond.Args()...))
-		}
-
-		if i > 0 {
-			fromTable = fmt.Sprintf("events e INNER JOIN step_%d prev ON e.distinct_id = prev.distinct_id", i-1)
-			conds = append(conds, chq.RawCond("e.occur_time >= prev.step_time"))
-		}
-
-		stepQuery := chq.NewQuery().
-			Select("e.distinct_id", "min(e.occur_time) AS step_time").
-			From(fromTable).
-			Where(conds...).
-			GroupBy("e.distinct_id")
-
-		stepQueries = append(stepQueries, stepQuery)
+		stepExprs[i] = cond.SQL()
+		stepArgs = append(stepArgs, cond.Args()...)
 	}
 
-	unionQueries := make([]*chq.Query, 0, len(steps))
-	for i := range steps {
-		query := chq.NewQuery()
-		for j := 0; j <= i; j++ {
-			query.With(fmt.Sprintf("step_%d", j), stepQueries[j])
-		}
-		unionQueries = append(unionQueries, query.
+	from := req.GetTimeRange().GetFrom().AsTime()
+	to := req.GetTimeRange().GetTo().AsTime()
+	windowSec := EffectiveWindowSec(req)
+
+	windowFunnelExpr := fmt.Sprintf(
+		"windowFunnel(%d)(occur_time, %s) AS level",
+		windowSec, strings.Join(stepExprs, ", "),
+	)
+
+	// CTE: one row per user with their deepest funnel level.
+	funnelCTE := chq.NewQuery().
+		Select("distinct_id").
+		SelectExpr(windowFunnelExpr, stepArgs...).
+		From("events").
+		Where(
+			chq.Eq("project_id", projectID),
+			chq.Gte("occur_time", from),
+			chq.Lt("occur_time", to),
+			topLevelFilterCond,
+		).
+		GroupBy("distinct_id")
+
+	// Outer: one row per step. countIf(level >= N) gives users who reached at least step N.
+	unionQueries := make([]*chq.Query, len(steps))
+	for i, step := range steps {
+		q := chq.NewQuery().
 			Select(
 				fmt.Sprintf("CAST(%d AS Int64) AS step_index", i),
-				fmt.Sprintf("%s AS event_kind", sqlStringLiteral(steps[i].GetEvent().GetKind())),
-				"toFloat64(count(*)) AS value",
+				fmt.Sprintf("%s AS event_kind", sqlStringLiteral(step.GetEvent().GetKind())),
+				fmt.Sprintf("toFloat64(countIf(level >= %d)) AS value", i+1),
+				"toFloat64(0) AS avg_time_seconds",
 			).
-			From(fmt.Sprintf("step_%d", i)))
+			From("funnel")
+		if i == 0 {
+			q.With("funnel", funnelCTE)
+		}
+		unionQueries[i] = q
 	}
 
 	return chq.UnionAll(unionQueries...).OrderBy("step_index ASC").Build()
+}
+
+// buildFunnelWithTiming generates a single-scan funnel query that returns per-user
+// event arrays for Go-side step matching and timing computation.
+//
+// Strategy: tag each event with which step it matches (via multiIf), aggregate into
+// per-user arrays, then Go walks the arrays to greedily match steps and compute intervals.
+// Single table scan, like windowFunnel, but preserves timestamps.
+//
+// Limitation: multiIf short-circuits — if two steps share the same conditions (e.g., both
+// match kind='page_view'), events always tag as the earlier step and the later step never
+// matches. This is uncommon in practice (funnel steps are usually distinct events).
+func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
+	steps := req.GetEvents()
+	if len(steps) == 0 {
+		return "", nil, fmt.Errorf("funnel requires at least one event step")
+	}
+
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	if err != nil {
+		return "", nil, err
+	}
+
+	from := req.GetTimeRange().GetFrom().AsTime()
+	to := req.GetTimeRange().GetTo().AsTime()
+
+	// Build multiIf expression to tag each event with its step index (-1 = no match).
+	// Also build OR condition for WHERE to pre-filter to relevant events only.
+	var multiIfParts []string
+	var multiIfArgs []any
+	var orConds []chq.Condition
+	for i, step := range steps {
+		cond, err := buildFunnelStepCondition(step, i)
+		if err != nil {
+			return "", nil, err
+		}
+		multiIfParts = append(multiIfParts, fmt.Sprintf("%s, %d", cond.SQL(), i))
+		multiIfArgs = append(multiIfArgs, cond.Args()...)
+		orConds = append(orConds, chq.RawCond(cond.SQL(), cond.Args()...))
+	}
+	multiIfExpr := "multiIf(" + strings.Join(multiIfParts, ", ") + ", -1) AS step_match"
+
+	// CTE: tag events with step index, pre-filtered to matching events.
+	taggedCTE := chq.NewQuery().
+		Select("distinct_id", "occur_time").
+		SelectExpr(multiIfExpr, multiIfArgs...).
+		From("events").
+		Where(
+			chq.Eq("project_id", projectID),
+			chq.Gte("occur_time", from),
+			chq.Lt("occur_time", to),
+			chq.Or(orConds...),
+			topLevelFilterCond,
+		)
+
+	// Main: aggregate per-user arrays sorted by time.
+	return chq.NewQuery().
+		With("tagged", taggedCTE).
+		Select(
+			"distinct_id",
+			"groupArray(occur_time ORDER BY occur_time ASC) AS times",
+			"groupArray(toInt64(step_match) ORDER BY occur_time ASC) AS step_matches",
+		).
+		From("tagged").
+		Where(chq.RawCond("step_match >= 0")).
+		GroupBy("distinct_id").
+		Build()
 }
 
 func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
@@ -264,8 +345,15 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 	from := req.GetTimeRange().GetFrom().AsTime()
 	to := req.GetTimeRange().GetTo().AsTime()
 
+	// cohorts: assign each user to a time bucket based on their first start event.
+	// first_event_time is the precise timestamp (not bucketed) — used to exclude
+	// return events that fall within the same bucket but before the actual start.
 	cohorts := chq.NewQuery().
-		Select("distinct_id", fmt.Sprintf("min(%s(occur_time)) AS cohort_time", granFn)).
+		Select(
+			"distinct_id",
+			fmt.Sprintf("min(%s(occur_time)) AS cohort_time", granFn),
+			"min(occur_time) AS first_event_time",
+		).
 		From("events").
 		Where(
 			chq.Eq("project_id", projectID),
@@ -281,6 +369,10 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 		From("cohorts").
 		GroupBy("cohort_time")
 
+	// retained: count return events per cohort per time bucket.
+	// Filter by first_event_time (not bucketed cohort_time) to avoid counting
+	// return events that happened before the user's actual start event.
+	// Conditions are aliased with "e." to avoid ambiguity in the JOIN.
 	retained := chq.NewQuery().
 		Select(
 			"c.cohort_time",
@@ -292,9 +384,9 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 			chq.Eq("e.project_id", projectID),
 			chq.Gte("e.occur_time", from),
 			chq.Lt("e.occur_time", to),
-			chq.RawCond("e.occur_time >= c.cohort_time"),
-			chq.RawCond(returnCond.SQL(), returnCond.Args()...),
-			topLevelFilterCond,
+			chq.RawCond("e.occur_time >= c.first_event_time"),
+			withEventAlias(returnCond, "e"),
+			withEventAlias(topLevelFilterCond, "e"),
 		).
 		GroupBy("c.cohort_time", "t")
 
@@ -312,6 +404,25 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 		Where(chq.RawCond("r.t >= r.cohort_time")).
 		OrderBy("r.cohort_time ASC", "r.t ASC").
 		Build()
+}
+
+// withEventAlias prefixes bare event column references with a table alias.
+// Used in JOINed CTEs where unaliased columns would be ambiguous.
+//
+// Handled columns: kind (from EventCondition), auto_properties/custom_properties
+// (from PropertyExpr via FilterClause). If new event table columns appear in filter
+// conditions, add replacement patterns here.
+func withEventAlias(cond chq.Condition, alias string) chq.Condition {
+	if cond.IsZero() {
+		return cond
+	}
+	sql := cond.SQL()
+	p := alias + "."
+	sql = strings.ReplaceAll(sql, "auto_properties[", p+"auto_properties[")
+	sql = strings.ReplaceAll(sql, "custom_properties[", p+"custom_properties[")
+	sql = strings.ReplaceAll(sql, "kind = ", p+"kind = ")
+	sql = strings.ReplaceAll(sql, "kind IN ", p+"kind IN ")
+	return chq.RawCond(sql, cond.Args()...)
 }
 
 // buildEventCondition extracts EventFilter from each EventQuery and delegates

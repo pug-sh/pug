@@ -31,6 +31,16 @@ message QueryRequest {
   // Groups are combined via filter_groups_operator.
   repeated FilterGroup filter_groups = 8;
   LogicalOperator filter_groups_operator = 9;
+
+  // Funnel conversion window in seconds. Only used for INSIGHT_TYPE_FUNNEL.
+  // The maximum time allowed from the first step to the last step per user.
+  // 0 means use the full time range as the window (no constraint).
+  int32 conversion_window_seconds = 10 [(buf.validate.field).int32.gte = 0];
+
+  // When true, funnel queries include per-step average time-to-convert.
+  // Uses an array-based single-scan query that captures per-step timestamps,
+  // then computes timing in Go. When false (default), uses windowFunnel() for faster counts only.
+  bool include_step_timing = 11;
 }
 
 message QueryResponse {
@@ -110,6 +120,9 @@ message Series {
   map<string, string> breakdown = 3;
   repeated DataPoint points = 4;
   double total = 5;
+  // Average seconds from the previous funnel step to this one. Only set for
+  // FUNNEL responses when include_step_timing is true. Zero for the first step.
+  double avg_time_to_convert_seconds = 6;
 }
 
 message DataPoint {

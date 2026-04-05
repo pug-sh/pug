@@ -23,9 +23,10 @@ type TrendRow struct {
 
 // FunnelRow is a single funnel step aggregate.
 type FunnelRow struct {
-	StepIndex int64
-	EventKind string
-	Value     float64
+	StepIndex         int64
+	EventKind         string
+	Value             float64
+	AvgConvertSeconds float64 // average seconds from previous step; 0 for step 0 or when timing is not requested
 }
 
 // RetentionRow is a single retention aggregate for one cohort bucket and time bucket.
@@ -163,7 +164,8 @@ func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any
 	return result, nil
 }
 
-// QueryFunnel executes a funnel query and returns rows of (step_index, event_kind, value).
+// QueryFunnel executes a funnel query and returns rows of
+// (step_index, event_kind, value, avg_time_seconds).
 func (e *Executor) QueryFunnel(ctx context.Context, sql string, args []any) ([]FunnelRow, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
@@ -178,7 +180,34 @@ func (e *Executor) QueryFunnel(ctx context.Context, sql string, args []any) ([]F
 	var result []FunnelRow
 	for rows.Next() {
 		var row FunnelRow
-		if err := rows.Scan(&row.StepIndex, &row.EventKind, &row.Value); err != nil {
+		if err := rows.Scan(&row.StepIndex, &row.EventKind, &row.Value, &row.AvgConvertSeconds); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// QueryFunnelUserEvents executes the array-based funnel query and returns per-user
+// event arrays for Go-side step matching and timing computation.
+func (e *Executor) QueryFunnelUserEvents(ctx context.Context, sql string, args []any) ([]FunnelUserEvents, error) {
+	rows, err := e.ch.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+		}
+	}()
+
+	var result []FunnelUserEvents
+	for rows.Next() {
+		var row FunnelUserEvents
+		if err := rows.Scan(&row.DistinctID, &row.Times, &row.StepMatches); err != nil {
 			return nil, err
 		}
 		result = append(result, row)

@@ -157,14 +157,18 @@ func TestFunnel(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(sql, "WITH step_0 AS") {
-		t.Errorf("expected step_0 CTE in SQL, got: %s", sql)
+	// windowFunnel-based: single CTE, no JOINs
+	if !strings.Contains(sql, "WITH funnel AS") {
+		t.Errorf("expected funnel CTE in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "WITH step_0 AS") || !strings.Contains(sql, "step_1 AS") {
-		t.Errorf("expected step_0 and step_1 CTEs in SQL, got: %s", sql)
+	if !strings.Contains(sql, "windowFunnel(") {
+		t.Errorf("expected windowFunnel() in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "INNER JOIN step_0 prev") {
-		t.Errorf("expected join with previous step in SQL, got: %s", sql)
+	if !strings.Contains(sql, "countIf(level >= 1)") {
+		t.Errorf("expected countIf for step 1 in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "countIf(level >= 2)") {
+		t.Errorf("expected countIf for step 2 in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "ORDER BY step_index ASC") {
 		t.Errorf("expected step ordering in SQL, got: %s", sql)
@@ -173,11 +177,118 @@ func TestFunnel(t *testing.T) {
 		t.Errorf("expected step labels in SQL, got: %s", sql)
 	}
 
-	// Subquery args are cumulative across funnel steps:
-	// step_0 output has step_0 args (4),
-	// step_1 output has step_0+step_1 args (8).
-	if len(args) != 12 {
-		t.Errorf("expected 12 args for 2-step funnel, got %d: %v", len(args), args)
+	// windowFunnel CTE args: step conditions (page_view, purchase) + WHERE (project_id, from, to)
+	if len(args) != 5 {
+		t.Errorf("expected 5 args for 2-step windowFunnel, got %d: %v", len(args), args)
+	}
+}
+
+func TestFunnelWithConversionWindow(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "sign_up"}},
+			{Event: &commonv1.EventFilter{Kind: "purchase"}},
+		},
+		ConversionWindowSeconds: 86400, // 1 day
+	}
+
+	sql, _, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(sql, "windowFunnel(86400)") {
+		t.Errorf("expected windowFunnel(86400) for 1-day window, got: %s", sql)
+	}
+}
+
+func TestFunnelDefaultWindowIsTimeRange(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType:             insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+		TimeRange:               timeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"), // 7 days = 604800 seconds
+		ConversionWindowSeconds: 0,                                                         // should default to time range
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "a"}},
+			{Event: &commonv1.EventFilter{Kind: "b"}},
+		},
+	}
+
+	sql, _, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(sql, "windowFunnel(604800)") {
+		t.Errorf("expected windowFunnel(604800) for 7-day default, got: %s", sql)
+	}
+}
+
+func TestFunnelWithStepTiming(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+		TimeRange:         timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		IncludeStepTiming: true,
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "sign_up"}},
+			{Event: &commonv1.EventFilter{Kind: "purchase"}},
+		},
+	}
+
+	sql, args, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Array-based single-scan, not windowFunnel or CTE chain
+	if strings.Contains(sql, "windowFunnel") {
+		t.Errorf("include_step_timing should use array approach, not windowFunnel: %s", sql)
+	}
+	if !strings.Contains(sql, "WITH tagged AS") {
+		t.Errorf("expected tagged CTE in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "multiIf(") {
+		t.Errorf("expected multiIf step tagging in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "groupArray(") {
+		t.Errorf("expected groupArray for per-user arrays in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "step_matches") {
+		t.Errorf("expected step_matches array in output, got: %s", sql)
+	}
+
+	// Args: multiIf(sign_up, purchase) + OR(sign_up, purchase) + WHERE(project, from, to) = 7
+	if len(args) != 7 {
+		t.Errorf("expected 7 args for 2-step timing funnel, got %d: %v", len(args), args)
+	}
+}
+
+func TestFunnelWithFilterGroups(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "sign_up"}},
+			{Event: &commonv1.EventFilter{Kind: "purchase"}},
+		},
+		FilterGroups: []*insightsv1.FilterGroup{
+			{
+				Filters: []*commonv1.PropertyFilter{
+					{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+				},
+			},
+		},
+	}
+
+	sql, _, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Filter group should appear inside the CTE WHERE
+	if !strings.Contains(sql, "$country") {
+		t.Errorf("expected filter group in funnel SQL, got: %s", sql)
 	}
 }
 
@@ -230,6 +341,21 @@ func TestRetention(t *testing.T) {
 	if !strings.Contains(sql, "ORDER BY r.cohort_time ASC, r.t ASC") {
 		t.Errorf("expected deterministic retention ordering, got: %s", sql)
 	}
+
+	// Cohorts CTE must capture precise first_event_time (not just bucketed cohort_time)
+	// to avoid counting return events before the user's actual start.
+	if !strings.Contains(sql, "first_event_time") {
+		t.Errorf("expected first_event_time in cohorts CTE, got: %s", sql)
+	}
+	if !strings.Contains(sql, "e.occur_time >= c.first_event_time") {
+		t.Errorf("retained CTE should filter by first_event_time, not cohort_time, got: %s", sql)
+	}
+
+	// Retained CTE conditions must use e.* aliases to avoid ambiguity in the JOIN.
+	if !strings.Contains(sql, "e.kind") {
+		t.Errorf("expected e.kind alias in retained CTE, got: %s", sql)
+	}
+
 	if len(args) != 8 {
 		t.Errorf("expected 8 args for retention query, got %d: %v", len(args), args)
 	}
@@ -1289,25 +1415,25 @@ func TestGroupSeries_Empty(t *testing.T) {
 
 func TestGroupRetentionSeries(t *testing.T) {
 	rows := []insights.RetentionRow{
-			{
-				CohortTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-				Time:       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-				Value:      100,
-				CohortSize: 10,
-			},
-			{
-				CohortTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-				Time:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
-				Value:      50,
-				CohortSize: 10,
-			},
-			{
-				CohortTime: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
-				Time:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
-				Value:      100,
-				CohortSize: 5,
-			},
-		}
+		{
+			CohortTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			Time:       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			Value:      100,
+			CohortSize: 10,
+		},
+		{
+			CohortTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			Time:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+			Value:      50,
+			CohortSize: 10,
+		},
+		{
+			CohortTime: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+			Time:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+			Value:      100,
+			CohortSize: 5,
+		},
+	}
 
 	series := insights.GroupRetentionSeries(rows)
 	if len(series) != 2 {

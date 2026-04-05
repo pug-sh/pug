@@ -136,13 +136,14 @@ type cte struct {
 
 // Query builds a single SELECT statement.
 type Query struct {
-	selects []string
-	from    string
-	wheres  []Condition
-	groupBy []string
-	orderBy []string
-	limit   *int64
-	ctes    []cte
+	selects    []string
+	selectArgs []any // positional args for SELECT expressions (e.g., windowFunnel conditions)
+	from       string
+	wheres     []Condition
+	groupBy    []string
+	orderBy    []string
+	limit      *int64
+	ctes       []cte
 }
 
 // NewQuery returns a new empty Query.
@@ -150,9 +151,18 @@ func NewQuery() *Query {
 	return &Query{}
 }
 
-// Select sets the SELECT expressions.
+// Select appends SELECT expressions (no positional args).
 func (q *Query) Select(exprs ...string) *Query {
 	q.selects = append(q.selects, exprs...)
+	return q
+}
+
+// SelectExpr appends a SELECT expression that contains positional ? args.
+// Args are emitted after CTE args and before WHERE args, matching ClickHouse
+// document order. Used for expressions like windowFunnel()(occur_time, kind = ?).
+func (q *Query) SelectExpr(expr string, args ...any) *Query {
+	q.selects = append(q.selects, expr)
+	q.selectArgs = append(q.selectArgs, args...)
 	return q
 }
 
@@ -225,6 +235,7 @@ func (q *Query) Build() (string, []any, error) {
 	sb.WriteString("SELECT ")
 	sb.WriteString(strings.Join(q.selects, ",\n"))
 	sb.WriteString("\n")
+	args = append(args, q.selectArgs...)
 
 	// FROM
 	if q.from == "" {

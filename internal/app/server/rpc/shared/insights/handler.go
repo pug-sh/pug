@@ -82,17 +82,40 @@ func (s *server) Query(
 			},
 		}
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
-		rows, err := s.executor.QueryFunnel(ctx, sql, args)
-		if err != nil {
-			slog.ErrorContext(ctx, "failed to query funnel", slogx.Error(err),
-				slog.String("projectID", principal.Project.ID))
-			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		var funnelRows []coreinsights.FunnelRow
+		if req.Msg.GetIncludeStepTiming() {
+			users, err := s.executor.QueryFunnelUserEvents(ctx, sql, args)
+			if err != nil {
+				slog.ErrorContext(ctx, "failed to query funnel user events", slogx.Error(err),
+					slog.String("projectID", principal.Project.ID))
+				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+			}
+			steps := req.Msg.GetEvents()
+			kinds := make([]string, len(steps))
+			for i, s := range steps {
+				kinds[i] = s.GetEvent().GetKind()
+			}
+			funnelRows, err = coreinsights.ComputeFunnelTiming(users, kinds, coreinsights.EffectiveWindowSec(req.Msg))
+			if err != nil {
+				slog.ErrorContext(ctx, "failed to compute funnel timing", slogx.Error(err),
+					slog.String("projectID", principal.Project.ID))
+				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+			}
+		} else {
+			var err error
+			funnelRows, err = s.executor.QueryFunnel(ctx, sql, args)
+			if err != nil {
+				slog.ErrorContext(ctx, "failed to query funnel", slogx.Error(err),
+					slog.String("projectID", principal.Project.ID))
+				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+			}
 		}
-		series = make([]*insightsv1.Series, 0, len(rows))
-		for _, row := range rows {
+		series = make([]*insightsv1.Series, 0, len(funnelRows))
+		for _, row := range funnelRows {
 			series = append(series, &insightsv1.Series{
-				EventKind: row.EventKind,
-				Total:     row.Value,
+				EventKind:               row.EventKind,
+				Total:                   row.Value,
+				AvgTimeToConvertSeconds: row.AvgConvertSeconds,
 			})
 		}
 	case insightsv1.InsightType_INSIGHT_TYPE_RETENTION:

@@ -240,6 +240,52 @@ func TestQueryBuild(t *testing.T) {
 	})
 }
 
+// --- SelectExpr ---
+
+func TestSelectExpr(t *testing.T) {
+	t.Run("args emitted between CTE and WHERE", func(t *testing.T) {
+		sql, args := build(t,
+			chq.NewQuery().
+				Select("distinct_id").
+				SelectExpr("windowFunnel(600)(occur_time, kind = ?, kind = ?) AS level", "signup", "purchase").
+				From("events").
+				Where(chq.Eq("project_id", "p1")).
+				GroupBy("distinct_id"),
+		)
+		// SELECT args (signup, purchase) must come before WHERE args (p1)
+		wantArgs := []any{"signup", "purchase", "p1"}
+		if diff := cmp.Diff(wantArgs, args); diff != "" {
+			t.Errorf("args order mismatch (-want +got):\n%s", diff)
+		}
+		if !containsStr(sql, "windowFunnel(600)") {
+			t.Errorf("expected windowFunnel in SQL, got: %s", sql)
+		}
+	})
+
+	t.Run("mixed with CTE args", func(t *testing.T) {
+		inner := chq.NewQuery().
+			Select("distinct_id").
+			SelectExpr("windowFunnel(300)(occur_time, kind = ?) AS level", "click").
+			From("events").
+			Where(chq.Eq("project_id", "inner-p")).
+			GroupBy("distinct_id")
+
+		_, args := build(t,
+			chq.NewQuery().
+				With("funnel", inner).
+				Select("level", "count() AS cnt").
+				From("funnel").
+				Where(chq.Gt("level", 0)).
+				GroupBy("level"),
+		)
+		// CTE: selectArgs(click) + WHERE(inner-p), then main: WHERE(0)
+		wantArgs := []any{"click", "inner-p", 0}
+		if diff := cmp.Diff(wantArgs, args); diff != "" {
+			t.Errorf("args order mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
 // --- CTE ---
 
 func TestCTE(t *testing.T) {

@@ -17,8 +17,9 @@
 
 ## Insight Types
 
-- [ ] Funnels — step-based conversion analysis
-- [ ] Retention — cohort-based return analysis
+- [x] Funnels — windowFunnel() for counts, array-based single-scan for timing
+- [x] Retention — cohort-based return analysis
+- [ ] Funnel timing statistics — median, p95, distribution (just change Go aggregation in `ComputeFunnelTiming`)
 - [ ] User paths/flows — exploratory sequence analysis
 
 ## Performance
@@ -38,5 +39,5 @@
 
 ## Multiple Event Queries
 
-- [ ] Support overlaying multiple event lines on one chart (currently uses first EventQuery only)
-- [ ] Per-event filters (`EventQuery.filters`) — proto field exists but builder ignores it. Silently dropped today.
+- [x] Support overlaying multiple event lines on one chart (UNION ALL with per-event aggregation)
+- [x] Per-event filters (`EventQuery.event.filters`) — handled via `EventCondition`

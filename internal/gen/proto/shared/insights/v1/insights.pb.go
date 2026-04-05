@@ -248,8 +248,16 @@ type QueryRequest struct {
 	// Groups are combined via filter_groups_operator.
 	FilterGroups         []*FilterGroup  `protobuf:"bytes,8,rep,name=filter_groups,json=filterGroups" json:"filter_groups,omitempty"`
 	FilterGroupsOperator LogicalOperator `protobuf:"varint,9,opt,name=filter_groups_operator,json=filterGroupsOperator,enum=shared.insights.v1.LogicalOperator" json:"filter_groups_operator,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Funnel conversion window in seconds. Only used for INSIGHT_TYPE_FUNNEL.
+	// The maximum time allowed from the first step to the last step per user.
+	// 0 means use the full time range as the window (no constraint).
+	ConversionWindowSeconds int32 `protobuf:"varint,10,opt,name=conversion_window_seconds,json=conversionWindowSeconds" json:"conversion_window_seconds,omitempty"`
+	// When true, funnel queries include per-step average time-to-convert.
+	// Uses an array-based single-scan query that captures per-step timestamps,
+	// then computes timing in Go. When false (default), uses windowFunnel() for faster counts only.
+	IncludeStepTiming bool `protobuf:"varint,11,opt,name=include_step_timing,json=includeStepTiming" json:"include_step_timing,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *QueryRequest) Reset() {
@@ -336,6 +344,20 @@ func (x *QueryRequest) GetFilterGroupsOperator() LogicalOperator {
 		return x.FilterGroupsOperator
 	}
 	return LogicalOperator_LOGICAL_OPERATOR_UNSPECIFIED
+}
+
+func (x *QueryRequest) GetConversionWindowSeconds() int32 {
+	if x != nil {
+		return x.ConversionWindowSeconds
+	}
+	return 0
+}
+
+func (x *QueryRequest) GetIncludeStepTiming() bool {
+	if x != nil {
+		return x.IncludeStepTiming
+	}
+	return false
 }
 
 type QueryResponse struct {
@@ -675,14 +697,17 @@ func (x *Breakdown) GetProperty() string {
 // For FUNNEL: event_kind + total are set (one series per step).
 // For RETENTION: breakdown["cohort"] + points are set (one series per cohort).
 type Series struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Label         string                 `protobuf:"bytes,1,opt,name=label" json:"label,omitempty"` // Reserved for future use.
-	EventKind     string                 `protobuf:"bytes,2,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
-	Breakdown     map[string]string      `protobuf:"bytes,3,rep,name=breakdown" json:"breakdown,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Points        []*DataPoint           `protobuf:"bytes,4,rep,name=points" json:"points,omitempty"`
-	Total         float64                `protobuf:"fixed64,5,opt,name=total" json:"total,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Label     string                 `protobuf:"bytes,1,opt,name=label" json:"label,omitempty"` // Reserved for future use.
+	EventKind string                 `protobuf:"bytes,2,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	Breakdown map[string]string      `protobuf:"bytes,3,rep,name=breakdown" json:"breakdown,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Points    []*DataPoint           `protobuf:"bytes,4,rep,name=points" json:"points,omitempty"`
+	Total     float64                `protobuf:"fixed64,5,opt,name=total" json:"total,omitempty"`
+	// Average seconds from the previous funnel step to this one. Only set for
+	// FUNNEL responses when include_step_timing is true. Zero for the first step.
+	AvgTimeToConvertSeconds float64 `protobuf:"fixed64,6,opt,name=avg_time_to_convert_seconds,json=avgTimeToConvertSeconds" json:"avg_time_to_convert_seconds,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *Series) Reset() {
@@ -746,6 +771,13 @@ func (x *Series) GetPoints() []*DataPoint {
 func (x *Series) GetTotal() float64 {
 	if x != nil {
 		return x.Total
+	}
+	return 0
+}
+
+func (x *Series) GetAvgTimeToConvertSeconds() float64 {
+	if x != nil {
+		return x.AvgTimeToConvertSeconds
 	}
 	return 0
 }
@@ -1022,7 +1054,7 @@ var File_shared_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc8\x04\n" +
+	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbd\x05\n" +
 	"\fQueryRequest\x12O\n" +
 	"\finsight_type\x18\x01 \x01(\x0e2\x1f.shared.insights.v1.InsightTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vinsightType\x12;\n" +
 	"\n" +
@@ -1034,7 +1066,10 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"breakdowns\x122\n" +
 	"\x0fbreakdown_limit\x18\a \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x0ebreakdownLimit\x12D\n" +
 	"\rfilter_groups\x18\b \x03(\v2\x1f.shared.insights.v1.FilterGroupR\ffilterGroups\x12Y\n" +
-	"\x16filter_groups_operator\x18\t \x01(\x0e2#.shared.insights.v1.LogicalOperatorR\x14filterGroupsOperatorJ\x04\b\x05\x10\x06\"C\n" +
+	"\x16filter_groups_operator\x18\t \x01(\x0e2#.shared.insights.v1.LogicalOperatorR\x14filterGroupsOperator\x12C\n" +
+	"\x19conversion_window_seconds\x18\n" +
+	" \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x17conversionWindowSeconds\x12.\n" +
+	"\x13include_step_timing\x18\v \x01(\bR\x11includeStepTimingJ\x04\b\x05\x10\x06\"C\n" +
 	"\rQueryResponse\x122\n" +
 	"\x06series\x18\x01 \x03(\v2\x1a.shared.insights.v1.SeriesR\x06series\"\x83\x03\n" +
 	"\x13SegmentUsersRequest\x12;\n" +
@@ -1058,14 +1093,15 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x05event\x18\x01 \x01(\v2\x16.common.v1.EventFilterR\x05event\x12R\n" +
 	"\vaggregation\x18\x02 \x01(\x0e2#.shared.insights.v1.AggregationTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vaggregation\"G\n" +
 	"\tBreakdown\x12:\n" +
-	"\bproperty\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\bproperty\"\x91\x02\n" +
+	"\bproperty\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\bproperty\"\xcf\x02\n" +
 	"\x06Series\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x1d\n" +
 	"\n" +
 	"event_kind\x18\x02 \x01(\tR\teventKind\x12G\n" +
 	"\tbreakdown\x18\x03 \x03(\v2).shared.insights.v1.Series.BreakdownEntryR\tbreakdown\x125\n" +
 	"\x06points\x18\x04 \x03(\v2\x1d.shared.insights.v1.DataPointR\x06points\x12\x14\n" +
-	"\x05total\x18\x05 \x01(\x01R\x05total\x1a<\n" +
+	"\x05total\x18\x05 \x01(\x01R\x05total\x12<\n" +
+	"\x1bavg_time_to_convert_seconds\x18\x06 \x01(\x01R\x17avgTimeToConvertSeconds\x1a<\n" +
 	"\x0eBreakdownEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Q\n" +
