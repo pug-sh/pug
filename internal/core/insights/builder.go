@@ -412,6 +412,10 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 // Handled columns: kind (from EventCondition), auto_properties/custom_properties
 // (from PropertyExpr via FilterClause). If new event table columns appear in filter
 // conditions, add replacement patterns here.
+//
+// TODO: eliminate this function by adding a table alias parameter to EventCondition
+// and PropertyExpr so conditions are built with the correct prefix from the start.
+// e.g. EventCondition(events, "e") → generates "e.kind = ?" directly.
 func withEventAlias(cond chq.Condition, alias string) chq.Condition {
 	if cond.IsZero() {
 		return cond
