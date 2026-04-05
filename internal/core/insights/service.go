@@ -80,8 +80,10 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	eg, egCtx := errgroup.WithContext(ctx)
 
 	eg.Go(func() error {
-		sql, args := BuildEventNamesQuery(projectID)
-		var err error
+		sql, args, err := BuildEventNamesQuery(projectID)
+		if err != nil {
+			return fmt.Errorf("build event names query: %w", err)
+		}
 		eventMetas, err = s.executor.QueryAggregateKeys(egCtx, sql, args)
 		if err != nil {
 			return fmt.Errorf("query event names: %w", err)
@@ -89,8 +91,10 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		return nil
 	})
 	eg.Go(func() error {
-		sql, args := BuildAutoPropertyKeysQuery(projectID, eventKind)
-		var err error
+		sql, args, err := BuildAutoPropertyKeysQuery(projectID, eventKind)
+		if err != nil {
+			return fmt.Errorf("build auto property keys query: %w", err)
+		}
 		autoPropKeys, err = s.executor.QueryAggregateKeys(egCtx, sql, args)
 		if err != nil {
 			return fmt.Errorf("query auto property keys: %w", err)
@@ -98,8 +102,10 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		return nil
 	})
 	eg.Go(func() error {
-		sql, args := BuildCustomPropertyKeysQuery(projectID, eventKind)
-		var err error
+		sql, args, err := BuildCustomPropertyKeysQuery(projectID, eventKind)
+		if err != nil {
+			return fmt.Errorf("build custom property keys query: %w", err)
+		}
 		customPropKeys, err = s.executor.QueryAggregateKeys(egCtx, sql, args)
 		if err != nil {
 			return fmt.Errorf("query custom property keys: %w", err)
@@ -199,7 +205,7 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	}
 
 	ttl := valuesCacheTTL
-	if len(values) < 10 {
+	if len(values) < 100 { // matches LIMIT in buildPropertyValuesQuery
 		ttl = valuesExhaustedCacheTTL
 	}
 	if data, err := json.Marshal(values); err != nil {

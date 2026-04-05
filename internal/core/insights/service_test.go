@@ -153,9 +153,8 @@ func TestServiceGetPropertyValues(t *testing.T) {
 	})
 
 	t.Run("unsupported_source", func(t *testing.T) {
-		_, err := svc.GetPropertyValues(ctx, projectID, "$country", "",
-			commonv1.PropertySource(99))
-		if err == nil {
+		if _, err := svc.GetPropertyValues(ctx, projectID, "$country", "",
+			commonv1.PropertySource(99)); err == nil {
 			t.Error("expected error for unsupported source")
 		}
 	})
@@ -198,9 +197,8 @@ func TestGroupSeriesBoundsCheck(t *testing.T) {
 	rows := []insights.TrendRow{
 		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "pv", Breakdowns: []string{}, Value: 10},
 	}
-	series := insights.GroupSeries(rows, []string{"$country"})
-	if series != nil {
-		t.Errorf("expected nil for mismatched breakdowns/properties, got %d series", len(series))
+	if _, err := insights.GroupSeries(rows, []string{"$country"}); err == nil {
+		t.Error("expected error for mismatched breakdowns/properties")
 	}
 }
 
@@ -210,20 +208,18 @@ func seedTestProject(t *testing.T, ctx context.Context, pg *testutil.TestPostgre
 	orgID := xid.New().String()
 	projectID := xid.New().String()
 
-	_, err := pg.PgW.Exec(ctx,
+	if _, err := pg.PgW.Exec(ctx,
 		`INSERT INTO orgs (id, display_name) VALUES ($1, $2)`,
-		orgID, "test-org")
-	if err != nil {
+		orgID, "test-org"); err != nil {
 		t.Fatalf("insert org: %v", err)
 	}
 
-	_, err = pg.PgW.Exec(ctx,
+	if _, err := pg.PgW.Exec(ctx,
 		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
 		projectID, orgID, "test-project",
 		xid.New().String()+"test",
 		xid.New().String()+"test",
-	)
-	if err != nil {
+	); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
 
@@ -272,14 +268,13 @@ func seedServiceProfiles(t *testing.T, ctx context.Context, pg *testutil.TestPos
 	}
 
 	for _, p := range profs {
-		_, err := pg.PgW.Exec(ctx,
+		if _, err := pg.PgW.Exec(ctx,
 			`INSERT INTO profiles (id, project_id, external_id, properties) VALUES ($1, $2, $3, $4::jsonb)`,
 			xid.New().String(),
 			projectID,
 			p.externalID,
 			p.properties,
-		)
-		if err != nil {
+		); err != nil {
 			t.Fatalf("insert profile: %v", err)
 		}
 	}

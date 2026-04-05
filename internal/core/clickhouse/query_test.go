@@ -166,15 +166,13 @@ func TestWhen(t *testing.T) {
 
 func TestQueryBuild(t *testing.T) {
 	t.Run("missing SELECT", func(t *testing.T) {
-		_, _, err := chq.NewQuery().From("events").Build()
-		if err == nil {
+		if _, _, err := chq.NewQuery().From("events").Build(); err == nil {
 			t.Fatal("expected error for missing SELECT")
 		}
 	})
 
 	t.Run("missing FROM", func(t *testing.T) {
-		_, _, err := chq.NewQuery().Select("1").Build()
-		if err == nil {
+		if _, _, err := chq.NewQuery().Select("1").Build(); err == nil {
 			t.Fatal("expected error for missing FROM")
 		}
 	})
@@ -325,12 +323,11 @@ func TestCTE(t *testing.T) {
 
 	t.Run("CTE sub-query error propagates", func(t *testing.T) {
 		badCTE := chq.NewQuery().From("events") // missing SELECT
-		_, _, err := chq.NewQuery().
+		if _, _, err := chq.NewQuery().
 			Select("1").
 			From("events").
 			With("bad", badCTE).
-			Build()
-		if err == nil {
+			Build(); err == nil {
 			t.Fatal("expected error from bad CTE sub-query")
 		}
 	})
@@ -383,16 +380,14 @@ func TestUnionAll(t *testing.T) {
 	})
 
 	t.Run("empty queries error", func(t *testing.T) {
-		_, _, err := chq.UnionAll().Build()
-		if err == nil {
+		if _, _, err := chq.UnionAll().Build(); err == nil {
 			t.Fatal("expected error for empty UnionAll")
 		}
 	})
 
 	t.Run("sub-query error propagates", func(t *testing.T) {
 		bad := chq.NewQuery().From("events") // missing SELECT
-		_, _, err := chq.UnionAll(q1, bad).Build()
-		if err == nil {
+		if _, _, err := chq.UnionAll(q1, bad).Build(); err == nil {
 			t.Fatal("expected error from bad sub-query")
 		}
 	})

@@ -40,12 +40,12 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		sql, args, err := insights.BuildQuery(req, testProjectID)
+		q, err := insights.BuildTrendsQuery(req, testProjectID)
 		if err != nil {
-			t.Fatalf("BuildQuery: %v", err)
+			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args, 0)
+		rows, err := executor.QueryTrends(ctx, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -78,12 +78,12 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		sql, args, err := insights.BuildQuery(req, testProjectID)
+		q, err := insights.BuildTrendsQuery(req, testProjectID)
 		if err != nil {
-			t.Fatalf("BuildQuery: %v", err)
+			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args, 0)
+		rows, err := executor.QueryTrends(ctx, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -118,17 +118,20 @@ func TestIntegration(t *testing.T) {
 			BreakdownLimit: 10,
 		}
 
-		sql, args, err := insights.BuildQuery(req, testProjectID)
+		q, err := insights.BuildTrendsQuery(req, testProjectID)
 		if err != nil {
-			t.Fatalf("BuildQuery: %v", err)
+			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args, 1)
+		rows, err := executor.QueryTrends(ctx, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series := insights.GroupSeries(rows, []string{"$country"})
+		series, err := insights.GroupSeries(rows, q.Properties)
+		if err != nil {
+			t.Fatalf("GroupSeries: %v", err)
+		}
 		if len(series) < 2 {
 			t.Fatalf("expected at least 2 breakdown series (US, GB), got %d", len(series))
 		}
@@ -146,12 +149,12 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		sql, args, err := insights.BuildQuery(req, testProjectID)
+		q, err := insights.BuildSegmentationQuery(req, testProjectID)
 		if err != nil {
-			t.Fatalf("BuildQuery: %v", err)
+			t.Fatalf("BuildSegmentationQuery: %v", err)
 		}
 
-		value, err := executor.QueryScalar(ctx, sql, args)
+		value, err := executor.QueryScalar(ctx, q)
 		if err != nil {
 			t.Fatalf("QueryScalar: %v", err)
 		}
@@ -182,12 +185,12 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		sql, args, err := insights.BuildQuery(req, testProjectID)
+		q, err := insights.BuildSegmentationQuery(req, testProjectID)
 		if err != nil {
-			t.Fatalf("BuildQuery: %v", err)
+			t.Fatalf("BuildSegmentationQuery: %v", err)
 		}
 
-		value, err := executor.QueryScalar(ctx, sql, args)
+		value, err := executor.QueryScalar(ctx, q)
 		if err != nil {
 			t.Fatalf("QueryScalar: %v", err)
 		}
@@ -211,12 +214,12 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		sql, args, err := insights.BuildQuery(req, testProjectID)
+		q, err := insights.BuildTrendsQuery(req, testProjectID)
 		if err != nil {
-			t.Fatalf("BuildQuery: %v", err)
+			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args, 0)
+		rows, err := executor.QueryTrends(ctx, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -298,17 +301,20 @@ func TestIntegration(t *testing.T) {
 			BreakdownLimit: 2, // Only top 2 countries, rest go to $others
 		}
 
-		sql, args, err := insights.BuildQuery(req, testProjectID)
+		q, err := insights.BuildTrendsQuery(req, testProjectID)
 		if err != nil {
-			t.Fatalf("BuildQuery: %v", err)
+			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args, 1)
+		rows, err := executor.QueryTrends(ctx, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series := insights.GroupSeries(rows, []string{"$country"})
+		series, err := insights.GroupSeries(rows, q.Properties)
+		if err != nil {
+			t.Fatalf("GroupSeries: %v", err)
+		}
 
 		// Should have top 2 + $others = 3 series
 		if len(series) != 3 {
@@ -341,17 +347,20 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		sql, args, err := insights.BuildQuery(req, testProjectID)
+		q, err := insights.BuildTrendsQuery(req, testProjectID)
 		if err != nil {
-			t.Fatalf("BuildQuery: %v", err)
+			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, sql, args, 0)
+		rows, err := executor.QueryTrends(ctx, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series := insights.GroupSeries(rows, nil)
+		series, err := insights.GroupSeries(rows, q.Properties)
+		if err != nil {
+			t.Fatalf("GroupSeries: %v", err)
+		}
 		if len(series) != 2 {
 			t.Fatalf("expected 2 series (page_view, purchase), got %d", len(series))
 		}

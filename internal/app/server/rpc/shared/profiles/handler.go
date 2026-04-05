@@ -31,6 +31,9 @@ type Server struct {
 }
 
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nats *natsdeps.NATSClient) *Server {
+	if nats == nil {
+		panic("profiles: nats is nil")
+	}
 	return &Server{
 		read:     dbread.New(pgRO),
 		write:    dbwrite.New(pgW),
@@ -59,6 +62,9 @@ func (s *Server) Delete(
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 	}
 
+	// Best-effort publish to sync deletion to ClickHouse. The PG delete is already
+	// committed, so we return success regardless — a failed NATS publish is logged
+	// for reconciliation but must not fail the client request (retry would get NotFound).
 	now := timestamppb.New(time.Now())
 	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
 		ProfileId:  req.Msg.Id,

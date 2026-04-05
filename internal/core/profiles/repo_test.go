@@ -106,20 +106,18 @@ func seedTestProject(t *testing.T, ctx context.Context, pg *testutil.TestPostgre
 	orgID := xid.New().String()
 	projectID := xid.New().String()
 
-	_, err := pg.PgW.Exec(ctx,
+	if _, err := pg.PgW.Exec(ctx,
 		`INSERT INTO orgs (id, display_name) VALUES ($1, $2)`,
-		orgID, "test-org")
-	if err != nil {
+		orgID, "test-org"); err != nil {
 		t.Fatalf("insert org: %v", err)
 	}
 
-	_, err = pg.PgW.Exec(ctx,
+	if _, err := pg.PgW.Exec(ctx,
 		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
 		projectID, orgID, "test-project",
 		xid.New().String()+"test", // 24 chars
 		xid.New().String()+"test", // 24 chars
-	)
-	if err != nil {
+	); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
 
@@ -138,14 +136,13 @@ func seedProfiles(t *testing.T, ctx context.Context, pg *testutil.TestPostgres, 
 	}
 
 	for _, p := range profs {
-		_, err := pg.PgW.Exec(ctx,
+		if _, err := pg.PgW.Exec(ctx,
 			`INSERT INTO profiles (id, project_id, external_id, properties) VALUES ($1, $2, $3, $4::jsonb)`,
 			xid.New().String(),
 			projectID,
 			p.externalID,
 			p.properties,
-		)
-		if err != nil {
+		); err != nil {
 			t.Fatalf("insert profile: %v", err)
 		}
 	}

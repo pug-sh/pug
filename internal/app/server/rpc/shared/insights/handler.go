@@ -28,7 +28,7 @@ func NewServer(service *coreinsights.Service, executor *coreinsights.Executor) *
 	}
 }
 
-// Query handles analytics queries for trends, segmentation, and funnel insight types.
+// Query handles analytics queries for trends, segmentation, funnel, and retention insight types.
 func (s *server) Query(
 	ctx context.Context,
 	req *connect.Request[insightsv1.QueryRequest],
@@ -42,71 +42,78 @@ func (s *server) Query(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	insightType := req.Msg.GetInsightType()
-
-	sql, args, err := coreinsights.BuildQuery(req.Msg, principal.Project.ID)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to build insights query", slogx.Error(err),
-			slog.String("projectID", principal.Project.ID),
-			slog.String("insightType", insightType.String()))
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
-	}
+	projectID := principal.Project.ID
 
 	var series []*insightsv1.Series
 
-	switch insightType {
+	switch req.Msg.GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
-		breakdowns := req.Msg.GetBreakdowns()
-		properties := make([]string, len(breakdowns))
-		for i, bk := range breakdowns {
-			properties[i] = bk.GetProperty()
+		q, err := coreinsights.BuildTrendsQuery(req.Msg, projectID)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to build trends query", slogx.Error(err),
+				slog.String("projectID", projectID))
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 		}
-		rows, err := s.executor.QueryTrends(ctx, sql, args, len(breakdowns))
+		rows, err := s.executor.QueryTrends(ctx, q)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to query trends", slogx.Error(err),
-				slog.String("projectID", principal.Project.ID))
+				slog.String("projectID", projectID))
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		series = coreinsights.GroupSeries(rows, properties)
+		series, err = coreinsights.GroupSeries(rows, q.Properties)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to group trend series", slogx.Error(err),
+				slog.String("projectID", projectID))
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
 
 	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
-		value, err := s.executor.QueryScalar(ctx, sql, args)
+		q, err := coreinsights.BuildSegmentationQuery(req.Msg, projectID)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to build segmentation query", slogx.Error(err),
+				slog.String("projectID", projectID))
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
+		}
+		value, err := s.executor.QueryScalar(ctx, q)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to query segmentation", slogx.Error(err),
-				slog.String("projectID", principal.Project.ID))
+				slog.String("projectID", projectID))
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		series = []*insightsv1.Series{
-			{
-				Total: value,
-			},
-		}
+		series = []*insightsv1.Series{{Total: value}}
+
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
 		var funnelRows []coreinsights.FunnelRow
 		if req.Msg.GetIncludeStepTiming() {
-			users, err := s.executor.QueryFunnelUserEvents(ctx, sql, args)
+			q, err := coreinsights.BuildFunnelTimingQuery(req.Msg, projectID)
+			if err != nil {
+				slog.WarnContext(ctx, "failed to build funnel timing query", slogx.Error(err),
+					slog.String("projectID", projectID))
+				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
+			}
+			users, err := s.executor.QueryFunnelUserEvents(ctx, q)
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to query funnel user events", slogx.Error(err),
-					slog.String("projectID", principal.Project.ID))
+					slog.String("projectID", projectID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
-			steps := req.Msg.GetEvents()
-			kinds := make([]string, len(steps))
-			for i, s := range steps {
-				kinds[i] = s.GetEvent().GetKind()
-			}
-			funnelRows, err = coreinsights.ComputeFunnelTiming(users, kinds, coreinsights.EffectiveWindowSec(req.Msg))
+			funnelRows, err = coreinsights.ComputeFunnelTiming(users, q.Kinds, q.WindowSec)
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to compute funnel timing", slogx.Error(err),
-					slog.String("projectID", principal.Project.ID))
+					slog.String("projectID", projectID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 		} else {
-			var err error
-			funnelRows, err = s.executor.QueryFunnel(ctx, sql, args)
+			q, err := coreinsights.BuildFunnelCountsQuery(req.Msg, projectID)
+			if err != nil {
+				slog.WarnContext(ctx, "failed to build funnel query", slogx.Error(err),
+					slog.String("projectID", projectID))
+				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
+			}
+			funnelRows, err = s.executor.QueryFunnel(ctx, q)
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to query funnel", slogx.Error(err),
-					slog.String("projectID", principal.Project.ID))
+					slog.String("projectID", projectID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 		}
@@ -118,11 +125,18 @@ func (s *server) Query(
 				AvgTimeToConvertSeconds: row.AvgConvertSeconds,
 			})
 		}
+
 	case insightsv1.InsightType_INSIGHT_TYPE_RETENTION:
-		rows, err := s.executor.QueryRetention(ctx, sql, args)
+		q, err := coreinsights.BuildRetentionQuery(req.Msg, projectID)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to build retention query", slogx.Error(err),
+				slog.String("projectID", projectID))
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
+		}
+		rows, err := s.executor.QueryRetention(ctx, q)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to query retention", slogx.Error(err),
-				slog.String("projectID", principal.Project.ID))
+				slog.String("projectID", projectID))
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		series = coreinsights.GroupRetentionSeries(rows)

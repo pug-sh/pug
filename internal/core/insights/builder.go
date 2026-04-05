@@ -11,7 +11,100 @@ import (
 
 const DefaultPageSize int32 = 100
 
+// Typed query structs link builder output to the correct executor method at compile time.
+
+// TrendsQuery is the compiled SQL for a trends insight.
+type TrendsQuery struct {
+	SQL           string
+	Args          []any
+	NumBreakdowns int
+	Properties    []string // breakdown property names for GroupSeries
+}
+
+// ScalarQuery is the compiled SQL for a single-value query (segmentation).
+type ScalarQuery struct {
+	SQL  string
+	Args []any
+}
+
+// FunnelQuery is the compiled SQL for funnel step counts (no timing).
+type FunnelQuery struct {
+	SQL  string
+	Args []any
+}
+
+// FunnelTimingQuery is the compiled SQL for per-user funnel event arrays.
+type FunnelTimingQuery struct {
+	SQL       string
+	Args      []any
+	Kinds     []string // step event kinds for ComputeFunnelTiming
+	WindowSec int64    // conversion window for ComputeFunnelTiming
+}
+
+// RetentionQuery is the compiled SQL for retention cohort analysis.
+type RetentionQuery struct {
+	SQL  string
+	Args []any
+}
+
+// BuildTrendsQuery builds a trends insight query with breakdown metadata.
+func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
+	sql, args, err := buildTrends(req, projectID)
+	if err != nil {
+		return TrendsQuery{}, err
+	}
+	breakdowns := req.GetBreakdowns()
+	properties := make([]string, len(breakdowns))
+	for i, bk := range breakdowns {
+		properties[i] = bk.GetProperty()
+	}
+	return TrendsQuery{SQL: sql, Args: args, NumBreakdowns: len(breakdowns), Properties: properties}, nil
+}
+
+// BuildSegmentationQuery builds a segmentation insight query.
+func BuildSegmentationQuery(req *insightsv1.QueryRequest, projectID string) (ScalarQuery, error) {
+	sql, args, err := buildSegmentation(req, projectID)
+	if err != nil {
+		return ScalarQuery{}, err
+	}
+	return ScalarQuery{SQL: sql, Args: args}, nil
+}
+
+// BuildFunnelCountsQuery builds a funnel step-counts query using windowFunnel().
+func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (FunnelQuery, error) {
+	sql, args, err := buildFunnelWindowFunnel(req, projectID)
+	if err != nil {
+		return FunnelQuery{}, err
+	}
+	return FunnelQuery{SQL: sql, Args: args}, nil
+}
+
+// BuildFunnelTimingQuery builds a funnel query for per-user event arrays with timing metadata.
+func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (FunnelTimingQuery, error) {
+	sql, args, err := buildFunnelWithTiming(req, projectID)
+	if err != nil {
+		return FunnelTimingQuery{}, err
+	}
+	steps := req.GetEvents()
+	kinds := make([]string, len(steps))
+	for i, s := range steps {
+		kinds[i] = s.GetEvent().GetKind()
+	}
+	return FunnelTimingQuery{SQL: sql, Args: args, Kinds: kinds, WindowSec: EffectiveWindowSec(req)}, nil
+}
+
+// BuildRetentionQuery builds a retention cohort analysis query.
+func BuildRetentionQuery(req *insightsv1.QueryRequest, projectID string) (RetentionQuery, error) {
+	sql, args, err := buildRetention(req, projectID)
+	if err != nil {
+		return RetentionQuery{}, err
+	}
+	return RetentionQuery{SQL: sql, Args: args}, nil
+}
+
 // BuildQuery builds a ClickHouse SQL query and positional args from a QueryRequest.
+// Prefer the type-specific builders (BuildTrendsQuery, BuildFunnelCountsQuery, etc.)
+// which provide compile-time safety between builder and executor.
 func BuildQuery(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	switch req.GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
@@ -40,9 +133,9 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	}
 
 	// Pre-build top-level filter condition — reused in CTE and every sub-query.
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), "")
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("trends: %w", err)
 	}
 
 	var topValsCTE *chq.Query
@@ -142,9 +235,9 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	aggExpr := aggregationExpr(aggregationType(req))
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), "")
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("segmentation: %w", err)
 	}
 
 	eventCond, err := buildEventCondition(req.GetEvents())
@@ -165,7 +258,7 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 		Build()
 }
 
-// buildFunnel dispatches to either windowFunnel (fast counts) or CTE chain (with step timing).
+// buildFunnel dispatches to either windowFunnel (fast counts) or single-scan array-based query (with step timing).
 func buildFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	if req.GetIncludeStepTiming() {
 		return buildFunnelWithTiming(req, projectID)
@@ -182,9 +275,9 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (st
 		return "", nil, fmt.Errorf("funnel requires at least one event step")
 	}
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), "")
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("funnel: %w", err)
 	}
 
 	// Build step conditions for windowFunnel boolean expressions.
@@ -257,9 +350,9 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (stri
 		return "", nil, fmt.Errorf("funnel requires at least one event step")
 	}
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), "")
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("funnel: %w", err)
 	}
 
 	from := req.GetTimeRange().GetFrom().AsTime()
@@ -320,9 +413,9 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 		returnEvent = events[1]
 	}
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), "")
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("retention: %w", err)
 	}
 
 	startCond, err := buildEventCondition([]*insightsv1.EventQuery{startEvent})
@@ -333,12 +426,18 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 		return "", nil, fmt.Errorf("retention start event: empty event filter")
 	}
 
-	returnCond, err := buildEventCondition([]*insightsv1.EventQuery{returnEvent})
+	// Build return event and top-level filter conditions with "e" alias for the JOINed CTE.
+	returnCondAliased, err := buildEventConditionAliased([]*insightsv1.EventQuery{returnEvent}, "e")
 	if err != nil {
 		return "", nil, fmt.Errorf("retention return event: %w", err)
 	}
-	if returnCond.IsZero() {
+	if returnCondAliased.IsZero() {
 		return "", nil, fmt.Errorf("retention return event: empty event filter")
+	}
+
+	topLevelFilterCondAliased, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), "e")
+	if err != nil {
+		return "", nil, fmt.Errorf("retention: %w", err)
 	}
 
 	granFn := granularityFunc(req.GetGranularity())
@@ -359,7 +458,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", from),
 			chq.Lt("occur_time", to),
-			chq.RawCond(startCond.SQL(), startCond.Args()...),
+			startCond,
 			topLevelFilterCond,
 		).
 		GroupBy("distinct_id")
@@ -372,7 +471,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 	// retained: count return events per cohort per time bucket.
 	// Filter by first_event_time (not bucketed cohort_time) to avoid counting
 	// return events that happened before the user's actual start event.
-	// Conditions are aliased with "e." to avoid ambiguity in the JOIN.
+	// Conditions use "e." alias to avoid ambiguity in the JOIN.
 	retained := chq.NewQuery().
 		Select(
 			"c.cohort_time",
@@ -385,8 +484,8 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 			chq.Gte("e.occur_time", from),
 			chq.Lt("e.occur_time", to),
 			chq.RawCond("e.occur_time >= c.first_event_time"),
-			withEventAlias(returnCond, "e"),
-			withEventAlias(topLevelFilterCond, "e"),
+			returnCondAliased,
+			topLevelFilterCondAliased,
 		).
 		GroupBy("c.cohort_time", "t")
 
@@ -406,37 +505,19 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 		Build()
 }
 
-// withEventAlias prefixes bare event column references with a table alias.
-// Used in JOINed CTEs where unaliased columns would be ambiguous.
-//
-// Handled columns: kind (from EventCondition), auto_properties/custom_properties
-// (from PropertyExpr via FilterClause). If new event table columns appear in filter
-// conditions, add replacement patterns here.
-//
-// TODO: eliminate this function by adding a table alias parameter to EventCondition
-// and PropertyExpr so conditions are built with the correct prefix from the start.
-// e.g. EventCondition(events, "e") → generates "e.kind = ?" directly.
-func withEventAlias(cond chq.Condition, alias string) chq.Condition {
-	if cond.IsZero() {
-		return cond
-	}
-	sql := cond.SQL()
-	p := alias + "."
-	sql = strings.ReplaceAll(sql, "auto_properties[", p+"auto_properties[")
-	sql = strings.ReplaceAll(sql, "custom_properties[", p+"custom_properties[")
-	sql = strings.ReplaceAll(sql, "kind = ", p+"kind = ")
-	sql = strings.ReplaceAll(sql, "kind IN ", p+"kind IN ")
-	return chq.RawCond(sql, cond.Args()...)
-}
-
 // buildEventCondition extracts EventFilter from each EventQuery and delegates
 // to clickhouse.EventCondition for SQL generation.
 func buildEventCondition(events []*insightsv1.EventQuery) (chq.Condition, error) {
+	return buildEventConditionAliased(events, "")
+}
+
+// buildEventConditionAliased builds event conditions with column references prefixed by alias.
+func buildEventConditionAliased(events []*insightsv1.EventQuery, alias string) (chq.Condition, error) {
 	filters := make([]*commonv1.EventFilter, len(events))
 	for i, ev := range events {
 		filters[i] = ev.GetEvent()
 	}
-	return chq.EventCondition(filters)
+	return chq.EventConditionAliased(filters, alias)
 }
 
 func buildFunnelStepCondition(step *insightsv1.EventQuery, idx int) (chq.Condition, error) {
@@ -460,9 +541,9 @@ func sqlStringLiteral(s string) string {
 // BuildSegmentUsersQuery builds a ClickHouse SQL query and args from a SegmentUsersRequest.
 // The generated query returns a paginated, cursor-keyed list of distinct user IDs.
 func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID string) (string, []any, error) {
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator())
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), "")
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("segment_users: %w", err)
 	}
 
 	eventCond, err := buildEventCondition(req.GetEvents())
@@ -491,8 +572,9 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 		Build()
 }
 
-// BuildPropertyValuesQuery returns a query for distinct values of a property key over the last
-// 30 days. Uses DISTINCT + LIMIT for early exit — no full aggregation, no insert overhead.
+// BuildAutoPropertyValuesQuery returns a query for distinct auto-property values of a key over the last
+// 30 days. Uses DISTINCT + LIMIT 100 for early exit — no full aggregation, no insert overhead.
+// The limit must match the cache exhaustion threshold in service.go's GetPropertyValues.
 func BuildAutoPropertyValuesQuery(projectID, propertyKey, eventKind string) (string, []any, error) {
 	return buildPropertyValuesQuery(projectID, propertyKey, "auto_properties", eventKind)
 }
@@ -506,8 +588,8 @@ func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) 
 	selectExpr := mapCol + `[?] AS value`
 	propertyNotEmptyClause := mapCol + `[?] != ''`
 
-	q := chq.NewQuery().
-		Select("DISTINCT "+selectExpr).
+	return chq.NewQuery().
+		SelectExpr("DISTINCT "+selectExpr, propertyKey).
 		From("events").
 		Where(
 			chq.Eq("project_id", projectID),
@@ -515,37 +597,35 @@ func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) 
 			chq.RawCond("occur_time >= now() - INTERVAL 30 DAY"),
 			chq.RawCond(propertyNotEmptyClause, propertyKey),
 		).
-		Limit(10)
-
-	sql, args, err := q.Build()
-	if err != nil {
-		return "", nil, fmt.Errorf("build property values query: %w", err)
-	}
-	return sql, append([]any{propertyKey}, args...), nil
+		Limit(100).
+		Build()
 }
 
+// buildTopLevelFilterCondition builds filter groups into a single Condition.
+// alias is an optional table alias prefix for column references (empty = no prefix).
 func buildTopLevelFilterCondition(
 	groups []*insightsv1.FilterGroup,
 	groupsOp insightsv1.LogicalOperator,
+	alias string,
 ) (chq.Condition, error) {
 	if len(groups) == 0 {
 		return chq.Condition{}, nil
 	}
 
-	groupClause, groupArgs, err := buildFilterGroupsClause(groups, groupsOp)
+	groupClause, groupArgs, err := buildFilterGroupsClause(groups, groupsOp, alias)
 	if err != nil {
 		return chq.Condition{}, err
 	}
 	return chq.RawCond(groupClause, groupArgs...), nil
 }
 
-func buildFilterGroupsClause(groups []*insightsv1.FilterGroup, groupsOp insightsv1.LogicalOperator) (string, []any, error) {
+func buildFilterGroupsClause(groups []*insightsv1.FilterGroup, groupsOp insightsv1.LogicalOperator, alias string) (string, []any, error) {
 	joinGroups := logicalJoin(groupsOp)
 
 	groupClauses := make([]string, 0, len(groups))
 	var args []any
 	for i, g := range groups {
-		clause, gArgs, err := buildSingleFilterGroupClause(g)
+		clause, gArgs, err := buildSingleFilterGroupClause(g, alias)
 		if err != nil {
 			return "", nil, fmt.Errorf("filter_groups[%d]: %w", i, err)
 		}
@@ -556,7 +636,7 @@ func buildFilterGroupsClause(groups []*insightsv1.FilterGroup, groupsOp insights
 	return "(" + strings.Join(groupClauses, " "+joinGroups+" ") + ")", args, nil
 }
 
-func buildSingleFilterGroupClause(group *insightsv1.FilterGroup) (string, []any, error) {
+func buildSingleFilterGroupClause(group *insightsv1.FilterGroup, alias string) (string, []any, error) {
 	if len(group.GetFilters()) == 0 {
 		return "", nil, fmt.Errorf("group must contain at least one filter")
 	}
@@ -566,7 +646,7 @@ func buildSingleFilterGroupClause(group *insightsv1.FilterGroup) (string, []any,
 	var args []any
 
 	for j, f := range group.GetFilters() {
-		clause, fArgs, err := chq.FilterClause(f)
+		clause, fArgs, err := chq.FilterClauseAliased(f, alias)
 		if err != nil {
 			return "", nil, fmt.Errorf("filters[%d]: %w", j, err)
 		}
@@ -587,8 +667,8 @@ func logicalJoin(op insightsv1.LogicalOperator) string {
 }
 
 // BuildEventNamesQuery returns a query against event_names for event names with count and last_seen.
-func BuildEventNamesQuery(projectID string) (string, []any) {
-	sql, args, err := chq.NewQuery().
+func BuildEventNamesQuery(projectID string) (string, []any, error) {
+	return chq.NewQuery().
 		Select("kind", "countMerge(event_count) AS count", "maxMerge(last_seen) AS last_seen").
 		From("event_names").
 		Where(chq.Eq("project_id", projectID)).
@@ -596,26 +676,22 @@ func BuildEventNamesQuery(projectID string) (string, []any) {
 		OrderBy("count DESC").
 		Limit(1000).
 		Build()
-	if err != nil {
-		panic(fmt.Sprintf("build event names query: %v", err))
-	}
-	return sql, args
 }
 
 // BuildAutoPropertyKeysQuery returns a query against property_keys for auto_property keys,
 // optionally scoped to a specific event kind.
-func BuildAutoPropertyKeysQuery(projectID, eventKind string) (string, []any) {
+func BuildAutoPropertyKeysQuery(projectID, eventKind string) (string, []any, error) {
 	return buildPropertyKeysQuery(projectID, "auto", eventKind)
 }
 
 // BuildCustomPropertyKeysQuery returns a query against property_keys for custom_property keys,
 // optionally scoped to a specific event kind.
-func BuildCustomPropertyKeysQuery(projectID, eventKind string) (string, []any) {
+func BuildCustomPropertyKeysQuery(projectID, eventKind string) (string, []any, error) {
 	return buildPropertyKeysQuery(projectID, "custom", eventKind)
 }
 
-func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any) {
-	sql, args, err := chq.NewQuery().
+func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any, error) {
+	return chq.NewQuery().
 		Select("key", "countMerge(event_count) AS count", "maxMerge(last_seen) AS last_seen").
 		From("property_keys").
 		Where(
@@ -627,10 +703,6 @@ func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any
 		OrderBy("count DESC").
 		Limit(500).
 		Build()
-	if err != nil {
-		panic(fmt.Sprintf("build property keys query: %v", err))
-	}
-	return sql, args
 }
 
 // granularityFunc returns the ClickHouse time-bucketing function name for the given granularity.

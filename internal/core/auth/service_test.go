@@ -35,11 +35,9 @@ func TestAuthService(t *testing.T) {
 	})
 
 	t.Run("SignUpWithEmail_duplicate", func(t *testing.T) {
-		_, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123")
-		if err == nil {
+		if _, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123"); err == nil {
 			t.Fatal("expected error for duplicate email")
-		}
-		if !errors.Is(err, auth.ErrEmailAlreadyExists) {
+		} else if !errors.Is(err, auth.ErrEmailAlreadyExists) {
 			t.Errorf("expected ErrEmailAlreadyExists, got: %v", err)
 		}
 	})
@@ -55,21 +53,17 @@ func TestAuthService(t *testing.T) {
 	})
 
 	t.Run("SignInWithEmail_wrong_password", func(t *testing.T) {
-		_, err := svc.SignInWithEmail(ctx, "test@example.com", "wrongpassword")
-		if err == nil {
+		if _, err := svc.SignInWithEmail(ctx, "test@example.com", "wrongpassword"); err == nil {
 			t.Fatal("expected error for wrong password")
-		}
-		if !errors.Is(err, auth.ErrInvalidCredentials) {
+		} else if !errors.Is(err, auth.ErrInvalidCredentials) {
 			t.Errorf("expected ErrInvalidCredentials, got: %v", err)
 		}
 	})
 
 	t.Run("SignInWithEmail_nonexistent", func(t *testing.T) {
-		_, err := svc.SignInWithEmail(ctx, "nobody@example.com", "password123")
-		if err == nil {
+		if _, err := svc.SignInWithEmail(ctx, "nobody@example.com", "password123"); err == nil {
 			t.Fatal("expected error for nonexistent email")
-		}
-		if !errors.Is(err, auth.ErrInvalidCredentials) {
+		} else if !errors.Is(err, auth.ErrInvalidCredentials) {
 			t.Errorf("expected ErrInvalidCredentials, got: %v", err)
 		}
 	})

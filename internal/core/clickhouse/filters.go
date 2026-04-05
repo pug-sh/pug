@@ -16,7 +16,15 @@ import (
 // At the RPC boundary, proto validation enforces the pattern ^\$?[a-zA-Z0-9_.-]+$ which
 // prevents SQL injection characters. Internal callers outside the RPC chain must validate separately.
 func PropertyExpr(name string) string {
-	return fmt.Sprintf("ifNull(nullIf(auto_properties['%s'], ''), custom_properties['%s'])", name, name)
+	return propertyExpr(name, "")
+}
+
+func propertyExpr(name, alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	return fmt.Sprintf("ifNull(nullIf(%sauto_properties['%s'], ''), %scustom_properties['%s'])", prefix, name, prefix, name)
 }
 
 // EscapeLike escapes ClickHouse LIKE metacharacters in a value.
@@ -29,7 +37,16 @@ func EscapeLike(s string) string {
 
 // FilterClause builds a single WHERE condition fragment for a PropertyFilter.
 func FilterClause(f *commonv1.PropertyFilter) (string, []any, error) {
-	prop := PropertyExpr(f.GetProperty())
+	return filterClause(f, "")
+}
+
+// FilterClauseAliased builds a FilterClause with column references prefixed by alias.
+func FilterClauseAliased(f *commonv1.PropertyFilter, alias string) (string, []any, error) {
+	return filterClause(f, alias)
+}
+
+func filterClause(f *commonv1.PropertyFilter, alias string) (string, []any, error) {
+	prop := propertyExpr(f.GetProperty(), alias)
 
 	switch f.GetOperator() {
 	case commonv1.FilterOperator_FILTER_OPERATOR_EQUALS:
@@ -93,7 +110,11 @@ func FilterClause(f *commonv1.PropertyFilter) (string, []any, error) {
 
 // PropertyCondition builds a typed query Condition for a PropertyFilter.
 func PropertyCondition(f *commonv1.PropertyFilter) (Condition, error) {
-	clause, args, err := FilterClause(f)
+	return propertyCondition(f, "")
+}
+
+func propertyCondition(f *commonv1.PropertyFilter, alias string) (Condition, error) {
+	clause, args, err := filterClause(f, alias)
 	if err != nil {
 		return Condition{}, err
 	}
@@ -103,27 +124,36 @@ func PropertyCondition(f *commonv1.PropertyFilter) (Condition, error) {
 // EventCondition builds a typed query Condition from event filters.
 // Empty input returns a zero-value Condition (no-op).
 func EventCondition(events []*commonv1.EventFilter) (Condition, error) {
+	return eventCondition(events, "")
+}
+
+// EventConditionAliased builds a typed query Condition from event filters,
+// prefixing column references (kind, auto_properties, custom_properties) with
+// the given table alias. Used in JOINed CTEs where bare column names are ambiguous.
+func EventConditionAliased(events []*commonv1.EventFilter, alias string) (Condition, error) {
+	return eventCondition(events, alias)
+}
+
+func eventCondition(events []*commonv1.EventFilter, alias string) (Condition, error) {
 	if len(events) == 0 {
 		return Condition{}, nil
 	}
 	if len(events) == 1 {
-		return singleEventCondition(events[0], -1, false)
+		return singleEventCondition(events[0], -1, alias)
 	}
 
-	parts := make([]string, 0, len(events))
-	var args []any
+	conds := make([]Condition, 0, len(events))
 	for i, ev := range events {
-		cond, err := singleEventCondition(ev, i, true)
+		cond, err := singleEventCondition(ev, i, alias)
 		if err != nil {
 			return Condition{}, err
 		}
-		parts = append(parts, cond.sql)
-		args = append(args, cond.args...)
+		conds = append(conds, cond)
 	}
-	return RawCond("(\n"+strings.Join(parts, "\nOR ")+"\n)", args...), nil
+	return Or(conds...), nil
 }
 
-func singleEventCondition(ev *commonv1.EventFilter, idx int, wrap bool) (Condition, error) {
+func singleEventCondition(ev *commonv1.EventFilter, idx int, alias string) (Condition, error) {
 	if ev == nil {
 		if idx >= 0 {
 			return Condition{}, fmt.Errorf("event[%d]: event filter is nil", idx)
@@ -131,55 +161,33 @@ func singleEventCondition(ev *commonv1.EventFilter, idx int, wrap bool) (Conditi
 		return Condition{}, fmt.Errorf("event filter is nil")
 	}
 
-	parts := make([]string, 0, 1+len(ev.GetFilters()))
-	var args []any
+	kindCol := "kind"
+	if alias != "" {
+		kindCol = alias + ".kind"
+	}
+
+	var conds []Condition
 	if ev.GetKind() != "" {
-		parts = append(parts, "kind = ?")
-		args = append(args, ev.GetKind())
+		conds = append(conds, Eq(kindCol, ev.GetKind()))
 	}
 	for j, f := range ev.GetFilters() {
-		cond, err := PropertyCondition(f)
+		cond, err := propertyCondition(f, alias)
 		if err != nil {
 			if idx >= 0 {
 				return Condition{}, fmt.Errorf("event[%d]: filters[%d]: %w", idx, j, err)
 			}
 			return Condition{}, fmt.Errorf("event filter: filters[%d]: %w", j, err)
 		}
-		parts = append(parts, cond.sql)
-		args = append(args, cond.args...)
+		conds = append(conds, cond)
 	}
 
-	if len(parts) == 0 {
+	if len(conds) == 0 {
 		if idx >= 0 {
 			return Condition{}, fmt.Errorf("event[%d]: empty event filter in multi-event query", idx)
 		}
 		return Condition{}, nil
 	}
 
-	sql := strings.Join(parts, " AND ")
-	if wrap {
-		sql = "(" + sql + ")"
-	}
-	return RawCond(sql, args...), nil
+	return And(conds...), nil
 }
 
-// WriteEventFilterCondition appends OR-joined event kind + per-event filter
-// conditions to sb/args. No-op when events is empty.
-// Single event:   AND kind = ? [AND per-event filters...]
-// Multiple events: AND ((kind=? AND ...) OR (kind=? AND ...))
-//
-// On error, the state of sb and args is undefined; callers must not use them.
-func WriteEventFilterCondition(sb *strings.Builder, args *[]any, events []*commonv1.EventFilter) error {
-	cond, err := EventCondition(events)
-	if err != nil {
-		return err
-	}
-	if cond.isZero() {
-		return nil
-	}
-	sb.WriteString("AND ")
-	sb.WriteString(cond.sql)
-	sb.WriteString("\n")
-	*args = append(*args, cond.args...)
-	return nil
-}

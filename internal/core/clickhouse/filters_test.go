@@ -112,8 +112,7 @@ func TestFilterClause_GTE_InvalidNumeric(t *testing.T) {
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE,
 		Value:    "not-a-number",
 	}
-	_, _, err := clickhouse.FilterClause(f)
-	if err == nil {
+	if _, _, err := clickhouse.FilterClause(f); err == nil {
 		t.Fatal("expected error for non-numeric value with GTE operator")
 	}
 }
@@ -267,8 +266,7 @@ func TestFilterClause_InEmptyValues(t *testing.T) {
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN,
 		Values:   []string{},
 	}
-	_, _, err := clickhouse.FilterClause(f)
-	if err == nil {
+	if _, _, err := clickhouse.FilterClause(f); err == nil {
 		t.Fatal("expected error for IN with empty values")
 	}
 }
@@ -279,8 +277,7 @@ func TestFilterClause_NotInEmptyValues(t *testing.T) {
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN,
 		Values:   []string{},
 	}
-	_, _, err := clickhouse.FilterClause(f)
-	if err == nil {
+	if _, _, err := clickhouse.FilterClause(f); err == nil {
 		t.Fatal("expected error for NOT_IN with empty values")
 	}
 }
@@ -290,220 +287,119 @@ func TestFilterClause_Unsupported(t *testing.T) {
 		Property: "x",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED,
 	}
-	_, _, err := clickhouse.FilterClause(f)
-	if err == nil {
+	if _, _, err := clickhouse.FilterClause(f); err == nil {
 		t.Fatal("expected error for unsupported operator")
 	}
 }
 
-func TestWriteEventFilterCondition_Empty(t *testing.T) {
-	var sb strings.Builder
-	var args []any
-	sb.WriteString("SELECT 1")
-
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, nil)
+func TestEventCondition_SingleKindOnly(t *testing.T) {
+	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{{Kind: "page_view"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if sb.String() != "SELECT 1" {
-		t.Errorf("expected no change to builder, got: %s", sb.String())
+	if !strings.Contains(cond.SQL(), "kind = ?") {
+		t.Errorf("expected kind clause, got: %s", cond.SQL())
 	}
-	if len(args) != 0 {
-		t.Errorf("expected no args, got: %v", args)
-	}
-}
-
-func TestWriteEventFilterCondition_SingleKindOnly(t *testing.T) {
-	var sb strings.Builder
-	var args []any
-
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
-		{Kind: "page_view"},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(sb.String(), "AND kind = ?") {
-		t.Errorf("expected kind clause, got: %s", sb.String())
-	}
-	if len(args) != 1 || args[0] != "page_view" {
-		t.Errorf("expected [page_view], got: %v", args)
+	if len(cond.Args()) != 1 || cond.Args()[0] != "page_view" {
+		t.Errorf("expected [page_view], got: %v", cond.Args())
 	}
 }
 
-func TestWriteEventFilterCondition_SingleWithFilters(t *testing.T) {
-	var sb strings.Builder
-	var args []any
-
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
-		{
-			Kind: "purchase",
-			Filters: []*commonv1.PropertyFilter{
-				{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	sql := sb.String()
-	if !strings.Contains(sql, "AND kind = ?") {
-		t.Errorf("expected kind clause, got: %s", sql)
-	}
-	if !strings.Contains(sql, "= ?") {
-		t.Errorf("expected filter clause, got: %s", sql)
-	}
-	if len(args) != 2 {
-		t.Errorf("expected 2 args (kind + filter value), got %d: %v", len(args), args)
-	}
-}
-
-func TestWriteEventFilterCondition_SingleFiltersOnly(t *testing.T) {
-	var sb strings.Builder
-	var args []any
-
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
-		{
-			Filters: []*commonv1.PropertyFilter{
-				{Property: "url", Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS, Value: "/blog"},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	sql := sb.String()
-	if strings.Contains(sql, "kind") {
-		t.Errorf("expected no kind clause when kind is empty, got: %s", sql)
-	}
-	if !strings.Contains(sql, "LIKE ?") {
-		t.Errorf("expected LIKE filter clause, got: %s", sql)
-	}
-	if len(args) != 1 {
-		t.Errorf("expected 1 arg, got %d: %v", len(args), args)
-	}
-}
-
-func TestWriteEventFilterCondition_SingleEmptyFilter(t *testing.T) {
-	var sb strings.Builder
-	var args []any
-	sb.WriteString("SELECT 1")
-
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
-		{},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// Empty EventFilter with no kind and no filters: no-op for single event path.
-	if sb.String() != "SELECT 1" {
-		t.Errorf("expected no change for empty EventFilter, got: %s", sb.String())
-	}
-	if len(args) != 0 {
-		t.Errorf("expected no args, got: %v", args)
-	}
-}
-
-func TestWriteEventFilterCondition_SingleNilEvent(t *testing.T) {
-	var sb strings.Builder
-	var args []any
-
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{nil})
-	if err == nil {
-		t.Fatal("expected error for nil EventFilter")
-	}
-	if !strings.Contains(err.Error(), "event filter is nil") {
-		t.Errorf("expected nil event filter error, got: %v", err)
-	}
-}
-
-func TestWriteEventFilterCondition_MultipleEvents(t *testing.T) {
-	var sb strings.Builder
-	var args []any
-
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+func TestEventCondition_MultipleEvents(t *testing.T) {
+	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{
 		{Kind: "page_view"},
 		{Kind: "purchase"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	sql := sb.String()
-	if !strings.Contains(sql, "AND (\n") {
-		t.Errorf("expected OR-joined block, got: %s", sql)
+	if !strings.Contains(cond.SQL(), " OR ") {
+		t.Errorf("expected OR separator, got: %s", cond.SQL())
 	}
-	if !strings.Contains(sql, "OR ") {
-		t.Errorf("expected OR separator, got: %s", sql)
+	if strings.Count(cond.SQL(), "kind = ?") != 2 {
+		t.Errorf("expected 2 kind clauses, got: %s", cond.SQL())
 	}
-	if strings.Count(sql, "kind = ?") != 2 {
-		t.Errorf("expected 2 kind clauses, got: %s", sql)
-	}
-	if len(args) != 2 {
-		t.Errorf("expected 2 args, got %d: %v", len(args), args)
+	if len(cond.Args()) != 2 {
+		t.Errorf("expected 2 args, got %d: %v", len(cond.Args()), cond.Args())
 	}
 }
 
-func TestWriteEventFilterCondition_MultipleWithEmptyFilter(t *testing.T) {
-	var sb strings.Builder
-	var args []any
+func TestEventCondition_NilEvent(t *testing.T) {
+	if _, err := clickhouse.EventCondition([]*commonv1.EventFilter{nil}); err == nil {
+		t.Fatal("expected error for nil EventFilter")
+	} else if !strings.Contains(err.Error(), "event filter is nil") {
+		t.Errorf("expected nil event filter error, got: %v", err)
+	}
+}
 
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+func TestEventCondition_MultipleWithEmptyFilter(t *testing.T) {
+	if _, err := clickhouse.EventCondition([]*commonv1.EventFilter{
 		{Kind: "page_view"},
-		{}, // empty kind and filters → error
-	})
-	if err == nil {
+		{},
+	}); err == nil {
 		t.Fatal("expected error for empty EventFilter in multi-event list")
-	}
-	if !strings.Contains(err.Error(), "event[1]") {
+	} else if !strings.Contains(err.Error(), "event[1]") {
 		t.Errorf("expected error to include event index, got: %v", err)
 	}
 }
 
-func TestWriteEventFilterCondition_MultipleWithNilEvent(t *testing.T) {
-	var sb strings.Builder
-	var args []any
-
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
-		{Kind: "page_view"},
-		nil,
-	})
-	if err == nil {
-		t.Fatal("expected error for nil EventFilter in multi-event list")
+func TestEventConditionAliased(t *testing.T) {
+	cond, err := clickhouse.EventConditionAliased([]*commonv1.EventFilter{
+		{
+			Kind: "page_view",
+			Filters: []*commonv1.PropertyFilter{
+				{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+			},
+		},
+	}, "e")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "event[1]") {
-		t.Errorf("expected error to include event index, got: %v", err)
+	sql := cond.SQL()
+	if !strings.Contains(sql, "e.kind = ?") {
+		t.Errorf("expected aliased kind 'e.kind = ?', got: %s", sql)
+	}
+	if !strings.Contains(sql, "e.auto_properties[") {
+		t.Errorf("expected aliased auto_properties 'e.auto_properties[', got: %s", sql)
+	}
+	if !strings.Contains(sql, "e.custom_properties[") {
+		t.Errorf("expected aliased custom_properties 'e.custom_properties[', got: %s", sql)
 	}
 }
 
-func TestWriteEventFilterCondition_ErrorPropagation(t *testing.T) {
-	var sb strings.Builder
-	var args []any
-
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
-		{
-			Filters: []*commonv1.PropertyFilter{
-				{Property: "x", Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED},
-			},
-		},
-	})
-	if err == nil {
-		t.Fatal("expected error for unsupported operator")
+func TestFilterClauseAliased(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "$country",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+		Value:    "US",
+	}
+	clause, args, err := clickhouse.FilterClauseAliased(f, "e")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(clause, "e.auto_properties[") {
+		t.Errorf("expected aliased property, got: %s", clause)
+	}
+	if len(args) != 1 || args[0] != "US" {
+		t.Errorf("unexpected args: %v", args)
 	}
 }
 
-func TestWriteEventFilterCondition_MultiEventErrorPropagation(t *testing.T) {
-	var sb strings.Builder
-	var args []any
-
-	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
-		{Kind: "page_view"},
-		{
-			Filters: []*commonv1.PropertyFilter{
-				{Property: "x", Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED},
-			},
-		},
-	})
-	if err == nil {
-		t.Fatal("expected error for unsupported operator in multi-event path")
+func TestPropertyCondition(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "$country",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+		Value:    "US",
+	}
+	cond, err := clickhouse.PropertyCondition(f)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	clause, args, _ := clickhouse.FilterClause(f)
+	if cond.SQL() != clause {
+		t.Errorf("PropertyCondition SQL = %q, want %q", cond.SQL(), clause)
+	}
+	if len(cond.Args()) != len(args) {
+		t.Errorf("PropertyCondition args len = %d, want %d", len(cond.Args()), len(args))
 	}
 }

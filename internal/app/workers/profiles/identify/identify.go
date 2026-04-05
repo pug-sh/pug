@@ -109,6 +109,12 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 	lookupErr := err
 
+	// Already identified with the same ID — skip merge, just sync current state to ClickHouse
+	// (handles retries where PG succeeded but a prior NATS publish failed).
+	if lookupErr == nil && existing.ID == profileID {
+		return publishUpsert(ctx, natsClient, existing.ID, projectID, existing.ExternalID.String, existing.Properties, false, existing.CreateTime.Time, existing.UpdateTime.Time)
+	}
+
 	tx, err := w.PgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed starting transaction", slogx.Error(err))
@@ -124,7 +130,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 	var (
 		mergedIntoProfileID string
-		// upsertProfile holds the target profile data to publish after commit.
+		// Target profile data to publish to ClickHouse after commit.
 		upsertID         string
 		upsertExtID      string
 		upsertProperties map[string]any
@@ -159,12 +165,6 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		upsertUpdateTime = updated.UpdateTime.Time
 
 	default:
-		// Already identified — skip merge and deletion but still sync current state to ClickHouse
-		// (handles retries where PG succeeded but a prior NATS publish failed).
-		if existing.ID == profileID {
-			return publishUpsert(ctx, natsClient, existing.ID, projectID, existing.ExternalID.String, existing.Properties, false, existing.CreateTime.Time, existing.UpdateTime.Time)
-		}
-
 		// Different profile owns this external_id — merge anonymous into existing.
 		merged, err := qtx.MergeProfileProperties(ctx, dbwrite.MergeProfilePropertiesParams{
 			SourceID:  profileID,
@@ -231,6 +231,8 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		slog.String("mergedIntoProfileId", mergedIntoProfileID))
 
 	if upsertID == "" {
+		slog.WarnContext(ctx, "upsertID is unexpectedly empty after committed identify transaction",
+			slog.String("profileId", profileID), slog.String("externalId", externalID))
 		return nil
 	}
 

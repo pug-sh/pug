@@ -45,12 +45,11 @@ func TestProjectsService(t *testing.T) {
 		t.Fatalf("CreateOrg: %v", err)
 	}
 
-	_, err = write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+	if _, err = write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      org.ID,
 		CustomerID: customer.ID,
 		Role:       "ORG_ROLE_ADMIN",
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
@@ -106,8 +105,7 @@ func TestProjectsService(t *testing.T) {
 
 	t.Run("GetProjectsByOrgID", func(t *testing.T) {
 		// Create a second project for the same org.
-		_, err := svc.CreateProject(ctx, org.ID, "Second Project")
-		if err != nil {
+		if _, err := svc.CreateProject(ctx, org.ID, "Second Project"); err != nil {
 			t.Fatalf("CreateProject (second): %v", err)
 		}
 
@@ -208,11 +206,9 @@ func TestProjectsService(t *testing.T) {
 			t.Fatalf("DeleteProject: %v", err)
 		}
 
-		_, err = svc.GetProjectByID(ctx, proj.ID)
-		if err == nil {
+		if _, err = svc.GetProjectByID(ctx, proj.ID); err == nil {
 			t.Fatal("expected error when getting deleted project, got nil")
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
+		} else if !errors.Is(err, pgx.ErrNoRows) {
 			t.Errorf("expected pgx.ErrNoRows, got: %v", err)
 		}
 	})

@@ -14,11 +14,15 @@ message ProfileAliasMessage {
   string project_id  = 4;
 }
 
+// ProfileUpsertMessage is published to profiles.upsert by register, identify,
+// and delete handlers to sync profile state to ClickHouse.
 message ProfileUpsertMessage {
   string                    profile_id  = 1;
   string                    project_id  = 2;
   string                    external_id = 3;
   google.protobuf.Struct    properties  = 4;
+  // When true, this message represents a soft-delete in ClickHouse.
+  // properties, create_time, and update_time may be zero-valued for deletes.
   bool                      is_deleted  = 5;
   google.protobuf.Timestamp create_time = 6;
   google.protobuf.Timestamp update_time = 7;

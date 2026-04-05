@@ -36,11 +36,10 @@ func TestPublisher(t *testing.T) {
 	}
 
 	// Create the events stream (normally done by NATS migrations).
-	_, err = js.CreateStream(ctx, jetstream.StreamConfig{
+	if _, err = js.CreateStream(ctx, jetstream.StreamConfig{
 		Name:     "events",
 		Subjects: []string{"events.>"},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("create stream: %v", err)
 	}
 

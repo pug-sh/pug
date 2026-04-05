@@ -171,8 +171,7 @@ func TestComputeFunnelTiming_NoUsers(t *testing.T) {
 }
 
 func TestComputeFunnelTiming_EmptyKindsReturnsError(t *testing.T) {
-	_, err := insights.ComputeFunnelTiming(nil, nil, 0)
-	if err == nil {
+	if _, err := insights.ComputeFunnelTiming(nil, nil, 0); err == nil {
 		t.Fatal("expected error for empty kinds")
 	}
 }
@@ -186,8 +185,7 @@ func TestComputeFunnelTiming_MismatchedArraysReturnsError(t *testing.T) {
 		},
 	}
 
-	_, err := insights.ComputeFunnelTiming(users, []string{"a", "b"}, 0)
-	if err == nil {
+	if _, err := insights.ComputeFunnelTiming(users, []string{"a", "b"}, 0); err == nil {
 		t.Fatal("expected error for mismatched array lengths")
 	}
 }

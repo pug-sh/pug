@@ -298,11 +298,9 @@ func TestFunnelRequiresAtLeastOneStep(t *testing.T) {
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 	}
 
-	_, _, err := insights.BuildQuery(req, "proj_123")
-	if err == nil {
+	if _, _, err := insights.BuildQuery(req, "proj_123"); err == nil {
 		t.Fatal("expected error for funnel with no events, got nil")
-	}
-	if !strings.Contains(err.Error(), "funnel requires at least one event step") {
+	} else if !strings.Contains(err.Error(), "funnel requires at least one event step") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -368,11 +366,9 @@ func TestRetentionRequiresAtLeastOneEvent(t *testing.T) {
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 	}
 
-	_, _, err := insights.BuildQuery(req, "proj_123")
-	if err == nil {
+	if _, _, err := insights.BuildQuery(req, "proj_123"); err == nil {
 		t.Fatal("expected error for retention with no events, got nil")
-	}
-	if !strings.Contains(err.Error(), "retention requires at least one event") {
+	} else if !strings.Contains(err.Error(), "retention requires at least one event") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -872,10 +868,10 @@ func TestBuildSegmentUsersQuery_MultiEvent(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(sql, "AND (\n") {
+	if !strings.Contains(sql, "AND (") {
 		t.Errorf("expected OR-joined event condition in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "OR ") {
+	if !strings.Contains(sql, " OR ") {
 		t.Errorf("expected OR between events in SQL, got: %s", sql)
 	}
 
@@ -1019,11 +1015,9 @@ func TestFilterGroups_EmptyGroupReturnsError(t *testing.T) {
 		},
 	}
 
-	_, _, err := insights.BuildQuery(req, "proj_123")
-	if err == nil {
+	if _, _, err := insights.BuildQuery(req, "proj_123"); err == nil {
 		t.Fatal("expected error for empty filter group, got nil")
-	}
-	if !strings.Contains(err.Error(), "filter_groups[0]") {
+	} else if !strings.Contains(err.Error(), "filter_groups[0]") {
 		t.Fatalf("expected error to mention filter_groups[0], got: %v", err)
 	}
 }
@@ -1035,11 +1029,9 @@ func TestUnsupportedInsightType(t *testing.T) {
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
 	}
 
-	_, _, err := insights.BuildQuery(req, "proj_123")
-	if err == nil {
+	if _, _, err := insights.BuildQuery(req, "proj_123"); err == nil {
 		t.Fatal("expected error for unsupported insight type, got nil")
-	}
-	if !strings.Contains(err.Error(), "unsupported insight type") {
+	} else if !strings.Contains(err.Error(), "unsupported insight type") {
 		t.Errorf("expected 'unsupported insight type' in error, got: %v", err)
 	}
 }
@@ -1061,11 +1053,9 @@ func TestUnsupportedFilterOperator(t *testing.T) {
 		},
 	}
 
-	_, _, err := insights.BuildQuery(req, "proj_123")
-	if err == nil {
+	if _, _, err := insights.BuildQuery(req, "proj_123"); err == nil {
 		t.Fatal("expected error for unsupported filter operator, got nil")
-	}
-	if !strings.Contains(err.Error(), "unsupported filter operator") {
+	} else if !strings.Contains(err.Error(), "unsupported filter operator") {
 		t.Errorf("expected 'unsupported filter operator' in error, got: %v", err)
 	}
 }
@@ -1094,11 +1084,9 @@ func TestNumericFilterRejectsNonNumericValue(t *testing.T) {
 					},
 				},
 			}
-			_, _, err := insights.BuildQuery(req, "proj_123")
-			if err == nil {
+			if _, _, err := insights.BuildQuery(req, "proj_123"); err == nil {
 				t.Fatal("expected error for non-numeric value, got nil")
-			}
-			if !strings.Contains(err.Error(), "invalid numeric value") {
+			} else if !strings.Contains(err.Error(), "invalid numeric value") {
 				t.Errorf("expected 'invalid numeric value' in error, got: %v", err)
 			}
 		})
@@ -1197,7 +1185,10 @@ func TestGroupSeries_Breakdowns(t *testing.T) {
 		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 3},
 	}
 
-	series := insights.GroupSeries(rows, []string{"$country"})
+	series, err := insights.GroupSeries(rows, []string{"$country"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(series) != 2 {
 		t.Fatalf("expected 2 series, got %d", len(series))
@@ -1282,7 +1273,7 @@ func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 			t.Fatalf("expected 5 args, got %d: %v", len(args), args)
 		}
 		// args: propertyKey, projectID, eventKind, propertyKey, limit
-		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "page_view" || args[3] != "$browser" || args[4] != int64(10) {
+		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "page_view" || args[3] != "$browser" || args[4] != int64(100) {
 			t.Errorf("unexpected args: %v", args)
 		}
 	})
@@ -1301,7 +1292,7 @@ func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 		if len(args) != 4 {
 			t.Fatalf("expected 4 args, got %d: %v", len(args), args)
 		}
-		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "$browser" || args[3] != int64(10) {
+		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "$browser" || args[3] != int64(100) {
 			t.Errorf("unexpected args: %v", args)
 		}
 	})
@@ -1321,7 +1312,10 @@ func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 }
 
 func TestBuildEventNamesQuery(t *testing.T) {
-	sql, args := insights.BuildEventNamesQuery("proj_1")
+	sql, args, err := insights.BuildEventNamesQuery("proj_1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(sql, "event_names") {
 		t.Error("expected event_names table in SQL")
 	}
@@ -1341,7 +1335,10 @@ func TestBuildEventNamesQuery(t *testing.T) {
 
 func TestBuildPropertyKeysQuery(t *testing.T) {
 	t.Run("auto_with_kind", func(t *testing.T) {
-		sql, args := insights.BuildAutoPropertyKeysQuery("proj_1", "page_view")
+		sql, args, err := insights.BuildAutoPropertyKeysQuery("proj_1", "page_view")
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !strings.Contains(sql, "map_type = ?") {
 			t.Error("expected map_type filter")
 		}
@@ -1360,7 +1357,10 @@ func TestBuildPropertyKeysQuery(t *testing.T) {
 	})
 
 	t.Run("custom_without_kind", func(t *testing.T) {
-		sql, args := insights.BuildCustomPropertyKeysQuery("proj_1", "")
+		sql, args, err := insights.BuildCustomPropertyKeysQuery("proj_1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
 		if strings.Contains(sql, "kind = ?") {
 			t.Error("should not have kind filter when empty")
 		}
@@ -1384,7 +1384,10 @@ func TestGroupSeries_MultiEvent(t *testing.T) {
 		{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 5},
 	}
 
-	series := insights.GroupSeries(rows, nil)
+	series, err := insights.GroupSeries(rows, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(series) != 2 {
 		t.Fatalf("expected 2 series, got %d", len(series))
@@ -1407,7 +1410,10 @@ func TestGroupSeries_MultiEvent(t *testing.T) {
 }
 
 func TestGroupSeries_Empty(t *testing.T) {
-	series := insights.GroupSeries(nil, nil)
+	series, err := insights.GroupSeries(nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(series) != 0 {
 		t.Errorf("expected 0 series for nil input, got %d", len(series))
 	}
@@ -1506,5 +1512,131 @@ func TestMultiEventTrendsWithFilters(t *testing.T) {
 	// Sub2: projectID, from, to, kind, $country=US
 	if len(args) != 11 {
 		t.Errorf("expected 11 args, got %d: %v", len(args), args)
+	}
+}
+
+// TestMultiEventTrendsWithBreakdowns verifies UNION ALL + CTE for multiple events with breakdowns.
+func TestMultiEventTrendsWithBreakdowns(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
+		},
+		Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
+		BreakdownLimit: 5,
+	}
+
+	sql, args, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Must have both UNION ALL and CTE.
+	if !strings.Contains(sql, "UNION ALL") {
+		t.Error("expected UNION ALL in SQL")
+	}
+	if !strings.Contains(sql, "top_vals") {
+		t.Error("expected CTE 'top_vals' in SQL")
+	}
+
+	// Both sub-queries should reference top_vals for breakdown bucketing.
+	if strings.Count(sql, "FROM top_vals") != 2 {
+		t.Errorf("expected 2 references to top_vals (one per sub-query), got %d", strings.Count(sql, "FROM top_vals"))
+	}
+
+	// Both sub-queries should have breakdown_0 in SELECT and GROUP BY.
+	if strings.Count(sql, "AS breakdown_0") < 3 {
+		t.Errorf("expected at least 3 breakdown_0 aliases (CTE + 2 sub-queries), got %d", strings.Count(sql, "AS breakdown_0"))
+	}
+
+	// CTE args: projectID, from, to, kind1, kind2, limit = 6
+	// Sub1 args: projectID, from, to, kind1 = 4
+	// Sub2 args: projectID, from, to, kind2 = 4
+	// Total = 14
+	if len(args) != 14 {
+		t.Fatalf("expected 14 args (CTE x6 + sub1 x4 + sub2 x4), got %d: %v", len(args), args)
+	}
+
+	// Verify the breakdown limit arg (int64(5)) is present.
+	found := false
+	for _, a := range args {
+		if a == int64(5) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected breakdown limit int64(5) in args, got: %v", args)
+	}
+}
+
+// TestSingleEventRetention verifies retention with a single event used as both cohort and return.
+func TestSingleEventRetention(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_WEEK,
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: "login"}},
+		},
+	}
+
+	sql, args, err := insights.BuildQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Retention structure: cohorts CTE + cohort_sizes CTE + retained CTE + main query.
+	if !strings.Contains(sql, "cohorts") {
+		t.Error("expected 'cohorts' CTE in SQL")
+	}
+	if !strings.Contains(sql, "retained") {
+		t.Error("expected 'retained' CTE in SQL")
+	}
+
+	// The same event kind should appear in both the cohorts CTE and the retained CTE.
+	// cohorts: kind = ? (start event)
+	// retained: e.kind = ? (return event, aliased)
+	if strings.Count(sql, "kind = ?") < 2 {
+		t.Errorf("expected kind condition in both cohorts and retained CTEs, got %d occurrences", strings.Count(sql, "kind = ?"))
+	}
+
+	// Granularity should be weekly.
+	if !strings.Contains(sql, "toStartOfWeek") {
+		t.Error("expected toStartOfWeek granularity in SQL")
+	}
+
+	// Args should include projectID and time range for both cohorts and retained CTEs,
+	// plus the kind arg for each.
+	// cohorts: projectID, from, to, kind = 4
+	// retained: projectID, from, to, kind = 4
+	// Total = 8
+	if len(args) != 8 {
+		t.Fatalf("expected 8 args (cohorts x4 + retained x4), got %d: %v", len(args), args)
+	}
+
+	// Both kind args should be "login".
+	kindCount := 0
+	for _, a := range args {
+		if a == "login" {
+			kindCount++
+		}
+	}
+	if kindCount != 2 {
+		t.Errorf("expected 2 'login' kind args (start + return), got %d", kindCount)
+	}
+}
+
+// TestGroupSeries_BreakdownMismatchError verifies that GroupSeries returns an error
+// when a row has fewer breakdowns than expected properties.
+func TestGroupSeries_BreakdownMismatchError(t *testing.T) {
+	rows := []insights.TrendRow{
+		{EventKind: "page_view", Breakdowns: []string{}, Value: 10},
+	}
+	if _, err := insights.GroupSeries(rows, []string{"$country"}); err == nil {
+		t.Error("expected error for mismatched breakdowns/properties")
 	}
 }

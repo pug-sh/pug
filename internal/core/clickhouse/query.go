@@ -9,7 +9,6 @@ import (
 type Condition struct {
 	sql  string
 	args []any
-	err  error
 }
 
 // SQL returns the condition SQL fragment.
@@ -24,12 +23,7 @@ func (c Condition) Args() []any {
 
 // IsZero reports whether the condition is a zero-value (should be skipped).
 func (c Condition) IsZero() bool {
-	return c.isZero()
-}
-
-// isZero reports whether the condition is a zero-value (should be skipped).
-func (c Condition) isZero() bool {
-	return c.sql == "" && c.err == nil
+	return c.sql == ""
 }
 
 // Eq returns a condition: col = ?
@@ -108,7 +102,7 @@ func When(ok bool, c Condition) Condition {
 func filterZero(conds []Condition) []Condition {
 	out := conds[:0:len(conds)]
 	for _, c := range conds {
-		if !c.isZero() {
+		if !c.IsZero() {
 			out = append(out, c)
 		}
 	}
@@ -166,7 +160,7 @@ func (q *Query) SelectExpr(expr string, args ...any) *Query {
 	return q
 }
 
-// From sets the FROM table.
+// From sets the FROM clause (table name, or a full FROM expression including JOINs).
 func (q *Query) From(table string) *Query {
 	q.from = table
 	return q
@@ -176,20 +170,20 @@ func (q *Query) From(table string) *Query {
 // Zero-value conditions are silently skipped.
 func (q *Query) Where(conds ...Condition) *Query {
 	for _, c := range conds {
-		if !c.isZero() {
+		if !c.IsZero() {
 			q.wheres = append(q.wheres, c)
 		}
 	}
 	return q
 }
 
-// GroupBy sets the GROUP BY columns.
+// GroupBy appends GROUP BY columns.
 func (q *Query) GroupBy(cols ...string) *Query {
 	q.groupBy = append(q.groupBy, cols...)
 	return q
 }
 
-// OrderBy sets the ORDER BY expressions.
+// OrderBy appends ORDER BY expressions.
 func (q *Query) OrderBy(exprs ...string) *Query {
 	q.orderBy = append(q.orderBy, exprs...)
 	return q
@@ -202,7 +196,11 @@ func (q *Query) Limit(n int64) *Query {
 }
 
 // With adds a named CTE. The sub-query's args are emitted before the main query's args.
+// Panics if sub is nil — pass a non-nil *Query or guard with a nil check before calling.
 func (q *Query) With(name string, sub *Query) *Query {
+	if sub == nil {
+		panic("clickhouse: With called with nil sub-query for CTE " + name)
+	}
 	q.ctes = append(q.ctes, cte{name: name, sub: sub})
 	return q
 }
@@ -248,9 +246,6 @@ func (q *Query) Build() (string, []any, error) {
 	// WHERE
 	active := filterZero(q.wheres)
 	for i, c := range active {
-		if c.err != nil {
-			return "", nil, c.err
-		}
 		if i == 0 {
 			sb.WriteString("WHERE ")
 		} else {
