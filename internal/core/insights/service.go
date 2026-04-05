@@ -205,7 +205,7 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	}
 
 	ttl := valuesCacheTTL
-	if len(values) < 100 { // matches LIMIT in buildPropertyValuesQuery
+	if len(values) < PropertyValuesLimit {
 		ttl = valuesExhaustedCacheTTL
 	}
 	if data, err := json.Marshal(values); err != nil {

@@ -245,7 +245,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 	// Soft-delete the source profile in CH when a merge occurred.
 	if deletedProfileID != "" {
-		if err := publishUpsert(ctx, natsClient, deletedProfileID, projectID, "", nil, true, time.Time{}, time.Time{}); err != nil {
+		if err := publishUpsert(ctx, natsClient, deletedProfileID, projectID, "", nil, true, time.Now(), time.Now()); err != nil {
 			return err
 		}
 	}

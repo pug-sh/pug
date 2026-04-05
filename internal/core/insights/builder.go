@@ -11,6 +11,10 @@ import (
 
 const DefaultPageSize int32 = 100
 
+// PropertyValuesLimit is the max distinct values returned by property-values queries.
+// Also used as the cache exhaustion threshold in Service.GetPropertyValues.
+const PropertyValuesLimit = 100
+
 // Typed query structs link builder output to the correct executor method at compile time.
 
 // TrendsQuery is the compiled SQL for a trends insight.
@@ -121,9 +125,10 @@ func BuildRetentionQuery(req *insightsv1.QueryRequest, projectID string) (Retent
 	return RetentionQuery{sql: sql, args: args}, nil
 }
 
-// BuildQuery builds a ClickHouse SQL query and positional args from a QueryRequest.
-// Prefer the type-specific builders (BuildTrendsQuery, BuildFunnelCountsQuery, etc.)
-// which provide compile-time safety between builder and executor.
+// Deprecated: BuildQuery builds a ClickHouse SQL query and positional args from a QueryRequest.
+// Use the type-specific builders (BuildTrendsQuery, BuildSegmentationQuery,
+// BuildFunnelCountsQuery, BuildFunnelTimingQuery, BuildRetentionQuery) which provide
+// compile-time safety between builder and executor.
 func BuildQuery(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	switch req.GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
@@ -147,6 +152,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	// Normalize: empty events → single unfiltered event with default aggregation.
 	if len(events) == 0 {
 		events = []*insightsv1.EventQuery{{
+			Event:       &commonv1.EventFilter{},
 			Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
 		}}
 	}
@@ -226,7 +232,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 		for _, f := range ev.GetEvent().GetFilters() {
 			cond, err := chq.PropertyCondition(f)
 			if err != nil {
-				return "", nil, err
+				return "", nil, fmt.Errorf("trends: events[%d]: %w", i, err)
 			}
 			query.Where(cond)
 		}
@@ -590,8 +596,7 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 }
 
 // BuildAutoPropertyValuesQuery returns a query for distinct auto-property values of a key over the last
-// 30 days. Uses DISTINCT + LIMIT 100 for early exit — no full aggregation, no insert overhead.
-// The limit must match the cache exhaustion threshold in service.go's GetPropertyValues.
+// 30 days. Uses DISTINCT + LIMIT for early exit — no full aggregation, no insert overhead.
 func BuildAutoPropertyValuesQuery(projectID, propertyKey, eventKind string) (string, []any, error) {
 	return buildPropertyValuesQuery(projectID, propertyKey, "auto_properties", eventKind)
 }
@@ -602,7 +607,6 @@ func BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind string) (s
 }
 
 // buildPropertyValuesQuery returns distinct values from mapCol for the given key over the last 30 days.
-// LIMIT 100 must match the cache exhaustion threshold in service.go's GetPropertyValues.
 func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) (string, []any, error) {
 	selectExpr := mapCol + `[?] AS value`
 	propertyNotEmptyClause := mapCol + `[?] != ''`
@@ -616,12 +620,13 @@ func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) 
 			chq.RawCond("occur_time >= now() - INTERVAL 30 DAY"),
 			chq.RawCond(propertyNotEmptyClause, propertyKey),
 		).
-		Limit(100).
+		Limit(int64(PropertyValuesLimit)).
 		Build()
 }
 
-// buildTopLevelFilterCondition builds filter groups into a single Condition.
-// alias is an optional table alias prefix for column references (empty = no prefix).
+// buildTopLevelFilterCondition builds filter groups into a single Condition
+// using And/Or composition. alias is an optional table alias prefix for column
+// references (empty = no prefix).
 func buildTopLevelFilterCondition(
 	groups []*insightsv1.FilterGroup,
 	groupsOp commonv1.LogicalOperator,
@@ -631,58 +636,39 @@ func buildTopLevelFilterCondition(
 		return chq.Condition{}, nil
 	}
 
-	groupClause, groupArgs, err := buildFilterGroupsClause(groups, groupsOp, alias)
-	if err != nil {
-		return chq.Condition{}, err
-	}
-	return chq.RawCond(groupClause, groupArgs...), nil
-}
-
-func buildFilterGroupsClause(groups []*insightsv1.FilterGroup, groupsOp commonv1.LogicalOperator, alias string) (string, []any, error) {
-	joinGroups := logicalJoin(groupsOp)
-
-	groupClauses := make([]string, 0, len(groups))
-	var args []any
+	groupConds := make([]chq.Condition, 0, len(groups))
 	for i, g := range groups {
-		clause, gArgs, err := buildSingleFilterGroupClause(g, alias)
+		cond, err := buildSingleFilterGroupCondition(g, alias)
 		if err != nil {
-			return "", nil, fmt.Errorf("filter_groups[%d]: %w", i, err)
+			return chq.Condition{}, fmt.Errorf("filter_groups[%d]: %w", i, err)
 		}
-		groupClauses = append(groupClauses, clause)
-		args = append(args, gArgs...)
+		groupConds = append(groupConds, cond)
 	}
 
-	return "(" + strings.Join(groupClauses, " "+joinGroups+" ") + ")", args, nil
+	if groupsOp == commonv1.LogicalOperator_LOGICAL_OPERATOR_OR {
+		return chq.Or(groupConds...), nil
+	}
+	return chq.And(groupConds...), nil
 }
 
-func buildSingleFilterGroupClause(group *insightsv1.FilterGroup, alias string) (string, []any, error) {
+func buildSingleFilterGroupCondition(group *insightsv1.FilterGroup, alias string) (chq.Condition, error) {
 	if len(group.GetFilters()) == 0 {
-		return "", nil, fmt.Errorf("group must contain at least one filter")
+		return chq.Condition{}, fmt.Errorf("group must contain at least one filter")
 	}
 
-	joinFilters := logicalJoin(group.GetOperator())
-	parts := make([]string, 0, len(group.GetFilters()))
-	var args []any
-
+	conds := make([]chq.Condition, 0, len(group.GetFilters()))
 	for j, f := range group.GetFilters() {
-		clause, fArgs, err := chq.FilterClauseAliased(f, alias)
+		cond, err := chq.PropertyConditionAliased(f, alias)
 		if err != nil {
-			return "", nil, fmt.Errorf("filters[%d]: %w", j, err)
+			return chq.Condition{}, fmt.Errorf("filters[%d]: %w", j, err)
 		}
-		parts = append(parts, clause)
-		args = append(args, fArgs...)
+		conds = append(conds, cond)
 	}
 
-	return "(" + strings.Join(parts, " "+joinFilters+" ") + ")", args, nil
-}
-
-func logicalJoin(op commonv1.LogicalOperator) string {
-	switch op {
-	case commonv1.LogicalOperator_LOGICAL_OPERATOR_OR:
-		return "OR"
-	default:
-		return "AND"
+	if group.GetOperator() == commonv1.LogicalOperator_LOGICAL_OPERATOR_OR {
+		return chq.Or(conds...), nil
 	}
+	return chq.And(conds...), nil
 }
 
 // BuildEventNamesQuery returns a query against event_names for event names with count and last_seen.

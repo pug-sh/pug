@@ -113,6 +113,12 @@ func PropertyCondition(f *commonv1.PropertyFilter) (Condition, error) {
 	return propertyCondition(f, "")
 }
 
+// PropertyConditionAliased builds a typed query Condition for a PropertyFilter,
+// prefixing column references with the given table alias.
+func PropertyConditionAliased(f *commonv1.PropertyFilter, alias string) (Condition, error) {
+	return propertyCondition(f, alias)
+}
+
 func propertyCondition(f *commonv1.PropertyFilter, alias string) (Condition, error) {
 	clause, args, err := filterClause(f, alias)
 	if err != nil {

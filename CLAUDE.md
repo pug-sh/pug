@@ -138,10 +138,11 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
 - Retention query semantics in `QueryRequest.events`:
   - `events[0]` = cohort/start event (required)
   - `events[1]` = return event (optional; defaults to `events[0]` when omitted)
-- Retention responses reuse `QueryResponse.series`:
-  - one series per cohort bucket
-  - `series.breakdown["cohort"]` stores the cohort timestamp (RFC3339)
-  - `series.points[].value` is retention percentage (`0..100`) across time buckets
+- Retention responses use `QueryResponse.retention` (a `RetentionResult`):
+  - one `RetentionCohort` per cohort bucket
+  - `RetentionCohort.cohort` stores the cohort timestamp (RFC3339)
+  - `RetentionCohort.cohort_size` stores the number of users in the cohort
+  - `RetentionCohort.points[].value` is retention percentage (`0..100`) across time buckets
 
 ### Event Enrichment
 

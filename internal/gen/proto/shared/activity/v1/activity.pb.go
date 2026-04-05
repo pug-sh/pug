@@ -644,20 +644,21 @@ var File_shared_activity_v1_activity_proto protoreflect.FileDescriptor
 
 const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\n" +
-	"!shared/activity/v1/activity.proto\x12\x12shared.activity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xde\x02\n" +
+	"!shared/activity/v1/activity.proto\x12\x12shared.activity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb6\x04\n" +
 	"\x16GetActivityFeedRequest\x12(\n" +
 	"\vdistinct_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"distinctId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x123\n" +
 	"\n" +
-	"time_range\x18\x03 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12D\n" +
-	"\x10property_filters\x18\x04 \x03(\v2\x19.common.v1.PropertyFilterR\x0fpropertyFilters\x12'\n" +
+	"time_range\x18\x03 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12N\n" +
+	"\x10property_filters\x18\x04 \x03(\v2\x19.common.v1.PropertyFilterB\b\xbaH\x05\x92\x01\x02\x10\x14R\x0fpropertyFilters\x12'\n" +
 	"\tpage_size\x18\x05 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x06 \x01(\tR\tpageToken\x128\n" +
-	"\x06events\x18\a \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events\"\xc1\x02\n" +
+	"\x06events\x18\a \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events:\xcb\x01\xbaH\xc7\x01\x1a\xc4\x01\n" +
+	"'activity_feed.events_non_empty_in_multi\x12Eeach event filter must specify a kind or at least one property filter\x1aRthis.events.size() <= 1|| this.events.all(e, e.kind != '' || e.filters.size() > 0)\"\xc1\x02\n" +
 	"\rActivityEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1f\n" +
@@ -671,20 +672,21 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\x11custom_properties\x18\a \x01(\v2\x17.google.protobuf.StructR\x10customProperties\"|\n" +
 	"\x17GetActivityFeedResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xd6\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xaf\x04\n" +
 	"\x17GetEventExplorerRequest\x12\x1f\n" +
 	"\vdistinct_id\x18\x01 \x01(\tR\n" +
 	"distinctId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x123\n" +
 	"\n" +
-	"time_range\x18\x03 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12D\n" +
-	"\x10property_filters\x18\x04 \x03(\v2\x19.common.v1.PropertyFilterR\x0fpropertyFilters\x12'\n" +
+	"time_range\x18\x03 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12N\n" +
+	"\x10property_filters\x18\x04 \x03(\v2\x19.common.v1.PropertyFilterB\b\xbaH\x05\x92\x01\x02\x10\x14R\x0fpropertyFilters\x12'\n" +
 	"\tpage_size\x18\x05 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x06 \x01(\tR\tpageToken\x128\n" +
-	"\x06events\x18\a \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events\"}\n" +
+	"\x06events\x18\a \x03(\v2\x16.common.v1.EventFilterB\b\xbaH\x05\x92\x01\x02\x102R\x06events:\xcc\x01\xbaH\xc8\x01\x1a\xc5\x01\n" +
+	"(event_explorer.events_non_empty_in_multi\x12Eeach event filter must specify a kind or at least one property filter\x1aRthis.events.size() <= 1|| this.events.all(e, e.kind != '' || e.filters.size() > 0)\"}\n" +
 	"\x18GetEventExplorerResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"Q\n" +

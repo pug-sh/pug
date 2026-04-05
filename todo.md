@@ -46,4 +46,4 @@
 
 - [ ] Log errors at source — executor `Query*` methods wrap errors with `fmt.Errorf` but don't log; handlers log downstream. Move logging into executor, remove duplicate logging from handlers.
 - [ ] Worker test coverage — `identify`, `register`, `upsert` workers have zero tests. Requires extracting interfaces for `profiles.Worker` dependencies (`dbread.Queries`, `dbwrite.Queries`, `pgxpool.Pool`) to enable mocking.
-- [ ] Typed query results — `BuildQuery` returns `(string, []any, error)` erasing insight type. Consider returning typed structs (e.g., `TrendsQuery`, `FunnelQuery`) to prevent scan mismatches between builder and executor.
+- [x] Typed query results — `BuildTrendsQuery`, `BuildFunnelCountsQuery`, etc. return typed structs with compile-time safety between builder and executor.

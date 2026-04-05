@@ -26,12 +26,71 @@ message QueryRequest {
       "&& this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION)"
       "|| this.events.size() > 0"
   };
-  InsightType insight_type = 1 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
+  option (buf.validate.message).cel = {
+    id: "query_request.funnel_only_conversion_window"
+    message: "conversion_window_seconds is only valid for funnel insight type"
+    expression:
+      "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
+      "|| this.conversion_window_seconds == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "query_request.funnel_only_step_timing"
+    message: "include_step_timing is only valid for funnel insight type"
+    expression:
+      "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
+      "|| !this.include_step_timing"
+  };
+
+  // Breakdowns are only meaningful for trends (top-N bucketing + $others).
+  // Other insight types ignore them silently — reject at the boundary instead.
+  option (buf.validate.message).cel = {
+    id: "query_request.trends_only_breakdowns"
+    message: "breakdowns are only supported for trends insight type"
+    expression:
+      "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS"
+      "|| this.breakdowns.size() == 0"
+  };
+
+  // breakdown_limit without breakdowns is a no-op — likely a client mistake.
+  option (buf.validate.message).cel = {
+    id: "query_request.breakdown_limit_requires_breakdowns"
+    message: "breakdown_limit requires at least one breakdown"
+    expression: "this.breakdown_limit == 0 || this.breakdowns.size() > 0"
+  };
+
+  // Retention uses events[0] as start event and events[1] as return event.
+  // Additional events are silently ignored — cap at 2 to surface the mistake.
+  option (buf.validate.message).cel = {
+    id: "query_request.retention_max_events"
+    message: "retention supports at most 2 events (start event and optional return event)"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION"
+      "|| this.events.size() <= 2"
+  };
+
+  // Cap funnel steps to avoid expensive windowFunnel() queries.
+  option (buf.validate.message).cel = {
+    id: "query_request.funnel_max_steps"
+    message: "funnel supports at most 20 steps"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
+      "|| this.events.size() <= 20"
+  };
+  InsightType insight_type = 1 [(buf.validate.field) = {
+    required: true
+    enum: {defined_only: true}
+  }];
   common.v1.TimeRange time_range = 2 [(buf.validate.field).required = true];
-  Granularity granularity = 3 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
+  Granularity granularity = 3 [(buf.validate.field) = {
+    required: true
+    enum: {defined_only: true}
+  }];
   repeated EventQuery events = 4;
   repeated Breakdown breakdowns = 6 [(buf.validate.field).repeated.max_items = 5];
-  int32 breakdown_limit = 7 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  int32 breakdown_limit = 7 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
   reserved 5;
 
   // Optional grouped filters for top-level conditions.
@@ -64,7 +123,10 @@ message QueryResponse {
 message SegmentUsersRequest {
   common.v1.TimeRange time_range = 1 [(buf.validate.field).required = true];
   repeated EventQuery events = 2 [(buf.validate.field).repeated.min_items = 1];
-  int32 page_size = 4 [(buf.validate.field).int32 = {gte: 0, lte: 1000}];
+  int32 page_size = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
   string page_token = 5;
   reserved 3;
 
@@ -114,7 +176,10 @@ message EventQuery {
 }
 
 message Breakdown {
-  string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
+  string property = 1 [(buf.validate.field) = {
+    required: true
+    string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}
+  }];
 }
 
 // TrendsResult contains one TrendSeries per (event_kind, breakdown) combination.
@@ -167,9 +232,17 @@ message DataPoint {
 }
 
 message GetPropertyValuesRequest {
-  string property_key            = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
-  common.v1.PropertySource source = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
-  string event_kind              = 3 [(buf.validate.field) = {string: {pattern: "^[a-zA-Z0-9_.-]*$"}}];
+  string property_key = 1 [(buf.validate.field) = {
+    required: true
+    string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}
+  }];
+  common.v1.PropertySource source = 2 [(buf.validate.field) = {
+    required: true
+    enum: {defined_only: true}
+  }];
+  string event_kind = 3 [(buf.validate.field) = {
+    string: {pattern: "^[a-zA-Z0-9_.-]*$"}
+  }];
 }
 
 message GetPropertyValuesResponse {
@@ -177,12 +250,14 @@ message GetPropertyValuesResponse {
 }
 
 message GetFilterSchemaRequest {
-  string event_kind = 1 [(buf.validate.field) = {string: {pattern: "^[a-zA-Z0-9_.-]*$"}}];
+  string event_kind = 1 [(buf.validate.field) = {
+    string: {pattern: "^[a-zA-Z0-9_.-]*$"}
+  }];
 }
 
 message GetFilterSchemaResponse {
-  repeated common.v1.EventNameMeta   events               = 1;
-  repeated common.v1.PropertyKeyMeta auto_property_keys   = 2;
+  repeated common.v1.EventNameMeta events = 1;
+  repeated common.v1.PropertyKeyMeta auto_property_keys = 2;
   repeated common.v1.PropertyKeyMeta custom_property_keys = 3;
-  repeated string                    profile_property_keys = 4;
+  repeated string profile_property_keys = 4;
 }
