@@ -149,6 +149,52 @@ type EventExplorerParams struct {
 	PageToken       *ActivityFeedCursor
 }
 
+func normalizePageSize(pageSize int32) int32 {
+	if pageSize <= 0 {
+		return DefaultPageSize
+	}
+	if pageSize > MaxPageSize {
+		return MaxPageSize
+	}
+	return pageSize
+}
+
+func applyCommonEventFilters(
+	q *chq.Query,
+	timeRange *commonv1.TimeRange,
+	propertyFilters []*commonv1.PropertyFilter,
+	pageToken *ActivityFeedCursor,
+) error {
+	// NOTE: From/To are guaranteed non-nil by proto validation (required fields + validate interceptor).
+	// If called outside the RPC chain, callers must ensure From and To are set.
+	if timeRange != nil {
+		q.Where(
+			chq.Gte("occur_time", timeRange.GetFrom().AsTime()),
+			chq.Lt("occur_time", timeRange.GetTo().AsTime()),
+		)
+	}
+
+	for _, f := range propertyFilters {
+		cond, err := chq.PropertyCondition(f)
+		if err != nil {
+			return err
+		}
+		q.Where(cond)
+	}
+
+	if pageToken != nil {
+		q.Where(chq.Or(
+			chq.Lt("occur_time", pageToken.OccurTime),
+			chq.And(
+				chq.Eq("occur_time", pageToken.OccurTime),
+				chq.Lt("event_id", pageToken.EventID),
+			),
+		))
+	}
+
+	return nil
+}
+
 // GetEventExplorer returns a paginated, filtered list of events across all users in a project.
 // It does not resolve aliases. Pagination is cursor-based on (occur_time DESC, event_id DESC).
 // PageSize defaults to 100 and is capped at 1000. A nil returned cursor means no more pages.
@@ -168,40 +214,11 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 			chq.When(params.SessionID != "", chq.Eq("session_id", params.SessionID)),
 		)
 
-	// NOTE: From/To are guaranteed non-nil by proto validation (required fields + validate interceptor).
-	// If called outside the RPC chain, callers must ensure From and To are set.
-	if params.TimeRange != nil {
-		q.Where(
-			chq.Gte("occur_time", params.TimeRange.GetFrom().AsTime()),
-			chq.Lt("occur_time", params.TimeRange.GetTo().AsTime()),
-		)
+	if err := applyCommonEventFilters(q, params.TimeRange, params.PropertyFilters, params.PageToken); err != nil {
+		return nil, nil, fmt.Errorf("GetEventExplorer: %w: %w", ErrInvalidFilter, err)
 	}
 
-	for _, f := range params.PropertyFilters {
-		cond, err := chq.PropertyCondition(f)
-		if err != nil {
-			return nil, nil, fmt.Errorf("GetEventExplorer: %w: %w", ErrInvalidFilter, err)
-		}
-		q.Where(cond)
-	}
-
-	if params.PageToken != nil {
-		q.Where(chq.Or(
-			chq.Lt("occur_time", params.PageToken.OccurTime),
-			chq.And(
-				chq.Eq("occur_time", params.PageToken.OccurTime),
-				chq.Lt("event_id", params.PageToken.EventID),
-			),
-		))
-	}
-
-	pageSize := params.PageSize
-	if pageSize <= 0 {
-		pageSize = DefaultPageSize
-	}
-	if pageSize > MaxPageSize {
-		pageSize = MaxPageSize
-	}
+	pageSize := normalizePageSize(params.PageSize)
 
 	sql, args, err := q.OrderBy("occur_time DESC", "event_id DESC").Limit(int64(pageSize)).Build()
 	if err != nil {
@@ -287,41 +304,11 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 			chq.When(params.SessionID != "", chq.Eq("session_id", params.SessionID)),
 		)
 
-	// NOTE: From/To are guaranteed non-nil by proto validation (required fields + validate interceptor).
-	// If called outside the RPC chain, callers must ensure From and To are set — nil values
-	// silently resolve to epoch time (1970-01-01) via protobuf's AsTime() nil-receiver behavior.
-	if params.TimeRange != nil {
-		q.Where(
-			chq.Gte("occur_time", params.TimeRange.GetFrom().AsTime()),
-			chq.Lt("occur_time", params.TimeRange.GetTo().AsTime()),
-		)
+	if err := applyCommonEventFilters(q, params.TimeRange, params.PropertyFilters, params.PageToken); err != nil {
+		return nil, nil, fmt.Errorf("GetActivityFeed: %w: %w", ErrInvalidFilter, err)
 	}
 
-	for _, f := range params.PropertyFilters {
-		cond, err := chq.PropertyCondition(f)
-		if err != nil {
-			return nil, nil, fmt.Errorf("GetActivityFeed: %w: %w", ErrInvalidFilter, err)
-		}
-		q.Where(cond)
-	}
-
-	if params.PageToken != nil {
-		q.Where(chq.Or(
-			chq.Lt("occur_time", params.PageToken.OccurTime),
-			chq.And(
-				chq.Eq("occur_time", params.PageToken.OccurTime),
-				chq.Lt("event_id", params.PageToken.EventID),
-			),
-		))
-	}
-
-	pageSize := params.PageSize
-	if pageSize <= 0 {
-		pageSize = DefaultPageSize
-	}
-	if pageSize > MaxPageSize {
-		pageSize = MaxPageSize
-	}
+	pageSize := normalizePageSize(params.PageSize)
 
 	sql, args, err := q.OrderBy("occur_time DESC", "event_id DESC").Limit(int64(pageSize)).Build()
 	if err != nil {

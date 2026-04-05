@@ -124,6 +124,13 @@ func EventCondition(events []*commonv1.EventFilter) (Condition, error) {
 }
 
 func singleEventCondition(ev *commonv1.EventFilter, idx int, wrap bool) (Condition, error) {
+	if ev == nil {
+		if idx >= 0 {
+			return Condition{}, fmt.Errorf("event[%d]: event filter is nil", idx)
+		}
+		return Condition{}, fmt.Errorf("event filter is nil")
+	}
+
 	parts := make([]string, 0, 1+len(ev.GetFilters()))
 	var args []any
 	if ev.GetKind() != "" {

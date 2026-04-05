@@ -404,6 +404,19 @@ func TestWriteEventFilterCondition_SingleEmptyFilter(t *testing.T) {
 	}
 }
 
+func TestWriteEventFilterCondition_SingleNilEvent(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{nil})
+	if err == nil {
+		t.Fatal("expected error for nil EventFilter")
+	}
+	if !strings.Contains(err.Error(), "event filter is nil") {
+		t.Errorf("expected nil event filter error, got: %v", err)
+	}
+}
+
 func TestWriteEventFilterCondition_MultipleEvents(t *testing.T) {
 	var sb strings.Builder
 	var args []any
@@ -440,6 +453,22 @@ func TestWriteEventFilterCondition_MultipleWithEmptyFilter(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for empty EventFilter in multi-event list")
+	}
+	if !strings.Contains(err.Error(), "event[1]") {
+		t.Errorf("expected error to include event index, got: %v", err)
+	}
+}
+
+func TestWriteEventFilterCondition_MultipleWithNilEvent(t *testing.T) {
+	var sb strings.Builder
+	var args []any
+
+	err := clickhouse.WriteEventFilterCondition(&sb, &args, []*commonv1.EventFilter{
+		{Kind: "page_view"},
+		nil,
+	})
+	if err == nil {
+		t.Fatal("expected error for nil EventFilter in multi-event list")
 	}
 	if !strings.Contains(err.Error(), "event[1]") {
 		t.Errorf("expected error to include event index, got: %v", err)
