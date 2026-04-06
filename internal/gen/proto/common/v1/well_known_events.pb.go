@@ -7,6 +7,7 @@
 package commonv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -1273,7 +1274,7 @@ var File_common_v1_well_known_events_proto protoreflect.FileDescriptor
 
 const file_common_v1_well_known_events_proto_rawDesc = "" +
 	"\n" +
-	"!common/v1/well_known_events.proto\x12\tcommon.v1\"\x14\n" +
+	"!common/v1/well_known_events.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\"\x14\n" +
 	"\x12PageViewProperties\"y\n" +
 	"\x0fClickProperties\x12\x14\n" +
 	"\x05class\x18\x01 \x01(\tR\x05class\x12\x0e\n" +
@@ -1281,9 +1282,9 @@ const file_common_v1_well_known_events_proto_rawDesc = "" +
 	"\x03tag\x18\x03 \x01(\tR\x03tag\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\x12\f\n" +
 	"\x01x\x18\x05 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x06 \x01(\x05R\x01y\"l\n" +
-	"\x13RageClickProperties\x12\x1f\n" +
-	"\vclick_count\x18\x01 \x01(\x05R\n" +
+	"\x01y\x18\x06 \x01(\x05R\x01y\"u\n" +
+	"\x13RageClickProperties\x12(\n" +
+	"\vclick_count\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02(\x02R\n" +
 	"clickCount\x12\x18\n" +
 	"\aelement\x18\x02 \x01(\tR\aelement\x12\f\n" +
 	"\x01x\x18\x03 \x01(\x05R\x01x\x12\f\n" +
@@ -1292,67 +1293,71 @@ const file_common_v1_well_known_events_proto_rawDesc = "" +
 	"\aelement\x18\x01 \x01(\tR\aelement\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12\f\n" +
 	"\x01x\x18\x03 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x04 \x01(\x05R\x01y\"G\n" +
-	"\x10ScrollProperties\x12\x18\n" +
-	"\apercent\x18\x01 \x01(\x05R\apercent\x12\x19\n" +
-	"\bscroll_y\x18\x02 \x01(\x05R\ascrollY\"(\n" +
-	"\x10SearchProperties\x12\x14\n" +
-	"\x05query\x18\x01 \x01(\tR\x05query\"h\n" +
-	"\x13AddToCartProperties\x12\x1d\n" +
+	"\x01y\x18\x04 \x01(\x05R\x01y\"[\n" +
+	"\x10ScrollProperties\x12#\n" +
+	"\apercent\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\apercent\x12\"\n" +
+	"\bscroll_y\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\ascrollY\"0\n" +
+	"\x10SearchProperties\x12\x1c\n" +
+	"\x05query\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05query\"\x87\x02\n" +
+	"\x13AddToCartProperties\x12%\n" +
 	"\n" +
-	"product_id\x18\x01 \x01(\tR\tproductId\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x01R\x06amount\x12\x1a\n" +
-	"\bcurrency\x18\x03 \x01(\tR\bcurrency\"n\n" +
-	"\x19CheckoutStartedProperties\x12\x1d\n" +
+	"product_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tproductId\x12&\n" +
+	"\x06amount\x18\x02 \x01(\x01B\x0e\xbaH\v\x12\t!\x00\x00\x00\x00\x00\x00\x00\x00R\x06amount\x12$\n" +
+	"\bcurrency\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x03R\bcurrency:{\xbaHx\x1av\n" +
+	" add_to_cart.currency_with_amount\x12'currency is required when amount is set\x1a)this.amount == 0.0 || this.currency != ''\"\x93\x02\n" +
+	"\x19CheckoutStartedProperties\x12%\n" +
 	"\n" +
-	"product_id\x18\x01 \x01(\tR\tproductId\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x01R\x06amount\x12\x1a\n" +
-	"\bcurrency\x18\x03 \x01(\tR\bcurrency\"p\n" +
-	"\x1bCheckoutCompletedProperties\x12\x1d\n" +
+	"product_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tproductId\x12&\n" +
+	"\x06amount\x18\x02 \x01(\x01B\x0e\xbaH\v\x12\t!\x00\x00\x00\x00\x00\x00\x00\x00R\x06amount\x12$\n" +
+	"\bcurrency\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x03R\bcurrency:\x80\x01\xbaH}\x1a{\n" +
+	"%checkout_started.currency_with_amount\x12'currency is required when amount is set\x1a)this.amount == 0.0 || this.currency != ''\"\x97\x02\n" +
+	"\x1bCheckoutCompletedProperties\x12%\n" +
 	"\n" +
-	"product_id\x18\x01 \x01(\tR\tproductId\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x01R\x06amount\x12\x1a\n" +
-	"\bcurrency\x18\x03 \x01(\tR\bcurrency\"g\n" +
-	"\x12PurchaseProperties\x12\x1d\n" +
+	"product_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tproductId\x12&\n" +
+	"\x06amount\x18\x02 \x01(\x01B\x0e\xbaH\v\x12\t!\x00\x00\x00\x00\x00\x00\x00\x00R\x06amount\x12$\n" +
+	"\bcurrency\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x03R\bcurrency:\x82\x01\xbaH\x7f\x1a}\n" +
+	"'checkout_completed.currency_with_amount\x12'currency is required when amount is set\x1a)this.amount == 0.0 || this.currency != ''\"\x83\x02\n" +
+	"\x12PurchaseProperties\x12%\n" +
 	"\n" +
-	"product_id\x18\x01 \x01(\tR\tproductId\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x01R\x06amount\x12\x1a\n" +
-	"\bcurrency\x18\x03 \x01(\tR\bcurrency\"K\n" +
-	"\x13FormStartProperties\x12\x17\n" +
-	"\aform_id\x18\x01 \x01(\tR\x06formId\x12\x1b\n" +
-	"\tform_name\x18\x02 \x01(\tR\bformName\"d\n" +
+	"product_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tproductId\x12&\n" +
+	"\x06amount\x18\x02 \x01(\x01B\x0e\xbaH\v\x12\t!\x00\x00\x00\x00\x00\x00\x00\x00R\x06amount\x12$\n" +
+	"\bcurrency\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x03R\bcurrency:x\xbaHu\x1as\n" +
+	"\x1dpurchase.currency_with_amount\x12'currency is required when amount is set\x1a)this.amount == 0.0 || this.currency != ''\"S\n" +
+	"\x13FormStartProperties\x12\x1f\n" +
+	"\aform_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x06formId\x12\x1b\n" +
+	"\tform_name\x18\x02 \x01(\tR\bformName\"l\n" +
 	"\x14FormSubmitProperties\x12\x16\n" +
-	"\x06action\x18\x01 \x01(\tR\x06action\x12\x17\n" +
-	"\aform_id\x18\x02 \x01(\tR\x06formId\x12\x1b\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\x12\x1f\n" +
+	"\aform_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x06formId\x12\x1b\n" +
 	"\tform_name\x18\x03 \x01(\tR\bformName\"\x12\n" +
 	"\x10SignupProperties\"\x11\n" +
 	"\x0fLoginProperties\"\x12\n" +
 	"\x10LogoutProperties\"\x13\n" +
 	"\x11AppOpenProperties\"\x14\n" +
-	"\x12AppCloseProperties\"n\n" +
-	"\x1eNotificationReceivedProperties\x12\x1f\n" +
-	"\vcampaign_id\x18\x01 \x01(\tR\n" +
+	"\x12AppCloseProperties\"v\n" +
+	"\x1eNotificationReceivedProperties\x12'\n" +
+	"\vcampaign_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"campaignId\x12+\n" +
-	"\x11notification_type\x18\x02 \x01(\tR\x10notificationType\"m\n" +
-	"\x1dNotificationClickedProperties\x12\x1f\n" +
-	"\vcampaign_id\x18\x01 \x01(\tR\n" +
+	"\x11notification_type\x18\x02 \x01(\tR\x10notificationType\"u\n" +
+	"\x1dNotificationClickedProperties\x12'\n" +
+	"\vcampaign_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"campaignId\x12+\n" +
-	"\x11notification_type\x18\x02 \x01(\tR\x10notificationType\"o\n" +
-	"\x1fNotificationDismissedProperties\x12\x1f\n" +
-	"\vcampaign_id\x18\x01 \x01(\tR\n" +
+	"\x11notification_type\x18\x02 \x01(\tR\x10notificationType\"w\n" +
+	"\x1fNotificationDismissedProperties\x12'\n" +
+	"\vcampaign_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"campaignId\x12+\n" +
-	"\x11notification_type\x18\x02 \x01(\tR\x10notificationType\"O\n" +
-	"\x13VideoPlayProperties\x12\x19\n" +
-	"\bvideo_id\x18\x01 \x01(\tR\avideoId\x12\x1d\n" +
+	"\x11notification_type\x18\x02 \x01(\tR\x10notificationType\"`\n" +
+	"\x13VideoPlayProperties\x12!\n" +
+	"\bvideo_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\avideoId\x12&\n" +
 	"\n" +
-	"position_s\x18\x02 \x01(\x05R\tpositionS\"P\n" +
-	"\x14VideoPauseProperties\x12\x19\n" +
-	"\bvideo_id\x18\x01 \x01(\tR\avideoId\x12\x1d\n" +
+	"position_s\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\tpositionS\"a\n" +
+	"\x14VideoPauseProperties\x12!\n" +
+	"\bvideo_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\avideoId\x12&\n" +
 	"\n" +
-	"position_s\x18\x02 \x01(\x05R\tpositionS\"8\n" +
-	"\x17ErrorOccurredProperties\x12\x1d\n" +
+	"position_s\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\tpositionS\"@\n" +
+	"\x17ErrorOccurredProperties\x12%\n" +
 	"\n" +
-	"error_code\x18\x01 \x01(\tR\terrorCode\"\x11\n" +
+	"error_code\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\terrorCode\"\x11\n" +
 	"\x0fSharePropertiesBIZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (

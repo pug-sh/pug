@@ -1,6 +1,8 @@
 edition = "2023";
 package common.v1;
 
+import "buf/validate/validate.proto";
+
 option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1";
 
@@ -31,7 +33,7 @@ message ClickProperties {
 
 // kind: "rage_click"
 message RageClickProperties {
-  int32 click_count = 1;
+  int32 click_count = 1 [(buf.validate.field).int32.gte = 2];
   string element = 2;
   int32 x = 3;
   int32 y = 4;
@@ -47,57 +49,80 @@ message DeadClickProperties {
 
 // kind: "scroll"
 message ScrollProperties {
-  int32 percent = 1;
-  int32 scroll_y = 2;
+  int32 percent = 1 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+  int32 scroll_y = 2 [(buf.validate.field).int32.gte = 0];
 }
 
 // Commerce events ────────────────────────────────────────────────────────────
 
 // kind: "search"
 message SearchProperties {
-  string query = 1;
+  string query = 1 [(buf.validate.field).required = true];
 }
 
 // kind: "add_to_cart"
 message AddToCartProperties {
-  string product_id = 1;
-  double amount = 2;
-  string currency = 3;
+  option (buf.validate.message).cel = {
+    id: "add_to_cart.currency_with_amount"
+    message: "currency is required when amount is set"
+    expression: "this.amount == 0.0 || this.currency != ''"
+  };
+  string product_id = 1 [(buf.validate.field).required = true];
+  double amount = 2 [(buf.validate.field).double.gt = 0];
+  string currency = 3 [(buf.validate.field).string.len = 3];
 }
 
 // kind: "checkout_started"
 message CheckoutStartedProperties {
-  string product_id = 1;
-  double amount = 2;
-  string currency = 3;
+  option (buf.validate.message).cel = {
+    id: "checkout_started.currency_with_amount"
+    message: "currency is required when amount is set"
+    expression: "this.amount == 0.0 || this.currency != ''"
+  };
+  string product_id = 1 [(buf.validate.field).required = true];
+  double amount = 2 [(buf.validate.field).double.gt = 0];
+  string currency = 3 [(buf.validate.field).string.len = 3];
 }
 
 // kind: "checkout_completed"
 message CheckoutCompletedProperties {
-  string product_id = 1;
-  double amount = 2;
-  string currency = 3;
+  option (buf.validate.message).cel = {
+    id: "checkout_completed.currency_with_amount"
+    message: "currency is required when amount is set"
+    expression: "this.amount == 0.0 || this.currency != ''"
+  };
+  string product_id = 1 [(buf.validate.field).required = true];
+  double amount = 2 [(buf.validate.field).double.gt = 0];
+  string currency = 3 [(buf.validate.field).string.len = 3];
 }
 
 // kind: "purchase"
 message PurchaseProperties {
-  string product_id = 1;
-  double amount = 2;
-  string currency = 3;
+  option (buf.validate.message).cel = {
+    id: "purchase.currency_with_amount"
+    message: "currency is required when amount is set"
+    expression: "this.amount == 0.0 || this.currency != ''"
+  };
+  string product_id = 1 [(buf.validate.field).required = true];
+  double amount = 2 [(buf.validate.field).double.gt = 0];
+  string currency = 3 [(buf.validate.field).string.len = 3];
 }
 
 // Form events ────────────────────────────────────────────────────────────────
 
 // kind: "form_start"
 message FormStartProperties {
-  string form_id = 1;
+  string form_id = 1 [(buf.validate.field).required = true];
   string form_name = 2;
 }
 
 // kind: "form_submit"
 message FormSubmitProperties {
   string action = 1;
-  string form_id = 2;
+  string form_id = 2 [(buf.validate.field).required = true];
   string form_name = 3;
 }
 
@@ -124,19 +149,19 @@ message AppCloseProperties {}
 
 // kind: "notification_received"
 message NotificationReceivedProperties {
-  string campaign_id = 1;
+  string campaign_id = 1 [(buf.validate.field).required = true];
   string notification_type = 2;
 }
 
 // kind: "notification_clicked"
 message NotificationClickedProperties {
-  string campaign_id = 1;
+  string campaign_id = 1 [(buf.validate.field).required = true];
   string notification_type = 2;
 }
 
 // kind: "notification_dismissed"
 message NotificationDismissedProperties {
-  string campaign_id = 1;
+  string campaign_id = 1 [(buf.validate.field).required = true];
   string notification_type = 2;
 }
 
@@ -144,21 +169,21 @@ message NotificationDismissedProperties {
 
 // kind: "video_play"
 message VideoPlayProperties {
-  string video_id = 1;
-  int32 position_s = 2;
+  string video_id = 1 [(buf.validate.field).required = true];
+  int32 position_s = 2 [(buf.validate.field).int32.gte = 0];
 }
 
 // kind: "video_pause"
 message VideoPauseProperties {
-  string video_id = 1;
-  int32 position_s = 2;
+  string video_id = 1 [(buf.validate.field).required = true];
+  int32 position_s = 2 [(buf.validate.field).int32.gte = 0];
 }
 
 // Error events ───────────────────────────────────────────────────────────────
 
 // kind: "error_occurred"
 message ErrorOccurredProperties {
-  string error_code = 1;
+  string error_code = 1 [(buf.validate.field).required = true];
 }
 
 // Social events ──────────────────────────────────────────────────────────────
