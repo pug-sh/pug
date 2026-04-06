@@ -37,4 +37,3 @@ message ProfileIdentifyMessage {
   string profile_id = 2;
   string project_id = 3;
 }
-

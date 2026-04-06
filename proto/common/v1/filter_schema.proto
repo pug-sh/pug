@@ -8,19 +8,19 @@ option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/common/v1;c
 
 enum PropertySource {
   PROPERTY_SOURCE_UNSPECIFIED = 0;
-  PROPERTY_SOURCE_AUTO        = 1;
-  PROPERTY_SOURCE_CUSTOM      = 2;
-  PROPERTY_SOURCE_PROFILE     = 3;
+  PROPERTY_SOURCE_AUTO = 1;
+  PROPERTY_SOURCE_CUSTOM = 2;
+  PROPERTY_SOURCE_PROFILE = 3;
 }
 
 message EventNameMeta {
-  string name                            = 1;
-  uint64 count                           = 2;
+  string name = 1;
+  uint64 count = 2;
   google.protobuf.Timestamp last_seen_at = 3;
 }
 
 message PropertyKeyMeta {
-  string name                            = 1;
-  uint64 count                           = 2;
+  string name = 1;
+  uint64 count = 2;
   google.protobuf.Timestamp last_seen_at = 3;
 }
