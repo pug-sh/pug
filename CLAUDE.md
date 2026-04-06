@@ -123,6 +123,27 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
 - **`proto/shared/`** — private API key or JWT (e.g., campaigns, delivery, profiles read/delete)
 - **`proto/common/v1/`** — shared message types with no service definitions, accessible from any auth level. Only put types here if they are needed across auth boundaries. If a message is only used behind private key + JWT, it belongs in `shared/`.
 
+### Insights Filter Model
+
+- Top-level insights filters are **group-based only**. In `shared.insights.v1`, use `filter_groups` and `filter_groups_operator` on `QueryRequest` and `SegmentUsersRequest`.
+- Legacy top-level `filters` fields are removed/reserved in `proto/shared/insights/v1/insights.proto`. Do not reintroduce them.
+- Group semantics:
+  - Within a group, conditions are combined using `FilterGroup.operator` (`AND` by default when unspecified).
+  - Between groups, conditions are combined using `filter_groups_operator` (`AND` by default when unspecified).
+- Per-event filters remain on `EventQuery.event.filters` and are independent of top-level filter groups.
+
+### Retention Insight
+
+- `shared.insights.v1.InsightType` supports `INSIGHT_TYPE_RETENTION`.
+- Retention query semantics in `QueryRequest.events`:
+  - `events[0]` = cohort/start event (required)
+  - `events[1]` = return event (optional; defaults to `events[0]` when omitted)
+- Retention responses use `QueryResponse.retention` (a `RetentionResult`):
+  - one `RetentionCohort` per cohort bucket
+  - `RetentionCohort.cohort` stores the cohort timestamp (RFC3339)
+  - `RetentionCohort.cohort_size` stores the number of users in the cohort
+  - `RetentionCohort.points[].value` is retention percentage (`0..100`) across time buckets
+
 ### Event Enrichment
 
 Incoming events are enriched with auto-properties before being published to NATS:
@@ -140,6 +161,13 @@ Profiles store properties as a single JSONB field (`properties`) rather than sep
 - **Dedup key (ORDER BY):** `(project_id, toStartOfMinute(occur_time), kind, event_id)` — minute granularity matches the finest time resolution dashboards use (per-minute charts). Full-precision `occur_time` is stored in the column.
 - **Partitioning:** `PARTITION BY toYYYYMM(occur_time)` — ReplacingMergeTree **never** deduplicates across partitions.
 - **occur_time stability:** `occur_time` is required (enforced by proto validation). Clients must send a stable value on retries — a different value that crosses a minute boundary lands in a different sort-key bucket (dedup fails); if it crosses a month boundary it lands in a different partition (permanent duplicate).
+
+### ClickHouse Query Builder Conventions
+
+- Prefer `internal/core/clickhouse` query builder for ClickHouse query construction in core packages (`insights`, `events`, filters-related query helpers).
+- Use parameterized limits (`LIMIT ?`) through `Query.Limit(...)` and pass `int64` values consistently.
+- Use `RawCond(...)` only for expression-level fragments that are awkward to model otherwise (for example `occur_time >= now() - INTERVAL 30 DAY` or `IN ?` tuple bindings). Keep full query structure (`SELECT/FROM/WHERE/GROUP/ORDER/LIMIT`) in the builder.
+- For property-values query helpers, query builder methods now return build errors; callers must propagate those errors instead of relying on raw-SQL fallbacks.
 
 ## Code Style
 

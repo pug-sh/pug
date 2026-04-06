@@ -22,11 +22,10 @@ func TestProjectsRepo(t *testing.T) {
 
 	// Seed an org — projects belong to orgs.
 	write := dbwrite.New(db.PgW)
-	_, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+	if _, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
 		ID:          "org-repo",
 		DisplayName: "Repo Org",
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("CreateOrg: %v", err)
 	}
 
@@ -81,8 +80,7 @@ func TestProjectsRepo(t *testing.T) {
 
 	t.Run("invalidate clears cache", func(t *testing.T) {
 		// Populate cache.
-		_, err := repo.GetProjectByPrivateApiKey(ctx, prvKey)
-		if err != nil {
+		if _, err := repo.GetProjectByPrivateApiKey(ctx, prvKey); err != nil {
 			t.Fatalf("populate cache: %v", err)
 		}
 
@@ -129,8 +127,7 @@ func TestProjectsRepo(t *testing.T) {
 	})
 
 	t.Run("nonexistent key returns error", func(t *testing.T) {
-		_, err := repo.GetProjectByPrivateApiKey(ctx, "prv_doesnotexist0000000")
-		if err == nil {
+		if _, err := repo.GetProjectByPrivateApiKey(ctx, "prv_doesnotexist0000000"); err == nil {
 			t.Fatal("expected error for nonexistent key, got nil")
 		}
 	})

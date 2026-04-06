@@ -104,8 +104,7 @@ func (n *initializer) createStreams(ctx context.Context, streams []natsdeps.Stre
 		}
 
 		js := n.client.GetJetStream()
-		_, err := js.CreateOrUpdateStream(ctx, cfg)
-		if err != nil {
+		if _, err := js.CreateOrUpdateStream(ctx, cfg); err != nil {
 			return fmt.Errorf("failed to create or update stream %s: %w", streamConfig.Name, err)
 		}
 		slog.InfoContext(ctx, "Stream ready", slog.String("name", streamConfig.Name))
@@ -166,8 +165,7 @@ func (n *initializer) createConsumers(ctx context.Context, consumers []natsdeps.
 		}
 
 		js := n.client.GetJetStream()
-		_, err := js.CreateOrUpdateConsumer(ctx, consumerConfig.StreamName, cfg)
-		if err != nil {
+		if _, err := js.CreateOrUpdateConsumer(ctx, consumerConfig.StreamName, cfg); err != nil {
 			return fmt.Errorf("failed to create consumer %s for stream %s: %w", consumerConfig.Name, consumerConfig.StreamName, err)
 		}
 

@@ -18,25 +18,121 @@ service InsightsService {
 }
 
 message QueryRequest {
-  InsightType insight_type = 1 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
+  option (buf.validate.message).cel = {
+    id: "query_request.funnel_retention_require_events"
+    message: "funnel and retention insight types require at least one event"
+    expression:
+      "(this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
+      "&& this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION)"
+      "|| this.events.size() > 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "query_request.funnel_only_conversion_window"
+    message: "conversion_window_seconds is only valid for funnel insight type"
+    expression:
+      "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
+      "|| this.conversion_window_seconds == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "query_request.funnel_only_step_timing"
+    message: "include_step_timing is only valid for funnel insight type"
+    expression:
+      "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
+      "|| !this.include_step_timing"
+  };
+
+  // Breakdowns are only meaningful for trends (top-N bucketing + $others).
+  // Other insight types ignore them silently — reject at the boundary instead.
+  option (buf.validate.message).cel = {
+    id: "query_request.trends_only_breakdowns"
+    message: "breakdowns are only supported for trends insight type"
+    expression:
+      "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS"
+      "|| this.breakdowns.size() == 0"
+  };
+
+  // breakdown_limit without breakdowns is a no-op — likely a client mistake.
+  option (buf.validate.message).cel = {
+    id: "query_request.breakdown_limit_requires_breakdowns"
+    message: "breakdown_limit requires at least one breakdown"
+    expression: "this.breakdown_limit == 0 || this.breakdowns.size() > 0"
+  };
+
+  // Retention uses events[0] as start event and events[1] as return event.
+  // Additional events are silently ignored — cap at 2 to surface the mistake.
+  option (buf.validate.message).cel = {
+    id: "query_request.retention_max_events"
+    message: "retention supports at most 2 events (start event and optional return event)"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION"
+      "|| this.events.size() <= 2"
+  };
+
+  // Cap funnel steps to avoid expensive windowFunnel() queries.
+  option (buf.validate.message).cel = {
+    id: "query_request.funnel_max_steps"
+    message: "funnel supports at most 20 steps"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
+      "|| this.events.size() <= 20"
+  };
+  InsightType insight_type = 1 [(buf.validate.field) = {
+    required: true
+    enum: {defined_only: true}
+  }];
   common.v1.TimeRange time_range = 2 [(buf.validate.field).required = true];
-  Granularity granularity = 3 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
+  Granularity granularity = 3 [(buf.validate.field) = {
+    required: true
+    enum: {defined_only: true}
+  }];
   repeated EventQuery events = 4;
-  repeated common.v1.PropertyFilter filters = 5;
   repeated Breakdown breakdowns = 6 [(buf.validate.field).repeated.max_items = 5];
-  int32 breakdown_limit = 7 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  int32 breakdown_limit = 7 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+  reserved 5;
+
+  // Optional grouped filters for top-level conditions.
+  // Each group combines its filters via group.operator.
+  // Groups are combined via filter_groups_operator.
+  repeated FilterGroup filter_groups = 8;
+  common.v1.LogicalOperator filter_groups_operator = 9;
+
+  // Funnel conversion window in seconds. Only used for INSIGHT_TYPE_FUNNEL.
+  // The maximum time allowed from the first step to the last step per user.
+  // 0 means use the full time range as the window (no constraint).
+  int32 conversion_window_seconds = 10 [(buf.validate.field).int32.gte = 0];
+
+  // When true, funnel queries include per-step average time-to-convert.
+  // Uses an array-based single-scan query that captures per-step timestamps,
+  // then computes timing in Go. When false (default), uses windowFunnel() for faster counts only.
+  bool include_step_timing = 11;
 }
 
 message QueryResponse {
-  repeated Series series = 1;
+  oneof result {
+    TrendsResult trends = 2;
+    SegmentationResult segmentation = 3;
+    FunnelResult funnel = 4;
+    RetentionResult retention = 5;
+  }
+  reserved 1; // was: repeated Series series
 }
 
 message SegmentUsersRequest {
   common.v1.TimeRange time_range = 1 [(buf.validate.field).required = true];
   repeated EventQuery events = 2 [(buf.validate.field).repeated.min_items = 1];
-  repeated common.v1.PropertyFilter filters = 3;
-  int32 page_size = 4 [(buf.validate.field).int32 = {gte: 0, lte: 1000}];
+  int32 page_size = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
   string page_token = 5;
+  reserved 3;
+
+  // Optional grouped filters for top-level conditions.
+  repeated FilterGroup filter_groups = 6;
+  common.v1.LogicalOperator filter_groups_operator = 7;
 }
 
 message SegmentUsersResponse {
@@ -48,6 +144,8 @@ enum InsightType {
   INSIGHT_TYPE_UNSPECIFIED = 0;
   INSIGHT_TYPE_TRENDS = 1;
   INSIGHT_TYPE_SEGMENTATION = 2;
+  INSIGHT_TYPE_FUNNEL = 3;
+  INSIGHT_TYPE_RETENTION = 4;
 }
 
 enum Granularity {
@@ -65,27 +163,67 @@ enum AggregationType {
   AGGREGATION_TYPE_PER_USER_AVG = 3;
 }
 
+message FilterGroup {
+  repeated common.v1.PropertyFilter filters = 1 [(buf.validate.field).repeated.min_items = 1];
+  common.v1.LogicalOperator operator = 2;
+}
+
 message EventQuery {
-  string kind = 1;
-  repeated common.v1.PropertyFilter filters = 2;
-  AggregationType aggregation = 3 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
+  common.v1.EventFilter event = 1;
+  // Aggregation type. Defaults to TOTAL when unspecified.
+  // Only used for trends and segmentation; ignored for funnel and retention.
+  AggregationType aggregation = 2 [(buf.validate.field).enum.defined_only = true];
 }
 
 message Breakdown {
-  string property = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
+  string property = 1 [(buf.validate.field) = {
+    required: true
+    string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}
+  }];
 }
 
-// Series represents a single data series in a query response.
-//
-// For TRENDS without breakdowns: event_kind + points are set.
-// For TRENDS with breakdowns: breakdown + points are set.
-// For SEGMENTATION: total is set.
-message Series {
-  string label = 1; // Reserved for future use.
-  string event_kind = 2;
-  map<string, string> breakdown = 3;
-  repeated DataPoint points = 4;
-  double total = 5;
+// TrendsResult contains one TrendSeries per (event_kind, breakdown) combination.
+message TrendsResult {
+  repeated TrendSeries series = 1;
+}
+
+// TrendSeries is a single time series for a trends insight.
+message TrendSeries {
+  string event_kind = 1;
+  map<string, string> breakdown = 2;
+  repeated DataPoint points = 3;
+}
+
+// SegmentationResult is a single aggregate value.
+message SegmentationResult {
+  double total = 1;
+}
+
+// FunnelResult contains one FunnelStep per funnel stage, ordered by step index.
+message FunnelResult {
+  repeated FunnelStep steps = 1;
+}
+
+// FunnelStep is a single stage in a funnel.
+message FunnelStep {
+  string event_kind = 1;
+  double total = 2;
+  // Average seconds from the previous step to this one.
+  // Zero for the first step or when include_step_timing is false.
+  double avg_time_to_convert_seconds = 3;
+}
+
+// RetentionResult contains one RetentionCohort per cohort bucket.
+message RetentionResult {
+  repeated RetentionCohort cohorts = 1;
+}
+
+// RetentionCohort is a single cohort's retention data.
+message RetentionCohort {
+  // Cohort bucket timestamp (RFC3339).
+  string cohort = 1;
+  double cohort_size = 2;
+  repeated DataPoint points = 3;
 }
 
 message DataPoint {
@@ -94,9 +232,17 @@ message DataPoint {
 }
 
 message GetPropertyValuesRequest {
-  string property_key            = 1 [(buf.validate.field) = {required: true, string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}}];
-  common.v1.PropertySource source = 2 [(buf.validate.field) = {required: true, enum: {defined_only: true}}];
-  string event_kind              = 3 [(buf.validate.field) = {string: {pattern: "^[a-zA-Z0-9_.-]*$"}}];
+  string property_key = 1 [(buf.validate.field) = {
+    required: true
+    string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}
+  }];
+  common.v1.PropertySource source = 2 [(buf.validate.field) = {
+    required: true
+    enum: {defined_only: true}
+  }];
+  string event_kind = 3 [(buf.validate.field) = {
+    string: {pattern: "^[a-zA-Z0-9_.-]*$"}
+  }];
 }
 
 message GetPropertyValuesResponse {
@@ -104,12 +250,14 @@ message GetPropertyValuesResponse {
 }
 
 message GetFilterSchemaRequest {
-  string event_kind = 1 [(buf.validate.field) = {string: {pattern: "^[a-zA-Z0-9_.-]*$"}}];
+  string event_kind = 1 [(buf.validate.field) = {
+    string: {pattern: "^[a-zA-Z0-9_.-]*$"}
+  }];
 }
 
 message GetFilterSchemaResponse {
-  repeated common.v1.EventNameMeta   events               = 1;
-  repeated common.v1.PropertyKeyMeta auto_property_keys   = 2;
+  repeated common.v1.EventNameMeta events = 1;
+  repeated common.v1.PropertyKeyMeta auto_property_keys = 2;
   repeated common.v1.PropertyKeyMeta custom_property_keys = 3;
-  repeated string                    profile_property_keys = 4;
+  repeated string profile_property_keys = 4;
 }

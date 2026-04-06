@@ -43,7 +43,6 @@ func TestMapToStruct(t *testing.T) {
 	})
 }
 
-
 func TestMapToStruct_AllValuesAreStrings(t *testing.T) {
 	// Verify that all values in the output are protobuf string values,
 	// not some other type.

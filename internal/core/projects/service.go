@@ -147,11 +147,10 @@ func (s *Service) GetProjectsByOrgID(ctx context.Context, orgID string) ([]dbrea
 }
 
 func (s *Service) ProjectExistsForOrgMember(ctx context.Context, projectID string, customerID string) (bool, error) {
-	_, err := s.read.GetProjectByIDAndOrgMember(ctx, dbread.GetProjectByIDAndOrgMemberParams{
+	if _, err := s.read.GetProjectByIDAndOrgMember(ctx, dbread.GetProjectByIDAndOrgMemberParams{
 		ID:         projectID,
 		CustomerID: customerID,
-	})
-	if err != nil {
+	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}

@@ -46,11 +46,11 @@ func (s *server) GetActivityFeed(
 	params := events.ActivityFeedParams{
 		ProjectID:       principal.Project.ID,
 		DistinctID:      req.Msg.GetDistinctId(),
-		Kind:            req.Msg.GetKind(),
 		SessionID:       req.Msg.GetSessionId(),
-		PropertyFilters: req.Msg.GetPropertyFilters(),
-		PageSize:        req.Msg.GetPageSize(),
 		TimeRange:       req.Msg.GetTimeRange(),
+		PropertyFilters: req.Msg.GetPropertyFilters(),
+		EventFilters:    req.Msg.GetEvents(),
+		PageSize:        req.Msg.GetPageSize(),
 	}
 
 	if req.Msg.GetPageToken() != "" {
@@ -73,9 +73,9 @@ func (s *server) GetActivityFeed(
 			slogx.Error(err),
 			slog.String("projectID", principal.Project.ID),
 			slog.String("distinctID", req.Msg.GetDistinctId()),
-			slog.String("kind", req.Msg.GetKind()),
 			slog.String("sessionID", req.Msg.GetSessionId()),
-			slog.Int("filterCount", len(req.Msg.GetPropertyFilters())))
+			slog.Int("filterCount", len(req.Msg.GetPropertyFilters())),
+			slog.Int("eventFilterCount", len(req.Msg.GetEvents())))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -119,11 +119,11 @@ func (s *server) GetEventExplorer(
 	params := events.EventExplorerParams{
 		ProjectID:       principal.Project.ID,
 		DistinctID:      req.Msg.GetDistinctId(),
-		Kind:            req.Msg.GetKind(),
 		SessionID:       req.Msg.GetSessionId(),
-		PropertyFilters: req.Msg.GetPropertyFilters(),
-		PageSize:        req.Msg.GetPageSize(),
 		TimeRange:       req.Msg.GetTimeRange(),
+		PropertyFilters: req.Msg.GetPropertyFilters(),
+		EventFilters:    req.Msg.GetEvents(),
+		PageSize:        req.Msg.GetPageSize(),
 	}
 
 	if req.Msg.GetPageToken() != "" {
@@ -146,9 +146,9 @@ func (s *server) GetEventExplorer(
 			slogx.Error(err),
 			slog.String("projectID", principal.Project.ID),
 			slog.String("distinctID", req.Msg.GetDistinctId()),
-			slog.String("kind", req.Msg.GetKind()),
 			slog.String("sessionID", req.Msg.GetSessionId()),
-			slog.Int("filterCount", len(req.Msg.GetPropertyFilters())))
+			slog.Int("filterCount", len(req.Msg.GetPropertyFilters())),
+			slog.Int("eventFilterCount", len(req.Msg.GetEvents())))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

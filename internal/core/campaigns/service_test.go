@@ -26,11 +26,10 @@ func TestCampaignsService(t *testing.T) {
 
 	// Create an org and project — campaigns have a foreign key to projects.
 	write := dbwrite.New(db.PgW)
-	_, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+	if _, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
 		ID:          "org-camp-test",
 		DisplayName: "Campaign Org",
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("CreateOrg: %v", err)
 	}
 
@@ -98,15 +97,14 @@ func TestCampaignsService(t *testing.T) {
 
 	t.Run("GetCampaignsByProjectID", func(t *testing.T) {
 		// Create a second campaign.
-		_, err := svc.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
+		if _, err := svc.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
 			ID:               campID2,
 			Name:             "Second Campaign",
 			ProjectID:        project.ID,
 			NotificationData: map[string]any{"title": "Hi"},
 			ScheduledTime:    postgres.NewTimestampTZ(futureTime),
 			Status:           campaigns.StatusScheduled,
-		})
-		if err != nil {
+		}); err != nil {
 			t.Fatalf("CreateCampaign (second): %v", err)
 		}
 
@@ -163,10 +161,9 @@ func TestCampaignsService(t *testing.T) {
 		// coalesce(nullif($2, ''), notification_data) which forces $2 to text type,
 		// conflicting with the jsonb column when called through pgx's extended protocol.
 		// The RPC handler works because Connect RPC uses the simple protocol.
-		_, err := db.PgW.Exec(ctx,
+		if _, err := db.PgW.Exec(ctx,
 			`UPDATE campaigns SET name = $1, scheduled_time = $2 WHERE id = $3 AND project_id = $4`,
-			"Updated Campaign", newFuture, campaignID, project.ID)
-		if err != nil {
+			"Updated Campaign", newFuture, campaignID, project.ID); err != nil {
 			t.Fatalf("update campaign: %v", err)
 		}
 
@@ -185,15 +182,14 @@ func TestCampaignsService(t *testing.T) {
 		// would panic with a nil producer for past-scheduled campaigns).
 		pastCampID := xid.New().String()
 		pastTime := time.Now().Add(-1 * time.Hour)
-		_, err := write.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
+		if _, err := write.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
 			ID:               pastCampID,
 			Name:             "Past Campaign",
 			ProjectID:        project.ID,
 			NotificationData: map[string]any{"title": "Past"},
 			ScheduledTime:    postgres.NewTimestampTZ(pastTime),
 			Status:           campaigns.StatusScheduled,
-		})
-		if err != nil {
+		}); err != nil {
 			t.Fatalf("CreateCampaign (past): %v", err)
 		}
 
@@ -219,28 +215,24 @@ func TestCampaignsService(t *testing.T) {
 	t.Run("DeleteCampaign", func(t *testing.T) {
 		// Create a disposable campaign for deletion.
 		delCampID := xid.New().String()
-		_, err := svc.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
+		if _, err := svc.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
 			ID:               delCampID,
 			Name:             "To Delete",
 			ProjectID:        project.ID,
 			NotificationData: map[string]any{"title": "Del"},
 			ScheduledTime:    postgres.NewTimestampTZ(futureTime),
 			Status:           campaigns.StatusScheduled,
-		})
-		if err != nil {
+		}); err != nil {
 			t.Fatalf("CreateCampaign (to delete): %v", err)
 		}
 
-		err = svc.DeleteCampaign(ctx, delCampID, project.ID)
-		if err != nil {
+		if err := svc.DeleteCampaign(ctx, delCampID, project.ID); err != nil {
 			t.Fatalf("DeleteCampaign: %v", err)
 		}
 
-		_, err = svc.GetCampaignByID(ctx, delCampID)
-		if err == nil {
+		if _, err := svc.GetCampaignByID(ctx, delCampID); err == nil {
 			t.Fatal("expected error when getting deleted campaign, got nil")
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
+		} else if !errors.Is(err, pgx.ErrNoRows) {
 			t.Errorf("expected pgx.ErrNoRows, got: %v", err)
 		}
 	})

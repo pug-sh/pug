@@ -62,8 +62,7 @@ func (s *Server) RecordEvent(
 	}
 
 	// Publish to NATS JetStream
-	_, err = s.producer.Publish(ctx, nats.DeliveryEventsSubject, data)
-	if err != nil {
+	if _, err = s.producer.Publish(ctx, nats.DeliveryEventsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish delivery event to NATS", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("failed to process request"))
 	}

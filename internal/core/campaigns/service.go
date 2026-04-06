@@ -119,8 +119,7 @@ func (s *Service) sendCampaignToNATS(ctx context.Context, campaign dbwrite.Campa
 		return fmt.Errorf("failed to marshal campaign message: %w", err)
 	}
 
-	_, err = s.producer.Publish(ctx, nats.CampaignScheduledSubject, data)
-	if err != nil {
+	if _, err = s.producer.Publish(ctx, nats.CampaignScheduledSubject, data); err != nil {
 		return fmt.Errorf("failed to send campaign to NATS: %w", err)
 	}
 

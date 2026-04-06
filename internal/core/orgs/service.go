@@ -143,11 +143,10 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 	if n == 0 {
 		// Distinguish "member not found" from "last admin blocked": check if
 		// the member still exists. Use write pool to avoid read-replica lag.
-		_, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+		if _, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
 			OrgID:      orgID,
 			CustomerID: customerID,
-		})
-		if err != nil {
+		}); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrMemberNotFound
 			}

@@ -9,6 +9,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 )
@@ -23,7 +24,11 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = chDB.Close(ctx) }()
+	defer func() {
+		if err := chDB.Close(ctx); err != nil {
+			slog.WarnContext(ctx, "failed to close ClickHouse connection", slogx.Error(err))
+		}
+	}()
 
 	natsClient, err := natsworker.New(ctx)
 	if err != nil {

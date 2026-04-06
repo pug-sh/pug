@@ -110,11 +110,9 @@ func TestWithSDKAuth(t *testing.T) {
 	})
 
 	t.Run("private key via query param rejected", func(t *testing.T) {
-		_, err := authFunc(ctx, newRequest("", "prv_valid456"))
-		if err == nil {
+		if _, err := authFunc(ctx, newRequest("", "prv_valid456")); err == nil {
 			t.Fatal("expected error for private key in query param")
-		}
-		if got := err.Error(); !strings.Contains(got, "beacon requests only support public API keys") {
+		} else if got := err.Error(); !strings.Contains(got, "beacon requests only support public API keys") {
 			t.Errorf("error = %q, want to contain beacon rejection message", got)
 		}
 	})
@@ -131,38 +129,31 @@ func TestWithSDKAuth(t *testing.T) {
 	})
 
 	t.Run("missing key returns error", func(t *testing.T) {
-		_, err := authFunc(ctx, newRequest("", ""))
-		if err == nil {
+		if _, err := authFunc(ctx, newRequest("", "")); err == nil {
 			t.Fatal("expected error for missing key")
 		}
 	})
 
 	t.Run("invalid prefix returns error", func(t *testing.T) {
-		_, err := authFunc(ctx, newRequest("xyz_invalid", ""))
-		if err == nil {
+		if _, err := authFunc(ctx, newRequest("xyz_invalid", "")); err == nil {
 			t.Fatal("expected error for invalid prefix")
-		}
-		if got := err.Error(); !strings.Contains(got, "invalid API key") {
+		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
 		}
 	})
 
 	t.Run("valid prefix but nonexistent key returns error", func(t *testing.T) {
-		_, err := authFunc(ctx, newRequest("pub_doesnotexist", ""))
-		if err == nil {
+		if _, err := authFunc(ctx, newRequest("pub_doesnotexist", "")); err == nil {
 			t.Fatal("expected error for nonexistent key")
-		}
-		if got := err.Error(); !strings.Contains(got, "invalid API key") {
+		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
 		}
 	})
 
 	t.Run("nonexistent private key returns error", func(t *testing.T) {
-		_, err := authFunc(ctx, newRequest("prv_doesnotexist", ""))
-		if err == nil {
+		if _, err := authFunc(ctx, newRequest("prv_doesnotexist", "")); err == nil {
 			t.Fatal("expected error for nonexistent private key")
-		}
-		if got := err.Error(); !strings.Contains(got, "invalid API key") {
+		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
 		}
 	})
@@ -175,11 +166,9 @@ func TestWithSDKAuth(t *testing.T) {
 		}
 		errAuthFunc := WithSDKAuth(errStub)
 
-		_, err := errAuthFunc(ctx, newRequest("pub_valid123", ""))
-		if err == nil {
+		if _, err := errAuthFunc(ctx, newRequest("pub_valid123", "")); err == nil {
 			t.Fatal("expected error for database failure")
-		}
-		if got := err.Error(); !strings.Contains(got, "failed to validate API key") {
+		} else if got := err.Error(); !strings.Contains(got, "failed to validate API key") {
 			t.Errorf("error = %q, want to contain %q", got, "failed to validate API key")
 		}
 	})
@@ -210,31 +199,25 @@ func TestWithDualAuth(t *testing.T) {
 	})
 
 	t.Run("public key via header rejected", func(t *testing.T) {
-		_, err := authFunc(ctx, newRequest("pub_valid123", ""))
-		if err == nil {
+		if _, err := authFunc(ctx, newRequest("pub_valid123", "")); err == nil {
 			t.Fatal("expected error for public key on dual auth")
-		}
-		if got := err.Error(); !strings.Contains(got, "invalid API key") {
+		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
 		}
 	})
 
 	t.Run("nonexistent private key returns error", func(t *testing.T) {
-		_, err := authFunc(ctx, newRequest("prv_doesnotexist", ""))
-		if err == nil {
+		if _, err := authFunc(ctx, newRequest("prv_doesnotexist", "")); err == nil {
 			t.Fatal("expected error for nonexistent private key")
-		}
-		if got := err.Error(); !strings.Contains(got, "invalid API key") {
+		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
 		}
 	})
 
 	t.Run("invalid prefix rejected", func(t *testing.T) {
-		_, err := authFunc(ctx, newRequest("xyz_invalid", ""))
-		if err == nil {
+		if _, err := authFunc(ctx, newRequest("xyz_invalid", "")); err == nil {
 			t.Fatal("expected error for invalid prefix")
-		}
-		if got := err.Error(); !strings.Contains(got, "invalid API key") {
+		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
 		}
 	})
@@ -242,11 +225,9 @@ func TestWithDualAuth(t *testing.T) {
 	t.Run("missing header falls back to JWT", func(t *testing.T) {
 		// No API key header → falls back to JWT auth, which will fail
 		// because there's no Authorization header.
-		_, err := authFunc(ctx, newRequest("", ""))
-		if err == nil {
+		if _, err := authFunc(ctx, newRequest("", "")); err == nil {
 			t.Fatal("expected error for missing auth")
-		}
-		if got := err.Error(); !strings.Contains(got, "Authorization header not present") {
+		} else if got := err.Error(); !strings.Contains(got, "Authorization header not present") {
 			t.Errorf("error = %q, want JWT fallback error", got)
 		}
 	})

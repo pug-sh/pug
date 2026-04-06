@@ -115,11 +115,11 @@ func handleRegister(ctx context.Context, w *profiles.Worker, natsClient *natswor
 				ProjectID: msg.GetProjectId(),
 			})
 			if readErr != nil {
-				slog.ErrorContext(ctx, "failed reading existing profile after unique violation", slogx.Error(readErr),
-					slog.String("profileId", msg.GetProfileId()))
-				return natsworker.NewPermanentError(readErr).
-					With("worker", "profile-register").
-					With("profile_id", msg.GetProfileId())
+				// Return retryable error: the unique violation confirms the profile exists
+				// on the writer, but the read replica may not have replicated yet.
+				slog.WarnContext(ctx, "failed reading existing profile after unique violation, will retry",
+					slogx.Error(readErr), slog.String("profileId", msg.GetProfileId()))
+				return fmt.Errorf("re-read after unique violation: %w", readErr)
 			}
 			return publishRegisterUpsert(ctx, natsClient, existing.ID, existing.ProjectID, existing.ExternalID.String, existing.Properties, existing.CreateTime.Time, existing.UpdateTime.Time)
 		}
@@ -154,7 +154,9 @@ func publishRegisterUpsert(ctx context.Context, natsClient *natsworker.NATSClien
 	if err != nil {
 		slog.ErrorContext(ctx, "failed marshalling profile upsert message", slogx.Error(err),
 			slog.String("profileId", profileID))
-		return fmt.Errorf("marshal profile upsert message: %w", err)
+		return natsworker.NewPermanentError(err).
+			With("worker", "profile-register").
+			With("profile_id", profileID)
 	}
 
 	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, upsertData); err != nil {
