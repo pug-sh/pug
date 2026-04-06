@@ -11,9 +11,10 @@ require (
 	connectrpc.com/grpcreflect v1.3.0
 	connectrpc.com/validate v0.6.0
 	firebase.google.com/go/v4 v4.19.0
-	github.com/ClickHouse/clickhouse-go/v2 v2.43.0
+	github.com/ClickHouse/clickhouse-go/v2 v2.44.0
 	github.com/exaring/otelpgx v0.10.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
 	github.com/jackc/pgx/v5 v5.9.1
@@ -33,7 +34,7 @@ require (
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
 	golang.org/x/sync v0.20.0
-	google.golang.org/api v0.273.0
+	google.golang.org/api v0.274.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v2 v2.4.0
 )
@@ -197,7 +198,6 @@ require (
 	github.com/golangci/swaggoswag v0.0.0-20250504205917-77f2aca3143e // indirect
 	github.com/golangci/unconvert v0.0.0-20250410112200-a129a6e6413e // indirect
 	github.com/google/cel-go v0.27.0 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-containerregistry v0.21.2 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
