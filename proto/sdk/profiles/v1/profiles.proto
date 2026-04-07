@@ -8,32 +8,20 @@ option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1";
 
 service ProfilesSDKService {
-  rpc Register(RegisterRequest) returns (RegisterResponse);
   rpc Identify(IdentifyRequest) returns (IdentifyResponse);
 }
 
 message IdentifyRequest {
-  string profile_id = 1 [(buf.validate.field).string = {min_len: 1}];
-  string external_id = 2 [(buf.validate.field).string = {min_len: 1}];
+  string external_id = 1 [(buf.validate.field).string = {min_len: 1}];
+  google.protobuf.Struct traits = 2;
+  string anonymous_id = 3;
 }
 
 message IdentifyResponse {}
 
-message RegisterRequest {
-  google.protobuf.Struct properties = 1;
-  string profile_id = 2 [(buf.validate.field).string = {min_len: 1}];
-}
-
-message RegisterResponse {}
-
-message ProfileRegisterMessage {
-  google.protobuf.Struct properties = 1;
-  string profile_id = 2;
-  string project_id = 3;
-}
-
 message ProfileIdentifyMessage {
   string external_id = 1;
-  string profile_id = 2;
-  string project_id = 3;
+  google.protobuf.Struct traits = 2;
+  string anonymous_id = 3;
+  string project_id = 4;
 }
