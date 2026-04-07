@@ -36,9 +36,10 @@ func (s *Server) Identify(
 	}
 
 	msg := &sdkprofilesv1.ProfileIdentifyMessage{
-		ExternalId: req.Msg.GetExternalId(),
-		ProfileId:  req.Msg.GetProfileId(),
-		ProjectId:  principal.Project.ID,
+		ExternalId:  req.Msg.GetExternalId(),
+		Traits:      req.Msg.GetTraits(),
+		AnonymousId: req.Msg.GetAnonymousId(),
+		ProjectId:   principal.Project.ID,
 	}
 
 	data, err := proto.Marshal(msg)
@@ -48,38 +49,9 @@ func (s *Server) Identify(
 	}
 
 	if _, err = s.producer.Publish(ctx, nats.ProfileIdentifySubject, data); err != nil {
-		slog.ErrorContext(ctx, "failed to publish identify operation to NATS", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to publish identify message", slogx.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	return connect.NewResponse(&sdkprofilesv1.IdentifyResponse{}), nil
-}
-
-func (s *Server) Register(
-	ctx context.Context,
-	req *connect.Request[sdkprofilesv1.RegisterRequest],
-) (*connect.Response[sdkprofilesv1.RegisterResponse], error) {
-	principal, err := rpc.MustGetPrincipalWithProject(ctx)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
-	}
-
-	msg := &sdkprofilesv1.ProfileRegisterMessage{
-		Properties: req.Msg.GetProperties(),
-		ProfileId:  req.Msg.GetProfileId(),
-		ProjectId:  principal.Project.ID,
-	}
-
-	data, err := proto.Marshal(msg)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal profile operation message", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
-	}
-
-	if _, err = s.producer.Publish(ctx, nats.ProfileRegisterSubject, data); err != nil {
-		slog.ErrorContext(ctx, "failed to publish profile operation to NATS", slogx.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
-	}
-
-	return connect.NewResponse(&sdkprofilesv1.RegisterResponse{}), nil
 }
