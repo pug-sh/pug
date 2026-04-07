@@ -191,12 +191,12 @@ var File_sdk_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\x8f\x01\n" +
+	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\x99\x01\n" +
 	"\x0fIdentifyRequest\x12(\n" +
 	"\vexternal_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"externalId\x12/\n" +
-	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12!\n" +
-	"\fanonymous_id\x18\x03 \x01(\tR\vanonymousId\"\x12\n" +
+	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12+\n" +
+	"\fanonymous_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\vanonymousId\"\x12\n" +
 	"\x10IdentifyResponse\"\xac\x01\n" +
 	"\x16ProfileIdentifyMessage\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +

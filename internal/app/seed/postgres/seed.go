@@ -242,6 +242,7 @@ func (s *Seeder) seedProfiles(ctx context.Context, projectID string) ([]string, 
 		id := fmt.Sprintf("user-%05d", i)
 		props := randomProperties(i)
 
+		// ~60% identified (with external_id), ~40% anonymous-only.
 		if rand.Float32() < 0.60 {
 			externalID := externalIDForProfile(props, i)
 			if _, err := w.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{

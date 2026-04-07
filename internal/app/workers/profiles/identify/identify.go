@@ -31,12 +31,6 @@ func Run(ctx context.Context) error {
 		return err
 	}
 
-	pgRO, err := postgres.NewReaderPool(ctx, &pgCfg)
-	if err != nil {
-		return err
-	}
-	defer pgRO.Close()
-
 	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
 	if err != nil {
 		return err
@@ -50,16 +44,16 @@ func Run(ctx context.Context) error {
 	defer natsClient.Close()
 
 	slog.InfoContext(ctx, "Starting profile identify worker...")
-	return StartWorker(ctx, pgRO, pgW, natsClient)
+	return StartWorker(ctx, pgW, natsClient)
 }
 
-func StartWorker(ctx context.Context, pgRO, pgW *pgxpool.Pool, natsClient *natsworker.NATSClient) error {
+func StartWorker(ctx context.Context, pgW *pgxpool.Pool, natsClient *natsworker.NATSClient) error {
 	consumerConfig, err := natsClient.GetConsumerConfigByName("profile-identify-processor-durable")
 	if err != nil {
 		return fmt.Errorf("failed to get profile identify consumer config: %w", err)
 	}
 
-	profileWorker := profiles.NewWorker(pgRO, pgW)
+	profileWorker := profiles.NewWorker(nil, pgW)
 
 	messageProcessor := func(ctx context.Context, msg jetstream.Msg) error {
 		return handleIdentify(ctx, profileWorker, natsClient, msg.Data())
@@ -102,7 +96,8 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		traits = map[string]any{}
 	}
 
-	// Upsert the identified profile — creates if new, merges traits if exists.
+	// Upsert the identified profile — creates if new, merges traits if exists
+	// (new traits overwrite existing keys via jsonb_shallow_merge).
 	profile, err := w.Write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         xid.New().String(),
 		ProjectID:  projectID,
@@ -111,6 +106,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to upsert profile", slogx.Error(err),
+			slog.String("projectId", projectID),
 			slog.String("externalId", externalID))
 		return err
 	}
@@ -126,13 +122,19 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natsworker.NATSClient, projectID, externalID, anonymousID string, target dbwrite.Profile) error {
 	// If the anonymous ID is the same as the target, nothing to merge.
+	// This happens when the SDK re-identifies a profile that was already
+	// identified — the upsert returned the existing row whose ID matches
+	// the anonymous_id sent by the client.
 	if anonymousID == target.ID {
 		return publishUpsert(ctx, natsClient, target.ID, projectID, target.ExternalID.String, target.Properties, false, target.CreateTime.Time, target.UpdateTime.Time)
 	}
 
 	tx, err := w.PgW.Begin(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed starting merge transaction", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed starting merge transaction", slogx.Error(err),
+			slog.String("projectId", projectID),
+			slog.String("anonymousId", anonymousID),
+			slog.String("targetId", target.ID))
 		return err
 	}
 	defer func() {
@@ -143,7 +145,8 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 	qtx := w.Write.WithTx(tx)
 
-	// Merge properties from anonymous into target.
+	// Merge properties from anonymous into target (target keys take precedence
+	// via jsonb_shallow_merge).
 	merged, err := qtx.MergeProfileProperties(ctx, dbwrite.MergeProfilePropertiesParams{
 		SourceID:  anonymousID,
 		TargetID:  target.ID,
@@ -151,13 +154,24 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Anonymous profile already deleted (retry). Use pre-merge target snapshot.
-			slog.WarnContext(ctx, "anonymous profile missing during merge, using pre-merge snapshot",
-				slog.String("anonymousId", anonymousID), slog.String("targetId", target.ID))
+			// ErrNoRows: either the source (anonymous) or target is missing from the
+			// join. The expected case is a retry where the anonymous profile was
+			// already merged and deleted on a prior attempt. The target was just
+			// upserted by UpsertProfileByExternalID moments before, so concurrent
+			// target deletion (e.g. dashboard Delete) is the only other possibility
+			// — an extremely narrow race window. Proceed with the pre-merge target
+			// snapshot; device reassignment and delete are idempotent no-ops when
+			// the source is already gone.
+			slog.WarnContext(ctx, "profile missing during merge, using pre-merge snapshot",
+				slog.String("projectId", projectID),
+				slog.String("anonymousId", anonymousID),
+				slog.String("targetId", target.ID))
 			merged = target
 		} else {
 			slog.ErrorContext(ctx, "failed merging profile properties", slogx.Error(err),
-				slog.String("anonymousId", anonymousID), slog.String("targetId", target.ID))
+				slog.String("projectId", projectID),
+				slog.String("anonymousId", anonymousID),
+				slog.String("targetId", target.ID))
 			return err
 		}
 	}
@@ -168,21 +182,33 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		ProjectID: projectID,
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed reassigning devices", slogx.Error(err),
-			slog.String("anonymousId", anonymousID), slog.String("targetId", target.ID))
+			slog.String("projectId", projectID),
+			slog.String("anonymousId", anonymousID),
+			slog.String("targetId", target.ID))
 		return err
 	}
 
-	if _, err := qtx.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
+	rowsDeleted, err := qtx.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
 		ID:        anonymousID,
 		ProjectID: projectID,
-	}); err != nil {
+	})
+	if err != nil {
 		slog.ErrorContext(ctx, "failed deleting anonymous profile", slogx.Error(err),
+			slog.String("projectId", projectID),
 			slog.String("anonymousId", anonymousID))
 		return err
 	}
+	if rowsDeleted == 0 {
+		slog.DebugContext(ctx, "anonymous profile already deleted (expected during retry)",
+			slog.String("projectId", projectID),
+			slog.String("anonymousId", anonymousID))
+	}
 
 	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed committing merge transaction", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed committing merge transaction", slogx.Error(err),
+			slog.String("projectId", projectID),
+			slog.String("anonymousId", anonymousID),
+			slog.String("targetId", target.ID))
 		return err
 	}
 
@@ -192,12 +218,12 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 
 	// Publish upsert for target.
 	if err := publishUpsert(ctx, natsClient, merged.ID, projectID, merged.ExternalID.String, merged.Properties, false, merged.CreateTime.Time, merged.UpdateTime.Time); err != nil {
-		return err
+		return fmt.Errorf("post-commit publish target upsert: %w", err)
 	}
 
 	// Soft-delete the anonymous profile in ClickHouse.
 	if err := publishUpsert(ctx, natsClient, anonymousID, projectID, "", nil, true, time.Now(), time.Now()); err != nil {
-		return err
+		return fmt.Errorf("post-commit publish anonymous soft-delete: %w", err)
 	}
 
 	// Publish alias for traceability.
@@ -219,7 +245,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
 		slog.ErrorContext(ctx, "failed publishing alias message", slogx.Error(err),
 			slog.String("anonymousId", anonymousID), slog.String("targetId", target.ID))
-		return fmt.Errorf("publish alias after committed merge: %w", err)
+		return fmt.Errorf("post-commit publish alias: %w", err)
 	}
 
 	return nil

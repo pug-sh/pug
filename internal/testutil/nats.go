@@ -22,7 +22,7 @@ func SetupNATS(t *testing.T) *TestNATS {
 
 	ctx := context.Background()
 
-	ctr, err := tcnats.Run(ctx, "nats:2.11-alpine")
+	ctr, err := tcnats.Run(ctx, "nats:2.12-alpine")
 	if err != nil {
 		t.Fatalf("testutil: start nats container: %v", err)
 	}
