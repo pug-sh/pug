@@ -71,7 +71,6 @@ build:
 	go build -o bin/cotton-worker-campaign ./cmd/workers/campaign
 	go build -o bin/cotton-worker-device ./cmd/workers/device
 	go build -o bin/cotton-worker-events ./cmd/workers/events
-	go build -o bin/cotton-worker-profile-register ./cmd/workers/profile/register
 	go build -o bin/cotton-worker-profile-identify ./cmd/workers/profile/identify
 	go build -o bin/cotton-worker-profile-alias ./cmd/workers/profile/alias
 	go build -o bin/cotton-worker-profile-upsert ./cmd/workers/profile/upsert
