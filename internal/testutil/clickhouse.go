@@ -30,10 +30,10 @@ func SetupClickHouse(t *testing.T) *TestClickHouse {
 	t.Helper()
 	ctx := context.Background()
 
-	ctr, err := tcclickhouse.Run(ctx, "clickhouse/clickhouse-server:24-alpine",
+	ctr, err := tcclickhouse.Run(ctx, "clickhouse/clickhouse-server:26.3-alpine",
 		tcclickhouse.WithDatabase("cotton_test"),
 		tcclickhouse.WithUsername("default"),
-		tcclickhouse.WithPassword(""),
+		tcclickhouse.WithPassword("test"),
 	)
 	if err != nil {
 		t.Fatalf("testutil: start clickhouse container: %v", err)
@@ -74,10 +74,10 @@ func SetupBareClickHouse(t *testing.T) *TestClickHouse {
 	t.Helper()
 	ctx := context.Background()
 
-	ctr, err := tcclickhouse.Run(ctx, "clickhouse/clickhouse-server:24-alpine",
+	ctr, err := tcclickhouse.Run(ctx, "clickhouse/clickhouse-server:26.3-alpine",
 		tcclickhouse.WithDatabase("cotton_test"),
 		tcclickhouse.WithUsername("default"),
-		tcclickhouse.WithPassword(""),
+		tcclickhouse.WithPassword("test"),
 	)
 	if err != nil {
 		t.Fatalf("testutil: start clickhouse container: %v", err)

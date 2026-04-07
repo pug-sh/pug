@@ -14,16 +14,6 @@ consumers:
     durable_name: "campaign-processor-durable"
     max_deliver: 5
 
-  # Consumer for profile register events
-  - name: "profile-register-processor"
-    stream_name: "profiles"
-    durable_name: "profile-register-processor-durable"
-    filter_subject: "profiles.register"
-    deliver_policy: "all"
-    ack_explicit: true
-    max_deliver: 5
-    replay_policy: "instant"
-
   # Consumer for profile identify events
   - name: "profile-identify-processor"
     stream_name: "profiles"

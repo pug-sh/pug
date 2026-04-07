@@ -18,7 +18,6 @@ import (
 	eventsworker "github.com/fivebitsio/cotton/internal/app/workers/events"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/alias"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/identify"
-	"github.com/fivebitsio/cotton/internal/app/workers/profiles/register"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/upsert"
 	"github.com/fivebitsio/cotton/internal/app/workers/scheduler"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -96,12 +95,6 @@ var profileCmd = &cobra.Command{
 	Short: "Profile worker related commands",
 }
 
-var profileRegisterCmd = &cobra.Command{
-	Use:   "register",
-	Short: "Start the profile register worker",
-	Run:   run(register.Run),
-}
-
 var profileIdentifyCmd = &cobra.Command{
 	Use:   "identify",
 	Short: "Start the profile identify worker",
@@ -159,7 +152,6 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return devices.Run(ctx) })
 		g.Go(func() error { return campaigns.Run(ctx) })
 		g.Go(func() error { return eventsworker.Run(ctx) })
-		g.Go(func() error { return register.Run(ctx) })
 		g.Go(func() error { return identify.Run(ctx) })
 		g.Go(func() error { return alias.Run(ctx) })
 		g.Go(func() error { return upsert.Run(ctx) })
@@ -263,7 +255,6 @@ var postgresSeedCmd = &cobra.Command{
 }
 
 func init() {
-	profileCmd.AddCommand(profileRegisterCmd)
 	profileCmd.AddCommand(profileIdentifyCmd)
 	profileCmd.AddCommand(profileAliasCmd)
 	profileCmd.AddCommand(profileUpsertCmd)

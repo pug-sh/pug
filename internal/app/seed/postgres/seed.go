@@ -13,6 +13,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -80,12 +81,18 @@ func (s *Seeder) Run(ctx context.Context) error {
 
 func (s *Seeder) resolveProject(ctx context.Context, read *dbread.Queries, customerID string) (dbread.Project, error) {
 	orgs, err := read.GetOrgsByCustomerID(ctx, customerID)
-	if err != nil || len(orgs) == 0 {
-		return dbread.Project{}, fmt.Errorf("no orgs found for customer %s: %w", customerID, err)
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to query orgs for customer %s: %w", customerID, err)
+	}
+	if len(orgs) == 0 {
+		return dbread.Project{}, fmt.Errorf("no orgs found for customer %s", customerID)
 	}
 	projects, err := read.GetProjectsByOrgID(ctx, orgs[0].ID)
-	if err != nil || len(projects) == 0 {
-		return dbread.Project{}, fmt.Errorf("no projects found for org %s: %w", orgs[0].ID, err)
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to query projects for org %s: %w", orgs[0].ID, err)
+	}
+	if len(projects) == 0 {
+		return dbread.Project{}, fmt.Errorf("no projects found for org %s", orgs[0].ID)
 	}
 	return projects[0], nil
 }
@@ -240,27 +247,27 @@ func (s *Seeder) seedProfiles(ctx context.Context, projectID string) ([]string, 
 	for i := range profileCount {
 		id := fmt.Sprintf("user-%05d", i)
 		props := randomProperties(i)
-		if _, err := w.RegisterProfile(ctx, dbwrite.RegisterProfileParams{
-			ID:         id,
-			ProjectID:  projectID,
-			Properties: props,
-		}); err != nil {
-			return nil, fmt.Errorf("insert profile %s: %w", id, err)
-		}
 
-		// ~60% of profiles are identified — they have an external_id set,
-		// matching what an identify() call from the SDK would produce.
-		// Use email from properties if present, otherwise a numeric customer ID.
+		// ~60% identified (with external_id), ~40% anonymous-only.
 		if rand.Float32() < 0.60 {
 			externalID := externalIDForProfile(props, i)
-			if _, err := w.SetProfileExternalID(ctx, dbwrite.SetProfileExternalIDParams{
+			if _, err := w.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 				ID:         id,
 				ProjectID:  projectID,
-				ExternalID: externalID,
+				ExternalID: pgtype.Text{String: externalID, Valid: true},
+				Properties: props,
 			}); err != nil {
-				return nil, fmt.Errorf("set external_id for profile %s: %w", id, err)
+				return nil, fmt.Errorf("upsert profile %s: %w", id, err)
 			}
 			identifiedIDs = append(identifiedIDs, id)
+		} else {
+			if _, err := w.RegisterProfile(ctx, dbwrite.RegisterProfileParams{
+				ID:         id,
+				ProjectID:  projectID,
+				Properties: props,
+			}); err != nil {
+				return nil, fmt.Errorf("insert anonymous profile %s: %w", id, err)
+			}
 		}
 	}
 

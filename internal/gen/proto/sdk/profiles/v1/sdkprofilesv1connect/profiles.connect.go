@@ -33,9 +33,6 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// ProfilesSDKServiceRegisterProcedure is the fully-qualified name of the ProfilesSDKService's
-	// Register RPC.
-	ProfilesSDKServiceRegisterProcedure = "/sdk.profiles.v1.ProfilesSDKService/Register"
 	// ProfilesSDKServiceIdentifyProcedure is the fully-qualified name of the ProfilesSDKService's
 	// Identify RPC.
 	ProfilesSDKServiceIdentifyProcedure = "/sdk.profiles.v1.ProfilesSDKService/Identify"
@@ -43,7 +40,9 @@ const (
 
 // ProfilesSDKServiceClient is a client for the sdk.profiles.v1.ProfilesSDKService service.
 type ProfilesSDKServiceClient interface {
-	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error)
+	// Identify creates or updates a profile by external_id. When anonymous_id
+	// is provided, the anonymous profile is merged into the identified one
+	// (properties, devices) and then deleted.
 	Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error)
 }
 
@@ -58,12 +57,6 @@ func NewProfilesSDKServiceClient(httpClient connect.HTTPClient, baseURL string, 
 	baseURL = strings.TrimRight(baseURL, "/")
 	profilesSDKServiceMethods := v1.File_sdk_profiles_v1_profiles_proto.Services().ByName("ProfilesSDKService").Methods()
 	return &profilesSDKServiceClient{
-		register: connect.NewClient[v1.RegisterRequest, v1.RegisterResponse](
-			httpClient,
-			baseURL+ProfilesSDKServiceRegisterProcedure,
-			connect.WithSchema(profilesSDKServiceMethods.ByName("Register")),
-			connect.WithClientOptions(opts...),
-		),
 		identify: connect.NewClient[v1.IdentifyRequest, v1.IdentifyResponse](
 			httpClient,
 			baseURL+ProfilesSDKServiceIdentifyProcedure,
@@ -75,13 +68,7 @@ func NewProfilesSDKServiceClient(httpClient connect.HTTPClient, baseURL string, 
 
 // profilesSDKServiceClient implements ProfilesSDKServiceClient.
 type profilesSDKServiceClient struct {
-	register *connect.Client[v1.RegisterRequest, v1.RegisterResponse]
 	identify *connect.Client[v1.IdentifyRequest, v1.IdentifyResponse]
-}
-
-// Register calls sdk.profiles.v1.ProfilesSDKService.Register.
-func (c *profilesSDKServiceClient) Register(ctx context.Context, req *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error) {
-	return c.register.CallUnary(ctx, req)
 }
 
 // Identify calls sdk.profiles.v1.ProfilesSDKService.Identify.
@@ -91,7 +78,9 @@ func (c *profilesSDKServiceClient) Identify(ctx context.Context, req *connect.Re
 
 // ProfilesSDKServiceHandler is an implementation of the sdk.profiles.v1.ProfilesSDKService service.
 type ProfilesSDKServiceHandler interface {
-	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error)
+	// Identify creates or updates a profile by external_id. When anonymous_id
+	// is provided, the anonymous profile is merged into the identified one
+	// (properties, devices) and then deleted.
 	Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error)
 }
 
@@ -102,12 +91,6 @@ type ProfilesSDKServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewProfilesSDKServiceHandler(svc ProfilesSDKServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	profilesSDKServiceMethods := v1.File_sdk_profiles_v1_profiles_proto.Services().ByName("ProfilesSDKService").Methods()
-	profilesSDKServiceRegisterHandler := connect.NewUnaryHandler(
-		ProfilesSDKServiceRegisterProcedure,
-		svc.Register,
-		connect.WithSchema(profilesSDKServiceMethods.ByName("Register")),
-		connect.WithHandlerOptions(opts...),
-	)
 	profilesSDKServiceIdentifyHandler := connect.NewUnaryHandler(
 		ProfilesSDKServiceIdentifyProcedure,
 		svc.Identify,
@@ -116,8 +99,6 @@ func NewProfilesSDKServiceHandler(svc ProfilesSDKServiceHandler, opts ...connect
 	)
 	return "/sdk.profiles.v1.ProfilesSDKService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case ProfilesSDKServiceRegisterProcedure:
-			profilesSDKServiceRegisterHandler.ServeHTTP(w, r)
 		case ProfilesSDKServiceIdentifyProcedure:
 			profilesSDKServiceIdentifyHandler.ServeHTTP(w, r)
 		default:
@@ -128,10 +109,6 @@ func NewProfilesSDKServiceHandler(svc ProfilesSDKServiceHandler, opts ...connect
 
 // UnimplementedProfilesSDKServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedProfilesSDKServiceHandler struct{}
-
-func (UnimplementedProfilesSDKServiceHandler) Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.RegisterResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sdk.profiles.v1.ProfilesSDKService.Register is not implemented"))
-}
 
 func (UnimplementedProfilesSDKServiceHandler) Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sdk.profiles.v1.ProfilesSDKService.Identify is not implemented"))

@@ -6,7 +6,6 @@ const (
 	DeviceOpsSubject = "devices.ops"
 
 	// Profile subjects
-	ProfileRegisterSubject = "profiles.register"
 	ProfileIdentifySubject = "profiles.identify"
 	ProfileAliasSubject    = "profiles.alias"
 	ProfileUpsertSubject   = "profiles.upsert"
@@ -26,7 +25,6 @@ const (
 	DLQCampaignsSubject        = "dlq.campaigns.scheduled"
 	DLQDeliveriesSubject       = "dlq.deliveries.events"
 	DLQEventsSubject           = "dlq.events.ingest"
-	DLQProfilesRegisterSubject = "dlq.profiles.register"
 	DLQProfilesIdentifySubject = "dlq.profiles.identify"
 	DLQProfilesAliasSubject    = "dlq.profiles.alias"
 	DLQProfilesUpsertSubject   = "dlq.profiles.upsert"

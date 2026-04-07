@@ -14,8 +14,8 @@ message ProfileAliasMessage {
   string project_id = 4;
 }
 
-// ProfileUpsertMessage is published to profiles.upsert by register, identify,
-// and delete handlers to sync profile state to ClickHouse.
+// ProfileUpsertMessage is published to profiles.upsert by the identify and
+// delete handlers to sync profile state to ClickHouse.
 // The upsert worker writes all fields into a ReplacingMergeTree keyed by (project_id, profile_id).
 message ProfileUpsertMessage {
   string profile_id = 1;

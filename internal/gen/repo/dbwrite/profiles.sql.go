@@ -7,6 +7,8 @@ package dbwrite
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const deleteProfileByIDAndProjectID = `-- name: DeleteProfileByIDAndProjectID :execrows
@@ -103,21 +105,28 @@ func (q *Queries) RegisterProfile(ctx context.Context, arg RegisterProfileParams
 	return i, err
 }
 
-const setProfileExternalID = `-- name: SetProfileExternalID :one
-update profiles
-set external_id = $1::text
-where id = $2 and project_id = $3
+const upsertProfileByExternalID = `-- name: UpsertProfileByExternalID :one
+insert into profiles (id, project_id, external_id, properties)
+values ($1, $2, $3, coalesce($4::jsonb, '{}'))
+on conflict (project_id, external_id) do update set
+  properties = jsonb_shallow_merge(profiles.properties, excluded.properties)
 returning create_time, external_id, id, properties, project_id, update_time
 `
 
-type SetProfileExternalIDParams struct {
-	ExternalID string
+type UpsertProfileByExternalIDParams struct {
 	ID         string
 	ProjectID  string
+	ExternalID pgtype.Text
+	Properties map[string]any
 }
 
-func (q *Queries) SetProfileExternalID(ctx context.Context, arg SetProfileExternalIDParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, setProfileExternalID, arg.ExternalID, arg.ID, arg.ProjectID)
+func (q *Queries) UpsertProfileByExternalID(ctx context.Context, arg UpsertProfileByExternalIDParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, upsertProfileByExternalID,
+		arg.ID,
+		arg.ProjectID,
+		arg.ExternalID,
+		arg.Properties,
+	)
 	var i Profile
 	err := row.Scan(
 		&i.CreateTime,
