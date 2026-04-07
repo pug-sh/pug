@@ -13,6 +13,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -240,27 +241,26 @@ func (s *Seeder) seedProfiles(ctx context.Context, projectID string) ([]string, 
 	for i := range profileCount {
 		id := fmt.Sprintf("user-%05d", i)
 		props := randomProperties(i)
-		if _, err := w.RegisterProfile(ctx, dbwrite.RegisterProfileParams{
-			ID:         id,
-			ProjectID:  projectID,
-			Properties: props,
-		}); err != nil {
-			return nil, fmt.Errorf("insert profile %s: %w", id, err)
-		}
 
-		// ~60% of profiles are identified — they have an external_id set,
-		// matching what an identify() call from the SDK would produce.
-		// Use email from properties if present, otherwise a numeric customer ID.
 		if rand.Float32() < 0.60 {
 			externalID := externalIDForProfile(props, i)
-			if _, err := w.SetProfileExternalID(ctx, dbwrite.SetProfileExternalIDParams{
+			if _, err := w.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 				ID:         id,
 				ProjectID:  projectID,
-				ExternalID: externalID,
+				ExternalID: pgtype.Text{String: externalID, Valid: true},
+				Properties: props,
 			}); err != nil {
-				return nil, fmt.Errorf("set external_id for profile %s: %w", id, err)
+				return nil, fmt.Errorf("upsert profile %s: %w", id, err)
 			}
 			identifiedIDs = append(identifiedIDs, id)
+		} else {
+			if _, err := w.RegisterProfile(ctx, dbwrite.RegisterProfileParams{
+				ID:         id,
+				ProjectID:  projectID,
+				Properties: props,
+			}); err != nil {
+				return nil, fmt.Errorf("insert anonymous profile %s: %w", id, err)
+			}
 		}
 	}
 
