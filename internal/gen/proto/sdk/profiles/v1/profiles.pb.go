@@ -24,10 +24,14 @@ const (
 )
 
 type IdentifyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	Traits        *structpb.Struct       `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
-	AnonymousId   string                 `protobuf:"bytes,3,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Stable user identifier (e.g. email, database ID).
+	ExternalId string `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	// Profile properties — shallow-merged into existing properties. On key conflict,
+	// these values take precedence over previously stored values.
+	Traits *structpb.Struct `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
+	// When set, triggers merge-and-delete of the anonymous profile into the identified one.
+	AnonymousId   string `protobuf:"bytes,3,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -119,6 +123,8 @@ func (*IdentifyResponse) Descriptor() ([]byte, []int) {
 	return file_sdk_profiles_v1_profiles_proto_rawDescGZIP(), []int{1}
 }
 
+// ProfileIdentifyMessage is the internal NATS envelope for the identify worker.
+// project_id is injected server-side from the authenticated principal.
 type ProfileIdentifyMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`

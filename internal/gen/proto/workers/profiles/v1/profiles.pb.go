@@ -91,8 +91,8 @@ func (x *ProfileAliasMessage) GetProjectId() string {
 	return ""
 }
 
-// ProfileUpsertMessage is published to profiles.upsert by register, identify,
-// and delete handlers to sync profile state to ClickHouse.
+// ProfileUpsertMessage is published to profiles.upsert by the identify and
+// delete handlers to sync profile state to ClickHouse.
 // The upsert worker writes all fields into a ReplacingMergeTree keyed by (project_id, profile_id).
 type ProfileUpsertMessage struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`

@@ -8,17 +8,26 @@ option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1";
 
 service ProfilesSDKService {
+  // Identify creates or updates a profile by external_id. When anonymous_id
+  // is provided, the anonymous profile is merged into the identified one
+  // (properties, devices) and then deleted.
   rpc Identify(IdentifyRequest) returns (IdentifyResponse);
 }
 
 message IdentifyRequest {
+  // Stable user identifier (e.g. email, database ID).
   string external_id = 1 [(buf.validate.field).string = {min_len: 1}];
+  // Profile properties — shallow-merged into existing properties. On key conflict,
+  // these values take precedence over previously stored values.
   google.protobuf.Struct traits = 2;
+  // When set, triggers merge-and-delete of the anonymous profile into the identified one.
   string anonymous_id = 3 [(buf.validate.field).string = {max_len: 255}];
 }
 
 message IdentifyResponse {}
 
+// ProfileIdentifyMessage is the internal NATS envelope for the identify worker.
+// project_id is injected server-side from the authenticated principal.
 message ProfileIdentifyMessage {
   string external_id = 1;
   google.protobuf.Struct traits = 2;

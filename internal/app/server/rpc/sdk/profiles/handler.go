@@ -44,12 +44,14 @@ func (s *Server) Identify(
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to marshal identify message", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to marshal identify message", slogx.Error(err),
+			slog.String("projectId", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	if _, err = s.producer.Publish(ctx, nats.ProfileIdentifySubject, data); err != nil {
-		slog.ErrorContext(ctx, "failed to publish identify message", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to publish identify message", slogx.Error(err),
+			slog.String("projectId", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 

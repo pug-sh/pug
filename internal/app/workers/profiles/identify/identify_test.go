@@ -158,7 +158,7 @@ func TestHandleIdentify_UpsertOnly(t *testing.T) {
 	projectID := seedProject(t, ctx, pg)
 	natsClient, js := setupNATSClient(t, ctx)
 
-	w := profiles.NewWorker(nil, pg.PgW)
+	w := profiles.NewWorker(pg.PgW)
 
 	data := makeIdentifyData(t, projectID, "alice@example.com", "", map[string]any{"plan": "pro"})
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
@@ -208,12 +208,22 @@ func TestHandleIdentify_UpsertMergesTraits(t *testing.T) {
 	projectID := seedProject(t, ctx, pg)
 	natsClient, _ := setupNATSClient(t, ctx)
 
-	w := profiles.NewWorker(nil, pg.PgW)
+	w := profiles.NewWorker(pg.PgW)
 
 	// First identify: creates profile.
 	data1 := makeIdentifyData(t, projectID, "bob@test.com", "", map[string]any{"plan": "free"})
 	if err := handleIdentify(ctx, w, natsClient, data1); err != nil {
 		t.Fatalf("first identify: %v", err)
+	}
+
+	// Capture profile ID after first identify.
+	var firstID string
+	err := pg.PgW.QueryRow(ctx,
+		`SELECT id FROM profiles WHERE project_id = $1 AND external_id = $2`,
+		projectID, "bob@test.com",
+	).Scan(&firstID)
+	if err != nil {
+		t.Fatalf("query profile after first identify: %v", err)
 	}
 
 	// Second identify: merges traits — new traits overwrite existing keys.
@@ -222,13 +232,17 @@ func TestHandleIdentify_UpsertMergesTraits(t *testing.T) {
 		t.Fatalf("second identify: %v", err)
 	}
 
+	var secondID string
 	var props map[string]any
-	err := pg.PgW.QueryRow(ctx,
-		`SELECT properties FROM profiles WHERE project_id = $1 AND external_id = $2`,
+	err = pg.PgW.QueryRow(ctx,
+		`SELECT id, properties FROM profiles WHERE project_id = $1 AND external_id = $2`,
 		projectID, "bob@test.com",
-	).Scan(&props)
+	).Scan(&secondID, &props)
 	if err != nil {
 		t.Fatalf("query profile: %v", err)
+	}
+	if secondID != firstID {
+		t.Errorf("profile ID changed across upserts: %q → %q", firstID, secondID)
 	}
 	if props["plan"] != "pro" {
 		t.Errorf("plan = %v, want %q (new traits should overwrite)", props["plan"], "pro")
@@ -273,7 +287,7 @@ func TestHandleIdentify_MergeAnonymous(t *testing.T) {
 		t.Fatalf("save device: %v", err)
 	}
 
-	w := profiles.NewWorker(nil, pg.PgW)
+	w := profiles.NewWorker(pg.PgW)
 
 	// Identify with anonymous_id → triggers merge.
 	data := makeIdentifyData(t, projectID, "carol@test.com", anonID, map[string]any{"plan": "enterprise"})
@@ -354,6 +368,52 @@ func TestHandleIdentify_MergeAnonymous(t *testing.T) {
 	}
 }
 
+func TestHandleIdentify_MergeOverlappingKeys(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	natsClient, _ := setupNATSClient(t, ctx)
+
+	write := dbwrite.New(pg.PgW)
+
+	// Create anonymous profile with overlapping key "plan".
+	anonID := xid.New().String()
+	if _, err := write.RegisterProfile(ctx, dbwrite.RegisterProfileParams{
+		ID:         anonID,
+		ProjectID:  projectID,
+		Properties: map[string]any{"plan": "free", "source": "web"},
+	}); err != nil {
+		t.Fatalf("register anon profile: %v", err)
+	}
+
+	w := profiles.NewWorker(pg.PgW)
+
+	// Identify with traits that overlap on "plan" — target should win.
+	data := makeIdentifyData(t, projectID, "overlap@test.com", anonID, map[string]any{"plan": "pro"})
+	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
+		t.Fatalf("handleIdentify: %v", err)
+	}
+
+	var props map[string]any
+	err := pg.PgW.QueryRow(ctx,
+		`SELECT properties FROM profiles WHERE project_id = $1 AND external_id = $2`,
+		projectID, "overlap@test.com",
+	).Scan(&props)
+	if err != nil {
+		t.Fatalf("query profile: %v", err)
+	}
+	if props["plan"] != "pro" {
+		t.Errorf("plan = %v, want %q (target traits should win)", props["plan"], "pro")
+	}
+	if props["source"] != "web" {
+		t.Errorf("source = %v, want %q (should be preserved from anonymous)", props["source"], "web")
+	}
+}
+
 func TestHandleIdentify_SelfMergeGuard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -364,7 +424,7 @@ func TestHandleIdentify_SelfMergeGuard(t *testing.T) {
 	projectID := seedProject(t, ctx, pg)
 	natsClient, js := setupNATSClient(t, ctx)
 
-	w := profiles.NewWorker(nil, pg.PgW)
+	w := profiles.NewWorker(pg.PgW)
 
 	// Create the identified profile.
 	data1 := makeIdentifyData(t, projectID, "dave@test.com", "", nil)
@@ -372,14 +432,18 @@ func TestHandleIdentify_SelfMergeGuard(t *testing.T) {
 		t.Fatalf("first identify: %v", err)
 	}
 
-	// Get the created profile ID.
+	// Get the created profile ID and verify nil traits produced empty properties.
 	var profileID string
+	var props map[string]any
 	err := pg.PgW.QueryRow(ctx,
-		`SELECT id FROM profiles WHERE project_id = $1 AND external_id = $2`,
+		`SELECT id, properties FROM profiles WHERE project_id = $1 AND external_id = $2`,
 		projectID, "dave@test.com",
-	).Scan(&profileID)
+	).Scan(&profileID, &props)
 	if err != nil {
 		t.Fatalf("query profile: %v", err)
+	}
+	if len(props) != 0 {
+		t.Errorf("properties = %v, want empty map for nil traits", props)
 	}
 
 	// Create a consumer that only sees messages published AFTER this point.
@@ -436,7 +500,7 @@ func TestHandleIdentify_RetryAfterMerge(t *testing.T) {
 	projectID := seedProject(t, ctx, pg)
 	natsClient, js := setupNATSClient(t, ctx)
 
-	w := profiles.NewWorker(nil, pg.PgW)
+	w := profiles.NewWorker(pg.PgW)
 
 	// Create an identified profile directly.
 	write := dbwrite.New(pg.PgW)
@@ -475,7 +539,7 @@ func TestHandleIdentify_RetryAfterMerge(t *testing.T) {
 }
 
 func TestHandleIdentify_UnmarshalError(t *testing.T) {
-	w := profiles.NewWorker(nil, nil)
+	w := profiles.NewWorker(nil)
 
 	err := handleIdentify(context.Background(), w, nil, []byte("garbage"))
 	if err == nil {
@@ -484,5 +548,92 @@ func TestHandleIdentify_UnmarshalError(t *testing.T) {
 
 	if _, ok := errors.AsType[*natsworker.PermanentError](err); !ok {
 		t.Errorf("expected PermanentError, got %T: %v", err, err)
+	}
+}
+
+func TestHandleIdentify_MissingRequiredFields(t *testing.T) {
+	w := profiles.NewWorker(nil)
+
+	tests := []struct {
+		name       string
+		projectID  string
+		externalID string
+	}{
+		{"empty projectId", "", "user@test.com"},
+		{"empty externalId", "proj-123", ""},
+		{"both empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeIdentifyData(t, tt.projectID, tt.externalID, "", nil)
+			err := handleIdentify(context.Background(), w, nil, data)
+			if err == nil {
+				t.Fatal("expected error for missing required fields")
+			}
+			if _, ok := errors.AsType[*natsworker.PermanentError](err); !ok {
+				t.Errorf("expected PermanentError, got %T: %v", err, err)
+			}
+		})
+	}
+}
+
+func TestHandleIdentify_CrossProjectIsolation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectA := seedProject(t, ctx, pg)
+	projectB := seedProject(t, ctx, pg)
+	natsClient, _ := setupNATSClient(t, ctx)
+
+	write := dbwrite.New(pg.PgW)
+
+	// Create an anonymous profile in project A.
+	anonID := xid.New().String()
+	if _, err := write.RegisterProfile(ctx, dbwrite.RegisterProfileParams{
+		ID:         anonID,
+		ProjectID:  projectA,
+		Properties: map[string]any{"source": "web"},
+	}); err != nil {
+		t.Fatalf("register anon profile in project A: %v", err)
+	}
+
+	w := profiles.NewWorker(pg.PgW)
+
+	// Identify in project B with anonymous_id from project A — should NOT merge.
+	data := makeIdentifyData(t, projectB, "cross@test.com", anonID, map[string]any{"plan": "pro"})
+	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
+		t.Fatalf("handleIdentify: %v", err)
+	}
+
+	// Anonymous profile in project A should still exist.
+	var count int
+	err := pg.PgW.QueryRow(ctx,
+		`SELECT count(*) FROM profiles WHERE id = $1 AND project_id = $2`,
+		anonID, projectA,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("count anon: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("anonymous profile in project A was deleted, want preserved (cross-project isolation)")
+	}
+
+	// Identified profile in project B should exist without anonymous properties.
+	var props map[string]any
+	err = pg.PgW.QueryRow(ctx,
+		`SELECT properties FROM profiles WHERE project_id = $1 AND external_id = $2`,
+		projectB, "cross@test.com",
+	).Scan(&props)
+	if err != nil {
+		t.Fatalf("query profile in project B: %v", err)
+	}
+	if props["source"] == "web" {
+		t.Error("project B profile got project A's anonymous properties — cross-project isolation broken")
+	}
+	if props["plan"] != "pro" {
+		t.Errorf("plan = %v, want %q", props["plan"], "pro")
 	}
 }

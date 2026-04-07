@@ -40,6 +40,9 @@ const (
 
 // ProfilesSDKServiceClient is a client for the sdk.profiles.v1.ProfilesSDKService service.
 type ProfilesSDKServiceClient interface {
+	// Identify creates or updates a profile by external_id. When anonymous_id
+	// is provided, the anonymous profile is merged into the identified one
+	// (properties, devices) and then deleted.
 	Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error)
 }
 
@@ -75,6 +78,9 @@ func (c *profilesSDKServiceClient) Identify(ctx context.Context, req *connect.Re
 
 // ProfilesSDKServiceHandler is an implementation of the sdk.profiles.v1.ProfilesSDKService service.
 type ProfilesSDKServiceHandler interface {
+	// Identify creates or updates a profile by external_id. When anonymous_id
+	// is provided, the anonymous profile is merged into the identified one
+	// (properties, devices) and then deleted.
 	Identify(context.Context, *connect.Request[v1.IdentifyRequest]) (*connect.Response[v1.IdentifyResponse], error)
 }
 

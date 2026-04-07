@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -190,6 +191,11 @@ func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow,
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("QueryFunnel: %w", err)
 	}
+	// ClickHouse UNION ALL does not reliably apply a trailing ORDER BY across
+	// all branches in every version. Sort client-side to guarantee step order.
+	slices.SortFunc(result, func(a, b FunnelRow) int {
+		return int(a.StepIndex - b.StepIndex)
+	})
 	return result, nil
 }
 

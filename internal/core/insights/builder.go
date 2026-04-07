@@ -415,12 +415,15 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (stri
 		)
 
 	// Main: aggregate per-user arrays sorted by time.
+	// arraySort with a lambda sorts step_matches by the corresponding occur_time.
+	// arrayZip pairs (time, step) tuples; arraySort orders by the first element;
+	// arrayMap extracts the sorted components back into separate arrays.
 	return chq.NewQuery().
 		With("tagged", taggedCTE).
 		Select(
 			"distinct_id",
-			"groupArray(occur_time ORDER BY occur_time ASC) AS times",
-			"groupArray(toInt64(step_match) ORDER BY occur_time ASC) AS step_matches",
+			"arraySort(groupArray(occur_time)) AS times",
+			"arrayMap(x -> x.2, arraySort(x -> x.1, arrayZip(groupArray(occur_time), groupArray(toInt64(step_match))))) AS step_matches",
 		).
 		From("tagged").
 		Where(chq.RawCond("step_match >= 0")).

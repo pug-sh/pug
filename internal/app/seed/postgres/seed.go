@@ -81,12 +81,18 @@ func (s *Seeder) Run(ctx context.Context) error {
 
 func (s *Seeder) resolveProject(ctx context.Context, read *dbread.Queries, customerID string) (dbread.Project, error) {
 	orgs, err := read.GetOrgsByCustomerID(ctx, customerID)
-	if err != nil || len(orgs) == 0 {
-		return dbread.Project{}, fmt.Errorf("no orgs found for customer %s: %w", customerID, err)
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to query orgs for customer %s: %w", customerID, err)
+	}
+	if len(orgs) == 0 {
+		return dbread.Project{}, fmt.Errorf("no orgs found for customer %s", customerID)
 	}
 	projects, err := read.GetProjectsByOrgID(ctx, orgs[0].ID)
-	if err != nil || len(projects) == 0 {
-		return dbread.Project{}, fmt.Errorf("no projects found for org %s: %w", orgs[0].ID, err)
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to query projects for org %s: %w", orgs[0].ID, err)
+	}
+	if len(projects) == 0 {
+		return dbread.Project{}, fmt.Errorf("no projects found for org %s", orgs[0].ID)
 	}
 	return projects[0], nil
 }
