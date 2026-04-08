@@ -7,6 +7,8 @@ package dbread
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getActiveProfileDevicesByProject = `-- name: GetActiveProfileDevicesByProject :many
@@ -58,7 +60,7 @@ where profile_id = $1 and project_id = $2
 `
 
 type GetProfileDevicesByProfileIDParams struct {
-	ProfileID string
+	ProfileID pgtype.Text
 	ProjectID string
 }
 

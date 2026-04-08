@@ -9,8 +9,10 @@ import (
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
 	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/testutil"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -73,7 +75,7 @@ func setupNATSClient(t *testing.T, ctx context.Context) (*natsworker.NATSClient,
 	return client, js
 }
 
-func makeIdentifyData(t *testing.T, projectID, externalID, anonymousID string, traits map[string]any) []byte {
+func makeIdentifyData(t *testing.T, projectID, externalID, anonymousID, deviceID string, traits map[string]any) []byte {
 	t.Helper()
 	var traitsPB *structpb.Struct
 	if traits != nil {
@@ -87,6 +89,7 @@ func makeIdentifyData(t *testing.T, projectID, externalID, anonymousID string, t
 		ProjectId:   projectID,
 		ExternalId:  externalID,
 		AnonymousId: anonymousID,
+		DeviceId:    deviceID,
 		Traits:      traitsPB,
 	}
 	data, err := proto.Marshal(msg)
@@ -160,7 +163,7 @@ func TestHandleIdentify_UpsertOnly(t *testing.T) {
 
 	w := profiles.NewWorker(pg.PgW)
 
-	data := makeIdentifyData(t, projectID, "alice@example.com", "", map[string]any{"plan": "pro"})
+	data := makeIdentifyData(t, projectID, "alice@example.com", "", "", map[string]any{"plan": "pro"})
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("handleIdentify: %v", err)
 	}
@@ -211,7 +214,7 @@ func TestHandleIdentify_UpsertMergesTraits(t *testing.T) {
 	w := profiles.NewWorker(pg.PgW)
 
 	// First identify: creates profile.
-	data1 := makeIdentifyData(t, projectID, "bob@test.com", "", map[string]any{"plan": "free"})
+	data1 := makeIdentifyData(t, projectID, "bob@test.com", "", "", map[string]any{"plan": "free"})
 	if err := handleIdentify(ctx, w, natsClient, data1); err != nil {
 		t.Fatalf("first identify: %v", err)
 	}
@@ -227,7 +230,7 @@ func TestHandleIdentify_UpsertMergesTraits(t *testing.T) {
 	}
 
 	// Second identify: merges traits — new traits overwrite existing keys.
-	data2 := makeIdentifyData(t, projectID, "bob@test.com", "", map[string]any{"plan": "pro", "role": "admin"})
+	data2 := makeIdentifyData(t, projectID, "bob@test.com", "", "", map[string]any{"plan": "pro", "role": "admin"})
 	if err := handleIdentify(ctx, w, natsClient, data2); err != nil {
 		t.Fatalf("second identify: %v", err)
 	}
@@ -278,7 +281,7 @@ func TestHandleIdentify_MergeAnonymous(t *testing.T) {
 	if _, err := write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 		ID:         deviceID,
 		Platform:   "ios",
-		ProfileID:  anonID,
+		ProfileID:  pgtype.Text{String: anonID, Valid: true},
 		ProjectID:  projectID,
 		Properties: map[string]any{},
 		Status:     "active",
@@ -290,7 +293,7 @@ func TestHandleIdentify_MergeAnonymous(t *testing.T) {
 	w := profiles.NewWorker(pg.PgW)
 
 	// Identify with anonymous_id → triggers merge.
-	data := makeIdentifyData(t, projectID, "carol@test.com", anonID, map[string]any{"plan": "enterprise"})
+	data := makeIdentifyData(t, projectID, "carol@test.com", anonID, "", map[string]any{"plan": "enterprise"})
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("handleIdentify: %v", err)
 	}
@@ -309,17 +312,17 @@ func TestHandleIdentify_MergeAnonymous(t *testing.T) {
 		t.Errorf("plan = %v, want %q", props["plan"], "enterprise")
 	}
 
-	// Verify: anonymous profile is deleted.
-	var count int
+	// Verify: anonymous profile is soft-deleted (row exists but deletion_time is set).
+	var deletedAt *string
 	err = pg.PgW.QueryRow(ctx,
-		`SELECT count(*) FROM profiles WHERE id = $1 AND project_id = $2`,
+		`SELECT deletion_time::text FROM profiles WHERE id = $1 AND project_id = $2`,
 		anonID, projectID,
-	).Scan(&count)
+	).Scan(&deletedAt)
 	if err != nil {
-		t.Fatalf("count anon: %v", err)
+		t.Fatalf("query anon deletion_time: %v", err)
 	}
-	if count != 0 {
-		t.Errorf("anonymous profile still exists, want deleted")
+	if deletedAt == nil {
+		t.Errorf("anonymous profile deletion_time is null, want soft-deleted")
 	}
 
 	// Verify: device was reassigned to target.
@@ -393,7 +396,7 @@ func TestHandleIdentify_MergeOverlappingKeys(t *testing.T) {
 	w := profiles.NewWorker(pg.PgW)
 
 	// Identify with traits that overlap on "plan" — target should win.
-	data := makeIdentifyData(t, projectID, "overlap@test.com", anonID, map[string]any{"plan": "pro"})
+	data := makeIdentifyData(t, projectID, "overlap@test.com", anonID, "", map[string]any{"plan": "pro"})
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("handleIdentify: %v", err)
 	}
@@ -427,7 +430,7 @@ func TestHandleIdentify_SelfMergeGuard(t *testing.T) {
 	w := profiles.NewWorker(pg.PgW)
 
 	// Create the identified profile.
-	data1 := makeIdentifyData(t, projectID, "dave@test.com", "", nil)
+	data1 := makeIdentifyData(t, projectID, "dave@test.com", "", "", nil)
 	if err := handleIdentify(ctx, w, natsClient, data1); err != nil {
 		t.Fatalf("first identify: %v", err)
 	}
@@ -458,7 +461,7 @@ func TestHandleIdentify_SelfMergeGuard(t *testing.T) {
 	}
 
 	// Identify with anonymous_id == profile's own ID → should not self-delete.
-	data2 := makeIdentifyData(t, projectID, "dave@test.com", profileID, nil)
+	data2 := makeIdentifyData(t, projectID, "dave@test.com", profileID, "", nil)
 	if err := handleIdentify(ctx, w, natsClient, data2); err != nil {
 		t.Fatalf("self-merge identify: %v", err)
 	}
@@ -517,7 +520,7 @@ func TestHandleIdentify_RetryAfterMerge(t *testing.T) {
 	// Identify with an anonymous_id that does NOT exist — simulates retry
 	// where the anonymous profile was already merged and deleted.
 	ghostAnonID := xid.New().String()
-	data := makeIdentifyData(t, projectID, "eve@test.com", ghostAnonID, map[string]any{"plan": "pro"})
+	data := makeIdentifyData(t, projectID, "eve@test.com", ghostAnonID, "", map[string]any{"plan": "pro"})
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("retry identify: %v", err)
 	}
@@ -565,7 +568,7 @@ func TestHandleIdentify_MissingRequiredFields(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data := makeIdentifyData(t, tt.projectID, tt.externalID, "", nil)
+			data := makeIdentifyData(t, tt.projectID, tt.externalID, "", "", nil)
 			err := handleIdentify(context.Background(), w, nil, data)
 			if err == nil {
 				t.Fatal("expected error for missing required fields")
@@ -603,7 +606,7 @@ func TestHandleIdentify_CrossProjectIsolation(t *testing.T) {
 	w := profiles.NewWorker(pg.PgW)
 
 	// Identify in project B with anonymous_id from project A — should NOT merge.
-	data := makeIdentifyData(t, projectB, "cross@test.com", anonID, map[string]any{"plan": "pro"})
+	data := makeIdentifyData(t, projectB, "cross@test.com", anonID, "", map[string]any{"plan": "pro"})
 	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
 		t.Fatalf("handleIdentify: %v", err)
 	}
@@ -635,5 +638,344 @@ func TestHandleIdentify_CrossProjectIsolation(t *testing.T) {
 	}
 	if props["plan"] != "pro" {
 		t.Errorf("plan = %v, want %q", props["plan"], "pro")
+	}
+}
+
+func TestHandleIdentify_LinkDevice(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	natsClient, _ := setupNATSClient(t, ctx)
+
+	write := dbwrite.New(pg.PgW)
+
+	// Register an anonymous device (NULL profile_id).
+	deviceID := xid.New().String()
+	if _, err := write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
+		ID:         deviceID,
+		Platform:   "ios",
+		ProfileID:  pgtype.Text{},
+		ProjectID:  projectID,
+		Properties: map[string]any{},
+		Status:     "active",
+		Token:      "token-link-test",
+	}); err != nil {
+		t.Fatalf("save anonymous device: %v", err)
+	}
+
+	w := profiles.NewWorker(pg.PgW)
+
+	// Identify with device_id set — should link device to the identified profile.
+	data := makeIdentifyData(t, projectID, "link@test.com", "", deviceID, nil)
+	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
+		t.Fatalf("handleIdentify: %v", err)
+	}
+
+	// Look up the profile.
+	var profileID string
+	if err := pg.PgW.QueryRow(ctx,
+		`SELECT id FROM profiles WHERE project_id = $1 AND external_id = $2`,
+		projectID, "link@test.com",
+	).Scan(&profileID); err != nil {
+		t.Fatalf("query profile: %v", err)
+	}
+
+	// Verify device is now linked to the profile.
+	var linkedProfileID pgtype.Text
+	if err := pg.PgW.QueryRow(ctx,
+		`SELECT profile_id FROM profile_devices WHERE id = $1 AND project_id = $2`,
+		deviceID, projectID,
+	).Scan(&linkedProfileID); err != nil {
+		t.Fatalf("query device: %v", err)
+	}
+	if !linkedProfileID.Valid {
+		t.Fatal("device profile_id is NULL, want linked profile")
+	}
+	if linkedProfileID.String != profileID {
+		t.Errorf("device profile_id = %q, want %q", linkedProfileID.String, profileID)
+	}
+}
+
+func TestHandleIdentify_DeviceAccountSwitch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	natsClient, _ := setupNATSClient(t, ctx)
+
+	write := dbwrite.New(pg.PgW)
+
+	// Create profile A.
+	profileAID := xid.New().String()
+	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
+		ID:         profileAID,
+		ProjectID:  projectID,
+		ExternalID: pgtype.Text{String: "profile-a@test.com", Valid: true},
+		Properties: map[string]any{},
+	}); err != nil {
+		t.Fatalf("upsert profile A: %v", err)
+	}
+
+	// Register device linked to profile A.
+	deviceID := xid.New().String()
+	if _, err := write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
+		ID:         deviceID,
+		Platform:   "android",
+		ProfileID:  pgtype.Text{String: profileAID, Valid: true},
+		ProjectID:  projectID,
+		Properties: map[string]any{},
+		Status:     "active",
+		Token:      "token-switch-test",
+	}); err != nil {
+		t.Fatalf("save device linked to profile A: %v", err)
+	}
+
+	w := profiles.NewWorker(pg.PgW)
+
+	// Identify as profile B with the same device_id — account switch.
+	data := makeIdentifyData(t, projectID, "profile-b@test.com", "", deviceID, nil)
+	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
+		t.Fatalf("handleIdentify: %v", err)
+	}
+
+	// Look up profile B's ID.
+	var profileBID string
+	if err := pg.PgW.QueryRow(ctx,
+		`SELECT id FROM profiles WHERE project_id = $1 AND external_id = $2`,
+		projectID, "profile-b@test.com",
+	).Scan(&profileBID); err != nil {
+		t.Fatalf("query profile B: %v", err)
+	}
+
+	// Verify device moved from profile A to profile B.
+	var linkedProfileID pgtype.Text
+	if err := pg.PgW.QueryRow(ctx,
+		`SELECT profile_id FROM profile_devices WHERE id = $1 AND project_id = $2`,
+		deviceID, projectID,
+	).Scan(&linkedProfileID); err != nil {
+		t.Fatalf("query device: %v", err)
+	}
+	if !linkedProfileID.Valid {
+		t.Fatal("device profile_id is NULL after account switch, want profile B")
+	}
+	if linkedProfileID.String == profileAID {
+		t.Error("device still linked to profile A after account switch, want profile B")
+	}
+	if linkedProfileID.String != profileBID {
+		t.Errorf("device profile_id = %q, want %q (profile B)", linkedProfileID.String, profileBID)
+	}
+}
+
+func TestSoftDeleteDeactivatesDevices(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+
+	write := dbwrite.New(pg.PgW)
+
+	// Create profile.
+	profileID := xid.New().String()
+	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
+		ID:         profileID,
+		ProjectID:  projectID,
+		ExternalID: pgtype.Text{String: "delete-me@test.com", Valid: true},
+		Properties: map[string]any{},
+	}); err != nil {
+		t.Fatalf("upsert profile: %v", err)
+	}
+
+	// Create active device linked to profile.
+	deviceID := xid.New().String()
+	if _, err := write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
+		ID:         deviceID,
+		Platform:   "ios",
+		ProfileID:  pgtype.Text{String: profileID, Valid: true},
+		ProjectID:  projectID,
+		Properties: map[string]any{},
+		Status:     "active",
+		Token:      "token-deactivate-test",
+	}); err != nil {
+		t.Fatalf("save device: %v", err)
+	}
+
+	// Run soft-delete + deactivate in a transaction.
+	tx, err := pg.PgW.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	qtx := write.WithTx(tx)
+
+	if _, err := qtx.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
+		ID:        profileID,
+		ProjectID: projectID,
+	}); err != nil {
+		tx.Rollback(ctx)
+		t.Fatalf("soft delete profile: %v", err)
+	}
+	if _, err := qtx.DeactivateDevicesByProfileID(ctx, dbwrite.DeactivateDevicesByProfileIDParams{
+		ProfileID: pgtype.Text{String: profileID, Valid: true},
+		ProjectID: projectID,
+	}); err != nil {
+		tx.Rollback(ctx)
+		t.Fatalf("deactivate devices: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit tx: %v", err)
+	}
+
+	// Verify profile has deletion_time IS NOT NULL.
+	var deletedAt *string
+	if err := pg.PgW.QueryRow(ctx,
+		`SELECT deletion_time::text FROM profiles WHERE id = $1 AND project_id = $2`,
+		profileID, projectID,
+	).Scan(&deletedAt); err != nil {
+		t.Fatalf("query profile deletion_time: %v", err)
+	}
+	if deletedAt == nil {
+		t.Error("profile deletion_time is NULL, want soft-deleted")
+	}
+
+	// Verify device has status = 'inactive'.
+	var status string
+	if err := pg.PgW.QueryRow(ctx,
+		`SELECT status FROM profile_devices WHERE id = $1 AND project_id = $2`,
+		deviceID, projectID,
+	).Scan(&status); err != nil {
+		t.Fatalf("query device status: %v", err)
+	}
+	if status != "inactive" {
+		t.Errorf("device status = %q, want %q", status, "inactive")
+	}
+}
+
+func TestSoftDeleteIdempotency(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+
+	write := dbwrite.New(pg.PgW)
+
+	// Create profile.
+	profileID := xid.New().String()
+	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
+		ID:         profileID,
+		ProjectID:  projectID,
+		ExternalID: pgtype.Text{String: "idem@test.com", Valid: true},
+		Properties: map[string]any{},
+	}); err != nil {
+		t.Fatalf("upsert profile: %v", err)
+	}
+
+	params := dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
+		ID:        profileID,
+		ProjectID: projectID,
+	}
+
+	// First soft-delete — should affect 1 row.
+	rows1, err := write.SoftDeleteProfileByIDAndProjectID(ctx, params)
+	if err != nil {
+		t.Fatalf("first soft delete: %v", err)
+	}
+	if rows1 != 1 {
+		t.Errorf("first soft delete rows = %d, want 1", rows1)
+	}
+
+	// Second soft-delete — should affect 0 rows (already deleted).
+	rows2, err := write.SoftDeleteProfileByIDAndProjectID(ctx, params)
+	if err != nil {
+		t.Fatalf("second soft delete: %v", err)
+	}
+	if rows2 != 0 {
+		t.Errorf("second soft delete rows = %d, want 0 (idempotent)", rows2)
+	}
+
+	// Verify profile still exists in DB with deletion_time set.
+	var deletedAt *string
+	if err := pg.PgW.QueryRow(ctx,
+		`SELECT deletion_time::text FROM profiles WHERE id = $1 AND project_id = $2`,
+		profileID, projectID,
+	).Scan(&deletedAt); err != nil {
+		t.Fatalf("query profile deletion_time: %v", err)
+	}
+	if deletedAt == nil {
+		t.Error("profile deletion_time is NULL after soft-delete, want set")
+	}
+}
+
+func TestSoftDeletedProfileInvisibleToReads(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+
+	write := dbwrite.New(pg.PgW)
+	read := dbread.New(pg.PgW)
+
+	// Create an identified profile.
+	profileID := xid.New().String()
+	externalID := "visible@test.com"
+	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
+		ID:         profileID,
+		ProjectID:  projectID,
+		ExternalID: pgtype.Text{String: externalID, Valid: true},
+		Properties: map[string]any{},
+	}); err != nil {
+		t.Fatalf("upsert profile: %v", err)
+	}
+
+	// Verify GetProfileByIDAndProjectID finds it.
+	if _, err := read.GetProfileByIDAndProjectID(ctx, dbread.GetProfileByIDAndProjectIDParams{
+		ID:        profileID,
+		ProjectID: projectID,
+	}); err != nil {
+		t.Fatalf("GetProfileByIDAndProjectID before delete: %v", err)
+	}
+
+	// Soft-delete the profile.
+	if _, err := write.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
+		ID:        profileID,
+		ProjectID: projectID,
+	}); err != nil {
+		t.Fatalf("soft delete profile: %v", err)
+	}
+
+	// Verify GetProfileByIDAndProjectID returns pgx.ErrNoRows.
+	_, err := read.GetProfileByIDAndProjectID(ctx, dbread.GetProfileByIDAndProjectIDParams{
+		ID:        profileID,
+		ProjectID: projectID,
+	})
+	if err == nil {
+		t.Error("GetProfileByIDAndProjectID returned nil error after soft-delete, want pgx.ErrNoRows")
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("GetProfileByIDAndProjectID error = %v, want pgx.ErrNoRows", err)
+	}
+
+	// Verify GetProfileByProjectAndExternalID returns pgx.ErrNoRows.
+	_, err = read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
+		ProjectID:  projectID,
+		ExternalID: externalID,
+	})
+	if err == nil {
+		t.Error("GetProfileByProjectAndExternalID returned nil error after soft-delete, want pgx.ErrNoRows")
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("GetProfileByProjectAndExternalID error = %v, want pgx.ErrNoRows", err)
 	}
 }

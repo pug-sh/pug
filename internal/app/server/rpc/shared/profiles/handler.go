@@ -25,6 +25,7 @@ import (
 
 type Server struct {
 	profilesv1connect.UnimplementedProfilesServiceHandler
+	pgW      *pgxpool.Pool
 	read     *dbread.Queries
 	write    *dbwrite.Queries
 	producer *natsdeps.NATSClient
@@ -35,6 +36,7 @@ func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nats *natsdeps.NATSClient)
 		panic("profiles: nats is nil")
 	}
 	return &Server{
+		pgW:      pgW,
 		read:     dbread.New(pgRO),
 		write:    dbwrite.New(pgW),
 		producer: nats,
@@ -50,21 +52,50 @@ func (s *Server) Delete(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	n, err := s.write.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
+	// Soft-delete profile and deactivate its devices in a single transaction
+	// so devices can't remain active for a deleted profile.
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed starting delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		}
+	}()
+
+	qtx := s.write.WithTx(tx)
+
+	n, err := qtx.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
 		ID:        req.Msg.Id,
 		ProjectID: principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed soft-deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 	if n == 0 {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 	}
 
-	// Best-effort publish to sync deletion to ClickHouse. The PG delete is already
-	// committed, so we return success regardless — a failed NATS publish is logged
-	// for reconciliation but must not fail the client request (retry would get NotFound).
+	if _, err := qtx.DeactivateDevicesByProfileID(ctx, dbwrite.DeactivateDevicesByProfileIDParams{
+		ProfileID: pgtype.Text{String: req.Msg.Id, Valid: true},
+		ProjectID: principal.Project.ID,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed deactivating devices for deleted profile", slogx.Error(err),
+			slog.String("profileId", req.Msg.Id))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed committing delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
+	}
+
+	// Best-effort publish to sync deletion to ClickHouse. The PG transaction is
+	// already committed, so we return success regardless — a failed NATS publish
+	// is logged for reconciliation but must not fail the client request.
 	now := timestamppb.New(time.Now())
 	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
 		ProfileId:  req.Msg.Id,

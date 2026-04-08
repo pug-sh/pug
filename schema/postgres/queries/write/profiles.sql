@@ -1,6 +1,7 @@
--- name: DeleteProfileByIDAndProjectID :execrows
-delete from profiles
-where id = @id and project_id = @project_id;
+-- name: SoftDeleteProfileByIDAndProjectID :execrows
+update profiles
+set deletion_time = now()
+where id = @id and project_id = @project_id and deletion_time is null;
 
 -- name: MergeProfileProperties :one
 update profiles
@@ -8,8 +9,10 @@ set properties = jsonb_shallow_merge(s.properties, profiles.properties)
 from profiles s
 where s.id = @source_id
   and s.project_id = @project_id
+  and s.deletion_time is null
   and profiles.id = @target_id
   and profiles.project_id = @project_id
+  and profiles.deletion_time is null
 returning profiles.*;
 
 -- name: ReassignProfileDevices :exec
@@ -27,6 +30,6 @@ returning *;
 -- name: UpsertProfileByExternalID :one
 insert into profiles (id, project_id, external_id, properties)
 values (@id, @project_id, @external_id, coalesce(@properties::jsonb, '{}'))
-on conflict (project_id, external_id) do update set
+on conflict (project_id, external_id) where deletion_time is null do update set
   properties = jsonb_shallow_merge(profiles.properties, excluded.properties)
 returning *;

@@ -57,6 +57,7 @@ func TestIdentify_Success(t *testing.T) {
 		ExternalId:  "user-42",
 		Traits:      traits,
 		AnonymousId: "anon-1",
+		DeviceId:    "xid-device-id-test1234",
 	})
 
 	ctx := sdkContext("proj-test")
@@ -90,8 +91,11 @@ func TestIdentify_Success(t *testing.T) {
 	if ident.ProjectId != "proj-test" {
 		t.Errorf("ProjectId = %q, want %q", ident.ProjectId, "proj-test")
 	}
-	if ident.AnonymousId != "anon-1" {
-		t.Errorf("AnonymousId = %q, want %q", ident.AnonymousId, "anon-1")
+	if ident.GetAnonymousId() != "anon-1" {
+		t.Errorf("AnonymousId = %q, want %q", ident.GetAnonymousId(), "anon-1")
+	}
+	if ident.GetDeviceId() != "xid-device-id-test1234" {
+		t.Errorf("DeviceId = %q, want %q", ident.GetDeviceId(), "xid-device-id-test1234")
 	}
 	if ident.Traits == nil || ident.Traits.Fields["plan"].GetStringValue() != "pro" {
 		t.Errorf("Traits.plan = %v, want %q", ident.Traits, "pro")

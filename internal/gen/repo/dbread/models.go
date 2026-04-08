@@ -57,19 +57,20 @@ type OrgMember struct {
 }
 
 type Profile struct {
-	CreateTime pgtype.Timestamptz
-	ExternalID pgtype.Text
-	ID         string
-	Properties map[string]any
-	ProjectID  string
-	UpdateTime pgtype.Timestamptz
+	CreateTime   pgtype.Timestamptz
+	DeletionTime pgtype.Timestamptz
+	ExternalID   pgtype.Text
+	ID           string
+	Properties   map[string]any
+	ProjectID    string
+	UpdateTime   pgtype.Timestamptz
 }
 
 type ProfileDevice struct {
 	CreateTime pgtype.Timestamptz
 	ID         string
 	Platform   string
-	ProfileID  string
+	ProfileID  pgtype.Text
 	ProjectID  string
 	Properties map[string]any
 	Status     string

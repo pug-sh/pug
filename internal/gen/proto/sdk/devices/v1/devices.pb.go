@@ -24,13 +24,14 @@ const (
 )
 
 type SubscribeRequest struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId          string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
-	Platform          string                 `protobuf:"bytes,2,opt,name=platform" json:"platform,omitempty"`
-	ProfileExternalId string                 `protobuf:"bytes,3,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
-	ProfileId         string                 `protobuf:"bytes,4,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	Token             string                 `protobuf:"bytes,5,opt,name=token" json:"token,omitempty"`
-	Properties        *structpb.Struct       `protobuf:"bytes,6,opt,name=properties" json:"properties,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	Platform string                 `protobuf:"bytes,2,opt,name=platform" json:"platform,omitempty"`
+	// Optional — when provided, links the device to a profile.
+	ProfileExternalId string           `protobuf:"bytes,3,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
+	ProfileId         string           `protobuf:"bytes,4,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	Token             string           `protobuf:"bytes,5,opt,name=token" json:"token,omitempty"`
+	Properties        *structpb.Struct `protobuf:"bytes,6,opt,name=properties" json:"properties,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -601,18 +602,17 @@ var File_sdk_devices_v1_devices_proto protoreflect.FileDescriptor
 
 const file_sdk_devices_v1_devices_proto_rawDesc = "" +
 	"\n" +
-	"\x1csdk/devices/v1/devices.proto\x12\x0esdk.devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xb9\x03\n" +
+	"\x1csdk/devices/v1/devices.proto\x12\x0esdk.devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xa8\x02\n" +
 	"\x10SubscribeRequest\x12%\n" +
 	"\tdevice_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\bdeviceId\x124\n" +
-	"\bplatform\x18\x02 \x01(\tB\x18\xbaH\x15r\x13R\aandroidR\x03iosR\x03webR\bplatform\x12.\n" +
-	"\x13profile_external_id\x18\x03 \x01(\tR\x11profileExternalId\x12\x1d\n" +
+	"\bplatform\x18\x02 \x01(\tB\x18\xbaH\x15r\x13R\aandroidR\x03iosR\x03webR\bplatform\x128\n" +
+	"\x13profile_external_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\x11profileExternalId\x12&\n" +
 	"\n" +
-	"profile_id\x18\x04 \x01(\tR\tprofileId\x12\x1c\n" +
+	"profile_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18\x14R\tprofileId\x12\x1c\n" +
 	"\x05token\x18\x05 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\x127\n" +
 	"\n" +
 	"properties\x18\x06 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"properties:\xa1\x01\xbaH\x9d\x01\x1a\x9a\x01\n" +
-	"$subscribe_request.profile_identifier\x129either profile_id or profile_external_id must be provided\x1a7this.profile_id != '' || this.profile_external_id != ''\"\x13\n" +
+	"properties\"\x13\n" +
 	"\x11SubscribeResponse\"`\n" +
 	"\x13UpdateStatusRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x98\x01\x14R\x02id\x12/\n" +

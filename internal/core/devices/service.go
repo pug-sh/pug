@@ -43,7 +43,7 @@ func (s *Service) SaveDevice(ctx context.Context, id, platform, profileID, proje
 	return s.write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 		ID:         id,
 		Platform:   platform,
-		ProfileID:  profileID,
+		ProfileID:  pgtype.Text{String: profileID, Valid: profileID != ""},
 		ProjectID:  projectID,
 		Properties: properties,
 		Status:     StatusActive,

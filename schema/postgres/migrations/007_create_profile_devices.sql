@@ -3,7 +3,7 @@ create table profile_devices (
   create_time timestamptz not null default now(),
   id char(20) not null,
   platform text not null check (platform in ('android', 'ios', 'web')),
-  profile_id char(20) not null references profiles(id) on delete cascade,
+  profile_id char(20) references profiles(id) on delete set null,
   project_id char(20) not null references projects(id) on delete cascade,
   properties jsonb not null default '{}'::jsonb,
   status text not null default 'active' check (status in ('active', 'inactive')),
