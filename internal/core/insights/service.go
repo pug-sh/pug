@@ -13,7 +13,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/fivebitsio/cotton/internal/core/profiles"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -28,23 +27,18 @@ const (
 type Service struct {
 	executor *Executor
 	redis    *redis.Client
-	profiles *profiles.Repo
 }
 
-func NewService(executor *Executor, redis *redis.Client, profiles *profiles.Repo) *Service {
+func NewService(executor *Executor, redis *redis.Client) *Service {
 	if executor == nil {
 		panic("insights: executor is nil")
 	}
 	if redis == nil {
 		panic("insights: redis is nil")
 	}
-	if profiles == nil {
-		panic("insights: profiles is nil")
-	}
 	return &Service{
 		executor: executor,
 		redis:    redis,
-		profiles: profiles,
 	}
 }
 
@@ -75,7 +69,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	var eventMetas []AggregateKeyMeta
 	var autoPropKeys []AggregateKeyMeta
 	var customPropKeys []AggregateKeyMeta
-	var profileProps []string
+	var profilePropKeys []AggregateKeyMeta
 
 	eg, egCtx := errgroup.WithContext(ctx)
 
@@ -113,10 +107,14 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		return nil
 	})
 	eg.Go(func() error {
-		var err error
-		profileProps, err = s.profiles.GetPropertyKeys(egCtx, projectID)
+		sql, args, err := BuildProfilePropertyKeysQuery(projectID)
 		if err != nil {
-			return fmt.Errorf("query profile property keys: %w", err)
+			return fmt.Errorf("build profile property keys query: %w", err)
+		}
+		var err2 error
+		profilePropKeys, err2 = s.executor.QueryAggregateKeys(egCtx, sql, args)
+		if err2 != nil {
+			return fmt.Errorf("query profile property keys: %w", err2)
 		}
 		return nil
 	})
@@ -144,7 +142,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		Events:              toEventMetas(eventMetas),
 		AutoPropertyKeys:    toPropKeyMetas(autoPropKeys),
 		CustomPropertyKeys:  toPropKeyMetas(customPropKeys),
-		ProfilePropertyKeys: profileProps,
+		ProfilePropertyKeys: toPropKeyMetas(profilePropKeys),
 	}
 
 	if data, err := proto.Marshal(resp); err != nil {
@@ -196,7 +194,11 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 		}
 		values, err = s.executor.QueryStringColumn(ctx, sql, args)
 	case commonv1.PropertySource_PROPERTY_SOURCE_PROFILE:
-		values, err = s.profiles.GetPropertyValues(ctx, projectID, propertyKey)
+		sql, args, buildErr := BuildProfilePropertyValuesQuery(projectID, propertyKey)
+		if buildErr != nil {
+			return nil, fmt.Errorf("build profile property values query: %w", buildErr)
+		}
+		values, err = s.executor.QueryStringColumn(ctx, sql, args)
 	default:
 		return nil, fmt.Errorf("unsupported property source: %v", source)
 	}

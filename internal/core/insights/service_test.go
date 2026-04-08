@@ -10,9 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/fivebitsio/cotton/internal/core/insights"
-	"github.com/fivebitsio/cotton/internal/core/profiles"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/testutil"
 )
 
@@ -28,11 +26,10 @@ func TestServiceGetFilterSchema(t *testing.T) {
 
 	projectID := seedTestProject(t, ctx, pg)
 	seedServiceEvents(t, ctx, ch, projectID)
-	seedServiceProfiles(t, ctx, pg, projectID)
+	seedServiceProfiles(t, ctx, ch, pg, projectID)
 
 	executor := insights.NewExecutor(ch.Conn)
-	repo := profiles.NewRepo(dbread.New(pg.PgRO))
-	svc := insights.NewService(executor, rd.Client, repo)
+	svc := insights.NewService(executor, rd.Client)
 
 	t.Run("returns_events_and_keys", func(t *testing.T) {
 		resp, err := svc.GetFilterSchema(ctx, projectID, "")
@@ -61,10 +58,10 @@ func TestServiceGetFilterSchema(t *testing.T) {
 			t.Errorf("expected page_view and purchase, got: %v", kinds)
 		}
 
-		// Verify profile property keys.
+		// Verify profile property keys include count and last_seen metadata.
 		profileKeys := map[string]bool{}
 		for _, k := range resp.GetProfilePropertyKeys() {
-			profileKeys[k] = true
+			profileKeys[k.GetName()] = true
 		}
 		if !profileKeys["plan"] || !profileKeys["role"] {
 			t.Errorf("expected plan and role in profile keys, got: %v", profileKeys)
@@ -108,11 +105,10 @@ func TestServiceGetPropertyValues(t *testing.T) {
 
 	projectID := seedTestProject(t, ctx, pg)
 	seedServiceEvents(t, ctx, ch, projectID)
-	seedServiceProfiles(t, ctx, pg, projectID)
+	seedServiceProfiles(t, ctx, ch, pg, projectID)
 
 	executor := insights.NewExecutor(ch.Conn)
-	repo := profiles.NewRepo(dbread.New(pg.PgRO))
-	svc := insights.NewService(executor, rd.Client, repo)
+	svc := insights.NewService(executor, rd.Client)
 
 	t.Run("auto_property", func(t *testing.T) {
 		values, err := svc.GetPropertyValues(ctx, projectID, "$country", "",
@@ -163,7 +159,6 @@ func TestServiceGetPropertyValues(t *testing.T) {
 func TestNewServicePanicsOnNilDeps(t *testing.T) {
 	rd := testutil.SetupRedis(t)
 	executor := &insights.Executor{}
-	repo := &profiles.Repo{}
 
 	t.Run("nil_executor", func(t *testing.T) {
 		defer func() {
@@ -171,7 +166,7 @@ func TestNewServicePanicsOnNilDeps(t *testing.T) {
 				t.Error("expected panic for nil executor")
 			}
 		}()
-		insights.NewService(nil, rd.Client, repo)
+		insights.NewService(nil, rd.Client)
 	})
 
 	t.Run("nil_redis", func(t *testing.T) {
@@ -180,16 +175,7 @@ func TestNewServicePanicsOnNilDeps(t *testing.T) {
 				t.Error("expected panic for nil redis")
 			}
 		}()
-		insights.NewService(executor, nil, repo)
-	})
-
-	t.Run("nil_profiles", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("expected panic for nil profiles")
-			}
-		}()
-		insights.NewService(executor, rd.Client, nil)
+		insights.NewService(executor, nil)
 	})
 }
 
@@ -256,7 +242,7 @@ func seedServiceEvents(t *testing.T, ctx context.Context, ch *testutil.TestClick
 	}
 }
 
-func seedServiceProfiles(t *testing.T, ctx context.Context, pg *testutil.TestPostgres, projectID string) {
+func seedServiceProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, pg *testutil.TestPostgres, projectID string) {
 	t.Helper()
 
 	profs := []struct {
@@ -267,15 +253,33 @@ func seedServiceProfiles(t *testing.T, ctx context.Context, pg *testutil.TestPos
 		{"bob", `{"plan": "free", "role": "member"}`},
 	}
 
+	now := time.Now().UTC()
+
 	for _, p := range profs {
+		profileID := xid.New().String()
+
 		if _, err := pg.PgW.Exec(ctx,
 			`INSERT INTO profiles (id, project_id, external_id, properties) VALUES ($1, $2, $3, $4::jsonb)`,
-			xid.New().String(),
+			profileID,
 			projectID,
 			p.externalID,
 			p.properties,
 		); err != nil {
-			t.Fatalf("insert profile: %v", err)
+			t.Fatalf("insert profile (postgres): %v", err)
+		}
+
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time, insert_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			profileID,
+			projectID,
+			p.externalID,
+			p.properties,
+			uint8(0),
+			now,
+			now,
+			now,
+		); err != nil {
+			t.Fatalf("insert profile (clickhouse): %v", err)
 		}
 	}
 }

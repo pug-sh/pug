@@ -35,265 +35,358 @@ func TestEscapeLike(t *testing.T) {
 	}
 }
 
-func TestFilterClause_Equals(t *testing.T) {
+func TestPropertyCondition_Equals(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "$country",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
 		Value:    "US",
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country']) = ?" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country']) = ?"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 1 || args[0] != "US" {
-		t.Errorf("unexpected args: %v", args)
+	if len(cond.Args()) != 1 || cond.Args()[0] != "US" {
+		t.Errorf("unexpected args: %v", cond.Args())
 	}
 }
 
-func TestFilterClause_Contains(t *testing.T) {
+func TestPropertyCondition_Contains(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "name",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS,
 		Value:    "test%val",
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "ifNull(nullIf(auto_properties['name'], ''), custom_properties['name']) LIKE ?" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "ifNull(nullIf(auto_properties['name'], ''), custom_properties['name']) LIKE ?"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 1 || args[0] != `%test\%val%` {
-		t.Errorf("unexpected args: %v (expected escaped LIKE value)", args)
+	if len(cond.Args()) != 1 || cond.Args()[0] != `%test\%val%` {
+		t.Errorf("unexpected args: %v (expected escaped LIKE value)", cond.Args())
 	}
 }
 
-func TestFilterClause_IsSet(t *testing.T) {
+func TestPropertyCondition_IsSet(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "email",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_SET,
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "ifNull(nullIf(auto_properties['email'], ''), custom_properties['email']) != ''" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "ifNull(nullIf(auto_properties['email'], ''), custom_properties['email']) != ''"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 0 {
-		t.Errorf("expected no args for IS_SET, got: %v", args)
+	if len(cond.Args()) != 0 {
+		t.Errorf("expected no args for IS_SET, got: %v", cond.Args())
 	}
 }
 
-func TestFilterClause_GTE_Numeric(t *testing.T) {
+func TestPropertyCondition_GTE_Numeric(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "score",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE,
 		Value:    "42.5",
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "toFloat64OrNull(ifNull(nullIf(auto_properties['score'], ''), custom_properties['score'])) >= ?" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "toFloat64OrNull(ifNull(nullIf(auto_properties['score'], ''), custom_properties['score'])) >= ?"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 1 || args[0] != 42.5 {
-		t.Errorf("unexpected args: %v", args)
+	if len(cond.Args()) != 1 || cond.Args()[0] != 42.5 {
+		t.Errorf("unexpected args: %v", cond.Args())
 	}
 }
 
-func TestFilterClause_GTE_InvalidNumeric(t *testing.T) {
+func TestPropertyCondition_GTE_InvalidNumeric(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "score",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE,
 		Value:    "not-a-number",
 	}
-	if _, _, err := clickhouse.FilterClause(f); err == nil {
+	if _, err := clickhouse.PropertyCondition(f, "proj1"); err == nil {
 		t.Fatal("expected error for non-numeric value with GTE operator")
 	}
 }
 
-func TestFilterClause_In(t *testing.T) {
+func TestPropertyCondition_In(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "$country",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN,
 		Values:   []string{"US", "UK", "CA"},
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country']) IN (?, ?, ?)" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country']) IN (?, ?, ?)"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 3 {
-		t.Errorf("expected 3 args, got %d: %v", len(args), args)
+	if len(cond.Args()) != 3 {
+		t.Errorf("expected 3 args, got %d: %v", len(cond.Args()), cond.Args())
 	}
 }
 
-func TestFilterClause_NotEquals(t *testing.T) {
+func TestPropertyCondition_NotEquals(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "status",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS,
 		Value:    "inactive",
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "ifNull(nullIf(auto_properties['status'], ''), custom_properties['status']) != ?" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "ifNull(nullIf(auto_properties['status'], ''), custom_properties['status']) != ?"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 1 || args[0] != "inactive" {
-		t.Errorf("unexpected args: %v", args)
+	if len(cond.Args()) != 1 || cond.Args()[0] != "inactive" {
+		t.Errorf("unexpected args: %v", cond.Args())
 	}
 }
 
-func TestFilterClause_NotContains(t *testing.T) {
+func TestPropertyCondition_NotContains(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "url",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS,
 		Value:    "admin",
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "ifNull(nullIf(auto_properties['url'], ''), custom_properties['url']) NOT LIKE ?" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "ifNull(nullIf(auto_properties['url'], ''), custom_properties['url']) NOT LIKE ?"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 1 || args[0] != "%admin%" {
-		t.Errorf("unexpected args: %v", args)
+	if len(cond.Args()) != 1 || cond.Args()[0] != "%admin%" {
+		t.Errorf("unexpected args: %v", cond.Args())
 	}
 }
 
-func TestFilterClause_IsNotSet(t *testing.T) {
+func TestPropertyCondition_IsNotSet(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "email",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET,
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "ifNull(nullIf(auto_properties['email'], ''), custom_properties['email']) = ''" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "ifNull(nullIf(auto_properties['email'], ''), custom_properties['email']) = ''"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 0 {
-		t.Errorf("expected no args for IS_NOT_SET, got: %v", args)
+	if len(cond.Args()) != 0 {
+		t.Errorf("expected no args for IS_NOT_SET, got: %v", cond.Args())
 	}
 }
 
-func TestFilterClause_LTE(t *testing.T) {
+func TestPropertyCondition_LTE(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "age",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_LTE,
 		Value:    "30",
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "toFloat64OrNull(ifNull(nullIf(auto_properties['age'], ''), custom_properties['age'])) <= ?" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "toFloat64OrNull(ifNull(nullIf(auto_properties['age'], ''), custom_properties['age'])) <= ?"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 1 || args[0] != float64(30) {
-		t.Errorf("unexpected args: %v", args)
+	if len(cond.Args()) != 1 || cond.Args()[0] != float64(30) {
+		t.Errorf("unexpected args: %v", cond.Args())
 	}
 }
 
-func TestFilterClause_LT(t *testing.T) {
+func TestPropertyCondition_LT(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "score",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_LT,
 		Value:    "100",
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "toFloat64OrNull(ifNull(nullIf(auto_properties['score'], ''), custom_properties['score'])) < ?" {
-		t.Errorf("unexpected clause: %s", clause)
-	}
-	if len(args) != 1 || args[0] != float64(100) {
-		t.Errorf("unexpected args: %v", args)
+	want := "toFloat64OrNull(ifNull(nullIf(auto_properties['score'], ''), custom_properties['score'])) < ?"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
 }
 
-func TestFilterClause_GT(t *testing.T) {
+func TestPropertyCondition_GT(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "revenue",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GT,
 		Value:    "0",
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "toFloat64OrNull(ifNull(nullIf(auto_properties['revenue'], ''), custom_properties['revenue'])) > ?" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "toFloat64OrNull(ifNull(nullIf(auto_properties['revenue'], ''), custom_properties['revenue'])) > ?"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 1 || args[0] != float64(0) {
-		t.Errorf("unexpected args: %v", args)
+	if len(cond.Args()) != 1 || cond.Args()[0] != float64(0) {
+		t.Errorf("unexpected args: %v", cond.Args())
 	}
 }
 
-func TestFilterClause_NotIn(t *testing.T) {
+func TestPropertyCondition_NotIn(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "$country",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN,
 		Values:   []string{"CN", "RU"},
 	}
-	clause, args, err := clickhouse.FilterClause(f)
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if clause != "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country']) NOT IN (?, ?)" {
-		t.Errorf("unexpected clause: %s", clause)
+	want := "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country']) NOT IN (?, ?)"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
-	if len(args) != 2 {
-		t.Errorf("expected 2 args, got %d: %v", len(args), args)
+	if len(cond.Args()) != 2 {
+		t.Errorf("expected 2 args, got %d: %v", len(cond.Args()), cond.Args())
 	}
 }
 
-func TestFilterClause_InEmptyValues(t *testing.T) {
+func TestPropertyCondition_InEmptyValues(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "$country",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN,
 		Values:   []string{},
 	}
-	if _, _, err := clickhouse.FilterClause(f); err == nil {
+	if _, err := clickhouse.PropertyCondition(f, "proj1"); err == nil {
 		t.Fatal("expected error for IN with empty values")
 	}
 }
 
-func TestFilterClause_NotInEmptyValues(t *testing.T) {
+func TestPropertyCondition_NotInEmptyValues(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "$country",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN,
 		Values:   []string{},
 	}
-	if _, _, err := clickhouse.FilterClause(f); err == nil {
+	if _, err := clickhouse.PropertyCondition(f, "proj1"); err == nil {
 		t.Fatal("expected error for NOT_IN with empty values")
 	}
 }
 
-func TestFilterClause_Unsupported(t *testing.T) {
+func TestPropertyCondition_Unsupported(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: "x",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED,
 	}
-	if _, _, err := clickhouse.FilterClause(f); err == nil {
+	if _, err := clickhouse.PropertyCondition(f, "proj1"); err == nil {
 		t.Fatal("expected error for unsupported operator")
 	}
 }
 
+func TestPropertyCondition_ProfileSource_Equals(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "plan",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+		Value:    "pro",
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+	}
+	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := cond.SQL()
+	if !strings.Contains(sql, "distinct_id IN (") {
+		t.Errorf("expected profile subquery, got: %s", sql)
+	}
+	if !strings.Contains(sql, "SELECT p.id FROM profiles p WHERE") {
+		t.Errorf("expected profile.id selection, got: %s", sql)
+	}
+	if !strings.Contains(sql, "UNION ALL") {
+		t.Errorf("expected UNION ALL for aliases, got: %s", sql)
+	}
+	if !strings.Contains(sql, "SELECT pa.alias_id FROM profile_aliases pa") {
+		t.Errorf("expected profile_aliases subquery, got: %s", sql)
+	}
+	if !strings.Contains(sql, "JSONExtractString(properties, 'plan')") {
+		t.Errorf("expected JSONExtractString for profile property, got: %s", sql)
+	}
+	if !strings.Contains(sql, "project_id = ?") {
+		t.Errorf("expected project_id condition, got: %s", sql)
+	}
+	if !strings.Contains(sql, "external_id != ''") {
+		t.Errorf("expected external_id filter, got: %s", sql)
+	}
+	// First arg should be projectID
+	args := cond.Args()
+	if len(args) < 2 {
+		t.Fatalf("expected at least 2 args (projectID + value), got %d: %v", len(args), args)
+	}
+	if args[0] != "proj_abc" {
+		t.Errorf("expected first arg to be projectID 'proj_abc', got: %v", args[0])
+	}
+	if args[len(args)-1] != "pro" {
+		t.Errorf("expected last arg to be filter value 'pro', got: %v", args[len(args)-1])
+	}
+}
+
+func TestPropertyCondition_ProfileSource_Aliased(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "plan",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+		Value:    "pro",
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+	}
+	cond, err := clickhouse.PropertyConditionAliased(f, "proj_abc", "e")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := cond.SQL()
+	if !strings.Contains(sql, "e.distinct_id IN (") {
+		t.Errorf("expected aliased profile subquery, got: %s", sql)
+	}
+	if !strings.Contains(sql, "SELECT p.id FROM profiles p WHERE") {
+		t.Errorf("expected profile.id selection with alias, got: %s", sql)
+	}
+}
+
+func TestPropertyConditionAliased(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "$country",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+		Value:    "US",
+	}
+	cond, err := clickhouse.PropertyConditionAliased(f, "proj1", "e")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(cond.SQL(), "e.auto_properties[") {
+		t.Errorf("expected aliased property, got: %s", cond.SQL())
+	}
+	if len(cond.Args()) != 1 || cond.Args()[0] != "US" {
+		t.Errorf("unexpected args: %v", cond.Args())
+	}
+}
+
 func TestEventCondition_NilSlice(t *testing.T) {
-	cond, err := clickhouse.EventCondition(nil)
+	cond, err := clickhouse.EventCondition(nil, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -303,7 +396,7 @@ func TestEventCondition_NilSlice(t *testing.T) {
 }
 
 func TestEventCondition_EmptySlice(t *testing.T) {
-	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{})
+	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{}, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -313,7 +406,7 @@ func TestEventCondition_EmptySlice(t *testing.T) {
 }
 
 func TestEventCondition_SingleKindOnly(t *testing.T) {
-	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{{Kind: "page_view"}})
+	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{{Kind: "page_view"}}, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -329,7 +422,7 @@ func TestEventCondition_MultipleEvents(t *testing.T) {
 	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{
 		{Kind: "page_view"},
 		{Kind: "purchase"},
-	})
+	}, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -345,7 +438,7 @@ func TestEventCondition_MultipleEvents(t *testing.T) {
 }
 
 func TestEventCondition_NilEvent(t *testing.T) {
-	if _, err := clickhouse.EventCondition([]*commonv1.EventFilter{nil}); err == nil {
+	if _, err := clickhouse.EventCondition([]*commonv1.EventFilter{nil}, "proj1"); err == nil {
 		t.Fatal("expected error for nil EventFilter")
 	} else if !strings.Contains(err.Error(), "event filter is nil") {
 		t.Errorf("expected nil event filter error, got: %v", err)
@@ -356,7 +449,7 @@ func TestEventCondition_MultipleWithEmptyFilter(t *testing.T) {
 	if _, err := clickhouse.EventCondition([]*commonv1.EventFilter{
 		{Kind: "page_view"},
 		{},
-	}); err == nil {
+	}, "proj1"); err == nil {
 		t.Fatal("expected error for empty EventFilter in multi-event list")
 	} else if !strings.Contains(err.Error(), "event[1]") {
 		t.Errorf("expected error to include event index, got: %v", err)
@@ -371,7 +464,7 @@ func TestEventConditionAliased(t *testing.T) {
 				{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
 			},
 		},
-	}, "e")
+	}, "proj1", "e")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -384,42 +477,5 @@ func TestEventConditionAliased(t *testing.T) {
 	}
 	if !strings.Contains(sql, "e.custom_properties[") {
 		t.Errorf("expected aliased custom_properties 'e.custom_properties[', got: %s", sql)
-	}
-}
-
-func TestFilterClauseAliased(t *testing.T) {
-	f := &commonv1.PropertyFilter{
-		Property: "$country",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-		Value:    "US",
-	}
-	clause, args, err := clickhouse.FilterClauseAliased(f, "e")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(clause, "e.auto_properties[") {
-		t.Errorf("expected aliased property, got: %s", clause)
-	}
-	if len(args) != 1 || args[0] != "US" {
-		t.Errorf("unexpected args: %v", args)
-	}
-}
-
-func TestPropertyCondition(t *testing.T) {
-	f := &commonv1.PropertyFilter{
-		Property: "$country",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-		Value:    "US",
-	}
-	cond, err := clickhouse.PropertyCondition(f)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	clause, args, _ := clickhouse.FilterClause(f)
-	if cond.SQL() != clause {
-		t.Errorf("PropertyCondition SQL = %q, want %q", cond.SQL(), clause)
-	}
-	if len(cond.Args()) != len(args) {
-		t.Errorf("PropertyCondition args len = %d, want %d", len(cond.Args()), len(args))
 	}
 }

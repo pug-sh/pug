@@ -161,6 +161,7 @@ func normalizePageSize(pageSize int32) int32 {
 
 func applyCommonEventFilters(
 	q *chq.Query,
+	projectID string,
 	timeRange *commonv1.TimeRange,
 	propertyFilters []*commonv1.PropertyFilter,
 	pageToken *ActivityFeedCursor,
@@ -175,7 +176,7 @@ func applyCommonEventFilters(
 	}
 
 	for _, f := range propertyFilters {
-		cond, err := chq.PropertyCondition(f)
+		cond, err := chq.PropertyCondition(f, projectID)
 		if err != nil {
 			return err
 		}
@@ -199,7 +200,7 @@ func applyCommonEventFilters(
 // It does not resolve aliases. Pagination is cursor-based on (occur_time DESC, event_id DESC).
 // PageSize defaults to 100 and is capped at 1000. A nil returned cursor means no more pages.
 func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParams) ([]Event, *ActivityFeedCursor, error) {
-	eventCond, err := chq.EventCondition(params.EventFilters)
+	eventCond, err := chq.EventCondition(params.EventFilters, params.ProjectID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetEventExplorer: %w: %w", ErrInvalidFilter, err)
 	}
@@ -214,7 +215,7 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 			chq.When(params.SessionID != "", chq.Eq("session_id", params.SessionID)),
 		)
 
-	if err := applyCommonEventFilters(q, params.TimeRange, params.PropertyFilters, params.PageToken); err != nil {
+	if err := applyCommonEventFilters(q, params.ProjectID, params.TimeRange, params.PropertyFilters, params.PageToken); err != nil {
 		return nil, nil, fmt.Errorf("GetEventExplorer: %w: %w", ErrInvalidFilter, err)
 	}
 
@@ -289,7 +290,7 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 
 	ids := append([]string{params.DistinctID}, aliasIDs...)
 
-	eventCond, err := chq.EventCondition(params.EventFilters)
+	eventCond, err := chq.EventCondition(params.EventFilters, params.ProjectID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetActivityFeed: %w: %w", ErrInvalidFilter, err)
 	}
@@ -304,7 +305,7 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 			chq.When(params.SessionID != "", chq.Eq("session_id", params.SessionID)),
 		)
 
-	if err := applyCommonEventFilters(q, params.TimeRange, params.PropertyFilters, params.PageToken); err != nil {
+	if err := applyCommonEventFilters(q, params.ProjectID, params.TimeRange, params.PropertyFilters, params.PageToken); err != nil {
 		return nil, nil, fmt.Errorf("GetActivityFeed: %w: %w", ErrInvalidFilter, err)
 	}
 

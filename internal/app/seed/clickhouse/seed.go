@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -172,7 +173,8 @@ func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate boo
 			return fmt.Errorf("marshal properties: %w", err)
 		}
 
-		if err := batch.Append(p.ID, projectID, p.ExternalID.String, string(propsJSON), uint8(0), p.CreateTime.Time, p.UpdateTime.Time); err != nil {
+		profileID := strings.TrimRight(p.ID, " ")
+		if err := batch.Append(profileID, projectID, p.ExternalID.String, string(propsJSON), uint8(0), p.CreateTime.Time, p.UpdateTime.Time); err != nil {
 			return fmt.Errorf("append profile: %w", err)
 		}
 		inserted++
