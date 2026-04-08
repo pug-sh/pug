@@ -22,7 +22,7 @@ limit @page_size;
 -- This query is only for seeding ClickHouse. Do not use in application code.
 select id, external_id, properties, create_time, update_time
 from profiles
-where project_id = @project_id;
+where project_id = @project_id and deletion_time is null;
 
 -- name: GetProfilePropertyKeys :many
 select distinct key

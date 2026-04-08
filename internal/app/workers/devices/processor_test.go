@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/testutil"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -124,7 +126,7 @@ func TestHandleSubscribe_RelinkOnResubscribe(t *testing.T) {
 	profile, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         identifiedID,
 		ProjectID:  projectID,
-		ExternalID: pgtype.Text{String: "alice@test.com", Valid: true},
+		ExternalID: postgres.NewText("alice@test.com"),
 		Properties: map[string]any{"plan": "pro"},
 	})
 	if err != nil {
@@ -171,7 +173,7 @@ func TestHandleSubscribe_AnonymousDoesNotUnlinkExistingDevice(t *testing.T) {
 	profile, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         profileID,
 		ProjectID:  projectID,
-		ExternalID: pgtype.Text{String: "linked@test.com", Valid: true},
+		ExternalID: postgres.NewText("linked@test.com"),
 		Properties: map[string]any{},
 	})
 	if err != nil {
@@ -183,7 +185,7 @@ func TestHandleSubscribe_AnonymousDoesNotUnlinkExistingDevice(t *testing.T) {
 	if _, err := write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 		ID:         deviceID,
 		Platform:   "ios",
-		ProfileID:  pgtype.Text{String: profile.ID, Valid: true},
+		ProfileID:  postgres.NewText(profile.ID),
 		ProjectID:  projectID,
 		Properties: map[string]any{},
 		Status:     "active",
@@ -231,7 +233,7 @@ func TestHandleSubscribe_WithProfile(t *testing.T) {
 	profile, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         profileID,
 		ProjectID:  projectID,
-		ExternalID: pgtype.Text{String: "bob@test.com", Valid: true},
+		ExternalID: postgres.NewText("bob@test.com"),
 		Properties: map[string]any{},
 	})
 	if err != nil {
@@ -259,5 +261,121 @@ func TestHandleSubscribe_WithProfile(t *testing.T) {
 	}
 	if linkedProfileID.String != profile.ID {
 		t.Errorf("profile_id = %q, want %q", linkedProfileID.String, profile.ID)
+	}
+}
+
+func TestGetActiveProfileDevices_ExcludesSoftDeletedProfileDevices(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	write := dbwrite.New(pg.PgW)
+	read := dbread.New(pg.PgRO)
+
+	// Create a profile and link a device to it.
+	profileID := xid.New().String()
+	profile, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
+		ID:         profileID,
+		ProjectID:  projectID,
+		ExternalID: postgres.NewText("alice@test.com"),
+		Properties: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("upsert profile: %v", err)
+	}
+
+	deviceID := xid.New().String()
+	if _, err := write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
+		ID:         deviceID,
+		Platform:   "ios",
+		ProfileID:  postgres.NewText(profile.ID),
+		ProjectID:  projectID,
+		Properties: map[string]any{},
+		Status:     "active",
+		Token:      "token-alice",
+	}); err != nil {
+		t.Fatalf("save device: %v", err)
+	}
+
+	// Before soft-delete: device should be returned.
+	devices, err := read.GetActiveProfileDevicesByProject(ctx, dbread.GetActiveProfileDevicesByProjectParams{
+		ProjectID: projectID,
+		AfterID:   "",
+		RowLimit:  100,
+	})
+	if err != nil {
+		t.Fatalf("get active devices: %v", err)
+	}
+	if len(devices) != 1 {
+		t.Fatalf("before delete: got %d devices, want 1", len(devices))
+	}
+
+	// Soft-delete the profile.
+	if _, err := write.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
+		ID:        profile.ID,
+		ProjectID: projectID,
+	}); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	// After soft-delete: device linked to deleted profile should be excluded.
+	devices, err = read.GetActiveProfileDevicesByProject(ctx, dbread.GetActiveProfileDevicesByProjectParams{
+		ProjectID: projectID,
+		AfterID:   "",
+		RowLimit:  100,
+	})
+	if err != nil {
+		t.Fatalf("get active devices after delete: %v", err)
+	}
+	if len(devices) != 0 {
+		t.Errorf("after delete: got %d devices, want 0 (soft-deleted profile devices excluded)", len(devices))
+	}
+}
+
+func TestGetActiveProfileDevices_IncludesAnonymousDevices(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	write := dbwrite.New(pg.PgW)
+	read := dbread.New(pg.PgRO)
+
+	// Register an anonymous device (NULL profile_id).
+	deviceID := xid.New().String()
+	if _, err := write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
+		ID:         deviceID,
+		Platform:   "android",
+		ProfileID:  pgtype.Text{Valid: false},
+		ProjectID:  projectID,
+		Properties: map[string]any{},
+		Status:     "active",
+		Token:      "token-anon",
+	}); err != nil {
+		t.Fatalf("save anonymous device: %v", err)
+	}
+
+	// Anonymous device should be included in campaign targeting.
+	devices, err := read.GetActiveProfileDevicesByProject(ctx, dbread.GetActiveProfileDevicesByProjectParams{
+		ProjectID: projectID,
+		AfterID:   "",
+		RowLimit:  100,
+	})
+	if err != nil {
+		t.Fatalf("get active devices: %v", err)
+	}
+	if len(devices) != 1 {
+		t.Fatalf("got %d devices, want 1 (anonymous device included)", len(devices))
+	}
+	if devices[0].ID != deviceID {
+		t.Errorf("device ID = %q, want %q", devices[0].ID, deviceID)
+	}
+	if devices[0].ProfileID.Valid {
+		t.Errorf("profile_id = %q, want NULL for anonymous device", devices[0].ProfileID.String)
 	}
 }

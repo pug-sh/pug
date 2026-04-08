@@ -7,6 +7,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
 	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -281,7 +282,7 @@ func TestHandleIdentify_MergeAnonymous(t *testing.T) {
 	if _, err := write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 		ID:         deviceID,
 		Platform:   "ios",
-		ProfileID:  pgtype.Text{String: anonID, Valid: true},
+		ProfileID:  postgres.NewText(anonID),
 		ProjectID:  projectID,
 		Properties: map[string]any{},
 		Status:     "active",
@@ -511,7 +512,7 @@ func TestHandleIdentify_RetryAfterMerge(t *testing.T) {
 	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         targetID,
 		ProjectID:  projectID,
-		ExternalID: pgtype.Text{String: "eve@test.com", Valid: true},
+		ExternalID: postgres.NewText("eve@test.com"),
 		Properties: map[string]any{"plan": "free"},
 	}); err != nil {
 		t.Fatalf("upsert target: %v", err)
@@ -717,7 +718,7 @@ func TestHandleIdentify_DeviceAccountSwitch(t *testing.T) {
 	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         profileAID,
 		ProjectID:  projectID,
-		ExternalID: pgtype.Text{String: "profile-a@test.com", Valid: true},
+		ExternalID: postgres.NewText("profile-a@test.com"),
 		Properties: map[string]any{},
 	}); err != nil {
 		t.Fatalf("upsert profile A: %v", err)
@@ -728,7 +729,7 @@ func TestHandleIdentify_DeviceAccountSwitch(t *testing.T) {
 	if _, err := write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 		ID:         deviceID,
 		Platform:   "android",
-		ProfileID:  pgtype.Text{String: profileAID, Valid: true},
+		ProfileID:  postgres.NewText(profileAID),
 		ProjectID:  projectID,
 		Properties: map[string]any{},
 		Status:     "active",
@@ -789,7 +790,7 @@ func TestSoftDeleteDeactivatesDevices(t *testing.T) {
 	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         profileID,
 		ProjectID:  projectID,
-		ExternalID: pgtype.Text{String: "delete-me@test.com", Valid: true},
+		ExternalID: postgres.NewText("delete-me@test.com"),
 		Properties: map[string]any{},
 	}); err != nil {
 		t.Fatalf("upsert profile: %v", err)
@@ -800,7 +801,7 @@ func TestSoftDeleteDeactivatesDevices(t *testing.T) {
 	if _, err := write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 		ID:         deviceID,
 		Platform:   "ios",
-		ProfileID:  pgtype.Text{String: profileID, Valid: true},
+		ProfileID:  postgres.NewText(profileID),
 		ProjectID:  projectID,
 		Properties: map[string]any{},
 		Status:     "active",
@@ -824,7 +825,7 @@ func TestSoftDeleteDeactivatesDevices(t *testing.T) {
 		t.Fatalf("soft delete profile: %v", err)
 	}
 	if _, err := qtx.DeactivateDevicesByProfileID(ctx, dbwrite.DeactivateDevicesByProfileIDParams{
-		ProfileID: pgtype.Text{String: profileID, Valid: true},
+		ProfileID: postgres.NewText(profileID),
 		ProjectID: projectID,
 	}); err != nil {
 		tx.Rollback(ctx)
@@ -875,7 +876,7 @@ func TestSoftDeleteIdempotency(t *testing.T) {
 	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         profileID,
 		ProjectID:  projectID,
-		ExternalID: pgtype.Text{String: "idem@test.com", Valid: true},
+		ExternalID: postgres.NewText("idem@test.com"),
 		Properties: map[string]any{},
 	}); err != nil {
 		t.Fatalf("upsert profile: %v", err)
@@ -935,7 +936,7 @@ func TestSoftDeletedProfileInvisibleToReads(t *testing.T) {
 	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         profileID,
 		ProjectID:  projectID,
-		ExternalID: pgtype.Text{String: externalID, Valid: true},
+		ExternalID: postgres.NewText(externalID),
 		Properties: map[string]any{},
 	}); err != nil {
 		t.Fatalf("upsert profile: %v", err)
@@ -977,5 +978,200 @@ func TestSoftDeletedProfileInvisibleToReads(t *testing.T) {
 		t.Error("GetProfileByProjectAndExternalID returned nil error after soft-delete, want pgx.ErrNoRows")
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		t.Errorf("GetProfileByProjectAndExternalID error = %v, want pgx.ErrNoRows", err)
+	}
+}
+
+func TestReIdentifyAfterSoftDelete(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	natsClient, _ := setupNATSClient(t, ctx)
+
+	w := profiles.NewWorker(pg.PgW)
+	read := dbread.New(pg.PgW)
+	write := dbwrite.New(pg.PgW)
+
+	// Step 1: Identify — creates profile.
+	data := makeIdentifyData(t, projectID, "reident@test.com", "", "", nil)
+	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
+		t.Fatalf("first identify: %v", err)
+	}
+
+	var firstID string
+	if err := pg.PgW.QueryRow(ctx,
+		`SELECT id FROM profiles WHERE project_id = $1 AND external_id = $2 AND deletion_time IS NULL`,
+		projectID, "reident@test.com",
+	).Scan(&firstID); err != nil {
+		t.Fatalf("query first profile: %v", err)
+	}
+
+	// Step 2: Soft-delete the profile.
+	if _, err := write.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
+		ID:        firstID,
+		ProjectID: projectID,
+	}); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	// Step 3: Re-identify with the same external_id.
+	data2 := makeIdentifyData(t, projectID, "reident@test.com", "", "", map[string]any{"plan": "new"})
+	if err := handleIdentify(ctx, w, natsClient, data2); err != nil {
+		t.Fatalf("re-identify: %v", err)
+	}
+
+	// Verify: new profile created with different ID.
+	newProfile, err := read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
+		ProjectID:  projectID,
+		ExternalID: "reident@test.com",
+	})
+	if err != nil {
+		t.Fatalf("query new profile: %v", err)
+	}
+	if newProfile.ID == firstID {
+		t.Errorf("re-identify reused soft-deleted profile ID %q, want new ID", firstID)
+	}
+	if newProfile.Properties["plan"] != "new" {
+		t.Errorf("properties.plan = %v, want %q", newProfile.Properties["plan"], "new")
+	}
+
+	// Verify: old soft-deleted row still exists.
+	var deletedAt *string
+	if err := pg.PgW.QueryRow(ctx,
+		`SELECT deletion_time::text FROM profiles WHERE id = $1 AND project_id = $2`,
+		firstID, projectID,
+	).Scan(&deletedAt); err != nil {
+		t.Fatalf("query old profile: %v", err)
+	}
+	if deletedAt == nil {
+		t.Error("old profile deletion_time is NULL, want soft-deleted")
+	}
+}
+
+func TestMergeWithSoftDeletedAnonymousProfile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	natsClient, js := setupNATSClient(t, ctx)
+
+	write := dbwrite.New(pg.PgW)
+
+	// Create an anonymous profile then soft-delete it.
+	anonID := xid.New().String()
+	if _, err := write.RegisterProfile(ctx, dbwrite.RegisterProfileParams{
+		ID:         anonID,
+		ProjectID:  projectID,
+		Properties: map[string]any{"source": "web"},
+	}); err != nil {
+		t.Fatalf("register anon profile: %v", err)
+	}
+	if _, err := write.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
+		ID:        anonID,
+		ProjectID: projectID,
+	}); err != nil {
+		t.Fatalf("soft delete anon: %v", err)
+	}
+
+	w := profiles.NewWorker(pg.PgW)
+
+	// Identify with the soft-deleted anonymous_id — merge should gracefully skip.
+	data := makeIdentifyData(t, projectID, "merge-deleted@test.com", anonID, "", map[string]any{"plan": "pro"})
+	if err := handleIdentify(ctx, w, natsClient, data); err != nil {
+		t.Fatalf("handleIdentify: %v", err)
+	}
+
+	// Verify: identified profile exists.
+	var profileID string
+	var props map[string]any
+	if err := pg.PgW.QueryRow(ctx,
+		`SELECT id, properties FROM profiles WHERE project_id = $1 AND external_id = $2 AND deletion_time IS NULL`,
+		projectID, "merge-deleted@test.com",
+	).Scan(&profileID, &props); err != nil {
+		t.Fatalf("query profile: %v", err)
+	}
+	if props["plan"] != "pro" {
+		t.Errorf("plan = %v, want %q", props["plan"], "pro")
+	}
+	// Anonymous properties should NOT be merged (source was soft-deleted).
+	if props["source"] == "web" {
+		t.Error("soft-deleted anonymous properties were merged, want skipped")
+	}
+
+	// Verify: NATS publishes still happened (target upsert + anon soft-delete).
+	upserts := fetchUpserts(t, ctx, js, 2)
+	if len(upserts) != 2 {
+		t.Fatalf("expected 2 upserts, got %d", len(upserts))
+	}
+	if upserts[0].ProfileId != profileID {
+		t.Errorf("target upsert ProfileId = %q, want %q", upserts[0].ProfileId, profileID)
+	}
+	if upserts[0].IsDeleted {
+		t.Error("target upsert IsDeleted = true, want false")
+	}
+}
+
+func TestSoftDeletedProfileInvisibleToList(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+
+	write := dbwrite.New(pg.PgW)
+	read := dbread.New(pg.PgW)
+
+	// Create two profiles.
+	keepID := xid.New().String()
+	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
+		ID:         keepID,
+		ProjectID:  projectID,
+		ExternalID: postgres.NewText("keep@test.com"),
+		Properties: map[string]any{},
+	}); err != nil {
+		t.Fatalf("upsert keep profile: %v", err)
+	}
+
+	deleteID := xid.New().String()
+	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
+		ID:         deleteID,
+		ProjectID:  projectID,
+		ExternalID: postgres.NewText("delete@test.com"),
+		Properties: map[string]any{},
+	}); err != nil {
+		t.Fatalf("upsert delete profile: %v", err)
+	}
+
+	// Soft-delete one.
+	if _, err := write.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
+		ID:        deleteID,
+		ProjectID: projectID,
+	}); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	// List should return only the active profile.
+	listed, err := read.GetProfilesByProjectID(ctx, dbread.GetProfilesByProjectIDParams{
+		ProjectID: projectID,
+		HasCursor: false,
+		PageSize:  100,
+	})
+	if err != nil {
+		t.Fatalf("list profiles: %v", err)
+	}
+
+	if len(listed) != 1 {
+		t.Fatalf("listed %d profiles, want 1", len(listed))
+	}
+	if listed[0].ID != keepID {
+		t.Errorf("listed profile ID = %q, want %q (active profile)", listed[0].ID, keepID)
 	}
 }

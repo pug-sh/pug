@@ -31,7 +31,7 @@ type IdentifyRequest struct {
 	// these values take precedence over previously stored values.
 	Traits *structpb.Struct `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
 	// The SDK-generated anonymous ID. Send on first identify only — triggers
-	// merge-and-delete of the anonymous profile. Must start with "anon-".
+	// merge-and-soft-delete of the anonymous profile. Must start with "anon-".
 	AnonymousId string `protobuf:"bytes,3,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
 	// The device to assign to this profile. The SDK should send this on first
 	// identify and on account switch (external_id changed) — not on every call,
@@ -223,7 +223,7 @@ const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"externalId\x12/\n" +
 	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x126\n" +
 	"\fanonymous_id\x18\x03 \x01(\tB\x13\xbaH\x10r\x0e\x18\xff\x012\t^$|^anon-R\vanonymousId\x12$\n" +
-	"\tdevice_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18\x14R\bdeviceId\"\x12\n" +
+	"\tdevice_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18$R\bdeviceId\"\x12\n" +
 	"\x10IdentifyResponse\"\xc9\x01\n" +
 	"\x16ProfileIdentifyMessage\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +

@@ -57,7 +57,7 @@ func TestCampaignsService(t *testing.T) {
 			Name:             "Test Campaign",
 			ProjectID:        project.ID,
 			NotificationData: map[string]any{"title": "Hello", "body": "World"},
-			ScheduledTime:    postgres.NewTimestampTZ(futureTime),
+			ScheduledTime:    postgres.NewTimestamptz(futureTime),
 			Status:           campaigns.StatusScheduled,
 		})
 		if err != nil {
@@ -102,7 +102,7 @@ func TestCampaignsService(t *testing.T) {
 			Name:             "Second Campaign",
 			ProjectID:        project.ID,
 			NotificationData: map[string]any{"title": "Hi"},
-			ScheduledTime:    postgres.NewTimestampTZ(futureTime),
+			ScheduledTime:    postgres.NewTimestamptz(futureTime),
 			Status:           campaigns.StatusScheduled,
 		}); err != nil {
 			t.Fatalf("CreateCampaign (second): %v", err)
@@ -187,7 +187,7 @@ func TestCampaignsService(t *testing.T) {
 			Name:             "Past Campaign",
 			ProjectID:        project.ID,
 			NotificationData: map[string]any{"title": "Past"},
-			ScheduledTime:    postgres.NewTimestampTZ(pastTime),
+			ScheduledTime:    postgres.NewTimestamptz(pastTime),
 			Status:           campaigns.StatusScheduled,
 		}); err != nil {
 			t.Fatalf("CreateCampaign (past): %v", err)
@@ -220,7 +220,7 @@ func TestCampaignsService(t *testing.T) {
 			Name:             "To Delete",
 			ProjectID:        project.ID,
 			NotificationData: map[string]any{"title": "Del"},
-			ScheduledTime:    postgres.NewTimestampTZ(futureTime),
+			ScheduledTime:    postgres.NewTimestamptz(futureTime),
 			Status:           campaigns.StatusScheduled,
 		}); err != nil {
 			t.Fatalf("CreateCampaign (to delete): %v", err)

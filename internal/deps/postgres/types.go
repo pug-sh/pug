@@ -11,8 +11,12 @@ func NewText(s string) pgtype.Text {
 	return pgtype.Text{String: s, Valid: true}
 }
 
-func NewTimestampTZ(t time.Time) pgtype.Timestamptz {
-	return pgtype.Timestamptz{Time: t, Valid: !t.IsZero()}
+func NewOptionalText(s string) pgtype.Text {
+	return pgtype.Text{String: s, Valid: s != ""}
+}
+
+func NewTimestamptz(t time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: t, Valid: true}
 }
 
 // TimestampToTimestamptz converts a proto timestamp to pgtype, returning Valid: false for nil.

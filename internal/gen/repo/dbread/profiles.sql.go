@@ -14,7 +14,7 @@ import (
 const getAllProfilesByProjectID = `-- name: GetAllProfilesByProjectID :many
 select id, external_id, properties, create_time, update_time
 from profiles
-where project_id = $1
+where project_id = $1 and deletion_time is null
 `
 
 type GetAllProfilesByProjectIDRow struct {

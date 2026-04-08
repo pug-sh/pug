@@ -7,13 +7,14 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 )
 
 func TestWToRPCMsg(t *testing.T) {
 	now := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
-	ts := pgtype.Timestamptz{Time: now, Valid: true}
+	ts := postgres.NewTimestamptz(now)
 
 	tests := []struct {
 		name     string
@@ -79,7 +80,7 @@ func TestWToRPCMsg(t *testing.T) {
 
 func TestROToRPCMsg(t *testing.T) {
 	now := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
-	ts := pgtype.Timestamptz{Time: now, Valid: true}
+	ts := postgres.NewTimestamptz(now)
 
 	tests := []struct {
 		name     string
@@ -145,7 +146,7 @@ func TestROToRPCMsg(t *testing.T) {
 
 func TestTimestampConversion(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
-	validTS := pgtype.Timestamptz{Time: now, Valid: true}
+	validTS := postgres.NewTimestamptz(now)
 	invalidTS := pgtype.Timestamptz{Valid: false}
 
 	c := dbwrite.Campaign{

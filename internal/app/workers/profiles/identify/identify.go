@@ -15,7 +15,6 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/xid"
@@ -109,7 +108,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	profile, err := w.Write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         xid.New().String(),
 		ProjectID:  projectID,
-		ExternalID: pgtype.Text{String: externalID, Valid: true},
+		ExternalID: postgres.NewText(externalID),
 		Properties: traits,
 	})
 	if err != nil {
@@ -124,7 +123,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	// Handles first-time linking (NULL → profile) and account switching (old → new).
 	if deviceID := msg.GetDeviceId(); deviceID != "" {
 		linked, err := w.Write.LinkDeviceToProfile(ctx, dbwrite.LinkDeviceToProfileParams{
-			ProfileID: pgtype.Text{String: profile.ID, Valid: true},
+			ProfileID: postgres.NewText(profile.ID),
 			DeviceID:  deviceID,
 			ProjectID: projectID,
 		})
@@ -136,14 +135,14 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			return err
 		}
 		if linked == 0 {
-			slog.DebugContext(ctx, "device not found for linking (may not exist yet)",
+			slog.WarnContext(ctx, "device not found for linking (may not exist yet)",
 				slog.String("projectId", projectID),
 				slog.String("deviceId", deviceID),
 				slog.String("profileId", profile.ID))
 		}
 	}
 
-	// No anonymous ID — just a trait update (and optional device reassign).
+	// No anonymous ID — just a trait update (and optional device link).
 	if anonymousID == "" {
 		return publishUpsert(ctx, natsClient, profile.ID, projectID, profile.ExternalID.String, profile.Properties, false, profile.CreateTime.Time, profile.UpdateTime.Time)
 	}
@@ -208,7 +207,13 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 					slog.String("projectId", projectID),
 					slog.String("anonymousId", anonymousID),
 					slog.String("targetId", target.ID))
-				return nil
+				// Release the connection before the NATS publish.
+				_ = tx.Rollback(ctx)
+				// The upsert in handleIdentify already succeeded in Postgres.
+				// Publish it so ClickHouse stays consistent even though the
+				// merge is skipped. The profile may be deleted again shortly,
+				// but the upsert worker handles that idempotently.
+				return publishUpsert(ctx, natsClient, target.ID, projectID, target.ExternalID.String, target.Properties, false, target.CreateTime.Time, target.UpdateTime.Time)
 			}
 			// Source (anonymous) is gone — expected on retry after a prior committed
 			// merge. Proceed with the pre-upsert target snapshot; device reassignment
@@ -228,8 +233,8 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	}
 
 	if err := qtx.ReassignProfileDevices(ctx, dbwrite.ReassignProfileDevicesParams{
-		TargetID:  pgtype.Text{String: target.ID, Valid: true},
-		SourceID:  pgtype.Text{String: anonymousID, Valid: true},
+		TargetID:  postgres.NewText(target.ID),
+		SourceID:  postgres.NewText(anonymousID),
 		ProjectID: projectID,
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed reassigning devices", slogx.Error(err),
@@ -274,8 +279,8 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	}
 
 	// Soft-delete the anonymous profile in ClickHouse. We use time.Now() for
-	// create_time and update_time because accurate values are unavailable (the
-	// row was already deleted in Postgres). ReplacingMergeTree uses insert_time
+	// create_time and update_time because the anonymous profile was never fetched
+	// and the soft-delete query returns only a row count. ReplacingMergeTree uses insert_time
 	// (set at CH write time via DEFAULT now64(3)) for version ordering, so
 	// these values don't affect dedup — they are purely informational.
 	if err := publishUpsert(ctx, natsClient, anonymousID, projectID, "", nil, true, time.Now(), time.Now()); err != nil {

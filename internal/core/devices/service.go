@@ -3,9 +3,9 @@ package devices
 import (
 	"context"
 
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -33,7 +33,7 @@ func (s *Service) UpdateDeviceStatus(ctx context.Context, id, projectID, status 
 
 func (s *Service) UpdateDeviceToken(ctx context.Context, id, projectID, token string) (dbwrite.ProfileDevice, error) {
 	return s.write.UpdateProfileDeviceToken(ctx, dbwrite.UpdateProfileDeviceTokenParams{
-		Token:     pgtype.Text{String: token, Valid: true},
+		Token:     postgres.NewText(token),
 		ID:        id,
 		ProjectID: projectID,
 	})
@@ -43,7 +43,7 @@ func (s *Service) SaveDevice(ctx context.Context, id, platform, profileID, proje
 	return s.write.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 		ID:         id,
 		Platform:   platform,
-		ProfileID:  pgtype.Text{String: profileID, Valid: profileID != ""},
+		ProfileID:  postgres.NewOptionalText(profileID),
 		ProjectID:  projectID,
 		Properties: properties,
 		Status:     StatusActive,

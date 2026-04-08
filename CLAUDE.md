@@ -164,7 +164,7 @@ ClickHouse profiles use `is_deleted UInt8` for the same purpose. The identify wo
 
 `profile_devices.profile_id` is nullable. Devices can be registered anonymously (no profile exists yet). When the SDK later calls Subscribe with a `profile_id` or `profile_external_id`, the upsert links the device via `coalesce(excluded.profile_id, profile_devices.profile_id)` — a re-subscribe with a profile never unlinks an already-linked device.
 
-The FK uses `ON DELETE SET NULL` — if a profile row is ever hard-deleted (e.g. project cascade), devices become unlinked rather than silently destroyed.
+The FK uses `ON DELETE SET NULL` — if a profile row is ever hard-deleted, its devices become unlinked rather than silently destroyed.
 
 ### ClickHouse Query Builder
 

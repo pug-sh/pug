@@ -76,6 +76,9 @@ type RegisterProfileParams struct {
 	ProjectID  string
 }
 
+// Used only by event ingestion for anonymous profiles. The (id, project_id) conflict
+// target is not partial — it matches soft-deleted rows too. This is acceptable because
+// xid-generated IDs never collide, and this query is not used for identified profiles.
 func (q *Queries) RegisterProfile(ctx context.Context, arg RegisterProfileParams) (Profile, error) {
 	row := q.db.QueryRow(ctx, registerProfile, arg.Properties, arg.ID, arg.ProjectID)
 	var i Profile

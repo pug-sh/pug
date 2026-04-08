@@ -111,7 +111,7 @@ func (s *server) Create(
 		Name:             req.Msg.Name,
 		ProjectID:        projectID,
 		NotificationData: notificationData,
-		ScheduledTime:    postgres.NewTimestampTZ(scheduledTimeParam.AsTime()),
+		ScheduledTime:    postgres.NewTimestamptz(scheduledTimeParam.AsTime()),
 		Status:           campaigns.StatusScheduled,
 	})
 	if err != nil {

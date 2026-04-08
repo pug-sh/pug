@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	natsdeps "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
@@ -56,12 +57,12 @@ func (s *Server) Delete(
 	// so devices can't remain active for a deleted profile.
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed starting delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed starting delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 	defer func() {
 		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "failed rolling back delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+			slog.ErrorContext(ctx, "failed rolling back delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
 		}
 	}()
 
@@ -72,24 +73,29 @@ func (s *Server) Delete(
 		ProjectID: principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed soft-deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed soft-deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 	if n == 0 {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 	}
 
-	if _, err := qtx.DeactivateDevicesByProfileID(ctx, dbwrite.DeactivateDevicesByProfileIDParams{
-		ProfileID: pgtype.Text{String: req.Msg.Id, Valid: true},
+	deactivated, err := qtx.DeactivateDevicesByProfileID(ctx, dbwrite.DeactivateDevicesByProfileIDParams{
+		ProfileID: postgres.NewText(req.Msg.Id),
 		ProjectID: principal.Project.ID,
-	}); err != nil {
+	})
+	if err != nil {
 		slog.ErrorContext(ctx, "failed deactivating devices for deleted profile", slogx.Error(err),
-			slog.String("profileId", req.Msg.Id))
+			slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
+	slog.InfoContext(ctx, "deactivated devices for deleted profile",
+		slog.Int64("count", deactivated),
+		slog.String("profileId", req.Msg.Id),
+		slog.String("projectId", principal.Project.ID))
 
 	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed committing delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed committing delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 
@@ -200,7 +206,7 @@ func (s *Server) List(
 		if err != nil {
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
 		}
-		cursorTime = pgtype.Timestamptz{Time: cursor.CreateTime, Valid: true}
+		cursorTime = postgres.NewTimestamptz(cursor.CreateTime)
 		cursorID = cursor.ID
 		hasCursor = true
 	}
