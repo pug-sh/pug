@@ -4,14 +4,16 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	natsgo "github.com/nats-io/nats.go"
 	"github.com/testcontainers/testcontainers-go"
-	tcnats "github.com/testcontainers/testcontainers-go/modules/nats"
+	"github.com/testcontainers/testcontainers-go/modules/nats"
 )
 
 // TestNATS holds a NATS testcontainer for testing.
 type TestNATS struct {
-	container *tcnats.NATSContainer
+	container *nats.NATSContainer
 	URL       string
 }
 
@@ -22,7 +24,7 @@ func SetupNATS(t *testing.T) *TestNATS {
 
 	ctx := context.Background()
 
-	ctr, err := tcnats.Run(ctx, "nats:2.12-alpine")
+	ctr, err := nats.Run(ctx, "nats:2.12-alpine")
 	if err != nil {
 		t.Fatalf("testutil: start nats container: %v", err)
 	}
@@ -31,6 +33,12 @@ func SetupNATS(t *testing.T) *TestNATS {
 	if err != nil {
 		_ = testcontainers.TerminateContainer(ctr)
 		t.Fatalf("testutil: get nats connection string: %v", err)
+	}
+
+	// Wait for NATS to be fully ready by attempting a connection with retries.
+	if err := waitForNATS(url, 30*time.Second); err != nil {
+		_ = testcontainers.TerminateContainer(ctr)
+		t.Fatalf("testutil: wait for nats ready: %v", err)
 	}
 
 	tn := &TestNATS{
@@ -45,4 +53,25 @@ func SetupNATS(t *testing.T) *TestNATS {
 	})
 
 	return tn
+}
+
+func waitForNATS(url string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			nc, err := natsgo.Connect(url, natsgo.MaxReconnects(1))
+			if err == nil {
+				nc.Close()
+				return nil
+			}
+		}
+	}
 }
