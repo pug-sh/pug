@@ -17,6 +17,12 @@ where project_id = @project_id
 order by create_time desc, id desc
 limit @page_size;
 
+-- name: GetAllProfilesByProjectID :many
+-- This query is only for seeding ClickHouse. Do not use in application code.
+select id, external_id, properties, create_time, update_time
+from profiles
+where project_id = @project_id;
+
 -- name: GetProfilePropertyKeys :many
 select distinct key
 from (

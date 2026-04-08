@@ -11,6 +11,47 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getAllProfilesByProjectID = `-- name: GetAllProfilesByProjectID :many
+select id, external_id, properties, create_time, update_time
+from profiles
+where project_id = $1
+`
+
+type GetAllProfilesByProjectIDRow struct {
+	ID         string
+	ExternalID pgtype.Text
+	Properties map[string]any
+	CreateTime pgtype.Timestamptz
+	UpdateTime pgtype.Timestamptz
+}
+
+// This query is only for seeding ClickHouse. Do not use in application code.
+func (q *Queries) GetAllProfilesByProjectID(ctx context.Context, projectID string) ([]GetAllProfilesByProjectIDRow, error) {
+	rows, err := q.db.Query(ctx, getAllProfilesByProjectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllProfilesByProjectIDRow
+	for rows.Next() {
+		var i GetAllProfilesByProjectIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.Properties,
+			&i.CreateTime,
+			&i.UpdateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProfileByIDAndProjectID = `-- name: GetProfileByIDAndProjectID :one
 select create_time, external_id, id, properties, project_id, update_time from profiles
 where id = $1 and project_id = $2

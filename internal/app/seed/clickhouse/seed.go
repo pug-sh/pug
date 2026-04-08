@@ -2,16 +2,17 @@ package seed
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"time"
 
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/google/uuid"
 )
 
-// Seeder writes mock events directly into ClickHouse for a given project.
 type Seeder struct {
 	deps *deps
 }
@@ -20,14 +21,14 @@ func NewSeeder(deps *deps) *Seeder {
 	return &Seeder{deps: deps}
 }
 
-// Run resolves the earliest project from PostgreSQL, then inserts count events
-// into ClickHouse in batches of batchSize.
-// If file is provided, it imports from that CSV instead of generating random data.
-// If truncate is true (the default), the events table is cleared before inserting.
 func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file string, truncate bool) error {
 	projectID, err := s.resolveProjectID(ctx)
 	if err != nil {
 		return err
+	}
+
+	if err := s.runProfiles(ctx, projectID, truncate); err != nil {
+		return fmt.Errorf("seed profiles: %w", err)
 	}
 
 	if file != "" {
@@ -140,6 +141,67 @@ func (s *Seeder) resolveProjectID(ctx context.Context) (string, error) {
 	return projectID, nil
 }
 
+func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate bool) error {
+	if truncate {
+		slog.InfoContext(ctx, "truncating profiles table")
+		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE profiles"); err != nil {
+			return fmt.Errorf("truncate profiles failed: %w", err)
+		}
+	}
+
+	slog.InfoContext(ctx, "copying profiles from PostgreSQL to ClickHouse",
+		slog.String("project_id", projectID),
+	)
+
+	pgRead := dbread.New(s.deps.pg)
+	profiles, err := pgRead.GetAllProfilesByProjectID(ctx, projectID)
+	if err != nil {
+		return fmt.Errorf("query profiles: %w", err)
+	}
+
+	batch, err := s.deps.ch.PrepareBatch(ctx,
+		"INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time)")
+	if err != nil {
+		return fmt.Errorf("prepare profiles batch: %w", err)
+	}
+
+	inserted := 0
+	for _, p := range profiles {
+		propsJSON, err := json.Marshal(p.Properties)
+		if err != nil {
+			return fmt.Errorf("marshal properties: %w", err)
+		}
+
+		if err := batch.Append(p.ID, projectID, p.ExternalID.String, string(propsJSON), uint8(0), p.CreateTime.Time, p.UpdateTime.Time); err != nil {
+			return fmt.Errorf("append profile: %w", err)
+		}
+		inserted++
+
+		if inserted%1000 == 0 {
+			if err := batch.Send(); err != nil {
+				return fmt.Errorf("send profiles batch: %w", err)
+			}
+			slog.InfoContext(ctx, "profiles copied",
+				slog.Int("inserted", inserted),
+			)
+			batch, err = s.deps.ch.PrepareBatch(ctx,
+				"INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time)")
+			if err != nil {
+				return fmt.Errorf("prepare profiles batch: %w", err)
+			}
+		}
+	}
+
+	if err := batch.Send(); err != nil {
+		return fmt.Errorf("send profiles batch: %w", err)
+	}
+
+	slog.InfoContext(ctx, "profiles copied",
+		slog.Int("count", inserted),
+	)
+	return nil
+}
+
 func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSize int, truncate bool) error {
 	slog.InfoContext(ctx, "importing from CSV",
 		slog.String("project_id", projectID),
@@ -221,7 +283,6 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 	}
 }
 
-// Run is the CLI entry point. It wires dependencies and delegates to Seeder.
 func Run(ctx context.Context, count int64, batchSize int, file string, truncate bool) error {
 	d, err := newDeps(ctx)
 	if err != nil {
