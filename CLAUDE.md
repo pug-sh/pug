@@ -154,6 +154,30 @@ Incoming events are enriched with auto-properties before being published to NATS
 
 Profiles store properties as a single JSONB field (`properties`) rather than separate `auto_properties` and `custom_properties` fields. This simplifies the data model while preserving the ability to distinguish between auto-populated and custom properties at the application level through property naming conventions (e.g., `$` prefix for auto-properties).
 
+### ClickHouse Query Builder
+
+Use `internal/core/clickhouse/query.go` for building ClickHouse queries. It provides a type-safe query builder with parameterized arguments:
+
+```go
+import "github.com/fivebitsio/cotton/internal/core/clickhouse"
+
+q := clickhouse.NewQuery().
+    Select("project_id", "kind", "count() AS event_count").
+    From("events").
+    Where(clickhouse.Eq("project_id", projectID)).
+    GroupBy("project_id", "kind").
+    OrderBy("event_count DESC")
+
+sql, args, err := q.Build()
+```
+
+Key types and functions:
+- **`clickhouse.NewQuery()`** — creates a new query builder
+- **`Condition`** — represents a WHERE clause with SQL + args; use builders like `Eq()`, `Neq()`, `Gt()`, `Lt()`, `Gte()`, `Lte()`, `RawCond()`
+- **`And()`**, **`Or()`** — combine conditions (skip zero-value conditions)
+- **`Query.Select()`**, **`Query.From()`**, **`Query.Where()`**, **`Query.GroupBy()`**, **`Query.OrderBy()`**, **`Query.Limit()`** — chain query parts
+- **`Query.Build()`** — returns SQL string, args, and error
+
 ### ClickHouse Events Table
 
 - **Engine:** `ReplacingMergeTree(insert_time)` — on merge, keeps the row with the highest `insert_time` per dedup key. Avoid `SELECT ... FINAL` — it forces synchronous deduplication at query time and is expensive. Background merges provide eventual consistency, which is sufficient for all current queries including per-user event history. Only use `FINAL` if a query has a hard correctness requirement that cannot tolerate transient duplicates.

@@ -57,7 +57,20 @@ FROM events
 WHERE notEmpty(custom_properties)
 GROUP BY project_id, map_type, kind, key;
 
+CREATE MATERIALIZED VIEW IF NOT EXISTS property_keys_profile_mv TO property_keys AS
+SELECT
+    project_id,
+    'profile'                               AS map_type,
+    ''                                      AS kind,
+    arrayJoin(JSONExtractKeys(properties))  AS key,
+    countState()                            AS event_count,
+    maxState(update_time)                   AS last_seen
+FROM profiles
+WHERE notEmpty(properties)
+GROUP BY project_id, map_type, kind, key;
+
 -- +goose Down
+DROP VIEW IF EXISTS property_keys_profile_mv;
 DROP VIEW IF EXISTS property_keys_custom_mv;
 DROP VIEW IF EXISTS property_keys_auto_mv;
 DROP TABLE IF EXISTS property_keys;
