@@ -112,10 +112,10 @@ func (s *Server) Delete(
 	upsertData, err := proto.Marshal(upsertMsg)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed marshalling profile delete upsert message", slogx.Error(err),
-			slog.String("profileId", req.Msg.Id))
+			slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
 	} else if err = s.producer.Publish(ctx, natsdeps.ProfileUpsertSubject, upsertData); err != nil {
 		slog.ErrorContext(ctx, "failed publishing profile delete to NATS", slogx.Error(err),
-			slog.String("profileId", req.Msg.Id))
+			slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
 	}
 
 	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil

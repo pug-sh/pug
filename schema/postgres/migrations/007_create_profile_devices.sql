@@ -3,6 +3,10 @@ create table profile_devices (
   create_time timestamptz not null default now(),
   id varchar(36) not null,
   platform text not null check (platform in ('android', 'ios', 'web')),
+  -- FK uses ON DELETE SET NULL as a safety net: if a profile were ever hard-deleted
+  -- at the database level, devices become unlinked rather than cascade-deleted.
+  -- In normal operation, profiles are soft-deleted and devices are explicitly
+  -- deactivated within the same transaction (see Delete handler).
   profile_id char(20) references profiles(id) on delete set null,
   project_id char(20) not null references projects(id) on delete cascade,
   properties jsonb not null default '{}'::jsonb,

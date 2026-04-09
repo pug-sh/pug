@@ -31,9 +31,10 @@ func (q *Queries) DeactivateDevicesByProfileID(ctx context.Context, arg Deactiva
 }
 
 const linkDeviceToProfile = `-- name: LinkDeviceToProfile :execrows
-update profile_devices
+update profile_devices pd
 set profile_id = $1
-where id = $2 and project_id = $3
+where pd.id = $2 and pd.project_id = $3
+  and exists (select 1 from profiles p where p.id = $1 and p.deletion_time is null)
 `
 
 type LinkDeviceToProfileParams struct {
@@ -44,7 +45,7 @@ type LinkDeviceToProfileParams struct {
 
 // Assigns a device to a profile. Always overwrites — handles both first-time
 // linking (NULL → profile) and account switching (old profile → new profile).
-// Idempotent: 0 rows if device doesn't exist.
+// Idempotent: 0 rows if device doesn't exist or target profile is soft-deleted.
 func (q *Queries) LinkDeviceToProfile(ctx context.Context, arg LinkDeviceToProfileParams) (int64, error) {
 	result, err := q.db.Exec(ctx, linkDeviceToProfile, arg.ProfileID, arg.DeviceID, arg.ProjectID)
 	if err != nil {
@@ -58,6 +59,7 @@ insert into profile_devices (id, platform, profile_id, project_id, properties, s
 values ($1, $2, $3, $4, coalesce($5::jsonb, '{}'), $6, nullif($7, ''))
 on conflict (project_id, id) do update set
   platform = excluded.platform,
+  -- Preserve existing profile link if the new value is NULL (anonymous re-subscribe).
   profile_id = coalesce(excluded.profile_id, profile_devices.profile_id),
   properties = jsonb_shallow_merge(profile_devices.properties, excluded.properties),
   status = excluded.status,

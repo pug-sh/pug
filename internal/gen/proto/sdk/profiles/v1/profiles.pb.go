@@ -30,8 +30,8 @@ type IdentifyRequest struct {
 	// Profile properties — shallow-merged into existing properties. On key conflict,
 	// these values take precedence over previously stored values.
 	Traits *structpb.Struct `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
-	// The SDK-generated anonymous ID. Send on first identify only — triggers
-	// merge-and-soft-delete of the anonymous profile. Must start with "anon-".
+	// The SDK-generated anonymous ID. The SDK should send this on first identify
+	// to trigger merge-and-soft-delete of the anonymous profile. Must start with "anon-".
 	AnonymousId string `protobuf:"bytes,3,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
 	// The device to assign to this profile. The SDK should send this on first
 	// identify and on account switch (external_id changed) — not on every call,

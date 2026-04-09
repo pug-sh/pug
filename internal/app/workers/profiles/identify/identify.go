@@ -208,7 +208,12 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 					slog.String("anonymousId", anonymousID),
 					slog.String("targetId", target.ID))
 				// Release the connection before the NATS publish.
-				_ = tx.Rollback(ctx)
+				if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+					slog.ErrorContext(ctx, "failed rolling back transaction after target-deleted skip", slogx.Error(err),
+						slog.String("projectId", projectID),
+						slog.String("anonymousId", anonymousID),
+						slog.String("targetId", target.ID))
+				}
 				// The upsert in handleIdentify already succeeded in Postgres.
 				// Publish it so ClickHouse stays consistent even though the
 				// merge is skipped. The profile may be deleted again shortly,

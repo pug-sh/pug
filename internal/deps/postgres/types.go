@@ -19,6 +19,10 @@ func NewTimestamptz(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: true}
 }
 
+func NewOptionalTimestamptz(t time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: t, Valid: !t.IsZero()}
+}
+
 // TimestampToTimestamptz converts a proto timestamp to pgtype, returning Valid: false for nil.
 func TimestampToTimestamptz(ts *timestamppb.Timestamp) pgtype.Timestamptz {
 	if ts == nil {
