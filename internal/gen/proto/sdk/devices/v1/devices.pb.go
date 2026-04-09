@@ -603,9 +603,10 @@ var File_sdk_devices_v1_devices_proto protoreflect.FileDescriptor
 
 const file_sdk_devices_v1_devices_proto_rawDesc = "" +
 	"\n" +
-	"\x1csdk/devices/v1/devices.proto\x12\x0esdk.devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xc4\x03\n" +
-	"\x10SubscribeRequest\x12&\n" +
-	"\tdevice_id\x18\x01 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18$R\bdeviceId\x124\n" +
+	"\x1csdk/devices/v1/devices.proto\x12\x0esdk.devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xc5\x03\n" +
+	"\x10SubscribeRequest\x12'\n" +
+	"\tdevice_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18$R\bdeviceId\x124\n" +
 	"\bplatform\x18\x02 \x01(\tB\x18\xbaH\x15r\x13R\aandroidR\x03iosR\x03webR\bplatform\x128\n" +
 	"\x13profile_external_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\x11profileExternalId\x12&\n" +
 	"\n" +
@@ -615,19 +616,22 @@ const file_sdk_devices_v1_devices_proto_rawDesc = "" +
 	"properties\x18\x06 \x01(\v2\x17.google.protobuf.StructR\n" +
 	"properties:\x98\x01\xbaH\x94\x01\x1a\x91\x01\n" +
 	"\x19profile_id_or_external_id\x12;at most one of profile_id or profile_external_id may be set\x1a7this.profile_id == '' || this.profile_external_id == ''\"\x13\n" +
-	"\x11SubscribeResponse\"a\n" +
-	"\x13UpdateStatusRequest\x12\x19\n" +
-	"\x02id\x18\x01 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18$R\x02id\x12/\n" +
+	"\x11SubscribeResponse\"b\n" +
+	"\x13UpdateStatusRequest\x12\x1a\n" +
+	"\x02id\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18$R\x02id\x12/\n" +
 	"\x06status\x18\x02 \x01(\tB\x17\xbaH\x14r\x12R\x06activeR\binactiveR\x06status\"\x16\n" +
-	"\x14UpdateStatusResponse\"M\n" +
-	"\x12UpdateTokenRequest\x12\x19\n" +
-	"\x02id\x18\x01 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18$R\x02id\x12\x1c\n" +
+	"\x14UpdateStatusResponse\"N\n" +
+	"\x12UpdateTokenRequest\x12\x1a\n" +
+	"\x02id\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18$R\x02id\x12\x1c\n" +
 	"\x05token\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\"\x15\n" +
 	"\x13UpdateTokenResponse\"\xd4\x02\n" +
-	"\x16DeviceOperationMessage\x12&\n" +
-	"\tdevice_id\x18\x01 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18$R\bdeviceId\x12&\n" +
+	"\x16DeviceOperationMessage\x12'\n" +
+	"\tdevice_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18$R\bdeviceId\x12%\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprojectId\x12@\n" +
+	"project_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprojectId\x12@\n" +
 	"\tsubscribe\x18\n" +
 	" \x01(\v2 .sdk.devices.v1.SubscribePayloadH\x00R\tsubscribe\x12J\n" +
 	"\rupdate_status\x18\v \x01(\v2#.sdk.devices.v1.UpdateStatusPayloadH\x00R\fupdateStatus\x12G\n" +

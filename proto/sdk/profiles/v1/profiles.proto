@@ -16,7 +16,7 @@ service ProfilesSDKService {
 
 message IdentifyRequest {
   // Stable user identifier (e.g. email, database ID).
-  string external_id = 1 [(buf.validate.field).string = {min_len: 1}];
+  string external_id = 1 [(buf.validate.field).required = true];
   // Profile properties — shallow-merged into existing properties. On key conflict,
   // these values take precedence over previously stored values.
   google.protobuf.Struct traits = 2;

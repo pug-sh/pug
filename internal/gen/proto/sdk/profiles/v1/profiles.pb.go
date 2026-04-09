@@ -217,9 +217,9 @@ var File_sdk_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xca\x01\n" +
-	"\x0fIdentifyRequest\x12(\n" +
-	"\vexternal_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
+	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xc9\x01\n" +
+	"\x0fIdentifyRequest\x12'\n" +
+	"\vexternal_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"externalId\x12/\n" +
 	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x126\n" +
 	"\fanonymous_id\x18\x03 \x01(\tB\x13\xbaH\x10r\x0e\x18\xff\x012\t^$|^anon-R\vanonymousId\x12$\n" +
