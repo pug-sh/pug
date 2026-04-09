@@ -821,14 +821,14 @@ func TestSoftDeleteDeactivatesDevices(t *testing.T) {
 		ID:        profileID,
 		ProjectID: projectID,
 	}); err != nil {
-		tx.Rollback(ctx)
+		_ = tx.Rollback(ctx)
 		t.Fatalf("soft delete profile: %v", err)
 	}
 	if _, err := qtx.DeactivateDevicesByProfileID(ctx, dbwrite.DeactivateDevicesByProfileIDParams{
 		ProfileID: postgres.NewText(profileID),
 		ProjectID: projectID,
 	}); err != nil {
-		tx.Rollback(ctx)
+		_ = tx.Rollback(ctx)
 		t.Fatalf("deactivate devices: %v", err)
 	}
 	if err := tx.Commit(ctx); err != nil {

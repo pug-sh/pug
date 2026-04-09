@@ -4,12 +4,15 @@ select case
   when a is null then b
   when b is null then a
   when jsonb_typeof(a) = 'object' and jsonb_typeof(b) = 'object' then
-    (select jsonb_object_agg(
-      coalesce(ka, kb),
-      coalesce(vb, va)
+    coalesce(
+      (select jsonb_object_agg(
+        coalesce(ka, kb),
+        coalesce(vb, va)
+      )
+      from jsonb_each(a) as ta(ka, va)
+      full outer join jsonb_each(b) as tb(kb, vb) on ka = kb),
+      '{}'::jsonb
     )
-    from jsonb_each(a) as ta(ka, va)
-    full outer join jsonb_each(b) as tb(kb, vb) on ka = kb)
   else b
 end
 $$ language sql immutable;
