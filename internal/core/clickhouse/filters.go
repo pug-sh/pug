@@ -92,10 +92,10 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 	propertyCond := And(nonemptyCond, innerCond)
 
 	sql := fmt.Sprintf(`%s IN (
-		SELECT p.id FROM profiles p WHERE p.project_id = ? AND %s
+		SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.deletion_time IS NULL AND %s
 		UNION ALL
 		SELECT pa.alias_id FROM profile_aliases pa WHERE pa.project_id = ? AND pa.profile_id IN (
-			SELECT p.id FROM profiles p WHERE p.project_id = ? AND %s
+			SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.deletion_time IS NULL AND %s
 		)
 	)`, distinctIDCol, propertyCond.SQL(), propertyCond.SQL())
 

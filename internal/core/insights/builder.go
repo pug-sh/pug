@@ -25,9 +25,9 @@ type TrendsQuery struct {
 	properties    []string // breakdown property names for GroupSeries
 }
 
-func (q TrendsQuery) SQL() string      { return q.sql }
-func (q TrendsQuery) Args() []any      { return q.args }
-func (q TrendsQuery) NumBreakdowns() int { return q.numBreakdowns }
+func (q TrendsQuery) SQL() string          { return q.sql }
+func (q TrendsQuery) Args() []any          { return q.args }
+func (q TrendsQuery) NumBreakdowns() int   { return q.numBreakdowns }
 func (q TrendsQuery) Properties() []string { return q.properties }
 
 // ScalarQuery is the compiled SQL for a single-value query (segmentation).
@@ -56,9 +56,9 @@ type FunnelTimingQuery struct {
 	windowSec int64    // conversion window for ComputeFunnelTiming
 }
 
-func (q FunnelTimingQuery) SQL() string    { return q.sql }
-func (q FunnelTimingQuery) Args() []any    { return q.args }
-func (q FunnelTimingQuery) Kinds() []string { return q.kinds }
+func (q FunnelTimingQuery) SQL() string      { return q.sql }
+func (q FunnelTimingQuery) Args() []any      { return q.args }
+func (q FunnelTimingQuery) Kinds() []string  { return q.kinds }
 func (q FunnelTimingQuery) WindowSec() int64 { return q.windowSec }
 
 // RetentionQuery is the compiled SQL for retention cohort analysis.
@@ -713,10 +713,11 @@ func BuildProfilePropertyKeysQuery(projectID string) (string, []any, error) {
 func BuildProfilePropertyValuesQuery(projectID, propertyKey string) (string, []any, error) {
 	propExpr := fmt.Sprintf("JSONExtractString(properties, '%s')", propertyKey)
 	return chq.NewQuery().
-		Select("DISTINCT " + propExpr + " AS value").
+		Select("DISTINCT "+propExpr+" AS value").
 		From("profiles").
 		Where(
 			chq.Eq("project_id", projectID),
+			chq.Eq("is_deleted", 0),
 			chq.RawCond(propExpr+" != ''"),
 		).
 		Limit(int64(PropertyValuesLimit)).
