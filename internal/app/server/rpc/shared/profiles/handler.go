@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	natsdeps "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
@@ -25,6 +26,7 @@ import (
 
 type Server struct {
 	profilesv1connect.UnimplementedProfilesServiceHandler
+	pgW      *pgxpool.Pool
 	read     *dbread.Queries
 	write    *dbwrite.Queries
 	producer *natsdeps.NATSClient
@@ -35,6 +37,7 @@ func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nats *natsdeps.NATSClient)
 		panic("profiles: nats is nil")
 	}
 	return &Server{
+		pgW:      pgW,
 		read:     dbread.New(pgRO),
 		write:    dbwrite.New(pgW),
 		producer: nats,
@@ -50,21 +53,55 @@ func (s *Server) Delete(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	n, err := s.write.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
+	// Soft-delete profile and deactivate its devices in a single transaction
+	// so devices can't remain active for a deleted profile.
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed starting delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
+		}
+	}()
+
+	qtx := s.write.WithTx(tx)
+
+	n, err := qtx.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
 		ID:        req.Msg.Id,
 		ProjectID: principal.Project.ID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed soft-deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 	if n == 0 {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 	}
 
-	// Best-effort publish to sync deletion to ClickHouse. The PG delete is already
-	// committed, so we return success regardless — a failed NATS publish is logged
-	// for reconciliation but must not fail the client request (retry would get NotFound).
+	deactivated, err := qtx.DeactivateDevicesByProfileID(ctx, dbwrite.DeactivateDevicesByProfileIDParams{
+		ProfileID: postgres.NewText(req.Msg.Id),
+		ProjectID: principal.Project.ID,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed deactivating devices for deleted profile", slogx.Error(err),
+			slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
+	}
+	slog.InfoContext(ctx, "deactivated devices for deleted profile",
+		slog.Int64("count", deactivated),
+		slog.String("profileId", req.Msg.Id),
+		slog.String("projectId", principal.Project.ID))
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed committing delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
+	}
+
+	// Best-effort publish to sync deletion to ClickHouse. The PG transaction is
+	// already committed, so we return success regardless — a failed NATS publish
+	// is logged for reconciliation but must not fail the client request.
 	now := timestamppb.New(time.Now())
 	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
 		ProfileId:  req.Msg.Id,
@@ -75,10 +112,10 @@ func (s *Server) Delete(
 	upsertData, err := proto.Marshal(upsertMsg)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed marshalling profile delete upsert message", slogx.Error(err),
-			slog.String("profileId", req.Msg.Id))
+			slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
 	} else if err = s.producer.Publish(ctx, natsdeps.ProfileUpsertSubject, upsertData); err != nil {
 		slog.ErrorContext(ctx, "failed publishing profile delete to NATS", slogx.Error(err),
-			slog.String("profileId", req.Msg.Id))
+			slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
 	}
 
 	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil
@@ -169,7 +206,7 @@ func (s *Server) List(
 		if err != nil {
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
 		}
-		cursorTime = pgtype.Timestamptz{Time: cursor.CreateTime, Valid: true}
+		cursorTime = postgres.NewTimestamptz(cursor.CreateTime)
 		cursorID = cursor.ID
 		hasCursor = true
 	}

@@ -38,8 +38,9 @@ func (s *Server) Identify(
 	msg := &sdkprofilesv1.ProfileIdentifyMessage{
 		ExternalId:  req.Msg.GetExternalId(),
 		Traits:      req.Msg.GetTraits(),
-		AnonymousId: req.Msg.GetAnonymousId(),
 		ProjectId:   principal.Project.ID,
+		AnonymousId: req.Msg.GetAnonymousId(),
+		DeviceId:    req.Msg.GetDeviceId(),
 	}
 
 	data, err := proto.Marshal(msg)

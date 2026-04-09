@@ -11,11 +11,56 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deactivateDevicesByProfileID = `-- name: DeactivateDevicesByProfileID :execrows
+update profile_devices
+set status = 'inactive'
+where profile_id = $1 and project_id = $2 and status = 'active'
+`
+
+type DeactivateDevicesByProfileIDParams struct {
+	ProfileID pgtype.Text
+	ProjectID string
+}
+
+func (q *Queries) DeactivateDevicesByProfileID(ctx context.Context, arg DeactivateDevicesByProfileIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateDevicesByProfileID, arg.ProfileID, arg.ProjectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const linkDeviceToProfile = `-- name: LinkDeviceToProfile :execrows
+update profile_devices pd
+set profile_id = $1
+where pd.id = $2 and pd.project_id = $3
+  and exists (select 1 from profiles p where p.id = $1 and p.deletion_time is null)
+`
+
+type LinkDeviceToProfileParams struct {
+	ProfileID pgtype.Text
+	DeviceID  string
+	ProjectID string
+}
+
+// Assigns a device to a profile. Always overwrites — handles both first-time
+// linking (NULL → profile) and account switching (old profile → new profile).
+// Idempotent: 0 rows if device doesn't exist or target profile is soft-deleted.
+func (q *Queries) LinkDeviceToProfile(ctx context.Context, arg LinkDeviceToProfileParams) (int64, error) {
+	result, err := q.db.Exec(ctx, linkDeviceToProfile, arg.ProfileID, arg.DeviceID, arg.ProjectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const saveProfileDevice = `-- name: SaveProfileDevice :one
 insert into profile_devices (id, platform, profile_id, project_id, properties, status, token)
 values ($1, $2, $3, $4, coalesce($5::jsonb, '{}'), $6, nullif($7, ''))
 on conflict (project_id, id) do update set
   platform = excluded.platform,
+  -- Preserve existing profile link if the new value is NULL (anonymous re-subscribe).
+  profile_id = coalesce(excluded.profile_id, profile_devices.profile_id),
   properties = jsonb_shallow_merge(profile_devices.properties, excluded.properties),
   status = excluded.status,
   token = coalesce(nullif(excluded.token, ''), profile_devices.token)
@@ -25,7 +70,7 @@ returning create_time, id, platform, profile_id, project_id, properties, status,
 type SaveProfileDeviceParams struct {
 	ID         string
 	Platform   string
-	ProfileID  string
+	ProfileID  pgtype.Text
 	ProjectID  string
 	Properties map[string]any
 	Status     string

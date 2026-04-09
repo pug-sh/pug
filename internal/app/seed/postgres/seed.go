@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"github.com/fivebitsio/cotton/internal/core/projects"
+	dbtypes "github.com/fivebitsio/cotton/internal/deps/postgres"
 	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -254,7 +254,7 @@ func (s *Seeder) seedProfiles(ctx context.Context, projectID string) ([]string, 
 			if _, err := w.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 				ID:         id,
 				ProjectID:  projectID,
-				ExternalID: pgtype.Text{String: externalID, Valid: true},
+				ExternalID: dbtypes.NewText(externalID),
 				Properties: props,
 			}); err != nil {
 				return nil, fmt.Errorf("upsert profile %s: %w", id, err)
@@ -314,7 +314,7 @@ func (s *Seeder) seedMerges(ctx context.Context, projectID string, identifiedIDs
 		if _, err := w.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 			ID:         deviceID,
 			Platform:   platform,
-			ProfileID:  anonID,
+			ProfileID:  dbtypes.NewText(anonID),
 			ProjectID:  projectID,
 			Properties: map[string]any{},
 			Status:     "active",
@@ -340,20 +340,20 @@ func (s *Seeder) seedMerges(ctx context.Context, projectID string, identifiedIDs
 		}
 
 		if err := qtx.ReassignProfileDevices(ctx, dbwrite.ReassignProfileDevicesParams{
-			SourceID:  anonID,
-			TargetID:  targetID,
+			SourceID:  dbtypes.NewText(anonID),
+			TargetID:  dbtypes.NewText(targetID),
 			ProjectID: projectID,
 		}); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("reassign devices %s → %s: %w", anonID, targetID, err)
 		}
 
-		if _, err := qtx.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
+		if _, err := qtx.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
 			ID:        anonID,
 			ProjectID: projectID,
 		}); err != nil {
 			_ = tx.Rollback(ctx)
-			return fmt.Errorf("delete anon profile %s: %w", anonID, err)
+			return fmt.Errorf("soft-delete anon profile %s: %w", anonID, err)
 		}
 
 		if err := tx.Commit(ctx); err != nil {
@@ -431,7 +431,7 @@ func (s *Seeder) seedDevices(ctx context.Context, projectID string) error {
 			if _, err := w.SaveProfileDevice(ctx, dbwrite.SaveProfileDeviceParams{
 				ID:         deviceID,
 				Platform:   platform,
-				ProfileID:  profileID,
+				ProfileID:  dbtypes.NewText(profileID),
 				ProjectID:  projectID,
 				Properties: map[string]any{},
 				Status:     status,

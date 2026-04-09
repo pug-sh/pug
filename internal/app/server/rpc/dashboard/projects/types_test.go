@@ -3,6 +3,7 @@ package projects
 import (
 	"testing"
 
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -22,7 +23,7 @@ func TestROToRPCMsg(t *testing.T) {
 				DisplayName:    "My Project",
 				PublicApiKey:   "pub_key_123",
 				PrivateApiKey:  "secret_private_key",
-				FcmServiceJson: pgtype.Text{String: `{"type":"service_account"}`, Valid: true},
+				FcmServiceJson: postgres.NewText(`{"type":"service_account"}`),
 			},
 		},
 		{
@@ -77,7 +78,7 @@ func TestWToRPCMsg(t *testing.T) {
 				DisplayName:    "Write Project",
 				PublicApiKey:   "pub_w_key",
 				PrivateApiKey:  "priv_w_secret",
-				FcmServiceJson: pgtype.Text{String: `{"project_id":"123"}`, Valid: true},
+				FcmServiceJson: postgres.NewText(`{"project_id":"123"}`),
 			},
 		},
 		{
@@ -132,7 +133,7 @@ func TestWToRPCMsgWithPrivateKey(t *testing.T) {
 				DisplayName:    "Create Response Project",
 				PublicApiKey:   "pub_pk_key",
 				PrivateApiKey:  "the_private_key",
-				FcmServiceJson: pgtype.Text{String: `{"service":"account"}`, Valid: true},
+				FcmServiceJson: postgres.NewText(`{"service":"account"}`),
 			},
 		},
 		{
@@ -180,7 +181,7 @@ func TestWToRPCMsgWithPrivateKeyIncludesAllBaseFields(t *testing.T) {
 		DisplayName:    "Compare",
 		PublicApiKey:   "pub_cmp",
 		PrivateApiKey:  "priv_cmp",
-		FcmServiceJson: pgtype.Text{String: "fcm_json", Valid: true},
+		FcmServiceJson: postgres.NewText("fcm_json"),
 	}
 
 	base := wToRPCMsg(p)

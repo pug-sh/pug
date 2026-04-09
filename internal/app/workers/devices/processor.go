@@ -82,9 +82,14 @@ func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOper
 func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOperationMessage) error {
 	subscribe := msg.GetSubscribe()
 
-	profileID, err := w.resolveProfileID(ctx, msg, subscribe)
-	if err != nil {
-		return err
+	// Profile is optional — anonymous devices have no profile yet.
+	var profileID string
+	if subscribe.GetProfileId() != "" || subscribe.GetProfileExternalId() != "" {
+		resolved, err := w.resolveProfileID(ctx, msg, subscribe)
+		if err != nil {
+			return err
+		}
+		profileID = resolved
 	}
 
 	properties := subscribe.GetProperties().AsMap()

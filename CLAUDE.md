@@ -154,6 +154,18 @@ Incoming events are enriched with auto-properties before being published to NATS
 
 Profiles store properties as a single JSONB field (`properties`) rather than separate `auto_properties` and `custom_properties` fields. This simplifies the data model while preserving the ability to distinguish between auto-populated and custom properties at the application level through property naming conventions (e.g., `$` prefix for auto-properties).
 
+### Profile Soft-Delete
+
+Profiles use soft-delete via a `deletion_time timestamptz` column (NULL = active). All read queries filter `deletion_time IS NULL`. The `SoftDeleteProfileByIDAndProjectID` query sets `deletion_time = now()` — it never hard-deletes. The `deletion_time IS NULL` guard makes soft-delete idempotent (returns 0 rows if already deleted).
+
+ClickHouse profiles use `is_deleted UInt8` for the same purpose. The identify worker and dashboard delete handler both publish `ProfileUpsertMessage` with `is_deleted=true` to sync soft-deletes to ClickHouse.
+
+### Device Subscriptions
+
+`profile_devices.profile_id` is nullable. Devices can be registered anonymously (no profile exists yet). When the SDK later calls Subscribe with a `profile_id` or `profile_external_id`, the upsert links the device via `coalesce(excluded.profile_id, profile_devices.profile_id)` — a re-subscribe with a profile never unlinks an already-linked device. The identify worker uses `LinkDeviceToProfile` which always overwrites `profile_id` to support account switching (old profile → new profile).
+
+The FK uses `ON DELETE SET NULL` as a safety net — if a profile row were ever hard-deleted at the database level, devices would become unlinked rather than cascade-deleted. In normal operation, profiles are soft-deleted and devices are explicitly deactivated within the same transaction.
+
 ### ClickHouse Query Builder
 
 Use `internal/core/clickhouse/query.go` for building ClickHouse queries. It provides a type-safe query builder with parameterized arguments:

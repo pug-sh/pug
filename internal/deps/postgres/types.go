@@ -11,7 +11,15 @@ func NewText(s string) pgtype.Text {
 	return pgtype.Text{String: s, Valid: true}
 }
 
-func NewTimestampTZ(t time.Time) pgtype.Timestamptz {
+func NewOptionalText(s string) pgtype.Text {
+	return pgtype.Text{String: s, Valid: s != ""}
+}
+
+func NewTimestamptz(t time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: t, Valid: true}
+}
+
+func NewOptionalTimestamptz(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: !t.IsZero()}
 }
 

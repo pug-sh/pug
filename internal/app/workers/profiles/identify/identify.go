@@ -15,7 +15,6 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/xid"
@@ -109,7 +108,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	profile, err := w.Write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 		ID:         xid.New().String(),
 		ProjectID:  projectID,
-		ExternalID: pgtype.Text{String: externalID, Valid: true},
+		ExternalID: postgres.NewText(externalID),
 		Properties: traits,
 	})
 	if err != nil {
@@ -119,7 +118,31 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		return err
 	}
 
-	// No anonymous profile to merge — publish upsert and we're done.
+	// Assign device to this profile. The SDK sends device_id on first identify
+	// and on account switch (external_id changed) — not on every call.
+	// Handles first-time linking (NULL → profile) and account switching (old → new).
+	if deviceID := msg.GetDeviceId(); deviceID != "" {
+		linked, err := w.Write.LinkDeviceToProfile(ctx, dbwrite.LinkDeviceToProfileParams{
+			ProfileID: postgres.NewText(profile.ID),
+			DeviceID:  deviceID,
+			ProjectID: projectID,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "failed linking device to profile", slogx.Error(err),
+				slog.String("projectId", projectID),
+				slog.String("deviceId", deviceID),
+				slog.String("profileId", profile.ID))
+			return err
+		}
+		if linked == 0 {
+			slog.WarnContext(ctx, "device not found for linking (may not exist yet)",
+				slog.String("projectId", projectID),
+				slog.String("deviceId", deviceID),
+				slog.String("profileId", profile.ID))
+		}
+	}
+
+	// No anonymous ID — just a trait update (and optional device link).
 	if anonymousID == "" {
 		return publishUpsert(ctx, natsClient, profile.ID, projectID, profile.ExternalID.String, profile.Properties, false, profile.CreateTime.Time, profile.UpdateTime.Time)
 	}
@@ -131,8 +154,8 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natsworker.NATSClient, projectID, anonymousID string, target dbwrite.Profile) error {
 	// If the anonymous ID is the same as the target, skip the merge path.
 	// Proceeding would attempt to merge a profile into itself:
-	// MergeProfileProperties would be a no-op, but DeleteProfileByIDAndProjectID
-	// would delete the very profile we just upserted. This happens when the SDK
+	// MergeProfileProperties would be a no-op, but SoftDeleteProfileByIDAndProjectID
+	// would soft-delete the very profile we just upserted. This happens when the SDK
 	// re-identifies a profile that was already identified — the upsert returned
 	// the existing row whose ID matches the anonymous_id sent by the client.
 	if anonymousID == target.ID {
@@ -172,7 +195,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			// deleted (e.g. dashboard Delete), skip the merge entirely.
 			var targetExists bool
 			if err := tx.QueryRow(ctx,
-				"select exists(select 1 from profiles where id = $1 and project_id = $2)",
+				"select exists(select 1 from profiles where id = $1 and project_id = $2 and deletion_time is null)",
 				target.ID, projectID).Scan(&targetExists); err != nil {
 				slog.ErrorContext(ctx, "failed checking target profile existence", slogx.Error(err),
 					slog.String("projectId", projectID),
@@ -184,7 +207,18 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 					slog.String("projectId", projectID),
 					slog.String("anonymousId", anonymousID),
 					slog.String("targetId", target.ID))
-				return nil
+				// Release the connection before the NATS publish.
+				if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+					slog.ErrorContext(ctx, "failed rolling back transaction after target-deleted skip", slogx.Error(err),
+						slog.String("projectId", projectID),
+						slog.String("anonymousId", anonymousID),
+						slog.String("targetId", target.ID))
+				}
+				// The upsert in handleIdentify already succeeded in Postgres.
+				// Publish it so ClickHouse stays consistent even though the
+				// merge is skipped. The profile may be deleted again shortly,
+				// but the upsert worker handles that idempotently.
+				return publishUpsert(ctx, natsClient, target.ID, projectID, target.ExternalID.String, target.Properties, false, target.CreateTime.Time, target.UpdateTime.Time)
 			}
 			// Source (anonymous) is gone — expected on retry after a prior committed
 			// merge. Proceed with the pre-upsert target snapshot; device reassignment
@@ -204,8 +238,8 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	}
 
 	if err := qtx.ReassignProfileDevices(ctx, dbwrite.ReassignProfileDevicesParams{
-		TargetID:  target.ID,
-		SourceID:  anonymousID,
+		TargetID:  postgres.NewText(target.ID),
+		SourceID:  postgres.NewText(anonymousID),
 		ProjectID: projectID,
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed reassigning devices", slogx.Error(err),
@@ -215,18 +249,18 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		return err
 	}
 
-	rowsDeleted, err := qtx.DeleteProfileByIDAndProjectID(ctx, dbwrite.DeleteProfileByIDAndProjectIDParams{
+	rowsDeleted, err := qtx.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
 		ID:        anonymousID,
 		ProjectID: projectID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed deleting anonymous profile", slogx.Error(err),
+		slog.ErrorContext(ctx, "failed soft-deleting anonymous profile", slogx.Error(err),
 			slog.String("projectId", projectID),
 			slog.String("anonymousId", anonymousID))
 		return err
 	}
 	if rowsDeleted == 0 {
-		slog.DebugContext(ctx, "anonymous profile already deleted (expected during retry)",
+		slog.DebugContext(ctx, "anonymous profile already soft-deleted (expected during retry)",
 			slog.String("projectId", projectID),
 			slog.String("anonymousId", anonymousID))
 	}
@@ -250,8 +284,8 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	}
 
 	// Soft-delete the anonymous profile in ClickHouse. We use time.Now() for
-	// create_time and update_time because accurate values are unavailable (the
-	// row was already deleted in Postgres). ReplacingMergeTree uses insert_time
+	// create_time and update_time because the anonymous profile was never fetched
+	// and the soft-delete query returns only a row count. ReplacingMergeTree uses insert_time
 	// (set at CH write time via DEFAULT now64(3)) for version ordering, so
 	// these values don't affect dedup — they are purely informational.
 	if err := publishUpsert(ctx, natsClient, anonymousID, projectID, "", nil, true, time.Now(), time.Now()); err != nil {

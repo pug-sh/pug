@@ -15,11 +15,12 @@ service DevicesService {
 
 message SubscribeRequest {
   option (buf.validate.message).cel = {
-    id: "subscribe_request.profile_identifier"
-    message: "either profile_id or profile_external_id must be provided"
-    expression: "this.profile_id != '' || this.profile_external_id != ''"
+    id: "profile_id_or_external_id",
+    message: "at most one of profile_id or profile_external_id may be set",
+    expression: "this.profile_id == '' || this.profile_external_id == ''"
   };
-  string device_id = 1 [(buf.validate.field).string = {len: 20}];
+
+  string device_id = 1 [(buf.validate.field).string = {min_len: 1, max_len: 36}];
   string platform = 2 [(buf.validate.field).string = {
     in: [
       "android",
@@ -27,8 +28,10 @@ message SubscribeRequest {
       "web"
     ]
   }];
-  string profile_external_id = 3;
-  string profile_id = 4;
+  // Optional — when provided, links the device to a profile.
+  string profile_external_id = 3 [(buf.validate.field).string = {max_len: 255}];
+  // Optional — alternative to profile_external_id for linking.
+  string profile_id = 4 [(buf.validate.field).string = {max_len: 20}];
   string token = 5 [(buf.validate.field).required = true];
   google.protobuf.Struct properties = 6;
 }
@@ -36,7 +39,7 @@ message SubscribeRequest {
 message SubscribeResponse {}
 
 message UpdateStatusRequest {
-  string id = 1 [(buf.validate.field).string = {len: 20}];
+  string id = 1 [(buf.validate.field).string = {min_len: 1, max_len: 36}];
   string status = 2 [(buf.validate.field).string = {
     in: [
       "active",
@@ -48,14 +51,14 @@ message UpdateStatusRequest {
 message UpdateStatusResponse {}
 
 message UpdateTokenRequest {
-  string id = 1 [(buf.validate.field).string = {len: 20}];
+  string id = 1 [(buf.validate.field).string = {min_len: 1, max_len: 36}];
   string token = 2 [(buf.validate.field).required = true];
 }
 
 message UpdateTokenResponse {}
 
 message DeviceOperationMessage {
-  string device_id = 1 [(buf.validate.field).string = {len: 20}];
+  string device_id = 1 [(buf.validate.field).string = {min_len: 1, max_len: 36}];
   string project_id = 2 [(buf.validate.field).string = {min_len: 1}];
 
   oneof operation_payload {

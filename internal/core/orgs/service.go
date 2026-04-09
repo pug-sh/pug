@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
@@ -17,7 +18,6 @@ import (
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 )
@@ -165,10 +165,10 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 	inv, err := s.write.CreateOrgInvitation(ctx, dbwrite.CreateOrgInvitationParams{
 		ID:        xid.New().String(),
 		OrgID:     orgID,
-		InviterID: pgtype.Text{String: inviterID, Valid: inviterID != ""},
+		InviterID: postgres.NewOptionalText(inviterID),
 		Email:     email,
 		Token:     token,
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(inviteTTL), Valid: true},
+		ExpiresAt: postgres.NewTimestamptz(time.Now().Add(inviteTTL)),
 	})
 	if err != nil {
 		// The CTE checks org_members joined with customers by email. ErrNoRows means

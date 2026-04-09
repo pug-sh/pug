@@ -7,12 +7,18 @@ package dbread
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getActiveProfileDevicesByProject = `-- name: GetActiveProfileDevicesByProject :many
-select create_time, id, platform, profile_id, project_id, properties, status, token, update_time from profile_devices
-where project_id = $1 and status = 'active' and id > $2
-order by id
+select pd.create_time, pd.id, pd.platform, pd.profile_id, pd.project_id, pd.properties, pd.status, pd.token, pd.update_time from profile_devices pd
+left join profiles p on p.id = pd.profile_id and p.project_id = pd.project_id
+where pd.project_id = $1
+  and pd.status = 'active'
+  and pd.id > $2
+  and (pd.profile_id is null or p.deletion_time is null)
+order by pd.id
 limit $3
 `
 
@@ -22,6 +28,8 @@ type GetActiveProfileDevicesByProjectParams struct {
 	RowLimit  int32
 }
 
+// Excludes devices still linked to a soft-deleted profile so campaigns
+// never target a "deleted" user's devices.
 func (q *Queries) GetActiveProfileDevicesByProject(ctx context.Context, arg GetActiveProfileDevicesByProjectParams) ([]ProfileDevice, error) {
 	rows, err := q.db.Query(ctx, getActiveProfileDevicesByProject, arg.ProjectID, arg.AfterID, arg.RowLimit)
 	if err != nil {
@@ -58,7 +66,7 @@ where profile_id = $1 and project_id = $2
 `
 
 type GetProfileDevicesByProfileIDParams struct {
-	ProfileID string
+	ProfileID pgtype.Text
 	ProjectID string
 }
 

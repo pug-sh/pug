@@ -11,33 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteProfileByIDAndProjectID = `-- name: DeleteProfileByIDAndProjectID :execrows
-delete from profiles
-where id = $1 and project_id = $2
-`
-
-type DeleteProfileByIDAndProjectIDParams struct {
-	ID        string
-	ProjectID string
-}
-
-func (q *Queries) DeleteProfileByIDAndProjectID(ctx context.Context, arg DeleteProfileByIDAndProjectIDParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteProfileByIDAndProjectID, arg.ID, arg.ProjectID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const mergeProfileProperties = `-- name: MergeProfileProperties :one
 update profiles
 set properties = jsonb_shallow_merge(s.properties, profiles.properties)
 from profiles s
 where s.id = $1
   and s.project_id = $2
+  and s.deletion_time is null
   and profiles.id = $3
   and profiles.project_id = $2
-returning profiles.create_time, profiles.external_id, profiles.id, profiles.properties, profiles.project_id, profiles.update_time
+  and profiles.deletion_time is null
+returning profiles.create_time, profiles.deletion_time, profiles.external_id, profiles.id, profiles.properties, profiles.project_id, profiles.update_time
 `
 
 type MergeProfilePropertiesParams struct {
@@ -51,6 +35,7 @@ func (q *Queries) MergeProfileProperties(ctx context.Context, arg MergeProfilePr
 	var i Profile
 	err := row.Scan(
 		&i.CreateTime,
+		&i.DeletionTime,
 		&i.ExternalID,
 		&i.ID,
 		&i.Properties,
@@ -67,8 +52,8 @@ where profile_id = $2 and project_id = $3
 `
 
 type ReassignProfileDevicesParams struct {
-	TargetID  string
-	SourceID  string
+	TargetID  pgtype.Text
+	SourceID  pgtype.Text
 	ProjectID string
 }
 
@@ -82,7 +67,7 @@ insert into profiles (properties, id, project_id)
 values (coalesce($1::jsonb, '{}'), $2, $3)
 on conflict (id, project_id) do update set
   properties = jsonb_shallow_merge(profiles.properties, excluded.properties)
-returning create_time, external_id, id, properties, project_id, update_time
+returning create_time, deletion_time, external_id, id, properties, project_id, update_time
 `
 
 type RegisterProfileParams struct {
@@ -91,11 +76,15 @@ type RegisterProfileParams struct {
 	ProjectID  string
 }
 
+// Used only by event ingestion for anonymous profiles. The (id, project_id) conflict
+// target is not partial — it matches soft-deleted rows too. This is acceptable because
+// xid-generated IDs never collide, and this query is not used for identified profiles.
 func (q *Queries) RegisterProfile(ctx context.Context, arg RegisterProfileParams) (Profile, error) {
 	row := q.db.QueryRow(ctx, registerProfile, arg.Properties, arg.ID, arg.ProjectID)
 	var i Profile
 	err := row.Scan(
 		&i.CreateTime,
+		&i.DeletionTime,
 		&i.ExternalID,
 		&i.ID,
 		&i.Properties,
@@ -105,12 +94,31 @@ func (q *Queries) RegisterProfile(ctx context.Context, arg RegisterProfileParams
 	return i, err
 }
 
+const softDeleteProfileByIDAndProjectID = `-- name: SoftDeleteProfileByIDAndProjectID :execrows
+update profiles
+set deletion_time = now()
+where id = $1 and project_id = $2 and deletion_time is null
+`
+
+type SoftDeleteProfileByIDAndProjectIDParams struct {
+	ID        string
+	ProjectID string
+}
+
+func (q *Queries) SoftDeleteProfileByIDAndProjectID(ctx context.Context, arg SoftDeleteProfileByIDAndProjectIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteProfileByIDAndProjectID, arg.ID, arg.ProjectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const upsertProfileByExternalID = `-- name: UpsertProfileByExternalID :one
 insert into profiles (id, project_id, external_id, properties)
 values ($1, $2, $3, coalesce($4::jsonb, '{}'))
-on conflict (project_id, external_id) do update set
+on conflict (project_id, external_id) where deletion_time is null do update set
   properties = jsonb_shallow_merge(profiles.properties, excluded.properties)
-returning create_time, external_id, id, properties, project_id, update_time
+returning create_time, deletion_time, external_id, id, properties, project_id, update_time
 `
 
 type UpsertProfileByExternalIDParams struct {
@@ -130,6 +138,7 @@ func (q *Queries) UpsertProfileByExternalID(ctx context.Context, arg UpsertProfi
 	var i Profile
 	err := row.Scan(
 		&i.CreateTime,
+		&i.DeletionTime,
 		&i.ExternalID,
 		&i.ID,
 		&i.Properties,

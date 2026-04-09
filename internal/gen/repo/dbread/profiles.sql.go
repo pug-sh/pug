@@ -14,7 +14,7 @@ import (
 const getAllProfilesByProjectID = `-- name: GetAllProfilesByProjectID :many
 select id, external_id, properties, create_time, update_time
 from profiles
-where project_id = $1
+where project_id = $1 and deletion_time is null
 `
 
 type GetAllProfilesByProjectIDRow struct {
@@ -53,8 +53,8 @@ func (q *Queries) GetAllProfilesByProjectID(ctx context.Context, projectID strin
 }
 
 const getProfileByIDAndProjectID = `-- name: GetProfileByIDAndProjectID :one
-select create_time, external_id, id, properties, project_id, update_time from profiles
-where id = $1 and project_id = $2
+select create_time, deletion_time, external_id, id, properties, project_id, update_time from profiles
+where id = $1 and project_id = $2 and deletion_time is null
 `
 
 type GetProfileByIDAndProjectIDParams struct {
@@ -67,6 +67,7 @@ func (q *Queries) GetProfileByIDAndProjectID(ctx context.Context, arg GetProfile
 	var i Profile
 	err := row.Scan(
 		&i.CreateTime,
+		&i.DeletionTime,
 		&i.ExternalID,
 		&i.ID,
 		&i.Properties,
@@ -77,8 +78,8 @@ func (q *Queries) GetProfileByIDAndProjectID(ctx context.Context, arg GetProfile
 }
 
 const getProfileByProjectAndExternalID = `-- name: GetProfileByProjectAndExternalID :one
-select create_time, external_id, id, properties, project_id, update_time from profiles
-where project_id = $1 and external_id = $2::text limit 1
+select create_time, deletion_time, external_id, id, properties, project_id, update_time from profiles
+where project_id = $1 and external_id = $2::text and deletion_time is null limit 1
 `
 
 type GetProfileByProjectAndExternalIDParams struct {
@@ -91,6 +92,7 @@ func (q *Queries) GetProfileByProjectAndExternalID(ctx context.Context, arg GetP
 	var i Profile
 	err := row.Scan(
 		&i.CreateTime,
+		&i.DeletionTime,
 		&i.ExternalID,
 		&i.ID,
 		&i.Properties,
@@ -104,7 +106,7 @@ const getProfilePropertyKeys = `-- name: GetProfilePropertyKeys :many
 select distinct key
 from (
     select properties from profiles
-    where project_id = $1
+    where project_id = $1 and deletion_time is null
     limit 10000
 ) sub,
      jsonb_object_keys(sub.properties) as key
@@ -136,6 +138,7 @@ const getProfilePropertyValues = `-- name: GetProfilePropertyValues :many
 select distinct properties->>$1::text as value
 from profiles
 where project_id = $2
+  and deletion_time is null
   and properties->>$1::text is not null
   and properties->>$1::text != ''
 order by value asc
@@ -168,8 +171,9 @@ func (q *Queries) GetProfilePropertyValues(ctx context.Context, arg GetProfilePr
 }
 
 const getProfilesByProjectID = `-- name: GetProfilesByProjectID :many
-select create_time, external_id, id, properties, project_id, update_time from profiles
+select create_time, deletion_time, external_id, id, properties, project_id, update_time from profiles
 where project_id = $1
+  and deletion_time is null
   and (
     $2::bool = false
     or create_time < $3
@@ -204,6 +208,7 @@ func (q *Queries) GetProfilesByProjectID(ctx context.Context, arg GetProfilesByP
 		var i Profile
 		if err := rows.Scan(
 			&i.CreateTime,
+			&i.DeletionTime,
 			&i.ExternalID,
 			&i.ID,
 			&i.Properties,

@@ -30,9 +30,13 @@ type IdentifyRequest struct {
 	// Profile properties — shallow-merged into existing properties. On key conflict,
 	// these values take precedence over previously stored values.
 	Traits *structpb.Struct `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
-	// When set, triggers merge-and-delete of the anonymous profile into the identified one.
-	// Must start with "anon-" to prevent misuse with identified profile IDs.
-	AnonymousId   string `protobuf:"bytes,3,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
+	// The SDK-generated anonymous ID. The SDK should send this on first identify
+	// to trigger merge-and-soft-delete of the anonymous profile. Must start with "anon-".
+	AnonymousId string `protobuf:"bytes,3,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
+	// The device to assign to this profile. The SDK should send this on first
+	// identify and on account switch (external_id changed) — not on every call,
+	// to avoid unnecessary DB writes. Omit for web SDKs without push support.
+	DeviceId      string `protobuf:"bytes,4,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -88,6 +92,13 @@ func (x *IdentifyRequest) GetAnonymousId() string {
 	return ""
 }
 
+func (x *IdentifyRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
 type IdentifyResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -130,8 +141,9 @@ type ProfileIdentifyMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	Traits        *structpb.Struct       `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
-	AnonymousId   string                 `protobuf:"bytes,3,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	AnonymousId   string                 `protobuf:"bytes,4,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
+	DeviceId      string                 `protobuf:"bytes,5,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -180,6 +192,13 @@ func (x *ProfileIdentifyMessage) GetTraits() *structpb.Struct {
 	return nil
 }
 
+func (x *ProfileIdentifyMessage) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
 func (x *ProfileIdentifyMessage) GetAnonymousId() string {
 	if x != nil {
 		return x.AnonymousId
@@ -187,9 +206,9 @@ func (x *ProfileIdentifyMessage) GetAnonymousId() string {
 	return ""
 }
 
-func (x *ProfileIdentifyMessage) GetProjectId() string {
+func (x *ProfileIdentifyMessage) GetDeviceId() string {
 	if x != nil {
-		return x.ProjectId
+		return x.DeviceId
 	}
 	return ""
 }
@@ -198,20 +217,22 @@ var File_sdk_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xa4\x01\n" +
+	"\x1esdk/profiles/v1/profiles.proto\x12\x0fsdk.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xca\x01\n" +
 	"\x0fIdentifyRequest\x12(\n" +
 	"\vexternal_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"externalId\x12/\n" +
 	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x126\n" +
-	"\fanonymous_id\x18\x03 \x01(\tB\x13\xbaH\x10r\x0e\x18\xff\x012\t^$|^anon-R\vanonymousId\"\x12\n" +
-	"\x10IdentifyResponse\"\xac\x01\n" +
+	"\fanonymous_id\x18\x03 \x01(\tB\x13\xbaH\x10r\x0e\x18\xff\x012\t^$|^anon-R\vanonymousId\x12$\n" +
+	"\tdevice_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18$R\bdeviceId\"\x12\n" +
+	"\x10IdentifyResponse\"\xc9\x01\n" +
 	"\x16ProfileIdentifyMessage\x12\x1f\n" +
 	"\vexternal_id\x18\x01 \x01(\tR\n" +
 	"externalId\x12/\n" +
-	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12!\n" +
-	"\fanonymous_id\x18\x03 \x01(\tR\vanonymousId\x12\x1d\n" +
+	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x04 \x01(\tR\tprojectId2e\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId\x12!\n" +
+	"\fanonymous_id\x18\x04 \x01(\tR\vanonymousId\x12\x1b\n" +
+	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId2e\n" +
 	"\x12ProfilesSDKService\x12O\n" +
 	"\bIdentify\x12 .sdk.profiles.v1.IdentifyRequest\x1a!.sdk.profiles.v1.IdentifyResponseBTZMgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 

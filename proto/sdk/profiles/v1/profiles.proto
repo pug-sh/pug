@@ -10,7 +10,7 @@ option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profile
 service ProfilesSDKService {
   // Identify creates or updates a profile by external_id. When anonymous_id
   // is provided, the anonymous profile is merged into the identified one
-  // (properties, devices) and then deleted.
+  // (properties, devices) and then soft-deleted.
   rpc Identify(IdentifyRequest) returns (IdentifyResponse);
 }
 
@@ -20,12 +20,16 @@ message IdentifyRequest {
   // Profile properties — shallow-merged into existing properties. On key conflict,
   // these values take precedence over previously stored values.
   google.protobuf.Struct traits = 2;
-  // When set, triggers merge-and-delete of the anonymous profile into the identified one.
-  // Must start with "anon-" to prevent misuse with identified profile IDs.
+  // The SDK-generated anonymous ID. The SDK should send this on first identify
+  // to trigger merge-and-soft-delete of the anonymous profile. Must start with "anon-".
   string anonymous_id = 3 [(buf.validate.field).string = {
     max_len: 255,
     pattern: "^$|^anon-"
   }];
+  // The device to assign to this profile. The SDK should send this on first
+  // identify and on account switch (external_id changed) — not on every call,
+  // to avoid unnecessary DB writes. Omit for web SDKs without push support.
+  string device_id = 4 [(buf.validate.field).string = {max_len: 36}];
 }
 
 message IdentifyResponse {}
@@ -35,6 +39,7 @@ message IdentifyResponse {}
 message ProfileIdentifyMessage {
   string external_id = 1;
   google.protobuf.Struct traits = 2;
-  string anonymous_id = 3;
-  string project_id = 4;
+  string project_id = 3;
+  string anonymous_id = 4;
+  string device_id = 5;
 }
