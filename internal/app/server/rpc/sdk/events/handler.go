@@ -19,6 +19,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+const cfHeaderBotScore = "CF-Bot-Score"
+
 type Server struct {
 	eventsv1connect.UnimplementedEventsServiceHandler
 	publisher   *coreevents.Publisher
@@ -58,6 +60,7 @@ func (s *Server) BatchCreate(
 
 	s.enrichGeo(ctx, req.Header(), events)
 	s.enrichUserAgent(ctx, req.Header(), events)
+	s.enrichBotScore(ctx, req.Header(), events)
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events", slogx.Error(err))
@@ -105,5 +108,20 @@ func (s *Server) enrichGeo(ctx context.Context, h http.Header, events []*eventsv
 		for k, v := range loc {
 			event.AutoProperties[k] = v
 		}
+	}
+}
+
+func (s *Server) enrichBotScore(ctx context.Context, h http.Header, events []*eventsv1.Event) {
+	botScoreStr := h.Get(cfHeaderBotScore)
+	if botScoreStr == "" {
+		return
+	}
+	var botScore uint32
+	if _, err := fmt.Sscanf(botScoreStr, "%d", &botScore); err != nil {
+		slog.WarnContext(ctx, "failed to parse bot score", slogx.Error(err), slog.String("bot_score", botScoreStr))
+		return
+	}
+	for _, event := range events {
+		event.BotScore = botScore
 	}
 }

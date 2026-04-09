@@ -120,6 +120,7 @@ type Event struct {
 	Kind             string                 `protobuf:"bytes,5,opt,name=kind" json:"kind,omitempty"`
 	OccurTime        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
 	SessionId        string                 `protobuf:"bytes,7,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
+	BotScore         uint32                 `protobuf:"varint,8,opt,name=bot_score,json=botScore" json:"bot_score,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -203,6 +204,13 @@ func (x *Event) GetSessionId() string {
 	return ""
 }
 
+func (x *Event) GetBotScore() uint32 {
+	if x != nil {
+		return x.BotScore
+	}
+	return 0
+}
+
 type EventBatch struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Events        []*Event               `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
@@ -263,7 +271,7 @@ const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"\x12BatchCreateRequest\x127\n" +
 	"\x06events\x18\x01 \x03(\v2\x14.sdk.events.v1.EventB\t\xbaH\x06\x92\x01\x03\x10\xe8\aR\x06events\"1\n" +
 	"\x13BatchCreateResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\rR\baccepted\"\x97\x04\n" +
+	"\baccepted\x18\x01 \x01(\rR\baccepted\"\xbe\x04\n" +
 	"\x05Event\x12&\n" +
 	"\bevent_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\aeventId\x12Q\n" +
 	"\x0fauto_properties\x18\x02 \x03(\v2(.sdk.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12W\n" +
@@ -274,7 +282,8 @@ const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"\n" +
 	"occur_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\toccurTime\x12*\n" +
 	"\n" +
-	"session_id\x18\a \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\tsessionId\x1aA\n" +
+	"session_id\x18\a \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\tsessionId\x12%\n" +
+	"\tbot_score\x18\b \x01(\rB\b\xbaH\x05*\x03\x18\xff\x01R\bbotScore\x1aA\n" +
 	"\x13AutoPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +
