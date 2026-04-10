@@ -71,10 +71,15 @@ func eventPropertyCondition(f *commonv1.PropertyFilter, alias string) (Condition
 }
 
 // profileFilterCondition builds a Condition that filters events by matching profile properties.
-// It generates: distinct_id IN (SELECT id FROM profiles WHERE project_id=? AND <prop_op> AND external_id != ”)
+// It generates a single: distinct_id IN (
 //
+//	SELECT p.id FROM profiles p WHERE project_id=? AND is_deleted=0 AND <prop_op>
 //	UNION ALL
-//	distinct_id IN (SELECT alias_id FROM profile_aliases WHERE project_id=? AND profile_id IN (...))
+//	SELECT pa.alias_id FROM profile_aliases pa WHERE project_id=? AND profile_id IN (
+//	    SELECT p.id FROM profiles p WHERE project_id=? AND is_deleted=0 AND <prop_op>
+//	)
+//
+// )
 func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias string) (Condition, error) {
 	prop := profilePropertyExpr(f.GetProperty())
 
@@ -92,10 +97,10 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 	propertyCond := And(nonemptyCond, innerCond)
 
 	sql := fmt.Sprintf(`%s IN (
-		SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.deletion_time IS NULL AND %s
+		SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND %s
 		UNION ALL
 		SELECT pa.alias_id FROM profile_aliases pa WHERE pa.project_id = ? AND pa.profile_id IN (
-			SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.deletion_time IS NULL AND %s
+			SELECT p.id FROM profiles p WHERE p.project_id = ? AND p.is_deleted = 0 AND %s
 		)
 	)`, distinctIDCol, propertyCond.SQL(), propertyCond.SQL())
 
