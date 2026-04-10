@@ -111,11 +111,11 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		if err != nil {
 			return fmt.Errorf("build profile property keys query: %w", err)
 		}
-		var err2 error
-		profilePropKeys, err2 = s.executor.QueryAggregateKeys(egCtx, sql, args)
-		if err2 != nil {
-			return fmt.Errorf("query profile property keys: %w", err2)
+		keys, err := s.executor.QueryAggregateKeys(egCtx, sql, args)
+		if err != nil {
+			return fmt.Errorf("query profile property keys: %w", err)
 		}
+		profilePropKeys = keys
 		return nil
 	})
 

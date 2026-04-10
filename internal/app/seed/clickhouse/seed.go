@@ -173,6 +173,8 @@ func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate boo
 			return fmt.Errorf("marshal properties: %w", err)
 		}
 
+		// Postgres profile IDs may carry trailing spaces when read via pgx into a plain string;
+		// strip them before inserting into ClickHouse to avoid mismatched lookups.
 		profileID := strings.TrimRight(p.ID, " ")
 		if err := batch.Append(profileID, projectID, p.ExternalID.String, string(propsJSON), uint8(0), p.CreateTime.Time, p.UpdateTime.Time); err != nil {
 			return fmt.Errorf("append profile: %w", err)

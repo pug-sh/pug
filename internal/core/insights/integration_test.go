@@ -402,6 +402,55 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("trends_with_profile_filter", func(t *testing.T) {
+		// alice(pro): 3 page_views; bob(free): 2; charlie(no profile): 1.
+		// Filter plan=pro → only alice's 3 events should count.
+		seedIntegrationProfiles(t, ctx, ch)
+
+		req := &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			},
+			FilterGroups: []*insightsv1.FilterGroup{
+				{
+					Filters: []*commonv1.PropertyFilter{
+						{
+							Property: "plan",
+							Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+							Value:    "pro",
+							Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+						},
+					},
+				},
+			},
+		}
+
+		q, err := insights.BuildTrendsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildTrendsQuery: %v", err)
+		}
+
+		rows, err := executor.QueryTrends(ctx, q)
+		if err != nil {
+			t.Fatalf("QueryTrends: %v", err)
+		}
+
+		var total float64
+		for _, r := range rows {
+			total += r.Value
+		}
+		// alice has 3 page_views; bob and charlie must be excluded.
+		if total != 3 {
+			t.Errorf("expected 3 events for plan=pro users, got %.0f (rows: %v)", total, rows)
+		}
+	})
+
 	t.Run("funnel_counts", func(t *testing.T) {
 		seedFunnelEvents(t, ctx, ch)
 
@@ -625,6 +674,35 @@ func seedRetentionEvents(t *testing.T, ctx context.Context, ch *testutil.TestCli
 		)
 		if err != nil {
 			t.Fatalf("insert retention event: %v", err)
+		}
+	}
+}
+
+// seedIntegrationProfiles inserts profiles into ClickHouse for profile-filter integration tests.
+//
+// Profiles (project_id = testProjectID):
+//
+//	alice → plan=pro, role=admin
+//	bob   → plan=free, role=member
+//	(charlie has no profile)
+func seedIntegrationProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
+	t.Helper()
+
+	now := time.Now().UTC()
+	profiles := []struct {
+		id         string
+		externalID string
+		properties string
+	}{
+		{"profile_alice", "alice", `{"plan":"pro","role":"admin"}`},
+		{"profile_bob", "bob", `{"plan":"free","role":"member"}`},
+	}
+	for _, p := range profiles {
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time, insert_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.id, testProjectID, p.externalID, p.properties, uint8(0), now, now, now,
+		); err != nil {
+			t.Fatalf("insert profile %s: %v", p.externalID, err)
 		}
 	}
 }
