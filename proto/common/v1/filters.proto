@@ -21,6 +21,8 @@ enum FilterOperator {
   FILTER_OPERATOR_GT = 10;
   FILTER_OPERATOR_IN = 11;
   FILTER_OPERATOR_NOT_IN = 12;
+  FILTER_OPERATOR_BETWEEN = 13;
+  FILTER_OPERATOR_NOT_BETWEEN = 14;
 }
 
 message PropertyFilter {
@@ -36,20 +38,24 @@ message PropertyFilter {
   };
   option (buf.validate.message).cel = {
     id: "property_filter.numeric_value_required"
-    message: "value must be a valid number for lte/gte/lt/gt operators"
+    message: "value must be a valid number for lte/gte/lt/gt/between/not_between operators"
     expression:
       "!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LTE"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GTE"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LT"
-      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GT)"
-      "|| double(this.value) == double(this.value)"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GT"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN)"
+      "|| (double(this.values[0]) == double(this.values[0]) && double(this.values[1]) == double(this.values[1]))"
   };
   option (buf.validate.message).cel = {
     id: "property_filter.values_required"
-    message: "values must not be empty for in/not_in operators"
+    message: "values must not be empty for in/not_in/between/not_between operators"
     expression:
       "!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN"
-      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN)"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN)"
       "|| this.values.size() > 0"
   };
   option (buf.validate.message).cel = {
@@ -58,7 +64,17 @@ message PropertyFilter {
     expression:
       "this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN"
       "|| this.values.size() == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "property_filter.between_requires_two_values"
+    message: "between/not_between operators require exactly 2 values"
+    expression:
+      "!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN)"
+      "|| this.values.size() == 2"
   };
   option (buf.validate.message).cel = {
     id: "property_filter.value_not_allowed_for_set_operators"

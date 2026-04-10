@@ -618,3 +618,39 @@ func TestEventConditionAliased(t *testing.T) {
 		t.Errorf("expected aliased custom_properties 'e.custom_properties[', got: %s", sql)
 	}
 }
+func TestFilterClauseAliased(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "$country",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+		Value:    "US",
+	}
+	clause, args, err := clickhouse.FilterClauseAliased(f, "e")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(clause, "e.auto_properties[") {
+		t.Errorf("expected aliased property, got: %s", clause)
+	}
+	if len(args) != 1 || args[0] != "US" {
+		t.Errorf("unexpected args: %v", args)
+	}
+}
+
+func TestPropertyCondition(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "$country",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+		Value:    "US",
+	}
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	clause, args, _ := clickhouse.FilterClause(f)
+	if cond.SQL() != clause {
+		t.Errorf("PropertyCondition SQL = %q, want %q", cond.SQL(), clause)
+	}
+	if len(cond.Args()) != len(args) {
+		t.Errorf("PropertyCondition args len = %d, want %d", len(cond.Args()), len(args))
+	}
+}

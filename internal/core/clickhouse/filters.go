@@ -43,6 +43,87 @@ func EscapeLike(s string) string {
 	return s
 }
 
+// FilterClause builds a single WHERE condition fragment for a PropertyFilter.
+func FilterClause(f *commonv1.PropertyFilter) (string, []any, error) {
+	return filterClause(f, "")
+}
+
+// FilterClauseAliased builds a FilterClause with column references prefixed by alias.
+func FilterClauseAliased(f *commonv1.PropertyFilter, alias string) (string, []any, error) {
+	return filterClause(f, alias)
+}
+
+func filterClause(f *commonv1.PropertyFilter, alias string) (string, []any, error) {
+	prop := propertyExpr(f.GetProperty(), alias)
+
+	switch f.GetOperator() {
+	case commonv1.FilterOperator_FILTER_OPERATOR_EQUALS:
+		return fmt.Sprintf("%s = ?", prop), []any{f.GetValue()}, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS:
+		return fmt.Sprintf("%s != ?", prop), []any{f.GetValue()}, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS:
+		return fmt.Sprintf("%s LIKE ?", prop), []any{"%" + EscapeLike(f.GetValue()) + "%"}, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS:
+		return fmt.Sprintf("%s NOT LIKE ?", prop), []any{"%" + EscapeLike(f.GetValue()) + "%"}, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_IS_SET:
+		return fmt.Sprintf("%s != ''", prop), nil, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET:
+		return fmt.Sprintf("%s = ''", prop), nil, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_LTE:
+		n, err := strconv.ParseFloat(f.GetValue(), 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
+		}
+		return fmt.Sprintf("toFloat64OrNull(%s) <= ?", prop), []any{n}, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_GTE:
+		n, err := strconv.ParseFloat(f.GetValue(), 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
+		}
+		return fmt.Sprintf("toFloat64OrNull(%s) >= ?", prop), []any{n}, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_LT:
+		n, err := strconv.ParseFloat(f.GetValue(), 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
+		}
+		return fmt.Sprintf("toFloat64OrNull(%s) < ?", prop), []any{n}, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_GT:
+		n, err := strconv.ParseFloat(f.GetValue(), 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
+		}
+		return fmt.Sprintf("toFloat64OrNull(%s) > ?", prop), []any{n}, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_IN:
+		if len(f.GetValues()) == 0 {
+			return "", nil, fmt.Errorf("IN operator requires at least one value for property %q", f.GetProperty())
+		}
+		args := make([]any, len(f.GetValues()))
+		for i, v := range f.GetValues() {
+			args[i] = v
+		}
+		return fmt.Sprintf("%s IN (%s)", prop, strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")), args, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN:
+		if len(f.GetValues()) == 0 {
+			return "", nil, fmt.Errorf("NOT IN operator requires at least one value for property %q", f.GetProperty())
+		}
+		args := make([]any, len(f.GetValues()))
+		for i, v := range f.GetValues() {
+			args[i] = v
+		}
+		return fmt.Sprintf("%s NOT IN (%s)", prop, strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")), args, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
+		min, _ := strconv.ParseFloat(f.GetValues()[0], 64)
+		max, _ := strconv.ParseFloat(f.GetValues()[1], 64)
+		return fmt.Sprintf("toFloat64OrNull(%s) >= ? AND toFloat64OrNull(%s) <= ?", prop, prop), []any{min, max}, nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
+		min, _ := strconv.ParseFloat(f.GetValues()[0], 64)
+		max, _ := strconv.ParseFloat(f.GetValues()[1], 64)
+		return fmt.Sprintf("toFloat64OrNull(%s) < ? OR toFloat64OrNull(%s) > ?", prop, prop), []any{min, max}, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported filter operator: %v", f.GetOperator())
+	}
+}
+
 // PropertyCondition builds a typed query Condition for a PropertyFilter.
 // Dispatches to profileFilterCondition when source is PROPERTY_SOURCE_PROFILE.
 // For profile filters, projectID is required to build the IN subquery.

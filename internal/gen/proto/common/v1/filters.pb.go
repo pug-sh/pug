@@ -38,6 +38,8 @@ const (
 	FilterOperator_FILTER_OPERATOR_GT           FilterOperator = 10
 	FilterOperator_FILTER_OPERATOR_IN           FilterOperator = 11
 	FilterOperator_FILTER_OPERATOR_NOT_IN       FilterOperator = 12
+	FilterOperator_FILTER_OPERATOR_BETWEEN      FilterOperator = 13
+	FilterOperator_FILTER_OPERATOR_NOT_BETWEEN  FilterOperator = 14
 )
 
 // Enum value maps for FilterOperator.
@@ -56,6 +58,8 @@ var (
 		10: "FILTER_OPERATOR_GT",
 		11: "FILTER_OPERATOR_IN",
 		12: "FILTER_OPERATOR_NOT_IN",
+		13: "FILTER_OPERATOR_BETWEEN",
+		14: "FILTER_OPERATOR_NOT_BETWEEN",
 	}
 	FilterOperator_value = map[string]int32{
 		"FILTER_OPERATOR_UNSPECIFIED":  0,
@@ -71,6 +75,8 @@ var (
 		"FILTER_OPERATOR_GT":           10,
 		"FILTER_OPERATOR_IN":           11,
 		"FILTER_OPERATOR_NOT_IN":       12,
+		"FILTER_OPERATOR_BETWEEN":      13,
+		"FILTER_OPERATOR_NOT_BETWEEN":  14,
 	}
 )
 
@@ -286,21 +292,22 @@ var File_common_v1_filters_proto protoreflect.FileDescriptor
 
 const file_common_v1_filters_proto_rawDesc = "" +
 	"\n" +
-	"\x17common/v1/filters.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\"\xe6\r\n" +
+	"\x17common/v1/filters.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\"\x81\x14\n" +
 	"\x0ePropertyFilter\x12:\n" +
 	"\bproperty\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\bproperty\x12B\n" +
 	"\boperator\x18\x02 \x01(\x0e2\x19.common.v1.FilterOperatorB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\boperator\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\tR\x05value\x12\x16\n" +
 	"\x06values\x18\x04 \x03(\tR\x06values\x12;\n" +
-	"\x06source\x18\x05 \x01(\x0e2\x19.common.v1.PropertySourceB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06source:\xe8\v\xbaH\xe4\v\x1a\xe4\x02\n" +
-	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a\x9c\x02this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.value != ''\x1a\x8e\x03\n" +
-	"&property_filter.numeric_value_required\x128value must be a valid number for lte/gte/lt/gt operators\x1a\xa9\x02!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LTE|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GTE|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LT|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GT)|| double(this.value) == double(this.value)\x1a\xf1\x01\n" +
-	"\x1fproperty_filter.values_required\x120values must not be empty for in/not_in operators\x1a\x9b\x01!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN)|| this.values.size() > 0\x1a\xe8\x01\n" +
-	"\"property_filter.values_not_allowed\x12&values must be empty for this operator\x1a\x99\x01this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.values.size() == 0\x1a\x8a\x02\n" +
+	"\x06source\x18\x05 \x01(\x0e2\x19.common.v1.PropertySourceB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06source:\x83\x12\xbaH\xff\x11\x1a\xe4\x02\n" +
+	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a\x9c\x02this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.value != ''\x1a\xec\x04\n" +
+	"&property_filter.numeric_value_required\x12Lvalue must be a valid number for lte/gte/lt/gt/between/not_between operators\x1a\xf3\x03!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LTE|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GTE|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LT|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GT|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN)|| (double(this.values[0]) == double(this.values[0]) && double(this.values[1]) == double(this.values[1]))\x1a\x91\x03\n" +
+	"\x1fproperty_filter.values_required\x12Dvalues must not be empty for in/not_in/between/not_between operators\x1a\xa7\x02!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN)|| this.values.size() > 0\x1a\xf4\x02\n" +
+	"\"property_filter.values_not_allowed\x12&values must be empty for this operator\x1a\xa5\x02this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN|| this.values.size() == 0\x1a\x8e\x02\n" +
+	"+property_filter.between_requires_two_values\x126between/not_between operators require exactly 2 values\x1a\xa6\x01!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN)|| this.values.size() == 2\x1a\x8a\x02\n" +
 	"3property_filter.value_not_allowed_for_set_operators\x123value must be empty for is_set/is_not_set operators\x1a\x9d\x01!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET)|| this.value == ''\"p\n" +
 	"\vEventFilter\x12,\n" +
 	"\x04kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\x04kind\x123\n" +
-	"\afilters\x18\x02 \x03(\v2\x19.common.v1.PropertyFilterR\afilters*\xff\x02\n" +
+	"\afilters\x18\x02 \x03(\v2\x19.common.v1.PropertyFilterR\afilters*\xbd\x03\n" +
 	"\x0eFilterOperator\x12\x1f\n" +
 	"\x1bFILTER_OPERATOR_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16FILTER_OPERATOR_EQUALS\x10\x01\x12\x1e\n" +
@@ -315,7 +322,9 @@ const file_common_v1_filters_proto_rawDesc = "" +
 	"\x12FILTER_OPERATOR_GT\x10\n" +
 	"\x12\x16\n" +
 	"\x12FILTER_OPERATOR_IN\x10\v\x12\x1a\n" +
-	"\x16FILTER_OPERATOR_NOT_IN\x10\f*f\n" +
+	"\x16FILTER_OPERATOR_NOT_IN\x10\f\x12\x1b\n" +
+	"\x17FILTER_OPERATOR_BETWEEN\x10\r\x12\x1f\n" +
+	"\x1bFILTER_OPERATOR_NOT_BETWEEN\x10\x0e*f\n" +
 	"\x0fLogicalOperator\x12 \n" +
 	"\x1cLOGICAL_OPERATOR_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14LOGICAL_OPERATOR_AND\x10\x01\x12\x17\n" +
