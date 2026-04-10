@@ -36,7 +36,7 @@ message GetActivityFeedRequest {
       "|| this.events.all(e, e.kind != '' || e.filters.size() > 0)"
   };
   // Required. The profile ID to fetch events for.
-  string distinct_id = 1 [(buf.validate.field).string.min_len = 1];
+  string distinct_id = 1 [(buf.validate.field).required = true];
   // Optional. Filter by session. Empty means all sessions.
   string session_id = 2;
   // Optional. Restrict to events within this time window.
