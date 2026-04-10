@@ -217,6 +217,63 @@ func TestEnrichUserAgent(t *testing.T) {
 	}
 }
 
+func TestEnrichBotScore(t *testing.T) {
+	tests := []struct {
+		name      string
+		header    string // empty = omit header
+		events    []*eventsv1.Event
+		wantScore uint32
+	}{
+		{
+			name:      "valid score applied to all events",
+			header:    "42",
+			events:    []*eventsv1.Event{{}, {}},
+			wantScore: 42,
+		},
+		{
+			name:      "score 0 applied",
+			header:    "0",
+			events:    []*eventsv1.Event{{}},
+			wantScore: 0,
+		},
+		{
+			name:      "score 99 applied",
+			header:    "99",
+			events:    []*eventsv1.Event{{}},
+			wantScore: 99,
+		},
+		{
+			name:      "no header — bot_score unchanged",
+			header:    "",
+			events:    []*eventsv1.Event{{BotScore: 50}},
+			wantScore: 50,
+		},
+		{
+			name:      "invalid header — bot_score unchanged",
+			header:    "not-a-number",
+			events:    []*eventsv1.Event{{BotScore: 10}},
+			wantScore: 10,
+		},
+	}
+
+	s := &Server{geoProvider: stubProvider{}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := http.Header{}
+			if tt.header != "" {
+				h.Set(cfHeaderBotScore, tt.header)
+			}
+			s.enrichBotScore(context.Background(), h, tt.events)
+			for _, event := range tt.events {
+				if event.BotScore != tt.wantScore {
+					t.Errorf("BotScore = %d, want %d", event.BotScore, tt.wantScore)
+				}
+			}
+		})
+	}
+}
+
 func TestEnrichGeoAndUserAgent(t *testing.T) {
 	uaParser, err := useragent.NewParser()
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"connectrpc.com/connect"
 
@@ -116,11 +117,12 @@ func (s *Server) enrichBotScore(ctx context.Context, h http.Header, events []*ev
 	if botScoreStr == "" {
 		return
 	}
-	var botScore uint32
-	if _, err := fmt.Sscanf(botScoreStr, "%d", &botScore); err != nil {
+	val, err := strconv.ParseUint(botScoreStr, 10, 32)
+	if err != nil {
 		slog.WarnContext(ctx, "failed to parse bot score", slogx.Error(err), slog.String("bot_score", botScoreStr))
 		return
 	}
+	botScore := uint32(val)
 	for _, event := range events {
 		event.BotScore = botScore
 	}
