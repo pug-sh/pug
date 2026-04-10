@@ -118,7 +118,7 @@ func filterClause(f *commonv1.PropertyFilter, alias string) (string, []any, erro
 	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
 		min, _ := strconv.ParseFloat(f.GetValues()[0], 64)
 		max, _ := strconv.ParseFloat(f.GetValues()[1], 64)
-		return fmt.Sprintf("toFloat64OrNull(%s) < ? OR toFloat64OrNull(%s) > ?", prop, prop), []any{min, max}, nil
+		return fmt.Sprintf("(toFloat64OrNull(%s) < ? OR toFloat64OrNull(%s) > ?)", prop, prop), []any{min, max}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported filter operator: %v", f.GetOperator())
 	}
