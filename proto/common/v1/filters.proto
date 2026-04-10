@@ -46,7 +46,7 @@ message PropertyFilter {
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GT"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN)"
-      "|| (double(this.values[0]) == double(this.values[0]) && double(this.values[1]) == double(this.values[1]))"
+      "|| (this.values.size() >= 2 && double(this.values[0]) == double(this.values[0]) && double(this.values[1]) == double(this.values[1]))"
   };
   option (buf.validate.message).cel = {
     id: "property_filter.values_required"

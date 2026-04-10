@@ -654,3 +654,104 @@ func TestPropertyCondition(t *testing.T) {
 		t.Errorf("PropertyCondition args len = %d, want %d", len(cond.Args()), len(args))
 	}
 }
+func TestPropertyConditionAliased_NotBetween(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "amount",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+		Values:   []string{"10", "50"},
+	}
+	cond, err := clickhouse.PropertyConditionAliased(f, "proj1", "e")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	clause, args, _ := clickhouse.FilterClauseAliased(f, "e")
+	if cond.SQL() != clause {
+		t.Errorf("PropertyConditionAliased SQL = %q, want %q", cond.SQL(), clause)
+	}
+	if len(cond.Args()) != len(args) {
+		t.Errorf("PropertyConditionAliased args len = %d, want %d", len(cond.Args()), len(args))
+	}
+}
+
+func TestFilterClauseBetween(t *testing.T) {
+	tests := []struct {
+		name        string
+		operator    commonv1.FilterOperator
+		values      []string
+		wantSQL     string
+		wantArgs    []any
+		wantErrFrag string
+	}{
+		{
+			name:     "between",
+			operator: commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+			values:   []string{"10.5", "99.9"},
+			wantSQL:  "toFloat64OrNull(",
+			wantArgs: []any{10.5, 99.9},
+		},
+		{
+			name:     "not_between",
+			operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+			values:   []string{"10.5", "99.9"},
+			wantSQL:  "(toFloat64OrNull(",
+			wantArgs: []any{10.5, 99.9},
+		},
+		{
+			name:        "between_too_few_values",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+			values:      []string{"10"},
+			wantErrFrag: "exactly 2 values",
+		},
+		{
+			name:        "not_between_no_values",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+			values:      []string{},
+			wantErrFrag: "exactly 2 values",
+		},
+		{
+			name:        "between_invalid_min",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+			values:      []string{"abc", "99"},
+			wantErrFrag: "invalid numeric value",
+		},
+		{
+			name:        "between_invalid_max",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+			values:      []string{"10", "xyz"},
+			wantErrFrag: "invalid numeric value",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &commonv1.PropertyFilter{
+				Property: "amount",
+				Operator: tt.operator,
+				Values:   tt.values,
+			}
+			clause, args, err := clickhouse.FilterClause(f)
+			if tt.wantErrFrag != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tt.wantErrFrag)
+				}
+				if !strings.Contains(err.Error(), tt.wantErrFrag) {
+					t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantErrFrag)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(clause, tt.wantSQL) {
+				t.Errorf("SQL = %q, want it to contain %q", clause, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Fatalf("args len = %d, want %d", len(args), len(tt.wantArgs))
+			}
+			for i, want := range tt.wantArgs {
+				if args[i] != want {
+					t.Errorf("args[%d] = %v, want %v", i, args[i], want)
+				}
+			}
+		})
+	}
+}
