@@ -190,6 +190,71 @@ func TestComputeFunnelTiming_MismatchedArraysReturnsError(t *testing.T) {
 	}
 }
 
+func TestComputeFunnelTiming_WithBreakdowns(t *testing.T) {
+	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(1 * time.Hour)
+	t2 := t0.Add(2 * time.Hour)
+
+	users := []insights.FunnelUserEvents{
+		// US users: both complete both steps
+		{DistinctID: "user-1", Times: []time.Time{t0, t1}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
+		{DistinctID: "user-2", Times: []time.Time{t0, t1}, StepMatches: []int64{0, 1}, Breakdowns: []string{"US"}},
+		// DE user: only completes step 0
+		{DistinctID: "user-3", Times: []time.Time{t0}, StepMatches: []int64{0}, Breakdowns: []string{"DE"}},
+		// DE user: completes both steps (2-hour gap)
+		{DistinctID: "user-4", Times: []time.Time{t0, t2}, StepMatches: []int64{0, 1}, Breakdowns: []string{"DE"}},
+	}
+
+	kinds := []string{"signup", "purchase"}
+	rows, err := insights.ComputeFunnelTiming(users, kinds, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 2 breakdowns × 2 steps = 4 rows; insertion order: US first, then DE.
+	if len(rows) != 4 {
+		t.Fatalf("expected 4 rows, got %d", len(rows))
+	}
+
+	// US step 0
+	if rows[0].Breakdowns[0] != "US" || rows[0].EventKind != "signup" {
+		t.Errorf("row 0: got breakdown=%v kind=%v", rows[0].Breakdowns, rows[0].EventKind)
+	}
+	if rows[0].Value != 2 {
+		t.Errorf("US step 0 count: got %v, want 2", rows[0].Value)
+	}
+
+	// US step 1: 2 users, avg = 3600s
+	if rows[1].Breakdowns[0] != "US" || rows[1].EventKind != "purchase" {
+		t.Errorf("row 1: got breakdown=%v kind=%v", rows[1].Breakdowns, rows[1].EventKind)
+	}
+	if rows[1].Value != 2 {
+		t.Errorf("US step 1 count: got %v, want 2", rows[1].Value)
+	}
+	if rows[1].AvgConvertSeconds != 3600 {
+		t.Errorf("US step 1 avg: got %v, want 3600", rows[1].AvgConvertSeconds)
+	}
+
+	// DE step 0: 2 users
+	if rows[2].Breakdowns[0] != "DE" || rows[2].EventKind != "signup" {
+		t.Errorf("row 2: got breakdown=%v kind=%v", rows[2].Breakdowns, rows[2].EventKind)
+	}
+	if rows[2].Value != 2 {
+		t.Errorf("DE step 0 count: got %v, want 2", rows[2].Value)
+	}
+
+	// DE step 1: 1 user (user-4), avg = 7200s
+	if rows[3].Breakdowns[0] != "DE" || rows[3].EventKind != "purchase" {
+		t.Errorf("row 3: got breakdown=%v kind=%v", rows[3].Breakdowns, rows[3].EventKind)
+	}
+	if rows[3].Value != 1 {
+		t.Errorf("DE step 1 count: got %v, want 1", rows[3].Value)
+	}
+	if rows[3].AvgConvertSeconds != 7200 {
+		t.Errorf("DE step 1 avg: got %v, want 7200", rows[3].AvgConvertSeconds)
+	}
+}
+
 func TestComputeFunnelTiming_SameKindSteps(t *testing.T) {
 	// Documents the multiIf limitation: when two steps have the same kind,
 	// multiIf always tags as the earlier step. The Go walk can still match

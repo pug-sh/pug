@@ -89,6 +89,7 @@ func (s *server) Query(
 
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
 		var funnelRows []coreinsights.FunnelRow
+		var funnelProperties []string
 		if req.Msg.GetIncludeStepTiming() {
 			q, err := coreinsights.BuildFunnelTimingQuery(req.Msg, projectID)
 			if err != nil {
@@ -108,6 +109,7 @@ func (s *server) Query(
 					slog.String("projectID", projectID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
+			funnelProperties = q.Properties()
 		} else {
 			q, err := coreinsights.BuildFunnelCountsQuery(req.Msg, projectID)
 			if err != nil {
@@ -121,17 +123,10 @@ func (s *server) Query(
 					slog.String("projectID", projectID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
-		}
-		steps := make([]*insightsv1.FunnelStep, 0, len(funnelRows))
-		for _, row := range funnelRows {
-			steps = append(steps, &insightsv1.FunnelStep{
-				EventKind:               row.EventKind,
-				Total:                   row.Value,
-				AvgTimeToConvertSeconds: row.AvgConvertSeconds,
-			})
+			funnelProperties = q.Properties()
 		}
 		resp.Result = &insightsv1.QueryResponse_Funnel{
-			Funnel: &insightsv1.FunnelResult{Steps: steps},
+			Funnel: &insightsv1.FunnelResult{Series: coreinsights.GroupFunnelSeries(funnelRows, funnelProperties)},
 		}
 
 	case insightsv1.InsightType_INSIGHT_TYPE_RETENTION:
@@ -148,7 +143,7 @@ func (s *server) Query(
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Retention{
-			Retention: &insightsv1.RetentionResult{Cohorts: coreinsights.GroupRetentionCohorts(rows)},
+			Retention: &insightsv1.RetentionResult{Series: coreinsights.GroupRetentionSeries(rows, q.Properties())},
 		}
 
 	default:

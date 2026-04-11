@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -26,6 +27,7 @@ type TrendRow struct {
 type FunnelRow struct {
 	StepIndex         int64
 	EventKind         string
+	Breakdowns        []string
 	Value             float64
 	AvgConvertSeconds float64 // average seconds from previous step; 0 for step 0 or when timing is not requested
 }
@@ -36,6 +38,7 @@ type RetentionRow struct {
 	Time       time.Time
 	Value      float64
 	CohortSize float64
+	Breakdowns []string
 }
 
 // Executor runs pre-built ClickHouse queries and scans the results.
@@ -168,7 +171,7 @@ func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any
 }
 
 // QueryFunnel executes a funnel query and returns rows of
-// (step_index, event_kind, value, avg_time_seconds).
+// (step_index, event_kind[, breakdown_0..N], value, avg_time_seconds).
 func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow, error) {
 	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
@@ -182,8 +185,14 @@ func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow,
 
 	var result []FunnelRow
 	for rows.Next() {
-		var row FunnelRow
-		if err := rows.Scan(&row.StepIndex, &row.EventKind, &row.Value, &row.AvgConvertSeconds); err != nil {
+		row := FunnelRow{Breakdowns: make([]string, q.NumBreakdowns())}
+		dest := make([]any, 0, 4+q.NumBreakdowns())
+		dest = append(dest, &row.StepIndex, &row.EventKind)
+		for i := range row.Breakdowns {
+			dest = append(dest, &row.Breakdowns[i])
+		}
+		dest = append(dest, &row.Value, &row.AvgConvertSeconds)
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("QueryFunnel: scan: %w", err)
 		}
 		result = append(result, row)
@@ -201,6 +210,7 @@ func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow,
 
 // QueryFunnelUserEvents executes the array-based funnel query and returns per-user
 // event arrays for Go-side step matching and timing computation.
+// Columns: (distinct_id, times, step_matches[, breakdown_0..N]).
 func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuery) ([]FunnelUserEvents, error) {
 	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
@@ -214,8 +224,13 @@ func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuer
 
 	var result []FunnelUserEvents
 	for rows.Next() {
-		var row FunnelUserEvents
-		if err := rows.Scan(&row.DistinctID, &row.Times, &row.StepMatches); err != nil {
+		row := FunnelUserEvents{Breakdowns: make([]string, q.NumBreakdowns())}
+		dest := make([]any, 0, 3+q.NumBreakdowns())
+		dest = append(dest, &row.DistinctID, &row.Times, &row.StepMatches)
+		for i := range row.Breakdowns {
+			dest = append(dest, &row.Breakdowns[i])
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("QueryFunnelUserEvents: scan: %w", err)
 		}
 		result = append(result, row)
@@ -226,7 +241,8 @@ func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuer
 	return result, nil
 }
 
-// QueryRetention executes a retention query and returns rows of (cohort_time, time, value, cohort_size).
+// QueryRetention executes a retention query and returns rows of
+// (cohort_time, time, value, cohort_size[, breakdown_0..N]).
 func (e *Executor) QueryRetention(ctx context.Context, q RetentionQuery) ([]RetentionRow, error) {
 	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
 	if err != nil {
@@ -240,8 +256,13 @@ func (e *Executor) QueryRetention(ctx context.Context, q RetentionQuery) ([]Rete
 
 	var result []RetentionRow
 	for rows.Next() {
-		var row RetentionRow
-		if err := rows.Scan(&row.CohortTime, &row.Time, &row.Value, &row.CohortSize); err != nil {
+		row := RetentionRow{Breakdowns: make([]string, q.NumBreakdowns())}
+		dest := make([]any, 0, 4+q.NumBreakdowns())
+		dest = append(dest, &row.CohortTime, &row.Time, &row.Value, &row.CohortSize)
+		for i := range row.Breakdowns {
+			dest = append(dest, &row.Breakdowns[i])
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("QueryRetention: scan: %w", err)
 		}
 		result = append(result, row)
@@ -272,7 +293,7 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 		if len(properties) > 0 && len(r.Breakdowns) < len(properties) {
 			return nil, fmt.Errorf("row has %d breakdowns but expected %d", len(r.Breakdowns), len(properties))
 		}
-		key := seriesKey{eventKind: r.EventKind, breakdown: fmt.Sprintf("%q", r.Breakdowns)}
+		key := seriesKey{eventKind: r.EventKind, breakdown: strings.Join(r.Breakdowns, "\x00")}
 		if _, ok := entriesByKey[key]; !ok {
 			orderedKeys = append(orderedKeys, key)
 			bd := make(map[string]string, len(properties))
@@ -302,28 +323,101 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 	return series, nil
 }
 
-// GroupRetentionCohorts groups retention rows into one RetentionCohort per cohort bucket.
-func GroupRetentionCohorts(rows []RetentionRow) []*insightsv1.RetentionCohort {
-	cohortMap := map[time.Time]*insightsv1.RetentionCohort{}
-	order := make([]time.Time, 0)
+// GroupFunnelSeries groups FunnelRow results into FunnelSeries, keyed by breakdown tuple.
+// Rows must be ordered by (breakdown, step_index) — the SQL builder guarantees this.
+// The properties slice provides the property name for each breakdown dimension.
+func GroupFunnelSeries(rows []FunnelRow, properties []string) []*insightsv1.FunnelSeries {
+	type seriesEntry struct {
+		breakdown map[string]string
+		steps     []*insightsv1.FunnelStep
+	}
+
+	var orderedKeys []string
+	entriesByKey := map[string]*seriesEntry{}
+
+	for _, r := range rows {
+		key := strings.Join(r.Breakdowns, "\x00")
+		if _, ok := entriesByKey[key]; !ok {
+			orderedKeys = append(orderedKeys, key)
+			bd := make(map[string]string, len(properties))
+			for i, prop := range properties {
+				if i < len(r.Breakdowns) {
+					bd[prop] = r.Breakdowns[i]
+				}
+			}
+			entriesByKey[key] = &seriesEntry{breakdown: bd}
+		}
+		entriesByKey[key].steps = append(entriesByKey[key].steps, &insightsv1.FunnelStep{
+			EventKind:               r.EventKind,
+			Total:                   r.Value,
+			AvgTimeToConvertSeconds: r.AvgConvertSeconds,
+		})
+	}
+
+	series := make([]*insightsv1.FunnelSeries, 0, len(orderedKeys))
+	for _, k := range orderedKeys {
+		e := entriesByKey[k]
+		s := &insightsv1.FunnelSeries{Steps: e.steps}
+		if len(e.breakdown) > 0 {
+			s.Breakdown = e.breakdown
+		}
+		series = append(series, s)
+	}
+	return series
+}
+
+// GroupRetentionSeries groups RetentionRow results into RetentionSeries, keyed by breakdown tuple.
+// Within each series, rows are grouped into cohorts. Insertion order is preserved for both
+// series and cohorts.
+func GroupRetentionSeries(rows []RetentionRow, properties []string) []*insightsv1.RetentionSeries {
+	type cohortEntry struct {
+		order  []time.Time
+		byTime map[time.Time]*insightsv1.RetentionCohort
+	}
+	type seriesEntry struct {
+		series  *insightsv1.RetentionSeries
+		cohorts cohortEntry
+	}
+
+	var orderedKeys []string
+	entriesByKey := map[string]*seriesEntry{}
 
 	for _, row := range rows {
-		if _, ok := cohortMap[row.CohortTime]; !ok {
-			order = append(order, row.CohortTime)
-			cohortMap[row.CohortTime] = &insightsv1.RetentionCohort{
+		key := strings.Join(row.Breakdowns, "\x00")
+		if _, ok := entriesByKey[key]; !ok {
+			orderedKeys = append(orderedKeys, key)
+			bd := make(map[string]string, len(properties))
+			for i, prop := range properties {
+				if i < len(row.Breakdowns) {
+					bd[prop] = row.Breakdowns[i]
+				}
+			}
+			entriesByKey[key] = &seriesEntry{
+				series:  &insightsv1.RetentionSeries{Breakdown: bd},
+				cohorts: cohortEntry{byTime: map[time.Time]*insightsv1.RetentionCohort{}},
+			}
+		}
+		entry := entriesByKey[key]
+		if _, ok := entry.cohorts.byTime[row.CohortTime]; !ok {
+			entry.cohorts.order = append(entry.cohorts.order, row.CohortTime)
+			entry.cohorts.byTime[row.CohortTime] = &insightsv1.RetentionCohort{
 				Cohort:     row.CohortTime.Format(time.RFC3339),
 				CohortSize: row.CohortSize,
 			}
 		}
-		cohortMap[row.CohortTime].Points = append(cohortMap[row.CohortTime].Points, &insightsv1.DataPoint{
+		entry.cohorts.byTime[row.CohortTime].Points = append(entry.cohorts.byTime[row.CohortTime].Points, &insightsv1.DataPoint{
 			Time:  timestamppb.New(row.Time),
 			Value: row.Value,
 		})
 	}
 
-	out := make([]*insightsv1.RetentionCohort, 0, len(order))
-	for _, cohort := range order {
-		out = append(out, cohortMap[cohort])
+	out := make([]*insightsv1.RetentionSeries, 0, len(orderedKeys))
+	for _, key := range orderedKeys {
+		entry := entriesByKey[key]
+		for _, ct := range entry.cohorts.order {
+			entry.series.Cohorts = append(entry.series.Cohorts, entry.cohorts.byTime[ct])
+		}
+		out = append(out, entry.series)
 	}
 	return out
 }

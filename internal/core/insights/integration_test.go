@@ -589,11 +589,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		cohorts := insights.GroupRetentionCohorts(rows)
-		// At least 1 cohort (Mar 1 sign_ups).
-		if len(cohorts) == 0 {
+		series := insights.GroupRetentionSeries(rows, nil)
+		// At least 1 series with 1 cohort (Mar 1 sign_ups).
+		if len(series) == 0 || len(series[0].Cohorts) == 0 {
 			t.Fatal("expected at least 1 retention cohort")
 		}
+		cohorts := series[0].Cohorts
 		// First cohort should have day-0 retention = 100%.
 		if cohorts[0].Points[0].Value != 100 {
 			t.Errorf("expected 100%% day-0 retention, got %v", cohorts[0].Points[0].Value)

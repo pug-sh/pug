@@ -122,6 +122,24 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
 - **`proto/shared/`** — private API key or JWT (e.g., campaigns, delivery, profiles read/delete)
 - **`proto/common/v1/`** — shared message types with no service definitions, accessible from any auth level. Only put types here if they are needed across auth boundaries. If a message is only used behind private key + JWT, it belongs in `shared/`.
 
+### Insights Breakdown
+
+Breakdowns are supported for trends, funnel, and retention. Segmentation does not support breakdowns.
+
+- `QueryRequest.breakdowns` is `repeated Breakdown` — list of property keys to break down by (e.g. `[{property: "$country"}, {property: "$browser"}]`).
+- **Attribution:** first-touch — each user is assigned the breakdown value(s) from their earliest matching event (`argMin(property, occur_time)`). This keeps funnel and retention per-user logic correct by not splitting a user across multiple groups.
+- **Top-N bucketing:** the query builds a `top_vals` CTE and groups values outside the top N into `'$others'` to keep result sets bounded. The event scope of `top_vals` matches the query's aggregation scope:
+  - Trends and funnel counts: `top_vals` covers all events in the time range.
+  - Funnel timing: `top_vals` is filtered to step-matching events (same scope as `user_arrays`).
+  - Retention: `top_vals` is filtered to start-event rows only.
+- **Two-phase aggregation pattern:** to avoid evaluating `argMin` twice, breakdown queries split into:
+  1. An aggregation CTE that computes `argMin(expr, occur_time) AS raw_bd_N` once.
+  2. A downstream CTE or SELECT that buckets `raw_bd_N` against `top_vals` as a plain scalar expression.
+- **Response shape:** funnel and retention responses wrap their results in series objects keyed by breakdown combination:
+  - `FunnelResult.series` → `repeated FunnelSeries` with `breakdown map<string,string>` + `steps repeated FunnelStep`
+  - `RetentionResult.series` → `repeated RetentionSeries` with `breakdown map<string,string>` + `cohorts repeated RetentionCohort`
+  - When no breakdowns are requested, a single series with an empty `breakdown` map is returned.
+
 ### Insights Filter Model
 
 - Top-level insights filters are **group-based only**. In `shared.insights.v1`, use `filter_groups` and `filter_groups_operator` on `QueryRequest` and `SegmentUsersRequest`.
@@ -138,7 +156,9 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
   - `events[0]` = cohort/start event (required)
   - `events[1]` = return event (optional; defaults to `events[0]` when omitted)
 - Retention responses use `QueryResponse.retention` (a `RetentionResult`):
-  - one `RetentionCohort` per cohort bucket
+  - `RetentionResult.series` is `repeated RetentionSeries` — one entry per breakdown combination (single entry when no breakdown)
+  - `RetentionSeries.breakdown` is a `map<string, string>` of property key → value for this series
+  - `RetentionSeries.cohorts` contains `repeated RetentionCohort`, one per cohort bucket
   - `RetentionCohort.cohort` stores the cohort timestamp (RFC3339)
   - `RetentionCohort.cohort_size` stores the number of users in the cohort
   - `RetentionCohort.points[].value` is retention percentage (`0..100`) across time buckets
@@ -204,6 +224,20 @@ Key types and functions:
 - Use parameterized limits (`LIMIT ?`) through `Query.Limit(...)` and pass `int64` values consistently.
 - Use `RawCond(...)` only for expression-level fragments that are awkward to model otherwise (for example `occur_time >= now() - INTERVAL 30 DAY` or `IN ?` tuple bindings). Keep full query structure (`SELECT/FROM/WHERE/GROUP/ORDER/LIMIT`) in the builder.
 - For property-values query helpers, query builder methods now return build errors; callers must propagate those errors instead of relying on raw-SQL fallbacks.
+
+### Insights Query Builders
+
+`insights.BuildQuery` is **deprecated**. Always use the type-specific builders — they provide compile-time safety between builder and executor:
+
+| Insight type | Builder | Query type |
+|---|---|---|
+| Trends | `BuildTrendsQuery` | `*TrendsQuery` |
+| Segmentation | `BuildSegmentationQuery` | `*SegmentationQuery` |
+| Funnel (counts) | `BuildFunnelCountsQuery` | `*FunnelQuery` |
+| Funnel (with timing) | `BuildFunnelTimingQuery` | `*FunnelTimingQuery` |
+| Retention | `BuildRetentionQuery` | `*RetentionQuery` |
+
+All query types expose `.SQL()`, `.Args()`, `.Properties()`. Funnel types also expose `.Kinds()` and `.WindowSec()`. The only legitimate remaining use of `BuildQuery` is testing the deprecated dispatcher's "unsupported insight type" error path.
 
 ## Code Style
 
