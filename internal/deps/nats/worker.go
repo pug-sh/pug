@@ -256,7 +256,16 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 
 		procCtx, cancel := context.WithTimeout(ctx, w.config.ProcessingTimeout)
 		procCtx = extractTraceContext(procCtx, msg)
-		procCtx, span := startConsumerSpan(procCtx, msg.Subject())
+
+		meta, _ := msg.Metadata()
+		var streamSeq, consumerSeq uint64
+		var numDelivered uint64
+		if meta != nil {
+			numDelivered = meta.NumDelivered
+			streamSeq = meta.Sequence.Stream
+			consumerSeq = meta.Sequence.Consumer
+		}
+		procCtx, span := startConsumerSpan(procCtx, msg.Subject(), w.config.StreamName, w.config.ConsumerName, numDelivered, streamSeq, consumerSeq)
 
 		err = w.processor(procCtx, msg)
 		if err != nil {

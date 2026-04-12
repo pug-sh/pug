@@ -16,10 +16,14 @@ import (
 const tracerName = "cotton/nats"
 
 var (
-	attrMessagingSystem = attribute.Key("messaging.system")
-	attrDestinationName = attribute.Key("messaging.destination.name")
-	attrBodySize        = attribute.Key("messaging.message.body.size")
-	attrMessagingOp     = attribute.Key("messaging.operation")
+	attrMessagingSystem     = attribute.Key("messaging.system")
+	attrDestinationName     = attribute.Key("messaging.destination.name")
+	attrBodySize            = attribute.Key("messaging.message.body.size")
+	attrMessagingOp         = attribute.Key("messaging.operation")
+	attrMessagingStream     = attribute.Key("messaging.destination.definition")
+	attrMessagingConsumer   = attribute.Key("messaging.consumer.name")
+	attrMessagingDeliveries = attribute.Key("messaging.message.delivery_number")
+	attrMessagingSeq        = attribute.Key("messaging.message.sequence")
 )
 
 // headerCarrier adapts nats.Header to propagation.TextMapCarrier so that the
@@ -99,12 +103,16 @@ func startProducerSpan(ctx context.Context, subject string, payloadSize int) (co
 	)
 }
 
-func startConsumerSpan(ctx context.Context, subject string) (context.Context, trace.Span) {
+func startConsumerSpan(ctx context.Context, subject, stream, consumer string, numDelivered uint64, streamSeq, consumerSeq uint64) (context.Context, trace.Span) {
 	return otel.Tracer(tracerName).Start(ctx, "process "+subject,
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
 			attrMessagingSystem.String("nats"),
 			attrDestinationName.String(subject),
+			attrMessagingStream.String(stream),
+			attrMessagingConsumer.String(consumer),
+			attrMessagingDeliveries.Int64(int64(numDelivered)),
+			attrMessagingSeq.Int64(int64(streamSeq)),
 			attrMessagingOp.String("process"),
 		),
 	)
