@@ -57,7 +57,11 @@ func Run(ctx context.Context) error {
 func start(ctx context.Context, d *deps) error {
 	queriesRo := dbread.New(d.pgRo)
 
-	handlerOpts := connect.WithInterceptors(validate.NewInterceptor(), cottonrpc.ErrorInterceptor())
+	handlerOpts := connect.WithInterceptors(
+		validate.NewInterceptor(),
+		cottonrpc.ErrorInterceptor(),
+		d.otelInterceptor,
+	)
 
 	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
 	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)

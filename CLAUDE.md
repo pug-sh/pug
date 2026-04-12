@@ -240,6 +240,29 @@ Key types and functions:
 
 All query types expose `.SQL()` and `.Args()`. All types except `ScalarQuery` also expose `.Properties()` and `.NumBreakdowns()`. `FunnelTimingQuery` also exposes `.Kinds()` and `.WindowSec()`. The only legitimate remaining use of `BuildQuery` is testing the deprecated dispatcher's "unsupported insight type" error path.
 
+### OpenTelemetry Instrumentation
+
+All telemetry is bootstrapped in `internal/deps/telemetry/`. The server initializes OpenTelemetry via `telemetry.NewOtelInterceptor(ctx)` which:
+
+- Sets up trace, metric, and log providers exporting OTLP over gRPC (insecure, default `localhost:4317`)
+- Replaces the default `slog` logger with an OTel-bridged logger — all `slog.*Context` calls are automatically correlated with the active trace
+- Returns an `otelconnect.Interceptor` that is wired into every Connect RPC handler
+
+**Instrumentation status:**
+
+| Component | Status |
+|-----------|--------|
+| Connect RPC | ✅ — `otelconnect.Interceptor` on all handlers |
+| slog → OTel | ✅ — `otelslog` bridge replaces default logger |
+| PostgreSQL | ✅ — `otelpgx` tracer on all connections |
+| Redis | ✅ — `redisotel` tracing + metrics on the client |
+| NATS/JetStream | ❌ — no official OTel package |
+| ClickHouse | ❌ — no official OTel package |
+
+**Configuration:** Set `OTEL_SERVICE_NAME` (required) and `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4317`).
+
+**Recording errors in spans:** Use `telemetry.RecordError(ctx, err)` to record an error on the current span, set the span status to `Error`, and attach stack traces. This is preferred over manual `span.SetStatus()` + `span.RecordError()` calls.
+
 ## Code Style
 
 - Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change. A PostToolUse hook auto-runs `goimports` on every `.go` file edit.

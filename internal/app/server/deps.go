@@ -5,11 +5,13 @@ import (
 	"log/slog"
 	"strings"
 
+	"connectrpc.com/otelconnect"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	chdb "github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	"github.com/fivebitsio/cotton/internal/deps/redis"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sethvargo/go-envconfig"
@@ -17,9 +19,11 @@ import (
 
 type deps struct {
 	ch          driver.Conn
+	closeOtel   func(context.Context)
 	corsOrigins []string
 	jwtKey      []byte
 	nats        *nats.NATSClient
+	otelInterceptor *otelconnect.Interceptor
 	pgRo        *pgxpool.Pool
 	pgW         *pgxpool.Pool
 	redis       *redis.Client
@@ -40,27 +44,40 @@ func (d *deps) close(ctx context.Context) {
 			slog.ErrorContext(ctx, "failed to close clickhouse", slogx.Error(err))
 		}
 	}
+	if d.closeOtel != nil {
+		d.closeOtel(ctx)
+	}
 }
 
 func newDeps(ctx context.Context) (*deps, error) {
+	otelInterceptor, closeOtel, err := telemetry.NewOtelInterceptor(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to initialize telemetry", slogx.Error(err))
+		return nil, err
+	}
+
 	var serverCfg config
 	if err := envconfig.Process(ctx, &serverCfg); err != nil {
+		closeOtel(ctx)
 		return nil, err
 	}
 
 	var pgCfg postgres.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
+		closeOtel(ctx)
 		return nil, err
 	}
 
 	pgRo, err := postgres.NewReaderPool(ctx, &pgCfg)
 	if err != nil {
+		closeOtel(ctx)
 		return nil, err
 	}
 
 	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
 	if err != nil {
 		pgRo.Close()
+		closeOtel(ctx)
 		return nil, err
 	}
 
@@ -68,6 +85,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 	if err != nil {
 		pgRo.Close()
 		pgW.Close()
+		closeOtel(ctx)
 		return nil, err
 	}
 
@@ -76,6 +94,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 		pgRo.Close()
 		pgW.Close()
 		natsClient.Close()
+		closeOtel(ctx)
 		return nil, err
 	}
 
@@ -84,6 +103,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 		pgRo.Close()
 		pgW.Close()
 		natsClient.Close()
+		closeOtel(ctx)
 		return nil, err
 	}
 
@@ -93,6 +113,7 @@ func newDeps(ctx context.Context) (*deps, error) {
 		pgW.Close()
 		natsClient.Close()
 		redisClient.Close(ctx)
+		closeOtel(ctx)
 		return nil, err
 	}
 
@@ -102,17 +123,20 @@ func newDeps(ctx context.Context) (*deps, error) {
 		pgW.Close()
 		natsClient.Close()
 		redisClient.Close(ctx)
+		closeOtel(ctx)
 		return nil, err
 	}
 
 	return &deps{
-		ch:          chConn,
-		corsOrigins: strings.Split(serverCfg.CORSOrigins, ","),
-		jwtKey:      []byte(serverCfg.JWTKey),
-		nats:        natsClient,
-		pgRo:        pgRo,
-		pgW:         pgW,
-		redis:       redisClient,
-		port:        serverCfg.Port,
+		ch:              chConn,
+		closeOtel:       closeOtel,
+		corsOrigins:     strings.Split(serverCfg.CORSOrigins, ","),
+		jwtKey:          []byte(serverCfg.JWTKey),
+		nats:            natsClient,
+		otelInterceptor: otelInterceptor,
+		pgRo:            pgRo,
+		pgW:             pgW,
+		redis:           redisClient,
+		port:            serverCfg.Port,
 	}, nil
 }
