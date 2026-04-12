@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"connectrpc.com/otelconnect"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	chdb "github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
@@ -19,7 +18,7 @@ import (
 )
 
 type deps struct {
-	ch              driver.Conn
+	ch              *chdb.Conn
 	closeOtel       func(context.Context) error
 	corsOrigins     []string
 	jwtKey          []byte
