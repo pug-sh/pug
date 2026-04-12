@@ -402,6 +402,77 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("trends_with_profile_filter", func(t *testing.T) {
+		// alice(pro): 3 page_views; bob(free): 2; charlie(no profile): 1.
+		// Plus 1 event from alias "alice_anon" which maps to alice (plan=pro).
+		// Filter plan=pro → alice's 3 events + 1 alias event = 4.
+		seedIntegrationProfiles(t, ctx, ch)
+
+		// Insert an event with an alias distinct_id to exercise the UNION ALL alias branch.
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+			testProjectID, uuid.New().String(), "page_view", "alice_anon",
+			time.Date(2024, 1, 1, 14, 0, 0, 0, time.UTC),
+			map[string]string{"$country": "US"},
+		); err != nil {
+			t.Fatalf("insert alias event: %v", err)
+		}
+
+		// Insert an event for the soft-deleted profile to verify is_deleted=0 guard.
+		// This event must NOT be included in the profile filter results.
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+			testProjectID, uuid.New().String(), "page_view", "deleted",
+			time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC),
+			map[string]string{"$country": "US"},
+		); err != nil {
+			t.Fatalf("insert deleted-profile event: %v", err)
+		}
+
+		req := &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			},
+			FilterGroups: []*insightsv1.FilterGroup{
+				{
+					Filters: []*commonv1.PropertyFilter{
+						{
+							Property: "plan",
+							Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+							Value:    "pro",
+							Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+						},
+					},
+				},
+			},
+		}
+
+		q, err := insights.BuildTrendsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildTrendsQuery: %v", err)
+		}
+
+		rows, err := executor.QueryTrends(ctx, q)
+		if err != nil {
+			t.Fatalf("QueryTrends: %v", err)
+		}
+
+		var total float64
+		for _, r := range rows {
+			total += r.Value
+		}
+		// alice has 3 page_views + 1 via alias "alice_anon"; bob and charlie must be excluded.
+		if total != 4 {
+			t.Errorf("expected 4 events for plan=pro users, got %.0f (rows: %v)", total, rows)
+		}
+	})
+
 	t.Run("funnel_counts", func(t *testing.T) {
 		seedFunnelEvents(t, ctx, ch)
 
@@ -626,6 +697,50 @@ func seedRetentionEvents(t *testing.T, ctx context.Context, ch *testutil.TestCli
 		if err != nil {
 			t.Fatalf("insert retention event: %v", err)
 		}
+	}
+}
+
+// seedIntegrationProfiles inserts profiles and aliases into ClickHouse for profile-filter integration tests.
+//
+// Profiles (project_id = testProjectID):
+//
+//	alice   → plan=pro, role=admin   (active, id matches events distinct_id)
+//	bob     → plan=free, role=member (active, id matches events distinct_id)
+//	deleted → plan=pro, role=admin   (is_deleted=1, must be excluded by soft-delete guard)
+//	(charlie has no profile)
+//
+// Aliases:
+//
+//	alice_anon → alice (exercises UNION ALL alias branch)
+func seedIntegrationProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
+	t.Helper()
+
+	now := time.Now().UTC()
+	profiles := []struct {
+		id         string
+		externalID string
+		properties string
+		isDeleted  uint8
+	}{
+		{"alice", "alice_ext", `{"plan":"pro","role":"admin"}`, 0},
+		{"bob", "bob_ext", `{"plan":"free","role":"member"}`, 0},
+		{"deleted", "deleted_ext", `{"plan":"pro","role":"admin"}`, 1},
+	}
+	for _, p := range profiles {
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time, insert_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.id, testProjectID, p.externalID, p.properties, p.isDeleted, now, now, now,
+		); err != nil {
+			t.Fatalf("insert profile %s: %v", p.id, err)
+		}
+	}
+
+	// Seed an alias so the UNION ALL branch in profileFilterCondition is exercised.
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+		"alice_anon", "alice", "alice_ext", testProjectID,
+	); err != nil {
+		t.Fatalf("insert alias: %v", err)
 	}
 }
 

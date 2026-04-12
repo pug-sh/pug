@@ -2,6 +2,7 @@ edition = "2023";
 package common.v1;
 
 import "buf/validate/validate.proto";
+import "common/v1/filter_schema.proto";
 
 option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1";
@@ -77,6 +78,7 @@ message PropertyFilter {
   }];
   string value = 3;
   repeated string values = 4;
+  PropertySource source = 5 [(buf.validate.field).enum.defined_only = true];
 }
 
 // EventFilter selects events by kind with optional per-event property filters.

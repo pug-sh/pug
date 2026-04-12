@@ -24,7 +24,6 @@ import (
 	sharedprofilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/shared/profiles"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
 	coreorgs "github.com/fivebitsio/cotton/internal/core/orgs"
-	coreprofiles "github.com/fivebitsio/cotton/internal/core/profiles"
 	coreprojects "github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
@@ -85,9 +84,8 @@ func start(ctx context.Context, d *deps) error {
 		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
 
 	// Shared
-	profilesRepo := coreprofiles.NewRepo(queriesRo)
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
-	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap(), profilesRepo)
+	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
 		insights.NewServer(insightsSvc, insightsExecutor), handlerOpts)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(

@@ -23,24 +23,3 @@ limit @page_size;
 select id, external_id, properties, create_time, update_time
 from profiles
 where project_id = @project_id and deletion_time is null;
-
--- name: GetProfilePropertyKeys :many
-select distinct key
-from (
-    select properties from profiles
-    where project_id = @project_id and deletion_time is null
-    limit 10000
-) sub,
-     jsonb_object_keys(sub.properties) as key
-order by key asc
-limit 1000;
-
--- name: GetProfilePropertyValues :many
-select distinct properties->>sqlc.arg(property_key)::text as value
-from profiles
-where project_id = @project_id
-  and deletion_time is null
-  and properties->>sqlc.arg(property_key)::text is not null
-  and properties->>sqlc.arg(property_key)::text != ''
-order by value asc
-limit 10;

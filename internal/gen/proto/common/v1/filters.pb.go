@@ -158,6 +158,7 @@ type PropertyFilter struct {
 	Operator      FilterOperator         `protobuf:"varint,2,opt,name=operator,enum=common.v1.FilterOperator" json:"operator,omitempty"`
 	Value         string                 `protobuf:"bytes,3,opt,name=value" json:"value,omitempty"`
 	Values        []string               `protobuf:"bytes,4,rep,name=values" json:"values,omitempty"`
+	Source        PropertySource         `protobuf:"varint,5,opt,name=source,enum=common.v1.PropertySource" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -220,6 +221,13 @@ func (x *PropertyFilter) GetValues() []string {
 	return nil
 }
 
+func (x *PropertyFilter) GetSource() PropertySource {
+	if x != nil {
+		return x.Source
+	}
+	return PropertySource_PROPERTY_SOURCE_UNSPECIFIED
+}
+
 // EventFilter selects events by kind with optional per-event property filters.
 // Used across activity feeds, event explorer, and insights queries.
 type EventFilter struct {
@@ -278,12 +286,13 @@ var File_common_v1_filters_proto protoreflect.FileDescriptor
 
 const file_common_v1_filters_proto_rawDesc = "" +
 	"\n" +
-	"\x17common/v1/filters.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\"\xa9\r\n" +
+	"\x17common/v1/filters.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\"\xe6\r\n" +
 	"\x0ePropertyFilter\x12:\n" +
 	"\bproperty\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\bproperty\x12B\n" +
 	"\boperator\x18\x02 \x01(\x0e2\x19.common.v1.FilterOperatorB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\boperator\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\tR\x05value\x12\x16\n" +
-	"\x06values\x18\x04 \x03(\tR\x06values:\xe8\v\xbaH\xe4\v\x1a\xe4\x02\n" +
+	"\x06values\x18\x04 \x03(\tR\x06values\x12;\n" +
+	"\x06source\x18\x05 \x01(\x0e2\x19.common.v1.PropertySourceB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06source:\xe8\v\xbaH\xe4\v\x1a\xe4\x02\n" +
 	"\x1eproperty_filter.value_required\x12#value is required for this operator\x1a\x9c\x02this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_SET|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN|| this.value != ''\x1a\x8e\x03\n" +
 	"&property_filter.numeric_value_required\x128value must be a valid number for lte/gte/lt/gt operators\x1a\xa9\x02!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LTE|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GTE|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LT|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GT)|| double(this.value) == double(this.value)\x1a\xf1\x01\n" +
 	"\x1fproperty_filter.values_required\x120values must not be empty for in/not_in operators\x1a\x9b\x01!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN)|| this.values.size() > 0\x1a\xe8\x01\n" +
@@ -331,15 +340,17 @@ var file_common_v1_filters_proto_goTypes = []any{
 	(LogicalOperator)(0),   // 1: common.v1.LogicalOperator
 	(*PropertyFilter)(nil), // 2: common.v1.PropertyFilter
 	(*EventFilter)(nil),    // 3: common.v1.EventFilter
+	(PropertySource)(0),    // 4: common.v1.PropertySource
 }
 var file_common_v1_filters_proto_depIdxs = []int32{
 	0, // 0: common.v1.PropertyFilter.operator:type_name -> common.v1.FilterOperator
-	2, // 1: common.v1.EventFilter.filters:type_name -> common.v1.PropertyFilter
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	4, // 1: common.v1.PropertyFilter.source:type_name -> common.v1.PropertySource
+	2, // 2: common.v1.EventFilter.filters:type_name -> common.v1.PropertyFilter
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_common_v1_filters_proto_init() }
@@ -347,6 +358,7 @@ func file_common_v1_filters_proto_init() {
 	if File_common_v1_filters_proto != nil {
 		return
 	}
+	file_common_v1_filter_schema_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -66,7 +66,7 @@ SELECT
     countState()                            AS event_count,
     maxState(update_time)                   AS last_seen
 FROM profiles
-WHERE notEmpty(properties)
+WHERE is_deleted = 0 AND notEmpty(properties)
 GROUP BY project_id, map_type, kind, key;
 
 -- +goose Down
