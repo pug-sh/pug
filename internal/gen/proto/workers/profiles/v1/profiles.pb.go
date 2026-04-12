@@ -7,6 +7,7 @@
 package workerprofilesv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -196,20 +197,20 @@ var File_workers_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_workers_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\"workers/profiles/v1/profiles.proto\x12\x13workers.profiles.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8f\x01\n" +
-	"\x13ProfileAliasMessage\x12\x19\n" +
-	"\balias_id\x18\x01 \x01(\tR\aaliasId\x12\x1d\n" +
+	"\"workers/profiles/v1/profiles.proto\x12\x13workers.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xaf\x01\n" +
+	"\x13ProfileAliasMessage\x12!\n" +
+	"\balias_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\aaliasId\x12%\n" +
 	"\n" +
-	"profile_id\x18\x02 \x01(\tR\tprofileId\x12\x1f\n" +
-	"\vexternal_id\x18\x03 \x01(\tR\n" +
-	"externalId\x12\x1d\n" +
+	"profile_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprofileId\x12'\n" +
+	"\vexternal_id\x18\x03 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
+	"externalId\x12%\n" +
 	"\n" +
-	"project_id\x18\x04 \x01(\tR\tprojectId\"\xc7\x02\n" +
-	"\x14ProfileUpsertMessage\x12\x1d\n" +
+	"project_id\x18\x04 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprojectId\"\xd7\x02\n" +
+	"\x14ProfileUpsertMessage\x12%\n" +
 	"\n" +
-	"profile_id\x18\x01 \x01(\tR\tprofileId\x12\x1d\n" +
+	"profile_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprofileId\x12%\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x1f\n" +
+	"project_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprojectId\x12\x1f\n" +
 	"\vexternal_id\x18\x03 \x01(\tR\n" +
 	"externalId\x127\n" +
 	"\n" +
