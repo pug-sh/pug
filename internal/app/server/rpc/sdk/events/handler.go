@@ -20,7 +20,10 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-const cfHeaderBotScore = "CF-Bot-Score"
+const (
+	cfHeaderBotScore    = "CF-Bot-Score"
+	cfHeaderVerifiedBot = "CF-Verified-Bot"
+)
 
 type Server struct {
 	eventsv1connect.UnimplementedEventsServiceHandler
@@ -63,6 +66,7 @@ func (s *Server) BatchCreate(
 	s.enrichGeo(ctx, projectID, req.Header(), events)
 	s.enrichUserAgent(ctx, projectID, req.Header(), events)
 	s.enrichBotScore(ctx, projectID, req.Header(), events)
+	s.enrichVerifiedBot(ctx, projectID, req.Header(), events)
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events", slogx.Error(err))
@@ -127,7 +131,7 @@ func (s *Server) enrichBotScore(ctx context.Context, projectID string, h http.He
 
 	val, err := strconv.ParseUint(botScoreStr, 10, 8)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to parse bot score from CDN header",
+		slog.WarnContext(ctx, "failed to parse bot score from CDN header",
 			slogx.Error(err),
 			slog.String("project_id", projectID),
 			slog.String("bot_score", botScoreStr),
@@ -141,5 +145,31 @@ func (s *Server) enrichBotScore(ctx context.Context, projectID string, h http.He
 			event.AutoProperties = make(map[string]string)
 		}
 		event.AutoProperties["$bot_score"] = score
+	}
+}
+
+func (s *Server) enrichVerifiedBot(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {
+	// Always strip client-supplied $verified_bot (server-only property).
+	for _, event := range events {
+		delete(event.AutoProperties, "$verified_bot")
+	}
+
+	val := h.Get(cfHeaderVerifiedBot)
+	if val == "" {
+		return
+	}
+	if val != "true" && val != "false" {
+		slog.WarnContext(ctx, "unexpected CF-Verified-Bot header value, skipping enrichment",
+			slog.String("project_id", projectID),
+			slog.String("verified_bot", val),
+			slog.Int("batch_size", len(events)))
+		return
+	}
+
+	for _, event := range events {
+		if event.AutoProperties == nil {
+			event.AutoProperties = make(map[string]string)
+		}
+		event.AutoProperties["$verified_bot"] = val
 	}
 }

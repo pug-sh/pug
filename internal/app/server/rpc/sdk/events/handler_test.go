@@ -290,6 +290,12 @@ func TestEnrichBotScore(t *testing.T) {
 			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$browser": "Chrome"}}},
 			wantScore: "42",
 		},
+		{
+			name:      "no header, nil AutoProperties — no panic",
+			header:    "",
+			events:    []*eventsv1.Event{{}},
+			wantScore: "",
+		},
 	}
 
 	s := &Server{geoProvider: stubProvider{}}
@@ -317,6 +323,88 @@ func TestEnrichBotScore(t *testing.T) {
 	}
 }
 
+func TestEnrichVerifiedBot(t *testing.T) {
+	tests := []struct {
+		name   string
+		header string // empty = omit header
+		events []*eventsv1.Event
+		want   string // empty = expect absent
+	}{
+		{
+			name:   "true applied to all events",
+			header: "true",
+			events: []*eventsv1.Event{{}, {}},
+			want:   "true",
+		},
+		{
+			name:   "false applied",
+			header: "false",
+			events: []*eventsv1.Event{{}},
+			want:   "false",
+		},
+		{
+			name:   "no header — client-supplied value stripped",
+			header: "",
+			events: []*eventsv1.Event{{AutoProperties: map[string]string{"$verified_bot": "true"}}},
+			want:   "",
+		},
+		{
+			name:   "invalid header — value absent",
+			header: "yes",
+			events: []*eventsv1.Event{{}},
+			want:   "",
+		},
+		{
+			name:   "client-supplied value overwritten",
+			header: "false",
+			events: []*eventsv1.Event{{AutoProperties: map[string]string{"$verified_bot": "true"}}},
+			want:   "false",
+		},
+		{
+			name:   "preserves other auto-properties",
+			header: "true",
+			events: []*eventsv1.Event{{AutoProperties: map[string]string{"$browser": "Chrome"}}},
+			want:   "true",
+		},
+		{
+			name:   "no header, nil AutoProperties — no panic",
+			header: "",
+			events: []*eventsv1.Event{{}},
+			want:   "",
+		},
+		{
+			name:   "case-sensitive — True rejected",
+			header: "True",
+			events: []*eventsv1.Event{{}},
+			want:   "",
+		},
+	}
+
+	s := &Server{geoProvider: stubProvider{}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := http.Header{}
+			if tt.header != "" {
+				h.Set(cfHeaderVerifiedBot, tt.header)
+			}
+			s.enrichVerifiedBot(context.Background(), "test-project", h, tt.events)
+			for _, event := range tt.events {
+				got, exists := event.AutoProperties["$verified_bot"]
+				if tt.want == "" {
+					if exists {
+						t.Errorf("expected $verified_bot absent, got %q", got)
+					}
+				} else if !exists {
+					t.Errorf("expected $verified_bot = %q, got absent", tt.want)
+				} else if got != tt.want {
+					t.Errorf("$verified_bot = %q, want %q", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
 func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 	uaParser, err := useragent.NewParser()
 	if err != nil {
@@ -327,17 +415,19 @@ func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 	s := &Server{geoProvider: stubProvider{loc: loc}, uaParser: uaParser}
 
 	events := []*eventsv1.Event{{
-		AutoProperties: map[string]string{useragent.PropOS: "iOS", "$bot_score": "99"},
+		AutoProperties: map[string]string{useragent.PropOS: "iOS", "$bot_score": "99", "$verified_bot": "true"},
 	}}
 
 	h := http.Header{}
 	h.Set("User-Agent", chromeWindowsUA)
 	h.Set(cfHeaderBotScore, "5")
+	h.Set(cfHeaderVerifiedBot, "false")
 
-	// Same order as BatchCreate: geo first, then UA, then bot score.
+	// Same order as BatchCreate: geo, UA, bot score, verified bot.
 	s.enrichGeo(context.Background(), "test-project", h, events)
 	s.enrichUserAgent(context.Background(), "test-project", h, events)
 	s.enrichBotScore(context.Background(), "test-project", h, events)
+	s.enrichVerifiedBot(context.Background(), "test-project", h, events)
 
 	want := map[string]string{
 		// Geo props (always overwrite).
@@ -348,8 +438,9 @@ func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 		useragent.PropBrowser:        "Chrome",
 		useragent.PropBrowserVersion: "118",
 		useragent.PropOSVersion:      "10",
-		// Bot score (CDN header overwrites client-supplied value).
-		"$bot_score": "5",
+		// Bot management (CDN headers overwrite client-supplied values).
+		"$bot_score":    "5",
+		"$verified_bot": "false",
 	}
 
 	assertProps(t, events[0], want)
