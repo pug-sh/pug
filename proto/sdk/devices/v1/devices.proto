@@ -20,7 +20,7 @@ message SubscribeRequest {
     expression: "this.profile_id == '' || this.profile_external_id == ''"
   };
 
-  string device_id = 1 [(buf.validate.field).string = {min_len: 1, max_len: 36}];
+  string device_id = 1 [(buf.validate.field).required = true, (buf.validate.field).string = {max_len: 36}];
   string platform = 2 [(buf.validate.field).string = {
     in: [
       "android",
@@ -39,7 +39,7 @@ message SubscribeRequest {
 message SubscribeResponse {}
 
 message UpdateStatusRequest {
-  string id = 1 [(buf.validate.field).string = {min_len: 1, max_len: 36}];
+  string id = 1 [(buf.validate.field).required = true, (buf.validate.field).string = {max_len: 36}];
   string status = 2 [(buf.validate.field).string = {
     in: [
       "active",
@@ -51,15 +51,15 @@ message UpdateStatusRequest {
 message UpdateStatusResponse {}
 
 message UpdateTokenRequest {
-  string id = 1 [(buf.validate.field).string = {min_len: 1, max_len: 36}];
+  string id = 1 [(buf.validate.field).required = true, (buf.validate.field).string = {max_len: 36}];
   string token = 2 [(buf.validate.field).required = true];
 }
 
 message UpdateTokenResponse {}
 
 message DeviceOperationMessage {
-  string device_id = 1 [(buf.validate.field).string = {min_len: 1, max_len: 36}];
-  string project_id = 2 [(buf.validate.field).string = {min_len: 1}];
+  string device_id = 1 [(buf.validate.field).required = true, (buf.validate.field).string = {max_len: 36}];
+  string project_id = 2 [(buf.validate.field).required = true];
 
   oneof operation_payload {
     SubscribePayload subscribe = 10;

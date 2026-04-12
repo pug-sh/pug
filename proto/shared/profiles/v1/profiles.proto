@@ -16,13 +16,13 @@ service ProfilesService {
 }
 
 message DeleteRequest {
-  string id = 1 [(buf.validate.field).string = {min_len: 1}];
+  string id = 1 [(buf.validate.field).required = true];
 }
 
 message DeleteResponse {}
 
 message GetByExternalIdRequest {
-  string external_id = 1 [(buf.validate.field).string = {min_len: 1}];
+  string external_id = 1 [(buf.validate.field).required = true];
 }
 
 message GetByExternalIdResponse {
@@ -30,7 +30,7 @@ message GetByExternalIdResponse {
 }
 
 message GetRequest {
-  string id = 1 [(buf.validate.field).string = {min_len: 1}];
+  string id = 1 [(buf.validate.field).required = true];
 }
 
 message GetResponse {
