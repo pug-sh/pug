@@ -49,7 +49,11 @@ func callInterceptor(t *testing.T, principal *Principal) tracetest.SpanStub {
 
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	defer tp.Shutdown(context.Background())
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown tracer provider: %v", err)
+		}
+	}()
 
 	interceptor := PrincipalInterceptor()
 	inner := interceptor.WrapUnary(func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {

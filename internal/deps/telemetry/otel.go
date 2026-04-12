@@ -99,7 +99,9 @@ func NewOtelInterceptor(ctx context.Context) (*otelconnect.Interceptor, func(con
 	otelInterceptor, err := otelconnect.NewInterceptor()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to create otel interceptor", slogx.Error(err))
-		shutdown(ctx)
+		if shutdownErr := shutdown(ctx); shutdownErr != nil {
+			slog.ErrorContext(ctx, "failed to shutdown otel after interceptor failure", slogx.Error(shutdownErr))
+		}
 		return nil, nil, err
 	}
 

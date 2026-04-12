@@ -11,6 +11,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/campaigns"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -37,12 +38,14 @@ func (s *server) Get(
 	campaign, err := s.service.GetCampaignByIDAndProjectID(ctx, req.Msg.Id, principal.Project.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed getting campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProto, err := roToRPCMsg(campaign)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -65,6 +68,7 @@ func (s *server) BatchGet(
 	campaigns, err := s.service.GetCampaignsByProjectID(ctx, projectID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed getting campaigns by project ID", slogx.Error(err), slog.String("projectId", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -73,6 +77,7 @@ func (s *server) BatchGet(
 		proto, err := roToRPCMsg(c)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", c.ID))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		campaignProtos[i] = proto
@@ -116,12 +121,14 @@ func (s *server) Create(
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed creating campaign", slogx.Error(err), slog.String("projectId", projectID), slog.String("campaignName", req.Msg.Name))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProto, err := wToRPCMsg(campaign)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", campaign.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -144,6 +151,7 @@ func (s *server) Delete(
 	err = s.service.DeleteCampaign(ctx, req.Msg.Id, projectID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed deleting campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -171,12 +179,14 @@ func (s *server) Update(
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed updating campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProto, err := wToRPCMsg(campaign)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", campaign.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

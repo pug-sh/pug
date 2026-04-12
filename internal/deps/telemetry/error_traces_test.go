@@ -14,7 +14,11 @@ import (
 func TestRecordError_NilError(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	defer tp.Shutdown(context.Background())
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown tracer provider: %v", err)
+		}
+	}()
 
 	ctx, span := tp.Tracer("test").Start(context.Background(), "test-span")
 	RecordError(ctx, nil)
@@ -36,7 +40,11 @@ func TestRecordError_NilError(t *testing.T) {
 func TestRecordError_RecordsError(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	defer tp.Shutdown(context.Background())
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown tracer provider: %v", err)
+		}
+	}()
 
 	ctx, span := tp.Tracer("test").Start(context.Background(), "test-span")
 	RecordError(ctx, errors.New("something broke"))
@@ -64,7 +72,11 @@ func TestRecordError_RecordsError(t *testing.T) {
 func TestRecordError_WithAttributes(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	defer tp.Shutdown(context.Background())
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown tracer provider: %v", err)
+		}
+	}()
 
 	ctx, span := tp.Tracer("test").Start(context.Background(), "test-span")
 	RecordError(ctx, errors.New("db error"), attribute.String("db.system", "postgresql"))

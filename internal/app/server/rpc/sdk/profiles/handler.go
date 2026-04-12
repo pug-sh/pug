@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -47,12 +48,14 @@ func (s *Server) Identify(
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal identify message", slogx.Error(err),
 			slog.String("projectId", principal.Project.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	if _, err = s.producer.Publish(ctx, nats.ProfileIdentifySubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish identify message", slogx.Error(err),
 			slog.String("projectId", principal.Project.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 

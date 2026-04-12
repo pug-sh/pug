@@ -69,7 +69,11 @@ func newDeps(ctx context.Context) (*deps, error) {
 		slog.ErrorContext(ctx, "failed to initialize telemetry", slogx.Error(err))
 		return nil, err
 	}
-	closers = append(closers, func() { closeOtel(ctx) })
+	closers = append(closers, func() {
+		if err := closeOtel(ctx); err != nil {
+			slog.ErrorContext(ctx, "failed to close otel during rollback", slogx.Error(err))
+		}
+	})
 
 	var serverCfg config
 	if err := envconfig.Process(ctx, &serverCfg); err != nil {
@@ -119,7 +123,11 @@ func newDeps(ctx context.Context) (*deps, error) {
 	if err != nil {
 		return nil, err
 	}
-	closers = append(closers, func() { chConn.Close() })
+	closers = append(closers, func() {
+		if err := chConn.Close(); err != nil {
+			slog.ErrorContext(ctx, "failed to close clickhouse during rollback", slogx.Error(err))
+		}
+	})
 
 	success = true
 	return &deps{

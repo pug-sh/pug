@@ -10,6 +10,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	natsdeps "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	profilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
@@ -58,6 +59,7 @@ func (s *Server) Delete(
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed starting delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 	defer func() {
@@ -74,6 +76,7 @@ func (s *Server) Delete(
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed soft-deleting profile", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 	if n == 0 {
@@ -87,6 +90,7 @@ func (s *Server) Delete(
 	if err != nil {
 		slog.ErrorContext(ctx, "failed deactivating devices for deleted profile", slogx.Error(err),
 			slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 	slog.InfoContext(ctx, "deactivated devices for deleted profile",
@@ -96,6 +100,7 @@ func (s *Server) Delete(
 
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed committing delete transaction", slogx.Error(err), slog.String("profileId", req.Msg.Id), slog.String("projectId", principal.Project.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 
@@ -139,6 +144,7 @@ func (s *Server) Get(
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 		}
 		slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profileId", req.Msg.Id))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
 	}
 
@@ -170,6 +176,7 @@ func (s *Server) GetByExternalId(
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 		}
 		slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("externalId", req.Msg.ExternalId))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
 	}
 
@@ -233,6 +240,7 @@ func (s *Server) List(
 				slog.Bool("hasCursor", hasCursor),
 				slog.String("cursorId", cursorID),
 				slog.Time("cursorTime", cursorTime.Time))
+			telemetry.RecordError(ctx, err)
 			return connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
 		}
 
@@ -260,6 +268,7 @@ func (s *Server) List(
 			nextPageToken, err = cursor.encode()
 			if err != nil {
 				slog.ErrorContext(ctx, "failed encoding page token", slogx.Error(err))
+				telemetry.RecordError(ctx, err)
 				return connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
 			}
 		}
@@ -273,6 +282,7 @@ func (s *Server) List(
 			}
 			slog.ErrorContext(ctx, "failed sending profile stream", slogx.Error(err),
 				slog.String("projectId", principal.Project.ID))
+			telemetry.RecordError(ctx, err)
 			return connect.NewError(connect.CodeInternal, errors.New("failed to stream profiles"))
 		}
 
@@ -293,6 +303,7 @@ func convertProfile(ctx context.Context, p dbread.Profile) (*profilesv1.Profile,
 	if err != nil {
 		slog.ErrorContext(ctx, "failed converting properties to protobuf struct",
 			slogx.Error(err), slog.String("profileId", p.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
 	}
 

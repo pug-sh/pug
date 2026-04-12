@@ -16,6 +16,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1/eventsv1connect"
 	"github.com/fivebitsio/cotton/internal/geo"
 	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/useragent"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -70,6 +71,7 @@ func (s *Server) BatchCreate(
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to accept events"))
 	}
 
