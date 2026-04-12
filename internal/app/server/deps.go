@@ -18,18 +18,20 @@ import (
 )
 
 type deps struct {
-	ch          driver.Conn
-	closeOtel   func(context.Context)
-	corsOrigins []string
-	jwtKey      []byte
-	nats        *nats.NATSClient
+	ch              driver.Conn
+	closeOtel       func(context.Context) error
+	corsOrigins     []string
+	jwtKey          []byte
+	nats            *nats.NATSClient
 	otelInterceptor *otelconnect.Interceptor
-	pgRo        *pgxpool.Pool
-	pgW         *pgxpool.Pool
-	redis       *redis.Client
-	port        string
+	pgRo            *pgxpool.Pool
+	pgW             *pgxpool.Pool
+	redis           *redis.Client
+	port            string
 }
 
+// close shuts down all deps. OTel must shut down last — it owns the slog backend,
+// so earlier components' shutdown logs are still captured.
 func (d *deps) close(ctx context.Context) {
 	d.pgRo.Close()
 	d.pgW.Close()
@@ -45,88 +47,81 @@ func (d *deps) close(ctx context.Context) {
 		}
 	}
 	if d.closeOtel != nil {
-		d.closeOtel(ctx)
+		if err := d.closeOtel(ctx); err != nil {
+			slog.ErrorContext(ctx, "failed to shutdown telemetry", slogx.Error(err))
+		}
 	}
 }
 
 func newDeps(ctx context.Context) (*deps, error) {
+	var closers []func()
+	success := false
+	defer func() {
+		if !success {
+			for i := len(closers) - 1; i >= 0; i-- {
+				closers[i]()
+			}
+		}
+	}()
+
 	otelInterceptor, closeOtel, err := telemetry.NewOtelInterceptor(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to initialize telemetry", slogx.Error(err))
 		return nil, err
 	}
+	closers = append(closers, func() { closeOtel(ctx) })
 
 	var serverCfg config
 	if err := envconfig.Process(ctx, &serverCfg); err != nil {
-		closeOtel(ctx)
 		return nil, err
 	}
 
 	var pgCfg postgres.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
-		closeOtel(ctx)
 		return nil, err
 	}
 
 	pgRo, err := postgres.NewReaderPool(ctx, &pgCfg)
 	if err != nil {
-		closeOtel(ctx)
 		return nil, err
 	}
+	closers = append(closers, pgRo.Close)
 
 	pgW, err := postgres.NewWriterPool(ctx, &pgCfg)
 	if err != nil {
-		pgRo.Close()
-		closeOtel(ctx)
 		return nil, err
 	}
+	closers = append(closers, pgW.Close)
 
 	natsClient, err := nats.New(ctx)
 	if err != nil {
-		pgRo.Close()
-		pgW.Close()
-		closeOtel(ctx)
 		return nil, err
 	}
+	closers = append(closers, natsClient.Close)
 
 	var redisCfg redis.Config
 	if err := envconfig.Process(ctx, &redisCfg); err != nil {
-		pgRo.Close()
-		pgW.Close()
-		natsClient.Close()
-		closeOtel(ctx)
 		return nil, err
 	}
 
 	redisClient, err := redis.NewFromConfig(ctx, &redisCfg)
 	if err != nil {
-		pgRo.Close()
-		pgW.Close()
-		natsClient.Close()
-		closeOtel(ctx)
 		return nil, err
 	}
+	closers = append(closers, func() { redisClient.Close(ctx) })
 
 	var chCfg chdb.Config
 	if err := envconfig.Process(ctx, &chCfg); err != nil {
-		pgRo.Close()
-		pgW.Close()
-		natsClient.Close()
-		redisClient.Close(ctx)
-		closeOtel(ctx)
 		return nil, err
 	}
 
 	chConn, err := chdb.NewReaderPool(ctx, &chCfg)
 	if err != nil {
-		pgRo.Close()
-		pgW.Close()
-		natsClient.Close()
-		redisClient.Close(ctx)
-		closeOtel(ctx)
 		return nil, err
 	}
+	closers = append(closers, func() { chConn.Close() })
 
+	success = true
 	return &deps{
 		ch:              chConn,
 		closeOtel:       closeOtel,
