@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -254,8 +255,13 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 		consecutiveErrors = 0
 
 		procCtx, cancel := context.WithTimeout(ctx, w.config.ProcessingTimeout)
+		procCtx = extractTraceContext(procCtx, msg)
+		procCtx, span := startConsumerSpan(procCtx, msg.Subject())
+
 		err = w.processor(procCtx, msg)
-		cancel()
+		if err != nil {
+			telemetry.RecordError(procCtx, err)
+		}
 
 		switch {
 		case IsPermanentError(err):
@@ -306,6 +312,9 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 					slogx.Error(ackErr))
 			}
 		}
+
+		span.End()
+		cancel()
 	}
 }
 
