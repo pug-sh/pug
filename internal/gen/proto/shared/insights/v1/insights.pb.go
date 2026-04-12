@@ -910,6 +910,7 @@ func (x *FunnelResult) GetSeries() []*FunnelSeries {
 }
 
 // FunnelSeries groups funnel steps for a single breakdown combination.
+// Map keys are property names from the request's breakdowns list; values are the attributed breakdown values for this series.
 type FunnelSeries struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Breakdown     map[string]string      `protobuf:"bytes,1,rep,name=breakdown" json:"breakdown,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
@@ -1072,6 +1073,7 @@ func (x *RetentionResult) GetSeries() []*RetentionSeries {
 }
 
 // RetentionSeries groups retention cohorts for a single breakdown combination.
+// Map keys are property names from the request's breakdowns list; values are the attributed breakdown values for this series.
 type RetentionSeries struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Breakdown     map[string]string      `protobuf:"bytes,1,rep,name=breakdown" json:"breakdown,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
@@ -1458,7 +1460,7 @@ var File_shared_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x81\x11\n" +
+	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd2\x12\n" +
 	"\fQueryRequest\x12O\n" +
 	"\finsight_type\x18\x01 \x01(\x0e2\x1f.shared.insights.v1.InsightTypeB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vinsightType\x12;\n" +
 	"\n" +
@@ -1473,11 +1475,12 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x16filter_groups_operator\x18\t \x01(\x0e2\x1a.common.v1.LogicalOperatorR\x14filterGroupsOperator\x12C\n" +
 	"\x19conversion_window_seconds\x18\n" +
 	" \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x17conversionWindowSeconds\x12.\n" +
-	"\x13include_step_timing\x18\v \x01(\bR\x11includeStepTiming:\xca\v\xbaH\xc6\v\x1a\xa0\x02\n" +
+	"\x13include_step_timing\x18\v \x01(\bR\x11includeStepTiming:\x9b\r\xbaH\x97\r\x1a\xa0\x02\n" +
 	"-query_request.funnel_retention_require_events\x12=funnel and retention insight types require at least one event\x1a\xaf\x01(this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL&& this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION)|| this.events.size() > 0\x1a\xdd\x01\n" +
 	"+query_request.funnel_only_conversion_window\x12?conversion_window_seconds is only valid for funnel insight type\x1amthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| this.conversion_window_seconds == 0\x1a\xc7\x01\n" +
 	"%query_request.funnel_only_step_timing\x129include_step_timing is only valid for funnel insight type\x1acthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| !this.include_step_timing\x1a\xd3\x01\n" +
-	"(query_request.segmentation_no_breakdowns\x12:breakdowns are not supported for segmentation insight type\x1akthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION|| this.breakdowns.size() == 0\x1a\x9d\x01\n" +
+	"(query_request.segmentation_no_breakdowns\x12:breakdowns are not supported for segmentation insight type\x1akthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION|| this.breakdowns.size() == 0\x1a\xce\x01\n" +
+	")query_request.unique_breakdown_properties\x12#breakdown properties must be unique\x1a|this.breakdowns.size() <= 1|| !this.breakdowns.exists(b,     this.breakdowns.filter(x, x.property == b.property).size() > 1)\x1a\x9d\x01\n" +
 	"1query_request.breakdown_limit_requires_breakdowns\x12/breakdown_limit requires at least one breakdown\x1a7this.breakdown_limit == 0 || this.breakdowns.size() > 0\x1a\xd7\x01\n" +
 	"\"query_request.retention_max_events\x12Kretention supports at most 2 events (start event and optional return event)\x1adthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION|| this.events.size() <= 2\x1a\xa6\x01\n" +
 	"\x1equery_request.funnel_max_steps\x12 funnel supports at most 20 steps\x1abthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| this.events.size() <= 20J\x04\b\x05\x10\x06\"\xaa\x02\n" +
@@ -1520,9 +1523,9 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"*\n" +
 	"\x12SegmentationResult\x12\x14\n" +
-	"\x05total\x18\x01 \x01(\x01R\x05total\"H\n" +
+	"\x05total\x18\x01 \x01(\x01R\x05total\"O\n" +
 	"\fFunnelResult\x128\n" +
-	"\x06series\x18\x01 \x03(\v2 .shared.insights.v1.FunnelSeriesR\x06series\"\xd1\x01\n" +
+	"\x06series\x18\x01 \x03(\v2 .shared.insights.v1.FunnelSeriesR\x06seriesR\x05steps\"\xd1\x01\n" +
 	"\fFunnelSeries\x12M\n" +
 	"\tbreakdown\x18\x01 \x03(\v2/.shared.insights.v1.FunnelSeries.BreakdownEntryR\tbreakdown\x124\n" +
 	"\x05steps\x18\x02 \x03(\v2\x1e.shared.insights.v1.FunnelStepR\x05steps\x1a<\n" +
@@ -1534,9 +1537,9 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
 	"event_kind\x18\x01 \x01(\tR\teventKind\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x01R\x05total\x12<\n" +
-	"\x1bavg_time_to_convert_seconds\x18\x03 \x01(\x01R\x17avgTimeToConvertSeconds\"N\n" +
+	"\x1bavg_time_to_convert_seconds\x18\x03 \x01(\x01R\x17avgTimeToConvertSeconds\"W\n" +
 	"\x0fRetentionResult\x12;\n" +
-	"\x06series\x18\x01 \x03(\v2#.shared.insights.v1.RetentionSeriesR\x06series\"\xe0\x01\n" +
+	"\x06series\x18\x01 \x03(\v2#.shared.insights.v1.RetentionSeriesR\x06seriesR\acohorts\"\xe0\x01\n" +
 	"\x0fRetentionSeries\x12P\n" +
 	"\tbreakdown\x18\x01 \x03(\v22.shared.insights.v1.RetentionSeries.BreakdownEntryR\tbreakdown\x12=\n" +
 	"\acohorts\x18\x02 \x03(\v2#.shared.insights.v1.RetentionCohortR\acohorts\x1a<\n" +

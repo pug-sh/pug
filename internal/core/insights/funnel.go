@@ -1,8 +1,10 @@
 package insights
 
 import (
+	"context"
 	"fmt"
-	"strings"
+	"log/slog"
+	"slices"
 	"time"
 
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
@@ -29,7 +31,7 @@ type FunnelUserEvents struct {
 //
 // Users with no breakdowns (empty Breakdowns slice) are all grouped together, producing
 // a single series — the same behaviour as before breakdowns were introduced.
-func ComputeFunnelTiming(users []FunnelUserEvents, kinds []string, windowSec int64) ([]FunnelRow, error) {
+func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []string, windowSec int64, numBreakdowns int) ([]FunnelRow, error) {
 	numSteps := len(kinds)
 	if numSteps == 0 {
 		return nil, fmt.Errorf("kinds must not be empty")
@@ -38,6 +40,15 @@ func ComputeFunnelTiming(users []FunnelUserEvents, kinds []string, windowSec int
 	type stepAcc struct {
 		count    int64
 		totalSec float64
+	}
+
+	// Validate uniform breakdown length across all users.
+	expectedBDs := numBreakdowns
+	for _, u := range users {
+		if len(u.Breakdowns) != expectedBDs {
+			return nil, fmt.Errorf("user %s: has %d breakdowns but expected %d",
+				u.DistinctID, len(u.Breakdowns), expectedBDs)
+		}
 	}
 
 	var orderedKeys []string
@@ -50,10 +61,10 @@ func ComputeFunnelTiming(users []FunnelUserEvents, kinds []string, windowSec int
 				u.DistinctID, len(u.Times), len(u.StepMatches))
 		}
 
-		key := strings.Join(u.Breakdowns, "\x00")
+		key := breakdownKey(u.Breakdowns)
 		if _, ok := accsByKey[key]; !ok {
 			orderedKeys = append(orderedKeys, key)
-			breakdownsByKey[key] = u.Breakdowns
+			breakdownsByKey[key] = slices.Clone(u.Breakdowns)
 			accsByKey[key] = make([]stepAcc, numSteps)
 		}
 		accs := accsByKey[key]
@@ -92,11 +103,15 @@ func ComputeFunnelTiming(users []FunnelUserEvents, kinds []string, windowSec int
 	// Seed zero-count rows if no users produced any keys — ensures the timing path
 	// returns one row per step (like windowFunnel's countIf=0 rows).
 	// Checked after the loop so users with all-empty breakdown values correctly produce
-	// a real key during the loop, avoiding collision with this sentinel.
+	// a real key during the loop, avoiding a spurious duplicate entry for the empty-breakdown key.
 	if len(orderedKeys) == 0 {
-		orderedKeys = append(orderedKeys, "")
-		breakdownsByKey[""] = nil
-		accsByKey[""] = make([]stepAcc, numSteps)
+		slog.DebugContext(ctx, "funnel timing: no matching users, returning zero-count rows",
+			slog.Int("steps", numSteps))
+		emptyBDs := make([]string, expectedBDs)
+		key := breakdownKey(emptyBDs)
+		orderedKeys = append(orderedKeys, key)
+		breakdownsByKey[key] = emptyBDs
+		accsByKey[key] = make([]stepAcc, numSteps)
 	}
 
 	var rows []FunnelRow
@@ -127,5 +142,9 @@ func EffectiveWindowSec(req *insightsv1.QueryRequest) int64 {
 	if s := int64(req.GetConversionWindowSeconds()); s > 0 {
 		return s
 	}
-	return int64(req.GetTimeRange().GetTo().AsTime().Sub(req.GetTimeRange().GetFrom().AsTime()).Seconds())
+	dur := int64(req.GetTimeRange().GetTo().AsTime().Sub(req.GetTimeRange().GetFrom().AsTime()).Seconds())
+	if dur <= 0 {
+		return 0
+	}
+	return dur
 }

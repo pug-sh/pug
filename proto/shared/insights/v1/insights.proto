@@ -51,6 +51,16 @@ message QueryRequest {
       "|| this.breakdowns.size() == 0"
   };
 
+  // Duplicate breakdown properties produce silently wrong aggregation.
+  option (buf.validate.message).cel = {
+    id: "query_request.unique_breakdown_properties"
+    message: "breakdown properties must be unique"
+    expression:
+      "this.breakdowns.size() <= 1"
+      "|| !this.breakdowns.exists(b,"
+      "     this.breakdowns.filter(x, x.property == b.property).size() > 1)"
+  };
+
   // breakdown_limit without breakdowns is a no-op — likely a client mistake.
   option (buf.validate.message).cel = {
     id: "query_request.breakdown_limit_requires_breakdowns"
@@ -202,10 +212,12 @@ message SegmentationResult {
 // FunnelResult contains one FunnelSeries per breakdown combination.
 // When no breakdown is requested, there is exactly one series with an empty breakdown map.
 message FunnelResult {
+  reserved steps; // previously held flat FunnelStep list before series-based breakdown support
   repeated FunnelSeries series = 1;
 }
 
 // FunnelSeries groups funnel steps for a single breakdown combination.
+// Map keys are property names from the request's breakdowns list; values are the attributed breakdown values for this series.
 message FunnelSeries {
   map<string, string> breakdown = 1;
   repeated FunnelStep steps = 2;
@@ -223,10 +235,12 @@ message FunnelStep {
 // RetentionResult contains one RetentionSeries per breakdown combination.
 // When no breakdown is requested, there is exactly one series with an empty breakdown map.
 message RetentionResult {
+  reserved cohorts; // previously held flat RetentionCohort list before series-based breakdown support
   repeated RetentionSeries series = 1;
 }
 
 // RetentionSeries groups retention cohorts for a single breakdown combination.
+// Map keys are property names from the request's breakdowns list; values are the attributed breakdown values for this series.
 message RetentionSeries {
   map<string, string> breakdown = 1;
   repeated RetentionCohort cohorts = 2;

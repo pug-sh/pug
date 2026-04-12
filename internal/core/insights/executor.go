@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -23,7 +24,7 @@ type TrendRow struct {
 	Value      float64
 }
 
-// FunnelRow is a single funnel step aggregate.
+// FunnelRow is a single funnel step aggregate for one breakdown combination.
 type FunnelRow struct {
 	StepIndex         int64
 	EventKind         string
@@ -32,7 +33,7 @@ type FunnelRow struct {
 	AvgConvertSeconds float64 // average seconds from previous step; 0 for step 0 or when timing is not requested
 }
 
-// RetentionRow is a single retention aggregate for one cohort bucket and time bucket.
+// RetentionRow is a single retention aggregate for one cohort bucket, time bucket, and breakdown combination.
 type RetentionRow struct {
 	CohortTime time.Time
 	Time       time.Time
@@ -201,9 +202,21 @@ func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow,
 		return nil, fmt.Errorf("QueryFunnel: %w", err)
 	}
 	// ClickHouse UNION ALL does not reliably apply a trailing ORDER BY across
-	// all branches in every version. Sort client-side to guarantee step order.
+	// all branches in every version. Sort client-side to guarantee step order
+	// and stable breakdown series ordering.
 	slices.SortFunc(result, func(a, b FunnelRow) int {
-		return int(a.StepIndex - b.StepIndex)
+		for i := range a.Breakdowns {
+			if i >= len(b.Breakdowns) {
+				return 1
+			}
+			if c := cmp.Compare(a.Breakdowns[i], b.Breakdowns[i]); c != 0 {
+				return c
+			}
+		}
+		if len(a.Breakdowns) < len(b.Breakdowns) {
+			return -1
+		}
+		return cmp.Compare(a.StepIndex, b.StepIndex)
 	})
 	return result, nil
 }
@@ -273,6 +286,12 @@ func (e *Executor) QueryRetention(ctx context.Context, q RetentionQuery) ([]Rete
 	return result, nil
 }
 
+// breakdownKey joins breakdown values into a single map key using a null-byte separator.
+// Breakdown values come from ClickHouse string columns and cannot contain null bytes.
+func breakdownKey(vals []string) string {
+	return strings.Join(vals, "\x00")
+}
+
 // GroupSeries groups TrendRow results into TrendSeries, keyed by (event_kind, breakdown_tuple).
 // The properties slice provides the property name for each breakdown dimension.
 // Insertion order is preserved.
@@ -290,10 +309,10 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 	entriesByKey := map[seriesKey]*seriesEntry{}
 
 	for _, r := range rows {
-		if len(properties) > 0 && len(r.Breakdowns) < len(properties) {
+		if len(r.Breakdowns) != len(properties) {
 			return nil, fmt.Errorf("row has %d breakdowns but expected %d", len(r.Breakdowns), len(properties))
 		}
-		key := seriesKey{eventKind: r.EventKind, breakdown: strings.Join(r.Breakdowns, "\x00")}
+		key := seriesKey{eventKind: r.EventKind, breakdown: breakdownKey(r.Breakdowns)}
 		if _, ok := entriesByKey[key]; !ok {
 			orderedKeys = append(orderedKeys, key)
 			bd := make(map[string]string, len(properties))
@@ -324,9 +343,8 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 }
 
 // GroupFunnelSeries groups FunnelRow results into FunnelSeries, keyed by breakdown tuple.
-// Rows must be ordered by (breakdown, step_index) — the SQL builder guarantees this.
 // The properties slice provides the property name for each breakdown dimension.
-func GroupFunnelSeries(rows []FunnelRow, properties []string) []*insightsv1.FunnelSeries {
+func GroupFunnelSeries(rows []FunnelRow, properties []string) ([]*insightsv1.FunnelSeries, error) {
 	type seriesEntry struct {
 		breakdown map[string]string
 		steps     []*insightsv1.FunnelStep
@@ -336,14 +354,15 @@ func GroupFunnelSeries(rows []FunnelRow, properties []string) []*insightsv1.Funn
 	entriesByKey := map[string]*seriesEntry{}
 
 	for _, r := range rows {
-		key := strings.Join(r.Breakdowns, "\x00")
+		if len(r.Breakdowns) != len(properties) {
+			return nil, fmt.Errorf("funnel row has %d breakdowns but expected %d", len(r.Breakdowns), len(properties))
+		}
+		key := breakdownKey(r.Breakdowns)
 		if _, ok := entriesByKey[key]; !ok {
 			orderedKeys = append(orderedKeys, key)
 			bd := make(map[string]string, len(properties))
 			for i, prop := range properties {
-				if i < len(r.Breakdowns) {
-					bd[prop] = r.Breakdowns[i]
-				}
+				bd[prop] = r.Breakdowns[i]
 			}
 			entriesByKey[key] = &seriesEntry{breakdown: bd}
 		}
@@ -363,13 +382,13 @@ func GroupFunnelSeries(rows []FunnelRow, properties []string) []*insightsv1.Funn
 		}
 		series = append(series, s)
 	}
-	return series
+	return series, nil
 }
 
 // GroupRetentionSeries groups RetentionRow results into RetentionSeries, keyed by breakdown tuple.
 // Within each series, rows are grouped into cohorts. Insertion order is preserved for both
 // series and cohorts.
-func GroupRetentionSeries(rows []RetentionRow, properties []string) []*insightsv1.RetentionSeries {
+func GroupRetentionSeries(rows []RetentionRow, properties []string) ([]*insightsv1.RetentionSeries, error) {
 	type cohortEntry struct {
 		order  []time.Time
 		byTime map[time.Time]*insightsv1.RetentionCohort
@@ -383,17 +402,22 @@ func GroupRetentionSeries(rows []RetentionRow, properties []string) []*insightsv
 	entriesByKey := map[string]*seriesEntry{}
 
 	for _, row := range rows {
-		key := strings.Join(row.Breakdowns, "\x00")
+		if len(row.Breakdowns) != len(properties) {
+			return nil, fmt.Errorf("retention row has %d breakdowns but expected %d", len(row.Breakdowns), len(properties))
+		}
+		key := breakdownKey(row.Breakdowns)
 		if _, ok := entriesByKey[key]; !ok {
 			orderedKeys = append(orderedKeys, key)
 			bd := make(map[string]string, len(properties))
 			for i, prop := range properties {
-				if i < len(row.Breakdowns) {
-					bd[prop] = row.Breakdowns[i]
-				}
+				bd[prop] = row.Breakdowns[i]
+			}
+			rs := &insightsv1.RetentionSeries{}
+			if len(bd) > 0 {
+				rs.Breakdown = bd
 			}
 			entriesByKey[key] = &seriesEntry{
-				series:  &insightsv1.RetentionSeries{Breakdown: bd},
+				series:  rs,
 				cohorts: cohortEntry{byTime: map[time.Time]*insightsv1.RetentionCohort{}},
 			}
 		}
@@ -419,5 +443,5 @@ func GroupRetentionSeries(rows []RetentionRow, properties []string) []*insightsv
 		}
 		out = append(out, entry.series)
 	}
-	return out
+	return out, nil
 }

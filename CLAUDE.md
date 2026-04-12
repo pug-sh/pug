@@ -129,10 +129,10 @@ Breakdowns are supported for trends, funnel, and retention. Segmentation does no
 - `QueryRequest.breakdowns` is `repeated Breakdown` — list of property keys to break down by (e.g. `[{property: "$country"}, {property: "$browser"}]`).
 - **Attribution:** first-touch — each user is assigned the breakdown value(s) from their earliest matching event (`argMin(property, occur_time)`). This keeps funnel and retention per-user logic correct by not splitting a user across multiple groups.
 - **Top-N bucketing:** the query builds a `top_vals` CTE and groups values outside the top N into `'$others'` to keep result sets bounded. The event scope of `top_vals` matches the query's aggregation scope:
-  - Trends and funnel counts: `top_vals` covers all events in the time range.
-  - Funnel timing: `top_vals` is filtered to step-matching events (same scope as `user_arrays`).
+  - Trends: `top_vals` covers all events matching any query event kind in the time range.
+  - Funnel (counts and timing): `top_vals` is filtered to step-matching events.
   - Retention: `top_vals` is filtered to start-event rows only.
-- **Two-phase aggregation pattern:** to avoid evaluating `argMin` twice, breakdown queries split into:
+- **Two-phase aggregation pattern:** funnel (counts, timing) and retention breakdown queries avoid evaluating `argMin` twice by splitting into:
   1. An aggregation CTE that computes `argMin(expr, occur_time) AS raw_bd_N` once.
   2. A downstream CTE or SELECT that buckets `raw_bd_N` against `top_vals` as a plain scalar expression.
 - **Response shape:** funnel and retention responses wrap their results in series objects keyed by breakdown combination:
@@ -205,6 +205,7 @@ sql, args, err := q.Build()
 ```
 
 Key types and functions:
+
 - **`clickhouse.NewQuery()`** — creates a new query builder
 - **`Condition`** — represents a WHERE clause with SQL + args; use builders like `Eq()`, `Neq()`, `Gt()`, `Lt()`, `Gte()`, `Lte()`, `RawCond()`
 - **`And()`**, **`Or()`** — combine conditions (skip zero-value conditions)
@@ -229,15 +230,15 @@ Key types and functions:
 
 `insights.BuildQuery` is **deprecated**. Always use the type-specific builders — they provide compile-time safety between builder and executor:
 
-| Insight type | Builder | Query type |
-|---|---|---|
-| Trends | `BuildTrendsQuery` | `*TrendsQuery` |
-| Segmentation | `BuildSegmentationQuery` | `*SegmentationQuery` |
-| Funnel (counts) | `BuildFunnelCountsQuery` | `*FunnelQuery` |
-| Funnel (with timing) | `BuildFunnelTimingQuery` | `*FunnelTimingQuery` |
-| Retention | `BuildRetentionQuery` | `*RetentionQuery` |
+| Insight type         | Builder                  | Query type          |
+| -------------------- | ------------------------ | ------------------- |
+| Trends               | `BuildTrendsQuery`       | `TrendsQuery`       |
+| Segmentation         | `BuildSegmentationQuery` | `ScalarQuery`       |
+| Funnel (counts)      | `BuildFunnelCountsQuery` | `FunnelQuery`       |
+| Funnel (with timing) | `BuildFunnelTimingQuery` | `FunnelTimingQuery` |
+| Retention            | `BuildRetentionQuery`    | `RetentionQuery`    |
 
-All query types expose `.SQL()`, `.Args()`, `.Properties()`. Funnel types also expose `.Kinds()` and `.WindowSec()`. The only legitimate remaining use of `BuildQuery` is testing the deprecated dispatcher's "unsupported insight type" error path.
+All query types expose `.SQL()` and `.Args()`. All types except `ScalarQuery` also expose `.Properties()` and `.NumBreakdowns()`. `FunnelTimingQuery` also exposes `.Kinds()` and `.WindowSec()`. The only legitimate remaining use of `BuildQuery` is testing the deprecated dispatcher's "unsupported insight type" error path.
 
 ## Code Style
 
