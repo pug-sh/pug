@@ -216,6 +216,13 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 		return
 	}
 	defer msgs.Stop()
+
+	// Unblock msgs.Next() when the context is cancelled.
+	go func() {
+		<-ctx.Done()
+		msgs.Stop()
+	}()
+
 	w.healthy.Store(true)
 
 	consecutiveErrors := 0
@@ -223,85 +230,80 @@ func (w *natsWorker) runMessageLoop(ctx context.Context) {
 	const errorBackoff = 500 * time.Millisecond
 
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			msg, err := msgs.Next()
-			if err != nil {
-				if err == jetstream.ErrMsgIteratorClosed {
-					return
-				}
-				consecutiveErrors++
-				slog.WarnContext(ctx, "failed to get next message",
-					slog.String("stream", w.config.StreamName),
-					slog.String("consumer", w.config.ConsumerName),
-					slog.Int("consecutive_errors", consecutiveErrors),
-					slogx.Error(err))
-				if consecutiveErrors >= maxConsecutiveErrors {
-					slog.ErrorContext(ctx, "too many consecutive message errors, restarting worker goroutine",
-						slog.String("stream", w.config.StreamName),
-						slog.String("consumer", w.config.ConsumerName))
-					w.healthy.Store(false)
-					return
-				}
-				time.Sleep(errorBackoff)
-				continue
+		msg, err := msgs.Next()
+		if err != nil {
+			if err == jetstream.ErrMsgIteratorClosed {
+				return
 			}
-			consecutiveErrors = 0
+			consecutiveErrors++
+			slog.WarnContext(ctx, "failed to get next message",
+				slog.String("stream", w.config.StreamName),
+				slog.String("consumer", w.config.ConsumerName),
+				slog.Int("consecutive_errors", consecutiveErrors),
+				slogx.Error(err))
+			if consecutiveErrors >= maxConsecutiveErrors {
+				slog.ErrorContext(ctx, "too many consecutive message errors, restarting worker goroutine",
+					slog.String("stream", w.config.StreamName),
+					slog.String("consumer", w.config.ConsumerName))
+				w.healthy.Store(false)
+				return
+			}
+			time.Sleep(errorBackoff)
+			continue
+		}
+		consecutiveErrors = 0
 
-			procCtx, cancel := context.WithTimeout(ctx, w.config.ProcessingTimeout)
-			err = w.processor(procCtx, msg)
-			cancel()
+		procCtx, cancel := context.WithTimeout(ctx, w.config.ProcessingTimeout)
+		err = w.processor(procCtx, msg)
+		cancel()
 
-			switch {
-			case IsPermanentError(err):
-				slog.ErrorContext(ctx, "terminating poison message",
+		switch {
+		case IsPermanentError(err):
+			slog.ErrorContext(ctx, "terminating poison message",
+				slog.String("stream", w.config.StreamName),
+				slog.String("consumer", w.config.ConsumerName),
+				slogx.Error(err))
+			if !w.publishToDLQ(ctx, msg, err) {
+				slog.ErrorContext(ctx, "DLQ publish failed for permanent error, terminating to avoid wasting retries",
 					slog.String("stream", w.config.StreamName),
 					slog.String("consumer", w.config.ConsumerName),
-					slogx.Error(err))
+					slog.String("subject", msg.Subject()))
+			}
+			if termErr := msg.Term(); termErr != nil {
+				slog.ErrorContext(ctx, "failed to terminate message",
+					slog.String("stream", w.config.StreamName),
+					slogx.Error(termErr))
+			}
+		case err != nil:
+			slog.ErrorContext(ctx, "message processing failed",
+				slog.String("stream", w.config.StreamName),
+				slog.String("consumer", w.config.ConsumerName),
+				slogx.Error(err))
+
+			if w.isLastDelivery(ctx, msg) {
 				if !w.publishToDLQ(ctx, msg, err) {
-					slog.ErrorContext(ctx, "DLQ publish failed for permanent error, terminating to avoid wasting retries",
+					slog.ErrorContext(ctx, "DLQ publish failed on last delivery, terminating to avoid silent message loss",
 						slog.String("stream", w.config.StreamName),
 						slog.String("consumer", w.config.ConsumerName),
 						slog.String("subject", msg.Subject()))
 				}
 				if termErr := msg.Term(); termErr != nil {
-					slog.ErrorContext(ctx, "failed to terminate message",
+					slog.ErrorContext(ctx, "failed to term message",
 						slog.String("stream", w.config.StreamName),
 						slogx.Error(termErr))
 				}
-			case err != nil:
-				slog.ErrorContext(ctx, "message processing failed",
-					slog.String("stream", w.config.StreamName),
-					slog.String("consumer", w.config.ConsumerName),
-					slogx.Error(err))
-
-				if w.isLastDelivery(ctx, msg) {
-					if !w.publishToDLQ(ctx, msg, err) {
-						slog.ErrorContext(ctx, "DLQ publish failed on last delivery, terminating to avoid silent message loss",
-							slog.String("stream", w.config.StreamName),
-							slog.String("consumer", w.config.ConsumerName),
-							slog.String("subject", msg.Subject()))
-					}
-					if termErr := msg.Term(); termErr != nil {
-						slog.ErrorContext(ctx, "failed to term message",
-							slog.String("stream", w.config.StreamName),
-							slogx.Error(termErr))
-					}
-				} else {
-					if nakErr := msg.Nak(); nakErr != nil {
-						slog.ErrorContext(ctx, "failed to nak message",
-							slog.String("stream", w.config.StreamName),
-							slogx.Error(nakErr))
-					}
-				}
-			default:
-				if ackErr := msg.Ack(); ackErr != nil {
-					slog.ErrorContext(ctx, "failed to ack message",
+			} else {
+				if nakErr := msg.Nak(); nakErr != nil {
+					slog.ErrorContext(ctx, "failed to nak message",
 						slog.String("stream", w.config.StreamName),
-						slogx.Error(ackErr))
+						slogx.Error(nakErr))
 				}
+			}
+		default:
+			if ackErr := msg.Ack(); ackErr != nil {
+				slog.ErrorContext(ctx, "failed to ack message",
+					slog.String("stream", w.config.StreamName),
+					slogx.Error(ackErr))
 			}
 		}
 	}

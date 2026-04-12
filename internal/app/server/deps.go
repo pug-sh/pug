@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"time"
 
 	"connectrpc.com/otelconnect"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -31,8 +32,12 @@ type deps struct {
 }
 
 // close shuts down all deps. OTel must shut down last — it owns the slog backend,
-// so earlier components' shutdown logs are still captured.
-func (d *deps) close(ctx context.Context) {
+// so earlier components' shutdown logs are still captured. A fresh timeout context
+// is used internally so cleanup isn't aborted by a cancelled signal context.
+func (d *deps) close() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	d.pgRo.Close()
 	d.pgW.Close()
 	if d.nats != nil {

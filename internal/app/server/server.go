@@ -49,7 +49,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer d.close(ctx)
+	defer d.close()
 
 	return start(ctx, d)
 }
@@ -59,6 +59,7 @@ func start(ctx context.Context, d *deps) error {
 
 	handlerOpts := connect.WithInterceptors(
 		d.otelInterceptor,
+		cottonrpc.LoggingInterceptor(),
 		validate.NewInterceptor(),
 		cottonrpc.ErrorInterceptor(),
 		cottonrpc.PrincipalInterceptor(),
