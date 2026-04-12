@@ -1,7 +1,10 @@
 package insights
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
+	"slices"
 	"time"
 
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
@@ -10,20 +13,25 @@ import (
 // FunnelUserEvents holds per-user event data from the array-based funnel query.
 // Times and StepMatches are parallel arrays sorted by occur_time ASC.
 // StepMatches[i] is the step index (0-based) that event i matches via multiIf tagging.
+// Breakdowns holds the per-dimension breakdown values for this user (empty when no breakdown).
 type FunnelUserEvents struct {
 	DistinctID  string
 	Times       []time.Time
 	StepMatches []int64
+	Breakdowns  []string
 }
 
 // ComputeFunnelTiming does greedy sequential step matching per user and aggregates
-// counts + average time-to-convert per step.
+// counts + average time-to-convert per step, grouped by breakdown combination.
 //
 // For each user, it walks events in time order and greedily matches: the first event
 // with step_match == current_step advances the funnel. The conversion window (in seconds)
 // is enforced from step 0's timestamp — if a later step exceeds the window, the user's
 // funnel is truncated there. A windowSec of 0 means no window constraint.
-func ComputeFunnelTiming(users []FunnelUserEvents, kinds []string, windowSec int64) ([]FunnelRow, error) {
+//
+// Users with no breakdowns (empty Breakdowns slice) are all grouped together, producing
+// a single series — the same behaviour as before breakdowns were introduced.
+func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []string, windowSec int64, numBreakdowns int) ([]FunnelRow, error) {
 	numSteps := len(kinds)
 	if numSteps == 0 {
 		return nil, fmt.Errorf("kinds must not be empty")
@@ -33,13 +41,33 @@ func ComputeFunnelTiming(users []FunnelUserEvents, kinds []string, windowSec int
 		count    int64
 		totalSec float64
 	}
-	accs := make([]stepAcc, numSteps)
+
+	// Validate uniform breakdown length across all users.
+	expectedBDs := numBreakdowns
+	for _, u := range users {
+		if len(u.Breakdowns) != expectedBDs {
+			return nil, fmt.Errorf("user %s: has %d breakdowns but expected %d",
+				u.DistinctID, len(u.Breakdowns), expectedBDs)
+		}
+	}
+
+	var orderedKeys []string
+	breakdownsByKey := map[string][]string{}
+	accsByKey := map[string][]stepAcc{}
 
 	for _, u := range users {
 		if len(u.Times) != len(u.StepMatches) {
 			return nil, fmt.Errorf("user %s: mismatched array lengths (times=%d, step_matches=%d)",
 				u.DistinctID, len(u.Times), len(u.StepMatches))
 		}
+
+		key := breakdownKey(u.Breakdowns)
+		if _, ok := accsByKey[key]; !ok {
+			orderedKeys = append(orderedKeys, key)
+			breakdownsByKey[key] = slices.Clone(u.Breakdowns)
+			accsByKey[key] = make([]stepAcc, numSteps)
+		}
+		accs := accsByKey[key]
 
 		stepTimes := make([]time.Time, numSteps)
 		matched := 0
@@ -72,17 +100,36 @@ func ComputeFunnelTiming(users []FunnelUserEvents, kinds []string, windowSec int
 		}
 	}
 
-	rows := make([]FunnelRow, numSteps)
-	for i := range numSteps {
-		var avgTime float64
-		if i > 0 && accs[i].count > 0 {
-			avgTime = accs[i].totalSec / float64(accs[i].count)
-		}
-		rows[i] = FunnelRow{
-			StepIndex:         int64(i),
-			EventKind:         kinds[i],
-			Value:             float64(accs[i].count),
-			AvgConvertSeconds: avgTime,
+	// Seed zero-count rows if no users produced any keys — ensures the timing path
+	// returns one row per step (like windowFunnel's countIf=0 rows).
+	// Checked after the loop so users with all-empty breakdown values correctly produce
+	// a real key during the loop, avoiding a spurious duplicate entry for the empty-breakdown key.
+	if len(orderedKeys) == 0 {
+		slog.DebugContext(ctx, "funnel timing: no matching users, returning zero-count rows",
+			slog.Int("steps", numSteps))
+		emptyBDs := make([]string, expectedBDs)
+		key := breakdownKey(emptyBDs)
+		orderedKeys = append(orderedKeys, key)
+		breakdownsByKey[key] = emptyBDs
+		accsByKey[key] = make([]stepAcc, numSteps)
+	}
+
+	var rows []FunnelRow
+	for _, key := range orderedKeys {
+		accs := accsByKey[key]
+		bds := breakdownsByKey[key]
+		for i := range numSteps {
+			var avgTime float64
+			if i > 0 && accs[i].count > 0 {
+				avgTime = accs[i].totalSec / float64(accs[i].count)
+			}
+			rows = append(rows, FunnelRow{
+				StepIndex:         int64(i),
+				EventKind:         kinds[i],
+				Breakdowns:        bds,
+				Value:             float64(accs[i].count),
+				AvgConvertSeconds: avgTime,
+			})
 		}
 	}
 	return rows, nil
@@ -95,5 +142,9 @@ func EffectiveWindowSec(req *insightsv1.QueryRequest) int64 {
 	if s := int64(req.GetConversionWindowSeconds()); s > 0 {
 		return s
 	}
-	return int64(req.GetTimeRange().GetTo().AsTime().Sub(req.GetTimeRange().GetFrom().AsTime()).Seconds())
+	dur := int64(req.GetTimeRange().GetTo().AsTime().Sub(req.GetTimeRange().GetFrom().AsTime()).Seconds())
+	if dur <= 0 {
+		return 0
+	}
+	return dur
 }

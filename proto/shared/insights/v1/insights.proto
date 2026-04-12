@@ -41,14 +41,24 @@ message QueryRequest {
       "|| !this.include_step_timing"
   };
 
-  // Breakdowns are only meaningful for trends (top-N bucketing + $others).
-  // Other insight types ignore them silently — reject at the boundary instead.
+  // Breakdowns are supported for trends, funnel, and retention.
+  // Segmentation ignores them — reject at the boundary instead.
   option (buf.validate.message).cel = {
-    id: "query_request.trends_only_breakdowns"
-    message: "breakdowns are only supported for trends insight type"
+    id: "query_request.segmentation_no_breakdowns"
+    message: "breakdowns are not supported for segmentation insight type"
     expression:
-      "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS"
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION"
       "|| this.breakdowns.size() == 0"
+  };
+
+  // Duplicate breakdown properties produce silently wrong aggregation.
+  option (buf.validate.message).cel = {
+    id: "query_request.unique_breakdown_properties"
+    message: "breakdown properties must be unique"
+    expression:
+      "this.breakdowns.size() <= 1"
+      "|| !this.breakdowns.exists(b,"
+      "     this.breakdowns.filter(x, x.property == b.property).size() > 1)"
   };
 
   // breakdown_limit without breakdowns is a no-op — likely a client mistake.
@@ -199,9 +209,18 @@ message SegmentationResult {
   double total = 1;
 }
 
-// FunnelResult contains one FunnelStep per funnel stage, ordered by step index.
+// FunnelResult contains one FunnelSeries per breakdown combination.
+// When no breakdown is requested, there is exactly one series with an empty breakdown map.
 message FunnelResult {
-  repeated FunnelStep steps = 1;
+  reserved steps; // previously held flat FunnelStep list before series-based breakdown support
+  repeated FunnelSeries series = 1;
+}
+
+// FunnelSeries groups funnel steps for a single breakdown combination.
+// Map keys are property names from the request's breakdowns list; values are the attributed breakdown values for this series.
+message FunnelSeries {
+  map<string, string> breakdown = 1;
+  repeated FunnelStep steps = 2;
 }
 
 // FunnelStep is a single stage in a funnel.
@@ -213,9 +232,18 @@ message FunnelStep {
   double avg_time_to_convert_seconds = 3;
 }
 
-// RetentionResult contains one RetentionCohort per cohort bucket.
+// RetentionResult contains one RetentionSeries per breakdown combination.
+// When no breakdown is requested, there is exactly one series with an empty breakdown map.
 message RetentionResult {
-  repeated RetentionCohort cohorts = 1;
+  reserved cohorts; // previously held flat RetentionCohort list before series-based breakdown support
+  repeated RetentionSeries series = 1;
+}
+
+// RetentionSeries groups retention cohorts for a single breakdown combination.
+// Map keys are property names from the request's breakdowns list; values are the attributed breakdown values for this series.
+message RetentionSeries {
+  map<string, string> breakdown = 1;
+  repeated RetentionCohort cohorts = 2;
 }
 
 // RetentionCohort is a single cohort's retention data.
