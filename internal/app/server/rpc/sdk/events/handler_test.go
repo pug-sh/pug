@@ -86,7 +86,7 @@ func TestEnrichGeo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Server{geoProvider: stubProvider{loc: tt.loc}}
-			s.enrichGeo(context.Background(), http.Header{}, tt.events)
+			s.enrichGeo(context.Background(), "test-project", http.Header{}, tt.events)
 
 			for _, event := range tt.events {
 				if tt.want == nil {
@@ -209,7 +209,7 @@ func TestEnrichUserAgent(t *testing.T) {
 			if tt.uaHeader != "" {
 				h.Set("User-Agent", tt.uaHeader)
 			}
-			s.enrichUserAgent(context.Background(), h, tt.events)
+			s.enrichUserAgent(context.Background(), "test-project", h, tt.events)
 			for _, event := range tt.events {
 				assertProps(t, event, tt.want)
 			}
@@ -217,7 +217,195 @@ func TestEnrichUserAgent(t *testing.T) {
 	}
 }
 
-func TestEnrichGeoAndUserAgent(t *testing.T) {
+func TestEnrichBotScore(t *testing.T) {
+	tests := []struct {
+		name      string
+		header    string // empty = omit header
+		events    []*eventsv1.Event
+		wantScore string // empty = expect absent
+	}{
+		{
+			name:      "valid score applied to all events",
+			header:    "42",
+			events:    []*eventsv1.Event{{}, {}},
+			wantScore: "42",
+		},
+		{
+			name:      "score 0 applied (existing value overwritten)",
+			header:    "0",
+			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$bot_score": "99"}}},
+			wantScore: "0",
+		},
+		{
+			name:      "score 99 applied",
+			header:    "99",
+			events:    []*eventsv1.Event{{}},
+			wantScore: "99",
+		},
+		{
+			name:      "no header — client-supplied bot_score stripped",
+			header:    "",
+			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$bot_score": "50"}}},
+			wantScore: "",
+		},
+		{
+			name:      "invalid header — bot_score absent",
+			header:    "not-a-number",
+			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$bot_score": "10"}}},
+			wantScore: "",
+		},
+		{
+			name:      "out of range for UInt8 — bot_score absent",
+			header:    "256",
+			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$bot_score": "10"}}},
+			wantScore: "",
+		},
+		{
+			name:      "negative value — bot_score absent",
+			header:    "-1",
+			events:    []*eventsv1.Event{{}},
+			wantScore: "",
+		},
+		{
+			name:      "max valid score 255",
+			header:    "255",
+			events:    []*eventsv1.Event{{}},
+			wantScore: "255",
+		},
+		{
+			name:      "score 0 on fresh event",
+			header:    "0",
+			events:    []*eventsv1.Event{{}},
+			wantScore: "0",
+		},
+		{
+			name:      "whitespace in header rejected",
+			header:    " 42 ",
+			events:    []*eventsv1.Event{{}},
+			wantScore: "",
+		},
+		{
+			name:      "preserves other auto-properties",
+			header:    "42",
+			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$browser": "Chrome"}}},
+			wantScore: "42",
+		},
+		{
+			name:      "no header, nil AutoProperties — no panic",
+			header:    "",
+			events:    []*eventsv1.Event{{}},
+			wantScore: "",
+		},
+	}
+
+	s := &Server{geoProvider: stubProvider{}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := http.Header{}
+			if tt.header != "" {
+				h.Set(cfHeaderBotScore, tt.header)
+			}
+			s.enrichBotScore(context.Background(), "test-project", h, tt.events)
+			for _, event := range tt.events {
+				got, exists := event.AutoProperties["$bot_score"]
+				if tt.wantScore == "" {
+					if exists {
+						t.Errorf("expected $bot_score absent, got %q", got)
+					}
+				} else if !exists {
+					t.Errorf("expected $bot_score = %q, got absent", tt.wantScore)
+				} else if got != tt.wantScore {
+					t.Errorf("$bot_score = %q, want %q", got, tt.wantScore)
+				}
+			}
+		})
+	}
+}
+
+func TestEnrichVerifiedBot(t *testing.T) {
+	tests := []struct {
+		name   string
+		header string // empty = omit header
+		events []*eventsv1.Event
+		want   string // empty = expect absent
+	}{
+		{
+			name:   "true applied to all events",
+			header: "true",
+			events: []*eventsv1.Event{{}, {}},
+			want:   "true",
+		},
+		{
+			name:   "false applied",
+			header: "false",
+			events: []*eventsv1.Event{{}},
+			want:   "false",
+		},
+		{
+			name:   "no header — client-supplied value stripped",
+			header: "",
+			events: []*eventsv1.Event{{AutoProperties: map[string]string{"$verified_bot": "true"}}},
+			want:   "",
+		},
+		{
+			name:   "invalid header — value absent",
+			header: "yes",
+			events: []*eventsv1.Event{{}},
+			want:   "",
+		},
+		{
+			name:   "client-supplied value overwritten",
+			header: "false",
+			events: []*eventsv1.Event{{AutoProperties: map[string]string{"$verified_bot": "true"}}},
+			want:   "false",
+		},
+		{
+			name:   "preserves other auto-properties",
+			header: "true",
+			events: []*eventsv1.Event{{AutoProperties: map[string]string{"$browser": "Chrome"}}},
+			want:   "true",
+		},
+		{
+			name:   "no header, nil AutoProperties — no panic",
+			header: "",
+			events: []*eventsv1.Event{{}},
+			want:   "",
+		},
+		{
+			name:   "case-sensitive — True rejected",
+			header: "True",
+			events: []*eventsv1.Event{{}},
+			want:   "",
+		},
+	}
+
+	s := &Server{geoProvider: stubProvider{}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := http.Header{}
+			if tt.header != "" {
+				h.Set(cfHeaderVerifiedBot, tt.header)
+			}
+			s.enrichVerifiedBot(context.Background(), "test-project", h, tt.events)
+			for _, event := range tt.events {
+				got, exists := event.AutoProperties["$verified_bot"]
+				if tt.want == "" {
+					if exists {
+						t.Errorf("expected $verified_bot absent, got %q", got)
+					}
+				} else if !exists {
+					t.Errorf("expected $verified_bot = %q, got absent", tt.want)
+				} else if got != tt.want {
+					t.Errorf("$verified_bot = %q, want %q", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 	uaParser, err := useragent.NewParser()
 	if err != nil {
 		t.Fatal(err)
@@ -226,14 +414,20 @@ func TestEnrichGeoAndUserAgent(t *testing.T) {
 	loc := geo.Location{geo.PropCountry: "US", geo.PropCity: "San Francisco"}
 	s := &Server{geoProvider: stubProvider{loc: loc}, uaParser: uaParser}
 
-	events := []*eventsv1.Event{{AutoProperties: map[string]string{useragent.PropOS: "iOS"}}}
+	events := []*eventsv1.Event{{
+		AutoProperties: map[string]string{useragent.PropOS: "iOS", "$bot_score": "99", "$verified_bot": "true"},
+	}}
 
 	h := http.Header{}
 	h.Set("User-Agent", chromeWindowsUA)
+	h.Set(cfHeaderBotScore, "5")
+	h.Set(cfHeaderVerifiedBot, "false")
 
-	// Same order as BatchCreate: geo first, then UA.
-	s.enrichGeo(context.Background(), h, events)
-	s.enrichUserAgent(context.Background(), h, events)
+	// Same order as BatchCreate: geo, UA, bot score, verified bot.
+	s.enrichGeo(context.Background(), "test-project", h, events)
+	s.enrichUserAgent(context.Background(), "test-project", h, events)
+	s.enrichBotScore(context.Background(), "test-project", h, events)
+	s.enrichVerifiedBot(context.Background(), "test-project", h, events)
 
 	want := map[string]string{
 		// Geo props (always overwrite).
@@ -244,6 +438,9 @@ func TestEnrichGeoAndUserAgent(t *testing.T) {
 		useragent.PropBrowser:        "Chrome",
 		useragent.PropBrowserVersion: "118",
 		useragent.PropOSVersion:      "10",
+		// Bot management (CDN headers overwrite client-supplied values).
+		"$bot_score":    "5",
+		"$verified_bot": "false",
 	}
 
 	assertProps(t, events[0], want)
