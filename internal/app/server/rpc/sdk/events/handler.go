@@ -59,9 +59,10 @@ func (s *Server) BatchCreate(
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	s.enrichGeo(ctx, req.Header(), events)
-	s.enrichUserAgent(ctx, req.Header(), events)
-	s.enrichBotScore(ctx, req.Header(), events)
+	projectID := principal.Project.ID
+	s.enrichGeo(ctx, projectID, req.Header(), events)
+	s.enrichUserAgent(ctx, projectID, req.Header(), events)
+	s.enrichBotScore(ctx, projectID, req.Header(), events)
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		slog.ErrorContext(ctx, "failed to publish events", slogx.Error(err))
@@ -73,14 +74,15 @@ func (s *Server) BatchCreate(
 	}), nil
 }
 
-func (s *Server) enrichUserAgent(ctx context.Context, h http.Header, events []*eventsv1.Event) {
+func (s *Server) enrichUserAgent(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {
 	if s.uaParser == nil {
-		slog.WarnContext(ctx, "user-agent enrichment skipped: parser not initialized")
+		slog.WarnContext(ctx, "user-agent enrichment skipped: parser not initialized", slog.String("project_id", projectID))
 		return
 	}
 	props := s.uaParser.Parse(h)
 	if len(props) == 0 {
 		slog.DebugContext(ctx, "user-agent enrichment skipped",
+			slog.String("project_id", projectID),
 			slog.Bool("header_present", h.Get("User-Agent") != ""))
 		return
 	}
@@ -96,10 +98,10 @@ func (s *Server) enrichUserAgent(ctx context.Context, h http.Header, events []*e
 	}
 }
 
-func (s *Server) enrichGeo(ctx context.Context, h http.Header, events []*eventsv1.Event) {
+func (s *Server) enrichGeo(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {
 	loc := s.geoProvider.Locate(h)
 	if len(loc) == 0 {
-		slog.DebugContext(ctx, "geo location empty, skipping enrichment")
+		slog.DebugContext(ctx, "geo location empty, skipping enrichment", slog.String("project_id", projectID))
 		return
 	}
 	for _, event := range events {
@@ -112,18 +114,32 @@ func (s *Server) enrichGeo(ctx context.Context, h http.Header, events []*eventsv
 	}
 }
 
-func (s *Server) enrichBotScore(ctx context.Context, h http.Header, events []*eventsv1.Event) {
+func (s *Server) enrichBotScore(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {
+	// Always strip client-supplied $bot_score (server-only property).
+	for _, event := range events {
+		delete(event.AutoProperties, "$bot_score")
+	}
+
 	botScoreStr := h.Get(cfHeaderBotScore)
 	if botScoreStr == "" {
 		return
 	}
-	val, err := strconv.ParseUint(botScoreStr, 10, 32)
+
+	val, err := strconv.ParseUint(botScoreStr, 10, 8)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to parse bot score", slogx.Error(err), slog.String("bot_score", botScoreStr))
+		slog.ErrorContext(ctx, "failed to parse bot score from CDN header",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("bot_score", botScoreStr),
+			slog.Int("batch_size", len(events)))
 		return
 	}
-	botScore := uint32(val)
+
+	score := strconv.FormatUint(val, 10)
 	for _, event := range events {
-		event.BotScore = botScore
+		if event.AutoProperties == nil {
+			event.AutoProperties = make(map[string]string)
+		}
+		event.AutoProperties["$bot_score"] = score
 	}
 }

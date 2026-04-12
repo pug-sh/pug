@@ -1,7 +1,6 @@
 -- +goose Up
 CREATE TABLE IF NOT EXISTS events (
     auto_properties   Map(String, String),
-    bot_score         UInt8 DEFAULT 0,
     custom_properties Map(String, String),
     distinct_id       String,
     event_id          UUID,

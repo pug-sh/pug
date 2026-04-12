@@ -33,7 +33,6 @@ message Event {
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  uint32 bot_score = 8;
 }
 
 message EventBatch {
