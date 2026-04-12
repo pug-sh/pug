@@ -23,6 +23,9 @@ service ActivityService {
   rpc GetFilterSchema(GetFilterSchemaRequest) returns (GetFilterSchemaResponse);
   // GetPropertyValues returns distinct values for a given property key.
   rpc GetPropertyValues(GetPropertyValuesRequest) returns (GetPropertyValuesResponse);
+  // GetActivityHeatmap returns per-day event counts for a user profile over a time window.
+  // Defaults to the last 60 days when no time_range is provided.
+  rpc GetActivityHeatmap(GetActivityHeatmapRequest) returns (GetActivityHeatmapResponse);
 }
 
 message GetActivityFeedRequest {
@@ -136,4 +139,21 @@ message GetPropertyValuesRequest {
 
 message GetPropertyValuesResponse {
   repeated string values = 1;
+}
+
+message GetActivityHeatmapRequest {
+  string distinct_id = 1 [(buf.validate.field).string.min_len = 1];
+  // Optional. Defaults to the last 60 days when omitted.
+  common.v1.TimeRange time_range = 2;
+}
+
+// HeatmapDay holds the event count for a single calendar day.
+message HeatmapDay {
+  // Date in YYYY-MM-DD format (UTC).
+  string date = 1;
+  int32 count = 2;
+}
+
+message GetActivityHeatmapResponse {
+  repeated HeatmapDay days = 1;
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"connectrpc.com/connect"
@@ -215,6 +216,48 @@ func mapToStruct(m map[string]string) (*structpb.Struct, error) {
 		fields[k] = v
 	}
 	return structpb.NewStruct(fields)
+}
+
+func (s *server) GetActivityHeatmap(
+	ctx context.Context,
+	req *connect.Request[activityv1.GetActivityHeatmapRequest],
+) (*connect.Response[activityv1.GetActivityHeatmapResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	to := time.Now().UTC()
+	from := to.AddDate(0, 0, -60)
+	if tr := req.Msg.GetTimeRange(); tr != nil {
+		from = tr.GetFrom().AsTime()
+		to = tr.GetTo().AsTime()
+	}
+
+	days, err := s.eventsReader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+		ProjectID:  principal.Project.ID,
+		DistinctID: req.Msg.GetDistinctId(),
+		From:       from,
+		To:         to,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get activity heatmap",
+			slogx.Error(err),
+			slog.String("projectID", principal.Project.ID),
+			slog.String("distinctID", req.Msg.GetDistinctId()))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	proto := make([]*activityv1.HeatmapDay, len(days))
+	for i, d := range days {
+		proto[i] = &activityv1.HeatmapDay{Date: d.Date, Count: d.Count}
+	}
+
+	return connect.NewResponse(&activityv1.GetActivityHeatmapResponse{Days: proto}), nil
 }
 
 func (s *server) GetFilterSchema(

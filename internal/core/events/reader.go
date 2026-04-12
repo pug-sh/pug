@@ -350,3 +350,69 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 
 	return events, nextCursor, nil
 }
+
+// HeatmapDay holds the event count for a single calendar day.
+type HeatmapDay struct {
+	Date  string // YYYY-MM-DD (UTC)
+	Count int32
+}
+
+// ActivityHeatmapParams configures the GetActivityHeatmap query.
+type ActivityHeatmapParams struct {
+	ProjectID  string
+	DistinctID string
+	From       time.Time
+	To         time.Time
+}
+
+// GetActivityHeatmap returns per-day event counts for a profile over the given window.
+// Alias IDs are resolved so merged anonymous events are included.
+func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapParams) ([]HeatmapDay, error) {
+	aliasIDs, err := r.getAliasIDs(ctx, params.ProjectID, params.DistinctID)
+	if err != nil {
+		return nil, fmt.Errorf("GetActivityHeatmap: getAliasIDs failed for project %s: %w", params.ProjectID, err)
+	}
+
+	ids := append([]string{params.DistinctID}, aliasIDs...)
+
+	sql, args, err := chq.NewQuery().
+		Select("toString(toDate(occur_time)) AS day", "count() AS cnt").
+		From("events").
+		Where(
+			chq.Eq("project_id", params.ProjectID),
+			chq.RawCond("distinct_id IN ?", ids),
+			chq.Gte("occur_time", params.From),
+			chq.Lt("occur_time", params.To),
+		).
+		GroupBy("day").
+		OrderBy("day").
+		Build()
+	if err != nil {
+		return nil, fmt.Errorf("GetActivityHeatmap: build query failed for project %s: %w", params.ProjectID, err)
+	}
+
+	rows, err := r.ch.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("GetActivityHeatmap: query failed for project %s: %w", params.ProjectID, err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "failed to close ClickHouse rows", slogx.Error(err))
+		}
+	}()
+
+	var days []HeatmapDay
+	for rows.Next() {
+		var date string
+		var cnt uint64
+		if err := rows.Scan(&date, &cnt); err != nil {
+			return nil, fmt.Errorf("GetActivityHeatmap: scan failed: %w", err)
+		}
+		days = append(days, HeatmapDay{Date: date, Count: int32(cnt)})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("GetActivityHeatmap: row iteration failed: %w", err)
+	}
+
+	return days, nil
+}
