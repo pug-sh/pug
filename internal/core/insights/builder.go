@@ -536,7 +536,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 }
 
 // buildEventCondition extracts EventFilter from each EventQuery and delegates
-// to clickhouse.EventCondition for SQL generation.
+// to clickhouse.EventConditionAliased for SQL generation.
 // projectID is required to build profile property filter subqueries.
 func buildEventCondition(events []*insightsv1.EventQuery, projectID string) (chq.Condition, error) {
 	return buildEventConditionAliased(events, projectID, "")
@@ -706,12 +706,12 @@ func BuildProfilePropertyKeysQuery(projectID string) (string, []any, error) {
 }
 
 // BuildProfilePropertyValuesQuery returns distinct values for a profile property from ClickHouse.
-// Profile properties are stored as a JSON string column and accessed via JSONExtractString.
+// Profile properties are stored in a String column containing JSON and accessed via JSONExtractString.
 //
 // SAFETY: propertyKey is interpolated directly into SQL. Callers must ensure it is
 // proto-validated (pattern ^\\$?[a-zA-Z0-9_.-]+$) before calling this function.
 func BuildProfilePropertyValuesQuery(projectID, propertyKey string) (string, []any, error) {
-	propExpr := fmt.Sprintf("JSONExtractString(properties, '%s')", propertyKey)
+	propExpr := chq.ProfilePropertyExpr(propertyKey)
 	return chq.NewQuery().
 		Select("DISTINCT "+propExpr+" AS value").
 		From("profiles").
@@ -732,6 +732,7 @@ func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any
 			chq.Eq("project_id", projectID),
 			chq.Eq("map_type", mapType),
 			chq.When(eventKind != "", chq.Eq("kind", eventKind)),
+			chq.RawCond("key != ''"),
 		).
 		GroupBy("key").
 		OrderBy("count DESC").

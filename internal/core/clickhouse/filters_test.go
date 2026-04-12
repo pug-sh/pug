@@ -328,22 +328,161 @@ func TestPropertyCondition_ProfileSource_Equals(t *testing.T) {
 	if !strings.Contains(sql, "JSONExtractString(properties, 'plan')") {
 		t.Errorf("expected JSONExtractString for profile property, got: %s", sql)
 	}
-	if !strings.Contains(sql, "project_id = ?") {
-		t.Errorf("expected project_id condition, got: %s", sql)
+	if !strings.Contains(sql, "is_deleted = 0") {
+		t.Errorf("expected soft-delete guard, got: %s", sql)
 	}
 	if !strings.Contains(sql, "external_id != ''") {
 		t.Errorf("expected external_id filter, got: %s", sql)
 	}
-	// First arg should be projectID
+	// Exact args: [projectID, filterValue, projectID, projectID, filterValue]
+	// Maps to: first branch (p.project_id=?, ...plan=?), aliases (pa.project_id=?, inner p.project_id=?, ...plan=?)
 	args := cond.Args()
-	if len(args) < 2 {
-		t.Fatalf("expected at least 2 args (projectID + value), got %d: %v", len(args), args)
+	wantArgs := []any{"proj_abc", "pro", "proj_abc", "proj_abc", "pro"}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
 	}
-	if args[0] != "proj_abc" {
-		t.Errorf("expected first arg to be projectID 'proj_abc', got: %v", args[0])
+	for i := range wantArgs {
+		if args[i] != wantArgs[i] {
+			t.Errorf("arg[%d] = %v, want %v", i, args[i], wantArgs[i])
+		}
 	}
-	if args[len(args)-1] != "pro" {
-		t.Errorf("expected last arg to be filter value 'pro', got: %v", args[len(args)-1])
+}
+
+func TestPropertyCondition_ProfileSource_IsSet(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "email",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_SET,
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+	}
+	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := cond.SQL()
+	if !strings.Contains(sql, "distinct_id IN (") {
+		t.Errorf("expected profile subquery, got: %s", sql)
+	}
+	if !strings.Contains(sql, "JSONExtractString(properties, 'email') != ''") {
+		t.Errorf("expected IS_SET condition for profile property, got: %s", sql)
+	}
+	// Zero-arg operator: args are only projectIDs (3 total)
+	args := cond.Args()
+	wantArgs := []any{"proj_abc", "proj_abc", "proj_abc"}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
+	}
+	for i := range wantArgs {
+		if args[i] != wantArgs[i] {
+			t.Errorf("arg[%d] = %v, want %v", i, args[i], wantArgs[i])
+		}
+	}
+}
+
+func TestPropertyCondition_ProfileSource_IsNotSet(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "phone",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET,
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+	}
+	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := cond.SQL()
+	if !strings.Contains(sql, "distinct_id IN (") {
+		t.Errorf("expected profile subquery, got: %s", sql)
+	}
+	if !strings.Contains(sql, "JSONExtractString(properties, 'phone') = ''") {
+		t.Errorf("expected IS_NOT_SET condition for profile property, got: %s", sql)
+	}
+	// Zero-arg operator: args are only projectIDs (3 total)
+	args := cond.Args()
+	wantArgs := []any{"proj_abc", "proj_abc", "proj_abc"}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
+	}
+	for i := range wantArgs {
+		if args[i] != wantArgs[i] {
+			t.Errorf("arg[%d] = %v, want %v", i, args[i], wantArgs[i])
+		}
+	}
+}
+
+func TestPropertyCondition_ProfileSource_In(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "plan",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN,
+		Values:   []string{"pro", "enterprise"},
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+	}
+	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := cond.SQL()
+	if !strings.Contains(sql, "distinct_id IN (") {
+		t.Errorf("expected profile subquery, got: %s", sql)
+	}
+	if !strings.Contains(sql, "JSONExtractString(properties, 'plan') IN (?, ?)") {
+		t.Errorf("expected IN condition for profile property, got: %s", sql)
+	}
+	// Multi-value operator: args are [projectID, val1, val2, projectID, projectID, val1, val2]
+	args := cond.Args()
+	wantArgs := []any{"proj_abc", "pro", "enterprise", "proj_abc", "proj_abc", "pro", "enterprise"}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
+	}
+	for i := range wantArgs {
+		if args[i] != wantArgs[i] {
+			t.Errorf("arg[%d] = %v, want %v", i, args[i], wantArgs[i])
+		}
+	}
+}
+
+func TestPropertyCondition_ProfileSource_GTE(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "score",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE,
+		Value:    "42.5",
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+	}
+	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := cond.SQL()
+	if !strings.Contains(sql, "distinct_id IN (") {
+		t.Errorf("expected profile subquery, got: %s", sql)
+	}
+	if !strings.Contains(sql, "toFloat64OrNull(JSONExtractString(properties, 'score')) >= ?") {
+		t.Errorf("expected numeric condition for profile property, got: %s", sql)
+	}
+	// Numeric operator: args are [projectID, numericValue, projectID, projectID, numericValue]
+	args := cond.Args()
+	wantArgs := []any{"proj_abc", 42.5, "proj_abc", "proj_abc", 42.5}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
+	}
+	for i := range wantArgs {
+		if args[i] != wantArgs[i] {
+			t.Errorf("arg[%d] = %v, want %v", i, args[i], wantArgs[i])
+		}
+	}
+}
+
+func TestPropertyCondition_ProfileSource_EmptyProjectID(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "plan",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
+		Value:    "pro",
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+	}
+	_, err := clickhouse.PropertyCondition(f, "")
+	if err == nil {
+		t.Fatal("expected error for empty projectID with profile source")
+	}
+	if !strings.Contains(err.Error(), "non-empty project ID") {
+		t.Errorf("expected project ID error, got: %v", err)
 	}
 }
 

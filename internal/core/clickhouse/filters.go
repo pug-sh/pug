@@ -27,11 +27,11 @@ func propertyExpr(name, alias string) string {
 	return fmt.Sprintf("ifNull(nullIf(%sauto_properties['%s'], ''), %scustom_properties['%s'])", prefix, name, prefix, name)
 }
 
-// profilePropertyExpr returns the ClickHouse expression to read a profile property.
-// Profile properties are stored as a JSON string column, so JSONExtractString is required.
+// ProfilePropertyExpr returns the ClickHouse expression to read a profile property.
+// Profile properties are stored in a String column containing JSON, so JSONExtractString is required.
 //
 // SAFETY: Same interpolation contract as PropertyExpr — name must be proto-validated.
-func profilePropertyExpr(name string) string {
+func ProfilePropertyExpr(name string) string {
 	return fmt.Sprintf("JSONExtractString(properties, '%s')", name)
 }
 
@@ -44,7 +44,7 @@ func EscapeLike(s string) string {
 }
 
 // PropertyCondition builds a typed query Condition for a PropertyFilter.
-// Dispatches to ProfileFilterCondition when source is PROPERTY_SOURCE_PROFILE.
+// Dispatches to profileFilterCondition when source is PROPERTY_SOURCE_PROFILE.
 // For profile filters, projectID is required to build the IN subquery.
 func PropertyCondition(f *commonv1.PropertyFilter, projectID string) (Condition, error) {
 	return propertyCondition(f, projectID, "")
@@ -52,7 +52,7 @@ func PropertyCondition(f *commonv1.PropertyFilter, projectID string) (Condition,
 
 // PropertyConditionAliased builds a typed query Condition for a PropertyFilter,
 // prefixing event column references with the given table alias.
-// Dispatches to ProfileFilterConditionAliased when source is PROPERTY_SOURCE_PROFILE.
+// Dispatches to profileFilterCondition when source is PROPERTY_SOURCE_PROFILE.
 func PropertyConditionAliased(f *commonv1.PropertyFilter, projectID, alias string) (Condition, error) {
 	return propertyCondition(f, projectID, alias)
 }
@@ -71,17 +71,26 @@ func eventPropertyCondition(f *commonv1.PropertyFilter, alias string) (Condition
 }
 
 // profileFilterCondition builds a Condition that filters events by matching profile properties.
-// It generates a single: distinct_id IN (
+// The alias only prefixes the outer distinct_id reference; subquery columns reference
+// profiles/profile_aliases tables directly and are unaffected by the alias.
 //
-//	SELECT p.id FROM profiles p WHERE project_id=? AND is_deleted=0 AND <prop_op>
+// It generates: [alias.]distinct_id IN (
+//
+//	SELECT p.id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND p.external_id != '' AND <prop_op>
 //	UNION ALL
-//	SELECT pa.alias_id FROM profile_aliases pa WHERE project_id=? AND profile_id IN (
-//	    SELECT p.id FROM profiles p WHERE project_id=? AND is_deleted=0 AND <prop_op>
+//	SELECT pa.alias_id FROM profile_aliases pa WHERE pa.project_id=? AND pa.profile_id IN (
+//	    SELECT p.id FROM profiles p WHERE p.project_id=? AND p.is_deleted=0 AND p.external_id != '' AND <prop_op>
 //	)
 //
 // )
+//
+// The external_id guard excludes profiles with empty external_id, which cannot match
+// any distinct_id in the events table.
 func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias string) (Condition, error) {
-	prop := profilePropertyExpr(f.GetProperty())
+	if projectID == "" {
+		return Condition{}, fmt.Errorf("profile property filter requires a non-empty project ID")
+	}
+	prop := ProfilePropertyExpr(f.GetProperty())
 
 	innerCond, err := operatorCondition(prop, f)
 	if err != nil {
@@ -108,7 +117,20 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 	args = append(args, propertyCond.Args()...)
 	args = append(args, projectID, projectID)
 	args = append(args, propertyCond.Args()...)
+
+	if n := strings.Count(sql, "?"); n != len(args) {
+		return Condition{}, fmt.Errorf("profile filter: placeholder count (%d) != arg count (%d)", n, len(args))
+	}
 	return RawCond(sql, args...), nil
+}
+
+// numericCond parses the filter value as float64 and builds a toFloat64OrNull comparison.
+func numericCond(prop, op string, f *commonv1.PropertyFilter) (Condition, error) {
+	n, err := strconv.ParseFloat(f.GetValue(), 64)
+	if err != nil {
+		return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
+	}
+	return RawCond("toFloat64OrNull("+prop+") "+op+" ?", n), nil
 }
 
 // operatorCondition builds a Condition for the given SQL expression and PropertyFilter operator.
@@ -127,29 +149,13 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 	case commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET:
 		return RawCond(prop + " = ''"), nil
 	case commonv1.FilterOperator_FILTER_OPERATOR_LTE:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return RawCond("toFloat64OrNull("+prop+") <= ?", n), nil
+		return numericCond(prop, "<=", f)
 	case commonv1.FilterOperator_FILTER_OPERATOR_GTE:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return RawCond("toFloat64OrNull("+prop+") >= ?", n), nil
+		return numericCond(prop, ">=", f)
 	case commonv1.FilterOperator_FILTER_OPERATOR_LT:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return RawCond("toFloat64OrNull("+prop+") < ?", n), nil
+		return numericCond(prop, "<", f)
 	case commonv1.FilterOperator_FILTER_OPERATOR_GT:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return RawCond("toFloat64OrNull("+prop+") > ?", n), nil
+		return numericCond(prop, ">", f)
 	case commonv1.FilterOperator_FILTER_OPERATOR_IN:
 		if len(f.GetValues()) == 0 {
 			return Condition{}, fmt.Errorf("IN operator requires at least one value for property %q", f.GetProperty())
@@ -183,7 +189,7 @@ func EventCondition(events []*commonv1.EventFilter, projectID string) (Condition
 }
 
 // EventConditionAliased builds a typed query Condition from event filters,
-// prefixing column references (kind, auto_properties, custom_properties, distinct_id) with
+// prefixing event table column references (kind, auto_properties, custom_properties) with
 // the given table alias. Used in JOINed CTEs where bare column names are ambiguous.
 func EventConditionAliased(events []*commonv1.EventFilter, projectID, alias string) (Condition, error) {
 	return eventCondition(events, projectID, alias)
