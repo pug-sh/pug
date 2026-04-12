@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -330,6 +331,9 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 	series := make([]*insightsv1.TrendSeries, 0, len(orderedKeys))
 	for _, k := range orderedKeys {
 		e := entriesByKey[k]
+		sort.SliceStable(e.points, func(i, j int) bool {
+			return e.points[i].GetTime().AsTime().Before(e.points[j].GetTime().AsTime())
+		})
 		s := &insightsv1.TrendSeries{
 			EventKind: e.eventKind,
 			Points:    e.points,

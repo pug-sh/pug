@@ -5,8 +5,8 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"connectrpc.com/connect"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/events"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
