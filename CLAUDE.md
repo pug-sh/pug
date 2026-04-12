@@ -261,7 +261,7 @@ All telemetry is bootstrapped in `internal/deps/telemetry/`. The server initiali
 
 **Configuration:** Set `OTEL_SERVICE_NAME` (required) and `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4317`).
 
-**Recording errors in spans:** Use `telemetry.RecordError(ctx, err)` to record an error on the current span, set the span status to `Error`, and attach stack traces. This is preferred over manual `span.SetStatus()` + `span.RecordError()` calls.
+**Recording errors in spans:** Use `telemetry.RecordError(ctx, err)` to record an error on the current span, set the span status to `Error`, and attach stack traces. This is preferred over manual `span.SetStatus()` + `span.RecordError()` calls. All RPC handlers should call `telemetry.RecordError(ctx, err)` in error-handling paths where there's an active span context (after `MustGetPrincipal*` extracts succeed).
 
 ## Code Style
 
