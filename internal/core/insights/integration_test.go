@@ -540,7 +540,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryFunnelUserEvents: %v", err)
 		}
 
-		rows, err := insights.ComputeFunnelTiming(users, q.Kinds(), q.WindowSec())
+		rows, err := insights.ComputeFunnelTiming(ctx, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
 		if err != nil {
 			t.Fatalf("ComputeFunnelTiming: %v", err)
 		}
@@ -589,11 +589,15 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		cohorts := insights.GroupRetentionCohorts(rows)
-		// At least 1 cohort (Mar 1 sign_ups).
-		if len(cohorts) == 0 {
+		series, err := insights.GroupRetentionSeries(rows, nil)
+		if err != nil {
+			t.Fatalf("GroupRetentionSeries: %v", err)
+		}
+		// At least 1 series with 1 cohort (Mar 1 sign_ups).
+		if len(series) == 0 || len(series[0].Cohorts) == 0 {
 			t.Fatal("expected at least 1 retention cohort")
 		}
+		cohorts := series[0].Cohorts
 		// First cohort should have day-0 retention = 100%.
 		if cohorts[0].Points[0].Value != 100 {
 			t.Errorf("expected 100%% day-0 retention, got %v", cohorts[0].Points[0].Value)
@@ -601,6 +605,249 @@ func TestIntegration(t *testing.T) {
 		// Cohort size should match seeded sign_ups.
 		if cohorts[0].CohortSize != 3 {
 			t.Errorf("expected cohort size 3, got %v", cohorts[0].CohortSize)
+		}
+	})
+
+	t.Run("funnel_counts_breakdown_others_bucket", func(t *testing.T) {
+		// Reuses seedFunnelEventsWithCountry data (Apr 2024):
+		//   US: alice sign_up+purchase, bob sign_up = 3 step-matching events
+		//   GB: charlie sign_up+purchase = 2 step-matching events
+		// BreakdownLimit=1: US stays (most events), GB → $others.
+		seedFunnelEventsWithCountry(t, ctx, ch)
+
+		req := &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)),
+			},
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
+				{Event: &commonv1.EventFilter{Kind: "purchase"}},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
+			BreakdownLimit: 1,
+		}
+
+		q, err := insights.BuildFunnelCountsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelCountsQuery: %v", err)
+		}
+
+		rows, err := executor.QueryFunnel(ctx, q)
+		if err != nil {
+			t.Fatalf("QueryFunnel: %v", err)
+		}
+
+		series, err := insights.GroupFunnelSeries(rows, q.Properties())
+		if err != nil {
+			t.Fatalf("GroupFunnelSeries: %v", err)
+		}
+
+		hasOthers := false
+		for _, s := range series {
+			if s.Breakdown["$country"] == "$others" {
+				hasOthers = true
+			}
+		}
+		if !hasOthers {
+			t.Error("expected $others bucket in funnel breakdown series")
+		}
+	})
+
+	t.Run("retention_breakdown_others_bucket", func(t *testing.T) {
+		// Uses seedRetentionEventsForOthersBucket (June 2024):
+		//   US: alice+bob sign_up = 2 start events → top 1
+		//   GB: charlie sign_up = 1 start event → $others
+		seedRetentionEventsForOthersBucket(t, ctx, ch)
+
+		req := &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 6, 8, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
+				{Event: &commonv1.EventFilter{Kind: "login"}},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
+			BreakdownLimit: 1,
+		}
+
+		q, err := insights.BuildRetentionQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildRetentionQuery: %v", err)
+		}
+
+		rows, err := executor.QueryRetention(ctx, q)
+		if err != nil {
+			t.Fatalf("QueryRetention: %v", err)
+		}
+
+		series, err := insights.GroupRetentionSeries(rows, q.Properties())
+		if err != nil {
+			t.Fatalf("GroupRetentionSeries: %v", err)
+		}
+
+		hasOthers := false
+		for _, s := range series {
+			if s.Breakdown["$country"] == "$others" {
+				hasOthers = true
+			}
+		}
+		if !hasOthers {
+			t.Error("expected $others bucket in retention breakdown series")
+		}
+	})
+
+	t.Run("funnel_counts_with_breakdown", func(t *testing.T) {
+		seedFunnelEventsWithCountry(t, ctx, ch)
+
+		req := &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)),
+			},
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
+				{Event: &commonv1.EventFilter{Kind: "purchase"}},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
+			BreakdownLimit: 10,
+		}
+
+		q, err := insights.BuildFunnelCountsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelCountsQuery: %v", err)
+		}
+
+		rows, err := executor.QueryFunnel(ctx, q)
+		if err != nil {
+			t.Fatalf("QueryFunnel: %v", err)
+		}
+
+		series, err := insights.GroupFunnelSeries(rows, q.Properties())
+		if err != nil {
+			t.Fatalf("GroupFunnelSeries: %v", err)
+		}
+		if len(series) < 2 {
+			t.Fatalf("expected at least 2 breakdown series, got %d", len(series))
+		}
+
+		// Seed data: alice(US) sign_up+purchase, bob(US) sign_up only, charlie(GB) sign_up+purchase.
+		// US: step 0 = 2, step 1 = 1. GB: step 0 = 1, step 1 = 1.
+		byCountry := map[string]*insightsv1.FunnelSeries{}
+		for _, s := range series {
+			byCountry[s.Breakdown["$country"]] = s
+		}
+		us, gb := byCountry["US"], byCountry["GB"]
+		if us == nil || gb == nil {
+			t.Fatalf("expected US and GB series, got keys: %v", byCountry)
+		}
+		if len(us.Steps) < 2 || us.Steps[0].Total != 2 || us.Steps[1].Total != 1 {
+			t.Errorf("US steps: got %+v, want [2, 1]", us.Steps)
+		}
+		if len(gb.Steps) < 2 || gb.Steps[0].Total != 1 || gb.Steps[1].Total != 1 {
+			t.Errorf("GB steps: got %+v, want [1, 1]", gb.Steps)
+		}
+	})
+
+	t.Run("funnel_timing_with_breakdown", func(t *testing.T) {
+		// Uses same seed data from funnel_counts_with_breakdown.
+		req := &insightsv1.QueryRequest{
+			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			IncludeStepTiming: true,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)),
+			},
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
+				{Event: &commonv1.EventFilter{Kind: "purchase"}},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
+			BreakdownLimit: 10,
+		}
+
+		q, err := insights.BuildFunnelTimingQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelTimingQuery: %v", err)
+		}
+
+		users, err := executor.QueryFunnelUserEvents(ctx, q)
+		if err != nil {
+			t.Fatalf("QueryFunnelUserEvents: %v", err)
+		}
+
+		funnelRows, err := insights.ComputeFunnelTiming(ctx, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
+		if err != nil {
+			t.Fatalf("ComputeFunnelTiming: %v", err)
+		}
+
+		series, err := insights.GroupFunnelSeries(funnelRows, q.Properties())
+		if err != nil {
+			t.Fatalf("GroupFunnelSeries: %v", err)
+		}
+		if len(series) < 2 {
+			t.Fatalf("expected at least 2 breakdown series, got %d", len(series))
+		}
+	})
+
+	t.Run("retention_with_breakdown", func(t *testing.T) {
+		seedRetentionEventsWithCountry(t, ctx, ch)
+
+		req := &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 5, 8, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
+				{Event: &commonv1.EventFilter{Kind: "login"}},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
+			BreakdownLimit: 10,
+		}
+
+		q, err := insights.BuildRetentionQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildRetentionQuery: %v", err)
+		}
+
+		rows, err := executor.QueryRetention(ctx, q)
+		if err != nil {
+			t.Fatalf("QueryRetention: %v", err)
+		}
+
+		series, err := insights.GroupRetentionSeries(rows, q.Properties())
+		if err != nil {
+			t.Fatalf("GroupRetentionSeries: %v", err)
+		}
+		if len(series) < 2 {
+			t.Fatalf("expected at least 2 breakdown series, got %d", len(series))
+		}
+
+		// Seed data: alice(US) sign_up+login day 1, login day 2. bob(GB) sign_up+login day 1.
+		// US cohort_size = 1 (alice), GB cohort_size = 1 (bob).
+		// US should have day-1 retention (alice logged in day 2); GB should not.
+		byCountry := map[string]*insightsv1.RetentionSeries{}
+		for _, s := range series {
+			byCountry[s.Breakdown["$country"]] = s
+		}
+		us, gb := byCountry["US"], byCountry["GB"]
+		if us == nil || gb == nil {
+			t.Fatalf("expected US and GB series, got keys: %v", byCountry)
+		}
+		if len(us.Cohorts) == 0 || us.Cohorts[0].CohortSize != 1 {
+			t.Errorf("US cohort_size: got %+v, want 1", us.Cohorts)
+		}
+		if len(gb.Cohorts) == 0 || gb.Cohorts[0].CohortSize != 1 {
+			t.Errorf("GB cohort_size: got %+v, want 1", gb.Cohorts)
 		}
 	})
 }
@@ -784,6 +1031,139 @@ func seedEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) 
 		)
 		if err != nil {
 			t.Fatalf("insert event: %v", err)
+		}
+	}
+}
+
+// seedFunnelEventsWithCountry inserts funnel events with $country for breakdown integration tests.
+//
+// Layout (all Apr 2024, project_id = testProjectID):
+//
+//	alice(US):   sign_up (Apr 1 10:00) → purchase (Apr 1 12:00)
+//	bob(US):     sign_up (Apr 1 10:00)
+//	charlie(GB): sign_up (Apr 1 10:00) → purchase (Apr 1 11:00)
+func seedFunnelEventsWithCountry(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
+	t.Helper()
+
+	type event struct {
+		user    string
+		kind    string
+		hour    int
+		country string
+	}
+
+	events := []event{
+		{"alice", "sign_up", 10, "US"},
+		{"alice", "purchase", 12, "US"},
+		{"bob", "sign_up", 10, "US"},
+		{"charlie", "sign_up", 10, "GB"},
+		{"charlie", "purchase", 11, "GB"},
+	}
+
+	for _, e := range events {
+		occurTime := time.Date(2024, 4, 1, e.hour, 0, 0, 0, time.UTC)
+		err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+			testProjectID,
+			uuid.New().String(),
+			e.kind,
+			e.user,
+			occurTime,
+			map[string]string{"$country": e.country},
+		)
+		if err != nil {
+			t.Fatalf("insert funnel event: %v", err)
+		}
+	}
+}
+
+// seedRetentionEventsWithCountry inserts retention events with $country for breakdown integration tests.
+//
+// Layout (all May 2024, project_id = testProjectID):
+//
+//	May 1: alice(US), bob(GB) sign_up (10:00)
+//	May 1: alice(US), bob(GB) login (12:00)
+//	May 2: alice(US) login
+func seedRetentionEventsWithCountry(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
+	t.Helper()
+
+	type event struct {
+		user    string
+		kind    string
+		day     int
+		hour    int
+		country string
+	}
+
+	events := []event{
+		{"alice", "sign_up", 1, 10, "US"},
+		{"bob", "sign_up", 1, 10, "GB"},
+		{"alice", "login", 1, 12, "US"},
+		{"bob", "login", 1, 12, "GB"},
+		{"alice", "login", 2, 12, "US"},
+	}
+
+	for _, e := range events {
+		occurTime := time.Date(2024, 5, e.day, e.hour, 0, 0, 0, time.UTC)
+		err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+			testProjectID,
+			uuid.New().String(),
+			e.kind,
+			e.user,
+			occurTime,
+			map[string]string{"$country": e.country},
+		)
+		if err != nil {
+			t.Fatalf("insert retention event: %v", err)
+		}
+	}
+}
+
+// seedRetentionEventsForOthersBucket inserts retention events with asymmetric start-event
+// counts per country, so BreakdownLimit=1 deterministically buckets the smaller group into $others.
+//
+// Layout (all June 2024, project_id = testProjectID):
+//
+//	June 1: alice(US), bob(US), charlie(GB) sign_up (10:00)
+//	June 1: alice(US), bob(US), charlie(GB) login (12:00)
+//	June 2: alice(US) login
+//
+// Start-event (sign_up) count: US=2, GB=1. With BreakdownLimit=1, US stays, GB → $others.
+func seedRetentionEventsForOthersBucket(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
+	t.Helper()
+
+	type event struct {
+		user    string
+		kind    string
+		day     int
+		hour    int
+		country string
+	}
+
+	events := []event{
+		{"alice", "sign_up", 1, 10, "US"},
+		{"bob", "sign_up", 1, 10, "US"},
+		{"charlie", "sign_up", 1, 10, "GB"},
+		{"alice", "login", 1, 12, "US"},
+		{"bob", "login", 1, 12, "US"},
+		{"charlie", "login", 1, 12, "GB"},
+		{"alice", "login", 2, 12, "US"},
+	}
+
+	for _, e := range events {
+		occurTime := time.Date(2024, 6, e.day, e.hour, 0, 0, 0, time.UTC)
+		err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+			testProjectID,
+			uuid.New().String(),
+			e.kind,
+			e.user,
+			occurTime,
+			map[string]string{"$country": e.country},
+		)
+		if err != nil {
+			t.Fatalf("insert retention event: %v", err)
 		}
 	}
 }

@@ -14,6 +14,17 @@ import (
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
+// connectCtxErr wraps a context error in the appropriate Connect error code.
+func connectCtxErr(err error) error {
+	code := connect.CodeCanceled
+	msg := "request canceled"
+	if errors.Is(err, context.DeadlineExceeded) {
+		code = connect.CodeDeadlineExceeded
+		msg = "request timed out"
+	}
+	return connect.NewError(code, errors.New(msg))
+}
+
 type server struct {
 	service  *coreinsights.Service
 	executor *coreinsights.Executor
@@ -22,6 +33,12 @@ type server struct {
 
 // NewServer creates a new InsightsService handler.
 func NewServer(service *coreinsights.Service, executor *coreinsights.Executor) *server {
+	if service == nil {
+		panic("insights: service is nil")
+	}
+	if executor == nil {
+		panic("insights: executor is nil")
+	}
 	return &server{
 		service:  service,
 		executor: executor,
@@ -34,7 +51,7 @@ func (s *server) Query(
 	req *connect.Request[insightsv1.QueryRequest],
 ) (*connect.Response[insightsv1.QueryResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, connectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -89,6 +106,7 @@ func (s *server) Query(
 
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
 		var funnelRows []coreinsights.FunnelRow
+		var funnelProperties []string
 		if req.Msg.GetIncludeStepTiming() {
 			q, err := coreinsights.BuildFunnelTimingQuery(req.Msg, projectID)
 			if err != nil {
@@ -102,12 +120,13 @@ func (s *server) Query(
 					slog.String("projectID", projectID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
-			funnelRows, err = coreinsights.ComputeFunnelTiming(users, q.Kinds(), q.WindowSec())
+			funnelRows, err = coreinsights.ComputeFunnelTiming(ctx, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to compute funnel timing", slogx.Error(err),
 					slog.String("projectID", projectID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
+			funnelProperties = q.Properties()
 		} else {
 			q, err := coreinsights.BuildFunnelCountsQuery(req.Msg, projectID)
 			if err != nil {
@@ -121,17 +140,16 @@ func (s *server) Query(
 					slog.String("projectID", projectID))
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
+			funnelProperties = q.Properties()
 		}
-		steps := make([]*insightsv1.FunnelStep, 0, len(funnelRows))
-		for _, row := range funnelRows {
-			steps = append(steps, &insightsv1.FunnelStep{
-				EventKind:               row.EventKind,
-				Total:                   row.Value,
-				AvgTimeToConvertSeconds: row.AvgConvertSeconds,
-			})
+		funnelSeries, err := coreinsights.GroupFunnelSeries(funnelRows, funnelProperties)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to group funnel series", slogx.Error(err),
+				slog.String("projectID", projectID))
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Funnel{
-			Funnel: &insightsv1.FunnelResult{Steps: steps},
+			Funnel: &insightsv1.FunnelResult{Series: funnelSeries},
 		}
 
 	case insightsv1.InsightType_INSIGHT_TYPE_RETENTION:
@@ -147,8 +165,14 @@ func (s *server) Query(
 				slog.String("projectID", projectID))
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
+		retentionSeries, err := coreinsights.GroupRetentionSeries(rows, q.Properties())
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to group retention series", slogx.Error(err),
+				slog.String("projectID", projectID))
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
 		resp.Result = &insightsv1.QueryResponse_Retention{
-			Retention: &insightsv1.RetentionResult{Cohorts: coreinsights.GroupRetentionCohorts(rows)},
+			Retention: &insightsv1.RetentionResult{Series: retentionSeries},
 		}
 
 	default:
@@ -165,7 +189,7 @@ func (s *server) SegmentUsers(
 	req *connect.Request[insightsv1.SegmentUsersRequest],
 ) (*connect.Response[insightsv1.SegmentUsersResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, connectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -209,7 +233,7 @@ func (s *server) GetFilterSchema(
 	req *connect.Request[insightsv1.GetFilterSchemaRequest],
 ) (*connect.Response[insightsv1.GetFilterSchemaResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, connectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -234,7 +258,7 @@ func (s *server) GetPropertyValues(
 	req *connect.Request[insightsv1.GetPropertyValuesRequest],
 ) (*connect.Response[insightsv1.GetPropertyValuesResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, connectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
