@@ -99,3 +99,10 @@ infra-up-fg:
 
 infra-down:
 	docker compose -f infra/dev/docker-compose.yaml down
+
+.PHONY: clickstack clickstack-down
+clickstack:
+	docker compose -f infra/dev/docker-compose.yaml -f infra/dev/docker-compose.clickstack.yaml up -d
+
+clickstack-down:
+	docker compose -f infra/dev/docker-compose.yaml -f infra/dev/docker-compose.clickstack.yaml down

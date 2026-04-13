@@ -10,6 +10,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/orgs"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -58,6 +59,7 @@ func (s *server) BatchGet(
 	isMember, err := s.orgsService.IsOrgMember(ctx, req.Msg.OrgId, principal.Customer.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isMember {
@@ -67,6 +69,7 @@ func (s *server) BatchGet(
 	projectsData, err := s.service.GetProjectsByOrgID(ctx, req.Msg.OrgId)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("orgId", req.Msg.OrgId))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -101,6 +104,7 @@ func (s *server) Create(
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("a project with this name already exists"))
 		}
 		slog.ErrorContext(ctx, "failed to create project", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -131,6 +135,7 @@ func (s *server) Delete(
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
 		}
 		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("orgId", principal.Project.OrgID), slog.String("id", principal.Project.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -158,6 +163,7 @@ func (s *server) UpdateDisplayName(
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
 		}
 		slog.ErrorContext(ctx, "failed to update project display name", slogx.Error(err), slog.String("projectID", wParams.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -188,6 +194,7 @@ func (s *server) UpdateFCMServiceJSON(
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
 		}
 		slog.ErrorContext(ctx, "failed to update project FCM service JSON", slogx.Error(err), slog.String("projectID", wParams.ID), slog.String("orgID", wParams.OrgID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

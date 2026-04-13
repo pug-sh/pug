@@ -517,7 +517,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("funnel_timing", func(t *testing.T) {
 		// Uses same seed data from funnel_counts.
 		req := &insightsv1.QueryRequest{
-			InsightType:      insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
 			IncludeStepTiming: true,
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)),

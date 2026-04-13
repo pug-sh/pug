@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -24,20 +25,31 @@ const (
 )
 
 // AuthType indicates which authentication method was used
-type AuthType int
+type AuthType string
 
 const (
-	AuthTypeUnknown AuthType = iota
-	AuthTypeJWT              // Dashboard user authenticated with JWT
-	AuthTypeAPIKey           // SDK authenticated with API key
+	AuthTypeJWT        AuthType = "jwt"
+	AuthTypePublicKey  AuthType = "pub_key"
+	AuthTypePrivateKey AuthType = "priv_key"
 )
 
 // Principal represents the authenticated entity.
 // Customer is set for JWT auth. Project is set for API key auth and JWT auth with x-project-id header.
 type Principal struct {
-	AuthType AuthType
-	Customer *dbread.Customer
-	Project  *dbread.Project
+	AuthType     AuthType
+	Customer     *dbread.Customer
+	Project      *dbread.Project
+	JWTID        string // JWT ID (jti claim), set for JWT auth
+	MaskedAPIKey string // Masked API key suffix (e.g. "...d456"), set for API key auth
+}
+
+// maskKey returns "...XXXX" showing only the last 4 characters of an API key,
+// or "***" if the key is 4 characters or shorter.
+func maskKey(key string) string {
+	if len(key) > 4 {
+		return "..." + key[len(key)-4:]
+	}
+	return "***"
 }
 
 // projectKeyLookup abstracts API key → project resolution for auth functions.
@@ -68,13 +80,13 @@ func WithSDKAuth(repo projectKeyLookup) authn.AuthFunc {
 
 		var project dbread.Project
 		var err error
-		var keyType string
+		var authType AuthType
 		switch {
 		case strings.HasPrefix(apiKey, publicKeyPrefix):
-			keyType = "public"
+			authType = AuthTypePublicKey
 			project, err = repo.GetProjectByPublicApiKey(ctx, apiKey)
 		case strings.HasPrefix(apiKey, privateKeyPrefix):
-			keyType = "private"
+			authType = AuthTypePrivateKey
 			project, err = repo.GetProjectByPrivateApiKey(ctx, apiKey)
 		default:
 			return nil, authn.Errorf("invalid API key")
@@ -87,11 +99,12 @@ func WithSDKAuth(repo projectKeyLookup) authn.AuthFunc {
 			return nil, authn.Errorf("failed to validate API key")
 		}
 
-		slog.DebugContext(ctx, "SDK auth succeeded", slog.String("keyType", keyType), slog.String("projectID", project.ID))
+		slog.DebugContext(ctx, "SDK auth succeeded", slog.String("authType", string(authType)), slog.String("projectID", project.ID))
 
 		return &Principal{
-			AuthType: AuthTypeAPIKey,
-			Project:  &project,
+			AuthType:     authType,
+			Project:      &project,
+			MaskedAPIKey: maskKey(apiKey),
 		}, nil
 	}
 }
@@ -135,6 +148,17 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 			return nil, authn.Errorf("invalid token claims")
 		}
 
+		var jwtID string
+		if claims, ok := parsedJWT.Claims.(jwt.MapClaims); !ok {
+			slog.WarnContext(ctx, "JWT claims are not MapClaims, cannot extract jti", slog.String("claims_type", fmt.Sprintf("%T", parsedJWT.Claims)))
+		} else if raw, exists := claims["jti"]; exists {
+			if s, ok := raw.(string); ok {
+				jwtID = s
+			} else {
+				slog.WarnContext(ctx, "jti claim is not a string", slog.String("jti_type", fmt.Sprintf("%T", raw)))
+			}
+		}
+
 		customer, err := queries.GetCustomerByID(ctx, customerID)
 		if err != nil {
 			if !errors.Is(err, pgx.ErrNoRows) {
@@ -146,6 +170,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 		principal := &Principal{
 			AuthType: AuthTypeJWT,
 			Customer: &customer,
+			JWTID:    jwtID,
 		}
 
 		// Optionally populate Project if x-project-id header is provided
@@ -187,8 +212,9 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup)
 				return nil, authn.Errorf("failed to validate API key")
 			}
 			return &Principal{
-				AuthType: AuthTypeAPIKey,
-				Project:  &project,
+				AuthType:     AuthTypePrivateKey,
+				Project:      &project,
+				MaskedAPIKey: maskKey(apiKey),
 			}, nil
 		}
 		return jwtAuth(ctx, req)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -75,12 +76,14 @@ func (s *server) Query(
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to query trends", slogx.Error(err),
 				slog.String("projectID", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		series, err := coreinsights.GroupSeries(rows, q.Properties())
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to group trend series", slogx.Error(err),
 				slog.String("projectID", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Trends{
@@ -98,6 +101,7 @@ func (s *server) Query(
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to query segmentation", slogx.Error(err),
 				slog.String("projectID", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Segmentation{
@@ -118,12 +122,14 @@ func (s *server) Query(
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to query funnel user events", slogx.Error(err),
 					slog.String("projectID", projectID))
+				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelRows, err = coreinsights.ComputeFunnelTiming(ctx, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to compute funnel timing", slogx.Error(err),
 					slog.String("projectID", projectID))
+				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelProperties = q.Properties()
@@ -138,6 +144,7 @@ func (s *server) Query(
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to query funnel", slogx.Error(err),
 					slog.String("projectID", projectID))
+				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelProperties = q.Properties()
@@ -146,6 +153,7 @@ func (s *server) Query(
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to group funnel series", slogx.Error(err),
 				slog.String("projectID", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Funnel{
@@ -163,12 +171,14 @@ func (s *server) Query(
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to query retention", slogx.Error(err),
 				slog.String("projectID", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		retentionSeries, err := coreinsights.GroupRetentionSeries(rows, q.Properties())
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to group retention series", slogx.Error(err),
 				slog.String("projectID", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Retention{
@@ -208,6 +218,7 @@ func (s *server) SegmentUsers(
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to query distinct IDs", slogx.Error(err),
 			slog.String("projectID", principal.Project.ID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -247,6 +258,7 @@ func (s *server) GetFilterSchema(
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get filter schema", slogx.Error(err),
 			slog.String("projectID", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -273,6 +285,7 @@ func (s *server) GetPropertyValues(
 		slog.ErrorContext(ctx, "failed to get property values", slogx.Error(err),
 			slog.String("projectID", projectID),
 			slog.String("propertyKey", req.Msg.PropertyKey))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

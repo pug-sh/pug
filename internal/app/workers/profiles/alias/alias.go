@@ -9,6 +9,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
@@ -18,6 +19,18 @@ import (
 )
 
 func Run(ctx context.Context) error {
+	closeOtel, err := telemetry.SetupSDK(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := closeOtel(shutdownCtx); err != nil {
+			slog.ErrorContext(shutdownCtx, "failed to shutdown telemetry", slogx.Error(err))
+		}
+	}()
+
 	var chCfg clickhouse.Config
 	if err := envconfig.Process(ctx, &chCfg); err != nil {
 		return err
