@@ -26,6 +26,10 @@ service ActivityService {
   // GetActivityHeatmap returns per-day event counts for a user profile over a time window.
   // Defaults to the last 60 days when no time_range is provided.
   rpc GetActivityHeatmap(GetActivityHeatmapRequest) returns (GetActivityHeatmapResponse);
+  // GetProfileStats returns aggregate statistics, device/browser/location context from the
+  // latest event, and per-day heatmap data for a profile. Resolves aliases so merged
+  // anonymous events are included.
+  rpc GetProfileStats(GetProfileStatsRequest) returns (GetProfileStatsResponse);
 }
 
 message GetActivityFeedRequest {
@@ -156,4 +160,41 @@ message HeatmapDay {
 
 message GetActivityHeatmapResponse {
   repeated HeatmapDay days = 1;
+}
+
+message GetProfileStatsRequest {
+  string distinct_id = 1 [(buf.validate.field).required = true];
+}
+
+// ProfileStats holds aggregate event statistics and device/location context
+// derived from the profile's latest event.
+message ProfileStats {
+  // Timestamp of the earliest event recorded for this profile.
+  google.protobuf.Timestamp first_seen = 1;
+  // Timestamp of the most recent event recorded for this profile.
+  google.protobuf.Timestamp last_seen = 2;
+  // Total number of events recorded for this profile.
+  int64 total_events = 3;
+  // Browser name from the latest event (e.g. "Chrome"). Empty if unavailable.
+  string browser = 4;
+  // Major browser version from the latest event (e.g. "124"). Empty if unavailable.
+  string browser_version = 5;
+  // OS name from the latest event (e.g. "Mac OS X"). Empty if unavailable.
+  string os = 6;
+  // Major OS version from the latest event (e.g. "14"). Empty if unavailable.
+  string os_version = 7;
+  // Device model from the latest event (e.g. "iPhone"). Empty for desktop browsers.
+  string device = 8;
+  // Country name from the latest event (e.g. "United States"). Empty if unavailable.
+  string country = 9;
+  // City name from the latest event (e.g. "San Francisco"). Empty if unavailable.
+  string city = 10;
+  // IP address from the latest event. Empty if unavailable.
+  string ip = 11;
+}
+
+message GetProfileStatsResponse {
+  ProfileStats stats = 1;
+  // Per-day event counts for the last 60 days.
+  repeated HeatmapDay heatmap = 2;
 }

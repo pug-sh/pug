@@ -271,6 +271,55 @@ func (s *server) GetActivityHeatmap(
 	return connect.NewResponse(&activityv1.GetActivityHeatmapResponse{Days: proto}), nil
 }
 
+func (s *server) GetProfileStats(
+	ctx context.Context,
+	req *connect.Request[activityv1.GetProfileStatsRequest],
+) (*connect.Response[activityv1.GetProfileStatsResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	stats, heatmap, err := s.eventsReader.GetProfileStats(ctx, principal.Project.ID, req.Msg.GetDistinctId())
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get profile stats",
+			slogx.Error(err),
+			slog.String("projectID", principal.Project.ID),
+			slog.String("distinctID", req.Msg.GetDistinctId()))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	resp := &activityv1.GetProfileStatsResponse{}
+
+	if stats != nil {
+		resp.Stats = &activityv1.ProfileStats{
+			FirstSeen:      timestamppb.New(stats.FirstSeen),
+			LastSeen:       timestamppb.New(stats.LastSeen),
+			TotalEvents:    stats.TotalEvents,
+			Browser:        stats.Browser,
+			BrowserVersion: stats.BrowserVersion,
+			Os:             stats.OS,
+			OsVersion:      stats.OSVersion,
+			Device:         stats.Device,
+			Country:        stats.Country,
+			City:           stats.City,
+			Ip:             stats.IP,
+		}
+	}
+
+	resp.Heatmap = make([]*activityv1.HeatmapDay, len(heatmap))
+	for i, d := range heatmap {
+		resp.Heatmap[i] = &activityv1.HeatmapDay{Date: d.Date, Count: d.Count}
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
 func (s *server) GetFilterSchema(
 	ctx context.Context,
 	req *connect.Request[activityv1.GetFilterSchemaRequest],

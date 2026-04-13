@@ -407,15 +407,147 @@ func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapP
 	var days []HeatmapDay
 	for rows.Next() {
 		var date string
-		var cnt int64
+		var cnt uint64
 		if err := rows.Scan(&date, &cnt); err != nil {
 			return nil, fmt.Errorf("GetActivityHeatmap: scan failed: %w", err)
 		}
-		days = append(days, HeatmapDay{Date: date, Count: cnt})
+		days = append(days, HeatmapDay{Date: date, Count: int64(cnt)})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("GetActivityHeatmap: row iteration failed: %w", err)
 	}
 
 	return days, nil
+}
+
+// ProfileStats holds aggregate event statistics and device/location context
+// derived from the profile's latest event.
+type ProfileStats struct {
+	FirstSeen      time.Time
+	LastSeen       time.Time
+	TotalEvents    int64
+	Browser        string
+	BrowserVersion string
+	OS             string
+	OSVersion      string
+	Device         string
+	Country        string
+	City           string
+	IP             string
+}
+
+// GetProfileStats returns aggregate event statistics and latest-event context for a profile.
+// Alias IDs are resolved so merged anonymous events are included.
+// Returns nil if the profile has no recorded events.
+func (r *Reader) GetProfileStats(ctx context.Context, projectID, distinctID string) (*ProfileStats, []HeatmapDay, error) {
+	aliasIDs, err := r.getAliasIDs(ctx, projectID, distinctID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetProfileStats: getAliasIDs failed for project %s: %w", projectID, err)
+	}
+
+	ids := append([]string{distinctID}, aliasIDs...)
+
+	// Single query: aggregate stats + auto_properties from the latest event.
+	statSQL, statArgs, err := chq.NewQuery().
+		Select(
+			"min(occur_time) AS first_seen",
+			"max(occur_time) AS last_seen",
+			"count() AS total_events",
+			"argMax(auto_properties, occur_time) AS latest_props",
+		).
+		From("events").
+		Where(
+			chq.Eq("project_id", projectID),
+			chq.RawCond("distinct_id IN ?", ids),
+		).
+		Build()
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetProfileStats: build stats query failed for project %s: %w", projectID, err)
+	}
+
+	rows, err := r.ch.Query(ctx, statSQL, statArgs...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetProfileStats: stats query failed for project %s: %w", projectID, err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "failed to close ClickHouse rows", slogx.Error(err))
+		}
+	}()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, nil, fmt.Errorf("GetProfileStats: row iteration failed: %w", err)
+		}
+		return nil, nil, nil
+	}
+
+	var stats ProfileStats
+	var totalEvents uint64
+	var latestProps map[string]string
+	if err := rows.Scan(&stats.FirstSeen, &stats.LastSeen, &totalEvents, &latestProps); err != nil {
+		return nil, nil, fmt.Errorf("GetProfileStats: scan failed: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("GetProfileStats: row iteration failed: %w", err)
+	}
+
+	stats.TotalEvents = int64(totalEvents)
+
+	// No events recorded yet.
+	if stats.TotalEvents == 0 {
+		return nil, nil, nil
+	}
+
+	stats.Browser = latestProps["$browser"]
+	stats.BrowserVersion = latestProps["$browserVersion"]
+	stats.OS = latestProps["$os"]
+	stats.OSVersion = latestProps["$osVersion"]
+	stats.Device = latestProps["$device"]
+	stats.Country = latestProps["$country"]
+	stats.City = latestProps["$city"]
+	stats.IP = latestProps["$ip"]
+
+	// Heatmap: per-day counts for the last 60 days.
+	now := time.Now().UTC()
+	heatmapSQL, heatmapArgs, err := chq.NewQuery().
+		Select("toString(toDate(occur_time)) AS day", "count() AS cnt").
+		From("events").
+		Where(
+			chq.Eq("project_id", projectID),
+			chq.RawCond("distinct_id IN ?", ids),
+			chq.Gte("occur_time", now.AddDate(0, 0, -60)),
+			chq.Lt("occur_time", now),
+		).
+		GroupBy("day").
+		OrderBy("day").
+		Build()
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetProfileStats: build heatmap query failed for project %s: %w", projectID, err)
+	}
+
+	hmRows, err := r.ch.Query(ctx, heatmapSQL, heatmapArgs...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetProfileStats: heatmap query failed for project %s: %w", projectID, err)
+	}
+	defer func() {
+		if err := hmRows.Close(); err != nil {
+			slog.ErrorContext(ctx, "failed to close ClickHouse heatmap rows", slogx.Error(err))
+		}
+	}()
+
+	var days []HeatmapDay
+	for hmRows.Next() {
+		var date string
+		var cnt uint64
+		if err := hmRows.Scan(&date, &cnt); err != nil {
+			return nil, nil, fmt.Errorf("GetProfileStats: heatmap scan failed: %w", err)
+		}
+		days = append(days, HeatmapDay{Date: date, Count: int64(cnt)})
+	}
+	if err := hmRows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("GetProfileStats: heatmap row iteration failed: %w", err)
+	}
+
+	return &stats, days, nil
 }

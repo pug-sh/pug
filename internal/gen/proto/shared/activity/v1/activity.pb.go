@@ -791,6 +791,240 @@ func (x *GetActivityHeatmapResponse) GetDays() []*HeatmapDay {
 	return nil
 }
 
+type GetProfileStatsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DistinctId    string                 `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProfileStatsRequest) Reset() {
+	*x = GetProfileStatsRequest{}
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProfileStatsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProfileStatsRequest) ProtoMessage() {}
+
+func (x *GetProfileStatsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProfileStatsRequest.ProtoReflect.Descriptor instead.
+func (*GetProfileStatsRequest) Descriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GetProfileStatsRequest) GetDistinctId() string {
+	if x != nil {
+		return x.DistinctId
+	}
+	return ""
+}
+
+// ProfileStats holds aggregate event statistics and device/location context
+// derived from the profile's latest event.
+type ProfileStats struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Timestamp of the earliest event recorded for this profile.
+	FirstSeen *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=first_seen,json=firstSeen" json:"first_seen,omitempty"`
+	// Timestamp of the most recent event recorded for this profile.
+	LastSeen *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=last_seen,json=lastSeen" json:"last_seen,omitempty"`
+	// Total number of events recorded for this profile.
+	TotalEvents int64 `protobuf:"varint,3,opt,name=total_events,json=totalEvents" json:"total_events,omitempty"`
+	// Browser name from the latest event (e.g. "Chrome"). Empty if unavailable.
+	Browser string `protobuf:"bytes,4,opt,name=browser" json:"browser,omitempty"`
+	// Major browser version from the latest event (e.g. "124"). Empty if unavailable.
+	BrowserVersion string `protobuf:"bytes,5,opt,name=browser_version,json=browserVersion" json:"browser_version,omitempty"`
+	// OS name from the latest event (e.g. "Mac OS X"). Empty if unavailable.
+	Os string `protobuf:"bytes,6,opt,name=os" json:"os,omitempty"`
+	// Major OS version from the latest event (e.g. "14"). Empty if unavailable.
+	OsVersion string `protobuf:"bytes,7,opt,name=os_version,json=osVersion" json:"os_version,omitempty"`
+	// Device model from the latest event (e.g. "iPhone"). Empty for desktop browsers.
+	Device string `protobuf:"bytes,8,opt,name=device" json:"device,omitempty"`
+	// Country name from the latest event (e.g. "United States"). Empty if unavailable.
+	Country string `protobuf:"bytes,9,opt,name=country" json:"country,omitempty"`
+	// City name from the latest event (e.g. "San Francisco"). Empty if unavailable.
+	City string `protobuf:"bytes,10,opt,name=city" json:"city,omitempty"`
+	// IP address from the latest event. Empty if unavailable.
+	Ip            string `protobuf:"bytes,11,opt,name=ip" json:"ip,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProfileStats) Reset() {
+	*x = ProfileStats{}
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileStats) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileStats) ProtoMessage() {}
+
+func (x *ProfileStats) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileStats.ProtoReflect.Descriptor instead.
+func (*ProfileStats) Descriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ProfileStats) GetFirstSeen() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FirstSeen
+	}
+	return nil
+}
+
+func (x *ProfileStats) GetLastSeen() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSeen
+	}
+	return nil
+}
+
+func (x *ProfileStats) GetTotalEvents() int64 {
+	if x != nil {
+		return x.TotalEvents
+	}
+	return 0
+}
+
+func (x *ProfileStats) GetBrowser() string {
+	if x != nil {
+		return x.Browser
+	}
+	return ""
+}
+
+func (x *ProfileStats) GetBrowserVersion() string {
+	if x != nil {
+		return x.BrowserVersion
+	}
+	return ""
+}
+
+func (x *ProfileStats) GetOs() string {
+	if x != nil {
+		return x.Os
+	}
+	return ""
+}
+
+func (x *ProfileStats) GetOsVersion() string {
+	if x != nil {
+		return x.OsVersion
+	}
+	return ""
+}
+
+func (x *ProfileStats) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *ProfileStats) GetCountry() string {
+	if x != nil {
+		return x.Country
+	}
+	return ""
+}
+
+func (x *ProfileStats) GetCity() string {
+	if x != nil {
+		return x.City
+	}
+	return ""
+}
+
+func (x *ProfileStats) GetIp() string {
+	if x != nil {
+		return x.Ip
+	}
+	return ""
+}
+
+type GetProfileStatsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Stats *ProfileStats          `protobuf:"bytes,1,opt,name=stats" json:"stats,omitempty"`
+	// Per-day event counts for the last 60 days.
+	Heatmap       []*HeatmapDay `protobuf:"bytes,2,rep,name=heatmap" json:"heatmap,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProfileStatsResponse) Reset() {
+	*x = GetProfileStatsResponse{}
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProfileStatsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProfileStatsResponse) ProtoMessage() {}
+
+func (x *GetProfileStatsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_activity_v1_activity_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProfileStatsResponse.ProtoReflect.Descriptor instead.
+func (*GetProfileStatsResponse) Descriptor() ([]byte, []int) {
+	return file_shared_activity_v1_activity_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetProfileStatsResponse) GetStats() *ProfileStats {
+	if x != nil {
+		return x.Stats
+	}
+	return nil
+}
+
+func (x *GetProfileStatsResponse) GetHeatmap() []*HeatmapDay {
+	if x != nil {
+		return x.Heatmap
+	}
+	return nil
+}
+
 var File_shared_activity_v1_activity_proto protoreflect.FileDescriptor
 
 const file_shared_activity_v1_activity_proto_rawDesc = "" +
@@ -866,13 +1100,35 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\x04date\x18\x01 \x01(\tR\x04date\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\"P\n" +
 	"\x1aGetActivityHeatmapResponse\x122\n" +
-	"\x04days\x18\x01 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\x04days2\xbf\x04\n" +
+	"\x04days\x18\x01 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\x04days\"A\n" +
+	"\x16GetProfileStatsRequest\x12'\n" +
+	"\vdistinct_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
+	"distinctId\"\xed\x02\n" +
+	"\fProfileStats\x129\n" +
+	"\n" +
+	"first_seen\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tfirstSeen\x127\n" +
+	"\tlast_seen\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\blastSeen\x12!\n" +
+	"\ftotal_events\x18\x03 \x01(\x03R\vtotalEvents\x12\x18\n" +
+	"\abrowser\x18\x04 \x01(\tR\abrowser\x12'\n" +
+	"\x0fbrowser_version\x18\x05 \x01(\tR\x0ebrowserVersion\x12\x0e\n" +
+	"\x02os\x18\x06 \x01(\tR\x02os\x12\x1d\n" +
+	"\n" +
+	"os_version\x18\a \x01(\tR\tosVersion\x12\x16\n" +
+	"\x06device\x18\b \x01(\tR\x06device\x12\x18\n" +
+	"\acountry\x18\t \x01(\tR\acountry\x12\x12\n" +
+	"\x04city\x18\n" +
+	" \x01(\tR\x04city\x12\x0e\n" +
+	"\x02ip\x18\v \x01(\tR\x02ip\"\x8b\x01\n" +
+	"\x17GetProfileStatsResponse\x126\n" +
+	"\x05stats\x18\x01 \x01(\v2 .shared.activity.v1.ProfileStatsR\x05stats\x128\n" +
+	"\aheatmap\x18\x02 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\aheatmap2\xab\x05\n" +
 	"\x0fActivityService\x12j\n" +
 	"\x0fGetActivityFeed\x12*.shared.activity.v1.GetActivityFeedRequest\x1a+.shared.activity.v1.GetActivityFeedResponse\x12m\n" +
 	"\x10GetEventExplorer\x12+.shared.activity.v1.GetEventExplorerRequest\x1a,.shared.activity.v1.GetEventExplorerResponse\x12j\n" +
 	"\x0fGetFilterSchema\x12*.shared.activity.v1.GetFilterSchemaRequest\x1a+.shared.activity.v1.GetFilterSchemaResponse\x12p\n" +
 	"\x11GetPropertyValues\x12,.shared.activity.v1.GetPropertyValuesRequest\x1a-.shared.activity.v1.GetPropertyValuesResponse\x12s\n" +
-	"\x12GetActivityHeatmap\x12-.shared.activity.v1.GetActivityHeatmapRequest\x1a..shared.activity.v1.GetActivityHeatmapResponseBTZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1;activityv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x12GetActivityHeatmap\x12-.shared.activity.v1.GetActivityHeatmapRequest\x1a..shared.activity.v1.GetActivityHeatmapResponse\x12j\n" +
+	"\x0fGetProfileStats\x12*.shared.activity.v1.GetProfileStatsRequest\x1a+.shared.activity.v1.GetProfileStatsResponseBTZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1;activityv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
 
 var (
 	file_shared_activity_v1_activity_proto_rawDescOnce sync.Once
@@ -886,7 +1142,7 @@ func file_shared_activity_v1_activity_proto_rawDescGZIP() []byte {
 	return file_shared_activity_v1_activity_proto_rawDescData
 }
 
-var file_shared_activity_v1_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_shared_activity_v1_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_shared_activity_v1_activity_proto_goTypes = []any{
 	(*GetActivityFeedRequest)(nil),     // 0: shared.activity.v1.GetActivityFeedRequest
 	(*ActivityEvent)(nil),              // 1: shared.activity.v1.ActivityEvent
@@ -900,49 +1156,58 @@ var file_shared_activity_v1_activity_proto_goTypes = []any{
 	(*GetActivityHeatmapRequest)(nil),  // 9: shared.activity.v1.GetActivityHeatmapRequest
 	(*HeatmapDay)(nil),                 // 10: shared.activity.v1.HeatmapDay
 	(*GetActivityHeatmapResponse)(nil), // 11: shared.activity.v1.GetActivityHeatmapResponse
-	(*v1.TimeRange)(nil),               // 12: common.v1.TimeRange
-	(*v1.PropertyFilter)(nil),          // 13: common.v1.PropertyFilter
-	(*v1.EventFilter)(nil),             // 14: common.v1.EventFilter
-	(*timestamppb.Timestamp)(nil),      // 15: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),            // 16: google.protobuf.Struct
-	(*v1.EventNameMeta)(nil),           // 17: common.v1.EventNameMeta
-	(*v1.PropertyKeyMeta)(nil),         // 18: common.v1.PropertyKeyMeta
-	(v1.PropertySource)(0),             // 19: common.v1.PropertySource
+	(*GetProfileStatsRequest)(nil),     // 12: shared.activity.v1.GetProfileStatsRequest
+	(*ProfileStats)(nil),               // 13: shared.activity.v1.ProfileStats
+	(*GetProfileStatsResponse)(nil),    // 14: shared.activity.v1.GetProfileStatsResponse
+	(*v1.TimeRange)(nil),               // 15: common.v1.TimeRange
+	(*v1.PropertyFilter)(nil),          // 16: common.v1.PropertyFilter
+	(*v1.EventFilter)(nil),             // 17: common.v1.EventFilter
+	(*timestamppb.Timestamp)(nil),      // 18: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),            // 19: google.protobuf.Struct
+	(*v1.EventNameMeta)(nil),           // 20: common.v1.EventNameMeta
+	(*v1.PropertyKeyMeta)(nil),         // 21: common.v1.PropertyKeyMeta
+	(v1.PropertySource)(0),             // 22: common.v1.PropertySource
 }
 var file_shared_activity_v1_activity_proto_depIdxs = []int32{
-	12, // 0: shared.activity.v1.GetActivityFeedRequest.time_range:type_name -> common.v1.TimeRange
-	13, // 1: shared.activity.v1.GetActivityFeedRequest.property_filters:type_name -> common.v1.PropertyFilter
-	14, // 2: shared.activity.v1.GetActivityFeedRequest.events:type_name -> common.v1.EventFilter
-	15, // 3: shared.activity.v1.ActivityEvent.occur_time:type_name -> google.protobuf.Timestamp
-	16, // 4: shared.activity.v1.ActivityEvent.auto_properties:type_name -> google.protobuf.Struct
-	16, // 5: shared.activity.v1.ActivityEvent.custom_properties:type_name -> google.protobuf.Struct
+	15, // 0: shared.activity.v1.GetActivityFeedRequest.time_range:type_name -> common.v1.TimeRange
+	16, // 1: shared.activity.v1.GetActivityFeedRequest.property_filters:type_name -> common.v1.PropertyFilter
+	17, // 2: shared.activity.v1.GetActivityFeedRequest.events:type_name -> common.v1.EventFilter
+	18, // 3: shared.activity.v1.ActivityEvent.occur_time:type_name -> google.protobuf.Timestamp
+	19, // 4: shared.activity.v1.ActivityEvent.auto_properties:type_name -> google.protobuf.Struct
+	19, // 5: shared.activity.v1.ActivityEvent.custom_properties:type_name -> google.protobuf.Struct
 	1,  // 6: shared.activity.v1.GetActivityFeedResponse.events:type_name -> shared.activity.v1.ActivityEvent
-	12, // 7: shared.activity.v1.GetEventExplorerRequest.time_range:type_name -> common.v1.TimeRange
-	13, // 8: shared.activity.v1.GetEventExplorerRequest.property_filters:type_name -> common.v1.PropertyFilter
-	14, // 9: shared.activity.v1.GetEventExplorerRequest.events:type_name -> common.v1.EventFilter
+	15, // 7: shared.activity.v1.GetEventExplorerRequest.time_range:type_name -> common.v1.TimeRange
+	16, // 8: shared.activity.v1.GetEventExplorerRequest.property_filters:type_name -> common.v1.PropertyFilter
+	17, // 9: shared.activity.v1.GetEventExplorerRequest.events:type_name -> common.v1.EventFilter
 	1,  // 10: shared.activity.v1.GetEventExplorerResponse.events:type_name -> shared.activity.v1.ActivityEvent
-	17, // 11: shared.activity.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
-	18, // 12: shared.activity.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
-	18, // 13: shared.activity.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
-	18, // 14: shared.activity.v1.GetFilterSchemaResponse.profile_property_keys:type_name -> common.v1.PropertyKeyMeta
-	19, // 15: shared.activity.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
-	12, // 16: shared.activity.v1.GetActivityHeatmapRequest.time_range:type_name -> common.v1.TimeRange
+	20, // 11: shared.activity.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
+	21, // 12: shared.activity.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
+	21, // 13: shared.activity.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
+	21, // 14: shared.activity.v1.GetFilterSchemaResponse.profile_property_keys:type_name -> common.v1.PropertyKeyMeta
+	22, // 15: shared.activity.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
+	15, // 16: shared.activity.v1.GetActivityHeatmapRequest.time_range:type_name -> common.v1.TimeRange
 	10, // 17: shared.activity.v1.GetActivityHeatmapResponse.days:type_name -> shared.activity.v1.HeatmapDay
-	0,  // 18: shared.activity.v1.ActivityService.GetActivityFeed:input_type -> shared.activity.v1.GetActivityFeedRequest
-	3,  // 19: shared.activity.v1.ActivityService.GetEventExplorer:input_type -> shared.activity.v1.GetEventExplorerRequest
-	5,  // 20: shared.activity.v1.ActivityService.GetFilterSchema:input_type -> shared.activity.v1.GetFilterSchemaRequest
-	7,  // 21: shared.activity.v1.ActivityService.GetPropertyValues:input_type -> shared.activity.v1.GetPropertyValuesRequest
-	9,  // 22: shared.activity.v1.ActivityService.GetActivityHeatmap:input_type -> shared.activity.v1.GetActivityHeatmapRequest
-	2,  // 23: shared.activity.v1.ActivityService.GetActivityFeed:output_type -> shared.activity.v1.GetActivityFeedResponse
-	4,  // 24: shared.activity.v1.ActivityService.GetEventExplorer:output_type -> shared.activity.v1.GetEventExplorerResponse
-	6,  // 25: shared.activity.v1.ActivityService.GetFilterSchema:output_type -> shared.activity.v1.GetFilterSchemaResponse
-	8,  // 26: shared.activity.v1.ActivityService.GetPropertyValues:output_type -> shared.activity.v1.GetPropertyValuesResponse
-	11, // 27: shared.activity.v1.ActivityService.GetActivityHeatmap:output_type -> shared.activity.v1.GetActivityHeatmapResponse
-	23, // [23:28] is the sub-list for method output_type
-	18, // [18:23] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	18, // 18: shared.activity.v1.ProfileStats.first_seen:type_name -> google.protobuf.Timestamp
+	18, // 19: shared.activity.v1.ProfileStats.last_seen:type_name -> google.protobuf.Timestamp
+	13, // 20: shared.activity.v1.GetProfileStatsResponse.stats:type_name -> shared.activity.v1.ProfileStats
+	10, // 21: shared.activity.v1.GetProfileStatsResponse.heatmap:type_name -> shared.activity.v1.HeatmapDay
+	0,  // 22: shared.activity.v1.ActivityService.GetActivityFeed:input_type -> shared.activity.v1.GetActivityFeedRequest
+	3,  // 23: shared.activity.v1.ActivityService.GetEventExplorer:input_type -> shared.activity.v1.GetEventExplorerRequest
+	5,  // 24: shared.activity.v1.ActivityService.GetFilterSchema:input_type -> shared.activity.v1.GetFilterSchemaRequest
+	7,  // 25: shared.activity.v1.ActivityService.GetPropertyValues:input_type -> shared.activity.v1.GetPropertyValuesRequest
+	9,  // 26: shared.activity.v1.ActivityService.GetActivityHeatmap:input_type -> shared.activity.v1.GetActivityHeatmapRequest
+	12, // 27: shared.activity.v1.ActivityService.GetProfileStats:input_type -> shared.activity.v1.GetProfileStatsRequest
+	2,  // 28: shared.activity.v1.ActivityService.GetActivityFeed:output_type -> shared.activity.v1.GetActivityFeedResponse
+	4,  // 29: shared.activity.v1.ActivityService.GetEventExplorer:output_type -> shared.activity.v1.GetEventExplorerResponse
+	6,  // 30: shared.activity.v1.ActivityService.GetFilterSchema:output_type -> shared.activity.v1.GetFilterSchemaResponse
+	8,  // 31: shared.activity.v1.ActivityService.GetPropertyValues:output_type -> shared.activity.v1.GetPropertyValuesResponse
+	11, // 32: shared.activity.v1.ActivityService.GetActivityHeatmap:output_type -> shared.activity.v1.GetActivityHeatmapResponse
+	14, // 33: shared.activity.v1.ActivityService.GetProfileStats:output_type -> shared.activity.v1.GetProfileStatsResponse
+	28, // [28:34] is the sub-list for method output_type
+	22, // [22:28] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_shared_activity_v1_activity_proto_init() }
@@ -956,7 +1221,7 @@ func file_shared_activity_v1_activity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_shared_activity_v1_activity_proto_rawDesc), len(file_shared_activity_v1_activity_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
