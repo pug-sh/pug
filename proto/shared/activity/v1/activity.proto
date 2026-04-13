@@ -197,4 +197,6 @@ message GetProfileStatsResponse {
   ProfileStats stats = 1;
   // Per-day event counts for the last 60 days.
   repeated HeatmapDay heatmap = 2;
+  // Custom properties set on the profile via identify() calls.
+  google.protobuf.Struct properties = 3;
 }

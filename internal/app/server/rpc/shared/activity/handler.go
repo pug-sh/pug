@@ -15,7 +15,9 @@ import (
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	activityv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1/activityv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -24,12 +26,14 @@ type server struct {
 	activityv1connect.UnimplementedActivityServiceHandler
 	eventsReader    *events.Reader
 	insightsService *coreinsights.Service
+	profilesRead    *dbread.Queries
 }
 
-func NewServer(ch driver.Conn, insightsService *coreinsights.Service) *server {
+func NewServer(ch driver.Conn, insightsService *coreinsights.Service, profilesRead *dbread.Queries) *server {
 	return &server{
 		eventsReader:    events.NewReader(ch),
 		insightsService: insightsService,
+		profilesRead:    profilesRead,
 	}
 }
 
@@ -315,6 +319,31 @@ func (s *server) GetProfileStats(
 	resp.Heatmap = make([]*activityv1.HeatmapDay, len(heatmap))
 	for i, d := range heatmap {
 		resp.Heatmap[i] = &activityv1.HeatmapDay{Date: d.Date, Count: d.Count}
+	}
+
+	profile, err := s.profilesRead.GetProfileByIDAndProjectID(ctx, dbread.GetProfileByIDAndProjectIDParams{
+		ID:        req.Msg.GetDistinctId(),
+		ProjectID: principal.Project.ID,
+	})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.ErrorContext(ctx, "failed to get profile properties",
+			slogx.Error(err),
+			slog.String("projectID", principal.Project.ID),
+			slog.String("distinctID", req.Msg.GetDistinctId()))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	if err == nil {
+		props, err := structpb.NewStruct(profile.Properties)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to convert profile properties to struct",
+				slogx.Error(err),
+				slog.String("projectID", principal.Project.ID),
+				slog.String("distinctID", req.Msg.GetDistinctId()))
+			telemetry.RecordError(ctx, err)
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
+		resp.Properties = props
 	}
 
 	return connect.NewResponse(resp), nil
