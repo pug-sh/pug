@@ -9,6 +9,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	deliveryv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/delivery/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/nats-io/nats.go/jetstream"
@@ -58,12 +59,14 @@ func (s *Server) RecordEvent(
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal delivery event message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	// Publish to NATS JetStream
 	if _, err = s.producer.Publish(ctx, nats.DeliveryEventsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish delivery event to NATS", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("failed to process request"))
 	}
 
