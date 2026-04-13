@@ -69,7 +69,7 @@ message PropertyFilter {
     id: "property_filter.values_not_allowed"
     message: "values must be empty for this operator"
     expression:
-      "!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN"
+      "(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IN"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_IN"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN)"
