@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"buf.build/go/protovalidate"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
@@ -99,17 +100,15 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			With("worker", "profile-identify")
 	}
 
+	if err := protovalidate.Validate(msg); err != nil {
+		slog.ErrorContext(ctx, "identify message failed validation", slogx.Error(err))
+		return natsworker.NewPermanentError(err).
+			With("worker", "profile-identify")
+	}
+
 	projectID := msg.GetProjectId()
 	externalID := msg.GetExternalId()
 	anonymousID := msg.GetAnonymousId()
-
-	if projectID == "" || externalID == "" {
-		slog.ErrorContext(ctx, "identify message missing required fields",
-			slog.String("projectId", projectID),
-			slog.String("externalId", externalID))
-		return natsworker.NewPermanentError(fmt.Errorf("identify message missing required fields")).
-			With("worker", "profile-identify")
-	}
 
 	traits := msg.GetTraits().AsMap()
 	if traits == nil {
