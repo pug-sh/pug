@@ -10,6 +10,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	sdkprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1"
 	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
@@ -25,6 +26,18 @@ import (
 )
 
 func Run(ctx context.Context) error {
+	closeOtel, err := telemetry.SetupSDK(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := closeOtel(shutdownCtx); err != nil {
+			slog.ErrorContext(shutdownCtx, "failed to shutdown telemetry", slogx.Error(err))
+		}
+	}()
+
 	var pgCfg postgres.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
 		return err

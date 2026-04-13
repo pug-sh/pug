@@ -1478,6 +1478,109 @@ func TestGroupSeries_MultiEvent(t *testing.T) {
 	}
 }
 
+func TestGroupSeries_SortsPointsByTime(t *testing.T) {
+	rows := []insights.TrendRow{
+		{Time: mustTime("2024-01-03T00:00:00Z"), EventKind: "page_view", Value: 30},
+		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Value: 10},
+		{Time: mustTime("2024-01-02T00:00:00Z"), EventKind: "page_view", Value: 20},
+	}
+
+	series, err := insights.GroupSeries(rows, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(series) != 1 {
+		t.Fatalf("expected 1 series, got %d", len(series))
+	}
+	pts := series[0].Points
+	if len(pts) != 3 {
+		t.Fatalf("expected 3 points, got %d", len(pts))
+	}
+	for i := 1; i < len(pts); i++ {
+		prev := pts[i-1].GetTime().AsTime()
+		curr := pts[i].GetTime().AsTime()
+		if !prev.Before(curr) {
+			t.Errorf("points not sorted: pts[%d]=%v >= pts[%d]=%v", i-1, prev, i, curr)
+		}
+	}
+	if pts[0].Value != 10 || pts[1].Value != 20 || pts[2].Value != 30 {
+		t.Errorf("unexpected values: %v, %v, %v", pts[0].Value, pts[1].Value, pts[2].Value)
+	}
+}
+
+func TestGroupSeries_SortsPointsByTime_Breakdowns(t *testing.T) {
+	// Simulate UNION ALL interleaving: rows arrive scrambled across breakdown groups.
+	rows := []insights.TrendRow{
+		{Time: mustTime("2024-01-03T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 30},
+		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"GB"}, Value: 5},
+		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 10},
+		{Time: mustTime("2024-01-02T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"GB"}, Value: 8},
+		{Time: mustTime("2024-01-02T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 20},
+	}
+
+	series, err := insights.GroupSeries(rows, []string{"$country"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(series) != 2 {
+		t.Fatalf("expected 2 series, got %d", len(series))
+	}
+	for _, s := range series {
+		for i := 1; i < len(s.Points); i++ {
+			prev := s.Points[i-1].GetTime().AsTime()
+			curr := s.Points[i].GetTime().AsTime()
+			if prev.After(curr) {
+				t.Errorf("series %v: points not sorted: pts[%d]=%v > pts[%d]=%v",
+					s.Breakdown, i-1, prev, i, curr)
+			}
+		}
+	}
+	// US series: 10, 20, 30
+	if series[0].Points[0].Value != 10 || series[0].Points[1].Value != 20 || series[0].Points[2].Value != 30 {
+		t.Errorf("unexpected US values: %v, %v, %v",
+			series[0].Points[0].Value, series[0].Points[1].Value, series[0].Points[2].Value)
+	}
+	// GB series: 5, 8
+	if series[1].Points[0].Value != 5 || series[1].Points[1].Value != 8 {
+		t.Errorf("unexpected GB values: %v, %v",
+			series[1].Points[0].Value, series[1].Points[1].Value)
+	}
+}
+
+func TestGroupSeries_SortsPointsByTime_MultiEvent(t *testing.T) {
+	// Simulate UNION ALL interleaving: rows from different event kinds arrive out of time order.
+	rows := []insights.TrendRow{
+		{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EventKind: "page_view", Value: 15},
+		{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 5},
+		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "page_view", Value: 10},
+		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 3},
+	}
+
+	series, err := insights.GroupSeries(rows, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(series) != 2 {
+		t.Fatalf("expected 2 series, got %d", len(series))
+	}
+	for _, s := range series {
+		for i := 1; i < len(s.Points); i++ {
+			prev := s.Points[i-1].GetTime().AsTime()
+			curr := s.Points[i].GetTime().AsTime()
+			if prev.After(curr) {
+				t.Errorf("series %q: points not sorted: pts[%d]=%v > pts[%d]=%v",
+					s.EventKind, i-1, prev, i, curr)
+			}
+		}
+	}
+	if series[0].Points[0].Value != 10 || series[0].Points[1].Value != 15 {
+		t.Errorf("unexpected page_view values: %v, %v", series[0].Points[0].Value, series[0].Points[1].Value)
+	}
+	if series[1].Points[0].Value != 3 || series[1].Points[1].Value != 5 {
+		t.Errorf("unexpected purchase values: %v, %v", series[1].Points[0].Value, series[1].Points[1].Value)
+	}
+}
+
 func TestGroupSeries_Empty(t *testing.T) {
 	series, err := insights.GroupSeries(nil, nil)
 	if err != nil {

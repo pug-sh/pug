@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/pressly/goose/v3"
 	tcclickhouse "github.com/testcontainers/testcontainers-go/modules/clickhouse"
 
@@ -20,7 +19,7 @@ import (
 // TestClickHouse holds the container and connection for a test ClickHouse instance.
 type TestClickHouse struct {
 	container *tcclickhouse.ClickHouseContainer
-	Conn      driver.Conn
+	Conn      *chdep.Conn
 	URL       string
 }
 
@@ -50,16 +49,16 @@ func SetupClickHouse(t *testing.T) *TestClickHouse {
 		t.Fatalf("testutil: run clickhouse migrations: %v", err)
 	}
 
-	conn, err := chdep.NewReaderPool(ctx, &chdep.Config{URL: connStr})
+	chConn, err := chdep.NewReaderPool(ctx, &chdep.Config{URL: connStr})
 	if err != nil {
 		_ = ctr.Terminate(ctx)
 		t.Fatalf("testutil: create clickhouse connection: %v", err)
 	}
 
-	tc := &TestClickHouse{container: ctr, Conn: conn, URL: connStr}
+	tc := &TestClickHouse{container: ctr, Conn: chConn, URL: connStr}
 
 	t.Cleanup(func() {
-		_ = conn.Close()
+		_ = chConn.Close()
 		if err := ctr.Terminate(context.Background()); err != nil {
 			fmt.Printf("testutil: terminate clickhouse container: %v\n", err)
 		}

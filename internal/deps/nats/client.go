@@ -81,7 +81,7 @@ func New(ctx context.Context) (*NATSClient, error) {
 
 	return &NATSClient{
 		conn:      conn,
-		jetStream: js,
+		jetStream: &tracedJetStream{js},
 		config:    &cfg,
 	}, nil
 }

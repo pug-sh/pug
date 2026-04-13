@@ -121,10 +121,10 @@ func TestGetActivityFeed(t *testing.T) {
 
 	t.Run("filters by kind", func(t *testing.T) {
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
-			ProjectID:  "proj-1",
-			DistinctID: "user-1",
-			EventFilters:     []*commonv1.EventFilter{{Kind: "page_view"}},
-			PageSize:   100,
+			ProjectID:    "proj-1",
+			DistinctID:   "user-1",
+			EventFilters: []*commonv1.EventFilter{{Kind: "page_view"}},
+			PageSize:     100,
 		})
 		if err != nil {
 			t.Fatalf("GetActivityFeed: %v", err)
@@ -432,11 +432,11 @@ func TestGetActivityFeed(t *testing.T) {
 		// kind=page_view + sessionA + time range covering first 2 events + $country=US
 		// Only the first page_view (now, sessionA) matches all criteria
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
-			ProjectID:  "proj-1",
-			DistinctID: "user-1",
-			EventFilters:     []*commonv1.EventFilter{{Kind: "page_view"}},
-			SessionID:  sessionA,
-			PageSize:   100,
+			ProjectID:    "proj-1",
+			DistinctID:   "user-1",
+			EventFilters: []*commonv1.EventFilter{{Kind: "page_view"}},
+			SessionID:    sessionA,
+			PageSize:     100,
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(now.Add(-90 * time.Second)),
 				To:   timestamppb.New(now.Add(time.Second)),
@@ -673,9 +673,9 @@ func TestGetEventExplorer(t *testing.T) {
 
 	t.Run("filters by kind", func(t *testing.T) {
 		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
-			ProjectID: "proj-1",
-			EventFilters:    []*commonv1.EventFilter{{Kind: "page_view"}},
-			PageSize:  100,
+			ProjectID:    "proj-1",
+			EventFilters: []*commonv1.EventFilter{{Kind: "page_view"}},
+			PageSize:     100,
 		})
 		if err != nil {
 			t.Fatalf("GetEventExplorer: %v", err)
@@ -793,10 +793,10 @@ func TestGetEventExplorer(t *testing.T) {
 
 	t.Run("combined filters", func(t *testing.T) {
 		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
-			ProjectID: "proj-1",
-			EventFilters:    []*commonv1.EventFilter{{Kind: "page_view"}},
-			SessionID: sessionA,
-			PageSize:  100,
+			ProjectID:    "proj-1",
+			EventFilters: []*commonv1.EventFilter{{Kind: "page_view"}},
+			SessionID:    sessionA,
+			PageSize:     100,
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(now.Add(-90 * time.Second)),
 				To:   timestamppb.New(now.Add(time.Second)),
@@ -899,9 +899,9 @@ func TestDecodeActivityFeedCursor_Invalid(t *testing.T) {
 		token string
 	}{
 		{"invalid base64", "!!!not-base64!!!"},
-		{"invalid json", "bm90LWpzb24"},                             // base64 of "not-json"
+		{"invalid json", "bm90LWpzb24"},                                       // base64 of "not-json"
 		{"empty event_id", "eyJ0IjoiMjAyNi0wMS0wMVQwMDowMDowMFoiLCJlIjoiIn0"}, // {"t":"2026-01-01T00:00:00Z","e":""}
-		{"zero time", "eyJ0IjoiMDAwMS0wMS0wMVQwMDowMDowMFoiLCJlIjoiYWJjIn0"},   // {"t":"0001-01-01T00:00:00Z","e":"abc"}
+		{"zero time", "eyJ0IjoiMDAwMS0wMS0wMVQwMDowMDowMFoiLCJlIjoiYWJjIn0"},  // {"t":"0001-01-01T00:00:00Z","e":"abc"}
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

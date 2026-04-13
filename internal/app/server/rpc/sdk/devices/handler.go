@@ -9,6 +9,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/nats-io/nats.go/jetstream"
@@ -51,11 +52,13 @@ func (s *Server) Subscribe(
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal subscribe message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	if _, err = s.producer.Publish(ctx, nats.DeviceOpsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish subscribe operation to NATS", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
@@ -84,11 +87,13 @@ func (s *Server) UpdateStatus(
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal device operation message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	if _, err = s.producer.Publish(ctx, nats.DeviceOpsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish device operation to NATS", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
@@ -117,11 +122,13 @@ func (s *Server) UpdateToken(
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal device operation message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 
 	if _, err = s.producer.Publish(ctx, nats.DeviceOpsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish device operation to NATS", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process request"))
 	}
 

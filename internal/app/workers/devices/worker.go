@@ -8,12 +8,26 @@ import (
 
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 )
 
 func Run(ctx context.Context) error {
+	closeOtel, err := telemetry.SetupSDK(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := closeOtel(shutdownCtx); err != nil {
+			slog.ErrorContext(shutdownCtx, "failed to shutdown telemetry", slogx.Error(err))
+		}
+	}()
+
 	var cfg postgres.Config
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return err

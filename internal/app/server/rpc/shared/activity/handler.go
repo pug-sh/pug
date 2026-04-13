@@ -6,12 +6,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"connectrpc.com/connect"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/events"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	activityv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1/activityv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -78,6 +79,7 @@ func (s *server) GetActivityFeed(
 			slog.String("sessionID", req.Msg.GetSessionId()),
 			slog.Int("filterCount", len(req.Msg.GetPropertyFilters())),
 			slog.Int("eventFilterCount", len(req.Msg.GetEvents())))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -97,6 +99,7 @@ func (s *server) GetActivityFeed(
 		token, err := nextCursor.Encode()
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to encode pagination cursor", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.NextPageToken = token
@@ -151,6 +154,7 @@ func (s *server) GetEventExplorer(
 			slog.String("sessionID", req.Msg.GetSessionId()),
 			slog.Int("filterCount", len(req.Msg.GetPropertyFilters())),
 			slog.Int("eventFilterCount", len(req.Msg.GetEvents())))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -170,6 +174,7 @@ func (s *server) GetEventExplorer(
 		token, err := nextCursor.Encode()
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to encode pagination cursor", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.NextPageToken = token
@@ -188,6 +193,7 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 				slogx.Error(err),
 				slog.String("eventID", e.EventID),
 				slog.String("projectID", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		customProps, err := mapToStruct(e.CustomProperties)
@@ -196,6 +202,7 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 				slogx.Error(err),
 				slog.String("eventID", e.EventID),
 				slog.String("projectID", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		protoEvents[i] = &activityv1.ActivityEvent{
@@ -283,6 +290,7 @@ func (s *server) GetFilterSchema(
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get filter schema", slogx.Error(err),
 			slog.String("projectID", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -314,6 +322,7 @@ func (s *server) GetPropertyValues(
 		slog.ErrorContext(ctx, "failed to get property values", slogx.Error(err),
 			slog.String("projectID", projectID),
 			slog.String("propertyKey", req.Msg.GetPropertyKey()))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
