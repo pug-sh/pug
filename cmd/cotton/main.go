@@ -20,7 +20,6 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/identify"
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/upsert"
 	"github.com/fivebitsio/cotton/internal/app/workers/scheduler"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -148,17 +147,6 @@ var devCmd = &cobra.Command{
 		if err := godotenv.Load(); err != nil {
 			slog.DebugContext(sigCtx, "No .env file found, relying on environment variables")
 		}
-
-		closeOtel, err := telemetry.SetupSDK(sigCtx)
-		if err != nil {
-			slog.ErrorContext(sigCtx, "failed to setup telemetry", slogx.Error(err))
-			os.Exit(1)
-		}
-		defer func() {
-			if err := closeOtel(sigCtx); err != nil {
-				slog.ErrorContext(sigCtx, "failed to shutdown telemetry", slogx.Error(err))
-			}
-		}()
 
 		g, ctx := errgroup.WithContext(sigCtx)
 		g.Go(func() error { return devices.Run(ctx) })

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"sync"
 
 	"connectrpc.com/otelconnect"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -14,10 +15,25 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
+var (
+	setupOnce   sync.Once
+	setupResult func(context.Context) error
+	setupErr    error
+)
+
 // SetupSDK bootstraps the OpenTelemetry pipeline (propagator, tracer, meter, and
-// logger providers). On success it returns a cleanup function that must be called
-// to flush and shut down all providers.
+// logger providers). It is safe to call from multiple goroutines; only the first
+// call initializes the SDK. Subsequent calls return the same shutdown function.
+// The returned shutdown is safe to call multiple times (OTel providers are no-ops
+// after the first shutdown).
 func SetupSDK(ctx context.Context) (func(context.Context) error, error) {
+	setupOnce.Do(func() {
+		setupResult, setupErr = doSetupSDK(ctx)
+	})
+	return setupResult, setupErr
+}
+
+func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	var shutdowns []func(context.Context) error
 	success := false
 	defer func() {
@@ -51,6 +67,7 @@ func SetupSDK(ctx context.Context) (func(context.Context) error, error) {
 		slog.ErrorContext(ctx, "unable to create logger provider", slogx.Error(err))
 		return nil, err
 	}
+	shutdowns = append(shutdowns, loggerProvider.Shutdown)
 
 	// Set globals now that all providers initialized successfully.
 	otel.SetTracerProvider(tracerProvider)
@@ -106,6 +123,15 @@ func NewOtelInterceptor(ctx context.Context) (*otelconnect.Interceptor, func(con
 	}
 
 	return otelInterceptor, shutdown, nil
+}
+
+// insecureExporter returns true when OTEL_EXPORTER_OTLP_INSECURE is "true" or
+// unset. The OTel SDK's gRPC exporters default to TLS; this helper defaults to
+// insecure for local development while allowing production deployments to enable
+// TLS by setting the env var to "false".
+func insecureExporter() bool {
+	v := os.Getenv("OTEL_EXPORTER_OTLP_INSECURE")
+	return v == "" || v == "true"
 }
 
 func newPropagator() propagation.TextMapPropagator {

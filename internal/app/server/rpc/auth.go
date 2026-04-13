@@ -43,6 +43,15 @@ type Principal struct {
 	MaskedAPIKey string // Masked API key suffix (e.g. "...d456"), set for API key auth
 }
 
+// maskKey returns "...XXXX" showing only the last 4 characters of an API key,
+// or "***" if the key is 4 characters or shorter.
+func maskKey(key string) string {
+	if len(key) > 4 {
+		return "..." + key[len(key)-4:]
+	}
+	return "***"
+}
+
 // projectKeyLookup abstracts API key → project resolution for auth functions.
 // Implementations must return pgx.ErrNoRows when no project matches the key.
 type projectKeyLookup interface {

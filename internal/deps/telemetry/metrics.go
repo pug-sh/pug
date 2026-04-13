@@ -8,7 +8,11 @@ import (
 )
 
 func newMetricsExporter(ctx context.Context) (metric.Exporter, error) {
-	return otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure())
+	var opts []otlpmetricgrpc.Option
+	if insecureExporter() {
+		opts = append(opts, otlpmetricgrpc.WithInsecure())
+	}
+	return otlpmetricgrpc.New(ctx, opts...)
 }
 
 func newMetricsProvider(ctx context.Context) (*metric.MeterProvider, error) {

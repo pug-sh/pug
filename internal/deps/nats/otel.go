@@ -24,6 +24,7 @@ var (
 	attrMessagingConsumer   = attribute.Key("messaging.consumer.name")
 	attrMessagingDeliveries = attribute.Key("messaging.message.delivery_number")
 	attrMessagingSeq        = attribute.Key("messaging.message.sequence")
+	attrMessagingConsumerSeq = attribute.Key("messaging.consumer.sequence")
 )
 
 // headerCarrier adapts nats.Header to propagation.TextMapCarrier so that the
@@ -44,12 +45,15 @@ func (c headerCarrier) Keys() []string {
 }
 
 // tracedJetStream wraps jetstream.JetStream and injects OTel trace context into
-// every outbound message. All methods except Publish and PublishMsg pass through
-// to the embedded interface unchanged.
+// every outbound message. Only Publish and PublishMsg are overridden; all other
+// methods (including PublishAsync/PublishMsgAsync) pass through untraced.
 type tracedJetStream struct {
 	jetstream.JetStream
 }
 
+// Publish delegates to the embedded JetStream.PublishMsg (not t.PublishMsg) because
+// Publish(subject, data) provides no header access for W3C trace context injection.
+// Calling the embedded PublishMsg directly avoids double-spanning.
 func (t *tracedJetStream) Publish(ctx context.Context, subject string, data []byte, opts ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
 	ctx, span := startProducerSpan(ctx, subject, len(data))
 	defer span.End()
@@ -113,6 +117,7 @@ func startConsumerSpan(ctx context.Context, subject, stream, consumer string, nu
 			attrMessagingConsumer.String(consumer),
 			attrMessagingDeliveries.Int64(int64(numDelivered)),
 			attrMessagingSeq.Int64(int64(streamSeq)),
+			attrMessagingConsumerSeq.Int64(int64(consumerSeq)),
 			attrMessagingOp.String("process"),
 		),
 	)

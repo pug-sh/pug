@@ -7,10 +7,10 @@ import (
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
 	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -26,6 +26,8 @@ type DB struct {
 type Conn struct {
 	conn chdriver.Conn
 }
+
+var _ chdriver.Conn = (*Conn)(nil)
 
 func (c *Conn) Unwrap() chdriver.Conn {
 	return c.conn
@@ -55,18 +57,17 @@ func (c *Conn) Query(ctx context.Context, query string, args ...any) (chdriver.R
 	c.setSpanAttrs(span, query)
 	rows, err := c.conn.Query(c.withSpan(ctx), query, args...)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		telemetry.RecordError(ctx, err)
 	}
 	return rows, err
 }
 
+// QueryRow is not traced because driver.Row defers errors to Scan(). A span
+// here would always show success status (the span ends before Scan is called),
+// which actively misleads operators. Callers should record Scan errors on their
+// own spans via telemetry.RecordError if error visibility is needed.
 func (c *Conn) QueryRow(ctx context.Context, query string, args ...any) chdriver.Row {
-	ctx, span := tracer().Start(ctx, c.spanName("query_row"))
-	defer func() { span.End() }()
-	c.setSpanAttrs(span, query)
-	row := c.conn.QueryRow(c.withSpan(ctx), query, args...)
-	return row
+	return c.conn.QueryRow(c.withSpan(ctx), query, args...)
 }
 
 func (c *Conn) Exec(ctx context.Context, query string, args ...any) error {
@@ -75,8 +76,7 @@ func (c *Conn) Exec(ctx context.Context, query string, args ...any) error {
 	c.setSpanAttrs(span, query)
 	err := c.conn.Exec(c.withSpan(ctx), query, args...)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		telemetry.RecordError(ctx, err)
 	}
 	return err
 }
@@ -87,8 +87,7 @@ func (c *Conn) Select(ctx context.Context, dest any, query string, args ...any) 
 	c.setSpanAttrs(span, query)
 	err := c.conn.Select(c.withSpan(ctx), dest, query, args...)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		telemetry.RecordError(ctx, err)
 	}
 	return err
 }
@@ -99,8 +98,7 @@ func (c *Conn) PrepareBatch(ctx context.Context, query string, opts ...chdriver.
 	c.setSpanAttrs(span, query)
 	batch, err := c.conn.PrepareBatch(c.withSpan(ctx), query, opts...)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		telemetry.RecordError(ctx, err)
 	}
 	return batch, err
 }
@@ -111,8 +109,7 @@ func (c *Conn) AsyncInsert(ctx context.Context, query string, wait bool, args ..
 	c.setSpanAttrs(span, query)
 	err := c.conn.AsyncInsert(c.withSpan(ctx), query, wait, args...)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		telemetry.RecordError(ctx, err)
 	}
 	return err
 }
@@ -152,6 +149,9 @@ func createConnection(ctx context.Context, cfg *Config) (*Conn, error) {
 
 	if err := conn.Ping(ctx); err != nil {
 		slog.ErrorContext(ctx, "Unable to ping ClickHouse", slogx.Error(err))
+		if closeErr := conn.Close(); closeErr != nil {
+			slog.ErrorContext(ctx, "failed to close ClickHouse after ping failure", slogx.Error(closeErr))
+		}
 		return nil, err
 	}
 

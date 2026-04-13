@@ -250,18 +250,18 @@ All telemetry is bootstrapped in `internal/deps/telemetry/`. The server initiali
 
 **Instrumentation status:**
 
-| Component | Status |
-|-----------|--------|
-| Connect RPC | ✅ — `otelconnect.Interceptor` on all handlers |
-| slog → OTel | ✅ — `otelslog` bridge replaces default logger |
-| PostgreSQL | ✅ — `otelpgx` tracer on all connections |
-| Redis | ✅ — `redisotel` tracing + metrics on the client |
-| NATS/JetStream | ❌ — no official OTel package |
-| ClickHouse | ❌ — no official OTel package |
+| Component      | Status                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Connect RPC    | ✅ — `otelconnect.Interceptor` on all handlers                                                                           |
+| slog → OTel    | ✅ — `otelslog` bridge replaces default logger                                                                           |
+| PostgreSQL     | ✅ — `otelpgx` tracer on all connections                                                                                 |
+| Redis          | ✅ — `redisotel` tracing + metrics on the client                                                                         |
+| NATS/JetStream | Custom — `tracedJetStream` wrapper in `internal/deps/nats/otel.go`, W3C trace context propagation on publish/consume     |
+| ClickHouse     | Custom — `Conn` wrapper in `internal/deps/clickhouse/clickhouse.go`, spans on Query/Exec/Select/PrepareBatch/AsyncInsert |
 
-**Configuration:** Set `OTEL_SERVICE_NAME` (required) and `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4317`).
+**Configuration:** Set `OTEL_SERVICE_NAME` (strongly recommended — telemetry data will lack a service identifier without it) and `OTEL_EXPORTER_OTLP_ENDPOINT` (default `localhost:4317`). TLS is disabled by default (`OTEL_EXPORTER_OTLP_INSECURE` defaults to `true` when unset); set `OTEL_EXPORTER_OTLP_INSECURE=false` to enable TLS for production OTLP endpoints.
 
-**Recording errors in spans:** Use `telemetry.RecordError(ctx, err)` to record an error on the current span, set the span status to `Error`, and attach stack traces. This is preferred over manual `span.SetStatus()` + `span.RecordError()` calls. All RPC handlers should call `telemetry.RecordError(ctx, err)` in error-handling paths where there's an active span context (after `MustGetPrincipal*` extracts succeed).
+**Recording errors in spans:** Use `telemetry.RecordError(ctx, err)` to record an error on the current span, set the span status to `Error`, and attach stack traces. All RPC handlers should call `telemetry.RecordError(ctx, err)` in error-handling paths for business logic errors. Auth extraction failures (`MustGetPrincipal*`) do not need `RecordError` since they are expected and handled by returning `CodeUnauthenticated`.
 
 ## Code Style
 

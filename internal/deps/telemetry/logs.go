@@ -8,7 +8,11 @@ import (
 )
 
 func newLogExporter(ctx context.Context) (log.Exporter, error) {
-	return otlploggrpc.New(ctx, otlploggrpc.WithInsecure())
+	var opts []otlploggrpc.Option
+	if insecureExporter() {
+		opts = append(opts, otlploggrpc.WithInsecure())
+	}
+	return otlploggrpc.New(ctx, opts...)
 }
 
 func newLoggerProvider(ctx context.Context) (*log.LoggerProvider, error) {

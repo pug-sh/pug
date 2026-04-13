@@ -74,8 +74,10 @@ func newDeps(ctx context.Context) (*deps, error) {
 		return nil, err
 	}
 	closers = append(closers, func() {
-		if err := closeOtel(ctx); err != nil {
-			slog.ErrorContext(ctx, "failed to close otel during rollback", slogx.Error(err))
+		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := closeOtel(rollbackCtx); err != nil {
+			slog.ErrorContext(rollbackCtx, "failed to close otel during rollback", slogx.Error(err))
 		}
 	})
 
@@ -116,7 +118,11 @@ func newDeps(ctx context.Context) (*deps, error) {
 	if err != nil {
 		return nil, err
 	}
-	closers = append(closers, func() { redisClient.Close(ctx) })
+	closers = append(closers, func() {
+		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		redisClient.Close(rollbackCtx)
+	})
 
 	var chCfg chdb.Config
 	if err := envconfig.Process(ctx, &chCfg); err != nil {

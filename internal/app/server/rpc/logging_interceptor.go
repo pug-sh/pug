@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"connectrpc.com/connect"
 )
 
@@ -39,25 +40,47 @@ func (i *loggingInterceptor) WrapStreamingHandler(next connect.StreamingHandlerF
 }
 
 func (i *loggingInterceptor) logUnary(ctx context.Context, req connect.AnyRequest, err error, start time.Time) {
-	status := "ok"
-	if err != nil {
-		status = "error"
-	}
-	slog.InfoContext(ctx, status+" "+req.Spec().Procedure+" "+time.Since(start).String(),
+	args := []any{
 		slog.String("procedure", req.Spec().Procedure),
 		slog.Duration("duration", time.Since(start)),
-		slog.Any("error", err),
-	)
+	}
+	logRPC(ctx, err, args)
 }
 
 func (i *loggingInterceptor) logStream(ctx context.Context, conn connect.StreamingHandlerConn, err error, start time.Time) {
-	status := "ok"
-	if err != nil {
-		status = "error"
-	}
-	slog.InfoContext(ctx, status+" "+conn.Spec().Procedure+" "+time.Since(start).String(),
+	args := []any{
 		slog.String("procedure", conn.Spec().Procedure),
 		slog.Duration("duration", time.Since(start)),
-		slog.Any("error", err),
-	)
+	}
+	logRPC(ctx, err, args)
+}
+
+func logRPC(ctx context.Context, err error, args []any) {
+	if err == nil {
+		slog.InfoContext(ctx, "rpc ok", args...)
+		return
+	}
+	args = append(args, slogx.Error(err))
+	if isClientError(err) {
+		slog.WarnContext(ctx, "rpc error", args...)
+	} else {
+		slog.ErrorContext(ctx, "rpc error", args...)
+	}
+}
+
+func isClientError(err error) bool {
+	code := connect.CodeOf(err)
+	switch code {
+	case connect.CodeInvalidArgument,
+		connect.CodeNotFound,
+		connect.CodeAlreadyExists,
+		connect.CodePermissionDenied,
+		connect.CodeUnauthenticated,
+		connect.CodeFailedPrecondition,
+		connect.CodeOutOfRange,
+		connect.CodeCanceled:
+		return true
+	default:
+		return false
+	}
 }

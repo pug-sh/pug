@@ -10,14 +10,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// maskKey returns "...XXXX" showing only the last 4 characters of an API key.
-func maskKey(key string) string {
-	if len(key) > 4 {
-		return "..." + key[len(key)-4:]
-	}
-	return "***"
-}
-
 // PrincipalInterceptor enriches the active OTel span with attributes from the
 // authenticated Principal. It must be registered after the OTel interceptor
 // (so a span exists) and requires the authn middleware to have already placed

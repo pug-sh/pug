@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles/upsert"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/joho/godotenv"
 )
@@ -20,17 +19,6 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		slog.DebugContext(ctx, "No .env file found, relying on environment variables")
 	}
-
-	closeOtel, err := telemetry.SetupSDK(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to setup telemetry", slogx.Error(err))
-		os.Exit(1)
-	}
-	defer func() {
-		if err := closeOtel(ctx); err != nil {
-			slog.ErrorContext(ctx, "failed to shutdown telemetry", slogx.Error(err))
-		}
-	}()
 
 	if err := upsert.Run(ctx); err != nil {
 		slog.ErrorContext(ctx, "error starting profile upsert worker", slogx.Error(err))

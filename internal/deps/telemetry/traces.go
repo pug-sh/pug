@@ -8,7 +8,11 @@ import (
 )
 
 func newTracesExporter(ctx context.Context) (trace.SpanExporter, error) {
-	return otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure())
+	var opts []otlptracegrpc.Option
+	if insecureExporter() {
+		opts = append(opts, otlptracegrpc.WithInsecure())
+	}
+	return otlptracegrpc.New(ctx, opts...)
 }
 
 func newTracesProvider(ctx context.Context) (*trace.TracerProvider, error) {
