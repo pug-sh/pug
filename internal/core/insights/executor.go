@@ -330,6 +330,11 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 	series := make([]*insightsv1.TrendSeries, 0, len(orderedKeys))
 	for _, k := range orderedKeys {
 		e := entriesByKey[k]
+		// ClickHouse UNION ALL does not reliably apply a trailing ORDER BY across
+		// all branches in every version. Sort client-side to guarantee time order.
+		slices.SortStableFunc(e.points, func(a, b *insightsv1.DataPoint) int {
+			return a.GetTime().AsTime().Compare(b.GetTime().AsTime())
+		})
 		s := &insightsv1.TrendSeries{
 			EventKind: e.eventKind,
 			Points:    e.points,

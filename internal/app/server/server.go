@@ -49,7 +49,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer d.close(ctx)
+	defer d.close()
 
 	return start(ctx, d)
 }
@@ -57,7 +57,13 @@ func Run(ctx context.Context) error {
 func start(ctx context.Context, d *deps) error {
 	queriesRo := dbread.New(d.pgRo)
 
-	handlerOpts := connect.WithInterceptors(validate.NewInterceptor(), cottonrpc.ErrorInterceptor())
+	handlerOpts := connect.WithInterceptors(
+		d.otelInterceptor,
+		cottonrpc.LoggingInterceptor(),
+		validate.NewInterceptor(),
+		cottonrpc.ErrorInterceptor(),
+		cottonrpc.PrincipalInterceptor(),
+	)
 
 	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
 	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)

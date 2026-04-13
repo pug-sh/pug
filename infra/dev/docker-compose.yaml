@@ -42,7 +42,8 @@ services:
     environment:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-cotton}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     volumes:
       - clickhouse-data:/var/lib/clickhouse
     ports:
@@ -55,6 +56,11 @@ services:
         hard: 262144
     networks:
       - cotton-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   dragonfly:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.36.0

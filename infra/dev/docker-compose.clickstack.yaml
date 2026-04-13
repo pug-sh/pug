@@ -1,0 +1,62 @@
+services:
+  mongo:
+    image: mongo:5.0.32-focal
+    restart: always
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - cotton-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  otel-collector:
+    image: hyperdx/hyperdx-otel-collector:2
+    restart: always
+    environment:
+      CLICKHOUSE_ENDPOINT: "tcp://clickhouse:9000?dial_timeout=10s"
+      HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE: default
+      HYPERDX_LOG_LEVEL: info
+    ports:
+      - "13133:13133"
+      - "24225:24225"
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+    networks:
+      - cotton-net
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
+  hyperdx:
+    image: hyperdx/hyperdx-local:latest
+    restart: always
+    ports:
+      - "${HYPERDX_APP_PORT:-3001}:3000"
+      - "${HYPERDX_API_PORT:-8081}:8081"
+    environment:
+      FRONTEND_URL: http://localhost:3001
+      HYPERDX_API_KEY: ${HYPERDX_API_KEY:-hdx_dev_key}
+      HYPERDX_API_PORT: 8081
+      HYPERDX_APP_PORT: 3001
+      HYPERDX_APP_URL: http://localhost:3001
+      HYPERDX_LOG_LEVEL: info
+      MONGO_URI: mongodb://mongo:27017/hyperdx
+      SERVER_URL: http://127.0.0.1:8081
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: hyperdx
+      DEFAULT_CONNECTIONS: '[{"name":"Local ClickHouse","host":"http://clickhouse:8123","username":"default","password":""}]'
+      DEFAULT_SOURCES: '[{"from":{"databaseName":"default","tableName":"otel_logs"},"kind":"log","timestampValueExpression":"TimestampTime","name":"Logs","displayedTimestampValueExpression":"Timestamp","implicitColumnExpression":"Body","serviceNameExpression":"ServiceName","bodyExpression":"Body","eventAttributesExpression":"LogAttributes","resourceAttributesExpression":"ResourceAttributes","defaultTableSelectExpression":"Timestamp,ServiceName,SeverityText,Body","severityTextExpression":"SeverityText","traceIdExpression":"TraceId","spanIdExpression":"SpanId","connection":"Local ClickHouse","traceSourceId":"Traces","sessionSourceId":"Sessions","metricSourceId":"Metrics"},{"from":{"databaseName":"default","tableName":"otel_traces"},"kind":"trace","timestampValueExpression":"Timestamp","name":"Traces","displayedTimestampValueExpression":"Timestamp","implicitColumnExpression":"SpanName","serviceNameExpression":"ServiceName","eventAttributesExpression":"SpanAttributes","resourceAttributesExpression":"ResourceAttributes","defaultTableSelectExpression":"Timestamp,ServiceName,StatusCode,round(Duration/1e6),SpanName","traceIdExpression":"TraceId","spanIdExpression":"SpanId","durationExpression":"Duration","durationPrecision":9,"parentSpanIdExpression":"ParentSpanId","spanNameExpression":"SpanName","spanKindExpression":"SpanKind","statusCodeExpression":"StatusCode","statusMessageExpression":"StatusMessage","connection":"Local ClickHouse","logSourceId":"Logs","sessionSourceId":"Sessions","metricSourceId":"Metrics"},{"from":{"databaseName":"default","tableName":"otel_metrics_gauge"},"kind":"metric","timestampValueExpression":"TimeUnix","name":"Metrics","resourceAttributesExpression":"ResourceAttributes","connection":"Local ClickHouse","logSourceId":"Logs","traceSourceId":"Traces","sessionSourceId":"Sessions"}]'
+    networks:
+      - cotton-net
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
