@@ -911,3 +911,207 @@ func TestDecodeActivityFeedCursor_Invalid(t *testing.T) {
 		})
 	}
 }
+
+func TestGetActivityHeatmap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+
+	now := time.Now().Truncate(24 * time.Hour) // Start of today (UTC)
+
+	// Seed events across multiple days for user-1 in proj-1.
+	// Day 0 (today): 3 events, Day -1: 2 events, Day -3: 1 event.
+	seedEvents := []struct {
+		kind  string
+		day   time.Time
+		count int
+	}{
+		{"page_view", now, 3},
+		{"page_view", now.AddDate(0, 0, -1), 2},
+		{"signup", now.AddDate(0, 0, -3), 1},
+	}
+	for _, se := range seedEvents {
+		for i := 0; i < se.count; i++ {
+			err := ch.Conn.Exec(ctx,
+				`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				uuid.NewString(), "proj-1", "user-1", se.kind,
+				map[string]string{},
+				map[string]string{},
+				se.day.Add(time.Duration(i)*time.Hour),
+				uuid.NewString(),
+			)
+			if err != nil {
+				t.Fatalf("seed event: %v", err)
+			}
+		}
+	}
+
+	// Seed alias: anon-1 -> user-1.
+	err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+		"anon-1", "user-1", "ext-1", "proj-1",
+	)
+	if err != nil {
+		t.Fatalf("seed alias: %v", err)
+	}
+
+	// Seed event under alias on day -1.
+	err = ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "anon-1", "anon_action",
+		map[string]string{},
+		map[string]string{},
+		now.AddDate(0, 0, -1).Add(30*time.Minute),
+		uuid.NewString(),
+	)
+	if err != nil {
+		t.Fatalf("seed anon event: %v", err)
+	}
+
+	// Seed event in different project (should not appear in proj-1 queries).
+	err = ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-2", "user-1", "other_project",
+		map[string]string{},
+		map[string]string{},
+		now,
+		uuid.NewString(),
+	)
+	if err != nil {
+		t.Fatalf("seed other project event: %v", err)
+	}
+
+	reader := events.NewReader(ch.Conn)
+
+	fullRange := &commonv1.TimeRange{
+		From: timestamppb.New(now.AddDate(0, 0, -7)),
+		To:   timestamppb.New(now.AddDate(0, 0, 1)),
+	}
+
+	t.Run("aggregates per-day counts", func(t *testing.T) {
+		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+			ProjectID:  "proj-1",
+			DistinctID: "user-1",
+			TimeRange:  fullRange,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityHeatmap: %v", err)
+		}
+		// Day -3: 1, Day -1: 3 (2 user-1 + 1 anon-1), Day 0: 3
+		if len(days) != 3 {
+			t.Fatalf("expected 3 days, got %d: %+v", len(days), days)
+		}
+	})
+
+	t.Run("includes alias events", func(t *testing.T) {
+		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+			ProjectID:  "proj-1",
+			DistinctID: "user-1",
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(now.AddDate(0, 0, -2)),
+				To:   timestamppb.New(now),
+			},
+		})
+		if err != nil {
+			t.Fatalf("GetActivityHeatmap: %v", err)
+		}
+		// Day -1: 2 user-1 + 1 anon-1 = 3
+		if len(days) != 1 {
+			t.Fatalf("expected 1 day, got %d: %+v", len(days), days)
+		}
+		if days[0].Count != 3 {
+			t.Errorf("expected count 3 (including alias), got %d", days[0].Count)
+		}
+	})
+
+	t.Run("time range boundary is half-open", func(t *testing.T) {
+		// [from, to) — from inclusive, to exclusive
+		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+			ProjectID:  "proj-1",
+			DistinctID: "user-1",
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(now),
+				To:   timestamppb.New(now.AddDate(0, 0, 1)),
+			},
+		})
+		if err != nil {
+			t.Fatalf("GetActivityHeatmap: %v", err)
+		}
+		if len(days) != 1 {
+			t.Fatalf("expected 1 day, got %d: %+v", len(days), days)
+		}
+		if days[0].Count != 3 {
+			t.Errorf("expected 3 events on boundary day, got %d", days[0].Count)
+		}
+	})
+
+	t.Run("project isolation", func(t *testing.T) {
+		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+			ProjectID:  "proj-2",
+			DistinctID: "user-1",
+			TimeRange:  fullRange,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityHeatmap: %v", err)
+		}
+		if len(days) != 1 {
+			t.Fatalf("expected 1 day for proj-2, got %d", len(days))
+		}
+		if days[0].Count != 1 {
+			t.Errorf("expected 1 event for proj-2, got %d", days[0].Count)
+		}
+	})
+
+	t.Run("empty for nonexistent profile", func(t *testing.T) {
+		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+			ProjectID:  "proj-1",
+			DistinctID: "nonexistent",
+			TimeRange:  fullRange,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityHeatmap: %v", err)
+		}
+		if len(days) != 0 {
+			t.Errorf("expected 0 days for nonexistent profile, got %d", len(days))
+		}
+	})
+
+	t.Run("ordered by day ascending", func(t *testing.T) {
+		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+			ProjectID:  "proj-1",
+			DistinctID: "user-1",
+			TimeRange:  fullRange,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityHeatmap: %v", err)
+		}
+		for i := 1; i < len(days); i++ {
+			if days[i].Date <= days[i-1].Date {
+				t.Errorf("not ordered ASC: [%d]=%s <= [%d]=%s", i, days[i].Date, i-1, days[i-1].Date)
+			}
+		}
+	})
+
+	t.Run("multiple events same day bucketed correctly", func(t *testing.T) {
+		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+			ProjectID:  "proj-1",
+			DistinctID: "user-1",
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(now),
+				To:   timestamppb.New(now.AddDate(0, 0, 1)),
+			},
+		})
+		if err != nil {
+			t.Fatalf("GetActivityHeatmap: %v", err)
+		}
+		if len(days) != 1 {
+			t.Fatalf("expected 1 day, got %d", len(days))
+		}
+		if days[0].Count != 3 {
+			t.Errorf("expected 3 events bucketed on same day, got %d", days[0].Count)
+		}
+	})
+}

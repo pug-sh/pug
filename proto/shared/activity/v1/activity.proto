@@ -142,7 +142,7 @@ message GetPropertyValuesResponse {
 }
 
 message GetActivityHeatmapRequest {
-  string distinct_id = 1 [(buf.validate.field).string.min_len = 1];
+  string distinct_id = 1 [(buf.validate.field).required = true];
   // Optional. Defaults to the last 60 days when omitted.
   common.v1.TimeRange time_range = 2;
 }
@@ -151,7 +151,7 @@ message GetActivityHeatmapRequest {
 message HeatmapDay {
   // Date in YYYY-MM-DD format (UTC).
   string date = 1;
-  int32 count = 2;
+  int64 count = 2;
 }
 
 message GetActivityHeatmapResponse {

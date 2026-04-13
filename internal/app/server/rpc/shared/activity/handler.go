@@ -11,6 +11,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/events"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
+	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	activityv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1/activityv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -231,24 +232,27 @@ func (s *server) GetActivityHeatmap(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	to := time.Now().UTC()
-	from := to.AddDate(0, 0, -60)
-	if tr := req.Msg.GetTimeRange(); tr != nil {
-		from = tr.GetFrom().AsTime()
-		to = tr.GetTo().AsTime()
+	tr := req.Msg.GetTimeRange()
+	if tr == nil {
+		now := time.Now().UTC()
+		tr = &commonv1.TimeRange{
+			From: timestamppb.New(now.AddDate(0, 0, -60)),
+			To:   timestamppb.New(now),
+		}
 	}
 
 	days, err := s.eventsReader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
 		ProjectID:  principal.Project.ID,
 		DistinctID: req.Msg.GetDistinctId(),
-		From:       from,
-		To:         to,
+		TimeRange:  tr,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get activity heatmap",
 			slogx.Error(err),
 			slog.String("projectID", principal.Project.ID),
-			slog.String("distinctID", req.Msg.GetDistinctId()))
+			slog.String("distinctID", req.Msg.GetDistinctId()),
+			slog.Time("from", tr.GetFrom().AsTime()),
+			slog.Time("to", tr.GetTo().AsTime()))
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

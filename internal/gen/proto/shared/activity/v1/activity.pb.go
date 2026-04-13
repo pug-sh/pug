@@ -698,7 +698,7 @@ type HeatmapDay struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Date in YYYY-MM-DD format (UTC).
 	Date          string `protobuf:"bytes,1,opt,name=date" json:"date,omitempty"`
-	Count         int32  `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
+	Count         int64  `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -740,7 +740,7 @@ func (x *HeatmapDay) GetDate() string {
 	return ""
 }
 
-func (x *HeatmapDay) GetCount() int32 {
+func (x *HeatmapDay) GetCount() int64 {
 	if x != nil {
 		return x.Count
 	}
@@ -855,16 +855,16 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\n" +
 	"event_kind\x18\x03 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"3\n" +
 	"\x19GetPropertyValuesResponse\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values\"z\n" +
-	"\x19GetActivityHeatmapRequest\x12(\n" +
-	"\vdistinct_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values\"y\n" +
+	"\x19GetActivityHeatmapRequest\x12'\n" +
+	"\vdistinct_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"distinctId\x123\n" +
 	"\n" +
 	"time_range\x18\x02 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\"6\n" +
 	"\n" +
 	"HeatmapDay\x12\x12\n" +
 	"\x04date\x18\x01 \x01(\tR\x04date\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x05R\x05count\"P\n" +
+	"\x05count\x18\x02 \x01(\x03R\x05count\"P\n" +
 	"\x1aGetActivityHeatmapResponse\x122\n" +
 	"\x04days\x18\x01 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\x04days2\xbf\x04\n" +
 	"\x0fActivityService\x12j\n" +

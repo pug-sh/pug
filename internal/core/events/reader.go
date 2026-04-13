@@ -354,15 +354,14 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 // HeatmapDay holds the event count for a single calendar day.
 type HeatmapDay struct {
 	Date  string // YYYY-MM-DD (UTC)
-	Count int32
+	Count int64
 }
 
 // ActivityHeatmapParams configures the GetActivityHeatmap query.
 type ActivityHeatmapParams struct {
 	ProjectID  string
 	DistinctID string
-	From       time.Time
-	To         time.Time
+	TimeRange  *commonv1.TimeRange
 }
 
 // GetActivityHeatmap returns per-day event counts for a profile over the given window.
@@ -375,18 +374,22 @@ func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapP
 
 	ids := append([]string{params.DistinctID}, aliasIDs...)
 
-	sql, args, err := chq.NewQuery().
+	q := chq.NewQuery().
 		Select("toString(toDate(occur_time)) AS day", "count() AS cnt").
 		From("events").
 		Where(
 			chq.Eq("project_id", params.ProjectID),
 			chq.RawCond("distinct_id IN ?", ids),
-			chq.Gte("occur_time", params.From),
-			chq.Lt("occur_time", params.To),
-		).
-		GroupBy("day").
-		OrderBy("day").
-		Build()
+		)
+
+	if params.TimeRange != nil {
+		q.Where(
+			chq.Gte("occur_time", params.TimeRange.GetFrom().AsTime()),
+			chq.Lt("occur_time", params.TimeRange.GetTo().AsTime()),
+		)
+	}
+
+	sql, args, err := q.GroupBy("day").OrderBy("day").Build()
 	if err != nil {
 		return nil, fmt.Errorf("GetActivityHeatmap: build query failed for project %s: %w", params.ProjectID, err)
 	}
@@ -404,11 +407,11 @@ func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapP
 	var days []HeatmapDay
 	for rows.Next() {
 		var date string
-		var cnt uint64
+		var cnt int64
 		if err := rows.Scan(&date, &cnt); err != nil {
 			return nil, fmt.Errorf("GetActivityHeatmap: scan failed: %w", err)
 		}
-		days = append(days, HeatmapDay{Date: date, Count: int32(cnt)})
+		days = append(days, HeatmapDay{Date: date, Count: cnt})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("GetActivityHeatmap: row iteration failed: %w", err)
