@@ -16,14 +16,14 @@ import (
 const tracerName = "cotton/nats"
 
 var (
-	attrMessagingSystem     = attribute.Key("messaging.system")
-	attrDestinationName     = attribute.Key("messaging.destination.name")
-	attrBodySize            = attribute.Key("messaging.message.body.size")
-	attrMessagingOp         = attribute.Key("messaging.operation")
-	attrMessagingStream     = attribute.Key("messaging.destination.definition")
-	attrMessagingConsumer   = attribute.Key("messaging.consumer.name")
-	attrMessagingDeliveries = attribute.Key("messaging.message.delivery_number")
-	attrMessagingSeq        = attribute.Key("messaging.message.sequence")
+	attrMessagingSystem      = attribute.Key("messaging.system")
+	attrDestinationName      = attribute.Key("messaging.destination.name")
+	attrBodySize             = attribute.Key("messaging.message.body.size")
+	attrMessagingOp          = attribute.Key("messaging.operation")
+	attrMessagingStream      = attribute.Key("messaging.destination.definition")
+	attrMessagingConsumer    = attribute.Key("messaging.consumer.name")
+	attrMessagingDeliveries  = attribute.Key("messaging.message.delivery_number")
+	attrMessagingSeq         = attribute.Key("messaging.message.sequence")
 	attrMessagingConsumerSeq = attribute.Key("messaging.consumer.sequence")
 )
 

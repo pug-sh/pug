@@ -107,7 +107,8 @@ func (c *Conn) AsyncInsert(ctx context.Context, query string, wait bool, args ..
 	ctx, span := tracer().Start(ctx, c.spanName("async_insert"))
 	defer func() { span.End() }()
 	c.setSpanAttrs(span, query)
-	err := c.conn.AsyncInsert(c.withSpan(ctx), query, wait, args...)
+	ctx = ch.Context(ctx, ch.WithAsync(wait))
+	err := c.conn.Exec(c.withSpan(ctx), query, args...)
 	if err != nil {
 		telemetry.RecordError(ctx, err)
 	}
