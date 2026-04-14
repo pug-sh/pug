@@ -277,6 +277,29 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			slog.String("anonymousId", anonymousID))
 	}
 
+	// Pre-commit: build and validate all outgoing NATS messages.
+	// If any message is invalid, the deferred rollback aborts the transaction
+	// so Postgres and ClickHouse stay consistent.
+	targetUpsertData, err := buildUpsertData(ctx, merged.ID, projectID, merged.ExternalID.String, merged.Properties, false, merged.CreateTime.Time, merged.UpdateTime.Time)
+	if err != nil {
+		return err
+	}
+
+	// Soft-delete the anonymous profile in ClickHouse. We use time.Now() for
+	// create_time and update_time because the anonymous profile was never fetched
+	// and the soft-delete query returns only a row count. ReplacingMergeTree uses insert_time
+	// (set at CH write time via DEFAULT now64(3)) for version ordering, so
+	// these values don't affect dedup — they are purely informational.
+	anonDeleteData, err := buildUpsertData(ctx, anonymousID, projectID, "", nil, true, time.Now(), time.Now())
+	if err != nil {
+		return err
+	}
+
+	aliasData, err := buildAliasData(ctx, anonymousID, target.ID, target.ExternalID.String, projectID)
+	if err != nil {
+		return err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed committing merge transaction", slogx.Error(err),
 			slog.String("projectId", projectID),
@@ -290,37 +313,18 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		slog.String("targetId", target.ID),
 		slog.String("anonymousId", anonymousID))
 
-	// Publish upsert for target.
-	if err := publishUpsert(ctx, natsClient, merged.ID, projectID, merged.ExternalID.String, merged.Properties, false, merged.CreateTime.Time, merged.UpdateTime.Time); err != nil {
+	// Post-commit: publish pre-validated messages.
+	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, targetUpsertData); err != nil {
+		slog.ErrorContext(ctx, "failed publishing target upsert", slogx.Error(err),
+			slog.String("targetId", merged.ID))
 		return fmt.Errorf("post-commit publish target upsert: %w", err)
 	}
-
-	// Soft-delete the anonymous profile in ClickHouse. We use time.Now() for
-	// create_time and update_time because the anonymous profile was never fetched
-	// and the soft-delete query returns only a row count. ReplacingMergeTree uses insert_time
-	// (set at CH write time via DEFAULT now64(3)) for version ordering, so
-	// these values don't affect dedup — they are purely informational.
-	if err := publishUpsert(ctx, natsClient, anonymousID, projectID, "", nil, true, time.Now(), time.Now()); err != nil {
+	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, anonDeleteData); err != nil {
+		slog.ErrorContext(ctx, "failed publishing anonymous soft-delete", slogx.Error(err),
+			slog.String("anonymousId", anonymousID))
 		return fmt.Errorf("post-commit publish anonymous soft-delete: %w", err)
 	}
-
-	// Publish alias for traceability.
-	aliasMsg := &workerprofilesv1.ProfileAliasMessage{
-		AliasId:    anonymousID,
-		ProfileId:  target.ID,
-		ExternalId: target.ExternalID.String,
-		ProjectId:  projectID,
-	}
-
-	aliasData, err := proto.Marshal(aliasMsg)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed marshalling alias message", slogx.Error(err),
-			slog.String("anonymousId", anonymousID), slog.String("targetId", target.ID))
-		return natsworker.NewPermanentError(err).
-			With("worker", "profile-identify").
-			With("anonymous_id", anonymousID)
-	}
-	if err = natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
+	if err := natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
 		slog.ErrorContext(ctx, "failed publishing alias message", slogx.Error(err),
 			slog.String("anonymousId", anonymousID), slog.String("targetId", target.ID))
 		return fmt.Errorf("post-commit publish alias: %w", err)
@@ -329,11 +333,10 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	return nil
 }
 
-// publishUpsert publishes a profile state to the upsert NATS subject for
-// ClickHouse sync. When isDeleted is true, the message acts as a soft-delete
-// marker — the upsert worker writes the row with is_deleted=1, and queries
-// must filter on is_deleted=0.
-func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profileID, projectID, externalID string, properties map[string]any, isDeleted bool, createTime, updateTime time.Time) error {
+// buildUpsertData constructs, validates, and marshals a ProfileUpsertMessage.
+// Returns the serialized bytes ready for NATS publish, or a PermanentError
+// if the message is invalid (e.g. missing required fields).
+func buildUpsertData(ctx context.Context, profileID, projectID, externalID string, properties map[string]any, isDeleted bool, createTime, updateTime time.Time) ([]byte, error) {
 	if properties == nil {
 		properties = map[string]any{}
 	}
@@ -342,7 +345,7 @@ func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profi
 	if err != nil {
 		slog.ErrorContext(ctx, "failed converting profile properties to struct", slogx.Error(err),
 			slog.String("profileId", profileID))
-		return natsworker.NewPermanentError(err).
+		return nil, natsworker.NewPermanentError(err).
 			With("worker", "profile-identify").
 			With("profile_id", profileID)
 	}
@@ -357,16 +360,68 @@ func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profi
 		UpdateTime: timestamppb.New(updateTime),
 	}
 
-	upsertData, err := proto.Marshal(upsertMsg)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed marshalling profile upsert message", slogx.Error(err),
+	if err := protovalidate.Validate(upsertMsg); err != nil {
+		slog.ErrorContext(ctx, "constructed invalid upsert message", slogx.Error(err),
 			slog.String("profileId", profileID))
-		return natsworker.NewPermanentError(err).
+		return nil, natsworker.NewPermanentError(err).
 			With("worker", "profile-identify").
 			With("profile_id", profileID)
 	}
 
-	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, upsertData); err != nil {
+	data, err := proto.Marshal(upsertMsg)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed marshalling profile upsert message", slogx.Error(err),
+			slog.String("profileId", profileID))
+		return nil, natsworker.NewPermanentError(err).
+			With("worker", "profile-identify").
+			With("profile_id", profileID)
+	}
+
+	return data, nil
+}
+
+// buildAliasData constructs, validates, and marshals a ProfileAliasMessage.
+// Returns the serialized bytes ready for NATS publish, or a PermanentError
+// if the message is invalid.
+func buildAliasData(ctx context.Context, anonymousID, targetID, externalID, projectID string) ([]byte, error) {
+	aliasMsg := &workerprofilesv1.ProfileAliasMessage{
+		AliasId:    anonymousID,
+		ProfileId:  targetID,
+		ExternalId: externalID,
+		ProjectId:  projectID,
+	}
+
+	if err := protovalidate.Validate(aliasMsg); err != nil {
+		slog.ErrorContext(ctx, "constructed invalid alias message", slogx.Error(err),
+			slog.String("anonymousId", anonymousID), slog.String("targetId", targetID))
+		return nil, natsworker.NewPermanentError(err).
+			With("worker", "profile-identify").
+			With("anonymous_id", anonymousID)
+	}
+
+	data, err := proto.Marshal(aliasMsg)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed marshalling alias message", slogx.Error(err),
+			slog.String("anonymousId", anonymousID), slog.String("targetId", targetID))
+		return nil, natsworker.NewPermanentError(err).
+			With("worker", "profile-identify").
+			With("anonymous_id", anonymousID)
+	}
+
+	return data, nil
+}
+
+// publishUpsert builds and publishes a profile state to the upsert NATS subject for
+// ClickHouse sync. When isDeleted is true, the message acts as a soft-delete
+// marker — the upsert worker writes the row with is_deleted=1, and queries
+// must filter on is_deleted=0.
+func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profileID, projectID, externalID string, properties map[string]any, isDeleted bool, createTime, updateTime time.Time) error {
+	data, err := buildUpsertData(ctx, profileID, projectID, externalID, properties, isDeleted, createTime, updateTime)
+	if err != nil {
+		return err
+	}
+
+	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed publishing profile upsert", slogx.Error(err),
 			slog.String("profileId", profileID))
 		return fmt.Errorf("publish profile upsert: %w", err)

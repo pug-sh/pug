@@ -27,8 +27,8 @@ service ActivityService {
   // Defaults to the last 60 days when no time_range is provided.
   rpc GetActivityHeatmap(GetActivityHeatmapRequest) returns (GetActivityHeatmapResponse);
   // GetProfileStats returns aggregate statistics, device/browser/location context from the
-  // latest event, per-day heatmap data, and profile properties for a profile. Resolves aliases
-  // so merged anonymous events are included.
+  // latest event, per-day heatmap data (last 60 days), and profile properties for a profile.
+  // Resolves aliases so merged anonymous events are included.
   rpc GetProfileStats(GetProfileStatsRequest) returns (GetProfileStatsResponse);
 }
 
@@ -194,10 +194,11 @@ message ProfileStats {
 }
 
 message GetProfileStatsResponse {
+  // Not set when the profile has no recorded events in ClickHouse.
   ProfileStats stats = 1;
-  // Per-day event counts for a recent time window (currently 60 days).
+  // Per-day event counts for the last 60 days.
   repeated HeatmapDay heatmap = 2;
   // Profile properties set via identify() calls. Includes both auto-properties
-  // (prefixed with '$') and custom properties.
+  // (prefixed with '$') and custom properties. Not set when no profile record exists in PostgreSQL.
   google.protobuf.Struct properties = 3;
 }

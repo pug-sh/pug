@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/fivebitsio/cotton/internal/app/workers/profiles"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
@@ -1173,5 +1174,76 @@ func TestSoftDeletedProfileInvisibleToList(t *testing.T) {
 	}
 	if listed[0].ID != keepID {
 		t.Errorf("listed profile ID = %q, want %q (active profile)", listed[0].ID, keepID)
+	}
+}
+
+func TestBuildUpsertData_ValidationRejectsMissingFields(t *testing.T) {
+	tests := []struct {
+		name      string
+		profileID string
+		projectID string
+	}{
+		{name: "empty profile_id", profileID: "", projectID: "proj1"},
+		{name: "empty project_id", profileID: "p1", projectID: ""},
+		{name: "both empty", profileID: "", projectID: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := buildUpsertData(context.Background(), tc.profileID, tc.projectID, "ext1", nil, false, time.Now(), time.Now())
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !natsworker.IsPermanentError(err) {
+				t.Errorf("expected PermanentError, got %T: %v", err, err)
+			}
+		})
+	}
+}
+
+func TestBuildUpsertData_ValidMessage(t *testing.T) {
+	data, err := buildUpsertData(context.Background(), "p1", "proj1", "ext1", map[string]any{"key": "val"}, false, time.Now(), time.Now())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("expected non-empty data")
+	}
+}
+
+func TestBuildAliasData_ValidationRejectsMissingFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		anonymousID string
+		targetID   string
+		externalID string
+		projectID  string
+	}{
+		{name: "empty alias_id", anonymousID: "", targetID: "t1", externalID: "e1", projectID: "proj1"},
+		{name: "empty profile_id", anonymousID: "a1", targetID: "", externalID: "e1", projectID: "proj1"},
+		{name: "empty external_id", anonymousID: "a1", targetID: "t1", externalID: "", projectID: "proj1"},
+		{name: "empty project_id", anonymousID: "a1", targetID: "t1", externalID: "e1", projectID: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := buildAliasData(context.Background(), tc.anonymousID, tc.targetID, tc.externalID, tc.projectID)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !natsworker.IsPermanentError(err) {
+				t.Errorf("expected PermanentError, got %T: %v", err, err)
+			}
+		})
+	}
+}
+
+func TestBuildAliasData_ValidMessage(t *testing.T) {
+	data, err := buildAliasData(context.Background(), "anon1", "target1", "ext1", "proj1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("expected non-empty data")
 	}
 }

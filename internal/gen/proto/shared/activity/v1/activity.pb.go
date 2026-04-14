@@ -974,11 +974,12 @@ func (x *ProfileStats) GetIp() string {
 
 type GetProfileStatsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Stats *ProfileStats          `protobuf:"bytes,1,opt,name=stats" json:"stats,omitempty"`
-	// Per-day event counts for a recent time window (currently 60 days).
+	// Not set when the profile has no recorded events in ClickHouse.
+	Stats *ProfileStats `protobuf:"bytes,1,opt,name=stats" json:"stats,omitempty"`
+	// Per-day event counts for the last 60 days.
 	Heatmap []*HeatmapDay `protobuf:"bytes,2,rep,name=heatmap" json:"heatmap,omitempty"`
 	// Profile properties set via identify() calls. Includes both auto-properties
-	// (prefixed with '$') and custom properties.
+	// (prefixed with '$') and custom properties. Not set when no profile record exists in PostgreSQL.
 	Properties    *structpb.Struct `protobuf:"bytes,3,opt,name=properties" json:"properties,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
