@@ -70,3 +70,14 @@ func TestGetActivityHeatmap_Unauthenticated(t *testing.T) {
 		t.Errorf("got code %v, want CodeUnauthenticated", code)
 	}
 }
+
+func TestGetProfileStats_Unauthenticated(t *testing.T) {
+	s := &server{}
+	_, err := s.GetProfileStats(context.Background(), connect.NewRequest(&activityv1.GetProfileStatsRequest{}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
+		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	}
+}

@@ -315,7 +315,7 @@ func TestGetActivityFeed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Encode: %v", err)
 		}
-		decoded, err := events.DecodeActivityFeedCursor(token)
+		decoded, err := events.DecodeEventCursor(token)
 		if err != nil {
 			t.Fatalf("Decode: %v", err)
 		}
@@ -866,8 +866,8 @@ func TestGetEventExplorer(t *testing.T) {
 	})
 }
 
-func TestActivityFeedCursor_RoundTrip(t *testing.T) {
-	original := &events.ActivityFeedCursor{
+func TestEventCursor_RoundTrip(t *testing.T) {
+	original := &events.EventCursor{
 		OccurTime: time.Date(2026, 3, 26, 12, 0, 0, 0, time.UTC),
 		EventID:   "evt-123",
 	}
@@ -880,7 +880,7 @@ func TestActivityFeedCursor_RoundTrip(t *testing.T) {
 		t.Fatal("Encode returned empty token")
 	}
 
-	decoded, err := events.DecodeActivityFeedCursor(token)
+	decoded, err := events.DecodeEventCursor(token)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -893,7 +893,7 @@ func TestActivityFeedCursor_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestDecodeActivityFeedCursor_Invalid(t *testing.T) {
+func TestDecodeEventCursor_Invalid(t *testing.T) {
 	tests := []struct {
 		name  string
 		token string
@@ -905,7 +905,7 @@ func TestDecodeActivityFeedCursor_Invalid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := events.DecodeActivityFeedCursor(tt.token); err == nil {
+			if _, err := events.DecodeEventCursor(tt.token); err == nil {
 				t.Error("expected error, got nil")
 			}
 		})
@@ -1003,6 +1003,15 @@ func TestGetActivityHeatmap(t *testing.T) {
 		// Day -3: 1, Day -1: 3 (2 user-1 + 1 anon-1), Day 0: 3
 		if len(days) != 3 {
 			t.Fatalf("expected 3 days, got %d: %+v", len(days), days)
+		}
+		if days[0].Count != 1 {
+			t.Errorf("day -3: got count %d, want 1", days[0].Count)
+		}
+		if days[1].Count != 3 {
+			t.Errorf("day -1: got count %d, want 3 (2 direct + 1 alias)", days[1].Count)
+		}
+		if days[2].Count != 3 {
+			t.Errorf("day 0: got count %d, want 3", days[2].Count)
 		}
 	})
 
@@ -1112,6 +1121,328 @@ func TestGetActivityHeatmap(t *testing.T) {
 		}
 		if days[0].Count != 3 {
 			t.Errorf("expected 3 events bucketed on same day, got %d", days[0].Count)
+		}
+	})
+
+	t.Run("nil time range returns all events", func(t *testing.T) {
+		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+			ProjectID:  "proj-1",
+			DistinctID: "user-1",
+			TimeRange:  nil,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityHeatmap: %v", err)
+		}
+		// All seeded days should be present: day -3, day -1, day 0 (7 events total across 3 days).
+		if len(days) != 3 {
+			t.Fatalf("expected 3 days with nil time range, got %d: %+v", len(days), days)
+		}
+		var total int64
+		for _, d := range days {
+			total += d.Count
+		}
+		if total != 7 {
+			t.Errorf("expected 7 total events across all days, got %d", total)
+		}
+	})
+
+	t.Run("alias-only events with no direct events", func(t *testing.T) {
+		// Create a profile with no direct events, only alias events.
+		err := ch.Conn.Exec(ctx,
+			`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+			"anon-alias-only", "alias-only-user", "ext-alias-only", "proj-1",
+		)
+		if err != nil {
+			t.Fatalf("seed alias: %v", err)
+		}
+		err = ch.Conn.Exec(ctx,
+			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			uuid.NewString(), "proj-1", "anon-alias-only", "page_view",
+			map[string]string{},
+			map[string]string{},
+			now,
+			uuid.NewString(),
+		)
+		if err != nil {
+			t.Fatalf("seed alias event: %v", err)
+		}
+
+		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+			ProjectID:  "proj-1",
+			DistinctID: "alias-only-user",
+			TimeRange:  fullRange,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityHeatmap: %v", err)
+		}
+		if len(days) != 1 {
+			t.Fatalf("expected 1 day from alias-only events, got %d: %+v", len(days), days)
+		}
+		if days[0].Count != 1 {
+			t.Errorf("expected 1 event from alias, got %d", days[0].Count)
+		}
+	})
+}
+
+func TestGetProfileStats(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+
+	now := time.Now().Truncate(24 * time.Hour)
+
+	// Seed events with auto_properties for user-1 in proj-1.
+	// Oldest event (day -5): browser=Firefox.
+	// Latest event (day 0): browser=Chrome — should be picked by argMax.
+	oldProps := map[string]string{
+		"$browser":        "Firefox",
+		"$browserVersion": "120",
+		"$os":             "Linux",
+		"$osVersion":      "6",
+		"$country":        "Germany",
+		"$city":           "Berlin",
+		"$ip":             "10.0.0.1",
+	}
+	latestProps := map[string]string{
+		"$browser":        "Chrome",
+		"$browserVersion": "124",
+		"$os":             "Mac OS X",
+		"$osVersion":      "14",
+		"$device":         "MacBook",
+		"$country":        "United States",
+		"$city":           "San Francisco",
+		"$ip":             "10.0.0.2",
+	}
+
+	// Day -5: 1 event with old props.
+	err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "user-1", "signup",
+		oldProps, map[string]string{},
+		now.AddDate(0, 0, -5),
+		uuid.NewString(),
+	)
+	if err != nil {
+		t.Fatalf("seed old event: %v", err)
+	}
+
+	// Day 0: 2 events with latest props.
+	for i := 0; i < 2; i++ {
+		err = ch.Conn.Exec(ctx,
+			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			uuid.NewString(), "proj-1", "user-1", "page_view",
+			latestProps, map[string]string{},
+			now.Add(time.Duration(i)*time.Hour),
+			uuid.NewString(),
+		)
+		if err != nil {
+			t.Fatalf("seed latest event: %v", err)
+		}
+	}
+
+	// Seed alias: anon-1 -> user-1.
+	err = ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+		"anon-1", "user-1", "ext-1", "proj-1",
+	)
+	if err != nil {
+		t.Fatalf("seed alias: %v", err)
+	}
+
+	// Day -2: 1 event under alias.
+	err = ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "anon-1", "anon_action",
+		map[string]string{"$browser": "Safari"}, map[string]string{},
+		now.AddDate(0, 0, -2),
+		uuid.NewString(),
+	)
+	if err != nil {
+		t.Fatalf("seed alias event: %v", err)
+	}
+
+	// Seed event in different project (should not appear).
+	err = ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-2", "user-1", "other_project",
+		map[string]string{}, map[string]string{},
+		now,
+		uuid.NewString(),
+	)
+	if err != nil {
+		t.Fatalf("seed other project event: %v", err)
+	}
+
+	reader := events.NewReader(ch.Conn)
+
+	t.Run("returns stats with auto_properties from latest event", func(t *testing.T) {
+		stats, heatmap, err := reader.GetProfileStats(ctx, "proj-1", "user-1")
+		if err != nil {
+			t.Fatalf("GetProfileStats: %v", err)
+		}
+		if stats == nil {
+			t.Fatal("expected non-nil stats")
+		}
+
+		// 3 direct + 1 alias = 4 total events.
+		if stats.TotalEvents != 4 {
+			t.Errorf("TotalEvents: got %d, want 4", stats.TotalEvents)
+		}
+
+		// FirstSeen should be day -5.
+		wantFirst := now.AddDate(0, 0, -5)
+		if !stats.FirstSeen.Truncate(24 * time.Hour).Equal(wantFirst) {
+			t.Errorf("FirstSeen: got %v, want %v", stats.FirstSeen, wantFirst)
+		}
+
+		// LastSeen should be day 0.
+		if !stats.LastSeen.Truncate(24 * time.Hour).Equal(now) {
+			t.Errorf("LastSeen: got %v, want %v", stats.LastSeen, now)
+		}
+
+		// Auto-properties should come from the latest event (Chrome, not Firefox).
+		if stats.Browser != "Chrome" {
+			t.Errorf("Browser: got %q, want %q", stats.Browser, "Chrome")
+		}
+		if stats.BrowserVersion != "124" {
+			t.Errorf("BrowserVersion: got %q, want %q", stats.BrowserVersion, "124")
+		}
+		if stats.OS != "Mac OS X" {
+			t.Errorf("OS: got %q, want %q", stats.OS, "Mac OS X")
+		}
+		if stats.Country != "United States" {
+			t.Errorf("Country: got %q, want %q", stats.Country, "United States")
+		}
+		if stats.IP != "10.0.0.2" {
+			t.Errorf("IP: got %q, want %q", stats.IP, "10.0.0.2")
+		}
+
+		// Heatmap should contain days within the last 60 days.
+		if len(heatmap) == 0 {
+			t.Fatal("expected non-empty heatmap")
+		}
+	})
+
+	t.Run("includes alias events in aggregation", func(t *testing.T) {
+		stats, _, err := reader.GetProfileStats(ctx, "proj-1", "user-1")
+		if err != nil {
+			t.Fatalf("GetProfileStats: %v", err)
+		}
+		if stats == nil {
+			t.Fatal("expected non-nil stats")
+		}
+		// 3 direct (user-1) + 1 alias (anon-1) = 4.
+		if stats.TotalEvents != 4 {
+			t.Errorf("TotalEvents: got %d, want 4 (including alias)", stats.TotalEvents)
+		}
+	})
+
+	t.Run("returns nil when no events exist", func(t *testing.T) {
+		stats, heatmap, err := reader.GetProfileStats(ctx, "proj-1", "nonexistent")
+		if err != nil {
+			t.Fatalf("GetProfileStats: %v", err)
+		}
+		if stats != nil {
+			t.Errorf("expected nil stats, got %+v", stats)
+		}
+		if heatmap != nil {
+			t.Errorf("expected nil heatmap, got %+v", heatmap)
+		}
+	})
+
+	t.Run("project isolation", func(t *testing.T) {
+		stats, _, err := reader.GetProfileStats(ctx, "proj-2", "user-1")
+		if err != nil {
+			t.Fatalf("GetProfileStats: %v", err)
+		}
+		if stats == nil {
+			t.Fatal("expected non-nil stats for proj-2")
+		}
+		if stats.TotalEvents != 1 {
+			t.Errorf("TotalEvents: got %d, want 1 for proj-2", stats.TotalEvents)
+		}
+	})
+
+	t.Run("heatmap covers last 60 days only", func(t *testing.T) {
+		// Seed an event older than 60 days — should appear in stats but not heatmap.
+		err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			uuid.NewString(), "proj-1", "user-1", "old_event",
+			map[string]string{}, map[string]string{},
+			now.AddDate(0, 0, -90),
+			uuid.NewString(),
+		)
+		if err != nil {
+			t.Fatalf("seed old event: %v", err)
+		}
+
+		stats, heatmap, err := reader.GetProfileStats(ctx, "proj-1", "user-1")
+		if err != nil {
+			t.Fatalf("GetProfileStats: %v", err)
+		}
+		if stats == nil {
+			t.Fatal("expected non-nil stats")
+		}
+
+		// Stats should include the old event (5 total now).
+		if stats.TotalEvents != 5 {
+			t.Errorf("TotalEvents: got %d, want 5 (including 90-day-old event)", stats.TotalEvents)
+		}
+
+		// Heatmap should NOT include the 90-day-old event.
+		for _, d := range heatmap {
+			dayTime, _ := time.Parse("2006-01-02", d.Date)
+			if dayTime.Before(now.AddDate(0, 0, -60)) {
+				t.Errorf("heatmap contains day %s which is older than 60 days", d.Date)
+			}
+		}
+	})
+
+	t.Run("sparse auto_properties returns empty strings for missing keys", func(t *testing.T) {
+		// Seed a newer event with only $os and $device — no $browser, $country, etc.
+		sparseProps := map[string]string{
+			"$os":     "Android",
+			"$device": "Pixel 8",
+		}
+		err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			uuid.NewString(), "proj-1", "user-1", "sparse_event",
+			sparseProps, map[string]string{},
+			now.Add(10*time.Hour), // latest event
+			uuid.NewString(),
+		)
+		if err != nil {
+			t.Fatalf("seed sparse event: %v", err)
+		}
+
+		stats, _, err := reader.GetProfileStats(ctx, "proj-1", "user-1")
+		if err != nil {
+			t.Fatalf("GetProfileStats: %v", err)
+		}
+		if stats == nil {
+			t.Fatal("expected non-nil stats")
+		}
+
+		// Present keys should have values from the sparse event.
+		if stats.OS != "Android" {
+			t.Errorf("OS: got %q, want %q", stats.OS, "Android")
+		}
+		if stats.Device != "Pixel 8" {
+			t.Errorf("Device: got %q, want %q", stats.Device, "Pixel 8")
+		}
+
+		// Missing keys should be empty strings, not errors.
+		if stats.Browser != "" {
+			t.Errorf("Browser: got %q, want empty string", stats.Browser)
+		}
+		if stats.Country != "" {
+			t.Errorf("Country: got %q, want empty string", stats.Country)
+		}
+		if stats.IP != "" {
+			t.Errorf("IP: got %q, want empty string", stats.IP)
 		}
 	})
 }

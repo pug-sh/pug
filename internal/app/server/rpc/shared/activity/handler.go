@@ -61,7 +61,7 @@ func (s *server) GetActivityFeed(
 	}
 
 	if req.Msg.GetPageToken() != "" {
-		cursor, err := events.DecodeActivityFeedCursor(req.Msg.GetPageToken())
+		cursor, err := events.DecodeEventCursor(req.Msg.GetPageToken())
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
 		}
@@ -136,7 +136,7 @@ func (s *server) GetEventExplorer(
 	}
 
 	if req.Msg.GetPageToken() != "" {
-		cursor, err := events.DecodeActivityFeedCursor(req.Msg.GetPageToken())
+		cursor, err := events.DecodeEventCursor(req.Msg.GetPageToken())
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
 		}
@@ -247,7 +247,7 @@ func (s *server) GetActivityHeatmap(
 	if tr == nil {
 		now := time.Now().UTC()
 		tr = &commonv1.TimeRange{
-			From: timestamppb.New(now.AddDate(0, 0, -60)),
+			From: timestamppb.New(now.AddDate(0, 0, -events.DefaultHeatmapDays)),
 			To:   timestamppb.New(now),
 		}
 	}
@@ -264,6 +264,7 @@ func (s *server) GetActivityHeatmap(
 			slog.String("distinctID", req.Msg.GetDistinctId()),
 			slog.Time("from", tr.GetFrom().AsTime()),
 			slog.Time("to", tr.GetTo().AsTime()))
+		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
