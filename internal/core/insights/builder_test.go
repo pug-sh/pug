@@ -2444,3 +2444,130 @@ func TestGroupFunnelSeries_SortedInputPreservesOrder(t *testing.T) {
 		t.Errorf("expected second series US, got %v", series[1].Breakdown)
 	}
 }
+
+// TestPropertyAggregation_Trends verifies SUM/AVG/MIN/MAX generate correct SQL in trends queries.
+func TestPropertyAggregation_Trends(t *testing.T) {
+	tests := []struct {
+		name        string
+		agg         insightsv1.AggregationType
+		property    string
+		wantContain string
+	}{
+		{
+			name:        "SUM",
+			agg:         insightsv1.AggregationType_AGGREGATION_TYPE_SUM,
+			property:    "revenue",
+			wantContain: "sum(toFloat64OrNull(",
+		},
+		{
+			name:        "AVG",
+			agg:         insightsv1.AggregationType_AGGREGATION_TYPE_AVG,
+			property:    "revenue",
+			wantContain: "ifNull(avg(toFloat64OrNull(",
+		},
+		{
+			name:        "MIN",
+			agg:         insightsv1.AggregationType_AGGREGATION_TYPE_MIN,
+			property:    "load_time",
+			wantContain: "ifNull(min(toFloat64OrNull(",
+		},
+		{
+			name:        "MAX",
+			agg:         insightsv1.AggregationType_AGGREGATION_TYPE_MAX,
+			property:    "$session_duration",
+			wantContain: "ifNull(max(toFloat64OrNull(",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &insightsv1.QueryRequest{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+				Events: []*insightsv1.EventQuery{
+					{
+						Event:               &commonv1.EventFilter{Kind: "purchase"},
+						Aggregation:         tc.agg,
+						AggregationProperty: tc.property,
+					},
+				},
+			}
+
+			q, err := insights.BuildTrendsQuery(req, "proj_123")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			sql := q.SQL()
+
+			if !strings.Contains(sql, tc.wantContain) {
+				t.Errorf("expected %q in SQL, got: %s", tc.wantContain, sql)
+			}
+			if !strings.Contains(sql, "'"+tc.property+"'") {
+				t.Errorf("expected property name %q in SQL, got: %s", tc.property, sql)
+			}
+		})
+	}
+}
+
+// TestPropertyAggregation_BackwardCompat verifies count-based aggs still work and ignore the property.
+func TestPropertyAggregation_BackwardCompat(t *testing.T) {
+	tests := []struct {
+		name        string
+		agg         insightsv1.AggregationType
+		wantContain string
+	}{
+		{"TOTAL", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "count(*)"},
+		{"UNIQUE_USERS", insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS, "count(DISTINCT distinct_id)"},
+		{"PER_USER_AVG", insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG, "count(*)) / toFloat64(count(DISTINCT distinct_id))"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &insightsv1.QueryRequest{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: tc.agg},
+				},
+			}
+
+			q, err := insights.BuildTrendsQuery(req, "proj_123")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(q.SQL(), tc.wantContain) {
+				t.Errorf("expected %q in SQL, got: %s", tc.wantContain, q.SQL())
+			}
+		})
+	}
+}
+
+// TestPropertyAggregation_Segmentation verifies SUM generates correct SQL in segmentation queries.
+func TestPropertyAggregation_Segmentation(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Events: []*insightsv1.EventQuery{
+			{
+				Event:               &commonv1.EventFilter{Kind: "purchase"},
+				Aggregation:         insightsv1.AggregationType_AGGREGATION_TYPE_SUM,
+				AggregationProperty: "revenue",
+			},
+		},
+	}
+
+	q, err := insights.BuildSegmentationQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := q.SQL()
+
+	if !strings.Contains(sql, "sum(toFloat64OrNull(") {
+		t.Errorf("expected sum(toFloat64OrNull( in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "'revenue'") {
+		t.Errorf("expected 'revenue' in SQL, got: %s", sql)
+	}
+}

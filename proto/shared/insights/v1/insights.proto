@@ -171,6 +171,10 @@ enum AggregationType {
   AGGREGATION_TYPE_TOTAL = 1;
   AGGREGATION_TYPE_UNIQUE_USERS = 2;
   AGGREGATION_TYPE_PER_USER_AVG = 3;
+  AGGREGATION_TYPE_SUM = 4;
+  AGGREGATION_TYPE_AVG = 5;
+  AGGREGATION_TYPE_MIN = 6;
+  AGGREGATION_TYPE_MAX = 7;
 }
 
 message FilterGroup {
@@ -179,10 +183,24 @@ message FilterGroup {
 }
 
 message EventQuery {
+  option (buf.validate.message).cel = {
+    id: "event_query.property_required_for_numeric_agg"
+    message: "aggregation_property is required for SUM, AVG, MIN, and MAX aggregation types"
+    expression:
+      "!(this.aggregation in ["
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX"
+      "]) || this.aggregation_property != ''"
+  };
+
   common.v1.EventFilter event = 1;
   // Aggregation type. Defaults to TOTAL when unspecified.
   // Only used for trends and segmentation; ignored for funnel and retention.
   AggregationType aggregation = 2 [(buf.validate.field).enum.defined_only = true];
+  // Property name to aggregate on. Required for SUM/AVG/MIN/MAX; ignored for TOTAL/UNIQUE_USERS/PER_USER_AVG.
+  string aggregation_property = 3 [(buf.validate.field).string.pattern = "^\\$?[a-zA-Z0-9_.-]*$"];
 }
 
 message Breakdown {

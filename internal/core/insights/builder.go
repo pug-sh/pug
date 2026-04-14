@@ -263,7 +263,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 		}
 
 		query := chq.NewQuery().
-			Select(append(selectExprs, aggregationExpr(agg)+" AS value")...).
+			Select(append(selectExprs, aggregationExpr(agg, ev.GetAggregationProperty())+" AS value")...).
 			From("events").
 			Where(
 				chq.Eq("project_id", projectID),
@@ -302,7 +302,17 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 }
 
 func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
-	aggExpr := aggregationExpr(aggregationType(req))
+	firstEvent := func() *insightsv1.EventQuery {
+		if len(req.GetEvents()) > 0 {
+			return req.GetEvents()[0]
+		}
+		return nil
+	}()
+	var aggProp string
+	if firstEvent != nil {
+		aggProp = firstEvent.GetAggregationProperty()
+	}
+	aggExpr := aggregationExpr(aggregationType(req), aggProp)
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
@@ -956,8 +966,23 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 	return insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
 }
 
-// aggregationExpr returns the SQL aggregation expression for the given type.
-func aggregationExpr(agg insightsv1.AggregationType) string {
+// aggregationExpr returns the SQL aggregation expression for the given type and optional property.
+// For TOTAL/UNIQUE_USERS/PER_USER_AVG, the property is ignored.
+// For SUM/AVG/MIN/MAX, property must be non-empty (enforced by proto validation).
+func aggregationExpr(agg insightsv1.AggregationType, property string) string {
+	if property != "" {
+		numeric := "toFloat64OrNull(" + chq.PropertyExpr(property) + ")"
+		switch agg {
+		case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
+			return "sum(" + numeric + ")"
+		case insightsv1.AggregationType_AGGREGATION_TYPE_AVG:
+			return "ifNull(avg(" + numeric + "), 0)"
+		case insightsv1.AggregationType_AGGREGATION_TYPE_MIN:
+			return "ifNull(min(" + numeric + "), 0)"
+		case insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
+			return "ifNull(max(" + numeric + "), 0)"
+		}
+	}
 	switch agg {
 	case insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS:
 		return "toFloat64(count(DISTINCT distinct_id))"

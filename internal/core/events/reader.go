@@ -11,8 +11,8 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	chq "github.com/fivebitsio/cotton/internal/core/clickhouse"
-	"github.com/fivebitsio/cotton/internal/geo"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	"github.com/fivebitsio/cotton/internal/geo"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/fivebitsio/cotton/internal/useragent"
 )

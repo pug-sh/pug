@@ -141,6 +141,10 @@ const (
 	AggregationType_AGGREGATION_TYPE_TOTAL        AggregationType = 1
 	AggregationType_AGGREGATION_TYPE_UNIQUE_USERS AggregationType = 2
 	AggregationType_AGGREGATION_TYPE_PER_USER_AVG AggregationType = 3
+	AggregationType_AGGREGATION_TYPE_SUM          AggregationType = 4
+	AggregationType_AGGREGATION_TYPE_AVG          AggregationType = 5
+	AggregationType_AGGREGATION_TYPE_MIN          AggregationType = 6
+	AggregationType_AGGREGATION_TYPE_MAX          AggregationType = 7
 )
 
 // Enum value maps for AggregationType.
@@ -150,12 +154,20 @@ var (
 		1: "AGGREGATION_TYPE_TOTAL",
 		2: "AGGREGATION_TYPE_UNIQUE_USERS",
 		3: "AGGREGATION_TYPE_PER_USER_AVG",
+		4: "AGGREGATION_TYPE_SUM",
+		5: "AGGREGATION_TYPE_AVG",
+		6: "AGGREGATION_TYPE_MIN",
+		7: "AGGREGATION_TYPE_MAX",
 	}
 	AggregationType_value = map[string]int32{
 		"AGGREGATION_TYPE_UNSPECIFIED":  0,
 		"AGGREGATION_TYPE_TOTAL":        1,
 		"AGGREGATION_TYPE_UNIQUE_USERS": 2,
 		"AGGREGATION_TYPE_PER_USER_AVG": 3,
+		"AGGREGATION_TYPE_SUM":          4,
+		"AGGREGATION_TYPE_AVG":          5,
+		"AGGREGATION_TYPE_MIN":          6,
+		"AGGREGATION_TYPE_MAX":          7,
 	}
 )
 
@@ -619,9 +631,11 @@ type EventQuery struct {
 	Event *v1.EventFilter        `protobuf:"bytes,1,opt,name=event" json:"event,omitempty"`
 	// Aggregation type. Defaults to TOTAL when unspecified.
 	// Only used for trends and segmentation; ignored for funnel and retention.
-	Aggregation   AggregationType `protobuf:"varint,2,opt,name=aggregation,enum=shared.insights.v1.AggregationType" json:"aggregation,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Aggregation AggregationType `protobuf:"varint,2,opt,name=aggregation,enum=shared.insights.v1.AggregationType" json:"aggregation,omitempty"`
+	// Property name to aggregate on. Required for SUM/AVG/MIN/MAX; ignored for TOTAL/UNIQUE_USERS/PER_USER_AVG.
+	AggregationProperty string `protobuf:"bytes,3,opt,name=aggregation_property,json=aggregationProperty" json:"aggregation_property,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *EventQuery) Reset() {
@@ -666,6 +680,13 @@ func (x *EventQuery) GetAggregation() AggregationType {
 		return x.Aggregation
 	}
 	return AggregationType_AGGREGATION_TYPE_UNSPECIFIED
+}
+
+func (x *EventQuery) GetAggregationProperty() string {
+	if x != nil {
+		return x.AggregationProperty
+	}
+	return ""
 }
 
 type Breakdown struct {
@@ -1505,11 +1526,13 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x84\x01\n" +
 	"\vFilterGroup\x12=\n" +
 	"\afilters\x18\x01 \x03(\v2\x19.common.v1.PropertyFilterB\b\xbaH\x05\x92\x01\x02\b\x01R\afilters\x126\n" +
-	"\boperator\x18\x02 \x01(\x0e2\x1a.common.v1.LogicalOperatorR\boperator\"\x8b\x01\n" +
+	"\boperator\x18\x02 \x01(\x0e2\x1a.common.v1.LogicalOperatorR\boperator\"\x89\x05\n" +
 	"\n" +
 	"EventQuery\x12,\n" +
 	"\x05event\x18\x01 \x01(\v2\x16.common.v1.EventFilterR\x05event\x12O\n" +
-	"\vaggregation\x18\x02 \x01(\x0e2#.shared.insights.v1.AggregationTypeB\b\xbaH\x05\x82\x01\x02\x10\x01R\vaggregation\"G\n" +
+	"\vaggregation\x18\x02 \x01(\x0e2#.shared.insights.v1.AggregationTypeB\b\xbaH\x05\x82\x01\x02\x10\x01R\vaggregation\x12N\n" +
+	"\x14aggregation_property\x18\x03 \x01(\tB\x1b\xbaH\x18r\x162\x14^\\$?[a-zA-Z0-9_.-]*$R\x13aggregationProperty:\xab\x03\xbaH\xa7\x03\x1a\xa4\x03\n" +
+	"-event_query.property_required_for_numeric_agg\x12Maggregation_property is required for SUM, AVG, MIN, and MAX aggregation types\x1a\xa3\x02!(this.aggregation in [  shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX]) || this.aggregation_property != ''\"G\n" +
 	"\tBreakdown\x12:\n" +
 	"\bproperty\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\bproperty\"G\n" +
 	"\fTrendsResult\x127\n" +
@@ -1580,12 +1603,16 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x10GRANULARITY_HOUR\x10\x01\x12\x13\n" +
 	"\x0fGRANULARITY_DAY\x10\x02\x12\x14\n" +
 	"\x10GRANULARITY_WEEK\x10\x03\x12\x15\n" +
-	"\x11GRANULARITY_MONTH\x10\x04*\x95\x01\n" +
+	"\x11GRANULARITY_MONTH\x10\x04*\xfd\x01\n" +
 	"\x0fAggregationType\x12 \n" +
 	"\x1cAGGREGATION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16AGGREGATION_TYPE_TOTAL\x10\x01\x12!\n" +
 	"\x1dAGGREGATION_TYPE_UNIQUE_USERS\x10\x02\x12!\n" +
-	"\x1dAGGREGATION_TYPE_PER_USER_AVG\x10\x032\xa0\x03\n" +
+	"\x1dAGGREGATION_TYPE_PER_USER_AVG\x10\x03\x12\x18\n" +
+	"\x14AGGREGATION_TYPE_SUM\x10\x04\x12\x18\n" +
+	"\x14AGGREGATION_TYPE_AVG\x10\x05\x12\x18\n" +
+	"\x14AGGREGATION_TYPE_MIN\x10\x06\x12\x18\n" +
+	"\x14AGGREGATION_TYPE_MAX\x10\a2\xa0\x03\n" +
 	"\x0fInsightsService\x12L\n" +
 	"\x05Query\x12 .shared.insights.v1.QueryRequest\x1a!.shared.insights.v1.QueryResponse\x12a\n" +
 	"\fSegmentUsers\x12'.shared.insights.v1.SegmentUsersRequest\x1a(.shared.insights.v1.SegmentUsersResponse\x12j\n" +
