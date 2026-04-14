@@ -74,8 +74,6 @@ func (s *server) Query(
 		}
 		rows, err := s.executor.QueryTrends(ctx, q)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to query trends", slogx.Error(err),
-				slog.String("projectID", projectID))
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
@@ -99,8 +97,6 @@ func (s *server) Query(
 		}
 		value, err := s.executor.QueryScalar(ctx, q)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to query segmentation", slogx.Error(err),
-				slog.String("projectID", projectID))
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
@@ -120,15 +116,11 @@ func (s *server) Query(
 			}
 			users, err := s.executor.QueryFunnelUserEvents(ctx, q)
 			if err != nil {
-				slog.ErrorContext(ctx, "failed to query funnel user events", slogx.Error(err),
-					slog.String("projectID", projectID))
 				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelRows, err = coreinsights.ComputeFunnelTiming(ctx, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
 			if err != nil {
-				slog.ErrorContext(ctx, "failed to compute funnel timing", slogx.Error(err),
-					slog.String("projectID", projectID))
 				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
@@ -142,8 +134,6 @@ func (s *server) Query(
 			}
 			funnelRows, err = s.executor.QueryFunnel(ctx, q)
 			if err != nil {
-				slog.ErrorContext(ctx, "failed to query funnel", slogx.Error(err),
-					slog.String("projectID", projectID))
 				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
@@ -169,8 +159,6 @@ func (s *server) Query(
 		}
 		rows, err := s.executor.QueryRetention(ctx, q)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to query retention", slogx.Error(err),
-				slog.String("projectID", projectID))
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
@@ -216,8 +204,6 @@ func (s *server) SegmentUsers(
 
 	ids, err := s.executor.QueryStringColumn(ctx, sql, args)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to query distinct IDs", slogx.Error(err),
-			slog.String("projectID", principal.Project.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

@@ -57,8 +57,12 @@ func NewExecutor(ch driver.Conn) *Executor {
 
 // QueryTrends executes a trends query and returns rows of (time, event_kind, [breakdown_0..N], value).
 func (e *Executor) QueryTrends(ctx context.Context, q TrendsQuery) ([]TrendRow, error) {
-	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
+	sql := q.SQL()
+	args := q.Args()
+	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query trends failed", slogx.Error(err),
+			slog.String("sql", sql), slog.Any("args", args))
 		return nil, fmt.Errorf("QueryTrends: %w", err)
 	}
 	defer func() {
@@ -89,8 +93,12 @@ func (e *Executor) QueryTrends(ctx context.Context, q TrendsQuery) ([]TrendRow, 
 
 // QueryScalar executes a query that returns a single float64 value.
 func (e *Executor) QueryScalar(ctx context.Context, q ScalarQuery) (float64, error) {
-	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
+	sql := q.SQL()
+	args := q.Args()
+	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query scalar failed", slogx.Error(err),
+			slog.String("sql", sql), slog.Any("args", args))
 		return 0, fmt.Errorf("QueryScalar: %w", err)
 	}
 	defer func() {
@@ -123,6 +131,8 @@ type AggregateKeyMeta struct {
 func (e *Executor) QueryAggregateKeys(ctx context.Context, sql string, args []any) ([]AggregateKeyMeta, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query aggregate keys failed", slogx.Error(err),
+			slog.String("sql", sql), slog.Any("args", args))
 		return nil, fmt.Errorf("QueryAggregateKeys: %w", err)
 	}
 	defer func() {
@@ -149,6 +159,8 @@ func (e *Executor) QueryAggregateKeys(ctx context.Context, sql string, args []an
 func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any) ([]string, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query string column failed", slogx.Error(err),
+			slog.String("sql", sql), slog.Any("args", args))
 		return nil, fmt.Errorf("QueryStringColumn: %w", err)
 	}
 	defer func() {
@@ -174,8 +186,12 @@ func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any
 // QueryFunnel executes a funnel query and returns rows of
 // (step_index, event_kind[, breakdown_0..N], value, avg_time_seconds).
 func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow, error) {
-	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
+	sql := q.SQL()
+	args := q.Args()
+	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query funnel failed", slogx.Error(err),
+			slog.String("sql", sql), slog.Any("args", args))
 		return nil, fmt.Errorf("QueryFunnel: %w", err)
 	}
 	defer func() {
@@ -225,8 +241,12 @@ func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow,
 // event arrays for Go-side step matching and timing computation.
 // Columns: (distinct_id, times, step_matches[, breakdown_0..N]).
 func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuery) ([]FunnelUserEvents, error) {
-	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
+	sql := q.SQL()
+	args := q.Args()
+	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query funnel user events failed", slogx.Error(err),
+			slog.String("sql", sql), slog.Any("args", args))
 		return nil, fmt.Errorf("QueryFunnelUserEvents: %w", err)
 	}
 	defer func() {
@@ -257,8 +277,12 @@ func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuer
 // QueryRetention executes a retention query and returns rows of
 // (cohort_time, time, value, cohort_size[, breakdown_0..N]).
 func (e *Executor) QueryRetention(ctx context.Context, q RetentionQuery) ([]RetentionRow, error) {
-	rows, err := e.ch.Query(ctx, q.SQL(), q.Args()...)
+	sql := q.SQL()
+	args := q.Args()
+	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query retention failed", slogx.Error(err),
+			slog.String("sql", sql), slog.Any("args", args))
 		return nil, fmt.Errorf("QueryRetention: %w", err)
 	}
 	defer func() {

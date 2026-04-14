@@ -8,6 +8,7 @@ import (
 	"time"
 
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
 // FunnelUserEvents holds per-user event data from the array-based funnel query.
@@ -34,7 +35,10 @@ type FunnelUserEvents struct {
 func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []string, windowSec int64, numBreakdowns int) ([]FunnelRow, error) {
 	numSteps := len(kinds)
 	if numSteps == 0 {
-		return nil, fmt.Errorf("kinds must not be empty")
+		err := fmt.Errorf("kinds must not be empty")
+		slog.ErrorContext(ctx, "insights: compute funnel timing failed", slogx.Error(err),
+			slog.Any("kinds", kinds))
+		return nil, err
 	}
 
 	type stepAcc struct {
@@ -46,8 +50,11 @@ func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []
 	expectedBDs := numBreakdowns
 	for _, u := range users {
 		if len(u.Breakdowns) != expectedBDs {
-			return nil, fmt.Errorf("user %s: has %d breakdowns but expected %d",
+			err := fmt.Errorf("user %s: has %d breakdowns but expected %d",
 				u.DistinctID, len(u.Breakdowns), expectedBDs)
+			slog.ErrorContext(ctx, "insights: compute funnel timing failed", slogx.Error(err),
+				slog.String("userID", u.DistinctID))
+			return nil, err
 		}
 	}
 
@@ -57,8 +64,11 @@ func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []
 
 	for _, u := range users {
 		if len(u.Times) != len(u.StepMatches) {
-			return nil, fmt.Errorf("user %s: mismatched array lengths (times=%d, step_matches=%d)",
+			err := fmt.Errorf("user %s: mismatched array lengths (times=%d, step_matches=%d)",
 				u.DistinctID, len(u.Times), len(u.StepMatches))
+			slog.ErrorContext(ctx, "insights: compute funnel timing failed", slogx.Error(err),
+				slog.String("userID", u.DistinctID))
+			return nil, err
 		}
 
 		key := breakdownKey(u.Breakdowns)
