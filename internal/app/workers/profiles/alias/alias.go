@@ -6,16 +6,16 @@ import (
 	"log/slog"
 	"time"
 
+	"buf.build/go/protovalidate"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
+	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
-
-	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
-	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
 func Run(ctx context.Context) error {
@@ -90,6 +90,12 @@ func handleAlias(ctx context.Context, ch driver.Conn, data []byte) error {
 	msg := &workerprofilesv1.ProfileAliasMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal alias message", slogx.Error(err))
+		return natsworker.NewPermanentError(err).
+			With("worker", "profile-alias")
+	}
+
+	if err := protovalidate.Validate(msg); err != nil {
+		slog.ErrorContext(ctx, "alias message failed validation", slogx.Error(err))
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-alias")
 	}

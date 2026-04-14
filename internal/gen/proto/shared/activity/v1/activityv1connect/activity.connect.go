@@ -69,8 +69,8 @@ type ActivityServiceClient interface {
 	// Defaults to the last 60 days when no time_range is provided.
 	GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error)
 	// GetProfileStats returns aggregate statistics, device/browser/location context from the
-	// latest event, per-day heatmap data, and profile properties for a profile. Resolves aliases
-	// so merged anonymous events are included.
+	// latest event, per-day heatmap data (last 60 days), and profile properties for a profile.
+	// Resolves aliases so merged anonymous events are included.
 	GetProfileStats(context.Context, *connect.Request[v1.GetProfileStatsRequest]) (*connect.Response[v1.GetProfileStatsResponse], error)
 }
 
@@ -180,8 +180,8 @@ type ActivityServiceHandler interface {
 	// Defaults to the last 60 days when no time_range is provided.
 	GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error)
 	// GetProfileStats returns aggregate statistics, device/browser/location context from the
-	// latest event, per-day heatmap data, and profile properties for a profile. Resolves aliases
-	// so merged anonymous events are included.
+	// latest event, per-day heatmap data (last 60 days), and profile properties for a profile.
+	// Resolves aliases so merged anonymous events are included.
 	GetProfileStats(context.Context, *connect.Request[v1.GetProfileStatsRequest]) (*connect.Response[v1.GetProfileStatsResponse], error)
 }
 

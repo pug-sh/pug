@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"buf.build/go/protovalidate"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
@@ -90,6 +91,12 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 	msg := &workerprofilesv1.ProfileUpsertMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal profile upsert message", slogx.Error(err))
+		return natsworker.NewPermanentError(err).
+			With("worker", "profile-upsert")
+	}
+
+	if err := protovalidate.Validate(msg); err != nil {
+		slog.ErrorContext(ctx, "upsert message failed validation", slogx.Error(err))
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-upsert")
 	}

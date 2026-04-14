@@ -1,6 +1,7 @@
 edition = "2023";
 package shared.campaigns.v1;
 
+import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 option features.field_presence = IMPLICIT;
@@ -48,13 +49,13 @@ message CreateResponse {
 }
 
 message DeleteRequest {
-  string id = 1;
+  string id = 1 [(buf.validate.field).required = true];
 }
 
 message DeleteResponse {}
 
 message GetRequest {
-  string id = 1;
+  string id = 1 [(buf.validate.field).required = true];
 }
 
 message GetResponse {
@@ -62,7 +63,7 @@ message GetResponse {
 }
 
 message UpdateRequest {
-  string id = 1;
+  string id = 1 [(buf.validate.field).required = true];
   string name = 2;
   bytes notification_data = 3;
   google.protobuf.Timestamp scheduled_time = 4;
