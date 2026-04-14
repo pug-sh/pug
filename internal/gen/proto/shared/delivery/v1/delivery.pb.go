@@ -7,6 +7,7 @@
 package deliveryv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -677,7 +678,7 @@ var File_shared_delivery_v1_delivery_proto protoreflect.FileDescriptor
 
 const file_shared_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
-	"!shared/delivery/v1/delivery.proto\x12\x12shared.delivery.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"W\n" +
+	"!shared/delivery/v1/delivery.proto\x12\x12shared.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"W\n" +
 	"\x13BatchDeliveryEvents\x12@\n" +
 	"\x06events\x18\x01 \x03(\v2(.shared.delivery.v1.DeliveryEventMessageR\x06events\"\xdd\x01\n" +
 	"\x15BatchMulticastMessage\x12\x12\n" +
@@ -712,18 +713,18 @@ const file_shared_delivery_v1_delivery_proto_rawDesc = "" +
 	"\tdevice_id\x18\b \x01(\tR\bdeviceId\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbd\x03\n" +
-	"\x12RecordEventRequest\x12\x1f\n" +
-	"\vcampaign_id\x18\x01 \x01(\tR\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd5\x03\n" +
+	"\x12RecordEventRequest\x12'\n" +
+	"\vcampaign_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"campaignId\x12C\n" +
 	"\x0fevent_timestamp\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x0eeventTimestamp\x12<\n" +
 	"\n" +
 	"event_type\x18\x03 \x01(\x0e2\x1d.shared.delivery.v1.EventTypeR\teventType\x12P\n" +
-	"\bmetadata\x18\x04 \x03(\v24.shared.delivery.v1.RecordEventRequest.MetadataEntryR\bmetadata\x12\x1d\n" +
+	"\bmetadata\x18\x04 \x03(\v24.shared.delivery.v1.RecordEventRequest.MetadataEntryR\bmetadata\x12%\n" +
 	"\n" +
-	"message_id\x18\x05 \x01(\tR\tmessageId\x128\n" +
-	"\bplatform\x18\x06 \x01(\x0e2\x1c.shared.delivery.v1.PlatformR\bplatform\x12\x1b\n" +
-	"\tdevice_id\x18\a \x01(\tR\bdeviceId\x1a;\n" +
+	"message_id\x18\x05 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tmessageId\x128\n" +
+	"\bplatform\x18\x06 \x01(\x0e2\x1c.shared.delivery.v1.PlatformR\bplatform\x12#\n" +
+	"\tdevice_id\x18\a \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bdeviceId\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9c\x01\n" +

@@ -1,6 +1,7 @@
 edition = "2023";
 package shared.delivery.v1;
 
+import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 option features.field_presence = IMPLICIT;
@@ -59,13 +60,13 @@ message DeliveryEventMessage {
 }
 
 message RecordEventRequest {
-  string campaign_id = 1;
+  string campaign_id = 1 [(buf.validate.field).required = true];
   google.protobuf.Timestamp event_timestamp = 2;
   EventType event_type = 3;
   map<string, string> metadata = 4;
-  string message_id = 5;
+  string message_id = 5 [(buf.validate.field).required = true];
   Platform platform = 6;
-  string device_id = 7;
+  string device_id = 7 [(buf.validate.field).required = true];
 }
 
 message RecordEventResponse {

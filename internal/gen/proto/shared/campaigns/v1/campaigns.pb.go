@@ -7,6 +7,7 @@
 package campaignsv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -650,7 +651,7 @@ var File_shared_campaigns_v1_campaigns_proto protoreflect.FileDescriptor
 
 const file_shared_campaigns_v1_campaigns_proto_rawDesc = "" +
 	"\n" +
-	"#shared/campaigns/v1/campaigns.proto\x12\x13shared.campaigns.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x11\n" +
+	"#shared/campaigns/v1/campaigns.proto\x12\x13shared.campaigns.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x11\n" +
 	"\x0fBatchGetRequest\"O\n" +
 	"\x10BatchGetResponse\x12;\n" +
 	"\tcampaigns\x18\x01 \x03(\v2\x1d.shared.campaigns.v1.CampaignR\tcampaigns\"\xc1\x03\n" +
@@ -677,17 +678,17 @@ const file_shared_campaigns_v1_campaigns_proto_rawDesc = "" +
 	"\x11notification_data\x18\x02 \x01(\fR\x10notificationData\x12A\n" +
 	"\x0escheduled_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\rscheduledTime\"K\n" +
 	"\x0eCreateResponse\x129\n" +
-	"\bcampaign\x18\x01 \x01(\v2\x1d.shared.campaigns.v1.CampaignR\bcampaign\"\x1f\n" +
-	"\rDeleteRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x10\n" +
-	"\x0eDeleteResponse\"\x1c\n" +
+	"\bcampaign\x18\x01 \x01(\v2\x1d.shared.campaigns.v1.CampaignR\bcampaign\"'\n" +
+	"\rDeleteRequest\x12\x16\n" +
+	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\"\x10\n" +
+	"\x0eDeleteResponse\"$\n" +
 	"\n" +
-	"GetRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"H\n" +
+	"GetRequest\x12\x16\n" +
+	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\"H\n" +
 	"\vGetResponse\x129\n" +
-	"\bcampaign\x18\x01 \x01(\v2\x1d.shared.campaigns.v1.CampaignR\bcampaign\"\xa3\x01\n" +
-	"\rUpdateRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\bcampaign\x18\x01 \x01(\v2\x1d.shared.campaigns.v1.CampaignR\bcampaign\"\xab\x01\n" +
+	"\rUpdateRequest\x12\x16\n" +
+	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
 	"\x11notification_data\x18\x03 \x01(\fR\x10notificationData\x12A\n" +
 	"\x0escheduled_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\rscheduledTime\"K\n" +

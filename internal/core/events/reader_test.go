@@ -1446,3 +1446,132 @@ func TestGetProfileStats(t *testing.T) {
 		}
 	})
 }
+
+func TestGetActivityHeatmap_EmptyInputsReturnError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	reader := events.NewReader(ch.Conn)
+	ctx := context.Background()
+
+	tests := []struct {
+		name       string
+		projectID  string
+		distinctID string
+	}{
+		{name: "empty project_id", projectID: "", distinctID: "user-1"},
+		{name: "empty distinct_id", projectID: "proj-1", distinctID: ""},
+		{name: "both empty", projectID: "", distinctID: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+				ProjectID:  tc.projectID,
+				DistinctID: tc.distinctID,
+			})
+			if err == nil {
+				t.Fatal("expected error for empty input, got nil")
+			}
+		})
+	}
+}
+
+func TestGetActivityHeatmap_PartialTimeRangeReturnError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	reader := events.NewReader(ch.Conn)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	tests := []struct {
+		name string
+		tr   *commonv1.TimeRange
+	}{
+		{
+			name: "zero From",
+			tr:   &commonv1.TimeRange{To: timestamppb.New(now)},
+		},
+		{
+			name: "zero To",
+			tr:   &commonv1.TimeRange{From: timestamppb.New(now)},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+				ProjectID:  "proj-1",
+				DistinctID: "user-1",
+				TimeRange:  tc.tr,
+			})
+			if err == nil {
+				t.Fatal("expected error for partial time range, got nil")
+			}
+		})
+	}
+}
+
+func TestGetProfileStats_EmptyInputsReturnError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	reader := events.NewReader(ch.Conn)
+	ctx := context.Background()
+
+	tests := []struct {
+		name       string
+		projectID  string
+		distinctID string
+	}{
+		{name: "empty project_id", projectID: "", distinctID: "user-1"},
+		{name: "empty distinct_id", projectID: "proj-1", distinctID: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := reader.GetProfileStats(ctx, tc.projectID, tc.distinctID)
+			if err == nil {
+				t.Fatal("expected error for empty input, got nil")
+			}
+		})
+	}
+}
+
+func TestGetActivityFeed_EmptyInputsReturnError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	reader := events.NewReader(ch.Conn)
+	ctx := context.Background()
+
+	tests := []struct {
+		name       string
+		projectID  string
+		distinctID string
+	}{
+		{name: "empty project_id", projectID: "", distinctID: "user-1"},
+		{name: "empty distinct_id", projectID: "proj-1", distinctID: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+				ProjectID:  tc.projectID,
+				DistinctID: tc.distinctID,
+			})
+			if err == nil {
+				t.Fatal("expected error for empty input, got nil")
+			}
+		})
+	}
+}
