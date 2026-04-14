@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -11,9 +12,12 @@ import (
 	"github.com/fivebitsio/cotton/internal/core/events"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
+	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	activityv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1/activityv1connect"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -22,12 +26,14 @@ type server struct {
 	activityv1connect.UnimplementedActivityServiceHandler
 	eventsReader    *events.Reader
 	insightsService *coreinsights.Service
+	profilesRead    *dbread.Queries
 }
 
-func NewServer(ch driver.Conn, insightsService *coreinsights.Service) *server {
+func NewServer(ch driver.Conn, insightsService *coreinsights.Service, profilesRead *dbread.Queries) *server {
 	return &server{
 		eventsReader:    events.NewReader(ch),
 		insightsService: insightsService,
+		profilesRead:    profilesRead,
 	}
 }
 
@@ -55,7 +61,7 @@ func (s *server) GetActivityFeed(
 	}
 
 	if req.Msg.GetPageToken() != "" {
-		cursor, err := events.DecodeActivityFeedCursor(req.Msg.GetPageToken())
+		cursor, err := events.DecodeEventCursor(req.Msg.GetPageToken())
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
 		}
@@ -130,7 +136,7 @@ func (s *server) GetEventExplorer(
 	}
 
 	if req.Msg.GetPageToken() != "" {
-		cursor, err := events.DecodeActivityFeedCursor(req.Msg.GetPageToken())
+		cursor, err := events.DecodeEventCursor(req.Msg.GetPageToken())
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
 		}
@@ -222,6 +228,126 @@ func mapToStruct(m map[string]string) (*structpb.Struct, error) {
 		fields[k] = v
 	}
 	return structpb.NewStruct(fields)
+}
+
+func (s *server) GetActivityHeatmap(
+	ctx context.Context,
+	req *connect.Request[activityv1.GetActivityHeatmapRequest],
+) (*connect.Response[activityv1.GetActivityHeatmapResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	tr := req.Msg.GetTimeRange()
+	if tr == nil {
+		now := time.Now().UTC()
+		tr = &commonv1.TimeRange{
+			From: timestamppb.New(now.AddDate(0, 0, -events.DefaultHeatmapDays)),
+			To:   timestamppb.New(now),
+		}
+	}
+
+	days, err := s.eventsReader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
+		ProjectID:  principal.Project.ID,
+		DistinctID: req.Msg.GetDistinctId(),
+		TimeRange:  tr,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get activity heatmap",
+			slogx.Error(err),
+			slog.String("projectID", principal.Project.ID),
+			slog.String("distinctID", req.Msg.GetDistinctId()),
+			slog.Time("from", tr.GetFrom().AsTime()),
+			slog.Time("to", tr.GetTo().AsTime()))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	proto := make([]*activityv1.HeatmapDay, len(days))
+	for i, d := range days {
+		proto[i] = &activityv1.HeatmapDay{Date: d.Date, Count: d.Count}
+	}
+
+	return connect.NewResponse(&activityv1.GetActivityHeatmapResponse{Days: proto}), nil
+}
+
+func (s *server) GetProfileStats(
+	ctx context.Context,
+	req *connect.Request[activityv1.GetProfileStatsRequest],
+) (*connect.Response[activityv1.GetProfileStatsResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	stats, heatmap, err := s.eventsReader.GetProfileStats(ctx, principal.Project.ID, req.Msg.GetDistinctId())
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get profile stats",
+			slogx.Error(err),
+			slog.String("projectID", principal.Project.ID),
+			slog.String("distinctID", req.Msg.GetDistinctId()))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	resp := &activityv1.GetProfileStatsResponse{}
+
+	if stats != nil {
+		resp.Stats = &activityv1.ProfileStats{
+			FirstSeen:      timestamppb.New(stats.FirstSeen),
+			LastSeen:       timestamppb.New(stats.LastSeen),
+			TotalEvents:    stats.TotalEvents,
+			Browser:        stats.Browser,
+			BrowserVersion: stats.BrowserVersion,
+			Os:             stats.OS,
+			OsVersion:      stats.OSVersion,
+			Device:         stats.Device,
+			Country:        stats.Country,
+			City:           stats.City,
+			Ip:             stats.IP,
+		}
+	}
+
+	resp.Heatmap = make([]*activityv1.HeatmapDay, len(heatmap))
+	for i, d := range heatmap {
+		resp.Heatmap[i] = &activityv1.HeatmapDay{Date: d.Date, Count: d.Count}
+	}
+
+	profile, err := s.profilesRead.GetProfileByIDAndProjectID(ctx, dbread.GetProfileByIDAndProjectIDParams{
+		ID:        req.Msg.GetDistinctId(),
+		ProjectID: principal.Project.ID,
+	})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.ErrorContext(ctx, "failed to get profile properties",
+			slogx.Error(err),
+			slog.String("projectID", principal.Project.ID),
+			slog.String("distinctID", req.Msg.GetDistinctId()))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	if err == nil {
+		props, err := structpb.NewStruct(profile.Properties)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to convert profile properties to struct",
+				slogx.Error(err),
+				slog.String("projectID", principal.Project.ID),
+				slog.String("distinctID", req.Msg.GetDistinctId()))
+			telemetry.RecordError(ctx, err)
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
+		resp.Properties = props
+	}
+
+	return connect.NewResponse(resp), nil
 }
 
 func (s *server) GetFilterSchema(

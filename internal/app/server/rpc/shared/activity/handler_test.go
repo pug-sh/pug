@@ -1,8 +1,11 @@
 package activity
 
 import (
+	"context"
 	"testing"
 
+	"connectrpc.com/connect"
+	activityv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -54,5 +57,27 @@ func TestMapToStruct_AllValuesAreStrings(t *testing.T) {
 	v := s.Fields["key"]
 	if _, ok := v.Kind.(*structpb.Value_StringValue); !ok {
 		t.Errorf("expected StringValue, got %T", v.Kind)
+	}
+}
+
+func TestGetActivityHeatmap_Unauthenticated(t *testing.T) {
+	s := &server{}
+	_, err := s.GetActivityHeatmap(context.Background(), connect.NewRequest(&activityv1.GetActivityHeatmapRequest{}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
+		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	}
+}
+
+func TestGetProfileStats_Unauthenticated(t *testing.T) {
+	s := &server{}
+	_, err := s.GetProfileStats(context.Background(), connect.NewRequest(&activityv1.GetProfileStatsRequest{}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
+		t.Errorf("got code %v, want CodeUnauthenticated", code)
 	}
 }

@@ -45,6 +45,12 @@ const (
 	// ActivityServiceGetPropertyValuesProcedure is the fully-qualified name of the ActivityService's
 	// GetPropertyValues RPC.
 	ActivityServiceGetPropertyValuesProcedure = "/shared.activity.v1.ActivityService/GetPropertyValues"
+	// ActivityServiceGetActivityHeatmapProcedure is the fully-qualified name of the ActivityService's
+	// GetActivityHeatmap RPC.
+	ActivityServiceGetActivityHeatmapProcedure = "/shared.activity.v1.ActivityService/GetActivityHeatmap"
+	// ActivityServiceGetProfileStatsProcedure is the fully-qualified name of the ActivityService's
+	// GetProfileStats RPC.
+	ActivityServiceGetProfileStatsProcedure = "/shared.activity.v1.ActivityService/GetProfileStats"
 )
 
 // ActivityServiceClient is a client for the shared.activity.v1.ActivityService service.
@@ -59,6 +65,13 @@ type ActivityServiceClient interface {
 	GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error)
 	// GetPropertyValues returns distinct values for a given property key.
 	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
+	// GetActivityHeatmap returns per-day event counts for a user profile over a time window.
+	// Defaults to the last 60 days when no time_range is provided.
+	GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error)
+	// GetProfileStats returns aggregate statistics, device/browser/location context from the
+	// latest event, per-day heatmap data, and profile properties for a profile. Resolves aliases
+	// so merged anonymous events are included.
+	GetProfileStats(context.Context, *connect.Request[v1.GetProfileStatsRequest]) (*connect.Response[v1.GetProfileStatsResponse], error)
 }
 
 // NewActivityServiceClient constructs a client for the shared.activity.v1.ActivityService service.
@@ -96,15 +109,29 @@ func NewActivityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(activityServiceMethods.ByName("GetPropertyValues")),
 			connect.WithClientOptions(opts...),
 		),
+		getActivityHeatmap: connect.NewClient[v1.GetActivityHeatmapRequest, v1.GetActivityHeatmapResponse](
+			httpClient,
+			baseURL+ActivityServiceGetActivityHeatmapProcedure,
+			connect.WithSchema(activityServiceMethods.ByName("GetActivityHeatmap")),
+			connect.WithClientOptions(opts...),
+		),
+		getProfileStats: connect.NewClient[v1.GetProfileStatsRequest, v1.GetProfileStatsResponse](
+			httpClient,
+			baseURL+ActivityServiceGetProfileStatsProcedure,
+			connect.WithSchema(activityServiceMethods.ByName("GetProfileStats")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // activityServiceClient implements ActivityServiceClient.
 type activityServiceClient struct {
-	getActivityFeed   *connect.Client[v1.GetActivityFeedRequest, v1.GetActivityFeedResponse]
-	getEventExplorer  *connect.Client[v1.GetEventExplorerRequest, v1.GetEventExplorerResponse]
-	getFilterSchema   *connect.Client[v1.GetFilterSchemaRequest, v1.GetFilterSchemaResponse]
-	getPropertyValues *connect.Client[v1.GetPropertyValuesRequest, v1.GetPropertyValuesResponse]
+	getActivityFeed    *connect.Client[v1.GetActivityFeedRequest, v1.GetActivityFeedResponse]
+	getEventExplorer   *connect.Client[v1.GetEventExplorerRequest, v1.GetEventExplorerResponse]
+	getFilterSchema    *connect.Client[v1.GetFilterSchemaRequest, v1.GetFilterSchemaResponse]
+	getPropertyValues  *connect.Client[v1.GetPropertyValuesRequest, v1.GetPropertyValuesResponse]
+	getActivityHeatmap *connect.Client[v1.GetActivityHeatmapRequest, v1.GetActivityHeatmapResponse]
+	getProfileStats    *connect.Client[v1.GetProfileStatsRequest, v1.GetProfileStatsResponse]
 }
 
 // GetActivityFeed calls shared.activity.v1.ActivityService.GetActivityFeed.
@@ -127,6 +154,16 @@ func (c *activityServiceClient) GetPropertyValues(ctx context.Context, req *conn
 	return c.getPropertyValues.CallUnary(ctx, req)
 }
 
+// GetActivityHeatmap calls shared.activity.v1.ActivityService.GetActivityHeatmap.
+func (c *activityServiceClient) GetActivityHeatmap(ctx context.Context, req *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error) {
+	return c.getActivityHeatmap.CallUnary(ctx, req)
+}
+
+// GetProfileStats calls shared.activity.v1.ActivityService.GetProfileStats.
+func (c *activityServiceClient) GetProfileStats(ctx context.Context, req *connect.Request[v1.GetProfileStatsRequest]) (*connect.Response[v1.GetProfileStatsResponse], error) {
+	return c.getProfileStats.CallUnary(ctx, req)
+}
+
 // ActivityServiceHandler is an implementation of the shared.activity.v1.ActivityService service.
 type ActivityServiceHandler interface {
 	// GetActivityFeed returns a paginated, filterable list of events for a user profile.
@@ -139,6 +176,13 @@ type ActivityServiceHandler interface {
 	GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error)
 	// GetPropertyValues returns distinct values for a given property key.
 	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
+	// GetActivityHeatmap returns per-day event counts for a user profile over a time window.
+	// Defaults to the last 60 days when no time_range is provided.
+	GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error)
+	// GetProfileStats returns aggregate statistics, device/browser/location context from the
+	// latest event, per-day heatmap data, and profile properties for a profile. Resolves aliases
+	// so merged anonymous events are included.
+	GetProfileStats(context.Context, *connect.Request[v1.GetProfileStatsRequest]) (*connect.Response[v1.GetProfileStatsResponse], error)
 }
 
 // NewActivityServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -172,6 +216,18 @@ func NewActivityServiceHandler(svc ActivityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(activityServiceMethods.ByName("GetPropertyValues")),
 		connect.WithHandlerOptions(opts...),
 	)
+	activityServiceGetActivityHeatmapHandler := connect.NewUnaryHandler(
+		ActivityServiceGetActivityHeatmapProcedure,
+		svc.GetActivityHeatmap,
+		connect.WithSchema(activityServiceMethods.ByName("GetActivityHeatmap")),
+		connect.WithHandlerOptions(opts...),
+	)
+	activityServiceGetProfileStatsHandler := connect.NewUnaryHandler(
+		ActivityServiceGetProfileStatsProcedure,
+		svc.GetProfileStats,
+		connect.WithSchema(activityServiceMethods.ByName("GetProfileStats")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/shared.activity.v1.ActivityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ActivityServiceGetActivityFeedProcedure:
@@ -182,6 +238,10 @@ func NewActivityServiceHandler(svc ActivityServiceHandler, opts ...connect.Handl
 			activityServiceGetFilterSchemaHandler.ServeHTTP(w, r)
 		case ActivityServiceGetPropertyValuesProcedure:
 			activityServiceGetPropertyValuesHandler.ServeHTTP(w, r)
+		case ActivityServiceGetActivityHeatmapProcedure:
+			activityServiceGetActivityHeatmapHandler.ServeHTTP(w, r)
+		case ActivityServiceGetProfileStatsProcedure:
+			activityServiceGetProfileStatsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -205,4 +265,12 @@ func (UnimplementedActivityServiceHandler) GetFilterSchema(context.Context, *con
 
 func (UnimplementedActivityServiceHandler) GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.activity.v1.ActivityService.GetPropertyValues is not implemented"))
+}
+
+func (UnimplementedActivityServiceHandler) GetActivityHeatmap(context.Context, *connect.Request[v1.GetActivityHeatmapRequest]) (*connect.Response[v1.GetActivityHeatmapResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.activity.v1.ActivityService.GetActivityHeatmap is not implemented"))
+}
+
+func (UnimplementedActivityServiceHandler) GetProfileStats(context.Context, *connect.Request[v1.GetProfileStatsRequest]) (*connect.Response[v1.GetProfileStatsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.activity.v1.ActivityService.GetProfileStats is not implemented"))
 }
