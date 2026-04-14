@@ -99,7 +99,7 @@ func start(ctx context.Context, d *deps) error {
 	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
 		delivery.NewServer(d.nats.GetJetStream()), handlerOpts)
 	activityPath, activityHandler := activityv1connect.NewActivityServiceHandler(
-		activityrpc.NewServer(d.ch, insightsSvc), handlerOpts)
+		activityrpc.NewServer(d.ch, insightsSvc, dbread.New(d.pgRo)), handlerOpts)
 	sharedProfilesPath, sharedProfilesHandler := profilesv1connect.NewProfilesServiceHandler(
 		sharedprofilesrpc.NewServer(d.pgRo, d.pgW, d.nats), handlerOpts)
 
