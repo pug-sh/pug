@@ -88,10 +88,10 @@ func makeIdentifyData(t *testing.T, projectID, externalID, anonymousID, deviceID
 		}
 	}
 	msg := &sdkprofilesv1.ProfileIdentifyMessage{
-		ProjectId:   projectID,
-		ExternalId:  externalID,
-		AnonymousId: anonymousID,
-		DeviceId:    deviceID,
+		ProjectId:   proto.String(projectID),
+		ExternalId:  proto.String(externalID),
+		AnonymousId: proto.String(anonymousID),
+		DeviceId:    proto.String(deviceID),
 		Traits:      traitsPB,
 	}
 	data, err := proto.Marshal(msg)

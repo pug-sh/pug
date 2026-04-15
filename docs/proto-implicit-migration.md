@@ -20,7 +20,7 @@ These can be done in any order and are fully self-contained.
 - [x] `proto/public/auth/v1/auth.proto`
 - [x] `proto/sdk/events/v1/events.proto`
 - [x] `proto/sdk/devices/v1/devices.proto`
-- [ ] `proto/sdk/profiles/v1/profiles.proto`
+- [x] `proto/sdk/profiles/v1/profiles.proto`
 - [ ] `proto/dashboard/orgs/v1/orgs.proto`
 - [ ] `proto/dashboard/projects/v1/projects.proto`
 - [ ] `proto/shared/campaigns/v1/campaigns.proto`

@@ -4,7 +4,6 @@ package sdk.profiles.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/struct.proto";
 
-option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1";
 
 service ProfilesSDKService {

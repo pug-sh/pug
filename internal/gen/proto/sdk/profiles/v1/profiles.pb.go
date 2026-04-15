@@ -26,17 +26,17 @@ const (
 type IdentifyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Stable user identifier (e.g. email, database ID).
-	ExternalId string `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ExternalId *string `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	// Profile properties — shallow-merged into existing properties. On key conflict,
 	// these values take precedence over previously stored values.
 	Traits *structpb.Struct `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
 	// The SDK-generated anonymous ID. The SDK should send this on first identify
 	// to trigger merge-and-soft-delete of the anonymous profile. Must start with "anon-".
-	AnonymousId string `protobuf:"bytes,3,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
+	AnonymousId *string `protobuf:"bytes,3,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
 	// The device to assign to this profile. The SDK should send this on first
 	// identify and on account switch (external_id changed) — not on every call,
 	// to avoid unnecessary DB writes. Omit for web SDKs without push support.
-	DeviceId      string `protobuf:"bytes,4,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	DeviceId      *string `protobuf:"bytes,4,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -72,8 +72,8 @@ func (*IdentifyRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *IdentifyRequest) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
+	if x != nil && x.ExternalId != nil {
+		return *x.ExternalId
 	}
 	return ""
 }
@@ -86,15 +86,15 @@ func (x *IdentifyRequest) GetTraits() *structpb.Struct {
 }
 
 func (x *IdentifyRequest) GetAnonymousId() string {
-	if x != nil {
-		return x.AnonymousId
+	if x != nil && x.AnonymousId != nil {
+		return *x.AnonymousId
 	}
 	return ""
 }
 
 func (x *IdentifyRequest) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
+	if x != nil && x.DeviceId != nil {
+		return *x.DeviceId
 	}
 	return ""
 }
@@ -139,11 +139,11 @@ func (*IdentifyResponse) Descriptor() ([]byte, []int) {
 // project_id is injected server-side from the authenticated principal.
 type ProfileIdentifyMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ExternalId    *string                `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	Traits        *structpb.Struct       `protobuf:"bytes,2,opt,name=traits" json:"traits,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	AnonymousId   string                 `protobuf:"bytes,4,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
-	DeviceId      string                 `protobuf:"bytes,5,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	ProjectId     *string                `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	AnonymousId   *string                `protobuf:"bytes,4,opt,name=anonymous_id,json=anonymousId" json:"anonymous_id,omitempty"`
+	DeviceId      *string                `protobuf:"bytes,5,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -179,8 +179,8 @@ func (*ProfileIdentifyMessage) Descriptor() ([]byte, []int) {
 }
 
 func (x *ProfileIdentifyMessage) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
+	if x != nil && x.ExternalId != nil {
+		return *x.ExternalId
 	}
 	return ""
 }
@@ -193,22 +193,22 @@ func (x *ProfileIdentifyMessage) GetTraits() *structpb.Struct {
 }
 
 func (x *ProfileIdentifyMessage) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
 	}
 	return ""
 }
 
 func (x *ProfileIdentifyMessage) GetAnonymousId() string {
-	if x != nil {
-		return x.AnonymousId
+	if x != nil && x.AnonymousId != nil {
+		return *x.AnonymousId
 	}
 	return ""
 }
 
 func (x *ProfileIdentifyMessage) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
+	if x != nil && x.DeviceId != nil {
+		return *x.DeviceId
 	}
 	return ""
 }
@@ -234,7 +234,7 @@ const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\fanonymous_id\x18\x04 \x01(\tR\vanonymousId\x12\x1b\n" +
 	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId2e\n" +
 	"\x12ProfilesSDKService\x12O\n" +
-	"\bIdentify\x12 .sdk.profiles.v1.IdentifyRequest\x1a!.sdk.profiles.v1.IdentifyResponseBTZMgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\bIdentify\x12 .sdk.profiles.v1.IdentifyRequest\x1a!.sdk.profiles.v1.IdentifyResponseBOZMgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1b\beditionsp\xe8\a"
 
 var (
 	file_sdk_profiles_v1_profiles_proto_rawDescOnce sync.Once
