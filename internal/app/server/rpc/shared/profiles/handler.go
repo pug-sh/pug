@@ -109,10 +109,11 @@ func (s *Server) Delete(
 	// already committed, so we return success regardless — a failed NATS publish
 	// is logged for reconciliation but must not fail the client request.
 	now := timestamppb.New(time.Now())
+	del := true
 	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
-		ProfileId:  profileID,
-		ProjectId:  principal.Project.ID,
-		IsDeleted:  true,
+		ProfileId:  proto.String(profileID),
+		ProjectId:  proto.String(principal.Project.ID),
+		IsDeleted:  &del,
 		UpdateTime: now,
 	}
 	upsertData, err := proto.Marshal(upsertMsg)

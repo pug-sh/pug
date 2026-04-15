@@ -350,12 +350,13 @@ func buildUpsertData(ctx context.Context, profileID, projectID, externalID strin
 			With("profile_id", profileID)
 	}
 
+	del := isDeleted
 	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
-		ProfileId:  profileID,
-		ProjectId:  projectID,
-		ExternalId: externalID,
+		ProfileId:  proto.String(profileID),
+		ProjectId:  proto.String(projectID),
+		ExternalId: proto.String(externalID),
 		Properties: propsStruct,
-		IsDeleted:  isDeleted,
+		IsDeleted:  &del,
 		CreateTime: timestamppb.New(createTime),
 		UpdateTime: timestamppb.New(updateTime),
 	}
@@ -385,10 +386,10 @@ func buildUpsertData(ctx context.Context, profileID, projectID, externalID strin
 // if the message is invalid.
 func buildAliasData(ctx context.Context, anonymousID, targetID, externalID, projectID string) ([]byte, error) {
 	aliasMsg := &workerprofilesv1.ProfileAliasMessage{
-		AliasId:    anonymousID,
-		ProfileId:  targetID,
-		ExternalId: externalID,
-		ProjectId:  projectID,
+		AliasId:    proto.String(anonymousID),
+		ProfileId:  proto.String(targetID),
+		ExternalId: proto.String(externalID),
+		ProjectId:  proto.String(projectID),
 	}
 
 	if err := protovalidate.Validate(aliasMsg); err != nil {

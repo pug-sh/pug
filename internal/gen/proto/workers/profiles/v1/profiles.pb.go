@@ -26,10 +26,10 @@ const (
 
 type ProfileAliasMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	AliasId       string                 `protobuf:"bytes,1,opt,name=alias_id,json=aliasId" json:"alias_id,omitempty"`
-	ProfileId     string                 `protobuf:"bytes,2,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	ExternalId    string                 `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	AliasId       *string                `protobuf:"bytes,1,opt,name=alias_id,json=aliasId" json:"alias_id,omitempty"`
+	ProfileId     *string                `protobuf:"bytes,2,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	ExternalId    *string                `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ProjectId     *string                `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -65,29 +65,29 @@ func (*ProfileAliasMessage) Descriptor() ([]byte, []int) {
 }
 
 func (x *ProfileAliasMessage) GetAliasId() string {
-	if x != nil {
-		return x.AliasId
+	if x != nil && x.AliasId != nil {
+		return *x.AliasId
 	}
 	return ""
 }
 
 func (x *ProfileAliasMessage) GetProfileId() string {
-	if x != nil {
-		return x.ProfileId
+	if x != nil && x.ProfileId != nil {
+		return *x.ProfileId
 	}
 	return ""
 }
 
 func (x *ProfileAliasMessage) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
+	if x != nil && x.ExternalId != nil {
+		return *x.ExternalId
 	}
 	return ""
 }
 
 func (x *ProfileAliasMessage) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
 	}
 	return ""
 }
@@ -97,16 +97,16 @@ func (x *ProfileAliasMessage) GetProjectId() string {
 // The upsert worker writes all fields into a ReplacingMergeTree keyed by (project_id, profile_id).
 type ProfileUpsertMessage struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProfileId string                 `protobuf:"bytes,1,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	ProjectId string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	ProfileId *string                `protobuf:"bytes,1,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	ProjectId *string                `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	// May be empty for anonymous profiles that have not been identified yet.
-	ExternalId string `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ExternalId *string `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	// JSONB profile properties. Empty struct for deletes.
 	Properties *structpb.Struct `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
 	// When true, this message represents a soft-delete in ClickHouse.
 	// The upsert worker maps this to a UInt8 is_deleted column (1 = deleted).
 	// properties, external_id, create_time, and update_time may be zero-valued for deletes.
-	IsDeleted bool `protobuf:"varint,5,opt,name=is_deleted,json=isDeleted" json:"is_deleted,omitempty"`
+	IsDeleted *bool `protobuf:"varint,5,opt,name=is_deleted,json=isDeleted" json:"is_deleted,omitempty"`
 	// PostgreSQL row timestamps. Zero-valued for soft-delete messages.
 	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
 	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
@@ -145,22 +145,22 @@ func (*ProfileUpsertMessage) Descriptor() ([]byte, []int) {
 }
 
 func (x *ProfileUpsertMessage) GetProfileId() string {
-	if x != nil {
-		return x.ProfileId
+	if x != nil && x.ProfileId != nil {
+		return *x.ProfileId
 	}
 	return ""
 }
 
 func (x *ProfileUpsertMessage) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
 	}
 	return ""
 }
 
 func (x *ProfileUpsertMessage) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
+	if x != nil && x.ExternalId != nil {
+		return *x.ExternalId
 	}
 	return ""
 }
@@ -173,8 +173,8 @@ func (x *ProfileUpsertMessage) GetProperties() *structpb.Struct {
 }
 
 func (x *ProfileUpsertMessage) GetIsDeleted() bool {
-	if x != nil {
-		return x.IsDeleted
+	if x != nil && x.IsDeleted != nil {
+		return *x.IsDeleted
 	}
 	return false
 }
@@ -221,7 +221,7 @@ const file_workers_profiles_v1_profiles_proto_rawDesc = "" +
 	"\vcreate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12;\n" +
 	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTimeB[ZTgithub.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1;workerprofilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"updateTimeBVZTgithub.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1;workerprofilesv1b\beditionsp\xe8\a"
 
 var (
 	file_workers_profiles_v1_profiles_proto_rawDescOnce sync.Once
