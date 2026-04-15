@@ -448,11 +448,11 @@ func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapP
 
 	var from, to time.Time
 	if params.TimeRange != nil {
-		from = params.TimeRange.GetFrom().AsTime()
-		to = params.TimeRange.GetTo().AsTime()
-		if from.IsZero() || to.IsZero() {
+		if params.TimeRange.GetFrom() == nil || params.TimeRange.GetTo() == nil {
 			return nil, fmt.Errorf("GetActivityHeatmap: TimeRange.From and TimeRange.To must be non-zero when TimeRange is set")
 		}
+		from = params.TimeRange.GetFrom().AsTime()
+		to = params.TimeRange.GetTo().AsTime()
 	}
 
 	days, err := r.queryHeatmap(ctx, params.ProjectID, ids, from, to)
