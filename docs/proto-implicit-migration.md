@@ -18,7 +18,7 @@ has the smallest possible blast radius.
 These can be done in any order and are fully self-contained.
 
 - [x] `proto/public/auth/v1/auth.proto`
-- [ ] `proto/sdk/events/v1/events.proto`
+- [x] `proto/sdk/events/v1/events.proto`
 - [ ] `proto/sdk/devices/v1/devices.proto`
 - [ ] `proto/sdk/profiles/v1/profiles.proto`
 - [ ] `proto/dashboard/orgs/v1/orgs.proto`

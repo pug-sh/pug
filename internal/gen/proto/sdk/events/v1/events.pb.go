@@ -69,7 +69,7 @@ func (x *BatchCreateRequest) GetEvents() []*Event {
 
 type BatchCreateResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Accepted      uint32                 `protobuf:"varint,1,opt,name=accepted" json:"accepted,omitempty"`
+	Accepted      *uint32                `protobuf:"varint,1,opt,name=accepted" json:"accepted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -105,21 +105,21 @@ func (*BatchCreateResponse) Descriptor() ([]byte, []int) {
 }
 
 func (x *BatchCreateResponse) GetAccepted() uint32 {
-	if x != nil {
-		return x.Accepted
+	if x != nil && x.Accepted != nil {
+		return *x.Accepted
 	}
 	return 0
 }
 
 type Event struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	EventId          string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId" json:"event_id,omitempty"`
+	EventId          *string                `protobuf:"bytes,1,opt,name=event_id,json=eventId" json:"event_id,omitempty"`
 	AutoProperties   map[string]string      `protobuf:"bytes,2,rep,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	CustomProperties map[string]string      `protobuf:"bytes,3,rep,name=custom_properties,json=customProperties" json:"custom_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	DistinctId       string                 `protobuf:"bytes,4,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
-	Kind             string                 `protobuf:"bytes,5,opt,name=kind" json:"kind,omitempty"`
+	DistinctId       *string                `protobuf:"bytes,4,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	Kind             *string                `protobuf:"bytes,5,opt,name=kind" json:"kind,omitempty"`
 	OccurTime        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
-	SessionId        string                 `protobuf:"bytes,7,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
+	SessionId        *string                `protobuf:"bytes,7,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -155,8 +155,8 @@ func (*Event) Descriptor() ([]byte, []int) {
 }
 
 func (x *Event) GetEventId() string {
-	if x != nil {
-		return x.EventId
+	if x != nil && x.EventId != nil {
+		return *x.EventId
 	}
 	return ""
 }
@@ -176,15 +176,15 @@ func (x *Event) GetCustomProperties() map[string]string {
 }
 
 func (x *Event) GetDistinctId() string {
-	if x != nil {
-		return x.DistinctId
+	if x != nil && x.DistinctId != nil {
+		return *x.DistinctId
 	}
 	return ""
 }
 
 func (x *Event) GetKind() string {
-	if x != nil {
-		return x.Kind
+	if x != nil && x.Kind != nil {
+		return *x.Kind
 	}
 	return ""
 }
@@ -197,8 +197,8 @@ func (x *Event) GetOccurTime() *timestamppb.Timestamp {
 }
 
 func (x *Event) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
+	if x != nil && x.SessionId != nil {
+		return *x.SessionId
 	}
 	return ""
 }
@@ -206,7 +206,7 @@ func (x *Event) GetSessionId() string {
 type EventBatch struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Events        []*Event               `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	ProjectId     *string                `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -249,8 +249,8 @@ func (x *EventBatch) GetEvents() []*Event {
 }
 
 func (x *EventBatch) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
 	}
 	return ""
 }
@@ -287,7 +287,7 @@ const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprojectId2e\n" +
 	"\rEventsService\x12T\n" +
-	"\vBatchCreate\x12!.sdk.events.v1.BatchCreateRequest\x1a\".sdk.events.v1.BatchCreateResponseBMZFgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1;eventsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\vBatchCreate\x12!.sdk.events.v1.BatchCreateRequest\x1a\".sdk.events.v1.BatchCreateResponseBHZFgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1;eventsv1b\beditionsp\xe8\a"
 
 var (
 	file_sdk_events_v1_events_proto_rawDescOnce sync.Once

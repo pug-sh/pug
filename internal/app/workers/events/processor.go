@@ -29,7 +29,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	if len(batch.Events) == 0 {
-		slog.WarnContext(ctx, "received empty event batch", slog.String("project_id", batch.ProjectId))
+		slog.WarnContext(ctx, "received empty event batch", slog.String("project_id", batch.GetProjectId()))
 		return nil
 	}
 
@@ -54,7 +54,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	// deduplicates across partitions, producing permanent duplicates.
 	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id)")
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)))
+		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()), slog.Int("count", len(batch.Events)))
 		return err
 	}
 
@@ -62,7 +62,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	defer func() {
 		if !sent {
 			if err := chBatch.Abort(); err != nil {
-				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.ProjectId))
+				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()))
 			}
 		}
 	}()
@@ -70,43 +70,43 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	for i, e := range batch.Events {
 		if e.OccurTime == nil {
 			slog.ErrorContext(ctx, "event missing required occur_time",
-				slog.String("project_id", batch.ProjectId),
-				slog.String("event_id", e.EventId),
+				slog.String("project_id", batch.GetProjectId()),
+				slog.String("event_id", e.GetEventId()),
 				slog.Int("event_index", i))
 			return natsworker.NewPermanentError(fmt.Errorf("event[%d]: occur_time is required for dedup", i)).
 				With("worker", "events").
-				With("project_id", batch.ProjectId).
-				With("event_id", e.EventId).
-				With("distinct_id", e.DistinctId).
-				With("kind", e.Kind)
+				With("project_id", batch.GetProjectId()).
+				With("event_id", e.GetEventId()).
+				With("distinct_id", e.GetDistinctId()).
+				With("kind", e.GetKind())
 		}
 
 		if err := chBatch.Append(
-			e.EventId,
-			batch.ProjectId,
-			e.DistinctId,
-			e.Kind,
+			e.GetEventId(),
+			batch.GetProjectId(),
+			e.GetDistinctId(),
+			e.GetKind(),
 			e.AutoProperties,
 			e.CustomProperties,
 			e.OccurTime.AsTime(),
-			e.SessionId,
+			e.GetSessionId(),
 		); err != nil {
-			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)), slog.String("event_id", e.EventId), slog.Int("event_index", i))
+			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()), slog.Int("count", len(batch.Events)), slog.String("event_id", e.GetEventId()), slog.Int("event_index", i))
 			return natsworker.NewPermanentError(err).
 				With("worker", "events").
-				With("project_id", batch.ProjectId).
-				With("event_id", e.EventId)
+				With("project_id", batch.GetProjectId()).
+				With("event_id", e.GetEventId())
 		}
 	}
 
 	if err := chBatch.Send(); err != nil {
-		slog.ErrorContext(ctx, "failed to send ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.ProjectId), slog.Int("count", len(batch.Events)))
+		slog.ErrorContext(ctx, "failed to send ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()), slog.Int("count", len(batch.Events)))
 		return err
 	}
 	sent = true
 
 	slog.InfoContext(ctx, "inserted events into ClickHouse",
-		slog.String("project_id", batch.ProjectId),
+		slog.String("project_id", batch.GetProjectId()),
 		slog.Int("count", len(batch.Events)))
 
 	return nil

@@ -25,7 +25,7 @@ func NewPublisher(producer jetstream.JetStream) *Publisher {
 
 func (p *Publisher) Publish(ctx context.Context, projectID string, events []*eventsv1.Event) error {
 	batch := &eventsv1.EventBatch{
-		ProjectId: projectID,
+		ProjectId: &projectID,
 		Events:    events,
 	}
 

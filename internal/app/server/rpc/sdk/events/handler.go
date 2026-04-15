@@ -56,7 +56,8 @@ func (s *Server) BatchCreate(
 
 	events := req.Msg.GetEvents()
 	if len(events) == 0 {
-		return connect.NewResponse(&eventsv1.BatchCreateResponse{Accepted: 0}), nil
+		accepted := uint32(0)
+		return connect.NewResponse(&eventsv1.BatchCreateResponse{Accepted: &accepted}), nil
 	}
 
 	if err := coreevents.ValidateExternalEvents(events); err != nil {
@@ -75,8 +76,9 @@ func (s *Server) BatchCreate(
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to accept events"))
 	}
 
+	accepted := uint32(len(events))
 	return connect.NewResponse(&eventsv1.BatchCreateResponse{
-		Accepted: uint32(len(events)),
+		Accepted: &accepted,
 	}), nil
 }
 
