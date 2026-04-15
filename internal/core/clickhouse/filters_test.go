@@ -618,3 +618,185 @@ func TestEventConditionAliased(t *testing.T) {
 		t.Errorf("expected aliased custom_properties 'e.custom_properties[', got: %s", sql)
 	}
 }
+
+func TestPropertyConditionAliased_NotBetween(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "amount",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+		Values:   []string{"10", "50"},
+	}
+	cond, err := clickhouse.PropertyConditionAliased(f, "proj1", "e")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "(toFloat64OrNull(ifNull(nullIf(e.auto_properties['amount'], ''), e.custom_properties['amount'])) < ? OR toFloat64OrNull(ifNull(nullIf(e.auto_properties['amount'], ''), e.custom_properties['amount'])) > ?)"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL:\n got: %s\nwant: %s", cond.SQL(), want)
+	}
+	if len(cond.Args()) != 2 {
+		t.Fatalf("expected 2 args, got %d: %v", len(cond.Args()), cond.Args())
+	}
+	if cond.Args()[0] != float64(10) || cond.Args()[1] != float64(50) {
+		t.Errorf("args = %v, want [10 50]", cond.Args())
+	}
+}
+
+func TestPropertyCondition_Between(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "amount",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+		Values:   []string{"10", "50"},
+	}
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "(toFloat64OrNull(ifNull(nullIf(auto_properties['amount'], ''), custom_properties['amount'])) >= ? AND toFloat64OrNull(ifNull(nullIf(auto_properties['amount'], ''), custom_properties['amount'])) <= ?)"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL:\n got: %s\nwant: %s", cond.SQL(), want)
+	}
+	if len(cond.Args()) != 2 {
+		t.Fatalf("expected 2 args, got %d: %v", len(cond.Args()), cond.Args())
+	}
+	if cond.Args()[0] != float64(10) || cond.Args()[1] != float64(50) {
+		t.Errorf("args = %v, want [10 50]", cond.Args())
+	}
+}
+
+func TestPropertyCondition_NotBetween(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "amount",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+		Values:   []string{"10", "50"},
+	}
+	cond, err := clickhouse.PropertyCondition(f, "proj1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "(toFloat64OrNull(ifNull(nullIf(auto_properties['amount'], ''), custom_properties['amount'])) < ? OR toFloat64OrNull(ifNull(nullIf(auto_properties['amount'], ''), custom_properties['amount'])) > ?)"
+	if cond.SQL() != want {
+		t.Errorf("unexpected SQL:\n got: %s\nwant: %s", cond.SQL(), want)
+	}
+	if len(cond.Args()) != 2 {
+		t.Fatalf("expected 2 args, got %d: %v", len(cond.Args()), cond.Args())
+	}
+	if cond.Args()[0] != float64(10) || cond.Args()[1] != float64(50) {
+		t.Errorf("args = %v, want [10 50]", cond.Args())
+	}
+}
+
+func TestPropertyCondition_Between_Errors(t *testing.T) {
+	tests := []struct {
+		name        string
+		operator    commonv1.FilterOperator
+		values      []string
+		wantErrFrag string
+	}{
+		{
+			name:        "between_too_few",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+			values:      []string{"10"},
+			wantErrFrag: "exactly 2 values",
+		},
+		{
+			name:        "between_too_many",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+			values:      []string{"10", "50", "90"},
+			wantErrFrag: "exactly 2 values",
+		},
+		{
+			name:        "between_invalid_min",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+			values:      []string{"abc", "99"},
+			wantErrFrag: "invalid numeric value",
+		},
+		{
+			name:        "between_invalid_max",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+			values:      []string{"10", "xyz"},
+			wantErrFrag: "invalid numeric value",
+		},
+		{
+			name:        "not_between_too_few",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+			values:      []string{},
+			wantErrFrag: "exactly 2 values",
+		},
+		{
+			name:        "not_between_too_many",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+			values:      []string{"10", "50", "90"},
+			wantErrFrag: "exactly 2 values",
+		},
+		{
+			name:        "not_between_invalid_min",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+			values:      []string{"abc", "99"},
+			wantErrFrag: "invalid numeric value",
+		},
+		{
+			name:        "not_between_invalid_max",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+			values:      []string{"10", "xyz"},
+			wantErrFrag: "invalid numeric value",
+		},
+		{
+			name:        "between_min_greater_than_max",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+			values:      []string{"100", "10"},
+			wantErrFrag: "values[0] <= values[1]",
+		},
+		{
+			name:        "not_between_min_greater_than_max",
+			operator:    commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+			values:      []string{"100", "10"},
+			wantErrFrag: "values[0] <= values[1]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &commonv1.PropertyFilter{
+				Property: "amount",
+				Operator: tt.operator,
+				Values:   tt.values,
+			}
+			_, err := clickhouse.PropertyCondition(f, "proj1")
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.wantErrFrag)
+			}
+			if !strings.Contains(err.Error(), tt.wantErrFrag) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantErrFrag)
+			}
+		})
+	}
+}
+
+func TestPropertyCondition_ProfileSource_Between(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: "score",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+		Values:   []string{"10", "50"},
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+	}
+	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := cond.SQL()
+	if !strings.Contains(sql, "distinct_id IN (") {
+		t.Errorf("expected profile subquery, got: %s", sql)
+	}
+	if !strings.Contains(sql, "toFloat64OrNull(JSONExtractString(properties, 'score'))") {
+		t.Errorf("expected numeric condition for profile property, got: %s", sql)
+	}
+	args := cond.Args()
+	wantArgs := []any{"proj_abc", float64(10), float64(50), "proj_abc", "proj_abc", float64(10), float64(50)}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("expected %d args, got %d: %v", len(wantArgs), len(args), args)
+	}
+	for i := range wantArgs {
+		if args[i] != wantArgs[i] {
+			t.Errorf("arg[%d] = %v, want %v", i, args[i], wantArgs[i])
+		}
+	}
+}
