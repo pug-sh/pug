@@ -182,6 +182,6 @@ are already pointers when updating the Go side here.
 
 ## Group 3 — Common (imported by Group 2, highest blast radius — do last)
 
-- [ ] `proto/common/v1/time.proto` — imported by `activity`, `insights`
-- [ ] `proto/common/v1/filter_schema.proto` — imported by `filters`, `activity`, `insights`
+- [x] `proto/common/v1/time.proto` — imported by `activity`, `insights`
+- [x] `proto/common/v1/filter_schema.proto` — imported by `filters`, `activity`, `insights`
 - [ ] `proto/common/v1/filters.proto` — imports `filter_schema`; imported by `activity`, `insights`
