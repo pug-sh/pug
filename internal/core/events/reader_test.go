@@ -9,6 +9,7 @@ import (
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	"github.com/fivebitsio/cotton/internal/testutil"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -123,7 +124,7 @@ func TestGetActivityFeed(t *testing.T) {
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
 			ProjectID:    "proj-1",
 			DistinctID:   "user-1",
-			EventFilters: []*commonv1.EventFilter{{Kind: "page_view"}},
+			EventFilters: []*commonv1.EventFilter{{Kind: proto.String("page_view")}},
 			PageSize:     100,
 		})
 		if err != nil {
@@ -377,9 +378,9 @@ func TestGetActivityFeed(t *testing.T) {
 			PageSize:   100,
 			PropertyFilters: []*commonv1.PropertyFilter{
 				{
-					Property: "$country",
-					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-					Value:    "US",
+					Property: proto.String("$country"),
+					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+					Value:    proto.String("US"),
 				},
 			},
 		})
@@ -400,9 +401,9 @@ func TestGetActivityFeed(t *testing.T) {
 			PageSize:   100,
 			PropertyFilters: []*commonv1.PropertyFilter{
 				{
-					Property: "plan",
-					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-					Value:    "pro",
+					Property: proto.String("plan"),
+					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+					Value:    proto.String("pro"),
 				},
 			},
 		})
@@ -434,7 +435,7 @@ func TestGetActivityFeed(t *testing.T) {
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
 			ProjectID:    "proj-1",
 			DistinctID:   "user-1",
-			EventFilters: []*commonv1.EventFilter{{Kind: "page_view"}},
+			EventFilters: []*commonv1.EventFilter{{Kind: proto.String("page_view")}},
 			SessionID:    sessionA,
 			PageSize:     100,
 			TimeRange: &commonv1.TimeRange{
@@ -443,9 +444,9 @@ func TestGetActivityFeed(t *testing.T) {
 			},
 			PropertyFilters: []*commonv1.PropertyFilter{
 				{
-					Property: "$country",
-					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-					Value:    "US",
+					Property: proto.String("$country"),
+					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+					Value:    proto.String("US"),
 				},
 			},
 		})
@@ -466,8 +467,8 @@ func TestGetActivityFeed(t *testing.T) {
 			ProjectID:  "proj-1",
 			DistinctID: "user-1",
 			EventFilters: []*commonv1.EventFilter{
-				{Kind: "page_view"},
-				{Kind: "purchase"},
+				{Kind: proto.String("page_view")},
+				{Kind: proto.String("purchase")},
 			},
 			PageSize: 100,
 		})
@@ -491,12 +492,12 @@ func TestGetActivityFeed(t *testing.T) {
 			DistinctID: "user-1",
 			EventFilters: []*commonv1.EventFilter{
 				{
-					Kind: "page_view",
+					Kind: proto.String("page_view"),
 					Filters: []*commonv1.PropertyFilter{
-						{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+						{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
 					},
 				},
-				{Kind: "signup"},
+				{Kind: proto.String("signup")},
 			},
 			PageSize: 100,
 		})
@@ -674,7 +675,7 @@ func TestGetEventExplorer(t *testing.T) {
 	t.Run("filters by kind", func(t *testing.T) {
 		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
 			ProjectID:    "proj-1",
-			EventFilters: []*commonv1.EventFilter{{Kind: "page_view"}},
+			EventFilters: []*commonv1.EventFilter{{Kind: proto.String("page_view")}},
 			PageSize:     100,
 		})
 		if err != nil {
@@ -725,9 +726,9 @@ func TestGetEventExplorer(t *testing.T) {
 			PageSize:  100,
 			PropertyFilters: []*commonv1.PropertyFilter{
 				{
-					Property: "$country",
-					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-					Value:    "DE",
+					Property: proto.String("$country"),
+					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+					Value:    proto.String("DE"),
 				},
 			},
 		})
@@ -794,7 +795,7 @@ func TestGetEventExplorer(t *testing.T) {
 	t.Run("combined filters", func(t *testing.T) {
 		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
 			ProjectID:    "proj-1",
-			EventFilters: []*commonv1.EventFilter{{Kind: "page_view"}},
+			EventFilters: []*commonv1.EventFilter{{Kind: proto.String("page_view")}},
 			SessionID:    sessionA,
 			PageSize:     100,
 			TimeRange: &commonv1.TimeRange{
@@ -803,9 +804,9 @@ func TestGetEventExplorer(t *testing.T) {
 			},
 			PropertyFilters: []*commonv1.PropertyFilter{
 				{
-					Property: "$country",
-					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-					Value:    "US",
+					Property: proto.String("$country"),
+					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+					Value:    proto.String("US"),
 				},
 			},
 		})
@@ -822,8 +823,8 @@ func TestGetEventExplorer(t *testing.T) {
 		evts, _, err := reader.GetEventExplorer(ctx, events.EventExplorerParams{
 			ProjectID: "proj-1",
 			EventFilters: []*commonv1.EventFilter{
-				{Kind: "page_view"},
-				{Kind: "purchase"},
+				{Kind: proto.String("page_view")},
+				{Kind: proto.String("purchase")},
 			},
 			PageSize: 100,
 		})
@@ -846,12 +847,12 @@ func TestGetEventExplorer(t *testing.T) {
 			ProjectID: "proj-1",
 			EventFilters: []*commonv1.EventFilter{
 				{
-					Kind: "page_view",
+					Kind: proto.String("page_view"),
 					Filters: []*commonv1.PropertyFilter{
-						{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+						{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
 					},
 				},
-				{Kind: "signup"},
+				{Kind: proto.String("signup")},
 			},
 			PageSize: 100,
 		})

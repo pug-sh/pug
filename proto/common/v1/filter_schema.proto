@@ -3,7 +3,7 @@ package common.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option features.field_presence = IMPLICIT;
+
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1";
 
 enum PropertySource {

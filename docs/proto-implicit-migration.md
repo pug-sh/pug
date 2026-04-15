@@ -184,4 +184,4 @@ are already pointers when updating the Go side here.
 
 - [x] `proto/common/v1/time.proto` — imported by `activity`, `insights`
 - [x] `proto/common/v1/filter_schema.proto` — imported by `filters`, `activity`, `insights`
-- [ ] `proto/common/v1/filters.proto` — imports `filter_schema`; imported by `activity`, `insights`
+- [x] `proto/common/v1/filters.proto` — imports `filter_schema`; imported by `activity`, `insights`

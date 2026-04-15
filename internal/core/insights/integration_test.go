@@ -37,7 +37,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -75,7 +75,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
 			},
 		}
 
@@ -113,7 +113,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
 			BreakdownLimit: proto.Int32(10),
@@ -146,7 +146,7 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -174,13 +174,13 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 			FilterGroups: []*insightsv1.FilterGroup{
 				{
 					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
 					Filters: []*commonv1.PropertyFilter{
-						{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+						{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
 					},
 				},
 			},
@@ -211,7 +211,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG.Enum()},
 			},
 		}
 
@@ -239,7 +239,7 @@ func TestIntegration(t *testing.T) {
 			To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 		}
 		events := []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 		}
 
 		// First page: size 2
@@ -296,7 +296,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
 			BreakdownLimit: proto.Int32(2), // Only top 2 countries, rest go to $others
@@ -343,8 +343,8 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -382,7 +382,7 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 			PageSize: proto.Int32(100),
 		}
@@ -438,16 +438,16 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 			FilterGroups: []*insightsv1.FilterGroup{
 				{
 					Filters: []*commonv1.PropertyFilter{
 						{
-							Property: "plan",
-							Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-							Value:    "pro",
-							Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+							Property: proto.String("plan"),
+							Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+							Value:    proto.String("pro"),
+							Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
 						},
 					},
 				},
@@ -484,9 +484,9 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 2, 8, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				{Event: &commonv1.EventFilter{Kind: "add_to_cart"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("add_to_cart")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -525,9 +525,9 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 2, 8, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				{Event: &commonv1.EventFilter{Kind: "add_to_cart"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("add_to_cart")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -575,8 +575,8 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				{Event: &commonv1.EventFilter{Kind: "login"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("login")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -623,8 +623,8 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
 			},
 			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
 			BreakdownLimit: proto.Int32(1),
@@ -670,8 +670,8 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
-				{Event: &commonv1.EventFilter{Kind: "login"}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
 			},
 			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
 			BreakdownLimit: proto.Int32(1),
@@ -713,8 +713,8 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
 			},
 			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
 			BreakdownLimit: proto.Int32(10),
@@ -766,8 +766,8 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
 			},
 			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
 			BreakdownLimit: proto.Int32(10),
@@ -808,8 +808,8 @@ func TestIntegration(t *testing.T) {
 			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
-				{Event: &commonv1.EventFilter{Kind: "login"}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
 			},
 			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
 			BreakdownLimit: proto.Int32(10),

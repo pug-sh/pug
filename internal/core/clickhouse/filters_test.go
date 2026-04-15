@@ -6,6 +6,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/clickhouse"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestPropertyExpr(t *testing.T) {
@@ -37,9 +38,9 @@ func TestEscapeLike(t *testing.T) {
 
 func TestPropertyCondition_Equals(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "$country",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-		Value:    "US",
+		Property: proto.String("$country"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+		Value:    proto.String("US"),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
@@ -56,9 +57,9 @@ func TestPropertyCondition_Equals(t *testing.T) {
 
 func TestPropertyCondition_Contains(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "name",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS,
-		Value:    "test%val",
+		Property: proto.String("name"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS.Enum(),
+		Value:    proto.String("test%val"),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
@@ -75,8 +76,8 @@ func TestPropertyCondition_Contains(t *testing.T) {
 
 func TestPropertyCondition_IsSet(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "email",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_SET,
+		Property: proto.String("email"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_SET.Enum(),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
@@ -93,9 +94,9 @@ func TestPropertyCondition_IsSet(t *testing.T) {
 
 func TestPropertyCondition_GTE_Numeric(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "score",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE,
-		Value:    "42.5",
+		Property: proto.String("score"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(),
+		Value:    proto.String("42.5"),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
@@ -112,9 +113,9 @@ func TestPropertyCondition_GTE_Numeric(t *testing.T) {
 
 func TestPropertyCondition_GTE_InvalidNumeric(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "score",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE,
-		Value:    "not-a-number",
+		Property: proto.String("score"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(),
+		Value:    proto.String("not-a-number"),
 	}
 	if _, err := clickhouse.PropertyCondition(f, "proj1"); err == nil {
 		t.Fatal("expected error for non-numeric value with GTE operator")
@@ -123,8 +124,8 @@ func TestPropertyCondition_GTE_InvalidNumeric(t *testing.T) {
 
 func TestPropertyCondition_In(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "$country",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN,
+		Property: proto.String("$country"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN.Enum(),
 		Values:   []string{"US", "UK", "CA"},
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
@@ -142,9 +143,9 @@ func TestPropertyCondition_In(t *testing.T) {
 
 func TestPropertyCondition_NotEquals(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "status",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS,
-		Value:    "inactive",
+		Property: proto.String("status"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS.Enum(),
+		Value:    proto.String("inactive"),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
@@ -161,9 +162,9 @@ func TestPropertyCondition_NotEquals(t *testing.T) {
 
 func TestPropertyCondition_NotContains(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "url",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS,
-		Value:    "admin",
+		Property: proto.String("url"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS.Enum(),
+		Value:    proto.String("admin"),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
@@ -180,8 +181,8 @@ func TestPropertyCondition_NotContains(t *testing.T) {
 
 func TestPropertyCondition_IsNotSet(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "email",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET,
+		Property: proto.String("email"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET.Enum(),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
@@ -198,9 +199,9 @@ func TestPropertyCondition_IsNotSet(t *testing.T) {
 
 func TestPropertyCondition_LTE(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "age",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_LTE,
-		Value:    "30",
+		Property: proto.String("age"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_LTE.Enum(),
+		Value:    proto.String("30"),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
@@ -217,9 +218,9 @@ func TestPropertyCondition_LTE(t *testing.T) {
 
 func TestPropertyCondition_LT(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "score",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_LT,
-		Value:    "100",
+		Property: proto.String("score"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_LT.Enum(),
+		Value:    proto.String("100"),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
@@ -233,9 +234,9 @@ func TestPropertyCondition_LT(t *testing.T) {
 
 func TestPropertyCondition_GT(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "revenue",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GT,
-		Value:    "0",
+		Property: proto.String("revenue"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GT.Enum(),
+		Value:    proto.String("0"),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
 	if err != nil {
@@ -252,8 +253,8 @@ func TestPropertyCondition_GT(t *testing.T) {
 
 func TestPropertyCondition_NotIn(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "$country",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN,
+		Property: proto.String("$country"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN.Enum(),
 		Values:   []string{"CN", "RU"},
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
@@ -271,8 +272,8 @@ func TestPropertyCondition_NotIn(t *testing.T) {
 
 func TestPropertyCondition_InEmptyValues(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "$country",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN,
+		Property: proto.String("$country"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN.Enum(),
 		Values:   []string{},
 	}
 	if _, err := clickhouse.PropertyCondition(f, "proj1"); err == nil {
@@ -282,8 +283,8 @@ func TestPropertyCondition_InEmptyValues(t *testing.T) {
 
 func TestPropertyCondition_NotInEmptyValues(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "$country",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN,
+		Property: proto.String("$country"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN.Enum(),
 		Values:   []string{},
 	}
 	if _, err := clickhouse.PropertyCondition(f, "proj1"); err == nil {
@@ -293,8 +294,8 @@ func TestPropertyCondition_NotInEmptyValues(t *testing.T) {
 
 func TestPropertyCondition_Unsupported(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "x",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED,
+		Property: proto.String("x"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED.Enum(),
 	}
 	if _, err := clickhouse.PropertyCondition(f, "proj1"); err == nil {
 		t.Fatal("expected error for unsupported operator")
@@ -303,10 +304,10 @@ func TestPropertyCondition_Unsupported(t *testing.T) {
 
 func TestPropertyCondition_ProfileSource_Equals(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "plan",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-		Value:    "pro",
-		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+		Property: proto.String("plan"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+		Value:    proto.String("pro"),
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
 	if err != nil {
@@ -350,9 +351,9 @@ func TestPropertyCondition_ProfileSource_Equals(t *testing.T) {
 
 func TestPropertyCondition_ProfileSource_IsSet(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "email",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_SET,
-		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+		Property: proto.String("email"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_SET.Enum(),
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
 	if err != nil {
@@ -380,9 +381,9 @@ func TestPropertyCondition_ProfileSource_IsSet(t *testing.T) {
 
 func TestPropertyCondition_ProfileSource_IsNotSet(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "phone",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET,
-		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+		Property: proto.String("phone"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET.Enum(),
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
 	if err != nil {
@@ -410,10 +411,10 @@ func TestPropertyCondition_ProfileSource_IsNotSet(t *testing.T) {
 
 func TestPropertyCondition_ProfileSource_In(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "plan",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN,
+		Property: proto.String("plan"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN.Enum(),
 		Values:   []string{"pro", "enterprise"},
-		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
 	if err != nil {
@@ -441,10 +442,10 @@ func TestPropertyCondition_ProfileSource_In(t *testing.T) {
 
 func TestPropertyCondition_ProfileSource_GTE(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "score",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE,
-		Value:    "42.5",
-		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+		Property: proto.String("score"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(),
+		Value:    proto.String("42.5"),
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
 	if err != nil {
@@ -472,10 +473,10 @@ func TestPropertyCondition_ProfileSource_GTE(t *testing.T) {
 
 func TestPropertyCondition_ProfileSource_EmptyProjectID(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "plan",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-		Value:    "pro",
-		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+		Property: proto.String("plan"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+		Value:    proto.String("pro"),
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
 	}
 	_, err := clickhouse.PropertyCondition(f, "")
 	if err == nil {
@@ -488,10 +489,10 @@ func TestPropertyCondition_ProfileSource_EmptyProjectID(t *testing.T) {
 
 func TestPropertyCondition_ProfileSource_Aliased(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "plan",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-		Value:    "pro",
-		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+		Property: proto.String("plan"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+		Value:    proto.String("pro"),
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
 	}
 	cond, err := clickhouse.PropertyConditionAliased(f, "proj_abc", "e")
 	if err != nil {
@@ -508,9 +509,9 @@ func TestPropertyCondition_ProfileSource_Aliased(t *testing.T) {
 
 func TestPropertyConditionAliased(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "$country",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-		Value:    "US",
+		Property: proto.String("$country"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+		Value:    proto.String("US"),
 	}
 	cond, err := clickhouse.PropertyConditionAliased(f, "proj1", "e")
 	if err != nil {
@@ -545,7 +546,7 @@ func TestEventCondition_EmptySlice(t *testing.T) {
 }
 
 func TestEventCondition_SingleKindOnly(t *testing.T) {
-	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{{Kind: "page_view"}}, "proj1")
+	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{{Kind: proto.String("page_view")}}, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -559,8 +560,8 @@ func TestEventCondition_SingleKindOnly(t *testing.T) {
 
 func TestEventCondition_MultipleEvents(t *testing.T) {
 	cond, err := clickhouse.EventCondition([]*commonv1.EventFilter{
-		{Kind: "page_view"},
-		{Kind: "purchase"},
+		{Kind: proto.String("page_view")},
+		{Kind: proto.String("purchase")},
 	}, "proj1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -586,7 +587,7 @@ func TestEventCondition_NilEvent(t *testing.T) {
 
 func TestEventCondition_MultipleWithEmptyFilter(t *testing.T) {
 	if _, err := clickhouse.EventCondition([]*commonv1.EventFilter{
-		{Kind: "page_view"},
+		{Kind: proto.String("page_view")},
 		{},
 	}, "proj1"); err == nil {
 		t.Fatal("expected error for empty EventFilter in multi-event list")
@@ -598,9 +599,9 @@ func TestEventCondition_MultipleWithEmptyFilter(t *testing.T) {
 func TestEventConditionAliased(t *testing.T) {
 	cond, err := clickhouse.EventConditionAliased([]*commonv1.EventFilter{
 		{
-			Kind: "page_view",
+			Kind: proto.String("page_view"),
 			Filters: []*commonv1.PropertyFilter{
-				{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+				{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
 			},
 		},
 	}, "proj1", "e")
@@ -621,8 +622,8 @@ func TestEventConditionAliased(t *testing.T) {
 
 func TestPropertyConditionAliased_NotBetween(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "amount",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+		Property: proto.String("amount"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN.Enum(),
 		Values:   []string{"10", "50"},
 	}
 	cond, err := clickhouse.PropertyConditionAliased(f, "proj1", "e")
@@ -643,8 +644,8 @@ func TestPropertyConditionAliased_NotBetween(t *testing.T) {
 
 func TestPropertyCondition_Between(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "amount",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+		Property: proto.String("amount"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN.Enum(),
 		Values:   []string{"10", "50"},
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
@@ -665,8 +666,8 @@ func TestPropertyCondition_Between(t *testing.T) {
 
 func TestPropertyCondition_NotBetween(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "amount",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+		Property: proto.String("amount"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN.Enum(),
 		Values:   []string{"10", "50"},
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj1")
@@ -756,8 +757,8 @@ func TestPropertyCondition_Between_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &commonv1.PropertyFilter{
-				Property: "amount",
-				Operator: tt.operator,
+				Property: proto.String("amount"),
+				Operator: tt.operator.Enum(),
 				Values:   tt.values,
 			}
 			_, err := clickhouse.PropertyCondition(f, "proj1")
@@ -773,10 +774,10 @@ func TestPropertyCondition_Between_Errors(t *testing.T) {
 
 func TestPropertyCondition_ProfileSource_Between(t *testing.T) {
 	f := &commonv1.PropertyFilter{
-		Property: "score",
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+		Property: proto.String("score"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN.Enum(),
 		Values:   []string{"10", "50"},
-		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
 	}
 	cond, err := clickhouse.PropertyCondition(f, "proj_abc")
 	if err != nil {
