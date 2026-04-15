@@ -24,7 +24,7 @@ const (
 
 type BatchGetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -60,8 +60,8 @@ func (*BatchGetRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *BatchGetRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
@@ -112,8 +112,8 @@ func (x *BatchGetResponse) GetProjects() []*Project {
 
 type CreateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	DisplayName   string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	OrgId         string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	OrgId         *string                `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -149,15 +149,15 @@ func (*CreateRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *CreateRequest) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
 	}
 	return ""
 }
 
 func (x *CreateRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
@@ -360,12 +360,12 @@ func (x *GetResponse) GetProject() *Project {
 
 type Project struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	DisplayName    string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	FcmServiceJson string                 `protobuf:"bytes,2,opt,name=fcm_service_json,json=fcmServiceJson" json:"fcm_service_json,omitempty"`
-	Id             string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
-	OrgId          string                 `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	PrivateApiKey  string                 `protobuf:"bytes,5,opt,name=private_api_key,json=privateApiKey" json:"private_api_key,omitempty"`
-	PublicApiKey   string                 `protobuf:"bytes,6,opt,name=public_api_key,json=publicApiKey" json:"public_api_key,omitempty"`
+	DisplayName    *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	FcmServiceJson *string                `protobuf:"bytes,2,opt,name=fcm_service_json,json=fcmServiceJson" json:"fcm_service_json,omitempty"`
+	Id             *string                `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
+	OrgId          *string                `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	PrivateApiKey  *string                `protobuf:"bytes,5,opt,name=private_api_key,json=privateApiKey" json:"private_api_key,omitempty"`
+	PublicApiKey   *string                `protobuf:"bytes,6,opt,name=public_api_key,json=publicApiKey" json:"public_api_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -401,50 +401,50 @@ func (*Project) Descriptor() ([]byte, []int) {
 }
 
 func (x *Project) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
 	}
 	return ""
 }
 
 func (x *Project) GetFcmServiceJson() string {
-	if x != nil {
-		return x.FcmServiceJson
+	if x != nil && x.FcmServiceJson != nil {
+		return *x.FcmServiceJson
 	}
 	return ""
 }
 
 func (x *Project) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
 
 func (x *Project) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
 
 func (x *Project) GetPrivateApiKey() string {
-	if x != nil {
-		return x.PrivateApiKey
+	if x != nil && x.PrivateApiKey != nil {
+		return *x.PrivateApiKey
 	}
 	return ""
 }
 
 func (x *Project) GetPublicApiKey() string {
-	if x != nil {
-		return x.PublicApiKey
+	if x != nil && x.PublicApiKey != nil {
+		return *x.PublicApiKey
 	}
 	return ""
 }
 
 type UpdateDisplayNameRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	DisplayName   string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -480,8 +480,8 @@ func (*UpdateDisplayNameRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *UpdateDisplayNameRequest) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
 	}
 	return ""
 }
@@ -532,7 +532,7 @@ func (x *UpdateDisplayNameResponse) GetProject() *Project {
 
 type UpdateFCMServiceJSONRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	FcmServiceJson string                 `protobuf:"bytes,1,opt,name=fcm_service_json,json=fcmServiceJson" json:"fcm_service_json,omitempty"`
+	FcmServiceJson *string                `protobuf:"bytes,1,opt,name=fcm_service_json,json=fcmServiceJson" json:"fcm_service_json,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -568,8 +568,8 @@ func (*UpdateFCMServiceJSONRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *UpdateFCMServiceJSONRequest) GetFcmServiceJson() string {
-	if x != nil {
-		return x.FcmServiceJson
+	if x != nil && x.FcmServiceJson != nil {
+		return *x.FcmServiceJson
 	}
 	return ""
 }
@@ -650,7 +650,7 @@ const file_dashboard_projects_v1_projects_proto_rawDesc = "" +
 	"\x06Delete\x12$.dashboard.projects.v1.DeleteRequest\x1a%.dashboard.projects.v1.DeleteResponse\"\x00\x12N\n" +
 	"\x03Get\x12!.dashboard.projects.v1.GetRequest\x1a\".dashboard.projects.v1.GetResponse\"\x00\x12x\n" +
 	"\x11UpdateDisplayName\x12/.dashboard.projects.v1.UpdateDisplayNameRequest\x1a0.dashboard.projects.v1.UpdateDisplayNameResponse\"\x00\x12\x81\x01\n" +
-	"\x14UpdateFCMServiceJSON\x122.dashboard.projects.v1.UpdateFCMServiceJSONRequest\x1a3.dashboard.projects.v1.UpdateFCMServiceJSONResponse\"\x00BWZPgithub.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1;projectsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x14UpdateFCMServiceJSON\x122.dashboard.projects.v1.UpdateFCMServiceJSONRequest\x1a3.dashboard.projects.v1.UpdateFCMServiceJSONResponse\"\x00BRZPgithub.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1;projectsv1b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_projects_v1_projects_proto_rawDescOnce sync.Once
