@@ -112,7 +112,7 @@ Never call `getPrincipalFromContext` directly in handlers.
 
 Services defined in `proto/` directory, organized by auth boundary (`public/`, `sdk/`, `dashboard/`, `shared/`). Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled. Profiles is split into `ProfilesSDKService` (sdk — Identify) and `ProfilesService` (shared — Get, GetByExternalId, List, Delete). SDK profiles uses Go import alias `sdkprofilesv1` to avoid collision with shared `profilesv1`.
 
-**Validation:** Prefer `buf/validate` (protovalidate) annotations in `.proto` files over hand-written Go validation code. The `validate.NewInterceptor()` in the server enforces all proto annotations before handlers run. Use CEL expressions for cross-field constraints (e.g., `this.from < this.to`, operator-dependent required fields). Only add Go-side validation as defense-in-depth for public functions in shared packages that may be called outside the RPC chain.
+**Validation:** Always use `buf/validate` (protovalidate) annotations in `.proto` files for request validation. The `validate.NewInterceptor()` in the server enforces all proto annotations before handlers run. Use CEL expressions for cross-field constraints (e.g., `this.from < this.to`, operator-dependent required fields). Do **not** duplicate proto validations in Go code — if protovalidate already enforces a constraint, trust it. Redundant checks add maintenance burden and drift risk without meaningful safety gain. Only add Go-side validation for public functions in shared packages that are called outside the RPC chain (e.g., a library used by workers that never passes through the interceptor).
 
 **Proto directory layout mirrors the handler auth boundary:**
 
