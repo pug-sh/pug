@@ -5,7 +5,6 @@ import "buf/validate/validate.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1;profilesv1";
 
 service ProfilesService {

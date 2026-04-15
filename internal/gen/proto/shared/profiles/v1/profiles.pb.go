@@ -26,7 +26,7 @@ const (
 
 type DeleteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -62,8 +62,8 @@ func (*DeleteRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *DeleteRequest) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
@@ -106,7 +106,7 @@ func (*DeleteResponse) Descriptor() ([]byte, []int) {
 
 type GetByExternalIdRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExternalId    string                 `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ExternalId    *string                `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -142,8 +142,8 @@ func (*GetByExternalIdRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetByExternalIdRequest) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
+	if x != nil && x.ExternalId != nil {
+		return *x.ExternalId
 	}
 	return ""
 }
@@ -194,7 +194,7 @@ func (x *GetByExternalIdResponse) GetProfile() *Profile {
 
 type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -230,8 +230,8 @@ func (*GetRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetRequest) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
@@ -283,7 +283,7 @@ func (x *GetResponse) GetProfile() *Profile {
 type ListRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
-	PageToken     string `protobuf:"bytes,1,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	PageToken     *string `protobuf:"bytes,1,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -319,8 +319,8 @@ func (*ListRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *ListRequest) GetPageToken() string {
-	if x != nil {
-		return x.PageToken
+	if x != nil && x.PageToken != nil {
+		return *x.PageToken
 	}
 	return ""
 }
@@ -329,7 +329,7 @@ type ListResponse struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Profiles []*Profile             `protobuf:"bytes,1,rep,name=profiles" json:"profiles,omitempty"`
 	// Empty when there are no more pages.
-	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
+	NextPageToken *string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -372,8 +372,8 @@ func (x *ListResponse) GetProfiles() []*Profile {
 }
 
 func (x *ListResponse) GetNextPageToken() string {
-	if x != nil {
-		return x.NextPageToken
+	if x != nil && x.NextPageToken != nil {
+		return *x.NextPageToken
 	}
 	return ""
 }
@@ -381,10 +381,10 @@ func (x *ListResponse) GetNextPageToken() string {
 type Profile struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
-	ExternalId    string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	Id            string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
+	ExternalId    *string                `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	Id            *string                `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
 	Properties    *structpb.Struct       `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,5,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	ProjectId     *string                `protobuf:"bytes,5,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -428,15 +428,15 @@ func (x *Profile) GetCreateTime() *timestamppb.Timestamp {
 }
 
 func (x *Profile) GetExternalId() string {
-	if x != nil {
-		return x.ExternalId
+	if x != nil && x.ExternalId != nil {
+		return *x.ExternalId
 	}
 	return ""
 }
 
 func (x *Profile) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
@@ -449,8 +449,8 @@ func (x *Profile) GetProperties() *structpb.Struct {
 }
 
 func (x *Profile) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
 	}
 	return ""
 }
@@ -503,7 +503,7 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"\x03Get\x12\x1e.shared.profiles.v1.GetRequest\x1a\x1f.shared.profiles.v1.GetResponse\"\x00\x12l\n" +
 	"\x0fGetByExternalId\x12*.shared.profiles.v1.GetByExternalIdRequest\x1a+.shared.profiles.v1.GetByExternalIdResponse\"\x00\x12M\n" +
 	"\x04List\x12\x1f.shared.profiles.v1.ListRequest\x1a .shared.profiles.v1.ListResponse\"\x000\x01\x12Q\n" +
-	"\x06Delete\x12!.shared.profiles.v1.DeleteRequest\x1a\".shared.profiles.v1.DeleteResponse\"\x00BTZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1;profilesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x06Delete\x12!.shared.profiles.v1.DeleteRequest\x1a\".shared.profiles.v1.DeleteResponse\"\x00BOZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1;profilesv1b\beditionsp\xe8\a"
 
 var (
 	file_shared_profiles_v1_profiles_proto_rawDescOnce sync.Once
