@@ -177,7 +177,7 @@ These can be done in any order and are fully self-contained.
 Do these after the common protos in Group 3 are migrated, so all imported scalar types
 are already pointers when updating the Go side here.
 
-- [ ] `proto/shared/activity/v1/activity.proto` — imports `filter_schema`, `filters`, `time`
+- [x] `proto/shared/activity/v1/activity.proto` — imports `filter_schema`, `filters`, `time`
 - [x] `proto/shared/insights/v1/insights.proto` — imports `filter_schema`, `filters`, `time`
 
 ## Group 3 — Common (imported by Group 2, highest blast radius — do last)
