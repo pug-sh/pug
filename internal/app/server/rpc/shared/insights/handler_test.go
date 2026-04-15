@@ -30,8 +30,9 @@ func TestQuery_UnsupportedInsightType(t *testing.T) {
 	})
 
 	s := &server{}
+	insightType := insightsv1.InsightType(999)
 	_, err := s.Query(ctx, connect.NewRequest(&insightsv1.QueryRequest{
-		InsightType: 999,
+		InsightType: &insightType,
 	}))
 	if err == nil {
 		t.Fatal("expected error, got nil")

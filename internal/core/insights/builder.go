@@ -222,7 +222,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	if len(events) == 0 {
 		events = []*insightsv1.EventQuery{{
 			Event:       &commonv1.EventFilter{},
-			Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
+			Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
 		}}
 	}
 

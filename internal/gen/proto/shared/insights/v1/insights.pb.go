@@ -200,25 +200,25 @@ func (AggregationType) EnumDescriptor() ([]byte, []int) {
 
 type QueryRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	InsightType    InsightType            `protobuf:"varint,1,opt,name=insight_type,json=insightType,enum=shared.insights.v1.InsightType" json:"insight_type,omitempty"`
+	InsightType    *InsightType           `protobuf:"varint,1,opt,name=insight_type,json=insightType,enum=shared.insights.v1.InsightType" json:"insight_type,omitempty"`
 	TimeRange      *v1.TimeRange          `protobuf:"bytes,2,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
-	Granularity    Granularity            `protobuf:"varint,3,opt,name=granularity,enum=shared.insights.v1.Granularity" json:"granularity,omitempty"`
+	Granularity    *Granularity           `protobuf:"varint,3,opt,name=granularity,enum=shared.insights.v1.Granularity" json:"granularity,omitempty"`
 	Events         []*EventQuery          `protobuf:"bytes,4,rep,name=events" json:"events,omitempty"`
 	Breakdowns     []*Breakdown           `protobuf:"bytes,6,rep,name=breakdowns" json:"breakdowns,omitempty"`
-	BreakdownLimit int32                  `protobuf:"varint,7,opt,name=breakdown_limit,json=breakdownLimit" json:"breakdown_limit,omitempty"`
+	BreakdownLimit *int32                 `protobuf:"varint,7,opt,name=breakdown_limit,json=breakdownLimit" json:"breakdown_limit,omitempty"`
 	// Optional grouped filters for top-level conditions.
 	// Each group combines its filters via group.operator.
 	// Groups are combined via filter_groups_operator.
-	FilterGroups         []*FilterGroup     `protobuf:"bytes,8,rep,name=filter_groups,json=filterGroups" json:"filter_groups,omitempty"`
-	FilterGroupsOperator v1.LogicalOperator `protobuf:"varint,9,opt,name=filter_groups_operator,json=filterGroupsOperator,enum=common.v1.LogicalOperator" json:"filter_groups_operator,omitempty"`
+	FilterGroups         []*FilterGroup      `protobuf:"bytes,8,rep,name=filter_groups,json=filterGroups" json:"filter_groups,omitempty"`
+	FilterGroupsOperator *v1.LogicalOperator `protobuf:"varint,9,opt,name=filter_groups_operator,json=filterGroupsOperator,enum=common.v1.LogicalOperator" json:"filter_groups_operator,omitempty"`
 	// Funnel conversion window in seconds. Only used for INSIGHT_TYPE_FUNNEL.
 	// The maximum time allowed from the first step to the last step per user.
 	// 0 means use the full time range as the window (no constraint).
-	ConversionWindowSeconds int32 `protobuf:"varint,10,opt,name=conversion_window_seconds,json=conversionWindowSeconds" json:"conversion_window_seconds,omitempty"`
+	ConversionWindowSeconds *int32 `protobuf:"varint,10,opt,name=conversion_window_seconds,json=conversionWindowSeconds" json:"conversion_window_seconds,omitempty"`
 	// When true, funnel queries include per-step average time-to-convert.
 	// Uses an array-based single-scan query that captures per-step timestamps,
 	// then computes timing in Go. When false (default), uses windowFunnel() for faster counts only.
-	IncludeStepTiming bool `protobuf:"varint,11,opt,name=include_step_timing,json=includeStepTiming" json:"include_step_timing,omitempty"`
+	IncludeStepTiming *bool `protobuf:"varint,11,opt,name=include_step_timing,json=includeStepTiming" json:"include_step_timing,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -254,8 +254,8 @@ func (*QueryRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *QueryRequest) GetInsightType() InsightType {
-	if x != nil {
-		return x.InsightType
+	if x != nil && x.InsightType != nil {
+		return *x.InsightType
 	}
 	return InsightType_INSIGHT_TYPE_UNSPECIFIED
 }
@@ -268,8 +268,8 @@ func (x *QueryRequest) GetTimeRange() *v1.TimeRange {
 }
 
 func (x *QueryRequest) GetGranularity() Granularity {
-	if x != nil {
-		return x.Granularity
+	if x != nil && x.Granularity != nil {
+		return *x.Granularity
 	}
 	return Granularity_GRANULARITY_UNSPECIFIED
 }
@@ -289,8 +289,8 @@ func (x *QueryRequest) GetBreakdowns() []*Breakdown {
 }
 
 func (x *QueryRequest) GetBreakdownLimit() int32 {
-	if x != nil {
-		return x.BreakdownLimit
+	if x != nil && x.BreakdownLimit != nil {
+		return *x.BreakdownLimit
 	}
 	return 0
 }
@@ -303,22 +303,22 @@ func (x *QueryRequest) GetFilterGroups() []*FilterGroup {
 }
 
 func (x *QueryRequest) GetFilterGroupsOperator() v1.LogicalOperator {
-	if x != nil {
-		return x.FilterGroupsOperator
+	if x != nil && x.FilterGroupsOperator != nil {
+		return *x.FilterGroupsOperator
 	}
 	return v1.LogicalOperator(0)
 }
 
 func (x *QueryRequest) GetConversionWindowSeconds() int32 {
-	if x != nil {
-		return x.ConversionWindowSeconds
+	if x != nil && x.ConversionWindowSeconds != nil {
+		return *x.ConversionWindowSeconds
 	}
 	return 0
 }
 
 func (x *QueryRequest) GetIncludeStepTiming() bool {
-	if x != nil {
-		return x.IncludeStepTiming
+	if x != nil && x.IncludeStepTiming != nil {
+		return *x.IncludeStepTiming
 	}
 	return false
 }
@@ -441,11 +441,11 @@ type SegmentUsersRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	TimeRange *v1.TimeRange          `protobuf:"bytes,1,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
 	Events    []*EventQuery          `protobuf:"bytes,2,rep,name=events" json:"events,omitempty"`
-	PageSize  int32                  `protobuf:"varint,4,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
-	PageToken string                 `protobuf:"bytes,5,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	PageSize  *int32                 `protobuf:"varint,4,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
+	PageToken *string                `protobuf:"bytes,5,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional grouped filters for top-level conditions.
-	FilterGroups         []*FilterGroup     `protobuf:"bytes,6,rep,name=filter_groups,json=filterGroups" json:"filter_groups,omitempty"`
-	FilterGroupsOperator v1.LogicalOperator `protobuf:"varint,7,opt,name=filter_groups_operator,json=filterGroupsOperator,enum=common.v1.LogicalOperator" json:"filter_groups_operator,omitempty"`
+	FilterGroups         []*FilterGroup      `protobuf:"bytes,6,rep,name=filter_groups,json=filterGroups" json:"filter_groups,omitempty"`
+	FilterGroupsOperator *v1.LogicalOperator `protobuf:"varint,7,opt,name=filter_groups_operator,json=filterGroupsOperator,enum=common.v1.LogicalOperator" json:"filter_groups_operator,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -495,15 +495,15 @@ func (x *SegmentUsersRequest) GetEvents() []*EventQuery {
 }
 
 func (x *SegmentUsersRequest) GetPageSize() int32 {
-	if x != nil {
-		return x.PageSize
+	if x != nil && x.PageSize != nil {
+		return *x.PageSize
 	}
 	return 0
 }
 
 func (x *SegmentUsersRequest) GetPageToken() string {
-	if x != nil {
-		return x.PageToken
+	if x != nil && x.PageToken != nil {
+		return *x.PageToken
 	}
 	return ""
 }
@@ -516,8 +516,8 @@ func (x *SegmentUsersRequest) GetFilterGroups() []*FilterGroup {
 }
 
 func (x *SegmentUsersRequest) GetFilterGroupsOperator() v1.LogicalOperator {
-	if x != nil {
-		return x.FilterGroupsOperator
+	if x != nil && x.FilterGroupsOperator != nil {
+		return *x.FilterGroupsOperator
 	}
 	return v1.LogicalOperator(0)
 }
@@ -525,7 +525,7 @@ func (x *SegmentUsersRequest) GetFilterGroupsOperator() v1.LogicalOperator {
 type SegmentUsersResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DistinctIds   []string               `protobuf:"bytes,1,rep,name=distinct_ids,json=distinctIds" json:"distinct_ids,omitempty"`
-	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
+	NextPageToken *string                `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -568,8 +568,8 @@ func (x *SegmentUsersResponse) GetDistinctIds() []string {
 }
 
 func (x *SegmentUsersResponse) GetNextPageToken() string {
-	if x != nil {
-		return x.NextPageToken
+	if x != nil && x.NextPageToken != nil {
+		return *x.NextPageToken
 	}
 	return ""
 }
@@ -577,7 +577,7 @@ func (x *SegmentUsersResponse) GetNextPageToken() string {
 type FilterGroup struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Filters       []*v1.PropertyFilter   `protobuf:"bytes,1,rep,name=filters" json:"filters,omitempty"`
-	Operator      v1.LogicalOperator     `protobuf:"varint,2,opt,name=operator,enum=common.v1.LogicalOperator" json:"operator,omitempty"`
+	Operator      *v1.LogicalOperator    `protobuf:"varint,2,opt,name=operator,enum=common.v1.LogicalOperator" json:"operator,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -620,8 +620,8 @@ func (x *FilterGroup) GetFilters() []*v1.PropertyFilter {
 }
 
 func (x *FilterGroup) GetOperator() v1.LogicalOperator {
-	if x != nil {
-		return x.Operator
+	if x != nil && x.Operator != nil {
+		return *x.Operator
 	}
 	return v1.LogicalOperator(0)
 }
@@ -631,10 +631,10 @@ type EventQuery struct {
 	Event *v1.EventFilter        `protobuf:"bytes,1,opt,name=event" json:"event,omitempty"`
 	// Aggregation type. Defaults to TOTAL when unspecified.
 	// Only used for trends and segmentation; ignored for funnel and retention.
-	Aggregation AggregationType `protobuf:"varint,2,opt,name=aggregation,enum=shared.insights.v1.AggregationType" json:"aggregation,omitempty"`
+	Aggregation *AggregationType `protobuf:"varint,2,opt,name=aggregation,enum=shared.insights.v1.AggregationType" json:"aggregation,omitempty"`
 	// Property name to aggregate on. Required for SUM/AVG/MIN/MAX; ignored for TOTAL/UNIQUE_USERS/PER_USER_AVG.
 	// Pattern uses * (not +) because this field may be empty for count-based aggregation types.
-	AggregationProperty string `protobuf:"bytes,3,opt,name=aggregation_property,json=aggregationProperty" json:"aggregation_property,omitempty"`
+	AggregationProperty *string `protobuf:"bytes,3,opt,name=aggregation_property,json=aggregationProperty" json:"aggregation_property,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -677,22 +677,22 @@ func (x *EventQuery) GetEvent() *v1.EventFilter {
 }
 
 func (x *EventQuery) GetAggregation() AggregationType {
-	if x != nil {
-		return x.Aggregation
+	if x != nil && x.Aggregation != nil {
+		return *x.Aggregation
 	}
 	return AggregationType_AGGREGATION_TYPE_UNSPECIFIED
 }
 
 func (x *EventQuery) GetAggregationProperty() string {
-	if x != nil {
-		return x.AggregationProperty
+	if x != nil && x.AggregationProperty != nil {
+		return *x.AggregationProperty
 	}
 	return ""
 }
 
 type Breakdown struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Property      string                 `protobuf:"bytes,1,opt,name=property" json:"property,omitempty"`
+	Property      *string                `protobuf:"bytes,1,opt,name=property" json:"property,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -728,8 +728,8 @@ func (*Breakdown) Descriptor() ([]byte, []int) {
 }
 
 func (x *Breakdown) GetProperty() string {
-	if x != nil {
-		return x.Property
+	if x != nil && x.Property != nil {
+		return *x.Property
 	}
 	return ""
 }
@@ -782,7 +782,7 @@ func (x *TrendsResult) GetSeries() []*TrendSeries {
 // TrendSeries is a single time series for a trends insight.
 type TrendSeries struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EventKind     string                 `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	EventKind     *string                `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
 	Breakdown     map[string]string      `protobuf:"bytes,2,rep,name=breakdown" json:"breakdown,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Points        []*DataPoint           `protobuf:"bytes,3,rep,name=points" json:"points,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -820,8 +820,8 @@ func (*TrendSeries) Descriptor() ([]byte, []int) {
 }
 
 func (x *TrendSeries) GetEventKind() string {
-	if x != nil {
-		return x.EventKind
+	if x != nil && x.EventKind != nil {
+		return *x.EventKind
 	}
 	return ""
 }
@@ -843,7 +843,7 @@ func (x *TrendSeries) GetPoints() []*DataPoint {
 // SegmentationResult is a single aggregate value.
 type SegmentationResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Total         float64                `protobuf:"fixed64,1,opt,name=total" json:"total,omitempty"`
+	Total         *float64               `protobuf:"fixed64,1,opt,name=total" json:"total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -879,8 +879,8 @@ func (*SegmentationResult) Descriptor() ([]byte, []int) {
 }
 
 func (x *SegmentationResult) GetTotal() float64 {
-	if x != nil {
-		return x.Total
+	if x != nil && x.Total != nil {
+		return *x.Total
 	}
 	return 0
 }
@@ -988,11 +988,11 @@ func (x *FunnelSeries) GetSteps() []*FunnelStep {
 // FunnelStep is a single stage in a funnel.
 type FunnelStep struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
-	EventKind string                 `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
-	Total     float64                `protobuf:"fixed64,2,opt,name=total" json:"total,omitempty"`
+	EventKind *string                `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	Total     *float64               `protobuf:"fixed64,2,opt,name=total" json:"total,omitempty"`
 	// Average seconds from the previous step to this one.
 	// Zero for the first step or when include_step_timing is false.
-	AvgTimeToConvertSeconds float64 `protobuf:"fixed64,3,opt,name=avg_time_to_convert_seconds,json=avgTimeToConvertSeconds" json:"avg_time_to_convert_seconds,omitempty"`
+	AvgTimeToConvertSeconds *float64 `protobuf:"fixed64,3,opt,name=avg_time_to_convert_seconds,json=avgTimeToConvertSeconds" json:"avg_time_to_convert_seconds,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -1028,22 +1028,22 @@ func (*FunnelStep) Descriptor() ([]byte, []int) {
 }
 
 func (x *FunnelStep) GetEventKind() string {
-	if x != nil {
-		return x.EventKind
+	if x != nil && x.EventKind != nil {
+		return *x.EventKind
 	}
 	return ""
 }
 
 func (x *FunnelStep) GetTotal() float64 {
-	if x != nil {
-		return x.Total
+	if x != nil && x.Total != nil {
+		return *x.Total
 	}
 	return 0
 }
 
 func (x *FunnelStep) GetAvgTimeToConvertSeconds() float64 {
-	if x != nil {
-		return x.AvgTimeToConvertSeconds
+	if x != nil && x.AvgTimeToConvertSeconds != nil {
+		return *x.AvgTimeToConvertSeconds
 	}
 	return 0
 }
@@ -1152,8 +1152,8 @@ func (x *RetentionSeries) GetCohorts() []*RetentionCohort {
 type RetentionCohort struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Cohort bucket timestamp (RFC3339).
-	Cohort        string       `protobuf:"bytes,1,opt,name=cohort" json:"cohort,omitempty"`
-	CohortSize    float64      `protobuf:"fixed64,2,opt,name=cohort_size,json=cohortSize" json:"cohort_size,omitempty"`
+	Cohort        *string      `protobuf:"bytes,1,opt,name=cohort" json:"cohort,omitempty"`
+	CohortSize    *float64     `protobuf:"fixed64,2,opt,name=cohort_size,json=cohortSize" json:"cohort_size,omitempty"`
 	Points        []*DataPoint `protobuf:"bytes,3,rep,name=points" json:"points,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1190,15 +1190,15 @@ func (*RetentionCohort) Descriptor() ([]byte, []int) {
 }
 
 func (x *RetentionCohort) GetCohort() string {
-	if x != nil {
-		return x.Cohort
+	if x != nil && x.Cohort != nil {
+		return *x.Cohort
 	}
 	return ""
 }
 
 func (x *RetentionCohort) GetCohortSize() float64 {
-	if x != nil {
-		return x.CohortSize
+	if x != nil && x.CohortSize != nil {
+		return *x.CohortSize
 	}
 	return 0
 }
@@ -1213,7 +1213,7 @@ func (x *RetentionCohort) GetPoints() []*DataPoint {
 type DataPoint struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Time          *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=time" json:"time,omitempty"`
-	Value         float64                `protobuf:"fixed64,2,opt,name=value" json:"value,omitempty"`
+	Value         *float64               `protobuf:"fixed64,2,opt,name=value" json:"value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1256,17 +1256,17 @@ func (x *DataPoint) GetTime() *timestamppb.Timestamp {
 }
 
 func (x *DataPoint) GetValue() float64 {
-	if x != nil {
-		return x.Value
+	if x != nil && x.Value != nil {
+		return *x.Value
 	}
 	return 0
 }
 
 type GetPropertyValuesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PropertyKey   string                 `protobuf:"bytes,1,opt,name=property_key,json=propertyKey" json:"property_key,omitempty"`
-	Source        v1.PropertySource      `protobuf:"varint,2,opt,name=source,enum=common.v1.PropertySource" json:"source,omitempty"`
-	EventKind     string                 `protobuf:"bytes,3,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	PropertyKey   *string                `protobuf:"bytes,1,opt,name=property_key,json=propertyKey" json:"property_key,omitempty"`
+	Source        *v1.PropertySource     `protobuf:"varint,2,opt,name=source,enum=common.v1.PropertySource" json:"source,omitempty"`
+	EventKind     *string                `protobuf:"bytes,3,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1302,22 +1302,22 @@ func (*GetPropertyValuesRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetPropertyValuesRequest) GetPropertyKey() string {
-	if x != nil {
-		return x.PropertyKey
+	if x != nil && x.PropertyKey != nil {
+		return *x.PropertyKey
 	}
 	return ""
 }
 
 func (x *GetPropertyValuesRequest) GetSource() v1.PropertySource {
-	if x != nil {
-		return x.Source
+	if x != nil && x.Source != nil {
+		return *x.Source
 	}
 	return v1.PropertySource(0)
 }
 
 func (x *GetPropertyValuesRequest) GetEventKind() string {
-	if x != nil {
-		return x.EventKind
+	if x != nil && x.EventKind != nil {
+		return *x.EventKind
 	}
 	return ""
 }
@@ -1368,7 +1368,7 @@ func (x *GetPropertyValuesResponse) GetValues() []string {
 
 type GetFilterSchemaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EventKind     string                 `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	EventKind     *string                `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1404,8 +1404,8 @@ func (*GetFilterSchemaRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetFilterSchemaRequest) GetEventKind() string {
-	if x != nil {
-		return x.EventKind
+	if x != nil && x.EventKind != nil {
+		return *x.EventKind
 	}
 	return ""
 }
@@ -1619,7 +1619,7 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x05Query\x12 .shared.insights.v1.QueryRequest\x1a!.shared.insights.v1.QueryResponse\x12a\n" +
 	"\fSegmentUsers\x12'.shared.insights.v1.SegmentUsersRequest\x1a(.shared.insights.v1.SegmentUsersResponse\x12j\n" +
 	"\x0fGetFilterSchema\x12*.shared.insights.v1.GetFilterSchemaRequest\x1a+.shared.insights.v1.GetFilterSchemaResponse\x12p\n" +
-	"\x11GetPropertyValues\x12,.shared.insights.v1.GetPropertyValuesRequest\x1a-.shared.insights.v1.GetPropertyValuesResponseBTZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1;insightsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x11GetPropertyValues\x12,.shared.insights.v1.GetPropertyValuesRequest\x1a-.shared.insights.v1.GetPropertyValuesResponseBOZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1;insightsv1b\beditionsp\xe8\a"
 
 var (
 	file_shared_insights_v1_insights_proto_rawDescOnce sync.Once
