@@ -224,13 +224,15 @@ const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x126\n" +
 	"\fanonymous_id\x18\x03 \x01(\tB\x13\xbaH\x10r\x0e\x18\xff\x012\t^$|^anon-R\vanonymousId\x12$\n" +
 	"\tdevice_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18$R\bdeviceId\"\x12\n" +
-	"\x10IdentifyResponse\"\xd9\x01\n" +
-	"\x16ProfileIdentifyMessage\x12'\n" +
-	"\vexternal_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
+	"\x10IdentifyResponse\"\xe1\x01\n" +
+	"\x16ProfileIdentifyMessage\x12+\n" +
+	"\vexternal_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\n" +
 	"externalId\x12/\n" +
-	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12%\n" +
+	"\x06traits\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06traits\x12)\n" +
 	"\n" +
-	"project_id\x18\x03 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprojectId\x12!\n" +
+	"project_id\x18\x03 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\tprojectId\x12!\n" +
 	"\fanonymous_id\x18\x04 \x01(\tR\vanonymousId\x12\x1b\n" +
 	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId2e\n" +
 	"\x12ProfilesSDKService\x12O\n" +
