@@ -8,7 +8,7 @@ import (
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 )
 
-// validFilter builds a PropertyFilter and asserts it passes proto validation.
+// assertValid asserts that the given PropertyFilter passes proto validation.
 func assertValid(t *testing.T, name string, f *commonv1.PropertyFilter) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
@@ -18,7 +18,7 @@ func assertValid(t *testing.T, name string, f *commonv1.PropertyFilter) {
 	})
 }
 
-// assertInvalid builds a PropertyFilter and asserts it fails proto validation.
+// assertInvalid asserts that the given PropertyFilter fails proto validation.
 func assertInvalid(t *testing.T, name string, f *commonv1.PropertyFilter) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
@@ -28,9 +28,9 @@ func assertInvalid(t *testing.T, name string, f *commonv1.PropertyFilter) {
 	})
 }
 
-// TestPropertyFilterValidation covers all CEL rules on PropertyFilter.
-// Focus is on the values_not_allowed rule that was previously inverted —
-// it was incorrectly requiring values[] to be empty for IN/NOT_IN/BETWEEN/NOT_BETWEEN.
+// TestPropertyFilterValidation exercises all CEL validation rules on PropertyFilter:
+// value_required, numeric_value_required, values_required, values_not_allowed,
+// between_requires_two_values, and value_not_allowed_for_set_operators.
 func TestPropertyFilterValidation(t *testing.T) {
 	// --- values_not_allowed regression: operators that use values[] must be accepted ---
 
@@ -117,6 +117,34 @@ func TestPropertyFilterValidation(t *testing.T) {
 		Property: "score",
 		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
 		Values:   []string{},
+	})
+	assertInvalid(t, "BETWEEN_three_values_rejected", &commonv1.PropertyFilter{
+		Property: "score",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+		Values:   []string{"10", "50", "90"},
+	})
+	assertInvalid(t, "NOT_BETWEEN_three_values_rejected", &commonv1.PropertyFilter{
+		Property: "score",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+		Values:   []string{"10", "50", "90"},
+	})
+
+	// --- numeric_value_required: NOT_BETWEEN coverage ---
+
+	assertInvalid(t, "NOT_BETWEEN_non_numeric_values_rejected", &commonv1.PropertyFilter{
+		Property: "amount",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+		Values:   []string{"abc", "50"},
+	})
+	assertInvalid(t, "BETWEEN_second_value_non_numeric_rejected", &commonv1.PropertyFilter{
+		Property: "score",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+		Values:   []string{"50", "abc"},
+	})
+	assertInvalid(t, "NOT_BETWEEN_second_value_non_numeric_rejected", &commonv1.PropertyFilter{
+		Property: "amount",
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+		Values:   []string{"50", "abc"},
 	})
 
 	// --- value_not_allowed_for_set_operators ---

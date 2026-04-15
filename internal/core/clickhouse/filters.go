@@ -43,107 +43,6 @@ func EscapeLike(s string) string {
 	return s
 }
 
-// FilterClause builds a single WHERE condition fragment for a PropertyFilter.
-func FilterClause(f *commonv1.PropertyFilter) (string, []any, error) {
-	return filterClause(f, "")
-}
-
-// FilterClauseAliased builds a FilterClause with column references prefixed by alias.
-func FilterClauseAliased(f *commonv1.PropertyFilter, alias string) (string, []any, error) {
-	return filterClause(f, alias)
-}
-
-func filterClause(f *commonv1.PropertyFilter, alias string) (string, []any, error) {
-	prop := propertyExpr(f.GetProperty(), alias)
-
-	switch f.GetOperator() {
-	case commonv1.FilterOperator_FILTER_OPERATOR_EQUALS:
-		return fmt.Sprintf("%s = ?", prop), []any{f.GetValue()}, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS:
-		return fmt.Sprintf("%s != ?", prop), []any{f.GetValue()}, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS:
-		return fmt.Sprintf("%s LIKE ?", prop), []any{"%" + EscapeLike(f.GetValue()) + "%"}, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS:
-		return fmt.Sprintf("%s NOT LIKE ?", prop), []any{"%" + EscapeLike(f.GetValue()) + "%"}, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_IS_SET:
-		return fmt.Sprintf("%s != ''", prop), nil, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET:
-		return fmt.Sprintf("%s = ''", prop), nil, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_LTE:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return fmt.Sprintf("toFloat64OrNull(%s) <= ?", prop), []any{n}, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_GTE:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return fmt.Sprintf("toFloat64OrNull(%s) >= ?", prop), []any{n}, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_LT:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return fmt.Sprintf("toFloat64OrNull(%s) < ?", prop), []any{n}, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_GT:
-		n, err := strconv.ParseFloat(f.GetValue(), 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
-		}
-		return fmt.Sprintf("toFloat64OrNull(%s) > ?", prop), []any{n}, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_IN:
-		if len(f.GetValues()) == 0 {
-			return "", nil, fmt.Errorf("IN operator requires at least one value for property %q", f.GetProperty())
-		}
-		args := make([]any, len(f.GetValues()))
-		for i, v := range f.GetValues() {
-			args[i] = v
-		}
-		return fmt.Sprintf("%s IN (%s)", prop, strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")), args, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN:
-		if len(f.GetValues()) == 0 {
-			return "", nil, fmt.Errorf("NOT IN operator requires at least one value for property %q", f.GetProperty())
-		}
-		args := make([]any, len(f.GetValues()))
-		for i, v := range f.GetValues() {
-			args[i] = v
-		}
-		return fmt.Sprintf("%s NOT IN (%s)", prop, strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")), args, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
-		if len(f.GetValues()) < 2 {
-			return "", nil, fmt.Errorf("BETWEEN operator requires exactly 2 values for property %q", f.GetProperty())
-		}
-		min, err := strconv.ParseFloat(f.GetValues()[0], 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[0], f.GetOperator(), err)
-		}
-		max, err := strconv.ParseFloat(f.GetValues()[1], 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
-		}
-		// No outer parens needed: AND binds tighter than OR, so composing with OR is safe.
-		return fmt.Sprintf("toFloat64OrNull(%s) >= ? AND toFloat64OrNull(%s) <= ?", prop, prop), []any{min, max}, nil
-	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
-		if len(f.GetValues()) < 2 {
-			return "", nil, fmt.Errorf("NOT BETWEEN operator requires exactly 2 values for property %q", f.GetProperty())
-		}
-		min, err := strconv.ParseFloat(f.GetValues()[0], 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[0], f.GetOperator(), err)
-		}
-		max, err := strconv.ParseFloat(f.GetValues()[1], 64)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
-		}
-		// Parens are required: without them, AND binds `kind = ? AND amount < ?` leaving `OR amount > ?` ungrouped.
-		return fmt.Sprintf("(toFloat64OrNull(%s) < ? OR toFloat64OrNull(%s) > ?)", prop, prop), []any{min, max}, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported filter operator: %v", f.GetOperator())
-	}
-}
-
 // PropertyCondition builds a typed query Condition for a PropertyFilter.
 // Dispatches to profileFilterCondition when source is PROPERTY_SOURCE_PROFILE.
 // For profile filters, projectID is required to build the IN subquery.
@@ -289,7 +188,10 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 		if err != nil {
 			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
 		}
-		return RawCond("toFloat64OrNull("+prop+") >= ? AND toFloat64OrNull("+prop+") <= ?", min, max), nil
+		if min > max {
+			return Condition{}, fmt.Errorf("between/not_between requires values[0] <= values[1] for property %q, got %v > %v", f.GetProperty(), min, max)
+		}
+		return RawCond("(toFloat64OrNull("+prop+") >= ? AND toFloat64OrNull("+prop+") <= ?)", min, max), nil
 	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
 		if len(f.GetValues()) != 2 {
 			return Condition{}, fmt.Errorf("between/not_between operators require exactly 2 values for property %q", f.GetProperty())
@@ -301,6 +203,9 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 		max, err := strconv.ParseFloat(f.GetValues()[1], 64)
 		if err != nil {
 			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
+		}
+		if min > max {
+			return Condition{}, fmt.Errorf("between/not_between requires values[0] <= values[1] for property %q, got %v > %v", f.GetProperty(), min, max)
 		}
 		return RawCond("(toFloat64OrNull("+prop+") < ? OR toFloat64OrNull("+prop+") > ?)", min, max), nil
 	default:

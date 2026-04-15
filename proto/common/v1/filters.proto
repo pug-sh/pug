@@ -40,7 +40,7 @@ message PropertyFilter {
   };
   option (buf.validate.message).cel = {
     id: "property_filter.numeric_value_required"
-    message: "value must be a valid number for lte/gte/lt/gt/between/not_between operators"
+    message: "value/values must contain valid numbers for lte/gte/lt/gt/between/not_between operators"
     expression:
       "!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LTE"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GTE"
@@ -52,8 +52,10 @@ message PropertyFilter {
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GTE"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_LT"
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_GT)"
-      "&& double(this.value) == double(this.value)"
-      "|| (this.values.size() >= 2 && double(this.values[0]) == double(this.values[0]) && double(this.values[1]) == double(this.values[1])))"
+      "&& double(this.value) == double(this.value))"
+      "|| ((this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN)"
+      "&& this.values.size() >= 2 && double(this.values[0]) == double(this.values[0]) && double(this.values[1]) == double(this.values[1]))"
   };
   option (buf.validate.message).cel = {
     id: "property_filter.values_required"
