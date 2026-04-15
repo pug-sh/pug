@@ -329,7 +329,7 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 
 	eventCond, err := buildEventCondition(req.GetEvents(), projectID)
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("segmentation: %w", err)
 	}
 
 	return chq.NewQuery().
@@ -1000,8 +1000,10 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 			return "ifNull(avg(" + numeric + "), 0)", nil
 		case insightsv1.AggregationType_AGGREGATION_TYPE_MIN:
 			return "ifNull(min(" + numeric + "), 0)", nil
-		default: // MAX
+		case insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
 			return "ifNull(max(" + numeric + "), 0)", nil
+		default:
+			return "", fmt.Errorf("aggregationExpr: unexpected numeric aggregation type %s", agg)
 		}
 	case insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS:
 		return "toFloat64(count(DISTINCT distinct_id))", nil

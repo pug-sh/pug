@@ -86,6 +86,24 @@ message QueryRequest {
       "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
       "|| this.events.size() <= 20"
   };
+
+  // SUM/AVG/MIN/MAX are only meaningful for trends and segmentation.
+  // Funnel and retention builders ignore the aggregation field, so reject early.
+  option (buf.validate.message).cel = {
+    id: "query_request.numeric_agg_only_trends_segmentation"
+    message: "SUM/AVG/MIN/MAX aggregation types are only supported for trends and segmentation"
+    expression:
+      "this.insight_type in ["
+      "  shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS,"
+      "  shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION"
+      "] || this.events.all(e,"
+      "  !(e.aggregation in ["
+      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,"
+      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,"
+      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,"
+      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX"
+      "  ]))"
+  };
   InsightType insight_type = 1 [(buf.validate.field) = {
     required: true
     enum: {defined_only: true}
@@ -200,6 +218,7 @@ message EventQuery {
   // Only used for trends and segmentation; ignored for funnel and retention.
   AggregationType aggregation = 2 [(buf.validate.field).enum.defined_only = true];
   // Property name to aggregate on. Required for SUM/AVG/MIN/MAX; ignored for TOTAL/UNIQUE_USERS/PER_USER_AVG.
+  // Pattern uses * (not +) because this field may be empty for count-based aggregation types.
   string aggregation_property = 3 [(buf.validate.field).string.pattern = "^\\$?[a-zA-Z0-9_.-]*$"];
 }
 

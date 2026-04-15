@@ -2628,6 +2628,39 @@ func TestPropertyAggregation_EmptyPropertyError(t *testing.T) {
 	}
 }
 
+// TestPropertyAggregation_EmptyPropertyError_Segmentation verifies the segmentation path
+// also returns an error for numeric aggs with empty property (bypassing proto validation).
+func TestPropertyAggregation_EmptyPropertyError_Segmentation(t *testing.T) {
+	aggs := []insightsv1.AggregationType{
+		insightsv1.AggregationType_AGGREGATION_TYPE_SUM,
+		insightsv1.AggregationType_AGGREGATION_TYPE_AVG,
+		insightsv1.AggregationType_AGGREGATION_TYPE_MIN,
+		insightsv1.AggregationType_AGGREGATION_TYPE_MAX,
+	}
+
+	for _, agg := range aggs {
+		t.Run(agg.String(), func(t *testing.T) {
+			req := &insightsv1.QueryRequest{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+				Events: []*insightsv1.EventQuery{
+					{
+						Event:       &commonv1.EventFilter{Kind: "purchase"},
+						Aggregation: agg,
+						// AggregationProperty intentionally omitted.
+					},
+				},
+			}
+
+			_, err := insights.BuildSegmentationQuery(req, "proj_123")
+			if err == nil {
+				t.Fatalf("expected error for %s with empty property, got nil", agg)
+			}
+		})
+	}
+}
+
 // TestPropertyAggregation_MixedEventAggregations verifies trends with multiple events
 // using different aggregation types (one numeric, one count-based).
 func TestPropertyAggregation_MixedEventAggregations(t *testing.T) {
