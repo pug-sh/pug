@@ -62,12 +62,12 @@ func (*PageViewProperties) Descriptor() ([]byte, []int) {
 // kind: "click"
 type ClickProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Class         string                 `protobuf:"bytes,1,opt,name=class" json:"class,omitempty"`
-	Id            string                 `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
-	Tag           string                 `protobuf:"bytes,3,opt,name=tag" json:"tag,omitempty"`
-	Text          string                 `protobuf:"bytes,4,opt,name=text" json:"text,omitempty"`
-	X             int32                  `protobuf:"varint,5,opt,name=x" json:"x,omitempty"`
-	Y             int32                  `protobuf:"varint,6,opt,name=y" json:"y,omitempty"`
+	Class         *string                `protobuf:"bytes,1,opt,name=class" json:"class,omitempty"`
+	Id            *string                `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
+	Tag           *string                `protobuf:"bytes,3,opt,name=tag" json:"tag,omitempty"`
+	Text          *string                `protobuf:"bytes,4,opt,name=text" json:"text,omitempty"`
+	X             *int32                 `protobuf:"varint,5,opt,name=x" json:"x,omitempty"`
+	Y             *int32                 `protobuf:"varint,6,opt,name=y" json:"y,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -103,43 +103,43 @@ func (*ClickProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *ClickProperties) GetClass() string {
-	if x != nil {
-		return x.Class
+	if x != nil && x.Class != nil {
+		return *x.Class
 	}
 	return ""
 }
 
 func (x *ClickProperties) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
 
 func (x *ClickProperties) GetTag() string {
-	if x != nil {
-		return x.Tag
+	if x != nil && x.Tag != nil {
+		return *x.Tag
 	}
 	return ""
 }
 
 func (x *ClickProperties) GetText() string {
-	if x != nil {
-		return x.Text
+	if x != nil && x.Text != nil {
+		return *x.Text
 	}
 	return ""
 }
 
 func (x *ClickProperties) GetX() int32 {
-	if x != nil {
-		return x.X
+	if x != nil && x.X != nil {
+		return *x.X
 	}
 	return 0
 }
 
 func (x *ClickProperties) GetY() int32 {
-	if x != nil {
-		return x.Y
+	if x != nil && x.Y != nil {
+		return *x.Y
 	}
 	return 0
 }
@@ -147,10 +147,10 @@ func (x *ClickProperties) GetY() int32 {
 // kind: "rage_click"
 type RageClickProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ClickCount    int32                  `protobuf:"varint,1,opt,name=click_count,json=clickCount" json:"click_count,omitempty"`
-	Element       string                 `protobuf:"bytes,2,opt,name=element" json:"element,omitempty"`
-	X             int32                  `protobuf:"varint,3,opt,name=x" json:"x,omitempty"`
-	Y             int32                  `protobuf:"varint,4,opt,name=y" json:"y,omitempty"`
+	ClickCount    *int32                 `protobuf:"varint,1,opt,name=click_count,json=clickCount" json:"click_count,omitempty"`
+	Element       *string                `protobuf:"bytes,2,opt,name=element" json:"element,omitempty"`
+	X             *int32                 `protobuf:"varint,3,opt,name=x" json:"x,omitempty"`
+	Y             *int32                 `protobuf:"varint,4,opt,name=y" json:"y,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -186,29 +186,29 @@ func (*RageClickProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *RageClickProperties) GetClickCount() int32 {
-	if x != nil {
-		return x.ClickCount
+	if x != nil && x.ClickCount != nil {
+		return *x.ClickCount
 	}
 	return 0
 }
 
 func (x *RageClickProperties) GetElement() string {
-	if x != nil {
-		return x.Element
+	if x != nil && x.Element != nil {
+		return *x.Element
 	}
 	return ""
 }
 
 func (x *RageClickProperties) GetX() int32 {
-	if x != nil {
-		return x.X
+	if x != nil && x.X != nil {
+		return *x.X
 	}
 	return 0
 }
 
 func (x *RageClickProperties) GetY() int32 {
-	if x != nil {
-		return x.Y
+	if x != nil && x.Y != nil {
+		return *x.Y
 	}
 	return 0
 }
@@ -216,10 +216,10 @@ func (x *RageClickProperties) GetY() int32 {
 // kind: "dead_click"
 type DeadClickProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Element       string                 `protobuf:"bytes,1,opt,name=element" json:"element,omitempty"`
-	Text          string                 `protobuf:"bytes,2,opt,name=text" json:"text,omitempty"`
-	X             int32                  `protobuf:"varint,3,opt,name=x" json:"x,omitempty"`
-	Y             int32                  `protobuf:"varint,4,opt,name=y" json:"y,omitempty"`
+	Element       *string                `protobuf:"bytes,1,opt,name=element" json:"element,omitempty"`
+	Text          *string                `protobuf:"bytes,2,opt,name=text" json:"text,omitempty"`
+	X             *int32                 `protobuf:"varint,3,opt,name=x" json:"x,omitempty"`
+	Y             *int32                 `protobuf:"varint,4,opt,name=y" json:"y,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -255,29 +255,29 @@ func (*DeadClickProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *DeadClickProperties) GetElement() string {
-	if x != nil {
-		return x.Element
+	if x != nil && x.Element != nil {
+		return *x.Element
 	}
 	return ""
 }
 
 func (x *DeadClickProperties) GetText() string {
-	if x != nil {
-		return x.Text
+	if x != nil && x.Text != nil {
+		return *x.Text
 	}
 	return ""
 }
 
 func (x *DeadClickProperties) GetX() int32 {
-	if x != nil {
-		return x.X
+	if x != nil && x.X != nil {
+		return *x.X
 	}
 	return 0
 }
 
 func (x *DeadClickProperties) GetY() int32 {
-	if x != nil {
-		return x.Y
+	if x != nil && x.Y != nil {
+		return *x.Y
 	}
 	return 0
 }
@@ -285,8 +285,8 @@ func (x *DeadClickProperties) GetY() int32 {
 // kind: "scroll"
 type ScrollProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Percent       int32                  `protobuf:"varint,1,opt,name=percent" json:"percent,omitempty"`
-	ScrollY       int32                  `protobuf:"varint,2,opt,name=scroll_y,json=scrollY" json:"scroll_y,omitempty"`
+	Percent       *int32                 `protobuf:"varint,1,opt,name=percent" json:"percent,omitempty"`
+	ScrollY       *int32                 `protobuf:"varint,2,opt,name=scroll_y,json=scrollY" json:"scroll_y,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -322,15 +322,15 @@ func (*ScrollProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *ScrollProperties) GetPercent() int32 {
-	if x != nil {
-		return x.Percent
+	if x != nil && x.Percent != nil {
+		return *x.Percent
 	}
 	return 0
 }
 
 func (x *ScrollProperties) GetScrollY() int32 {
-	if x != nil {
-		return x.ScrollY
+	if x != nil && x.ScrollY != nil {
+		return *x.ScrollY
 	}
 	return 0
 }
@@ -338,7 +338,7 @@ func (x *ScrollProperties) GetScrollY() int32 {
 // kind: "search"
 type SearchProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Query         string                 `protobuf:"bytes,1,opt,name=query" json:"query,omitempty"`
+	Query         *string                `protobuf:"bytes,1,opt,name=query" json:"query,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -374,8 +374,8 @@ func (*SearchProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *SearchProperties) GetQuery() string {
-	if x != nil {
-		return x.Query
+	if x != nil && x.Query != nil {
+		return *x.Query
 	}
 	return ""
 }
@@ -383,9 +383,9 @@ func (x *SearchProperties) GetQuery() string {
 // kind: "add_to_cart"
 type AddToCartProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId" json:"product_id,omitempty"`
-	Amount        float64                `protobuf:"fixed64,2,opt,name=amount" json:"amount,omitempty"`
-	Currency      string                 `protobuf:"bytes,3,opt,name=currency" json:"currency,omitempty"`
+	ProductId     *string                `protobuf:"bytes,1,opt,name=product_id,json=productId" json:"product_id,omitempty"`
+	Amount        *float64               `protobuf:"fixed64,2,opt,name=amount" json:"amount,omitempty"`
+	Currency      *string                `protobuf:"bytes,3,opt,name=currency" json:"currency,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -421,22 +421,22 @@ func (*AddToCartProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *AddToCartProperties) GetProductId() string {
-	if x != nil {
-		return x.ProductId
+	if x != nil && x.ProductId != nil {
+		return *x.ProductId
 	}
 	return ""
 }
 
 func (x *AddToCartProperties) GetAmount() float64 {
-	if x != nil {
-		return x.Amount
+	if x != nil && x.Amount != nil {
+		return *x.Amount
 	}
 	return 0
 }
 
 func (x *AddToCartProperties) GetCurrency() string {
-	if x != nil {
-		return x.Currency
+	if x != nil && x.Currency != nil {
+		return *x.Currency
 	}
 	return ""
 }
@@ -444,9 +444,9 @@ func (x *AddToCartProperties) GetCurrency() string {
 // kind: "checkout_started"
 type CheckoutStartedProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId" json:"product_id,omitempty"`
-	Amount        float64                `protobuf:"fixed64,2,opt,name=amount" json:"amount,omitempty"`
-	Currency      string                 `protobuf:"bytes,3,opt,name=currency" json:"currency,omitempty"`
+	ProductId     *string                `protobuf:"bytes,1,opt,name=product_id,json=productId" json:"product_id,omitempty"`
+	Amount        *float64               `protobuf:"fixed64,2,opt,name=amount" json:"amount,omitempty"`
+	Currency      *string                `protobuf:"bytes,3,opt,name=currency" json:"currency,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -482,22 +482,22 @@ func (*CheckoutStartedProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *CheckoutStartedProperties) GetProductId() string {
-	if x != nil {
-		return x.ProductId
+	if x != nil && x.ProductId != nil {
+		return *x.ProductId
 	}
 	return ""
 }
 
 func (x *CheckoutStartedProperties) GetAmount() float64 {
-	if x != nil {
-		return x.Amount
+	if x != nil && x.Amount != nil {
+		return *x.Amount
 	}
 	return 0
 }
 
 func (x *CheckoutStartedProperties) GetCurrency() string {
-	if x != nil {
-		return x.Currency
+	if x != nil && x.Currency != nil {
+		return *x.Currency
 	}
 	return ""
 }
@@ -505,9 +505,9 @@ func (x *CheckoutStartedProperties) GetCurrency() string {
 // kind: "checkout_completed"
 type CheckoutCompletedProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId" json:"product_id,omitempty"`
-	Amount        float64                `protobuf:"fixed64,2,opt,name=amount" json:"amount,omitempty"`
-	Currency      string                 `protobuf:"bytes,3,opt,name=currency" json:"currency,omitempty"`
+	ProductId     *string                `protobuf:"bytes,1,opt,name=product_id,json=productId" json:"product_id,omitempty"`
+	Amount        *float64               `protobuf:"fixed64,2,opt,name=amount" json:"amount,omitempty"`
+	Currency      *string                `protobuf:"bytes,3,opt,name=currency" json:"currency,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -543,22 +543,22 @@ func (*CheckoutCompletedProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *CheckoutCompletedProperties) GetProductId() string {
-	if x != nil {
-		return x.ProductId
+	if x != nil && x.ProductId != nil {
+		return *x.ProductId
 	}
 	return ""
 }
 
 func (x *CheckoutCompletedProperties) GetAmount() float64 {
-	if x != nil {
-		return x.Amount
+	if x != nil && x.Amount != nil {
+		return *x.Amount
 	}
 	return 0
 }
 
 func (x *CheckoutCompletedProperties) GetCurrency() string {
-	if x != nil {
-		return x.Currency
+	if x != nil && x.Currency != nil {
+		return *x.Currency
 	}
 	return ""
 }
@@ -566,9 +566,9 @@ func (x *CheckoutCompletedProperties) GetCurrency() string {
 // kind: "purchase"
 type PurchaseProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId" json:"product_id,omitempty"`
-	Amount        float64                `protobuf:"fixed64,2,opt,name=amount" json:"amount,omitempty"`
-	Currency      string                 `protobuf:"bytes,3,opt,name=currency" json:"currency,omitempty"`
+	ProductId     *string                `protobuf:"bytes,1,opt,name=product_id,json=productId" json:"product_id,omitempty"`
+	Amount        *float64               `protobuf:"fixed64,2,opt,name=amount" json:"amount,omitempty"`
+	Currency      *string                `protobuf:"bytes,3,opt,name=currency" json:"currency,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -604,22 +604,22 @@ func (*PurchaseProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *PurchaseProperties) GetProductId() string {
-	if x != nil {
-		return x.ProductId
+	if x != nil && x.ProductId != nil {
+		return *x.ProductId
 	}
 	return ""
 }
 
 func (x *PurchaseProperties) GetAmount() float64 {
-	if x != nil {
-		return x.Amount
+	if x != nil && x.Amount != nil {
+		return *x.Amount
 	}
 	return 0
 }
 
 func (x *PurchaseProperties) GetCurrency() string {
-	if x != nil {
-		return x.Currency
+	if x != nil && x.Currency != nil {
+		return *x.Currency
 	}
 	return ""
 }
@@ -627,8 +627,8 @@ func (x *PurchaseProperties) GetCurrency() string {
 // kind: "form_start"
 type FormStartProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	FormId        string                 `protobuf:"bytes,1,opt,name=form_id,json=formId" json:"form_id,omitempty"`
-	FormName      string                 `protobuf:"bytes,2,opt,name=form_name,json=formName" json:"form_name,omitempty"`
+	FormId        *string                `protobuf:"bytes,1,opt,name=form_id,json=formId" json:"form_id,omitempty"`
+	FormName      *string                `protobuf:"bytes,2,opt,name=form_name,json=formName" json:"form_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -664,15 +664,15 @@ func (*FormStartProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *FormStartProperties) GetFormId() string {
-	if x != nil {
-		return x.FormId
+	if x != nil && x.FormId != nil {
+		return *x.FormId
 	}
 	return ""
 }
 
 func (x *FormStartProperties) GetFormName() string {
-	if x != nil {
-		return x.FormName
+	if x != nil && x.FormName != nil {
+		return *x.FormName
 	}
 	return ""
 }
@@ -680,9 +680,9 @@ func (x *FormStartProperties) GetFormName() string {
 // kind: "form_submit"
 type FormSubmitProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Action        string                 `protobuf:"bytes,1,opt,name=action" json:"action,omitempty"`
-	FormId        string                 `protobuf:"bytes,2,opt,name=form_id,json=formId" json:"form_id,omitempty"`
-	FormName      string                 `protobuf:"bytes,3,opt,name=form_name,json=formName" json:"form_name,omitempty"`
+	Action        *string                `protobuf:"bytes,1,opt,name=action" json:"action,omitempty"`
+	FormId        *string                `protobuf:"bytes,2,opt,name=form_id,json=formId" json:"form_id,omitempty"`
+	FormName      *string                `protobuf:"bytes,3,opt,name=form_name,json=formName" json:"form_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -718,22 +718,22 @@ func (*FormSubmitProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *FormSubmitProperties) GetAction() string {
-	if x != nil {
-		return x.Action
+	if x != nil && x.Action != nil {
+		return *x.Action
 	}
 	return ""
 }
 
 func (x *FormSubmitProperties) GetFormId() string {
-	if x != nil {
-		return x.FormId
+	if x != nil && x.FormId != nil {
+		return *x.FormId
 	}
 	return ""
 }
 
 func (x *FormSubmitProperties) GetFormName() string {
-	if x != nil {
-		return x.FormName
+	if x != nil && x.FormName != nil {
+		return *x.FormName
 	}
 	return ""
 }
@@ -926,8 +926,8 @@ func (*AppCloseProperties) Descriptor() ([]byte, []int) {
 // kind: "notification_received"
 type NotificationReceivedProperties struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	CampaignId       string                 `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
-	NotificationType string                 `protobuf:"bytes,2,opt,name=notification_type,json=notificationType" json:"notification_type,omitempty"`
+	CampaignId       *string                `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
+	NotificationType *string                `protobuf:"bytes,2,opt,name=notification_type,json=notificationType" json:"notification_type,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -963,15 +963,15 @@ func (*NotificationReceivedProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *NotificationReceivedProperties) GetCampaignId() string {
-	if x != nil {
-		return x.CampaignId
+	if x != nil && x.CampaignId != nil {
+		return *x.CampaignId
 	}
 	return ""
 }
 
 func (x *NotificationReceivedProperties) GetNotificationType() string {
-	if x != nil {
-		return x.NotificationType
+	if x != nil && x.NotificationType != nil {
+		return *x.NotificationType
 	}
 	return ""
 }
@@ -979,8 +979,8 @@ func (x *NotificationReceivedProperties) GetNotificationType() string {
 // kind: "notification_clicked"
 type NotificationClickedProperties struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	CampaignId       string                 `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
-	NotificationType string                 `protobuf:"bytes,2,opt,name=notification_type,json=notificationType" json:"notification_type,omitempty"`
+	CampaignId       *string                `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
+	NotificationType *string                `protobuf:"bytes,2,opt,name=notification_type,json=notificationType" json:"notification_type,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1016,15 +1016,15 @@ func (*NotificationClickedProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *NotificationClickedProperties) GetCampaignId() string {
-	if x != nil {
-		return x.CampaignId
+	if x != nil && x.CampaignId != nil {
+		return *x.CampaignId
 	}
 	return ""
 }
 
 func (x *NotificationClickedProperties) GetNotificationType() string {
-	if x != nil {
-		return x.NotificationType
+	if x != nil && x.NotificationType != nil {
+		return *x.NotificationType
 	}
 	return ""
 }
@@ -1032,8 +1032,8 @@ func (x *NotificationClickedProperties) GetNotificationType() string {
 // kind: "notification_dismissed"
 type NotificationDismissedProperties struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	CampaignId       string                 `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
-	NotificationType string                 `protobuf:"bytes,2,opt,name=notification_type,json=notificationType" json:"notification_type,omitempty"`
+	CampaignId       *string                `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
+	NotificationType *string                `protobuf:"bytes,2,opt,name=notification_type,json=notificationType" json:"notification_type,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1069,15 +1069,15 @@ func (*NotificationDismissedProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *NotificationDismissedProperties) GetCampaignId() string {
-	if x != nil {
-		return x.CampaignId
+	if x != nil && x.CampaignId != nil {
+		return *x.CampaignId
 	}
 	return ""
 }
 
 func (x *NotificationDismissedProperties) GetNotificationType() string {
-	if x != nil {
-		return x.NotificationType
+	if x != nil && x.NotificationType != nil {
+		return *x.NotificationType
 	}
 	return ""
 }
@@ -1085,8 +1085,8 @@ func (x *NotificationDismissedProperties) GetNotificationType() string {
 // kind: "video_play"
 type VideoPlayProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	VideoId       string                 `protobuf:"bytes,1,opt,name=video_id,json=videoId" json:"video_id,omitempty"`
-	PositionS     int32                  `protobuf:"varint,2,opt,name=position_s,json=positionS" json:"position_s,omitempty"`
+	VideoId       *string                `protobuf:"bytes,1,opt,name=video_id,json=videoId" json:"video_id,omitempty"`
+	PositionS     *int32                 `protobuf:"varint,2,opt,name=position_s,json=positionS" json:"position_s,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1122,15 +1122,15 @@ func (*VideoPlayProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *VideoPlayProperties) GetVideoId() string {
-	if x != nil {
-		return x.VideoId
+	if x != nil && x.VideoId != nil {
+		return *x.VideoId
 	}
 	return ""
 }
 
 func (x *VideoPlayProperties) GetPositionS() int32 {
-	if x != nil {
-		return x.PositionS
+	if x != nil && x.PositionS != nil {
+		return *x.PositionS
 	}
 	return 0
 }
@@ -1138,8 +1138,8 @@ func (x *VideoPlayProperties) GetPositionS() int32 {
 // kind: "video_pause"
 type VideoPauseProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	VideoId       string                 `protobuf:"bytes,1,opt,name=video_id,json=videoId" json:"video_id,omitempty"`
-	PositionS     int32                  `protobuf:"varint,2,opt,name=position_s,json=positionS" json:"position_s,omitempty"`
+	VideoId       *string                `protobuf:"bytes,1,opt,name=video_id,json=videoId" json:"video_id,omitempty"`
+	PositionS     *int32                 `protobuf:"varint,2,opt,name=position_s,json=positionS" json:"position_s,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1175,15 +1175,15 @@ func (*VideoPauseProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *VideoPauseProperties) GetVideoId() string {
-	if x != nil {
-		return x.VideoId
+	if x != nil && x.VideoId != nil {
+		return *x.VideoId
 	}
 	return ""
 }
 
 func (x *VideoPauseProperties) GetPositionS() int32 {
-	if x != nil {
-		return x.PositionS
+	if x != nil && x.PositionS != nil {
+		return *x.PositionS
 	}
 	return 0
 }
@@ -1191,7 +1191,7 @@ func (x *VideoPauseProperties) GetPositionS() int32 {
 // kind: "error_occurred"
 type ErrorOccurredProperties struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ErrorCode     string                 `protobuf:"bytes,1,opt,name=error_code,json=errorCode" json:"error_code,omitempty"`
+	ErrorCode     *string                `protobuf:"bytes,1,opt,name=error_code,json=errorCode" json:"error_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1227,8 +1227,8 @@ func (*ErrorOccurredProperties) Descriptor() ([]byte, []int) {
 }
 
 func (x *ErrorOccurredProperties) GetErrorCode() string {
-	if x != nil {
-		return x.ErrorCode
+	if x != nil && x.ErrorCode != nil {
+		return *x.ErrorCode
 	}
 	return ""
 }
@@ -1358,7 +1358,7 @@ const file_common_v1_well_known_events_proto_rawDesc = "" +
 	"\x17ErrorOccurredProperties\x12%\n" +
 	"\n" +
 	"error_code\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\terrorCode\"\x11\n" +
-	"\x0fSharePropertiesBIZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x0fSharePropertiesBDZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_well_known_events_proto_rawDescOnce sync.Once
