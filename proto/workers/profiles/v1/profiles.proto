@@ -8,20 +8,43 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1;workerprofilesv1";
 
 message ProfileAliasMessage {
-  string alias_id = 1 [(buf.validate.field).required = true];
-  string profile_id = 2 [(buf.validate.field).required = true];
-  string external_id = 3 [(buf.validate.field).required = true];
-  string project_id = 4 [(buf.validate.field).required = true];
+  string alias_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
+  string profile_id = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
+  string external_id = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
+  string project_id = 4 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
 }
 
 // ProfileUpsertMessage is published to profiles.upsert by the identify and
 // delete handlers to sync profile state to ClickHouse.
 // The upsert worker writes all fields into a ReplacingMergeTree keyed by (project_id, profile_id).
+// ProfileUpsertMessage is published to profiles.upsert by the identify and
+// delete handlers to sync profile state to ClickHouse.
+// The upsert worker writes all fields into a ReplacingMergeTree keyed by (project_id, profile_id).
 message ProfileUpsertMessage {
-  string profile_id = 1 [(buf.validate.field).required = true];
-  string project_id = 2 [(buf.validate.field).required = true];
+  string profile_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
+  string project_id = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
   // May be empty for anonymous profiles that have not been identified yet.
-  string external_id = 3;
+  string external_id = 3 [
+    (buf.validate.field).string.min_len = 1
+  ];
   // JSONB profile properties. Empty struct for deletes.
   google.protobuf.Struct properties = 4;
   // When true, this message represents a soft-delete in ClickHouse.

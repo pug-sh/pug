@@ -192,13 +192,13 @@ func TestHandleIdentify_UpsertOnly(t *testing.T) {
 	if len(upserts) != 1 {
 		t.Fatalf("expected 1 upsert, got %d", len(upserts))
 	}
-	if upserts[0].ProfileId != profileID {
-		t.Errorf("upsert.ProfileId = %q, want %q", upserts[0].ProfileId, profileID)
+	if upserts[0].GetProfileId() != profileID {
+		t.Errorf("upsert.ProfileId = %q, want %q", upserts[0].GetProfileId(), profileID)
 	}
-	if upserts[0].ExternalId != "alice@example.com" {
-		t.Errorf("upsert.ExternalId = %q, want %q", upserts[0].ExternalId, "alice@example.com")
+	if upserts[0].GetExternalId() != "alice@example.com" {
+		t.Errorf("upsert.ExternalId = %q, want %q", upserts[0].GetExternalId(), "alice@example.com")
 	}
-	if upserts[0].IsDeleted {
+	if upserts[0].GetIsDeleted() {
 		t.Error("upsert.IsDeleted = true, want false")
 	}
 }
@@ -345,16 +345,16 @@ func TestHandleIdentify_MergeAnonymous(t *testing.T) {
 	if len(upserts) != 2 {
 		t.Fatalf("expected 2 upserts, got %d", len(upserts))
 	}
-	if upserts[0].ProfileId != targetID {
-		t.Errorf("target upsert ProfileId = %q, want %q", upserts[0].ProfileId, targetID)
+	if upserts[0].GetProfileId() != targetID {
+		t.Errorf("target upsert ProfileId = %q, want %q", upserts[0].GetProfileId(), targetID)
 	}
-	if upserts[0].IsDeleted {
+	if upserts[0].GetIsDeleted() {
 		t.Error("target upsert IsDeleted = true, want false")
 	}
-	if upserts[1].ProfileId != anonID {
-		t.Errorf("soft-delete ProfileId = %q, want %q", upserts[1].ProfileId, anonID)
+	if upserts[1].GetProfileId() != anonID {
+		t.Errorf("soft-delete ProfileId = %q, want %q", upserts[1].GetProfileId(), anonID)
 	}
-	if !upserts[1].IsDeleted {
+	if !upserts[1].GetIsDeleted() {
 		t.Error("soft-delete IsDeleted = false, want true")
 	}
 
@@ -362,14 +362,14 @@ func TestHandleIdentify_MergeAnonymous(t *testing.T) {
 	if len(aliases) != 1 {
 		t.Fatalf("expected 1 alias, got %d", len(aliases))
 	}
-	if aliases[0].AliasId != anonID {
-		t.Errorf("alias.AliasId = %q, want %q", aliases[0].AliasId, anonID)
+	if aliases[0].GetAliasId() != anonID {
+		t.Errorf("alias.AliasId = %q, want %q", aliases[0].GetAliasId(), anonID)
 	}
-	if aliases[0].ProfileId != targetID {
-		t.Errorf("alias.ProfileId = %q, want %q", aliases[0].ProfileId, targetID)
+	if aliases[0].GetProfileId() != targetID {
+		t.Errorf("alias.ProfileId = %q, want %q", aliases[0].GetProfileId(), targetID)
 	}
-	if aliases[0].ExternalId != "carol@test.com" {
-		t.Errorf("alias.ExternalId = %q, want %q", aliases[0].ExternalId, "carol@test.com")
+	if aliases[0].GetExternalId() != "carol@test.com" {
+		t.Errorf("alias.ExternalId = %q, want %q", aliases[0].GetExternalId(), "carol@test.com")
 	}
 }
 
@@ -532,13 +532,13 @@ func TestHandleIdentify_RetryAfterMerge(t *testing.T) {
 	if len(upserts) != 2 {
 		t.Fatalf("expected 2 upserts, got %d", len(upserts))
 	}
-	if upserts[0].ProfileId != targetID {
-		t.Errorf("target upsert ProfileId = %q, want %q", upserts[0].ProfileId, targetID)
+	if upserts[0].GetProfileId() != targetID {
+		t.Errorf("target upsert ProfileId = %q, want %q", upserts[0].GetProfileId(), targetID)
 	}
-	if upserts[1].ProfileId != ghostAnonID {
-		t.Errorf("soft-delete ProfileId = %q, want %q", upserts[1].ProfileId, ghostAnonID)
+	if upserts[1].GetProfileId() != ghostAnonID {
+		t.Errorf("soft-delete ProfileId = %q, want %q", upserts[1].GetProfileId(), ghostAnonID)
 	}
-	if !upserts[1].IsDeleted {
+	if !upserts[1].GetIsDeleted() {
 		t.Error("soft-delete IsDeleted = false, want true")
 	}
 }
@@ -1110,10 +1110,10 @@ func TestMergeWithSoftDeletedAnonymousProfile(t *testing.T) {
 	if len(upserts) != 2 {
 		t.Fatalf("expected 2 upserts, got %d", len(upserts))
 	}
-	if upserts[0].ProfileId != profileID {
-		t.Errorf("target upsert ProfileId = %q, want %q", upserts[0].ProfileId, profileID)
+	if upserts[0].GetProfileId() != profileID {
+		t.Errorf("target upsert ProfileId = %q, want %q", upserts[0].GetProfileId(), profileID)
 	}
-	if upserts[0].IsDeleted {
+	if upserts[0].GetIsDeleted() {
 		t.Error("target upsert IsDeleted = true, want false")
 	}
 }

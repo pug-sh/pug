@@ -96,18 +96,12 @@ func (x *ProfileAliasMessage) GetProjectId() string {
 // delete handlers to sync profile state to ClickHouse.
 // The upsert worker writes all fields into a ReplacingMergeTree keyed by (project_id, profile_id).
 type ProfileUpsertMessage struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProfileId *string                `protobuf:"bytes,1,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	ProjectId *string                `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	// May be empty for anonymous profiles that have not been identified yet.
-	ExternalId *string `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	// JSONB profile properties. Empty struct for deletes.
-	Properties *structpb.Struct `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
-	// When true, this message represents a soft-delete in ClickHouse.
-	// The upsert worker maps this to a UInt8 is_deleted column (1 = deleted).
-	// properties, external_id, create_time, and update_time may be zero-valued for deletes.
-	IsDeleted *bool `protobuf:"varint,5,opt,name=is_deleted,json=isDeleted" json:"is_deleted,omitempty"`
-	// PostgreSQL row timestamps. Zero-valued for soft-delete messages.
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProfileId     *string                `protobuf:"bytes,1,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	ProjectId     *string                `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	ExternalId    *string                `protobuf:"bytes,3,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	Properties    *structpb.Struct       `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
+	IsDeleted     *bool                  `protobuf:"varint,5,opt,name=is_deleted,json=isDeleted" json:"is_deleted,omitempty"`
 	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
 	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -197,21 +191,27 @@ var File_workers_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_workers_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"\"workers/profiles/v1/profiles.proto\x12\x13workers.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xaf\x01\n" +
-	"\x13ProfileAliasMessage\x12!\n" +
-	"\balias_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\aaliasId\x12%\n" +
+	"\"workers/profiles/v1/profiles.proto\x12\x13workers.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbf\x01\n" +
+	"\x13ProfileAliasMessage\x12%\n" +
+	"\balias_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\aaliasId\x12)\n" +
 	"\n" +
-	"profile_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprofileId\x12'\n" +
-	"\vexternal_id\x18\x03 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"externalId\x12%\n" +
+	"profile_id\x18\x02 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\tprofileId\x12+\n" +
+	"\vexternal_id\x18\x03 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\n" +
+	"externalId\x12)\n" +
 	"\n" +
-	"project_id\x18\x04 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprojectId\"\xd7\x02\n" +
-	"\x14ProfileUpsertMessage\x12%\n" +
+	"project_id\x18\x04 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\tprojectId\"\xe8\x02\n" +
+	"\x14ProfileUpsertMessage\x12)\n" +
 	"\n" +
-	"profile_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprofileId\x12%\n" +
+	"profile_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\tprofileId\x12)\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tprojectId\x12\x1f\n" +
-	"\vexternal_id\x18\x03 \x01(\tR\n" +
+	"project_id\x18\x02 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\tprojectId\x12(\n" +
+	"\vexternal_id\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
 	"externalId\x127\n" +
 	"\n" +
 	"properties\x18\x04 \x01(\v2\x17.google.protobuf.StructR\n" +
