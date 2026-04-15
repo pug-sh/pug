@@ -167,9 +167,9 @@ These can be done in any order and are fully self-contained.
 - [x] `proto/dashboard/orgs/v1/orgs.proto`
 - [x] `proto/dashboard/projects/v1/projects.proto`
 - [x] `proto/shared/campaigns/v1/campaigns.proto`
-- [ ] `proto/shared/delivery/v1/delivery.proto`
-- [ ] `proto/shared/profiles/v1/profiles.proto`
-- [ ] `proto/workers/profiles/v1/profiles.proto`
+- [x] `proto/shared/delivery/v1/delivery.proto`
+- [x] `proto/shared/profiles/v1/profiles.proto`
+- [x] `proto/workers/profiles/v1/profiles.proto`
 - [ ] `proto/common/v1/well_known_events.proto`
 
 ## Group 2 — Consumers of common (import common, not imported by others)

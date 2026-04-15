@@ -29,9 +29,6 @@ message ProfileAliasMessage {
 // ProfileUpsertMessage is published to profiles.upsert by the identify and
 // delete handlers to sync profile state to ClickHouse.
 // The upsert worker writes all fields into a ReplacingMergeTree keyed by (project_id, profile_id).
-// ProfileUpsertMessage is published to profiles.upsert by the identify and
-// delete handlers to sync profile state to ClickHouse.
-// The upsert worker writes all fields into a ReplacingMergeTree keyed by (project_id, profile_id).
 message ProfileUpsertMessage {
   string profile_id = 1 [
     (buf.validate.field).required = true,
@@ -42,9 +39,7 @@ message ProfileUpsertMessage {
     (buf.validate.field).string.min_len = 1
   ];
   // May be empty for anonymous profiles that have not been identified yet.
-  string external_id = 3 [
-    (buf.validate.field).string.min_len = 1
-  ];
+  string external_id = 3;
   // JSONB profile properties. Empty struct for deletes.
   google.protobuf.Struct properties = 4;
   // When true, this message represents a soft-delete in ClickHouse.

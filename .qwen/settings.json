@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(dev.to)",
+      "WebFetch(raw.githubusercontent.com)"
+    ]
+  },
+  "$version": 3
+}
