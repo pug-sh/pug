@@ -24,8 +24,8 @@ const (
 
 type SignInWithEmailRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         string                 `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
-	Password      string                 `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
+	Email         *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	Password      *string                `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -61,22 +61,22 @@ func (*SignInWithEmailRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *SignInWithEmailRequest) GetEmail() string {
-	if x != nil {
-		return x.Email
+	if x != nil && x.Email != nil {
+		return *x.Email
 	}
 	return ""
 }
 
 func (x *SignInWithEmailRequest) GetPassword() string {
-	if x != nil {
-		return x.Password
+	if x != nil && x.Password != nil {
+		return *x.Password
 	}
 	return ""
 }
 
 type SignInWithEmailResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
+	Token         *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -112,16 +112,16 @@ func (*SignInWithEmailResponse) Descriptor() ([]byte, []int) {
 }
 
 func (x *SignInWithEmailResponse) GetToken() string {
-	if x != nil {
-		return x.Token
+	if x != nil && x.Token != nil {
+		return *x.Token
 	}
 	return ""
 }
 
 type SignUpWithEmailRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         string                 `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
-	Password      string                 `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
+	Email         *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	Password      *string                `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -157,22 +157,22 @@ func (*SignUpWithEmailRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *SignUpWithEmailRequest) GetEmail() string {
-	if x != nil {
-		return x.Email
+	if x != nil && x.Email != nil {
+		return *x.Email
 	}
 	return ""
 }
 
 func (x *SignUpWithEmailRequest) GetPassword() string {
-	if x != nil {
-		return x.Password
+	if x != nil && x.Password != nil {
+		return *x.Password
 	}
 	return ""
 }
 
 type SignUpWithEmailResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
+	Token         *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -208,8 +208,8 @@ func (*SignUpWithEmailResponse) Descriptor() ([]byte, []int) {
 }
 
 func (x *SignUpWithEmailResponse) GetToken() string {
-	if x != nil {
-		return x.Token
+	if x != nil && x.Token != nil {
+		return *x.Token
 	}
 	return ""
 }
@@ -218,20 +218,22 @@ var File_public_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x19public/auth/v1/auth.proto\x12\x0epublic.auth.v1\x1a\x1bbuf/validate/validate.proto\"[\n" +
-	"\x16SignInWithEmailRequest\x12\x1d\n" +
-	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12\"\n" +
+	"\x19public/auth/v1/auth.proto\x12\x0epublic.auth.v1\x1a\x1bbuf/validate/validate.proto\"^\n" +
+	"\x16SignInWithEmailRequest\x12 \n" +
+	"\x05email\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12\"\n" +
 	"\bpassword\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bpassword\"/\n" +
 	"\x17SignInWithEmailResponse\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"[\n" +
-	"\x16SignUpWithEmailRequest\x12\x1d\n" +
-	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12\"\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"^\n" +
+	"\x16SignUpWithEmailRequest\x12 \n" +
+	"\x05email\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12\"\n" +
 	"\bpassword\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bpassword\"/\n" +
 	"\x17SignUpWithEmailResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token2\xd9\x01\n" +
 	"\vAuthService\x12d\n" +
 	"\x0fSignInWithEmail\x12&.public.auth.v1.SignInWithEmailRequest\x1a'.public.auth.v1.SignInWithEmailResponse\"\x00\x12d\n" +
-	"\x0fSignUpWithEmail\x12&.public.auth.v1.SignUpWithEmailRequest\x1a'.public.auth.v1.SignUpWithEmailResponse\"\x00BLZEgithub.com/fivebitsio/cotton/internal/gen/proto/public/auth/v1;authv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x0fSignUpWithEmail\x12&.public.auth.v1.SignUpWithEmailRequest\x1a'.public.auth.v1.SignUpWithEmailResponse\"\x00BGZEgithub.com/fivebitsio/cotton/internal/gen/proto/public/auth/v1;authv1b\beditionsp\xe8\a"
 
 var (
 	file_public_auth_v1_auth_proto_rawDescOnce sync.Once
