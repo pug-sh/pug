@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"google.golang.org/protobuf/proto"
+
 	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
@@ -12,16 +14,20 @@ import (
 // toRPCOrg and toRPCOrgFromWrite must be kept in sync — they convert
 // the read and write models to the same proto message.
 func toRPCOrg(o dbread.Org) *orgsv1.Org {
+	displayName := o.DisplayName
+	id := o.ID
 	return &orgsv1.Org{
-		DisplayName: o.DisplayName,
-		Id:          o.ID,
+		DisplayName: &displayName,
+		Id:          &id,
 	}
 }
 
 func toRPCOrgFromWrite(o dbwrite.Org) *orgsv1.Org {
+	displayName := o.DisplayName
+	id := o.ID
 	return &orgsv1.Org{
-		DisplayName: o.DisplayName,
-		Id:          o.ID,
+		DisplayName: &displayName,
+		Id:          &id,
 	}
 }
 
@@ -49,13 +55,14 @@ func toRPCInvitation(ctx context.Context, inv dbwrite.OrgInvitation) *orgsv1.Org
 	if inv.ExpiresAt.Valid {
 		expiresAt = inv.ExpiresAt.Time.UTC().Format("2006-01-02T15:04:05Z")
 	}
+	st := toRPCInvitationStatus(ctx, inv.Status)
 	return &orgsv1.OrgInvitation{
-		Email:     inv.Email,
-		ExpiresAt: expiresAt,
-		Id:        inv.ID,
-		OrgId:     inv.OrgID,
-		Status:    toRPCInvitationStatus(ctx, inv.Status),
-		Token:     inv.Token,
+		Email:     proto.String(inv.Email),
+		ExpiresAt: proto.String(expiresAt),
+		Id:        proto.String(inv.ID),
+		OrgId:     proto.String(inv.OrgID),
+		Status:    &st,
+		Token:     proto.String(inv.Token),
 	}
 }
 
@@ -64,11 +71,12 @@ func toRPCInvitationRO(ctx context.Context, inv dbread.OrgInvitation) *orgsv1.Or
 	if inv.ExpiresAt.Valid {
 		expiresAt = inv.ExpiresAt.Time.UTC().Format("2006-01-02T15:04:05Z")
 	}
+	st := toRPCInvitationStatus(ctx, inv.Status)
 	return &orgsv1.OrgInvitation{
-		Email:     inv.Email,
-		ExpiresAt: expiresAt,
-		Id:        inv.ID,
-		OrgId:     inv.OrgID,
-		Status:    toRPCInvitationStatus(ctx, inv.Status),
+		Email:     proto.String(inv.Email),
+		ExpiresAt: proto.String(expiresAt),
+		Id:        proto.String(inv.ID),
+		OrgId:     proto.String(inv.OrgID),
+		Status:    &st,
 	}
 }

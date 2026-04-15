@@ -3,7 +3,6 @@ package dashboard.orgs.v1;
 
 import "buf/validate/validate.proto";
 
-option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1;orgsv1";
 
 enum OrgRole {
@@ -93,7 +92,10 @@ message RemoveMemberRequest {
 message RemoveMemberResponse {}
 
 message InviteMemberRequest {
-  string email = 1 [(buf.validate.field).string.email = true];
+  string email = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.email = true
+  ];
   string org_id = 2 [(buf.validate.field).required = true];
 }
 

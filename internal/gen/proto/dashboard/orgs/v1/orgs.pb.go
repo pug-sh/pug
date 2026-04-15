@@ -122,8 +122,8 @@ func (InvitationStatus) EnumDescriptor() ([]byte, []int) {
 
 type Org struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	DisplayName   string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	Id            string                 `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
+	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	Id            *string                `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -159,26 +159,26 @@ func (*Org) Descriptor() ([]byte, []int) {
 }
 
 func (x *Org) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
 	}
 	return ""
 }
 
 func (x *Org) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
 
 type OrgMember struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CustomerId    string                 `protobuf:"bytes,1,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	Email         string                 `protobuf:"bytes,3,opt,name=email" json:"email,omitempty"`
-	OrgId         string                 `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	Role          OrgRole                `protobuf:"varint,5,opt,name=role,enum=dashboard.orgs.v1.OrgRole" json:"role,omitempty"`
+	CustomerId    *string                `protobuf:"bytes,1,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
+	DisplayName   *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	Email         *string                `protobuf:"bytes,3,opt,name=email" json:"email,omitempty"`
+	OrgId         *string                `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	Role          *OrgRole               `protobuf:"varint,5,opt,name=role,enum=dashboard.orgs.v1.OrgRole" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -214,48 +214,48 @@ func (*OrgMember) Descriptor() ([]byte, []int) {
 }
 
 func (x *OrgMember) GetCustomerId() string {
-	if x != nil {
-		return x.CustomerId
+	if x != nil && x.CustomerId != nil {
+		return *x.CustomerId
 	}
 	return ""
 }
 
 func (x *OrgMember) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
 	}
 	return ""
 }
 
 func (x *OrgMember) GetEmail() string {
-	if x != nil {
-		return x.Email
+	if x != nil && x.Email != nil {
+		return *x.Email
 	}
 	return ""
 }
 
 func (x *OrgMember) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
 
 func (x *OrgMember) GetRole() OrgRole {
-	if x != nil {
-		return x.Role
+	if x != nil && x.Role != nil {
+		return *x.Role
 	}
 	return OrgRole_ORG_ROLE_UNSPECIFIED
 }
 
 type OrgInvitation struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         string                 `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
-	ExpiresAt     string                 `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt" json:"expires_at,omitempty"`
-	Id            string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
-	OrgId         string                 `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	Status        InvitationStatus       `protobuf:"varint,5,opt,name=status,enum=dashboard.orgs.v1.InvitationStatus" json:"status,omitempty"`
-	Token         string                 `protobuf:"bytes,6,opt,name=token" json:"token,omitempty"`
+	Email         *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	ExpiresAt     *string                `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt" json:"expires_at,omitempty"`
+	Id            *string                `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
+	OrgId         *string                `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	Status        *InvitationStatus      `protobuf:"varint,5,opt,name=status,enum=dashboard.orgs.v1.InvitationStatus" json:"status,omitempty"`
+	Token         *string                `protobuf:"bytes,6,opt,name=token" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -291,43 +291,43 @@ func (*OrgInvitation) Descriptor() ([]byte, []int) {
 }
 
 func (x *OrgInvitation) GetEmail() string {
-	if x != nil {
-		return x.Email
+	if x != nil && x.Email != nil {
+		return *x.Email
 	}
 	return ""
 }
 
 func (x *OrgInvitation) GetExpiresAt() string {
-	if x != nil {
-		return x.ExpiresAt
+	if x != nil && x.ExpiresAt != nil {
+		return *x.ExpiresAt
 	}
 	return ""
 }
 
 func (x *OrgInvitation) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
 
 func (x *OrgInvitation) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
 
 func (x *OrgInvitation) GetStatus() InvitationStatus {
-	if x != nil {
-		return x.Status
+	if x != nil && x.Status != nil {
+		return *x.Status
 	}
 	return InvitationStatus_INVITATION_STATUS_UNSPECIFIED
 }
 
 func (x *OrgInvitation) GetToken() string {
-	if x != nil {
-		return x.Token
+	if x != nil && x.Token != nil {
+		return *x.Token
 	}
 	return ""
 }
@@ -414,7 +414,7 @@ func (x *ListResponse) GetOrgs() []*Org {
 
 type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -450,8 +450,8 @@ func (*GetRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
@@ -502,8 +502,8 @@ func (x *GetResponse) GetOrg() *Org {
 
 type UpdateDisplayNameRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	DisplayName   string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	OrgId         string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	OrgId         *string                `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -539,15 +539,15 @@ func (*UpdateDisplayNameRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *UpdateDisplayNameRequest) GetDisplayName() string {
-	if x != nil {
-		return x.DisplayName
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
 	}
 	return ""
 }
 
 func (x *UpdateDisplayNameRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
@@ -598,7 +598,7 @@ func (x *UpdateDisplayNameResponse) GetOrg() *Org {
 
 type ListMembersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -634,8 +634,8 @@ func (*ListMembersRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *ListMembersRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
@@ -686,8 +686,8 @@ func (x *ListMembersResponse) GetMembers() []*OrgMember {
 
 type RemoveMemberRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CustomerId    string                 `protobuf:"bytes,1,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
-	OrgId         string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	CustomerId    *string                `protobuf:"bytes,1,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
+	OrgId         *string                `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -723,15 +723,15 @@ func (*RemoveMemberRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *RemoveMemberRequest) GetCustomerId() string {
-	if x != nil {
-		return x.CustomerId
+	if x != nil && x.CustomerId != nil {
+		return *x.CustomerId
 	}
 	return ""
 }
 
 func (x *RemoveMemberRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
@@ -774,8 +774,8 @@ func (*RemoveMemberResponse) Descriptor() ([]byte, []int) {
 
 type InviteMemberRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         string                 `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
-	OrgId         string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	Email         *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	OrgId         *string                `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -811,15 +811,15 @@ func (*InviteMemberRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *InviteMemberRequest) GetEmail() string {
-	if x != nil {
-		return x.Email
+	if x != nil && x.Email != nil {
+		return *x.Email
 	}
 	return ""
 }
 
 func (x *InviteMemberRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
@@ -870,7 +870,7 @@ func (x *InviteMemberResponse) GetInvitation() *OrgInvitation {
 
 type AcceptInviteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
+	Token         *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -906,8 +906,8 @@ func (*AcceptInviteRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *AcceptInviteRequest) GetToken() string {
-	if x != nil {
-		return x.Token
+	if x != nil && x.Token != nil {
+		return *x.Token
 	}
 	return ""
 }
@@ -958,7 +958,7 @@ func (x *AcceptInviteResponse) GetOrg() *Org {
 
 type ListInvitationsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -994,8 +994,8 @@ func (*ListInvitationsRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *ListInvitationsRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
 	}
 	return ""
 }
@@ -1088,9 +1088,10 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\vcustomer_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"customerId\x12\x1d\n" +
 	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"\x16\n" +
-	"\x14RemoveMemberResponse\"S\n" +
-	"\x13InviteMemberRequest\x12\x1d\n" +
-	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12\x1d\n" +
+	"\x14RemoveMemberResponse\"V\n" +
+	"\x13InviteMemberRequest\x12 \n" +
+	"\x05email\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12\x1d\n" +
 	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"X\n" +
 	"\x14InviteMemberResponse\x12@\n" +
 	"\n" +
@@ -1120,7 +1121,7 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\fRemoveMember\x12&.dashboard.orgs.v1.RemoveMemberRequest\x1a'.dashboard.orgs.v1.RemoveMemberResponse\"\x00\x12a\n" +
 	"\fInviteMember\x12&.dashboard.orgs.v1.InviteMemberRequest\x1a'.dashboard.orgs.v1.InviteMemberResponse\"\x00\x12a\n" +
 	"\fAcceptInvite\x12&.dashboard.orgs.v1.AcceptInviteRequest\x1a'.dashboard.orgs.v1.AcceptInviteResponse\"\x00\x12j\n" +
-	"\x0fListInvitations\x12).dashboard.orgs.v1.ListInvitationsRequest\x1a*.dashboard.orgs.v1.ListInvitationsResponse\"\x00BOZHgithub.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1;orgsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x0fListInvitations\x12).dashboard.orgs.v1.ListInvitationsRequest\x1a*.dashboard.orgs.v1.ListInvitationsResponse\"\x00BJZHgithub.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_orgs_v1_orgs_proto_rawDescOnce sync.Once
