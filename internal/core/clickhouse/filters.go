@@ -176,6 +176,38 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 		}
 		placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")
 		return RawCond(prop+" NOT IN ("+placeholders+")", args...), nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
+		if len(f.GetValues()) != 2 {
+			return Condition{}, fmt.Errorf("between/not_between operators require exactly 2 values for property %q", f.GetProperty())
+		}
+		min, err := strconv.ParseFloat(f.GetValues()[0], 64)
+		if err != nil {
+			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[0], f.GetOperator(), err)
+		}
+		max, err := strconv.ParseFloat(f.GetValues()[1], 64)
+		if err != nil {
+			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
+		}
+		if min > max {
+			return Condition{}, fmt.Errorf("between/not_between requires values[0] <= values[1] for property %q, got %v > %v", f.GetProperty(), min, max)
+		}
+		return RawCond("(toFloat64OrNull("+prop+") >= ? AND toFloat64OrNull("+prop+") <= ?)", min, max), nil
+	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
+		if len(f.GetValues()) != 2 {
+			return Condition{}, fmt.Errorf("between/not_between operators require exactly 2 values for property %q", f.GetProperty())
+		}
+		min, err := strconv.ParseFloat(f.GetValues()[0], 64)
+		if err != nil {
+			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[0], f.GetOperator(), err)
+		}
+		max, err := strconv.ParseFloat(f.GetValues()[1], 64)
+		if err != nil {
+			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
+		}
+		if min > max {
+			return Condition{}, fmt.Errorf("between/not_between requires values[0] <= values[1] for property %q, got %v > %v", f.GetProperty(), min, max)
+		}
+		return RawCond("(toFloat64OrNull("+prop+") < ? OR toFloat64OrNull("+prop+") > ?)", min, max), nil
 	default:
 		return Condition{}, fmt.Errorf("unsupported filter operator: %v", f.GetOperator())
 	}

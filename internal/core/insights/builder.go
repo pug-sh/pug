@@ -262,8 +262,13 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 				fmt.Sprintf("if(%s IN (SELECT breakdown_%d FROM top_vals), %s, '$others') AS breakdown_%d", expr, j, expr, j))
 		}
 
+		aggExpr, err := aggregationExpr(agg, ev.GetAggregationProperty())
+		if err != nil {
+			return "", nil, fmt.Errorf("trends: events[%d]: %w", i, err)
+		}
+
 		query := chq.NewQuery().
-			Select(append(selectExprs, aggregationExpr(agg)+" AS value")...).
+			Select(append(selectExprs, aggExpr+" AS value")...).
 			From("events").
 			Where(
 				chq.Eq("project_id", projectID),
@@ -302,7 +307,20 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 }
 
 func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
-	aggExpr := aggregationExpr(aggregationType(req))
+	firstEvent := func() *insightsv1.EventQuery {
+		if len(req.GetEvents()) > 0 {
+			return req.GetEvents()[0]
+		}
+		return nil
+	}()
+	var aggProp string
+	if firstEvent != nil {
+		aggProp = firstEvent.GetAggregationProperty()
+	}
+	aggExpr, err := aggregationExpr(aggregationType(req), aggProp)
+	if err != nil {
+		return "", nil, fmt.Errorf("segmentation: %w", err)
+	}
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
@@ -311,7 +329,7 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 
 	eventCond, err := buildEventCondition(req.GetEvents(), projectID)
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("segmentation: %w", err)
 	}
 
 	return chq.NewQuery().
@@ -956,14 +974,42 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 	return insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
 }
 
-// aggregationExpr returns the SQL aggregation expression for the given type.
-func aggregationExpr(agg insightsv1.AggregationType) string {
+// aggregationExpr returns the SQL aggregation expression for the given type and optional property.
+// For TOTAL/UNIQUE_USERS/PER_USER_AVG, the property parameter is unused.
+// For SUM/AVG/MIN/MAX, property must be non-empty; returns an error otherwise.
+//
+// AVG/MIN/MAX use ifNull(..., 0) because these ClickHouse aggregates return NULL when all
+// inputs are NULL (e.g. all property values are non-numeric). SUM does not need this because
+// ClickHouse sum() returns 0 for all-NULL inputs. The tradeoff is that "no data" and "actual
+// zero" are indistinguishable in the result — consumers should check event counts separately
+// if the distinction matters.
+func aggregationExpr(agg insightsv1.AggregationType, property string) (string, error) {
 	switch agg {
+	case insightsv1.AggregationType_AGGREGATION_TYPE_SUM,
+		insightsv1.AggregationType_AGGREGATION_TYPE_AVG,
+		insightsv1.AggregationType_AGGREGATION_TYPE_MIN,
+		insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
+		if property == "" {
+			return "", fmt.Errorf("aggregationExpr: %s requires a non-empty property", agg)
+		}
+		numeric := "toFloat64OrNull(" + chq.PropertyExpr(property) + ")"
+		switch agg {
+		case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
+			return "sum(" + numeric + ")", nil
+		case insightsv1.AggregationType_AGGREGATION_TYPE_AVG:
+			return "ifNull(avg(" + numeric + "), 0)", nil
+		case insightsv1.AggregationType_AGGREGATION_TYPE_MIN:
+			return "ifNull(min(" + numeric + "), 0)", nil
+		case insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
+			return "ifNull(max(" + numeric + "), 0)", nil
+		default:
+			return "", fmt.Errorf("aggregationExpr: unexpected numeric aggregation type %s", agg)
+		}
 	case insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS:
-		return "toFloat64(count(DISTINCT distinct_id))"
+		return "toFloat64(count(DISTINCT distinct_id))", nil
 	case insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG:
-		return "if(count(DISTINCT distinct_id) = 0, 0, toFloat64(count(*)) / toFloat64(count(DISTINCT distinct_id)))"
+		return "if(count(DISTINCT distinct_id) = 0, 0, toFloat64(count(*)) / toFloat64(count(DISTINCT distinct_id)))", nil
 	default: // TOTAL and UNSPECIFIED
-		return "toFloat64(count(*))"
+		return "toFloat64(count(*))", nil
 	}
 }

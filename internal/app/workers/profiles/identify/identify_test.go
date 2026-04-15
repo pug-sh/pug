@@ -1213,11 +1213,11 @@ func TestBuildUpsertData_ValidMessage(t *testing.T) {
 
 func TestBuildAliasData_ValidationRejectsMissingFields(t *testing.T) {
 	tests := []struct {
-		name       string
+		name        string
 		anonymousID string
-		targetID   string
-		externalID string
-		projectID  string
+		targetID    string
+		externalID  string
+		projectID   string
 	}{
 		{name: "empty alias_id", anonymousID: "", targetID: "t1", externalID: "e1", projectID: "proj1"},
 		{name: "empty profile_id", anonymousID: "a1", targetID: "", externalID: "e1", projectID: "proj1"},
