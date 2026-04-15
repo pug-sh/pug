@@ -164,9 +164,9 @@ These can be done in any order and are fully self-contained.
 - [x] `proto/sdk/events/v1/events.proto`
 - [x] `proto/sdk/devices/v1/devices.proto`
 - [x] `proto/sdk/profiles/v1/profiles.proto`
-- [ ] `proto/dashboard/orgs/v1/orgs.proto`
-- [ ] `proto/dashboard/projects/v1/projects.proto`
-- [ ] `proto/shared/campaigns/v1/campaigns.proto`
+- [x] `proto/dashboard/orgs/v1/orgs.proto`
+- [x] `proto/dashboard/projects/v1/projects.proto`
+- [x] `proto/shared/campaigns/v1/campaigns.proto`
 - [ ] `proto/shared/delivery/v1/delivery.proto`
 - [ ] `proto/shared/profiles/v1/profiles.proto`
 - [ ] `proto/workers/profiles/v1/profiles.proto`
