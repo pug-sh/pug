@@ -3,6 +3,8 @@ package campaigns
 import (
 	"encoding/json"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
 	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
@@ -19,13 +21,13 @@ func wToRPCMsg(c dbwrite.Campaign) (*campaignsv1.Campaign, error) {
 	return &campaignsv1.Campaign{
 		CreateTime:       postgres.TimestamptzToTimestamp(c.CreateTime),
 		EndTime:          postgres.TimestamptzToTimestamp(c.EndTime),
-		Id:               c.ID,
-		Name:             c.Name,
+		Id:               proto.String(c.ID),
+		Name:             proto.String(c.Name),
 		NotificationData: notificationData,
-		ProjectId:        c.ProjectID,
+		ProjectId:        proto.String(c.ProjectID),
 		ScheduledTime:    postgres.TimestamptzToTimestamp(c.ScheduledTime),
 		StartTime:        postgres.TimestamptzToTimestamp(c.StartTime),
-		Status:           c.Status,
+		Status:           proto.String(c.Status),
 		UpdateTime:       postgres.TimestamptzToTimestamp(c.UpdateTime),
 	}, nil
 }
@@ -38,13 +40,13 @@ func roToRPCMsg(c dbread.Campaign) (*campaignsv1.Campaign, error) {
 	return &campaignsv1.Campaign{
 		CreateTime:       postgres.TimestamptzToTimestamp(c.CreateTime),
 		EndTime:          postgres.TimestamptzToTimestamp(c.EndTime),
-		Id:               c.ID,
-		Name:             c.Name,
+		Id:               proto.String(c.ID),
+		Name:             proto.String(c.Name),
 		NotificationData: notificationData,
-		ProjectId:        c.ProjectID,
+		ProjectId:        proto.String(c.ProjectID),
 		ScheduledTime:    postgres.TimestamptzToTimestamp(c.ScheduledTime),
 		StartTime:        postgres.TimestamptzToTimestamp(c.StartTime),
-		Status:           c.Status,
+		Status:           proto.String(c.Status),
 		UpdateTime:       postgres.TimestamptzToTimestamp(c.UpdateTime),
 	}, nil
 }

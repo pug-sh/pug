@@ -35,16 +35,17 @@ func (s *server) Get(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	campaign, err := s.service.GetCampaignByIDAndProjectID(ctx, req.Msg.Id, principal.Project.ID)
+	campaignID := req.Msg.GetId()
+	campaign, err := s.service.GetCampaignByIDAndProjectID(ctx, campaignID, principal.Project.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed getting campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed getting campaign", slogx.Error(err), slog.String("campaignId", campaignID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProto, err := roToRPCMsg(campaign)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", campaignID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -113,14 +114,14 @@ func (s *server) Create(
 
 	campaign, err := s.service.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
 		ID:               xid.New().String(),
-		Name:             req.Msg.Name,
+		Name:             req.Msg.GetName(),
 		ProjectID:        projectID,
 		NotificationData: notificationData,
 		ScheduledTime:    postgres.NewTimestamptz(scheduledTimeParam.AsTime()),
 		Status:           campaigns.StatusScheduled,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed creating campaign", slogx.Error(err), slog.String("projectId", projectID), slog.String("campaignName", req.Msg.Name))
+		slog.ErrorContext(ctx, "failed creating campaign", slogx.Error(err), slog.String("projectId", projectID), slog.String("campaignName", req.Msg.GetName()))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -148,9 +149,10 @@ func (s *server) Delete(
 
 	projectID := principal.Project.ID
 
-	err = s.service.DeleteCampaign(ctx, req.Msg.Id, projectID)
+	campaignID := req.Msg.GetId()
+	err = s.service.DeleteCampaign(ctx, campaignID, projectID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed deleting campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed deleting campaign", slogx.Error(err), slog.String("campaignId", campaignID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -171,14 +173,14 @@ func (s *server) Update(
 
 	// SQL uses COALESCE to preserve existing values for empty/null fields
 	campaign, err := s.service.UpdateCampaign(ctx, dbwrite.UpdateCampaignParams{
-		ID:               req.Msg.Id,
+		ID:               req.Msg.GetId(),
 		ProjectID:        principal.Project.ID,
-		Name:             req.Msg.Name,
-		NotificationData: req.Msg.NotificationData,
-		ScheduledTime:    postgres.TimestampToTimestamptz(req.Msg.ScheduledTime),
+		Name:             req.Msg.GetName(),
+		NotificationData: req.Msg.GetNotificationData(),
+		ScheduledTime:    postgres.TimestampToTimestamptz(req.Msg.GetScheduledTime()),
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed updating campaign", slogx.Error(err), slog.String("campaignId", req.Msg.Id))
+		slog.ErrorContext(ctx, "failed updating campaign", slogx.Error(err), slog.String("campaignId", req.Msg.GetId()))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
