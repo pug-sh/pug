@@ -3,6 +3,145 @@
 Tracking removal of `option features.field_presence = IMPLICIT;` from each proto file.
 Edition stays at `"2023"` (buf does not yet support `"2024"`).
 
+## Step-by-step procedure for each file
+
+Follow these steps exactly for each proto file in order.
+
+### 1. Read the proto file
+
+Identify every singular scalar field (`string`, `bool`, `int32`, `uint32`, `int64`, `uint64`,
+`float`, `double`, `bytes`) in every message. Message-type fields (`google.protobuf.Timestamp`,
+`google.protobuf.Struct`, oneofs) are always pointer types and are unaffected.
+
+### 2. Audit validation annotations on every scalar field
+
+With IMPLICIT, a missing `(buf.validate.field).required = true` still enforces
+"must be non-empty" when an `in`, `string.email`, `string.uuid`, `string.pattern`, or any
+other value constraint is present — an unset field defaults to `""` which fails the
+constraint. With EXPLICIT (after removing IMPLICIT), **unset optional fields skip all field
+constraints entirely**. Only `required = true` forces constraint evaluation on unset fields.
+
+**Rule:** for every scalar field that has a value constraint (e.g. `in`, `email`, `uuid`,
+`pattern`, `min_len`) but no `(buf.validate.field).required = true`, ask: "should this field
+be required?" If yes, add `required = true`. Common cases:
+
+- `platform` / `status` with `in: [...]` — almost always required; add `required = true`.
+- `email` with `string.email = true` — almost always required; add `required = true`.
+- Optional fields with `in: [...]` or `min_len` that represent genuinely optional inputs do
+  NOT get `required = true` — leave them as is. An unset optional field is valid.
+
+**Also check `min_len`:** after migration, `required = true` alone only checks presence
+(non-nil). If an empty string must be rejected, add `string.min_len = 1` alongside
+`required = true`. This came up for `EventBatch.project_id`.
+
+**CEL constraints are unaffected:** message-level `cel` expressions always evaluate.
+Accessing an unset optional string in CEL returns `""` (zero value), so expressions like
+`this.field == ''` continue to work correctly for "not set" checks. No CEL changes needed.
+
+### 3. Remove IMPLICIT and regenerate
+
+```
+# Remove the line:
+option features.field_presence = IMPLICIT;
+
+# Regenerate:
+make rpc
+```
+
+`make rpc` runs `buf lint` then `buf generate`. Fix any lint errors before continuing.
+
+### 4. Fix Go call sites — construction
+
+After regen, all scalar fields in the affected messages become pointer types (e.g. `*string`,
+`*uint32`). Any struct literal that sets a scalar field directly will fail to compile.
+
+**Pattern — string fields:**
+```go
+// Before
+msg := &foov1.Foo{Name: someString}
+
+// After
+msg := &foov1.Foo{Name: proto.String(someString)}
+```
+
+Import `"google.golang.org/protobuf/proto"` if not already present.
+
+**Pattern — non-string scalar fields (uint32, bool, etc.):**
+```go
+// Before
+resp := &foov1.Response{Accepted: uint32(n)}
+
+// After
+accepted := uint32(n)
+resp := &foov1.Response{Accepted: &accepted}
+// or use a typed helper if one exists
+```
+
+Note: `uint32(n)` is not addressable; store in a local variable first.
+
+**Empty-string trap:** `proto.String("")` creates a *present* field (non-nil pointer to `""`).
+This passes `required = true` because required only checks presence. If the field is
+conditionally set (e.g., in a test helper that builds messages for missing-field tests),
+only set the pointer when the value is non-empty:
+```go
+if name != "" {
+    msg.Name = proto.String(name)
+}
+```
+
+### 5. Fix Go call sites — reading
+
+Direct field access (`msg.Field`) compiles fine for pointer types but dereferences are
+unsafe if nil. Prefer the generated getters, which always return zero values for nil fields:
+
+```go
+// Prefer this everywhere (safe, returns "" for nil)
+msg.GetName()
+
+// Only use direct access when you know the field is set (e.g. after required validation)
+*msg.Name
+```
+
+In tests that directly compare fields after unmarshaling, switch direct comparisons to
+getters:
+```go
+// Before
+if ident.ExternalId != "user-42" {
+
+// After
+if ident.GetExternalId() != "user-42" {
+```
+
+### 6. Build and test
+
+```
+go build ./...
+make test
+```
+
+Ignore IDE diagnostics showing `cannot use *string as string` — these are stale and will
+clear on the next language server refresh. `go build ./...` is authoritative.
+
+**What to look for in failing tests after migration:**
+
+- `expected validation error for empty X, got nil` — an empty-string field that previously
+  failed a value constraint now passes because the unset field skips constraints with
+  EXPLICIT. Likely needs `min_len = 1` added to the proto field (or `required = true` if
+  not already present).
+- `panic: nil pointer dereference` in a test that passes empty strings and expects
+  validation to stop execution — the validation passed (see above), and execution reached
+  code that calls a database or another nil dependency. Root cause is the same: missing
+  `min_len` or `required` on the field.
+- `nil.AsTime()` returning Unix epoch instead of Go zero time — any code that uses
+  `.IsZero()` to detect an unset `*timestamppb.Timestamp` is wrong. Use `== nil` instead.
+
+### 7. Commit
+
+Stage: the `.proto` file, the entire `internal/gen/proto/<pkg>/` directory, all modified
+Go files, and the updated checklist in this doc.
+
+---
+
 ## Ordering rationale
 
 `field_presence = IMPLICIT` is a file-level option. Removing it makes all singular scalar
