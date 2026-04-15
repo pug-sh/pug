@@ -96,12 +96,14 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	msg := &sdkprofilesv1.ProfileIdentifyMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal identify message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-identify")
 	}
 
 	if err := protovalidate.Validate(msg); err != nil {
 		slog.ErrorContext(ctx, "identify message failed validation", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-identify")
 	}
@@ -127,6 +129,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		slog.ErrorContext(ctx, "failed to upsert profile", slogx.Error(err),
 			slog.String("projectId", projectID),
 			slog.String("externalId", externalID))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 
@@ -144,6 +147,7 @@ func handleIdentify(ctx context.Context, w *profiles.Worker, natsClient *natswor
 				slog.String("projectId", projectID),
 				slog.String("deviceId", deviceID),
 				slog.String("profileId", profile.ID))
+			telemetry.RecordError(ctx, err)
 			return err
 		}
 		if linked == 0 {
@@ -180,6 +184,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			slog.String("projectId", projectID),
 			slog.String("anonymousId", anonymousID),
 			slog.String("targetId", target.ID))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	defer func() {
@@ -212,6 +217,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 				slog.ErrorContext(ctx, "failed checking target profile existence", slogx.Error(err),
 					slog.String("projectId", projectID),
 					slog.String("targetId", target.ID))
+				telemetry.RecordError(ctx, err)
 				return err
 			}
 			if !targetExists {
@@ -245,6 +251,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 				slog.String("projectId", projectID),
 				slog.String("anonymousId", anonymousID),
 				slog.String("targetId", target.ID))
+			telemetry.RecordError(ctx, err)
 			return err
 		}
 	}
@@ -258,6 +265,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			slog.String("projectId", projectID),
 			slog.String("anonymousId", anonymousID),
 			slog.String("targetId", target.ID))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 
@@ -269,6 +277,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 		slog.ErrorContext(ctx, "failed soft-deleting anonymous profile", slogx.Error(err),
 			slog.String("projectId", projectID),
 			slog.String("anonymousId", anonymousID))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	if rowsDeleted == 0 {
@@ -305,6 +314,7 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 			slog.String("projectId", projectID),
 			slog.String("anonymousId", anonymousID),
 			slog.String("targetId", target.ID))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 
@@ -317,16 +327,19 @@ func mergeAnonymous(ctx context.Context, w *profiles.Worker, natsClient *natswor
 	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, targetUpsertData); err != nil {
 		slog.ErrorContext(ctx, "failed publishing target upsert", slogx.Error(err),
 			slog.String("targetId", merged.ID))
+		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("post-commit publish target upsert: %w", err)
 	}
 	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, anonDeleteData); err != nil {
 		slog.ErrorContext(ctx, "failed publishing anonymous soft-delete", slogx.Error(err),
 			slog.String("anonymousId", anonymousID))
+		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("post-commit publish anonymous soft-delete: %w", err)
 	}
 	if err := natsClient.Publish(ctx, natsworker.ProfileAliasSubject, aliasData); err != nil {
 		slog.ErrorContext(ctx, "failed publishing alias message", slogx.Error(err),
 			slog.String("anonymousId", anonymousID), slog.String("targetId", target.ID))
+		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("post-commit publish alias: %w", err)
 	}
 
@@ -345,6 +358,7 @@ func buildUpsertData(ctx context.Context, profileID, projectID, externalID strin
 	if err != nil {
 		slog.ErrorContext(ctx, "failed converting profile properties to struct", slogx.Error(err),
 			slog.String("profileId", profileID))
+		telemetry.RecordError(ctx, err)
 		return nil, natsworker.NewPermanentError(err).
 			With("worker", "profile-identify").
 			With("profile_id", profileID)
@@ -363,6 +377,7 @@ func buildUpsertData(ctx context.Context, profileID, projectID, externalID strin
 	if err := protovalidate.Validate(upsertMsg); err != nil {
 		slog.ErrorContext(ctx, "constructed invalid upsert message", slogx.Error(err),
 			slog.String("profileId", profileID))
+		telemetry.RecordError(ctx, err)
 		return nil, natsworker.NewPermanentError(err).
 			With("worker", "profile-identify").
 			With("profile_id", profileID)
@@ -372,6 +387,7 @@ func buildUpsertData(ctx context.Context, profileID, projectID, externalID strin
 	if err != nil {
 		slog.ErrorContext(ctx, "failed marshalling profile upsert message", slogx.Error(err),
 			slog.String("profileId", profileID))
+		telemetry.RecordError(ctx, err)
 		return nil, natsworker.NewPermanentError(err).
 			With("worker", "profile-identify").
 			With("profile_id", profileID)
@@ -394,6 +410,7 @@ func buildAliasData(ctx context.Context, anonymousID, targetID, externalID, proj
 	if err := protovalidate.Validate(aliasMsg); err != nil {
 		slog.ErrorContext(ctx, "constructed invalid alias message", slogx.Error(err),
 			slog.String("anonymousId", anonymousID), slog.String("targetId", targetID))
+		telemetry.RecordError(ctx, err)
 		return nil, natsworker.NewPermanentError(err).
 			With("worker", "profile-identify").
 			With("anonymous_id", anonymousID)
@@ -403,6 +420,7 @@ func buildAliasData(ctx context.Context, anonymousID, targetID, externalID, proj
 	if err != nil {
 		slog.ErrorContext(ctx, "failed marshalling alias message", slogx.Error(err),
 			slog.String("anonymousId", anonymousID), slog.String("targetId", targetID))
+		telemetry.RecordError(ctx, err)
 		return nil, natsworker.NewPermanentError(err).
 			With("worker", "profile-identify").
 			With("anonymous_id", anonymousID)
@@ -424,6 +442,7 @@ func publishUpsert(ctx context.Context, natsClient *natsworker.NATSClient, profi
 	if err := natsClient.Publish(ctx, natsworker.ProfileUpsertSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed publishing profile upsert", slogx.Error(err),
 			slog.String("profileId", profileID))
+		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("publish profile upsert: %w", err)
 	}
 

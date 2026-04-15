@@ -90,12 +90,14 @@ func handleAlias(ctx context.Context, ch driver.Conn, data []byte) error {
 	msg := &workerprofilesv1.ProfileAliasMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal alias message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-alias")
 	}
 
 	if err := protovalidate.Validate(msg); err != nil {
 		slog.ErrorContext(ctx, "alias message failed validation", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-alias")
 	}
@@ -111,6 +113,7 @@ func handleAlias(ctx context.Context, ch driver.Conn, data []byte) error {
 	); err != nil {
 		slog.ErrorContext(ctx, "failed inserting profile alias into ClickHouse", slogx.Error(err),
 			slog.String("aliasId", aliasID), slog.String("profileId", profileID))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 

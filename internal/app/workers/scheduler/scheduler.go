@@ -86,6 +86,7 @@ func (s *Scheduler) pollAndPublish(ctx context.Context) {
 	dueCampaigns, err := s.read.GetScheduledCampaigns(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to poll scheduled campaigns", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return
 	}
 
@@ -107,6 +108,7 @@ func (s *Scheduler) pollAndPublish(ctx context.Context) {
 			failCount++
 			slog.ErrorContext(ctx, "failed to marshal campaign message",
 				slogx.Error(err), slog.String("campaign_id", c.ID))
+			telemetry.RecordError(ctx, err)
 			continue
 		}
 
@@ -114,6 +116,7 @@ func (s *Scheduler) pollAndPublish(ctx context.Context) {
 			failCount++
 			slog.ErrorContext(ctx, "failed to publish scheduled campaign",
 				slogx.Error(err), slog.String("campaign_id", c.ID))
+			telemetry.RecordError(ctx, err)
 			continue
 		}
 

@@ -11,6 +11,7 @@ import (
 	devicessvc "github.com/fivebitsio/cotton/internal/core/devices"
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -51,6 +52,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 
 	if err := w.campaignService.UpdateCampaignStatus(ctx, campaign.ID, campaigns.StatusInProgress); err != nil {
 		slog.ErrorContext(ctx, "failed to set campaign in-progress", slogx.Error(err), slog.String("campaign_id", campaign.ID))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 
@@ -73,6 +75,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 					slog.String("device_id", device.ID),
 					slog.String("campaign_id", campaign.ID),
 					slogx.Error(err))
+				telemetry.RecordError(ctx, err)
 			}
 		}
 

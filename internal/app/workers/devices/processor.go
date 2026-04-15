@@ -13,6 +13,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/devices"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -34,6 +35,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	msg := &devicesv1.DeviceOperationMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal device operation message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "devices")
 	}
@@ -72,6 +74,7 @@ func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOper
 			slog.ErrorContext(ctx, "failed to find profile for device upsert", slogx.Error(err),
 				slog.String("externalId", subscribe.GetProfileExternalId()),
 				slog.String("projectId", msg.GetProjectId()))
+			telemetry.RecordError(ctx, err)
 		}
 		return "", err
 	}
@@ -102,6 +105,7 @@ func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOpera
 			slog.String("deviceId", msg.GetDeviceId()),
 			slog.String("profileId", profileID),
 			slog.String("projectId", msg.GetProjectId()))
+		telemetry.RecordError(ctx, err)
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.ForeignKeyViolation {
 			return natsworker.NewPermanentError(err).
 				With("worker", "devices").
@@ -128,6 +132,7 @@ func (w *Worker) handleUpdateStatus(ctx context.Context, msg *devicesv1.DeviceOp
 				With("project_id", msg.GetProjectId())
 		}
 		slog.ErrorContext(ctx, "failed to update device status", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	return nil
@@ -146,6 +151,7 @@ func (w *Worker) handleUpdateToken(ctx context.Context, msg *devicesv1.DeviceOpe
 				With("project_id", msg.GetProjectId())
 		}
 		slog.ErrorContext(ctx, "failed to update device token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	return nil

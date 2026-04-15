@@ -91,12 +91,14 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 	msg := &workerprofilesv1.ProfileUpsertMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal profile upsert message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-upsert")
 	}
 
 	if err := protovalidate.Validate(msg); err != nil {
 		slog.ErrorContext(ctx, "upsert message failed validation", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-upsert")
 	}
@@ -110,6 +112,7 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal profile properties", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-upsert").
 			With("profile_id", msg.GetProfileId())
@@ -127,6 +130,7 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 
@@ -143,6 +147,7 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 	if err := batch.Append(msg.GetProfileId(), msg.GetProjectId(), msg.GetExternalId(), string(propsJSON), isDeleted, createTime, updateTime); err != nil {
 		slog.ErrorContext(ctx, "failed to append profile to batch", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "profile-upsert").
 			With("profile_id", msg.GetProfileId())
@@ -153,6 +158,7 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 	if err := batch.Send(); err != nil {
 		slog.ErrorContext(ctx, "failed to send profile batch to ClickHouse", slogx.Error(err),
 			slog.String("profileId", msg.GetProfileId()))
+		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("send profile batch: %w", err)
 	}
 	sent = true
