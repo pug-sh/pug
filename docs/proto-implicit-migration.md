@@ -80,14 +80,18 @@ resp := &foov1.Response{Accepted: &accepted}
 Note: `uint32(n)` is not addressable; store in a local variable first.
 
 **Empty-string trap:** `proto.String("")` creates a *present* field (non-nil pointer to `""`).
-This passes `required = true` because required only checks presence. If the field is
-conditionally set (e.g., in a test helper that builds messages for missing-field tests),
-only set the pointer when the value is non-empty:
-```go
-if name != "" {
-    msg.Name = proto.String(name)
-}
+This passes `required = true` because required only checks presence, not value. The correct
+fix is to add `string.min_len = 1` to the proto field so that empty strings are rejected by
+value constraint regardless of how the field was set:
+```proto
+string project_id = 3 [
+  (buf.validate.field).required = true,
+  (buf.validate.field).string.min_len = 1
+];
 ```
+This keeps call sites simple (`proto.String(v)` always) and enforces the constraint in one
+place. Do NOT work around this with conditional nil-setting in Go — it is verbose and moves
+the constraint out of the proto definition where it belongs.
 
 ### 5. Fix Go call sites — reading
 
