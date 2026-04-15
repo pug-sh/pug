@@ -39,13 +39,13 @@ func seedProject(t *testing.T, ctx context.Context, pg *testutil.TestPostgres) s
 func makeSubscribeData(t *testing.T, deviceID, projectID, platform, token, profileExternalID string) []byte {
 	t.Helper()
 	msg := &devicesv1.DeviceOperationMessage{
-		DeviceId:  deviceID,
-		ProjectId: projectID,
+		DeviceId:  proto.String(deviceID),
+		ProjectId: proto.String(projectID),
 		OperationPayload: &devicesv1.DeviceOperationMessage_Subscribe{
 			Subscribe: &devicesv1.SubscribePayload{
-				Platform:          platform,
-				Token:             token,
-				ProfileExternalId: profileExternalID,
+				Platform:          proto.String(platform),
+				Token:             proto.String(token),
+				ProfileExternalId: proto.String(profileExternalID),
 			},
 		},
 	}

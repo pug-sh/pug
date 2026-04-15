@@ -36,14 +36,14 @@ func (s *Server) Subscribe(
 	}
 
 	msg := &devicesv1.DeviceOperationMessage{
-		DeviceId:  req.Msg.GetDeviceId(),
-		ProjectId: principal.Project.ID,
+		DeviceId:  proto.String(req.Msg.GetDeviceId()),
+		ProjectId: proto.String(principal.Project.ID),
 		OperationPayload: &devicesv1.DeviceOperationMessage_Subscribe{
 			Subscribe: &devicesv1.SubscribePayload{
-				Platform:          req.Msg.GetPlatform(),
-				ProfileExternalId: req.Msg.GetProfileExternalId(),
-				ProfileId:         req.Msg.GetProfileId(),
-				Token:             req.Msg.GetToken(),
+				Platform:          proto.String(req.Msg.GetPlatform()),
+				ProfileExternalId: proto.String(req.Msg.GetProfileExternalId()),
+				ProfileId:         proto.String(req.Msg.GetProfileId()),
+				Token:             proto.String(req.Msg.GetToken()),
 				Properties:        req.Msg.GetProperties(),
 			},
 		},
@@ -75,11 +75,11 @@ func (s *Server) UpdateStatus(
 	}
 
 	msg := &devicesv1.DeviceOperationMessage{
-		DeviceId:  req.Msg.GetId(),
-		ProjectId: principal.Project.ID,
+		DeviceId:  proto.String(req.Msg.GetId()),
+		ProjectId: proto.String(principal.Project.ID),
 		OperationPayload: &devicesv1.DeviceOperationMessage_UpdateStatus{
 			UpdateStatus: &devicesv1.UpdateStatusPayload{
-				Status: req.Msg.GetStatus(),
+				Status: proto.String(req.Msg.GetStatus()),
 			},
 		},
 	}
@@ -110,11 +110,11 @@ func (s *Server) UpdateToken(
 	}
 
 	msg := &devicesv1.DeviceOperationMessage{
-		DeviceId:  req.Msg.GetId(),
-		ProjectId: principal.Project.ID,
+		DeviceId:  proto.String(req.Msg.GetId()),
+		ProjectId: proto.String(principal.Project.ID),
 		OperationPayload: &devicesv1.DeviceOperationMessage_UpdateToken{
 			UpdateToken: &devicesv1.UpdateTokenPayload{
-				Token: req.Msg.GetToken(),
+				Token: proto.String(req.Msg.GetToken()),
 			},
 		},
 	}
