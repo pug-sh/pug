@@ -7,8 +7,9 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
@@ -234,10 +235,14 @@ func (s *server) SegmentUsers(
 		nextPageToken = ids[len(ids)-1]
 	}
 
-	return connect.NewResponse(&insightsv1.SegmentUsersResponse{
-		DistinctIds:   ids,
-		NextPageToken: proto.String(nextPageToken),
-	}), nil
+	resp := &insightsv1.SegmentUsersResponse{
+		DistinctIds: ids,
+	}
+	if nextPageToken != "" {
+		resp.NextPageToken = proto.String(nextPageToken)
+	}
+
+	return connect.NewResponse(resp), nil
 }
 
 func (s *server) GetFilterSchema(

@@ -8,7 +8,6 @@ import "common/v1/time.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1;activityv1";
 
 // ActivityService provides paginated access to raw event data and aggregated activity insights for user profiles.

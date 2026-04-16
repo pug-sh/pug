@@ -449,7 +449,7 @@ func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapP
 	var from, to time.Time
 	if params.TimeRange != nil {
 		if params.TimeRange.GetFrom() == nil || params.TimeRange.GetTo() == nil {
-			return nil, fmt.Errorf("GetActivityHeatmap: TimeRange.From and TimeRange.To must be non-zero when TimeRange is set")
+			return nil, fmt.Errorf("GetActivityHeatmap: TimeRange.From and TimeRange.To must be set when TimeRange is provided")
 		}
 		from = params.TimeRange.GetFrom().AsTime()
 		to = params.TimeRange.GetTo().AsTime()

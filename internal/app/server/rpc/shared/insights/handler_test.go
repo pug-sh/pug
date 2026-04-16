@@ -9,7 +9,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 )
 

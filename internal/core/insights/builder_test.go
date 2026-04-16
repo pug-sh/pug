@@ -2567,7 +2567,7 @@ func TestPropertyAggregation_BackwardCompat(t *testing.T) {
 				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 				Events: []*insightsv1.EventQuery{
-					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: tc.agg.Enum().Enum(), AggregationProperty: proto.String(tc.property)},
+					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: tc.agg.Enum(), AggregationProperty: proto.String(tc.property)},
 				},
 			}
 

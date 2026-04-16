@@ -45,15 +45,13 @@ func (s *Server) RecordEvent(
 	}
 
 	// Create delivery event message for NATS
-	et := req.Msg.GetEventType()
-	pf := req.Msg.GetPlatform()
 	msg := &deliveryv1.DeliveryEventMessage{
 		ProjectId:      proto.String(projectID),
 		CampaignId:     proto.String(req.Msg.GetCampaignId()),
 		MessageId:      proto.String(req.Msg.GetMessageId()),
 		DeviceId:       proto.String(req.Msg.GetDeviceId()),
-		EventType:      &et,
-		Platform:       &pf,
+		EventType:      req.Msg.GetEventType().Enum(),
+		Platform:       req.Msg.GetPlatform().Enum(),
 		EventTimestamp: eventTimestamp,
 		Metadata:       req.Msg.GetMetadata(),
 	}
@@ -72,14 +70,11 @@ func (s *Server) RecordEvent(
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("failed to process request"))
 	}
 
-	success := true
-	shouldRetry := false
-	retryAfter := int32(0)
 	return connect.NewResponse(&deliveryv1.RecordEventResponse{
-		Success:           &success,
+		Success:           proto.Bool(true),
 		Message:           proto.String("Successfully recorded delivery event"),
-		ShouldRetry:       &shouldRetry,
-		RetryAfterSeconds: &retryAfter,
+		ShouldRetry:       proto.Bool(false),
+		RetryAfterSeconds: proto.Int32(0),
 	}), nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreevents "github.com/fivebitsio/cotton/internal/core/events"
@@ -56,8 +57,7 @@ func (s *Server) BatchCreate(
 
 	events := req.Msg.GetEvents()
 	if len(events) == 0 {
-		accepted := uint32(0)
-		return connect.NewResponse(&eventsv1.BatchCreateResponse{Accepted: &accepted}), nil
+		return connect.NewResponse(&eventsv1.BatchCreateResponse{Accepted: proto.Uint32(0)}), nil
 	}
 
 	if err := coreevents.ValidateExternalEvents(events); err != nil {
@@ -76,9 +76,8 @@ func (s *Server) BatchCreate(
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to accept events"))
 	}
 
-	accepted := uint32(len(events))
 	return connect.NewResponse(&eventsv1.BatchCreateResponse{
-		Accepted: &accepted,
+		Accepted: proto.Uint32(uint32(len(events))),
 	}), nil
 }
 

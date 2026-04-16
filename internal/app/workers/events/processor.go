@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 
+	"buf.build/go/protovalidate"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"google.golang.org/protobuf/proto"
+
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
-	"google.golang.org/protobuf/proto"
 )
 
 type Processor struct {
@@ -24,6 +26,12 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	batch := &eventsv1.EventBatch{}
 	if err := proto.Unmarshal(data, batch); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal event batch", slogx.Error(err))
+		return natsworker.NewPermanentError(err).
+			With("worker", "events")
+	}
+
+	if err := protovalidate.Validate(batch); err != nil {
+		slog.ErrorContext(ctx, "event batch failed validation", slogx.Error(err))
 		return natsworker.NewPermanentError(err).
 			With("worker", "events")
 	}

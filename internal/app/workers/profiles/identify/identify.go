@@ -350,13 +350,12 @@ func buildUpsertData(ctx context.Context, profileID, projectID, externalID strin
 			With("profile_id", profileID)
 	}
 
-	del := isDeleted
 	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
 		ProfileId:  proto.String(profileID),
 		ProjectId:  proto.String(projectID),
 		ExternalId: proto.String(externalID),
 		Properties: propsStruct,
-		IsDeleted:  &del,
+		IsDeleted:  proto.Bool(isDeleted),
 		CreateTime: timestamppb.New(createTime),
 		UpdateTime: timestamppb.New(updateTime),
 	}

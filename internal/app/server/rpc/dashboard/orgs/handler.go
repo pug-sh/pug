@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreorgs "github.com/fivebitsio/cotton/internal/core/orgs"
@@ -165,17 +166,12 @@ func (s *server) ListMembers(
 
 	result := make([]*orgsv1.OrgMember, 0, len(members))
 	for _, m := range members {
-		customerID := m.CustomerID
-		displayName := m.DisplayName
-		email := m.Email
-		orgID := m.OrgID
-		role := toRPCRole(ctx, m.Role)
 		result = append(result, &orgsv1.OrgMember{
-			CustomerId:  &customerID,
-			DisplayName: &displayName,
-			Email:       &email,
-			OrgId:       &orgID,
-			Role:        &role,
+			CustomerId:  proto.String(m.CustomerID),
+			DisplayName: proto.String(m.DisplayName),
+			Email:       proto.String(m.Email),
+			OrgId:       proto.String(m.OrgID),
+			Role:        toRPCRole(ctx, m.Role).Enum(),
 		})
 	}
 

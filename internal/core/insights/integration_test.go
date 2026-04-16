@@ -601,11 +601,11 @@ func TestIntegration(t *testing.T) {
 		cohorts := series[0].Cohorts
 		// First cohort should have day-0 retention = 100%.
 		if cohorts[0].Points[0].GetValue() != 100 {
-			t.Errorf("expected 100%% day-0 retention, got %v", cohorts[0].Points[0].Value)
+			t.Errorf("expected 100%% day-0 retention, got %v", cohorts[0].Points[0].GetValue())
 		}
 		// Cohort size should match seeded sign_ups.
 		if cohorts[0].GetCohortSize() != 3 {
-			t.Errorf("expected cohort size 3, got %v", cohorts[0].CohortSize)
+			t.Errorf("expected cohort size 3, got %v", cohorts[0].GetCohortSize())
 		}
 	})
 

@@ -109,11 +109,10 @@ func (s *Server) Delete(
 	// already committed, so we return success regardless — a failed NATS publish
 	// is logged for reconciliation but must not fail the client request.
 	now := timestamppb.New(time.Now())
-	del := true
 	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
 		ProfileId:  proto.String(profileID),
 		ProjectId:  proto.String(principal.Project.ID),
-		IsDeleted:  &del,
+		IsDeleted:  proto.Bool(true),
 		UpdateTime: now,
 	}
 	upsertData, err := proto.Marshal(upsertMsg)
@@ -277,10 +276,13 @@ func (s *Server) List(
 			}
 		}
 
-		if err := stream.Send(&profilesv1.ListResponse{
-			Profiles:      pbProfiles,
-			NextPageToken: proto.String(nextPageToken),
-		}); err != nil {
+		listResp := &profilesv1.ListResponse{
+			Profiles: pbProfiles,
+		}
+		if nextPageToken != "" {
+			listResp.NextPageToken = proto.String(nextPageToken)
+		}
+		if err := stream.Send(listResp); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}

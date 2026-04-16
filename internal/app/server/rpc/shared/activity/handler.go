@@ -269,14 +269,12 @@ func (s *server) GetActivityHeatmap(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	proto := make([]*activityv1.HeatmapDay, len(days))
+	heatmapDays := make([]*activityv1.HeatmapDay, len(days))
 	for i, d := range days {
-		date := d.Date
-		count := d.Count
-		proto[i] = &activityv1.HeatmapDay{Date: &date, Count: &count}
+		heatmapDays[i] = &activityv1.HeatmapDay{Date: proto.String(d.Date), Count: proto.Int64(d.Count)}
 	}
 
-	return connect.NewResponse(&activityv1.GetActivityHeatmapResponse{Days: proto}), nil
+	return connect.NewResponse(&activityv1.GetActivityHeatmapResponse{Days: heatmapDays}), nil
 }
 
 func (s *server) GetProfileStats(
@@ -305,35 +303,24 @@ func (s *server) GetProfileStats(
 	resp := &activityv1.GetProfileStatsResponse{}
 
 	if stats != nil {
-		totalEvents := stats.TotalEvents
-		browser := stats.Browser
-		browserVersion := stats.BrowserVersion
-		os := stats.OS
-		osVersion := stats.OSVersion
-		device := stats.Device
-		country := stats.Country
-		city := stats.City
-		ip := stats.IP
 		resp.Stats = &activityv1.ProfileStats{
 			FirstSeen:      timestamppb.New(stats.FirstSeen),
 			LastSeen:       timestamppb.New(stats.LastSeen),
-			TotalEvents:    &totalEvents,
-			Browser:        &browser,
-			BrowserVersion: &browserVersion,
-			Os:             &os,
-			OsVersion:      &osVersion,
-			Device:         &device,
-			Country:        &country,
-			City:           &city,
-			Ip:             &ip,
+			TotalEvents:    proto.Int64(stats.TotalEvents),
+			Browser:        proto.String(stats.Browser),
+			BrowserVersion: proto.String(stats.BrowserVersion),
+			Os:             proto.String(stats.OS),
+			OsVersion:      proto.String(stats.OSVersion),
+			Device:         proto.String(stats.Device),
+			Country:        proto.String(stats.Country),
+			City:           proto.String(stats.City),
+			Ip:             proto.String(stats.IP),
 		}
 	}
 
 	resp.Heatmap = make([]*activityv1.HeatmapDay, len(heatmap))
 	for i, d := range heatmap {
-		date := d.Date
-		count := d.Count
-		resp.Heatmap[i] = &activityv1.HeatmapDay{Date: &date, Count: &count}
+		resp.Heatmap[i] = &activityv1.HeatmapDay{Date: proto.String(d.Date), Count: proto.Int64(d.Count)}
 	}
 
 	profile, err := s.profilesRead.GetProfileByIDAndProjectID(ctx, dbread.GetProfileByIDAndProjectIDParams{

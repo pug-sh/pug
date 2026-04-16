@@ -152,9 +152,8 @@ Go files, and the updated checklist in this doc.
 fields in that file's messages become pointer types in generated Go, requiring nil-checks
 everywhere those fields are accessed.
 
-Files are ordered so that protos with the most downstream consumers are done last — that
-way the common types are already migrated before the files that use them, and each step
-has the smallest possible blast radius.
+Files are ordered so that leaf consumers are migrated first, and the common types imported
+by multiple consumers are done last. Each step has the smallest possible blast radius.
 
 ## Group 1 — Standalone (no internal imports, not imported by internal protos)
 
@@ -174,8 +173,8 @@ These can be done in any order and are fully self-contained.
 
 ## Group 2 — Consumers of common (import common, not imported by others)
 
-Do these after the common protos in Group 3 are migrated, so all imported scalar types
-are already pointers when updating the Go side here.
+Do these before the common protos in Group 3, so the Go call-site changes here are
+committed before Group 3 changes the imported types.
 
 - [x] `proto/shared/activity/v1/activity.proto` — imports `filter_schema`, `filters`, `time`
 - [x] `proto/shared/insights/v1/insights.proto` — imports `filter_schema`, `filters`, `time`

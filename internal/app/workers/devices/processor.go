@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"buf.build/go/protovalidate"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -34,6 +35,12 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	msg := &devicesv1.DeviceOperationMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal device operation message", slogx.Error(err))
+		return natsworker.NewPermanentError(err).
+			With("worker", "devices")
+	}
+
+	if err := protovalidate.Validate(msg); err != nil {
+		slog.ErrorContext(ctx, "device operation message failed validation", slogx.Error(err))
 		return natsworker.NewPermanentError(err).
 			With("worker", "devices")
 	}

@@ -108,7 +108,7 @@ func (s *server) Create(
 	}
 
 	var notificationData map[string]any
-	if err := json.Unmarshal(req.Msg.NotificationData, &notificationData); err != nil {
+	if err := json.Unmarshal(req.Msg.GetNotificationData(), &notificationData); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
