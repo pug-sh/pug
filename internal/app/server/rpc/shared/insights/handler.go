@@ -188,8 +188,7 @@ func (s *server) Query(
 		}
 
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument,
-			errors.New("unsupported insight type"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unsupported insight type"))
 	}
 
 	return connect.NewResponse(resp), nil

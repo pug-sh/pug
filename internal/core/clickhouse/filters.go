@@ -168,7 +168,7 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 		return RawCond(prop+" IN ("+placeholders+")", args...), nil
 	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN:
 		if len(f.GetValues()) == 0 {
-			return Condition{}, fmt.Errorf("NOT IN operator requires at least one value for property %q", f.GetProperty())
+			return Condition{}, fmt.Errorf("NOT_IN operator requires at least one value for property %q", f.GetProperty())
 		}
 		args := make([]any, len(f.GetValues()))
 		for i, v := range f.GetValues() {
@@ -178,7 +178,7 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 		return RawCond(prop+" NOT IN ("+placeholders+")", args...), nil
 	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
 		if len(f.GetValues()) != 2 {
-			return Condition{}, fmt.Errorf("between/not_between operators require exactly 2 values for property %q", f.GetProperty())
+			return Condition{}, fmt.Errorf("BETWEEN operator requires exactly 2 values for property %q, got %d", f.GetProperty(), len(f.GetValues()))
 		}
 		min, err := strconv.ParseFloat(f.GetValues()[0], 64)
 		if err != nil {
@@ -187,14 +187,11 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 		max, err := strconv.ParseFloat(f.GetValues()[1], 64)
 		if err != nil {
 			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
-		}
-		if min > max {
-			return Condition{}, fmt.Errorf("between/not_between requires values[0] <= values[1] for property %q, got %v > %v", f.GetProperty(), min, max)
 		}
 		return RawCond("(toFloat64OrNull("+prop+") >= ? AND toFloat64OrNull("+prop+") <= ?)", min, max), nil
 	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
 		if len(f.GetValues()) != 2 {
-			return Condition{}, fmt.Errorf("between/not_between operators require exactly 2 values for property %q", f.GetProperty())
+			return Condition{}, fmt.Errorf("NOT_BETWEEN operator requires exactly 2 values for property %q, got %d", f.GetProperty(), len(f.GetValues()))
 		}
 		min, err := strconv.ParseFloat(f.GetValues()[0], 64)
 		if err != nil {
@@ -204,13 +201,9 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 		if err != nil {
 			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
 		}
-		if min > max {
-			return Condition{}, fmt.Errorf("between/not_between requires values[0] <= values[1] for property %q, got %v > %v", f.GetProperty(), min, max)
-		}
 		return RawCond("(toFloat64OrNull("+prop+") < ? OR toFloat64OrNull("+prop+") > ?)", min, max), nil
-	default:
-		return Condition{}, fmt.Errorf("unsupported filter operator: %v", f.GetOperator())
 	}
+	return Condition{}, fmt.Errorf("unsupported filter operator: %v", f.GetOperator())
 }
 
 // EventCondition builds a typed query Condition from event filters.

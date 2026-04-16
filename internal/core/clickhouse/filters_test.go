@@ -741,18 +741,6 @@ func TestPropertyCondition_Between_Errors(t *testing.T) {
 			values:      []string{"10", "xyz"},
 			wantErrFrag: "invalid numeric value",
 		},
-		{
-			name:        "between_min_greater_than_max",
-			operator:    commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
-			values:      []string{"100", "10"},
-			wantErrFrag: "values[0] <= values[1]",
-		},
-		{
-			name:        "not_between_min_greater_than_max",
-			operator:    commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
-			values:      []string{"100", "10"},
-			wantErrFrag: "values[0] <= values[1]",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
