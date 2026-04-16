@@ -5,7 +5,9 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"connectrpc.com/otelconnect"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -14,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 )
+
+const shutdownTimeout = 5 * time.Second
 
 var (
 	setupOnce   sync.Once
@@ -81,19 +85,23 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	slog.SetDefault(otelslog.NewLogger(serviceName, otelslog.WithLoggerProvider(loggerProvider), otelslog.WithSource(true)))
 
 	shutdown := func(ctx context.Context) error {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
 		var errs []error
-		if err := tracerProvider.Shutdown(ctx); err != nil {
+		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
 			slog.ErrorContext(ctx, "failed to shutdown tracer provider", slogx.Error(err))
 			errs = append(errs, err)
 		}
-		if err := meterProvider.Shutdown(ctx); err != nil {
-			slog.ErrorContext(ctx, "failed to shutdown meter provider", slogx.Error(err))
-			errs = append(errs, err)
+		if err := meterProvider.Shutdown(shutdownCtx); err != nil {
+			if !strings.Contains(err.Error(), "reader is shutdown") {
+				slog.ErrorContext(ctx, "failed to shutdown meter provider", slogx.Error(err))
+				errs = append(errs, err)
+			}
 		}
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 		// Restore a plain stderr logger before shutting down the OTel logger
 		// provider so its own shutdown error can still be logged.
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-		if err := loggerProvider.Shutdown(ctx); err != nil {
+		if err := loggerProvider.Shutdown(shutdownCtx); err != nil {
 			slog.ErrorContext(ctx, "failed to shutdown logger provider", slogx.Error(err))
 			errs = append(errs, err)
 		}
