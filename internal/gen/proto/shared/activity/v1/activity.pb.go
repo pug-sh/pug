@@ -28,17 +28,17 @@ const (
 type GetActivityFeedRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Required. The profile ID to fetch events for.
-	DistinctId string `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	DistinctId *string `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
 	// Optional. Filter by session. Empty means all sessions.
-	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
+	SessionId *string `protobuf:"bytes,2,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	// Optional. Restrict to events within this time window.
 	TimeRange *v1.TimeRange `protobuf:"bytes,3,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
 	// Optional. Filter by event properties (auto or custom).
 	PropertyFilters []*v1.PropertyFilter `protobuf:"bytes,4,rep,name=property_filters,json=propertyFilters" json:"property_filters,omitempty"`
 	// 0 means server default (100). Max 1000.
-	PageSize int32 `protobuf:"varint,5,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
+	PageSize *int32 `protobuf:"varint,5,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
 	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
-	PageToken string `protobuf:"bytes,6,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	PageToken *string `protobuf:"bytes,6,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional. Filter by multiple event types with per-event property filters.
 	Events        []*v1.EventFilter `protobuf:"bytes,7,rep,name=events" json:"events,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -76,15 +76,15 @@ func (*GetActivityFeedRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetActivityFeedRequest) GetDistinctId() string {
-	if x != nil {
-		return x.DistinctId
+	if x != nil && x.DistinctId != nil {
+		return *x.DistinctId
 	}
 	return ""
 }
 
 func (x *GetActivityFeedRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
+	if x != nil && x.SessionId != nil {
+		return *x.SessionId
 	}
 	return ""
 }
@@ -104,15 +104,15 @@ func (x *GetActivityFeedRequest) GetPropertyFilters() []*v1.PropertyFilter {
 }
 
 func (x *GetActivityFeedRequest) GetPageSize() int32 {
-	if x != nil {
-		return x.PageSize
+	if x != nil && x.PageSize != nil {
+		return *x.PageSize
 	}
 	return 0
 }
 
 func (x *GetActivityFeedRequest) GetPageToken() string {
-	if x != nil {
-		return x.PageToken
+	if x != nil && x.PageToken != nil {
+		return *x.PageToken
 	}
 	return ""
 }
@@ -126,12 +126,12 @@ func (x *GetActivityFeedRequest) GetEvents() []*v1.EventFilter {
 
 type ActivityEvent struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
-	EventId    string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId" json:"event_id,omitempty"`
-	Kind       string                 `protobuf:"bytes,2,opt,name=kind" json:"kind,omitempty"`
-	DistinctId string                 `protobuf:"bytes,3,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	EventId    *string                `protobuf:"bytes,1,opt,name=event_id,json=eventId" json:"event_id,omitempty"`
+	Kind       *string                `protobuf:"bytes,2,opt,name=kind" json:"kind,omitempty"`
+	DistinctId *string                `protobuf:"bytes,3,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
 	OccurTime  *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
 	// May be empty if no session was active.
-	SessionId string `protobuf:"bytes,5,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
+	SessionId *string `protobuf:"bytes,5,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	// System-enriched properties (geo, user-agent, etc.).
 	AutoProperties *structpb.Struct `protobuf:"bytes,6,opt,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty"`
 	// Client-supplied custom properties.
@@ -171,22 +171,22 @@ func (*ActivityEvent) Descriptor() ([]byte, []int) {
 }
 
 func (x *ActivityEvent) GetEventId() string {
-	if x != nil {
-		return x.EventId
+	if x != nil && x.EventId != nil {
+		return *x.EventId
 	}
 	return ""
 }
 
 func (x *ActivityEvent) GetKind() string {
-	if x != nil {
-		return x.Kind
+	if x != nil && x.Kind != nil {
+		return *x.Kind
 	}
 	return ""
 }
 
 func (x *ActivityEvent) GetDistinctId() string {
-	if x != nil {
-		return x.DistinctId
+	if x != nil && x.DistinctId != nil {
+		return *x.DistinctId
 	}
 	return ""
 }
@@ -199,8 +199,8 @@ func (x *ActivityEvent) GetOccurTime() *timestamppb.Timestamp {
 }
 
 func (x *ActivityEvent) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
+	if x != nil && x.SessionId != nil {
+		return *x.SessionId
 	}
 	return ""
 }
@@ -223,7 +223,7 @@ type GetActivityFeedResponse struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Events []*ActivityEvent       `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
 	// Empty when there are no more pages.
-	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
+	NextPageToken *string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -266,8 +266,8 @@ func (x *GetActivityFeedResponse) GetEvents() []*ActivityEvent {
 }
 
 func (x *GetActivityFeedResponse) GetNextPageToken() string {
-	if x != nil {
-		return x.NextPageToken
+	if x != nil && x.NextPageToken != nil {
+		return *x.NextPageToken
 	}
 	return ""
 }
@@ -275,17 +275,17 @@ func (x *GetActivityFeedResponse) GetNextPageToken() string {
 type GetEventExplorerRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Optional. Filter to a specific user. Empty means all users.
-	DistinctId string `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	DistinctId *string `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
 	// Optional. Filter by session. Empty means all sessions.
-	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
+	SessionId *string `protobuf:"bytes,2,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	// Optional. Restrict to events within this time window.
 	TimeRange *v1.TimeRange `protobuf:"bytes,3,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
 	// Optional. Filter by event properties (auto or custom).
 	PropertyFilters []*v1.PropertyFilter `protobuf:"bytes,4,rep,name=property_filters,json=propertyFilters" json:"property_filters,omitempty"`
 	// 0 means server default (100). Max 1000.
-	PageSize int32 `protobuf:"varint,5,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
+	PageSize *int32 `protobuf:"varint,5,opt,name=page_size,json=pageSize" json:"page_size,omitempty"`
 	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
-	PageToken string `protobuf:"bytes,6,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	PageToken *string `protobuf:"bytes,6,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
 	// Optional. Filter by multiple event types with per-event property filters.
 	Events        []*v1.EventFilter `protobuf:"bytes,7,rep,name=events" json:"events,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -323,15 +323,15 @@ func (*GetEventExplorerRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetEventExplorerRequest) GetDistinctId() string {
-	if x != nil {
-		return x.DistinctId
+	if x != nil && x.DistinctId != nil {
+		return *x.DistinctId
 	}
 	return ""
 }
 
 func (x *GetEventExplorerRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
+	if x != nil && x.SessionId != nil {
+		return *x.SessionId
 	}
 	return ""
 }
@@ -351,15 +351,15 @@ func (x *GetEventExplorerRequest) GetPropertyFilters() []*v1.PropertyFilter {
 }
 
 func (x *GetEventExplorerRequest) GetPageSize() int32 {
-	if x != nil {
-		return x.PageSize
+	if x != nil && x.PageSize != nil {
+		return *x.PageSize
 	}
 	return 0
 }
 
 func (x *GetEventExplorerRequest) GetPageToken() string {
-	if x != nil {
-		return x.PageToken
+	if x != nil && x.PageToken != nil {
+		return *x.PageToken
 	}
 	return ""
 }
@@ -375,7 +375,7 @@ type GetEventExplorerResponse struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Events []*ActivityEvent       `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
 	// Empty when there are no more pages.
-	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
+	NextPageToken *string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -418,15 +418,15 @@ func (x *GetEventExplorerResponse) GetEvents() []*ActivityEvent {
 }
 
 func (x *GetEventExplorerResponse) GetNextPageToken() string {
-	if x != nil {
-		return x.NextPageToken
+	if x != nil && x.NextPageToken != nil {
+		return *x.NextPageToken
 	}
 	return ""
 }
 
 type GetFilterSchemaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EventKind     string                 `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	EventKind     *string                `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -462,8 +462,8 @@ func (*GetFilterSchemaRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetFilterSchemaRequest) GetEventKind() string {
-	if x != nil {
-		return x.EventKind
+	if x != nil && x.EventKind != nil {
+		return *x.EventKind
 	}
 	return ""
 }
@@ -538,9 +538,9 @@ func (x *GetFilterSchemaResponse) GetProfilePropertyKeys() []*v1.PropertyKeyMeta
 
 type GetPropertyValuesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PropertyKey   string                 `protobuf:"bytes,1,opt,name=property_key,json=propertyKey" json:"property_key,omitempty"`
-	Source        v1.PropertySource      `protobuf:"varint,2,opt,name=source,enum=common.v1.PropertySource" json:"source,omitempty"`
-	EventKind     string                 `protobuf:"bytes,3,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	PropertyKey   *string                `protobuf:"bytes,1,opt,name=property_key,json=propertyKey" json:"property_key,omitempty"`
+	Source        *v1.PropertySource     `protobuf:"varint,2,opt,name=source,enum=common.v1.PropertySource" json:"source,omitempty"`
+	EventKind     *string                `protobuf:"bytes,3,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -576,22 +576,22 @@ func (*GetPropertyValuesRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetPropertyValuesRequest) GetPropertyKey() string {
-	if x != nil {
-		return x.PropertyKey
+	if x != nil && x.PropertyKey != nil {
+		return *x.PropertyKey
 	}
 	return ""
 }
 
 func (x *GetPropertyValuesRequest) GetSource() v1.PropertySource {
-	if x != nil {
-		return x.Source
+	if x != nil && x.Source != nil {
+		return *x.Source
 	}
 	return v1.PropertySource(0)
 }
 
 func (x *GetPropertyValuesRequest) GetEventKind() string {
-	if x != nil {
-		return x.EventKind
+	if x != nil && x.EventKind != nil {
+		return *x.EventKind
 	}
 	return ""
 }
@@ -642,7 +642,7 @@ func (x *GetPropertyValuesResponse) GetValues() []string {
 
 type GetActivityHeatmapRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
-	DistinctId string                 `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	DistinctId *string                `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
 	// Optional. Defaults to the last 60 days when omitted.
 	TimeRange     *v1.TimeRange `protobuf:"bytes,2,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -680,8 +680,8 @@ func (*GetActivityHeatmapRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetActivityHeatmapRequest) GetDistinctId() string {
-	if x != nil {
-		return x.DistinctId
+	if x != nil && x.DistinctId != nil {
+		return *x.DistinctId
 	}
 	return ""
 }
@@ -697,8 +697,8 @@ func (x *GetActivityHeatmapRequest) GetTimeRange() *v1.TimeRange {
 type HeatmapDay struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Date in YYYY-MM-DD format (UTC).
-	Date          string `protobuf:"bytes,1,opt,name=date" json:"date,omitempty"`
-	Count         int64  `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
+	Date          *string `protobuf:"bytes,1,opt,name=date" json:"date,omitempty"`
+	Count         *int64  `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -734,15 +734,15 @@ func (*HeatmapDay) Descriptor() ([]byte, []int) {
 }
 
 func (x *HeatmapDay) GetDate() string {
-	if x != nil {
-		return x.Date
+	if x != nil && x.Date != nil {
+		return *x.Date
 	}
 	return ""
 }
 
 func (x *HeatmapDay) GetCount() int64 {
-	if x != nil {
-		return x.Count
+	if x != nil && x.Count != nil {
+		return *x.Count
 	}
 	return 0
 }
@@ -793,7 +793,7 @@ func (x *GetActivityHeatmapResponse) GetDays() []*HeatmapDay {
 
 type GetProfileStatsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	DistinctId    string                 `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	DistinctId    *string                `protobuf:"bytes,1,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -829,8 +829,8 @@ func (*GetProfileStatsRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetProfileStatsRequest) GetDistinctId() string {
-	if x != nil {
-		return x.DistinctId
+	if x != nil && x.DistinctId != nil {
+		return *x.DistinctId
 	}
 	return ""
 }
@@ -844,23 +844,23 @@ type ProfileStats struct {
 	// Timestamp of the most recent event recorded for this profile.
 	LastSeen *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=last_seen,json=lastSeen" json:"last_seen,omitempty"`
 	// Total number of events recorded for this profile.
-	TotalEvents int64 `protobuf:"varint,3,opt,name=total_events,json=totalEvents" json:"total_events,omitempty"`
+	TotalEvents *int64 `protobuf:"varint,3,opt,name=total_events,json=totalEvents" json:"total_events,omitempty"`
 	// Browser name from the latest event (e.g. "Chrome"). Empty if unavailable.
-	Browser string `protobuf:"bytes,4,opt,name=browser" json:"browser,omitempty"`
+	Browser *string `protobuf:"bytes,4,opt,name=browser" json:"browser,omitempty"`
 	// Major browser version from the latest event (e.g. "124"). Empty if unavailable.
-	BrowserVersion string `protobuf:"bytes,5,opt,name=browser_version,json=browserVersion" json:"browser_version,omitempty"`
+	BrowserVersion *string `protobuf:"bytes,5,opt,name=browser_version,json=browserVersion" json:"browser_version,omitempty"`
 	// OS name from the latest event (e.g. "Mac OS X"). Empty if unavailable.
-	Os string `protobuf:"bytes,6,opt,name=os" json:"os,omitempty"`
+	Os *string `protobuf:"bytes,6,opt,name=os" json:"os,omitempty"`
 	// Major OS version from the latest event (e.g. "14"). Empty if unavailable.
-	OsVersion string `protobuf:"bytes,7,opt,name=os_version,json=osVersion" json:"os_version,omitempty"`
+	OsVersion *string `protobuf:"bytes,7,opt,name=os_version,json=osVersion" json:"os_version,omitempty"`
 	// Device model from the latest event (e.g. "iPhone"). Empty for desktop browsers.
-	Device string `protobuf:"bytes,8,opt,name=device" json:"device,omitempty"`
+	Device *string `protobuf:"bytes,8,opt,name=device" json:"device,omitempty"`
 	// Country name from the latest event (e.g. "United States"). Empty if unavailable.
-	Country string `protobuf:"bytes,9,opt,name=country" json:"country,omitempty"`
+	Country *string `protobuf:"bytes,9,opt,name=country" json:"country,omitempty"`
 	// City name from the latest event (e.g. "San Francisco"). Empty if unavailable.
-	City string `protobuf:"bytes,10,opt,name=city" json:"city,omitempty"`
+	City *string `protobuf:"bytes,10,opt,name=city" json:"city,omitempty"`
 	// IP address from the latest event. Empty if unavailable.
-	Ip            string `protobuf:"bytes,11,opt,name=ip" json:"ip,omitempty"`
+	Ip            *string `protobuf:"bytes,11,opt,name=ip" json:"ip,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -910,64 +910,64 @@ func (x *ProfileStats) GetLastSeen() *timestamppb.Timestamp {
 }
 
 func (x *ProfileStats) GetTotalEvents() int64 {
-	if x != nil {
-		return x.TotalEvents
+	if x != nil && x.TotalEvents != nil {
+		return *x.TotalEvents
 	}
 	return 0
 }
 
 func (x *ProfileStats) GetBrowser() string {
-	if x != nil {
-		return x.Browser
+	if x != nil && x.Browser != nil {
+		return *x.Browser
 	}
 	return ""
 }
 
 func (x *ProfileStats) GetBrowserVersion() string {
-	if x != nil {
-		return x.BrowserVersion
+	if x != nil && x.BrowserVersion != nil {
+		return *x.BrowserVersion
 	}
 	return ""
 }
 
 func (x *ProfileStats) GetOs() string {
-	if x != nil {
-		return x.Os
+	if x != nil && x.Os != nil {
+		return *x.Os
 	}
 	return ""
 }
 
 func (x *ProfileStats) GetOsVersion() string {
-	if x != nil {
-		return x.OsVersion
+	if x != nil && x.OsVersion != nil {
+		return *x.OsVersion
 	}
 	return ""
 }
 
 func (x *ProfileStats) GetDevice() string {
-	if x != nil {
-		return x.Device
+	if x != nil && x.Device != nil {
+		return *x.Device
 	}
 	return ""
 }
 
 func (x *ProfileStats) GetCountry() string {
-	if x != nil {
-		return x.Country
+	if x != nil && x.Country != nil {
+		return *x.Country
 	}
 	return ""
 }
 
 func (x *ProfileStats) GetCity() string {
-	if x != nil {
-		return x.City
+	if x != nil && x.City != nil {
+		return *x.City
 	}
 	return ""
 }
 
 func (x *ProfileStats) GetIp() string {
-	if x != nil {
-		return x.Ip
+	if x != nil && x.Ip != nil {
+		return *x.Ip
 	}
 	return ""
 }
@@ -1142,7 +1142,7 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\x0fGetFilterSchema\x12*.shared.activity.v1.GetFilterSchemaRequest\x1a+.shared.activity.v1.GetFilterSchemaResponse\x12p\n" +
 	"\x11GetPropertyValues\x12,.shared.activity.v1.GetPropertyValuesRequest\x1a-.shared.activity.v1.GetPropertyValuesResponse\x12s\n" +
 	"\x12GetActivityHeatmap\x12-.shared.activity.v1.GetActivityHeatmapRequest\x1a..shared.activity.v1.GetActivityHeatmapResponse\x12j\n" +
-	"\x0fGetProfileStats\x12*.shared.activity.v1.GetProfileStatsRequest\x1a+.shared.activity.v1.GetProfileStatsResponseBTZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1;activityv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x0fGetProfileStats\x12*.shared.activity.v1.GetProfileStatsRequest\x1a+.shared.activity.v1.GetProfileStatsResponseBOZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1;activityv1b\beditionsp\xe8\a"
 
 var (
 	file_shared_activity_v1_activity_proto_rawDescOnce sync.Once

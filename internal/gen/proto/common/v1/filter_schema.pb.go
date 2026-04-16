@@ -76,8 +76,8 @@ func (PropertySource) EnumDescriptor() ([]byte, []int) {
 
 type EventNameMeta struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	Count         uint64                 `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
+	Name          *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	Count         *uint64                `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
 	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -114,15 +114,15 @@ func (*EventNameMeta) Descriptor() ([]byte, []int) {
 }
 
 func (x *EventNameMeta) GetName() string {
-	if x != nil {
-		return x.Name
+	if x != nil && x.Name != nil {
+		return *x.Name
 	}
 	return ""
 }
 
 func (x *EventNameMeta) GetCount() uint64 {
-	if x != nil {
-		return x.Count
+	if x != nil && x.Count != nil {
+		return *x.Count
 	}
 	return 0
 }
@@ -136,8 +136,8 @@ func (x *EventNameMeta) GetLastSeenAt() *timestamppb.Timestamp {
 
 type PropertyKeyMeta struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	Count         uint64                 `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
+	Name          *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	Count         *uint64                `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
 	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -174,15 +174,15 @@ func (*PropertyKeyMeta) Descriptor() ([]byte, []int) {
 }
 
 func (x *PropertyKeyMeta) GetName() string {
-	if x != nil {
-		return x.Name
+	if x != nil && x.Name != nil {
+		return *x.Name
 	}
 	return ""
 }
 
 func (x *PropertyKeyMeta) GetCount() uint64 {
-	if x != nil {
-		return x.Count
+	if x != nil && x.Count != nil {
+		return *x.Count
 	}
 	return 0
 }
@@ -213,7 +213,7 @@ const file_common_v1_filter_schema_proto_rawDesc = "" +
 	"\x1bPROPERTY_SOURCE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14PROPERTY_SOURCE_AUTO\x10\x01\x12\x1a\n" +
 	"\x16PROPERTY_SOURCE_CUSTOM\x10\x02\x12\x1b\n" +
-	"\x17PROPERTY_SOURCE_PROFILE\x10\x03BIZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x17PROPERTY_SOURCE_PROFILE\x10\x03BDZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_filter_schema_proto_rawDescOnce sync.Once

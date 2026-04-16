@@ -17,13 +17,13 @@ func TestHandleUpsert_ValidationRejectsMissingFields(t *testing.T) {
 		{
 			name: "empty profile_id",
 			msg: &workerprofilesv1.ProfileUpsertMessage{
-				ProjectId: "proj1",
+				ProjectId: proto.String("proj1"),
 			},
 		},
 		{
 			name: "empty project_id",
 			msg: &workerprofilesv1.ProfileUpsertMessage{
-				ProfileId: "p1",
+				ProfileId: proto.String("p1"),
 			},
 		},
 	}

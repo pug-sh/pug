@@ -7,6 +7,8 @@ import (
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
 )
 
+func sp(s string) *string { return &s }
+
 func TestValidateExternalEvents(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -19,63 +21,63 @@ func TestValidateExternalEvents(t *testing.T) {
 		},
 		{
 			name:   "single valid event",
-			events: []*eventsv1.Event{{EventId: "e1", Kind: "page_view"}},
+			events: []*eventsv1.Event{{EventId: sp("e1"), Kind: sp("page_view")}},
 		},
 		{
 			name: "multiple valid events",
 			events: []*eventsv1.Event{
-				{EventId: "e1", Kind: "page_view"},
-				{EventId: "e2", Kind: "purchase"},
-				{EventId: "e3", Kind: "signup"},
+				{EventId: sp("e1"), Kind: sp("page_view")},
+				{EventId: sp("e2"), Kind: sp("purchase")},
+				{EventId: sp("e3"), Kind: sp("signup")},
 			},
 		},
 		{
 			name: "duplicate event_id",
 			events: []*eventsv1.Event{
-				{EventId: "e1", Kind: "page_view"},
-				{EventId: "e1", Kind: "purchase"},
+				{EventId: sp("e1"), Kind: sp("page_view")},
+				{EventId: sp("e1"), Kind: sp("purchase")},
 			},
 			wantErr: "duplicate",
 		},
 		{
 			name: "duplicate at third position",
 			events: []*eventsv1.Event{
-				{EventId: "e1", Kind: "a"},
-				{EventId: "e2", Kind: "b"},
-				{EventId: "e1", Kind: "c"},
+				{EventId: sp("e1"), Kind: sp("a")},
+				{EventId: sp("e2"), Kind: sp("b")},
+				{EventId: sp("e1"), Kind: sp("c")},
 			},
 			wantErr: "event[2]",
 		},
 		{
 			name:    "reserved prefix cotton.",
-			events:  []*eventsv1.Event{{EventId: "e1", Kind: "cotton.signup"}},
+			events:  []*eventsv1.Event{{EventId: sp("e1"), Kind: sp("cotton.signup")}},
 			wantErr: "reserved",
 		},
 		{
 			name: "mixed valid and reserved",
 			events: []*eventsv1.Event{
-				{EventId: "e1", Kind: "page_view"},
-				{EventId: "e2", Kind: "cotton.internal"},
+				{EventId: sp("e1"), Kind: sp("page_view")},
+				{EventId: sp("e2"), Kind: sp("cotton.internal")},
 			},
 			wantErr: "event[1]",
 		},
 		{
 			name:   "kind with cotton prefix but not cotton dot",
-			events: []*eventsv1.Event{{EventId: "e1", Kind: "cottoncandy"}},
+			events: []*eventsv1.Event{{EventId: sp("e1"), Kind: sp("cottoncandy")}},
 		},
 		{
 			name: "auto_properties with $ prefix — valid",
 			events: []*eventsv1.Event{{
-				EventId:        "e1",
-				Kind:           "page_view",
+				EventId:        sp("e1"),
+				Kind:           sp("page_view"),
 				AutoProperties: map[string]string{"$browser": "Chrome", "$os": "Windows"},
 			}},
 		},
 		{
 			name: "auto_properties without $ prefix — rejected",
 			events: []*eventsv1.Event{{
-				EventId:        "e1",
-				Kind:           "page_view",
+				EventId:        sp("e1"),
+				Kind:           sp("page_view"),
 				AutoProperties: map[string]string{"browser": "Chrome"},
 			}},
 			wantErr: "must start with '$'",
@@ -83,8 +85,8 @@ func TestValidateExternalEvents(t *testing.T) {
 		{
 			name: "auto_properties mixed valid and invalid keys",
 			events: []*eventsv1.Event{{
-				EventId:        "e1",
-				Kind:           "page_view",
+				EventId:        sp("e1"),
+				Kind:           sp("page_view"),
 				AutoProperties: map[string]string{"$browser": "Chrome", "os": "Windows"},
 			}},
 			wantErr: "must start with '$'",

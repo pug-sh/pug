@@ -9,7 +9,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 )
 
@@ -30,8 +30,9 @@ func TestQuery_UnsupportedInsightType(t *testing.T) {
 	})
 
 	s := &server{}
+	insightType := insightsv1.InsightType(999)
 	_, err := s.Query(ctx, connect.NewRequest(&insightsv1.QueryRequest{
-		InsightType: 999,
+		InsightType: &insightType,
 	}))
 	if err == nil {
 		t.Fatal("expected error, got nil")

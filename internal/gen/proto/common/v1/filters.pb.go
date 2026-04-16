@@ -160,11 +160,11 @@ func (LogicalOperator) EnumDescriptor() ([]byte, []int) {
 
 type PropertyFilter struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Property      string                 `protobuf:"bytes,1,opt,name=property" json:"property,omitempty"`
-	Operator      FilterOperator         `protobuf:"varint,2,opt,name=operator,enum=common.v1.FilterOperator" json:"operator,omitempty"`
-	Value         string                 `protobuf:"bytes,3,opt,name=value" json:"value,omitempty"`
+	Property      *string                `protobuf:"bytes,1,opt,name=property" json:"property,omitempty"`
+	Operator      *FilterOperator        `protobuf:"varint,2,opt,name=operator,enum=common.v1.FilterOperator" json:"operator,omitempty"`
+	Value         *string                `protobuf:"bytes,3,opt,name=value" json:"value,omitempty"`
 	Values        []string               `protobuf:"bytes,4,rep,name=values" json:"values,omitempty"`
-	Source        PropertySource         `protobuf:"varint,5,opt,name=source,enum=common.v1.PropertySource" json:"source,omitempty"`
+	Source        *PropertySource        `protobuf:"varint,5,opt,name=source,enum=common.v1.PropertySource" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -200,22 +200,22 @@ func (*PropertyFilter) Descriptor() ([]byte, []int) {
 }
 
 func (x *PropertyFilter) GetProperty() string {
-	if x != nil {
-		return x.Property
+	if x != nil && x.Property != nil {
+		return *x.Property
 	}
 	return ""
 }
 
 func (x *PropertyFilter) GetOperator() FilterOperator {
-	if x != nil {
-		return x.Operator
+	if x != nil && x.Operator != nil {
+		return *x.Operator
 	}
 	return FilterOperator_FILTER_OPERATOR_UNSPECIFIED
 }
 
 func (x *PropertyFilter) GetValue() string {
-	if x != nil {
-		return x.Value
+	if x != nil && x.Value != nil {
+		return *x.Value
 	}
 	return ""
 }
@@ -228,8 +228,8 @@ func (x *PropertyFilter) GetValues() []string {
 }
 
 func (x *PropertyFilter) GetSource() PropertySource {
-	if x != nil {
-		return x.Source
+	if x != nil && x.Source != nil {
+		return *x.Source
 	}
 	return PropertySource_PROPERTY_SOURCE_UNSPECIFIED
 }
@@ -238,7 +238,7 @@ func (x *PropertyFilter) GetSource() PropertySource {
 // Used across activity feeds, event explorer, and insights queries.
 type EventFilter struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          string                 `protobuf:"bytes,1,opt,name=kind" json:"kind,omitempty"`
+	Kind          *string                `protobuf:"bytes,1,opt,name=kind" json:"kind,omitempty"`
 	Filters       []*PropertyFilter      `protobuf:"bytes,2,rep,name=filters" json:"filters,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -275,8 +275,8 @@ func (*EventFilter) Descriptor() ([]byte, []int) {
 }
 
 func (x *EventFilter) GetKind() string {
-	if x != nil {
-		return x.Kind
+	if x != nil && x.Kind != nil {
+		return *x.Kind
 	}
 	return ""
 }
@@ -328,7 +328,7 @@ const file_common_v1_filters_proto_rawDesc = "" +
 	"\x0fLogicalOperator\x12 \n" +
 	"\x1cLOGICAL_OPERATOR_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14LOGICAL_OPERATOR_AND\x10\x01\x12\x17\n" +
-	"\x13LOGICAL_OPERATOR_OR\x10\x02BIZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x13LOGICAL_OPERATOR_OR\x10\x02BDZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_filters_proto_rawDescOnce sync.Once

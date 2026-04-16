@@ -4,7 +4,6 @@ package shared.delivery.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
-option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/delivery/v1;deliveryv1";
 
 service DeliveryService {

@@ -38,7 +38,7 @@ func (s *server) SignUpWithEmail(
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	return connect.NewResponse(&authv1.SignUpWithEmailResponse{Token: token}), nil
+	return connect.NewResponse(&authv1.SignUpWithEmailResponse{Token: &token}), nil
 }
 
 func (s *server) SignInWithEmail(
@@ -54,5 +54,5 @@ func (s *server) SignInWithEmail(
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	return connect.NewResponse(&authv1.SignInWithEmailResponse{Token: token}), nil
+	return connect.NewResponse(&authv1.SignInWithEmailResponse{Token: &token}), nil
 }

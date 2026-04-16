@@ -126,14 +126,18 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	toEventMetas := func(rows []AggregateKeyMeta) []*commonv1.EventNameMeta {
 		out := make([]*commonv1.EventNameMeta, len(rows))
 		for i, m := range rows {
-			out[i] = &commonv1.EventNameMeta{Name: m.Key, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
+			key := m.Key
+			count := m.Count
+			out[i] = &commonv1.EventNameMeta{Name: proto.String(key), Count: &count, LastSeenAt: timestamppb.New(m.LastSeen)}
 		}
 		return out
 	}
 	toPropKeyMetas := func(rows []AggregateKeyMeta) []*commonv1.PropertyKeyMeta {
 		out := make([]*commonv1.PropertyKeyMeta, len(rows))
 		for i, m := range rows {
-			out[i] = &commonv1.PropertyKeyMeta{Name: m.Key, Count: m.Count, LastSeenAt: timestamppb.New(m.LastSeen)}
+			key := m.Key
+			count := m.Count
+			out[i] = &commonv1.PropertyKeyMeta{Name: proto.String(key), Count: &count, LastSeenAt: timestamppb.New(m.LastSeen)}
 		}
 		return out
 	}

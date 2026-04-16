@@ -59,17 +59,17 @@ func TestWToRPCMsg(t *testing.T) {
 			if err != nil {
 				t.Fatalf("wToRPCMsg() unexpected error: %v", err)
 			}
-			if msg.Id != tt.wantID {
-				t.Errorf("Id = %q, want %q", msg.Id, tt.wantID)
+			if msg.GetId() != tt.wantID {
+				t.Errorf("Id = %q, want %q", msg.GetId(), tt.wantID)
 			}
-			if msg.Name != tt.wantName {
-				t.Errorf("Name = %q, want %q", msg.Name, tt.wantName)
+			if msg.GetName() != tt.wantName {
+				t.Errorf("Name = %q, want %q", msg.GetName(), tt.wantName)
 			}
-			if msg.ProjectId != tt.input.ProjectID {
-				t.Errorf("ProjectId = %q, want %q", msg.ProjectId, tt.input.ProjectID)
+			if msg.GetProjectId() != tt.input.ProjectID {
+				t.Errorf("ProjectId = %q, want %q", msg.GetProjectId(), tt.input.ProjectID)
 			}
-			if msg.Status != tt.input.Status {
-				t.Errorf("Status = %q, want %q", msg.Status, tt.input.Status)
+			if msg.GetStatus() != tt.input.Status {
+				t.Errorf("Status = %q, want %q", msg.GetStatus(), tt.input.Status)
 			}
 			if string(msg.NotificationData) != tt.wantJSON {
 				t.Errorf("NotificationData = %s, want %s", msg.NotificationData, tt.wantJSON)
@@ -125,17 +125,17 @@ func TestROToRPCMsg(t *testing.T) {
 			if err != nil {
 				t.Fatalf("roToRPCMsg() unexpected error: %v", err)
 			}
-			if msg.Id != tt.wantID {
-				t.Errorf("Id = %q, want %q", msg.Id, tt.wantID)
+			if msg.GetId() != tt.wantID {
+				t.Errorf("Id = %q, want %q", msg.GetId(), tt.wantID)
 			}
-			if msg.Name != tt.wantName {
-				t.Errorf("Name = %q, want %q", msg.Name, tt.wantName)
+			if msg.GetName() != tt.wantName {
+				t.Errorf("Name = %q, want %q", msg.GetName(), tt.wantName)
 			}
-			if msg.ProjectId != tt.input.ProjectID {
-				t.Errorf("ProjectId = %q, want %q", msg.ProjectId, tt.input.ProjectID)
+			if msg.GetProjectId() != tt.input.ProjectID {
+				t.Errorf("ProjectId = %q, want %q", msg.GetProjectId(), tt.input.ProjectID)
 			}
-			if msg.Status != tt.input.Status {
-				t.Errorf("Status = %q, want %q", msg.Status, tt.input.Status)
+			if msg.GetStatus() != tt.input.Status {
+				t.Errorf("Status = %q, want %q", msg.GetStatus(), tt.input.Status)
 			}
 			if string(msg.NotificationData) != tt.wantJSON {
 				t.Errorf("NotificationData = %s, want %s", msg.NotificationData, tt.wantJSON)

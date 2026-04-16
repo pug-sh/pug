@@ -56,9 +56,10 @@ func (s *server) BatchGet(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	isMember, err := s.orgsService.IsOrgMember(ctx, req.Msg.OrgId, principal.Customer.ID)
+	orgID := req.Msg.GetOrgId()
+	isMember, err := s.orgsService.IsOrgMember(ctx, orgID, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", req.Msg.OrgId), slog.String("customerId", principal.Customer.ID))
+		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", orgID), slog.String("customerId", principal.Customer.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -66,9 +67,9 @@ func (s *server) BatchGet(
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
 	}
 
-	projectsData, err := s.service.GetProjectsByOrgID(ctx, req.Msg.OrgId)
+	projectsData, err := s.service.GetProjectsByOrgID(ctx, orgID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("orgId", req.Msg.OrgId))
+		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("orgId", orgID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -95,7 +96,7 @@ func (s *server) Create(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	projectData, err := s.service.CreateProjectAsAdmin(ctx, req.Msg.OrgId, principal.Customer.ID, req.Msg.DisplayName)
+	projectData, err := s.service.CreateProjectAsAdmin(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetDisplayName())
 	if err != nil {
 		if errors.Is(err, projects.ErrAdminRequired) {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
@@ -156,7 +157,7 @@ func (s *server) UpdateDisplayName(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	wParams := dbwrite.UpdateProjectDisplayNameParams{OrgID: principal.Project.OrgID, DisplayName: req.Msg.DisplayName, ID: principal.Project.ID}
+	wParams := dbwrite.UpdateProjectDisplayNameParams{OrgID: principal.Project.OrgID, DisplayName: req.Msg.GetDisplayName(), ID: principal.Project.ID}
 	projectData, err := s.service.UpdateProjectDisplayName(ctx, wParams)
 	if err != nil {
 		if errors.Is(err, projects.ErrProjectNotFound) {
@@ -186,7 +187,7 @@ func (s *server) UpdateFCMServiceJSON(
 
 	wParams := dbwrite.UpdateFCMServiceJSONParams{
 		OrgID:          principal.Project.OrgID,
-		FcmServiceJson: postgres.NewText(req.Msg.FcmServiceJson),
+		FcmServiceJson: postgres.NewText(req.Msg.GetFcmServiceJson()),
 		ID:             principal.Project.ID,
 	}
 	if _, err := s.service.UpdateFCMServiceJSON(ctx, wParams); err != nil {

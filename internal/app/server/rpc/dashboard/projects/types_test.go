@@ -43,23 +43,23 @@ func TestROToRPCMsg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := roToRPCMsg(tt.input)
 
-			if msg.Id != tt.input.ID {
-				t.Errorf("Id = %q, want %q", msg.Id, tt.input.ID)
+			if msg.GetId() != tt.input.ID {
+				t.Errorf("Id = %q, want %q", msg.GetId(), tt.input.ID)
 			}
-			if msg.OrgId != tt.input.OrgID {
-				t.Errorf("OrgId = %q, want %q", msg.OrgId, tt.input.OrgID)
+			if msg.GetOrgId() != tt.input.OrgID {
+				t.Errorf("OrgId = %q, want %q", msg.GetOrgId(), tt.input.OrgID)
 			}
-			if msg.DisplayName != tt.input.DisplayName {
-				t.Errorf("DisplayName = %q, want %q", msg.DisplayName, tt.input.DisplayName)
+			if msg.GetDisplayName() != tt.input.DisplayName {
+				t.Errorf("DisplayName = %q, want %q", msg.GetDisplayName(), tt.input.DisplayName)
 			}
-			if msg.PublicApiKey != tt.input.PublicApiKey {
-				t.Errorf("PublicApiKey = %q, want %q", msg.PublicApiKey, tt.input.PublicApiKey)
+			if msg.GetPublicApiKey() != tt.input.PublicApiKey {
+				t.Errorf("PublicApiKey = %q, want %q", msg.GetPublicApiKey(), tt.input.PublicApiKey)
 			}
-			if msg.FcmServiceJson != tt.input.FcmServiceJson.String {
-				t.Errorf("FcmServiceJson = %q, want %q", msg.FcmServiceJson, tt.input.FcmServiceJson.String)
+			if msg.GetFcmServiceJson() != tt.input.FcmServiceJson.String {
+				t.Errorf("FcmServiceJson = %q, want %q", msg.GetFcmServiceJson(), tt.input.FcmServiceJson.String)
 			}
-			if msg.PrivateApiKey != "" {
-				t.Errorf("PrivateApiKey should be empty, got %q", msg.PrivateApiKey)
+			if msg.GetPrivateApiKey() != "" {
+				t.Errorf("PrivateApiKey should be empty, got %q", msg.GetPrivateApiKey())
 			}
 		})
 	}
@@ -98,23 +98,23 @@ func TestWToRPCMsg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := wToRPCMsg(tt.input)
 
-			if msg.Id != tt.input.ID {
-				t.Errorf("Id = %q, want %q", msg.Id, tt.input.ID)
+			if msg.GetId() != tt.input.ID {
+				t.Errorf("Id = %q, want %q", msg.GetId(), tt.input.ID)
 			}
-			if msg.OrgId != tt.input.OrgID {
-				t.Errorf("OrgId = %q, want %q", msg.OrgId, tt.input.OrgID)
+			if msg.GetOrgId() != tt.input.OrgID {
+				t.Errorf("OrgId = %q, want %q", msg.GetOrgId(), tt.input.OrgID)
 			}
-			if msg.DisplayName != tt.input.DisplayName {
-				t.Errorf("DisplayName = %q, want %q", msg.DisplayName, tt.input.DisplayName)
+			if msg.GetDisplayName() != tt.input.DisplayName {
+				t.Errorf("DisplayName = %q, want %q", msg.GetDisplayName(), tt.input.DisplayName)
 			}
-			if msg.PublicApiKey != tt.input.PublicApiKey {
-				t.Errorf("PublicApiKey = %q, want %q", msg.PublicApiKey, tt.input.PublicApiKey)
+			if msg.GetPublicApiKey() != tt.input.PublicApiKey {
+				t.Errorf("PublicApiKey = %q, want %q", msg.GetPublicApiKey(), tt.input.PublicApiKey)
 			}
-			if msg.FcmServiceJson != tt.input.FcmServiceJson.String {
-				t.Errorf("FcmServiceJson = %q, want %q", msg.FcmServiceJson, tt.input.FcmServiceJson.String)
+			if msg.GetFcmServiceJson() != tt.input.FcmServiceJson.String {
+				t.Errorf("FcmServiceJson = %q, want %q", msg.GetFcmServiceJson(), tt.input.FcmServiceJson.String)
 			}
-			if msg.PrivateApiKey != "" {
-				t.Errorf("PrivateApiKey should be empty, got %q", msg.PrivateApiKey)
+			if msg.GetPrivateApiKey() != "" {
+				t.Errorf("PrivateApiKey should be empty, got %q", msg.GetPrivateApiKey())
 			}
 		})
 	}
@@ -152,23 +152,23 @@ func TestWToRPCMsgWithPrivateKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := wToRPCMsgWithPrivateKey(tt.input)
 
-			if msg.Id != tt.input.ID {
-				t.Errorf("Id = %q, want %q", msg.Id, tt.input.ID)
+			if msg.GetId() != tt.input.ID {
+				t.Errorf("Id = %q, want %q", msg.GetId(), tt.input.ID)
 			}
-			if msg.OrgId != tt.input.OrgID {
-				t.Errorf("OrgId = %q, want %q", msg.OrgId, tt.input.OrgID)
+			if msg.GetOrgId() != tt.input.OrgID {
+				t.Errorf("OrgId = %q, want %q", msg.GetOrgId(), tt.input.OrgID)
 			}
-			if msg.DisplayName != tt.input.DisplayName {
-				t.Errorf("DisplayName = %q, want %q", msg.DisplayName, tt.input.DisplayName)
+			if msg.GetDisplayName() != tt.input.DisplayName {
+				t.Errorf("DisplayName = %q, want %q", msg.GetDisplayName(), tt.input.DisplayName)
 			}
-			if msg.PublicApiKey != tt.input.PublicApiKey {
-				t.Errorf("PublicApiKey = %q, want %q", msg.PublicApiKey, tt.input.PublicApiKey)
+			if msg.GetPublicApiKey() != tt.input.PublicApiKey {
+				t.Errorf("PublicApiKey = %q, want %q", msg.GetPublicApiKey(), tt.input.PublicApiKey)
 			}
-			if msg.PrivateApiKey != tt.input.PrivateApiKey {
-				t.Errorf("PrivateApiKey = %q, want %q", msg.PrivateApiKey, tt.input.PrivateApiKey)
+			if msg.GetPrivateApiKey() != tt.input.PrivateApiKey {
+				t.Errorf("PrivateApiKey = %q, want %q", msg.GetPrivateApiKey(), tt.input.PrivateApiKey)
 			}
-			if msg.FcmServiceJson != tt.input.FcmServiceJson.String {
-				t.Errorf("FcmServiceJson = %q, want %q", msg.FcmServiceJson, tt.input.FcmServiceJson.String)
+			if msg.GetFcmServiceJson() != tt.input.FcmServiceJson.String {
+				t.Errorf("FcmServiceJson = %q, want %q", msg.GetFcmServiceJson(), tt.input.FcmServiceJson.String)
 			}
 		})
 	}
@@ -187,25 +187,25 @@ func TestWToRPCMsgWithPrivateKeyIncludesAllBaseFields(t *testing.T) {
 	base := wToRPCMsg(p)
 	full := wToRPCMsgWithPrivateKey(p)
 
-	if base.Id != full.Id {
-		t.Errorf("Id mismatch: base=%q full=%q", base.Id, full.Id)
+	if base.GetId() != full.GetId() {
+		t.Errorf("Id mismatch: base=%q full=%q", base.GetId(), full.GetId())
 	}
-	if base.OrgId != full.OrgId {
-		t.Errorf("OrgId mismatch: base=%q full=%q", base.OrgId, full.OrgId)
+	if base.GetOrgId() != full.GetOrgId() {
+		t.Errorf("OrgId mismatch: base=%q full=%q", base.GetOrgId(), full.GetOrgId())
 	}
-	if base.DisplayName != full.DisplayName {
-		t.Errorf("DisplayName mismatch: base=%q full=%q", base.DisplayName, full.DisplayName)
+	if base.GetDisplayName() != full.GetDisplayName() {
+		t.Errorf("DisplayName mismatch: base=%q full=%q", base.GetDisplayName(), full.GetDisplayName())
 	}
-	if base.PublicApiKey != full.PublicApiKey {
-		t.Errorf("PublicApiKey mismatch: base=%q full=%q", base.PublicApiKey, full.PublicApiKey)
+	if base.GetPublicApiKey() != full.GetPublicApiKey() {
+		t.Errorf("PublicApiKey mismatch: base=%q full=%q", base.GetPublicApiKey(), full.GetPublicApiKey())
 	}
-	if base.FcmServiceJson != full.FcmServiceJson {
-		t.Errorf("FcmServiceJson mismatch: base=%q full=%q", base.FcmServiceJson, full.FcmServiceJson)
+	if base.GetFcmServiceJson() != full.GetFcmServiceJson() {
+		t.Errorf("FcmServiceJson mismatch: base=%q full=%q", base.GetFcmServiceJson(), full.GetFcmServiceJson())
 	}
-	if base.PrivateApiKey != "" {
-		t.Errorf("base PrivateApiKey should be empty, got %q", base.PrivateApiKey)
+	if base.GetPrivateApiKey() != "" {
+		t.Errorf("base PrivateApiKey should be empty, got %q", base.GetPrivateApiKey())
 	}
-	if full.PrivateApiKey != "priv_cmp" {
-		t.Errorf("full PrivateApiKey = %q, want %q", full.PrivateApiKey, "priv_cmp")
+	if full.GetPrivateApiKey() != "priv_cmp" {
+		t.Errorf("full PrivateApiKey = %q, want %q", full.GetPrivateApiKey(), "priv_cmp")
 	}
 }

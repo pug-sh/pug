@@ -15,6 +15,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/testutil"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestNewServer_NilNATSPanics(t *testing.T) {
@@ -38,7 +39,8 @@ func TestNewServer_NonNilNATS(t *testing.T) {
 
 func TestDelete_Unauthenticated(t *testing.T) {
 	s := NewServer(nil, nil, &natsdeps.NATSClient{})
-	_, err := s.Delete(context.Background(), connect.NewRequest(&profilesv1.DeleteRequest{Id: "p1"}))
+	id := proto.String("p1")
+	_, err := s.Delete(context.Background(), connect.NewRequest(&profilesv1.DeleteRequest{Id: id}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -49,7 +51,8 @@ func TestDelete_Unauthenticated(t *testing.T) {
 
 func TestGet_Unauthenticated(t *testing.T) {
 	s := NewServer(nil, nil, &natsdeps.NATSClient{})
-	_, err := s.Get(context.Background(), connect.NewRequest(&profilesv1.GetRequest{Id: "p1"}))
+	id := proto.String("p1")
+	_, err := s.Get(context.Background(), connect.NewRequest(&profilesv1.GetRequest{Id: id}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -133,7 +136,8 @@ func TestDelete_SoftDeleteAndDeactivateDevices(t *testing.T) {
 	s := NewServer(pg.PgRO, pg.PgW, natsClient)
 
 	// Delete the profile via the handler.
-	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: profileID}))
+	delID := proto.String(profileID)
+	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: delID}))
 	if err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -198,13 +202,15 @@ func TestDelete_AlreadyDeleted(t *testing.T) {
 	s := NewServer(pg.PgRO, pg.PgW, natsClient)
 
 	// First delete succeeds.
-	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: profileID}))
+	delID := proto.String(profileID)
+	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: delID}))
 	if err != nil {
 		t.Fatalf("first Delete: %v", err)
 	}
 
 	// Second delete returns CodeNotFound.
-	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: profileID}))
+	delID = proto.String(profileID)
+	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: delID}))
 	if err == nil {
 		t.Fatal("expected error for already-deleted profile, got nil")
 	}
@@ -233,7 +239,8 @@ func TestDelete_NonExistent(t *testing.T) {
 
 	s := NewServer(pg.PgRO, pg.PgW, natsClient)
 
-	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: "nonexistent-id"}))
+	delID := proto.String("nonexistent-id")
+	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: delID}))
 	if err == nil {
 		t.Fatal("expected error for non-existent profile, got nil")
 	}

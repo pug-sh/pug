@@ -7,6 +7,8 @@ import (
 
 	"connectrpc.com/connect"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
@@ -101,7 +103,7 @@ func (s *server) Query(
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Segmentation{
-			Segmentation: &insightsv1.SegmentationResult{Total: value},
+			Segmentation: &insightsv1.SegmentationResult{Total: proto.Float64(value)},
 		}
 
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
@@ -219,10 +221,14 @@ func (s *server) SegmentUsers(
 		nextPageToken = ids[len(ids)-1]
 	}
 
-	return connect.NewResponse(&insightsv1.SegmentUsersResponse{
-		DistinctIds:   ids,
-		NextPageToken: nextPageToken,
-	}), nil
+	resp := &insightsv1.SegmentUsersResponse{
+		DistinctIds: ids,
+	}
+	if nextPageToken != "" {
+		resp.NextPageToken = proto.String(nextPageToken)
+	}
+
+	return connect.NewResponse(resp), nil
 }
 
 func (s *server) GetFilterSchema(
@@ -266,11 +272,11 @@ func (s *server) GetPropertyValues(
 
 	projectID := principal.Project.ID
 
-	values, err := s.service.GetPropertyValues(ctx, projectID, req.Msg.PropertyKey, req.Msg.EventKind, req.Msg.Source)
+	values, err := s.service.GetPropertyValues(ctx, projectID, req.Msg.GetPropertyKey(), req.Msg.GetEventKind(), req.Msg.GetSource())
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get property values", slogx.Error(err),
 			slog.String("projectID", projectID),
-			slog.String("propertyKey", req.Msg.PropertyKey))
+			slog.String("propertyKey", req.Msg.GetPropertyKey()))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

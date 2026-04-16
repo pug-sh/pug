@@ -4,7 +4,6 @@ package sdk.events.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
-option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1;eventsv1";
 
 service EventsService {
@@ -37,5 +36,8 @@ message Event {
 
 message EventBatch {
   repeated Event events = 1;
-  string project_id = 2 [(buf.validate.field).required = true];
+  string project_id = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
 }
