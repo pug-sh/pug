@@ -48,10 +48,10 @@ func TestPublisher(t *testing.T) {
 	t.Run("publish valid batch", func(t *testing.T) {
 		err := publisher.Publish(ctx, "proj-1", []*eventsv1.Event{
 			{
-				EventId:    uuid.NewString(),
-				DistinctId: "user-1",
-				SessionId:  uuid.NewString(),
-				Kind:       "page_view",
+				EventId:    proto.String(uuid.NewString()),
+				DistinctId: proto.String("user-1"),
+				SessionId:  proto.String(uuid.NewString()),
+				Kind:       proto.String("page_view"),
 				OccurTime:  timestamppb.Now(),
 			},
 		})
@@ -77,13 +77,13 @@ func TestPublisher(t *testing.T) {
 			if err := proto.Unmarshal(msg.Data(), &batch); err != nil {
 				t.Fatalf("unmarshal: %v", err)
 			}
-			if batch.ProjectId != "proj-1" {
-				t.Errorf("ProjectId = %q, want %q", batch.ProjectId, "proj-1")
+			if batch.GetProjectId() != "proj-1" {
+				t.Errorf("ProjectId = %q, want %q", batch.GetProjectId(), "proj-1")
 			}
 			if len(batch.Events) != 1 {
 				t.Errorf("events count = %d, want 1", len(batch.Events))
 			}
-			if batch.Events[0].EventId == "" {
+			if batch.Events[0].GetEventId() == "" {
 				t.Error("EventId should not be empty")
 			}
 			received++
@@ -95,8 +95,8 @@ func TestPublisher(t *testing.T) {
 
 	t.Run("publish multiple events", func(t *testing.T) {
 		err := publisher.Publish(ctx, "proj-2", []*eventsv1.Event{
-			{EventId: uuid.NewString(), DistinctId: "user-1", SessionId: uuid.NewString(), Kind: "click", OccurTime: timestamppb.Now()},
-			{EventId: uuid.NewString(), DistinctId: "user-2", SessionId: uuid.NewString(), Kind: "purchase", OccurTime: timestamppb.Now()},
+			{EventId: proto.String(uuid.NewString()), DistinctId: proto.String("user-1"), SessionId: proto.String(uuid.NewString()), Kind: proto.String("click"), OccurTime: timestamppb.Now()},
+			{EventId: proto.String(uuid.NewString()), DistinctId: proto.String("user-2"), SessionId: proto.String(uuid.NewString()), Kind: proto.String("purchase"), OccurTime: timestamppb.Now()},
 		})
 		if err != nil {
 			t.Fatalf("Publish: %v", err)
@@ -105,7 +105,7 @@ func TestPublisher(t *testing.T) {
 
 	t.Run("empty project ID fails validation", func(t *testing.T) {
 		err := publisher.Publish(ctx, "", []*eventsv1.Event{
-			{EventId: uuid.NewString(), DistinctId: "user-1", SessionId: uuid.NewString(), Kind: "test", OccurTime: timestamppb.Now()},
+			{EventId: proto.String(uuid.NewString()), DistinctId: proto.String("user-1"), SessionId: proto.String(uuid.NewString()), Kind: proto.String("test"), OccurTime: timestamppb.Now()},
 		})
 		if err == nil {
 			t.Fatal("expected validation error for empty project ID, got nil")

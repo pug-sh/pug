@@ -12,6 +12,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -323,7 +324,7 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 		}
 		entriesByKey[key].points = append(entriesByKey[key].points, &insightsv1.DataPoint{
 			Time:  timestamppb.New(r.Time),
-			Value: r.Value,
+			Value: proto.Float64(r.Value),
 		})
 	}
 
@@ -336,7 +337,7 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 			return a.GetTime().AsTime().Compare(b.GetTime().AsTime())
 		})
 		s := &insightsv1.TrendSeries{
-			EventKind: e.eventKind,
+			EventKind: proto.String(e.eventKind),
 			Points:    e.points,
 		}
 		if len(e.breakdown) > 0 {
@@ -372,9 +373,9 @@ func GroupFunnelSeries(rows []FunnelRow, properties []string) ([]*insightsv1.Fun
 			entriesByKey[key] = &seriesEntry{breakdown: bd}
 		}
 		entriesByKey[key].steps = append(entriesByKey[key].steps, &insightsv1.FunnelStep{
-			EventKind:               r.EventKind,
-			Total:                   r.Value,
-			AvgTimeToConvertSeconds: r.AvgConvertSeconds,
+			EventKind:               proto.String(r.EventKind),
+			Total:                   proto.Float64(r.Value),
+			AvgTimeToConvertSeconds: proto.Float64(r.AvgConvertSeconds),
 		})
 	}
 
@@ -430,13 +431,13 @@ func GroupRetentionSeries(rows []RetentionRow, properties []string) ([]*insights
 		if _, ok := entry.cohorts.byTime[row.CohortTime]; !ok {
 			entry.cohorts.order = append(entry.cohorts.order, row.CohortTime)
 			entry.cohorts.byTime[row.CohortTime] = &insightsv1.RetentionCohort{
-				Cohort:     row.CohortTime.Format(time.RFC3339),
-				CohortSize: row.CohortSize,
+				Cohort:     proto.String(row.CohortTime.Format(time.RFC3339)),
+				CohortSize: proto.Float64(row.CohortSize),
 			}
 		}
 		entry.cohorts.byTime[row.CohortTime].Points = append(entry.cohorts.byTime[row.CohortTime].Points, &insightsv1.DataPoint{
 			Time:  timestamppb.New(row.Time),
-			Value: row.Value,
+			Value: proto.Float64(row.Value),
 		})
 	}
 

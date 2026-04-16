@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/fivebitsio/cotton/internal/core/insights"
@@ -29,14 +30,14 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("trends_daily", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -67,14 +68,14 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("trends_unique_users", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
 			},
 		}
 
@@ -105,17 +106,17 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("trends_with_breakdown", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
-			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
-			BreakdownLimit: 10,
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(10),
 		}
 
 		q, err := insights.BuildTrendsQuery(req, testProjectID)
@@ -139,13 +140,13 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("segmentation", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -167,19 +168,19 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("segmentation_with_filter", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 			FilterGroups: []*insightsv1.FilterGroup{
 				{
-					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND,
+					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
 					Filters: []*commonv1.PropertyFilter{
-						{Property: "$country", Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS, Value: "US"},
+						{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
 					},
 				},
 			},
@@ -203,14 +204,14 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("per_user_avg", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG.Enum()},
 			},
 		}
 
@@ -238,12 +239,12 @@ func TestIntegration(t *testing.T) {
 			To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 		}
 		events := []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 		}
 
 		// First page: size 2
 		req1 := &insightsv1.SegmentUsersRequest{
-			TimeRange: tr, Events: events, PageSize: 2,
+			TimeRange: tr, Events: events, PageSize: proto.Int32(2),
 		}
 		sql1, args1, err := insights.BuildSegmentUsersQuery(req1, testProjectID)
 		if err != nil {
@@ -259,7 +260,7 @@ func TestIntegration(t *testing.T) {
 
 		// Second page: cursor from last ID of page 1
 		req2 := &insightsv1.SegmentUsersRequest{
-			TimeRange: tr, Events: events, PageSize: 2, PageToken: page1[len(page1)-1],
+			TimeRange: tr, Events: events, PageSize: proto.Int32(2), PageToken: proto.String(page1[len(page1)-1]),
 		}
 		sql2, args2, err := insights.BuildSegmentUsersQuery(req2, testProjectID)
 		if err != nil {
@@ -288,17 +289,17 @@ func TestIntegration(t *testing.T) {
 		seedPurchases(t, ctx, ch)
 
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)),
 			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
-			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
-			BreakdownLimit: 2, // Only top 2 countries, rest go to $others
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(2), // Only top 2 countries, rest go to $others
 		}
 
 		q, err := insights.BuildTrendsQuery(req, testProjectID)
@@ -335,15 +336,15 @@ func TestIntegration(t *testing.T) {
 	t.Run("multi_event_trends", func(t *testing.T) {
 		// Uses seed data: page_view (Jan 1-3) and purchase (Jan 1 only, from seedPurchases)
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -367,7 +368,7 @@ func TestIntegration(t *testing.T) {
 
 		kindSet := map[string]bool{}
 		for _, s := range series {
-			kindSet[s.EventKind] = true
+			kindSet[s.GetEventKind()] = true
 		}
 		if !kindSet["page_view"] || !kindSet["purchase"] {
 			t.Errorf("expected both page_view and purchase series, got kinds: %v", kindSet)
@@ -381,9 +382,9 @@ func TestIntegration(t *testing.T) {
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
-			PageSize: 100,
+			PageSize: proto.Int32(100),
 		}
 
 		sql, args, err := insights.BuildSegmentUsersQuery(req, testProjectID)
@@ -430,23 +431,23 @@ func TestIntegration(t *testing.T) {
 		}
 
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
 			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "page_view"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 			FilterGroups: []*insightsv1.FilterGroup{
 				{
 					Filters: []*commonv1.PropertyFilter{
 						{
-							Property: "plan",
-							Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS,
-							Value:    "pro",
-							Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE,
+							Property: proto.String("plan"),
+							Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+							Value:    proto.String("pro"),
+							Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
 						},
 					},
 				},
@@ -477,15 +478,15 @@ func TestIntegration(t *testing.T) {
 		seedFunnelEvents(t, ctx, ch)
 
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 2, 8, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
-				{Event: &commonv1.EventFilter{Kind: "add_to_cart"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("add_to_cart")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -517,16 +518,16 @@ func TestIntegration(t *testing.T) {
 	t.Run("funnel_timing", func(t *testing.T) {
 		// Uses same seed data from funnel_counts.
 		req := &insightsv1.QueryRequest{
-			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
-			IncludeStepTiming: true,
+			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			IncludeStepTiming: proto.Bool(true),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 2, 8, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
-				{Event: &commonv1.EventFilter{Kind: "add_to_cart"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("add_to_cart")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -567,15 +568,15 @@ func TestIntegration(t *testing.T) {
 		seedRetentionEvents(t, ctx, ch)
 
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 3, 8, 0, 0, 0, 0, time.UTC)),
 			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
-				{Event: &commonv1.EventFilter{Kind: "login"}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("login")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		}
 
@@ -599,12 +600,12 @@ func TestIntegration(t *testing.T) {
 		}
 		cohorts := series[0].Cohorts
 		// First cohort should have day-0 retention = 100%.
-		if cohorts[0].Points[0].Value != 100 {
-			t.Errorf("expected 100%% day-0 retention, got %v", cohorts[0].Points[0].Value)
+		if cohorts[0].Points[0].GetValue() != 100 {
+			t.Errorf("expected 100%% day-0 retention, got %v", cohorts[0].Points[0].GetValue())
 		}
 		// Cohort size should match seeded sign_ups.
-		if cohorts[0].CohortSize != 3 {
-			t.Errorf("expected cohort size 3, got %v", cohorts[0].CohortSize)
+		if cohorts[0].GetCohortSize() != 3 {
+			t.Errorf("expected cohort size 3, got %v", cohorts[0].GetCohortSize())
 		}
 	})
 
@@ -616,17 +617,17 @@ func TestIntegration(t *testing.T) {
 		seedFunnelEventsWithCountry(t, ctx, ch)
 
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
 			},
-			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
-			BreakdownLimit: 1,
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(1),
 		}
 
 		q, err := insights.BuildFunnelCountsQuery(req, testProjectID)
@@ -662,18 +663,18 @@ func TestIntegration(t *testing.T) {
 		seedRetentionEventsForOthersBucket(t, ctx, ch)
 
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 6, 8, 0, 0, 0, 0, time.UTC)),
 			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
-				{Event: &commonv1.EventFilter{Kind: "login"}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
 			},
-			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
-			BreakdownLimit: 1,
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(1),
 		}
 
 		q, err := insights.BuildRetentionQuery(req, testProjectID)
@@ -706,17 +707,17 @@ func TestIntegration(t *testing.T) {
 		seedFunnelEventsWithCountry(t, ctx, ch)
 
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
 			},
-			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
-			BreakdownLimit: 10,
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(10),
 		}
 
 		q, err := insights.BuildFunnelCountsQuery(req, testProjectID)
@@ -747,10 +748,10 @@ func TestIntegration(t *testing.T) {
 		if us == nil || gb == nil {
 			t.Fatalf("expected US and GB series, got keys: %v", byCountry)
 		}
-		if len(us.Steps) < 2 || us.Steps[0].Total != 2 || us.Steps[1].Total != 1 {
+		if len(us.Steps) < 2 || us.Steps[0].GetTotal() != 2 || us.Steps[1].GetTotal() != 1 {
 			t.Errorf("US steps: got %+v, want [2, 1]", us.Steps)
 		}
-		if len(gb.Steps) < 2 || gb.Steps[0].Total != 1 || gb.Steps[1].Total != 1 {
+		if len(gb.Steps) < 2 || gb.Steps[0].GetTotal() != 1 || gb.Steps[1].GetTotal() != 1 {
 			t.Errorf("GB steps: got %+v, want [1, 1]", gb.Steps)
 		}
 	})
@@ -758,18 +759,18 @@ func TestIntegration(t *testing.T) {
 	t.Run("funnel_timing_with_breakdown", func(t *testing.T) {
 		// Uses same seed data from funnel_counts_with_breakdown.
 		req := &insightsv1.QueryRequest{
-			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
-			IncludeStepTiming: true,
+			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			IncludeStepTiming: proto.Bool(true),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 4, 8, 0, 0, 0, 0, time.UTC)),
 			},
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
-				{Event: &commonv1.EventFilter{Kind: "purchase"}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
 			},
-			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
-			BreakdownLimit: 10,
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(10),
 		}
 
 		q, err := insights.BuildFunnelTimingQuery(req, testProjectID)
@@ -800,18 +801,18 @@ func TestIntegration(t *testing.T) {
 		seedRetentionEventsWithCountry(t, ctx, ch)
 
 		req := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 5, 8, 0, 0, 0, 0, time.UTC)),
 			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY,
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: "sign_up"}},
-				{Event: &commonv1.EventFilter{Kind: "login"}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
 			},
-			Breakdowns:     []*insightsv1.Breakdown{{Property: "$country"}},
-			BreakdownLimit: 10,
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(10),
 		}
 
 		q, err := insights.BuildRetentionQuery(req, testProjectID)
@@ -843,10 +844,10 @@ func TestIntegration(t *testing.T) {
 		if us == nil || gb == nil {
 			t.Fatalf("expected US and GB series, got keys: %v", byCountry)
 		}
-		if len(us.Cohorts) == 0 || us.Cohorts[0].CohortSize != 1 {
+		if len(us.Cohorts) == 0 || us.Cohorts[0].GetCohortSize() != 1 {
 			t.Errorf("US cohort_size: got %+v, want 1", us.Cohorts)
 		}
-		if len(gb.Cohorts) == 0 || gb.Cohorts[0].CohortSize != 1 {
+		if len(gb.Cohorts) == 0 || gb.Cohorts[0].GetCohortSize() != 1 {
 			t.Errorf("GB cohort_size: got %+v, want 1", gb.Cohorts)
 		}
 	})

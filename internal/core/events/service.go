@@ -14,12 +14,12 @@ const reservedPrefix = "cotton."
 func ValidateExternalEvents(events []*eventsv1.Event) error {
 	seen := make(map[string]struct{}, len(events))
 	for i, e := range events {
-		if _, exists := seen[e.EventId]; exists {
-			return fmt.Errorf("event[%d]: duplicate event_id %q in batch", i, e.EventId)
+		if _, exists := seen[e.GetEventId()]; exists {
+			return fmt.Errorf("event[%d]: duplicate event_id %q in batch", i, e.GetEventId())
 		}
-		seen[e.EventId] = struct{}{}
-		if strings.HasPrefix(e.Kind, reservedPrefix) {
-			return fmt.Errorf("event[%d]: kind %q uses reserved prefix %q", i, e.Kind, reservedPrefix)
+		seen[e.GetEventId()] = struct{}{}
+		if strings.HasPrefix(e.GetKind(), reservedPrefix) {
+			return fmt.Errorf("event[%d]: kind %q uses reserved prefix %q", i, e.GetKind(), reservedPrefix)
 		}
 		for k := range e.AutoProperties {
 			if !strings.HasPrefix(k, "$") {

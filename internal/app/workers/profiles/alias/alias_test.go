@@ -17,33 +17,33 @@ func TestHandleAlias_ValidationRejectsMissingFields(t *testing.T) {
 		{
 			name: "empty alias_id",
 			msg: &workerprofilesv1.ProfileAliasMessage{
-				ProfileId:  "p1",
-				ExternalId: "e1",
-				ProjectId:  "proj1",
+				ProfileId:  proto.String("p1"),
+				ExternalId: proto.String("e1"),
+				ProjectId:  proto.String("proj1"),
 			},
 		},
 		{
 			name: "empty profile_id",
 			msg: &workerprofilesv1.ProfileAliasMessage{
-				AliasId:    "a1",
-				ExternalId: "e1",
-				ProjectId:  "proj1",
+				AliasId:    proto.String("a1"),
+				ExternalId: proto.String("e1"),
+				ProjectId:  proto.String("proj1"),
 			},
 		},
 		{
 			name: "empty external_id",
 			msg: &workerprofilesv1.ProfileAliasMessage{
-				AliasId:   "a1",
-				ProfileId: "p1",
-				ProjectId: "proj1",
+				AliasId:   proto.String("a1"),
+				ProfileId: proto.String("p1"),
+				ProjectId: proto.String("proj1"),
 			},
 		},
 		{
 			name: "empty project_id",
 			msg: &workerprofilesv1.ProfileAliasMessage{
-				AliasId:    "a1",
-				ProfileId:  "p1",
-				ExternalId: "e1",
+				AliasId:    proto.String("a1"),
+				ProfileId:  proto.String("p1"),
+				ExternalId: proto.String("e1"),
 			},
 		},
 	}

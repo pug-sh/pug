@@ -25,13 +25,13 @@ const (
 
 type SubscribeRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
-	Platform string                 `protobuf:"bytes,2,opt,name=platform" json:"platform,omitempty"`
+	DeviceId *string                `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	Platform *string                `protobuf:"bytes,2,opt,name=platform" json:"platform,omitempty"`
 	// Optional — when provided, links the device to a profile.
-	ProfileExternalId string `protobuf:"bytes,3,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
+	ProfileExternalId *string `protobuf:"bytes,3,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
 	// Optional — alternative to profile_external_id for linking.
-	ProfileId     string           `protobuf:"bytes,4,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	Token         string           `protobuf:"bytes,5,opt,name=token" json:"token,omitempty"`
+	ProfileId     *string          `protobuf:"bytes,4,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	Token         *string          `protobuf:"bytes,5,opt,name=token" json:"token,omitempty"`
 	Properties    *structpb.Struct `protobuf:"bytes,6,opt,name=properties" json:"properties,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -68,36 +68,36 @@ func (*SubscribeRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *SubscribeRequest) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
+	if x != nil && x.DeviceId != nil {
+		return *x.DeviceId
 	}
 	return ""
 }
 
 func (x *SubscribeRequest) GetPlatform() string {
-	if x != nil {
-		return x.Platform
+	if x != nil && x.Platform != nil {
+		return *x.Platform
 	}
 	return ""
 }
 
 func (x *SubscribeRequest) GetProfileExternalId() string {
-	if x != nil {
-		return x.ProfileExternalId
+	if x != nil && x.ProfileExternalId != nil {
+		return *x.ProfileExternalId
 	}
 	return ""
 }
 
 func (x *SubscribeRequest) GetProfileId() string {
-	if x != nil {
-		return x.ProfileId
+	if x != nil && x.ProfileId != nil {
+		return *x.ProfileId
 	}
 	return ""
 }
 
 func (x *SubscribeRequest) GetToken() string {
-	if x != nil {
-		return x.Token
+	if x != nil && x.Token != nil {
+		return *x.Token
 	}
 	return ""
 }
@@ -147,8 +147,8 @@ func (*SubscribeResponse) Descriptor() ([]byte, []int) {
 
 type UpdateStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	Status        string                 `protobuf:"bytes,2,opt,name=status" json:"status,omitempty"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Status        *string                `protobuf:"bytes,2,opt,name=status" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -184,15 +184,15 @@ func (*UpdateStatusRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *UpdateStatusRequest) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
 
 func (x *UpdateStatusRequest) GetStatus() string {
-	if x != nil {
-		return x.Status
+	if x != nil && x.Status != nil {
+		return *x.Status
 	}
 	return ""
 }
@@ -235,8 +235,8 @@ func (*UpdateStatusResponse) Descriptor() ([]byte, []int) {
 
 type UpdateTokenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	Token         string                 `protobuf:"bytes,2,opt,name=token" json:"token,omitempty"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Token         *string                `protobuf:"bytes,2,opt,name=token" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -272,15 +272,15 @@ func (*UpdateTokenRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *UpdateTokenRequest) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
 
 func (x *UpdateTokenRequest) GetToken() string {
-	if x != nil {
-		return x.Token
+	if x != nil && x.Token != nil {
+		return *x.Token
 	}
 	return ""
 }
@@ -323,8 +323,8 @@ func (*UpdateTokenResponse) Descriptor() ([]byte, []int) {
 
 type DeviceOperationMessage struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId  string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
-	ProjectId string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	DeviceId  *string                `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	ProjectId *string                `protobuf:"bytes,2,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	// Types that are valid to be assigned to OperationPayload:
 	//
 	//	*DeviceOperationMessage_Subscribe
@@ -366,15 +366,15 @@ func (*DeviceOperationMessage) Descriptor() ([]byte, []int) {
 }
 
 func (x *DeviceOperationMessage) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
+	if x != nil && x.DeviceId != nil {
+		return *x.DeviceId
 	}
 	return ""
 }
 
 func (x *DeviceOperationMessage) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
 	}
 	return ""
 }
@@ -437,10 +437,10 @@ func (*DeviceOperationMessage_UpdateToken) isDeviceOperationMessage_OperationPay
 
 type SubscribePayload struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	Platform          string                 `protobuf:"bytes,1,opt,name=platform" json:"platform,omitempty"`
-	ProfileExternalId string                 `protobuf:"bytes,2,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
-	ProfileId         string                 `protobuf:"bytes,3,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	Token             string                 `protobuf:"bytes,4,opt,name=token" json:"token,omitempty"`
+	Platform          *string                `protobuf:"bytes,1,opt,name=platform" json:"platform,omitempty"`
+	ProfileExternalId *string                `protobuf:"bytes,2,opt,name=profile_external_id,json=profileExternalId" json:"profile_external_id,omitempty"`
+	ProfileId         *string                `protobuf:"bytes,3,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	Token             *string                `protobuf:"bytes,4,opt,name=token" json:"token,omitempty"`
 	Properties        *structpb.Struct       `protobuf:"bytes,5,opt,name=properties" json:"properties,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -477,29 +477,29 @@ func (*SubscribePayload) Descriptor() ([]byte, []int) {
 }
 
 func (x *SubscribePayload) GetPlatform() string {
-	if x != nil {
-		return x.Platform
+	if x != nil && x.Platform != nil {
+		return *x.Platform
 	}
 	return ""
 }
 
 func (x *SubscribePayload) GetProfileExternalId() string {
-	if x != nil {
-		return x.ProfileExternalId
+	if x != nil && x.ProfileExternalId != nil {
+		return *x.ProfileExternalId
 	}
 	return ""
 }
 
 func (x *SubscribePayload) GetProfileId() string {
-	if x != nil {
-		return x.ProfileId
+	if x != nil && x.ProfileId != nil {
+		return *x.ProfileId
 	}
 	return ""
 }
 
 func (x *SubscribePayload) GetToken() string {
-	if x != nil {
-		return x.Token
+	if x != nil && x.Token != nil {
+		return *x.Token
 	}
 	return ""
 }
@@ -513,7 +513,7 @@ func (x *SubscribePayload) GetProperties() *structpb.Struct {
 
 type UpdateStatusPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        string                 `protobuf:"bytes,1,opt,name=status" json:"status,omitempty"`
+	Status        *string                `protobuf:"bytes,1,opt,name=status" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -549,15 +549,15 @@ func (*UpdateStatusPayload) Descriptor() ([]byte, []int) {
 }
 
 func (x *UpdateStatusPayload) GetStatus() string {
-	if x != nil {
-		return x.Status
+	if x != nil && x.Status != nil {
+		return *x.Status
 	}
 	return ""
 }
 
 type UpdateTokenPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
+	Token         *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -593,8 +593,8 @@ func (*UpdateTokenPayload) Descriptor() ([]byte, []int) {
 }
 
 func (x *UpdateTokenPayload) GetToken() string {
-	if x != nil {
-		return x.Token
+	if x != nil && x.Token != nil {
+		return *x.Token
 	}
 	return ""
 }
@@ -603,11 +603,11 @@ var File_sdk_devices_v1_devices_proto protoreflect.FileDescriptor
 
 const file_sdk_devices_v1_devices_proto_rawDesc = "" +
 	"\n" +
-	"\x1csdk/devices/v1/devices.proto\x12\x0esdk.devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xc5\x03\n" +
+	"\x1csdk/devices/v1/devices.proto\x12\x0esdk.devices.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xc8\x03\n" +
 	"\x10SubscribeRequest\x12'\n" +
 	"\tdevice_id\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02\x18$R\bdeviceId\x124\n" +
-	"\bplatform\x18\x02 \x01(\tB\x18\xbaH\x15r\x13R\aandroidR\x03iosR\x03webR\bplatform\x128\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18$R\bdeviceId\x127\n" +
+	"\bplatform\x18\x02 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x13R\aandroidR\x03iosR\x03webR\bplatform\x128\n" +
 	"\x13profile_external_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\x11profileExternalId\x12&\n" +
 	"\n" +
 	"profile_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18\x14R\tprofileId\x12\x1c\n" +
@@ -616,11 +616,11 @@ const file_sdk_devices_v1_devices_proto_rawDesc = "" +
 	"properties\x18\x06 \x01(\v2\x17.google.protobuf.StructR\n" +
 	"properties:\x98\x01\xbaH\x94\x01\x1a\x91\x01\n" +
 	"\x19profile_id_or_external_id\x12;at most one of profile_id or profile_external_id may be set\x1a7this.profile_id == '' || this.profile_external_id == ''\"\x13\n" +
-	"\x11SubscribeResponse\"b\n" +
+	"\x11SubscribeResponse\"e\n" +
 	"\x13UpdateStatusRequest\x12\x1a\n" +
 	"\x02id\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02\x18$R\x02id\x12/\n" +
-	"\x06status\x18\x02 \x01(\tB\x17\xbaH\x14r\x12R\x06activeR\binactiveR\x06status\"\x16\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18$R\x02id\x122\n" +
+	"\x06status\x18\x02 \x01(\tB\x1a\xbaH\x17\xc8\x01\x01r\x12R\x06activeR\binactiveR\x06status\"\x16\n" +
 	"\x14UpdateStatusResponse\"N\n" +
 	"\x12UpdateTokenRequest\x12\x1a\n" +
 	"\x02id\x18\x01 \x01(\tB\n" +
@@ -636,24 +636,24 @@ const file_sdk_devices_v1_devices_proto_rawDesc = "" +
 	" \x01(\v2 .sdk.devices.v1.SubscribePayloadH\x00R\tsubscribe\x12J\n" +
 	"\rupdate_status\x18\v \x01(\v2#.sdk.devices.v1.UpdateStatusPayloadH\x00R\fupdateStatus\x12G\n" +
 	"\fupdate_token\x18\f \x01(\v2\".sdk.devices.v1.UpdateTokenPayloadH\x00R\vupdateTokenB\x13\n" +
-	"\x11operation_payload\"\xee\x01\n" +
-	"\x10SubscribePayload\x124\n" +
-	"\bplatform\x18\x01 \x01(\tB\x18\xbaH\x15r\x13R\aandroidR\x03iosR\x03webR\bplatform\x12.\n" +
+	"\x11operation_payload\"\xf1\x01\n" +
+	"\x10SubscribePayload\x127\n" +
+	"\bplatform\x18\x01 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x13R\aandroidR\x03iosR\x03webR\bplatform\x12.\n" +
 	"\x13profile_external_id\x18\x02 \x01(\tR\x11profileExternalId\x12\x1d\n" +
 	"\n" +
 	"profile_id\x18\x03 \x01(\tR\tprofileId\x12\x1c\n" +
 	"\x05token\x18\x04 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\x127\n" +
 	"\n" +
 	"properties\x18\x05 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"properties\"F\n" +
-	"\x13UpdateStatusPayload\x12/\n" +
-	"\x06status\x18\x01 \x01(\tB\x17\xbaH\x14r\x12R\x06activeR\binactiveR\x06status\"2\n" +
+	"properties\"I\n" +
+	"\x13UpdateStatusPayload\x122\n" +
+	"\x06status\x18\x01 \x01(\tB\x1a\xbaH\x17\xc8\x01\x01r\x12R\x06activeR\binactiveR\x06status\"2\n" +
 	"\x12UpdateTokenPayload\x12\x1c\n" +
 	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token2\x9b\x02\n" +
 	"\x0eDevicesService\x12R\n" +
 	"\tSubscribe\x12 .sdk.devices.v1.SubscribeRequest\x1a!.sdk.devices.v1.SubscribeResponse\"\x00\x12[\n" +
 	"\fUpdateStatus\x12#.sdk.devices.v1.UpdateStatusRequest\x1a$.sdk.devices.v1.UpdateStatusResponse\"\x00\x12X\n" +
-	"\vUpdateToken\x12\".sdk.devices.v1.UpdateTokenRequest\x1a#.sdk.devices.v1.UpdateTokenResponse\"\x00BOZHgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1;devicesv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\vUpdateToken\x12\".sdk.devices.v1.UpdateTokenRequest\x1a#.sdk.devices.v1.UpdateTokenResponse\"\x00BJZHgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1;devicesv1b\beditionsp\xe8\a"
 
 var (
 	file_sdk_devices_v1_devices_proto_rawDescOnce sync.Once

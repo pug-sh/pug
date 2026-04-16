@@ -4,7 +4,6 @@ package shared.campaigns.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
-option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1;campaignsv1";
 
 service CampaignService {

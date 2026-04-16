@@ -7,7 +7,6 @@ import "common/v1/filters.proto";
 import "common/v1/time.proto";
 import "google/protobuf/timestamp.proto";
 
-option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1;insightsv1";
 
 service InsightsService {

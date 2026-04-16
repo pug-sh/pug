@@ -107,13 +107,13 @@ type Campaign struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	CreateTime       *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
 	EndTime          *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=end_time,json=endTime" json:"end_time,omitempty"`
-	Id               string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
-	Name             string                 `protobuf:"bytes,4,opt,name=name" json:"name,omitempty"`
+	Id               *string                `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
+	Name             *string                `protobuf:"bytes,4,opt,name=name" json:"name,omitempty"`
 	NotificationData []byte                 `protobuf:"bytes,5,opt,name=notification_data,json=notificationData" json:"notification_data,omitempty"`
-	ProjectId        string                 `protobuf:"bytes,6,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	ProjectId        *string                `protobuf:"bytes,6,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	ScheduledTime    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=scheduled_time,json=scheduledTime" json:"scheduled_time,omitempty"`
 	StartTime        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=start_time,json=startTime" json:"start_time,omitempty"`
-	Status           string                 `protobuf:"bytes,9,opt,name=status" json:"status,omitempty"`
+	Status           *string                `protobuf:"bytes,9,opt,name=status" json:"status,omitempty"`
 	UpdateTime       *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -164,15 +164,15 @@ func (x *Campaign) GetEndTime() *timestamppb.Timestamp {
 }
 
 func (x *Campaign) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
 
 func (x *Campaign) GetName() string {
-	if x != nil {
-		return x.Name
+	if x != nil && x.Name != nil {
+		return *x.Name
 	}
 	return ""
 }
@@ -185,8 +185,8 @@ func (x *Campaign) GetNotificationData() []byte {
 }
 
 func (x *Campaign) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
 	}
 	return ""
 }
@@ -206,8 +206,8 @@ func (x *Campaign) GetStartTime() *timestamppb.Timestamp {
 }
 
 func (x *Campaign) GetStatus() string {
-	if x != nil {
-		return x.Status
+	if x != nil && x.Status != nil {
+		return *x.Status
 	}
 	return ""
 }
@@ -221,7 +221,7 @@ func (x *Campaign) GetUpdateTime() *timestamppb.Timestamp {
 
 type CampaignSchedule struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -257,15 +257,15 @@ func (*CampaignSchedule) Descriptor() ([]byte, []int) {
 }
 
 func (x *CampaignSchedule) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
 
 type CreateRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	Name             string                 `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	Name             *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
 	NotificationData []byte                 `protobuf:"bytes,2,opt,name=notification_data,json=notificationData" json:"notification_data,omitempty"`
 	ScheduledTime    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=scheduled_time,json=scheduledTime" json:"scheduled_time,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -303,8 +303,8 @@ func (*CreateRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *CreateRequest) GetName() string {
-	if x != nil {
-		return x.Name
+	if x != nil && x.Name != nil {
+		return *x.Name
 	}
 	return ""
 }
@@ -369,7 +369,7 @@ func (x *CreateResponse) GetCampaign() *Campaign {
 
 type DeleteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -405,8 +405,8 @@ func (*DeleteRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *DeleteRequest) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
@@ -449,7 +449,7 @@ func (*DeleteResponse) Descriptor() ([]byte, []int) {
 
 type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -485,8 +485,8 @@ func (*GetRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *GetRequest) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
@@ -537,8 +537,8 @@ func (x *GetResponse) GetCampaign() *Campaign {
 
 type UpdateRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	Name             string                 `protobuf:"bytes,2,opt,name=name" json:"name,omitempty"`
+	Id               *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Name             *string                `protobuf:"bytes,2,opt,name=name" json:"name,omitempty"`
 	NotificationData []byte                 `protobuf:"bytes,3,opt,name=notification_data,json=notificationData" json:"notification_data,omitempty"`
 	ScheduledTime    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=scheduled_time,json=scheduledTime" json:"scheduled_time,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -576,15 +576,15 @@ func (*UpdateRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *UpdateRequest) GetId() string {
-	if x != nil {
-		return x.Id
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
 
 func (x *UpdateRequest) GetName() string {
-	if x != nil {
-		return x.Name
+	if x != nil && x.Name != nil {
+		return *x.Name
 	}
 	return ""
 }
@@ -699,7 +699,7 @@ const file_shared_campaigns_v1_campaigns_proto_rawDesc = "" +
 	"\x06Create\x12\".shared.campaigns.v1.CreateRequest\x1a#.shared.campaigns.v1.CreateResponse\"\x00\x12S\n" +
 	"\x06Delete\x12\".shared.campaigns.v1.DeleteRequest\x1a#.shared.campaigns.v1.DeleteResponse\"\x00\x12J\n" +
 	"\x03Get\x12\x1f.shared.campaigns.v1.GetRequest\x1a .shared.campaigns.v1.GetResponse\"\x00\x12S\n" +
-	"\x06Update\x12\".shared.campaigns.v1.UpdateRequest\x1a#.shared.campaigns.v1.UpdateResponse\"\x00BVZOgithub.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1;campaignsv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\x06Update\x12\".shared.campaigns.v1.UpdateRequest\x1a#.shared.campaigns.v1.UpdateResponse\"\x00BQZOgithub.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1;campaignsv1b\beditionsp\xe8\a"
 
 var (
 	file_shared_campaigns_v1_campaigns_proto_rawDescOnce sync.Once

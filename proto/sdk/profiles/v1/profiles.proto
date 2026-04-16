@@ -4,7 +4,6 @@ package sdk.profiles.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/struct.proto";
 
-option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1";
 
 service ProfilesSDKService {
@@ -37,9 +36,15 @@ message IdentifyResponse {}
 // ProfileIdentifyMessage is the internal NATS envelope for the identify worker.
 // project_id is injected server-side from the authenticated principal.
 message ProfileIdentifyMessage {
-  string external_id = 1 [(buf.validate.field).required = true];
+  string external_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
   google.protobuf.Struct traits = 2;
-  string project_id = 3 [(buf.validate.field).required = true];
+  string project_id = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
   string anonymous_id = 4;
   string device_id = 5;
 }

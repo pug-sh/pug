@@ -176,12 +176,12 @@ func (x *BatchDeliveryEvents) GetEvents() []*DeliveryEventMessage {
 
 type BatchMulticastMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Body          string                 `protobuf:"bytes,1,opt,name=body" json:"body,omitempty"`
-	CampaignId    string                 `protobuf:"bytes,2,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
-	Image         string                 `protobuf:"bytes,3,opt,name=image" json:"image,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	Body          *string                `protobuf:"bytes,1,opt,name=body" json:"body,omitempty"`
+	CampaignId    *string                `protobuf:"bytes,2,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
+	Image         *string                `protobuf:"bytes,3,opt,name=image" json:"image,omitempty"`
+	ProjectId     *string                `protobuf:"bytes,4,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
 	DeviceTokens  []*DeviceToken         `protobuf:"bytes,5,rep,name=device_tokens,json=deviceTokens" json:"device_tokens,omitempty"`
-	Title         string                 `protobuf:"bytes,6,opt,name=title" json:"title,omitempty"`
+	Title         *string                `protobuf:"bytes,6,opt,name=title" json:"title,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -217,29 +217,29 @@ func (*BatchMulticastMessage) Descriptor() ([]byte, []int) {
 }
 
 func (x *BatchMulticastMessage) GetBody() string {
-	if x != nil {
-		return x.Body
+	if x != nil && x.Body != nil {
+		return *x.Body
 	}
 	return ""
 }
 
 func (x *BatchMulticastMessage) GetCampaignId() string {
-	if x != nil {
-		return x.CampaignId
+	if x != nil && x.CampaignId != nil {
+		return *x.CampaignId
 	}
 	return ""
 }
 
 func (x *BatchMulticastMessage) GetImage() string {
-	if x != nil {
-		return x.Image
+	if x != nil && x.Image != nil {
+		return *x.Image
 	}
 	return ""
 }
 
 func (x *BatchMulticastMessage) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
 	}
 	return ""
 }
@@ -252,8 +252,8 @@ func (x *BatchMulticastMessage) GetDeviceTokens() []*DeviceToken {
 }
 
 func (x *BatchMulticastMessage) GetTitle() string {
-	if x != nil {
-		return x.Title
+	if x != nil && x.Title != nil {
+		return *x.Title
 	}
 	return ""
 }
@@ -296,9 +296,9 @@ func (*BatchUnicastMessage) Descriptor() ([]byte, []int) {
 
 type DeliveryEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EventCount    uint64                 `protobuf:"varint,1,opt,name=event_count,json=eventCount" json:"event_count,omitempty"`
-	EventType     EventType              `protobuf:"varint,2,opt,name=event_type,json=eventType,enum=shared.delivery.v1.EventType" json:"event_type,omitempty"`
-	Platform      Platform               `protobuf:"varint,3,opt,name=platform,enum=shared.delivery.v1.Platform" json:"platform,omitempty"`
+	EventCount    *uint64                `protobuf:"varint,1,opt,name=event_count,json=eventCount" json:"event_count,omitempty"`
+	EventType     *EventType             `protobuf:"varint,2,opt,name=event_type,json=eventType,enum=shared.delivery.v1.EventType" json:"event_type,omitempty"`
+	Platform      *Platform              `protobuf:"varint,3,opt,name=platform,enum=shared.delivery.v1.Platform" json:"platform,omitempty"`
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -335,22 +335,22 @@ func (*DeliveryEvent) Descriptor() ([]byte, []int) {
 }
 
 func (x *DeliveryEvent) GetEventCount() uint64 {
-	if x != nil {
-		return x.EventCount
+	if x != nil && x.EventCount != nil {
+		return *x.EventCount
 	}
 	return 0
 }
 
 func (x *DeliveryEvent) GetEventType() EventType {
-	if x != nil {
-		return x.EventType
+	if x != nil && x.EventType != nil {
+		return *x.EventType
 	}
 	return EventType_EVENT_TYPE_UNSPECIFIED
 }
 
 func (x *DeliveryEvent) GetPlatform() Platform {
-	if x != nil {
-		return x.Platform
+	if x != nil && x.Platform != nil {
+		return *x.Platform
 	}
 	return Platform_PLATFORM_UNSPECIFIED
 }
@@ -364,14 +364,14 @@ func (x *DeliveryEvent) GetTimestamp() *timestamppb.Timestamp {
 
 type DeliveryEventMessage struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	CampaignId     string                 `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
+	CampaignId     *string                `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
 	EventTimestamp *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=event_timestamp,json=eventTimestamp" json:"event_timestamp,omitempty"`
-	EventType      EventType              `protobuf:"varint,3,opt,name=event_type,json=eventType,enum=shared.delivery.v1.EventType" json:"event_type,omitempty"`
+	EventType      *EventType             `protobuf:"varint,3,opt,name=event_type,json=eventType,enum=shared.delivery.v1.EventType" json:"event_type,omitempty"`
 	Metadata       map[string]string      `protobuf:"bytes,4,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	MessageId      string                 `protobuf:"bytes,5,opt,name=message_id,json=messageId" json:"message_id,omitempty"`
-	Platform       Platform               `protobuf:"varint,6,opt,name=platform,enum=shared.delivery.v1.Platform" json:"platform,omitempty"`
-	ProjectId      string                 `protobuf:"bytes,7,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	DeviceId       string                 `protobuf:"bytes,8,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	MessageId      *string                `protobuf:"bytes,5,opt,name=message_id,json=messageId" json:"message_id,omitempty"`
+	Platform       *Platform              `protobuf:"varint,6,opt,name=platform,enum=shared.delivery.v1.Platform" json:"platform,omitempty"`
+	ProjectId      *string                `protobuf:"bytes,7,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	DeviceId       *string                `protobuf:"bytes,8,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -407,8 +407,8 @@ func (*DeliveryEventMessage) Descriptor() ([]byte, []int) {
 }
 
 func (x *DeliveryEventMessage) GetCampaignId() string {
-	if x != nil {
-		return x.CampaignId
+	if x != nil && x.CampaignId != nil {
+		return *x.CampaignId
 	}
 	return ""
 }
@@ -421,8 +421,8 @@ func (x *DeliveryEventMessage) GetEventTimestamp() *timestamppb.Timestamp {
 }
 
 func (x *DeliveryEventMessage) GetEventType() EventType {
-	if x != nil {
-		return x.EventType
+	if x != nil && x.EventType != nil {
+		return *x.EventType
 	}
 	return EventType_EVENT_TYPE_UNSPECIFIED
 }
@@ -435,42 +435,42 @@ func (x *DeliveryEventMessage) GetMetadata() map[string]string {
 }
 
 func (x *DeliveryEventMessage) GetMessageId() string {
-	if x != nil {
-		return x.MessageId
+	if x != nil && x.MessageId != nil {
+		return *x.MessageId
 	}
 	return ""
 }
 
 func (x *DeliveryEventMessage) GetPlatform() Platform {
-	if x != nil {
-		return x.Platform
+	if x != nil && x.Platform != nil {
+		return *x.Platform
 	}
 	return Platform_PLATFORM_UNSPECIFIED
 }
 
 func (x *DeliveryEventMessage) GetProjectId() string {
-	if x != nil {
-		return x.ProjectId
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
 	}
 	return ""
 }
 
 func (x *DeliveryEventMessage) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
+	if x != nil && x.DeviceId != nil {
+		return *x.DeviceId
 	}
 	return ""
 }
 
 type RecordEventRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	CampaignId     string                 `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
+	CampaignId     *string                `protobuf:"bytes,1,opt,name=campaign_id,json=campaignId" json:"campaign_id,omitempty"`
 	EventTimestamp *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=event_timestamp,json=eventTimestamp" json:"event_timestamp,omitempty"`
-	EventType      EventType              `protobuf:"varint,3,opt,name=event_type,json=eventType,enum=shared.delivery.v1.EventType" json:"event_type,omitempty"`
+	EventType      *EventType             `protobuf:"varint,3,opt,name=event_type,json=eventType,enum=shared.delivery.v1.EventType" json:"event_type,omitempty"`
 	Metadata       map[string]string      `protobuf:"bytes,4,rep,name=metadata" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	MessageId      string                 `protobuf:"bytes,5,opt,name=message_id,json=messageId" json:"message_id,omitempty"`
-	Platform       Platform               `protobuf:"varint,6,opt,name=platform,enum=shared.delivery.v1.Platform" json:"platform,omitempty"`
-	DeviceId       string                 `protobuf:"bytes,7,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	MessageId      *string                `protobuf:"bytes,5,opt,name=message_id,json=messageId" json:"message_id,omitempty"`
+	Platform       *Platform              `protobuf:"varint,6,opt,name=platform,enum=shared.delivery.v1.Platform" json:"platform,omitempty"`
+	DeviceId       *string                `protobuf:"bytes,7,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -506,8 +506,8 @@ func (*RecordEventRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *RecordEventRequest) GetCampaignId() string {
-	if x != nil {
-		return x.CampaignId
+	if x != nil && x.CampaignId != nil {
+		return *x.CampaignId
 	}
 	return ""
 }
@@ -520,8 +520,8 @@ func (x *RecordEventRequest) GetEventTimestamp() *timestamppb.Timestamp {
 }
 
 func (x *RecordEventRequest) GetEventType() EventType {
-	if x != nil {
-		return x.EventType
+	if x != nil && x.EventType != nil {
+		return *x.EventType
 	}
 	return EventType_EVENT_TYPE_UNSPECIFIED
 }
@@ -534,32 +534,32 @@ func (x *RecordEventRequest) GetMetadata() map[string]string {
 }
 
 func (x *RecordEventRequest) GetMessageId() string {
-	if x != nil {
-		return x.MessageId
+	if x != nil && x.MessageId != nil {
+		return *x.MessageId
 	}
 	return ""
 }
 
 func (x *RecordEventRequest) GetPlatform() Platform {
-	if x != nil {
-		return x.Platform
+	if x != nil && x.Platform != nil {
+		return *x.Platform
 	}
 	return Platform_PLATFORM_UNSPECIFIED
 }
 
 func (x *RecordEventRequest) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
+	if x != nil && x.DeviceId != nil {
+		return *x.DeviceId
 	}
 	return ""
 }
 
 type RecordEventResponse struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	Message           string                 `protobuf:"bytes,1,opt,name=message" json:"message,omitempty"`
-	RetryAfterSeconds int32                  `protobuf:"varint,2,opt,name=retry_after_seconds,json=retryAfterSeconds" json:"retry_after_seconds,omitempty"`
-	ShouldRetry       bool                   `protobuf:"varint,3,opt,name=should_retry,json=shouldRetry" json:"should_retry,omitempty"`
-	Success           bool                   `protobuf:"varint,4,opt,name=success" json:"success,omitempty"`
+	Message           *string                `protobuf:"bytes,1,opt,name=message" json:"message,omitempty"`
+	RetryAfterSeconds *int32                 `protobuf:"varint,2,opt,name=retry_after_seconds,json=retryAfterSeconds" json:"retry_after_seconds,omitempty"`
+	ShouldRetry       *bool                  `protobuf:"varint,3,opt,name=should_retry,json=shouldRetry" json:"should_retry,omitempty"`
+	Success           *bool                  `protobuf:"varint,4,opt,name=success" json:"success,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -595,37 +595,37 @@ func (*RecordEventResponse) Descriptor() ([]byte, []int) {
 }
 
 func (x *RecordEventResponse) GetMessage() string {
-	if x != nil {
-		return x.Message
+	if x != nil && x.Message != nil {
+		return *x.Message
 	}
 	return ""
 }
 
 func (x *RecordEventResponse) GetRetryAfterSeconds() int32 {
-	if x != nil {
-		return x.RetryAfterSeconds
+	if x != nil && x.RetryAfterSeconds != nil {
+		return *x.RetryAfterSeconds
 	}
 	return 0
 }
 
 func (x *RecordEventResponse) GetShouldRetry() bool {
-	if x != nil {
-		return x.ShouldRetry
+	if x != nil && x.ShouldRetry != nil {
+		return *x.ShouldRetry
 	}
 	return false
 }
 
 func (x *RecordEventResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
+	if x != nil && x.Success != nil {
+		return *x.Success
 	}
 	return false
 }
 
 type DeviceToken struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
-	Token         string                 `protobuf:"bytes,2,opt,name=token" json:"token,omitempty"`
+	DeviceId      *string                `protobuf:"bytes,1,opt,name=device_id,json=deviceId" json:"device_id,omitempty"`
+	Token         *string                `protobuf:"bytes,2,opt,name=token" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -661,15 +661,15 @@ func (*DeviceToken) Descriptor() ([]byte, []int) {
 }
 
 func (x *DeviceToken) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
+	if x != nil && x.DeviceId != nil {
+		return *x.DeviceId
 	}
 	return ""
 }
 
 func (x *DeviceToken) GetToken() string {
-	if x != nil {
-		return x.Token
+	if x != nil && x.Token != nil {
+		return *x.Token
 	}
 	return ""
 }
@@ -748,7 +748,7 @@ const file_shared_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x10PLATFORM_ANDROID\x10\x01\x12\x10\n" +
 	"\fPLATFORM_IOS\x10\x022q\n" +
 	"\x0fDeliveryService\x12^\n" +
-	"\vRecordEvent\x12&.shared.delivery.v1.RecordEventRequest\x1a'.shared.delivery.v1.RecordEventResponseBTZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/delivery/v1;deliveryv1\x92\x03\x02\b\x02b\beditionsp\xe8\a"
+	"\vRecordEvent\x12&.shared.delivery.v1.RecordEventRequest\x1a'.shared.delivery.v1.RecordEventResponseBOZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/delivery/v1;deliveryv1b\beditionsp\xe8\a"
 
 var (
 	file_shared_delivery_v1_delivery_proto_rawDescOnce sync.Once

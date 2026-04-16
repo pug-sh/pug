@@ -54,10 +54,10 @@ func TestIdentify_Success(t *testing.T) {
 
 	traits, _ := structpb.NewStruct(map[string]any{"plan": "pro"})
 	req := connect.NewRequest(&sdkprofilesv1.IdentifyRequest{
-		ExternalId:  "user-42",
+		ExternalId:  proto.String("user-42"),
 		Traits:      traits,
-		AnonymousId: "anon-1",
-		DeviceId:    "xid-device-id-test1234",
+		AnonymousId: proto.String("anon-1"),
+		DeviceId:    proto.String("xid-device-id-test1234"),
 	})
 
 	ctx := sdkContext("proj-test")
@@ -85,11 +85,11 @@ func TestIdentify_Success(t *testing.T) {
 	if err := proto.Unmarshal(msg.Data, &ident); err != nil {
 		t.Fatalf("unmarshal published message: %v", err)
 	}
-	if ident.ExternalId != "user-42" {
-		t.Errorf("ExternalId = %q, want %q", ident.ExternalId, "user-42")
+	if ident.GetExternalId() != "user-42" {
+		t.Errorf("ExternalId = %q, want %q", ident.GetExternalId(), "user-42")
 	}
-	if ident.ProjectId != "proj-test" {
-		t.Errorf("ProjectId = %q, want %q", ident.ProjectId, "proj-test")
+	if ident.GetProjectId() != "proj-test" {
+		t.Errorf("ProjectId = %q, want %q", ident.GetProjectId(), "proj-test")
 	}
 	if ident.GetAnonymousId() != "anon-1" {
 		t.Errorf("AnonymousId = %q, want %q", ident.GetAnonymousId(), "anon-1")
@@ -106,7 +106,7 @@ func TestIdentify_Unauthenticated(t *testing.T) {
 	srv := NewServer(&spyJetStream{})
 
 	req := connect.NewRequest(&sdkprofilesv1.IdentifyRequest{
-		ExternalId: "user-42",
+		ExternalId: proto.String("user-42"),
 	})
 
 	// No principal in context.
@@ -124,7 +124,7 @@ func TestIdentify_PublishError(t *testing.T) {
 	srv := NewServer(spy)
 
 	req := connect.NewRequest(&sdkprofilesv1.IdentifyRequest{
-		ExternalId: "user-42",
+		ExternalId: proto.String("user-42"),
 	})
 
 	_, err := srv.Identify(sdkContext("proj-test"), req)

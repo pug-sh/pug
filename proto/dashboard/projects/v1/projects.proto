@@ -3,7 +3,6 @@ package dashboard.projects.v1;
 
 import "buf/validate/validate.proto";
 
-option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1;projectsv1";
 
 service ProjectsService {

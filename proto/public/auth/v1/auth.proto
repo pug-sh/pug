@@ -3,7 +3,6 @@ package public.auth.v1;
 
 import "buf/validate/validate.proto";
 
-option features.field_presence = IMPLICIT;
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/public/auth/v1;authv1";
 
 service AuthService {
@@ -12,7 +11,10 @@ service AuthService {
 }
 
 message SignInWithEmailRequest {
-  string email = 1 [(buf.validate.field).string.email = true];
+  string email = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.email = true
+  ];
   string password = 2 [(buf.validate.field).required = true];
 }
 
@@ -21,7 +23,10 @@ message SignInWithEmailResponse {
 }
 
 message SignUpWithEmailRequest {
-  string email = 1 [(buf.validate.field).string.email = true];
+  string email = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.email = true
+  ];
   string password = 2 [(buf.validate.field).required = true];
 }
 

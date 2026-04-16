@@ -18,6 +18,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -106,7 +107,7 @@ func (s *server) GetActivityFeed(
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		resp.NextPageToken = token
+		resp.NextPageToken = proto.String(token)
 	}
 
 	return connect.NewResponse(resp), nil
@@ -181,7 +182,7 @@ func (s *server) GetEventExplorer(
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		resp.NextPageToken = token
+		resp.NextPageToken = proto.String(token)
 	}
 
 	return connect.NewResponse(resp), nil
@@ -210,11 +211,11 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		protoEvents[i] = &activityv1.ActivityEvent{
-			EventId:          e.EventID,
-			Kind:             e.Kind,
-			DistinctId:       e.DistinctID,
+			EventId:          proto.String(e.EventID),
+			Kind:             proto.String(e.Kind),
+			DistinctId:       proto.String(e.DistinctID),
 			OccurTime:        timestamppb.New(e.OccurTime),
-			SessionId:        e.SessionID,
+			SessionId:        proto.String(e.SessionID),
 			AutoProperties:   autoProps,
 			CustomProperties: customProps,
 		}
@@ -268,12 +269,12 @@ func (s *server) GetActivityHeatmap(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	proto := make([]*activityv1.HeatmapDay, len(days))
+	heatmapDays := make([]*activityv1.HeatmapDay, len(days))
 	for i, d := range days {
-		proto[i] = &activityv1.HeatmapDay{Date: d.Date, Count: d.Count}
+		heatmapDays[i] = &activityv1.HeatmapDay{Date: proto.String(d.Date), Count: proto.Int64(d.Count)}
 	}
 
-	return connect.NewResponse(&activityv1.GetActivityHeatmapResponse{Days: proto}), nil
+	return connect.NewResponse(&activityv1.GetActivityHeatmapResponse{Days: heatmapDays}), nil
 }
 
 func (s *server) GetProfileStats(
@@ -305,21 +306,21 @@ func (s *server) GetProfileStats(
 		resp.Stats = &activityv1.ProfileStats{
 			FirstSeen:      timestamppb.New(stats.FirstSeen),
 			LastSeen:       timestamppb.New(stats.LastSeen),
-			TotalEvents:    stats.TotalEvents,
-			Browser:        stats.Browser,
-			BrowserVersion: stats.BrowserVersion,
-			Os:             stats.OS,
-			OsVersion:      stats.OSVersion,
-			Device:         stats.Device,
-			Country:        stats.Country,
-			City:           stats.City,
-			Ip:             stats.IP,
+			TotalEvents:    proto.Int64(stats.TotalEvents),
+			Browser:        proto.String(stats.Browser),
+			BrowserVersion: proto.String(stats.BrowserVersion),
+			Os:             proto.String(stats.OS),
+			OsVersion:      proto.String(stats.OSVersion),
+			Device:         proto.String(stats.Device),
+			Country:        proto.String(stats.Country),
+			City:           proto.String(stats.City),
+			Ip:             proto.String(stats.IP),
 		}
 	}
 
 	resp.Heatmap = make([]*activityv1.HeatmapDay, len(heatmap))
 	for i, d := range heatmap {
-		resp.Heatmap[i] = &activityv1.HeatmapDay{Date: d.Date, Count: d.Count}
+		resp.Heatmap[i] = &activityv1.HeatmapDay{Date: proto.String(d.Date), Count: proto.Int64(d.Count)}
 	}
 
 	profile, err := s.profilesRead.GetProfileByIDAndProjectID(ctx, dbread.GetProfileByIDAndProjectIDParams{
