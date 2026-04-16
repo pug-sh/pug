@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
 const shutdownTimeout = 5 * time.Second
@@ -93,14 +93,16 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 			errs = append(errs, err)
 		}
 		if err := meterProvider.Shutdown(shutdownCtx); err != nil {
-			if !strings.Contains(err.Error(), "reader is shutdown") {
+			// ErrReaderShutdown is a benign race: the periodic reader's background
+			// goroutine may attempt a final export after Shutdown() returns.
+			if !errors.Is(err, sdkmetric.ErrReaderShutdown) {
 				slog.ErrorContext(ctx, "failed to shutdown meter provider", slogx.Error(err))
 				errs = append(errs, err)
 			}
 		}
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 		// Restore a plain stderr logger before shutting down the OTel logger
 		// provider so its own shutdown error can still be logged.
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 		if err := loggerProvider.Shutdown(shutdownCtx); err != nil {
 			slog.ErrorContext(ctx, "failed to shutdown logger provider", slogx.Error(err))
 			errs = append(errs, err)
