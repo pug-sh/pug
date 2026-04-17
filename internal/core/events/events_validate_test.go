@@ -1,24 +1,43 @@
 package events_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"buf.build/go/protovalidate"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
 )
 
-func strPtr(s string) *string { return &s }
+// hasRule returns true if err is a *protovalidate.ValidationError and any of
+// its violations has a rule id matching the given substring. Falls back to
+// substring match against err.Error() for CEL runtime errors (e.g. failed type
+// coercion), which protovalidate wraps as plain errors but include the rule id
+// in the message text.
+func hasRule(err error, ruleSubstring string) bool {
+	var ve *protovalidate.ValidationError
+	if errors.As(err, &ve) {
+		for _, v := range ve.Violations {
+			if strings.Contains(v.Proto.GetRuleId(), ruleSubstring) {
+				return true
+			}
+		}
+		return false
+	}
+	return strings.Contains(err.Error(), ruleSubstring)
+}
 
 // validEvent returns an Event with all required fields populated.
 func validEvent() *eventsv1.Event {
 	return &eventsv1.Event{
-		EventId:    strPtr("550e8400-e29b-41d4-a716-446655440000"),
-		DistinctId: strPtr("user-1"),
-		Kind:       strPtr("page_view"),
+		EventId:    proto.String("550e8400-e29b-41d4-a716-446655440000"),
+		DistinctId: proto.String("user-1"),
+		Kind:       proto.String("page_view"),
 		OccurTime:  timestamppb.Now(),
-		SessionId:  strPtr("660e8400-e29b-41d4-a716-446655440001"),
+		SessionId:  proto.String("660e8400-e29b-41d4-a716-446655440001"),
 	}
 }
 
@@ -33,16 +52,26 @@ func TestEventValidation_KindNoReservedPrefix(t *testing.T) {
 		{name: "reserved_prefix_rejected", kind: "cotton.signup", wantErr: true},
 		{name: "prefix_not_substring", kind: "cottoncandy", wantErr: false},
 		{name: "exact_prefix_rejected", kind: "cotton.", wantErr: true},
+		// Case-sensitivity: startsWith is byte-exact, so upper/mixed-case variants must be accepted.
+		{name: "case_sensitive_upper_accepted", kind: "Cotton.foo", wantErr: false},
+		{name: "case_sensitive_shouting_accepted", kind: "COTTON.foo", wantErr: false},
+		{name: "case_sensitive_mixed_accepted", kind: "CoTtOn.abc", wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := validEvent()
-			e.Kind = strPtr(tt.kind)
+			e.Kind = proto.String(tt.kind)
 			err := protovalidate.Validate(e)
-			if tt.wantErr && err == nil {
-				t.Error("expected validation error, got nil")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if !hasRule(err, "kind_no_reserved_prefix") {
+					t.Errorf("expected rule kind_no_reserved_prefix in violations, got: %v", err)
+				}
+				return
 			}
-			if !tt.wantErr && err != nil {
+			if err != nil {
 				t.Errorf("expected valid, got error: %v", err)
 			}
 		})
@@ -62,16 +91,26 @@ func TestEventValidation_AutoPropertiesDollarPrefix(t *testing.T) {
 		{name: "nil_map_accepted", autoProperties: nil, wantErr: false},
 		{name: "mixed_valid_invalid", autoProperties: map[string]string{"$browser": "Chrome", "os": "macOS"}, wantErr: true},
 		{name: "single_valid_key", autoProperties: map[string]string{"$device": "iPhone"}, wantErr: false},
+		// Edge cases: protobuf map keys can be empty strings, and the literal single-char "$" key
+		// is valid per startsWith("$") semantics.
+		{name: "single_dollar_char_key_accepted", autoProperties: map[string]string{"$": "value"}, wantErr: false},
+		{name: "empty_string_key_rejected", autoProperties: map[string]string{"": "value"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := validEvent()
 			e.AutoProperties = tt.autoProperties
 			err := protovalidate.Validate(e)
-			if tt.wantErr && err == nil {
-				t.Error("expected validation error, got nil")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if !hasRule(err, "auto_properties_dollar_prefix") {
+					t.Errorf("expected rule auto_properties_dollar_prefix in violations, got: %v", err)
+				}
+				return
 			}
-			if !tt.wantErr && err != nil {
+			if err != nil {
 				t.Errorf("expected valid, got error: %v", err)
 			}
 		})

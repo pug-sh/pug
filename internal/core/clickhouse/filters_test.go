@@ -270,28 +270,6 @@ func TestPropertyCondition_NotIn(t *testing.T) {
 	}
 }
 
-func TestPropertyCondition_InEmptyValues(t *testing.T) {
-	f := &commonv1.PropertyFilter{
-		Property: proto.String("$country"),
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_IN.Enum(),
-		Values:   []string{},
-	}
-	if _, err := clickhouse.PropertyCondition(f, "proj1"); err == nil {
-		t.Fatal("expected error for IN with empty values")
-	}
-}
-
-func TestPropertyCondition_NotInEmptyValues(t *testing.T) {
-	f := &commonv1.PropertyFilter{
-		Property: proto.String("$country"),
-		Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN.Enum(),
-		Values:   []string{},
-	}
-	if _, err := clickhouse.PropertyCondition(f, "proj1"); err == nil {
-		t.Fatal("expected error for NOT_IN with empty values")
-	}
-}
-
 func TestPropertyCondition_Unsupported(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: proto.String("x"),

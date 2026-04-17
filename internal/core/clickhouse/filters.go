@@ -134,6 +134,19 @@ func numericCond(prop, op string, f *commonv1.PropertyFilter) (Condition, error)
 }
 
 // operatorCondition builds a Condition for the given SQL expression and PropertyFilter operator.
+//
+// Upstream validation: callers via the RPC handler chain pass through `validate.NewInterceptor()`,
+// which enforces the full set of PropertyFilter CEL rules (operator enum defined_only/not_in:[0],
+// value_required, values_required, values_not_allowed, value_not_allowed_for_set_operators,
+// numeric_value_required, between_requires_two_values, between_ordered_values).
+//
+// This function retains two non-validation concerns:
+//   - BETWEEN/NOT_BETWEEN length check: prevents an index-out-of-range panic on direct callers
+//     that bypass the interceptor before strconv.ParseFloat is called on values[0]/[1].
+//   - strconv.ParseFloat: converts the string representation to float64 for the ClickHouse
+//     parameter binding (toFloat64OrNull(prop) >= ?). This is a conversion, not a validation.
+//
+// Direct callers (workers, scripts) bypassing the interceptor must pre-validate or risk invalid SQL.
 func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, error) {
 	switch f.GetOperator() {
 	case commonv1.FilterOperator_FILTER_OPERATOR_EQUALS:
@@ -157,9 +170,6 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 	case commonv1.FilterOperator_FILTER_OPERATOR_GT:
 		return numericCond(prop, ">", f)
 	case commonv1.FilterOperator_FILTER_OPERATOR_IN:
-		if len(f.GetValues()) == 0 {
-			return Condition{}, fmt.Errorf("IN operator requires at least one value for property %q", f.GetProperty())
-		}
 		args := make([]any, len(f.GetValues()))
 		for i, v := range f.GetValues() {
 			args[i] = v
@@ -167,9 +177,6 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 		placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")
 		return RawCond(prop+" IN ("+placeholders+")", args...), nil
 	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN:
-		if len(f.GetValues()) == 0 {
-			return Condition{}, fmt.Errorf("NOT_IN operator requires at least one value for property %q", f.GetProperty())
-		}
 		args := make([]any, len(f.GetValues()))
 		for i, v := range f.GetValues() {
 			args[i] = v

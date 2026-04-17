@@ -188,7 +188,16 @@ func (s *server) Query(
 		}
 
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unsupported insight type"))
+		// Defensive: protovalidate rejects undefined/UNSPECIFIED insight_type values at the interceptor,
+		// so this arm is unreachable via the RPC path. A new enum variant added to the proto without a
+		// matching case here would land here — log it so operators notice.
+		err := errors.New("unsupported insight type")
+		slog.WarnContext(ctx, "unsupported insight type reached handler default",
+			slogx.Error(err),
+			slog.String("projectID", projectID),
+			slog.String("insightType", req.Msg.GetInsightType().String()))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
 	return connect.NewResponse(resp), nil

@@ -548,6 +548,10 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 	events := req.GetEvents()
 	breakdowns := req.GetBreakdowns()
 
+	if len(events) == 0 {
+		return "", nil, fmt.Errorf("retention: requires at least one event")
+	}
+
 	startEvent := events[0]
 	returnEvent := startEvent
 	if len(events) > 1 {
@@ -937,7 +941,13 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 
 // aggregationExpr returns the SQL aggregation expression for the given type and optional property.
 // For TOTAL/UNIQUE_USERS/PER_USER_AVG, the property parameter is unused.
-// For SUM/AVG/MIN/MAX, property is required (enforced by proto validation at the RPC boundary).
+// For SUM/AVG/MIN/MAX, property is required (enforced by proto validation at the RPC boundary
+// via `event_query.property_required_for_numeric_agg`).
+//
+// WARNING for direct callers (workers, scripts) bypassing the RPC interceptor: passing an empty
+// property with SUM/AVG/MIN/MAX produces valid SQL that silently returns 0 rather than erroring —
+// the generated expression `sum(toFloat64OrNull(ifNull(nullIf(auto_properties[''], ''), …)))`
+// matches no rows. Pre-validate or accept the silent-zero behavior.
 //
 // AVG/MIN/MAX use ifNull(..., 0) because these ClickHouse aggregates return NULL when all
 // inputs are NULL (e.g. all property values are non-numeric). SUM does not need this because
