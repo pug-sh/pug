@@ -112,7 +112,7 @@ Never call `getPrincipalFromContext` directly in handlers.
 
 Services defined in `proto/` directory, organized by auth boundary (`public/`, `sdk/`, `dashboard/`, `shared/`). Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled. Profiles is split into `ProfilesSDKService` (sdk — Identify) and `ProfilesService` (shared — Get, GetByExternalId, List, Delete). SDK profiles uses Go import alias `sdkprofilesv1` to avoid collision with shared `profilesv1`.
 
-**Validation:** Always use `buf/validate` (protovalidate) annotations in `.proto` files for request validation. The `validate.NewInterceptor()` in the server enforces all proto annotations before handlers run. Use CEL expressions for cross-field constraints (e.g., `this.from < this.to`, operator-dependent required fields). Do **not** duplicate proto validations in Go code — if protovalidate already enforces a constraint, trust it. Redundant checks add maintenance burden and drift risk without meaningful safety gain. Only add Go-side validation for public functions in shared packages that are called outside the RPC chain (e.g., a library used by workers that never passes through the interceptor).
+**Validation:** Always use `buf/validate` (protovalidate) annotations in `.proto` files for request validation. The `validate.NewInterceptor()` in the server enforces all proto annotations before handlers run. Use CEL expressions for cross-field constraints (e.g., `this.from < this.to`, operator-dependent required fields, ordered values in repeated fields, map-key prefix checks via `map.all(k, k.startsWith('$'))`). Do **not** duplicate proto validations in Go code — if protovalidate already enforces a constraint, trust it. Redundant checks add maintenance burden and drift risk without meaningful safety gain. Only add Go-side validation for constraints CEL cannot express — for example, batch-level cross-element checks on repeated fields, since CEL on `repeated` evaluates per-element. Concrete example: `internal/core/events/service.go::ValidateExternalEvents` deduplicates `event_id` across a batch.
 
 **Proto directory layout mirrors the handler auth boundary:**
 
@@ -228,7 +228,7 @@ Key types and functions:
 
 ### Insights Query Builders
 
-`insights.BuildQuery` is **deprecated**. Always use the type-specific builders — they provide compile-time safety between builder and executor:
+Always use the type-specific builders — they provide compile-time safety between builder and executor:
 
 | Insight type         | Builder                  | Query type          |
 | -------------------- | ------------------------ | ------------------- |
@@ -238,7 +238,7 @@ Key types and functions:
 | Funnel (with timing) | `BuildFunnelTimingQuery` | `FunnelTimingQuery` |
 | Retention            | `BuildRetentionQuery`    | `RetentionQuery`    |
 
-All query types expose `.SQL()` and `.Args()`. All types except `ScalarQuery` also expose `.Properties()` and `.NumBreakdowns()`. `FunnelTimingQuery` also exposes `.Kinds()` and `.WindowSec()`. The only legitimate remaining use of `BuildQuery` is testing the deprecated dispatcher's "unsupported insight type" error path.
+All query types expose `.SQL()` and `.Args()`. All types except `ScalarQuery` also expose `.Properties()` and `.NumBreakdowns()`. `FunnelTimingQuery` also exposes `.Kinds()` and `.WindowSec()`.
 
 ### OpenTelemetry Instrumentation
 

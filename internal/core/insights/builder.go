@@ -194,25 +194,6 @@ func bucketRawExpr(i int) string {
 	)
 }
 
-// Deprecated: BuildQuery builds a ClickHouse SQL query and positional args from a QueryRequest.
-// Use the type-specific builders (BuildTrendsQuery, BuildSegmentationQuery,
-// BuildFunnelCountsQuery, BuildFunnelTimingQuery, BuildRetentionQuery) which provide
-// compile-time safety between builder and executor.
-func BuildQuery(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
-	switch req.GetInsightType() {
-	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
-		return buildTrends(req, projectID)
-	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
-		return buildSegmentation(req, projectID)
-	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
-		return buildFunnel(req, projectID)
-	case insightsv1.InsightType_INSIGHT_TYPE_RETENTION:
-		return buildRetention(req, projectID)
-	default:
-		return "", nil, fmt.Errorf("unsupported insight type: %v", req.GetInsightType())
-	}
-}
-
 func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	granFn := granularityFunc(req.GetGranularity())
 	breakdowns := req.GetBreakdowns()
@@ -345,14 +326,6 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 		Build()
 }
 
-// buildFunnel dispatches to either windowFunnel (fast counts) or single-scan array-based query (with step timing).
-func buildFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
-	if req.GetIncludeStepTiming() {
-		return buildFunnelWithTiming(req, projectID)
-	}
-	return buildFunnelWindowFunnel(req, projectID)
-}
-
 // buildFunnelWindowFunnel generates a funnel counts query using ClickHouse's windowFunnel() aggregate.
 // windowFunnel scans the events table once and returns the deepest step reached per user
 // within the conversion window. The outer UNION ALL computes cumulative counts per step.
@@ -362,10 +335,6 @@ func buildFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any,
 // then runs over the step-filtered events, and results are grouped by breakdown value.
 func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	steps := req.GetEvents()
-	if len(steps) == 0 {
-		return "", nil, fmt.Errorf("funnel requires at least one event step")
-	}
-
 	breakdowns := req.GetBreakdowns()
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
@@ -476,10 +445,6 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (st
 // against the top-N CTE and falls back to '$others'.
 func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	steps := req.GetEvents()
-	if len(steps) == 0 {
-		return "", nil, fmt.Errorf("funnel requires at least one event step")
-	}
-
 	breakdowns := req.GetBreakdowns()
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
@@ -581,11 +546,11 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (stri
 
 func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	events := req.GetEvents()
-	if len(events) == 0 {
-		return "", nil, fmt.Errorf("retention requires at least one event")
-	}
-
 	breakdowns := req.GetBreakdowns()
+
+	if len(events) == 0 {
+		return "", nil, fmt.Errorf("retention: requires at least one event")
+	}
 
 	startEvent := events[0]
 	returnEvent := startEvent
@@ -976,7 +941,13 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 
 // aggregationExpr returns the SQL aggregation expression for the given type and optional property.
 // For TOTAL/UNIQUE_USERS/PER_USER_AVG, the property parameter is unused.
-// For SUM/AVG/MIN/MAX, property must be non-empty; returns an error otherwise.
+// For SUM/AVG/MIN/MAX, property is required (enforced by proto validation at the RPC boundary
+// via `event_query.property_required_for_numeric_agg`).
+//
+// WARNING for direct callers (workers, scripts) bypassing the RPC interceptor: passing an empty
+// property with SUM/AVG/MIN/MAX produces valid SQL that silently returns 0 rather than erroring —
+// the generated expression `sum(toFloat64OrNull(ifNull(nullIf(auto_properties[''], ''), …)))`
+// matches no rows. Pre-validate or accept the silent-zero behavior.
 //
 // AVG/MIN/MAX use ifNull(..., 0) because these ClickHouse aggregates return NULL when all
 // inputs are NULL (e.g. all property values are non-numeric). SUM does not need this because
@@ -989,9 +960,6 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 		insightsv1.AggregationType_AGGREGATION_TYPE_AVG,
 		insightsv1.AggregationType_AGGREGATION_TYPE_MIN,
 		insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
-		if property == "" {
-			return "", fmt.Errorf("aggregationExpr: %s requires a non-empty property", agg)
-		}
 		numeric := "toFloat64OrNull(" + chq.PropertyExpr(property) + ")"
 		switch agg {
 		case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
