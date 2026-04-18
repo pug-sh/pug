@@ -36,9 +36,9 @@ func TestPercentileFloat(t *testing.T) {
 	}{
 		{"empty", nil, 0.95, 0},
 		{"single p95", []float64{100}, 0.95, 100},
-		{"three p95 ceiling", []float64{10, 20, 30}, 0.95, 30},         // ceil(0.95*3)=3 → idx 2
-		{"four p95", []float64{10, 20, 30, 40}, 0.95, 40},              // ceil(0.95*4)=4 → idx 3
-		{"p50 odd", []float64{10, 20, 30}, 0.50, 20},                   // ceil(0.5*3)=2 → idx 1
+		{"three p95 ceiling", []float64{10, 20, 30}, 0.95, 30}, // ceil(0.95*3)=3 → idx 2
+		{"four p95", []float64{10, 20, 30, 40}, 0.95, 40},      // ceil(0.95*4)=4 → idx 3
+		{"p50 odd", []float64{10, 20, 30}, 0.50, 20},           // ceil(0.5*3)=2 → idx 1
 		{"twenty p95", []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}, 0.95, 19}, // ceil(0.95*20)=19 → idx 18
 	}
 	for _, tc := range tests {
