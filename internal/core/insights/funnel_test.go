@@ -403,3 +403,118 @@ func TestComputeFunnelTiming_BreakdownLengthMismatch(t *testing.T) {
 		t.Fatal("expected error for mismatched breakdown lengths across users")
 	}
 }
+
+func TestComputeFunnelTiming_MedianOddCount(t *testing.T) {
+	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	// 3 users with step-1 conversion times: 60s, 120s, 180s
+	users := []insights.FunnelUserEvents{
+		{DistinctID: "u1", Times: []time.Time{t0, t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1}},
+		{DistinctID: "u2", Times: []time.Time{t0, t0.Add(120 * time.Second)}, StepMatches: []int64{0, 1}},
+		{DistinctID: "u3", Times: []time.Time{t0, t0.Add(180 * time.Second)}, StepMatches: []int64{0, 1}},
+	}
+	rows, err := insights.ComputeFunnelTiming(ctx, users, []string{"a", "b"}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	step1 := rows[1]
+	if step1.MedianConvertSeconds != 120 {
+		t.Errorf("median: got %v, want 120", step1.MedianConvertSeconds)
+	}
+	if step1.P95ConvertSeconds != 180 {
+		t.Errorf("p95: got %v, want 180", step1.P95ConvertSeconds)
+	}
+}
+
+func TestComputeFunnelTiming_MedianEvenCount(t *testing.T) {
+	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	// 4 users with step-1 conversion times: 60s, 120s, 180s, 240s → median = (120+180)/2 = 150
+	users := []insights.FunnelUserEvents{
+		{DistinctID: "u1", Times: []time.Time{t0, t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1}},
+		{DistinctID: "u2", Times: []time.Time{t0, t0.Add(120 * time.Second)}, StepMatches: []int64{0, 1}},
+		{DistinctID: "u3", Times: []time.Time{t0, t0.Add(180 * time.Second)}, StepMatches: []int64{0, 1}},
+		{DistinctID: "u4", Times: []time.Time{t0, t0.Add(240 * time.Second)}, StepMatches: []int64{0, 1}},
+	}
+	rows, err := insights.ComputeFunnelTiming(ctx, users, []string{"a", "b"}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	step1 := rows[1]
+	if step1.MedianConvertSeconds != 150 {
+		t.Errorf("median: got %v, want 150", step1.MedianConvertSeconds)
+	}
+	if step1.P95ConvertSeconds != 240 {
+		t.Errorf("p95: got %v, want 240", step1.P95ConvertSeconds)
+	}
+}
+
+func TestComputeFunnelTiming_DistributionBuckets(t *testing.T) {
+	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	// One user per bucket: <30s, 30s-2m, 2-5m, 5-15m, 15-60m, 1-6h, 6-24h, 24h+
+	deltaSecs := []float64{10, 60, 200, 600, 2000, 10000, 50000, 100000}
+	users := make([]insights.FunnelUserEvents, len(deltaSecs))
+	for i, d := range deltaSecs {
+		users[i] = insights.FunnelUserEvents{
+			DistinctID:  "u" + string(rune('0'+i)),
+			Times:       []time.Time{t0, t0.Add(time.Duration(d) * time.Second)},
+			StepMatches: []int64{0, 1},
+		}
+	}
+	rows, err := insights.ComputeFunnelTiming(ctx, users, []string{"a", "b"}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dist := rows[1].ConvertSecondsDistribution
+	if len(dist) != 8 {
+		t.Fatalf("distribution length: got %d, want 8", len(dist))
+	}
+	for i, c := range dist {
+		if c != 1 {
+			t.Errorf("bucket %d: got %d, want 1", i, c)
+		}
+	}
+}
+
+func TestComputeFunnelTiming_StepZeroHasNoStats(t *testing.T) {
+	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	users := []insights.FunnelUserEvents{
+		{DistinctID: "u1", Times: []time.Time{t0, t0.Add(60 * time.Second)}, StepMatches: []int64{0, 1}},
+	}
+	rows, err := insights.ComputeFunnelTiming(ctx, users, []string{"a", "b"}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	step0 := rows[0]
+	if step0.MedianConvertSeconds != 0 {
+		t.Errorf("step 0 median: got %v, want 0", step0.MedianConvertSeconds)
+	}
+	if step0.P95ConvertSeconds != 0 {
+		t.Errorf("step 0 p95: got %v, want 0", step0.P95ConvertSeconds)
+	}
+	if step0.ConvertSecondsDistribution != nil {
+		t.Errorf("step 0 distribution: got %v, want nil", step0.ConvertSecondsDistribution)
+	}
+}
+
+func TestComputeFunnelTiming_NoConvertersStepHasZeroDistribution(t *testing.T) {
+	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	// User only completes step 0; step 1 has count=0
+	users := []insights.FunnelUserEvents{
+		{DistinctID: "u1", Times: []time.Time{t0}, StepMatches: []int64{0}},
+	}
+	rows, err := insights.ComputeFunnelTiming(ctx, users, []string{"a", "b"}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	step1 := rows[1]
+	if step1.ConvertSecondsDistribution == nil {
+		t.Fatal("step 1 distribution: got nil, want zero-filled slice")
+	}
+	if len(step1.ConvertSecondsDistribution) != 8 {
+		t.Errorf("step 1 distribution length: got %d, want 8", len(step1.ConvertSecondsDistribution))
+	}
+	for i, c := range step1.ConvertSecondsDistribution {
+		if c != 0 {
+			t.Errorf("bucket %d: got %d, want 0", i, c)
+		}
+	}
+}

@@ -40,6 +40,7 @@ func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []
 	type stepAcc struct {
 		count    int64
 		totalSec float64
+		times    []float64 // per-converting-user seconds; empty for step 0
 	}
 
 	// Validate uniform breakdown length across all users.
@@ -95,7 +96,9 @@ func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []
 		for s := range matched {
 			accs[s].count++
 			if s > 0 {
-				accs[s].totalSec += stepTimes[s].Sub(stepTimes[s-1]).Seconds()
+				delta := stepTimes[s].Sub(stepTimes[s-1]).Seconds()
+				accs[s].totalSec += delta
+				accs[s].times = append(accs[s].times, delta)
 			}
 		}
 	}
@@ -119,16 +122,28 @@ func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []
 		accs := accsByKey[key]
 		bds := breakdownsByKey[key]
 		for i := range numSteps {
-			var avgTime float64
+			var avgTime, median, p95 float64
+			var dist []int64
 			if i > 0 && accs[i].count > 0 {
 				avgTime = accs[i].totalSec / float64(accs[i].count)
 			}
+			if i > 0 && len(accs[i].times) > 0 {
+				slices.Sort(accs[i].times)
+				median = medianFloat(accs[i].times)
+				p95 = percentileFloat(accs[i].times, 0.95)
+				dist = distributionCounts(accs[i].times, funnelTimingBucketUpperSec)
+			} else if i > 0 {
+				dist = make([]int64, len(funnelTimingBucketUpperSec))
+			}
 			rows = append(rows, FunnelRow{
-				StepIndex:         int64(i),
-				EventKind:         kinds[i],
-				Breakdowns:        bds,
-				Value:             float64(accs[i].count),
-				AvgConvertSeconds: avgTime,
+				StepIndex:                  int64(i),
+				EventKind:                  kinds[i],
+				Breakdowns:                 bds,
+				Value:                      float64(accs[i].count),
+				AvgConvertSeconds:          avgTime,
+				MedianConvertSeconds:       median,
+				P95ConvertSeconds:          p95,
+				ConvertSecondsDistribution: dist,
 			})
 		}
 	}

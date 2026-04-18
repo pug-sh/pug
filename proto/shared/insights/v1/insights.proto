@@ -259,6 +259,16 @@ message FunnelSeries {
   repeated FunnelStep steps = 2;
 }
 
+// DistributionBucket is a single histogram bucket for conversion time distribution.
+message DistributionBucket {
+  // Human-readable label, e.g. "0-30s", "30s-2m".
+  string label = 1;
+  // Exclusive upper bound in seconds. Absent for the last open-ended bucket ("24h+"); use the label instead.
+  double upper_bound_seconds = 2;
+  // Number of users whose conversion time fell in this bucket.
+  int64 count = 3;
+}
+
 // FunnelStep is a single stage in a funnel.
 message FunnelStep {
   string event_kind = 1;
@@ -266,6 +276,15 @@ message FunnelStep {
   // Average seconds from the previous step to this one.
   // Zero for the first step or when include_step_timing is false.
   double avg_time_to_convert_seconds = 3;
+  // Median seconds from the previous step to this one.
+  // Zero for the first step or when include_step_timing is false.
+  double median_time_to_convert_seconds = 4;
+  // 95th-percentile seconds from the previous step to this one.
+  // Zero for the first step or when include_step_timing is false.
+  double p95_time_to_convert_seconds = 5;
+  // Histogram of conversion times from the previous step to this one.
+  // Empty for the first step or when include_step_timing is false.
+  repeated DistributionBucket convert_time_distribution = 6;
 }
 
 // RetentionResult contains one RetentionSeries per breakdown combination.

@@ -27,11 +27,14 @@ type TrendRow struct {
 
 // FunnelRow is a single funnel step aggregate for one breakdown combination.
 type FunnelRow struct {
-	StepIndex         int64
-	EventKind         string
-	Breakdowns        []string
-	Value             float64
-	AvgConvertSeconds float64 // average seconds from previous step; 0 for step 0 or when timing is not requested
+	StepIndex                  int64
+	EventKind                  string
+	Breakdowns                 []string
+	Value                      float64
+	AvgConvertSeconds          float64 // average seconds from previous step; 0 for step 0 or when timing is not requested
+	MedianConvertSeconds       float64 // median seconds from previous step; 0 for step 0
+	P95ConvertSeconds          float64 // 95th-percentile seconds from previous step; 0 for step 0
+	ConvertSecondsDistribution []int64 // histogram counts per bucket; nil for step 0
 }
 
 // RetentionRow is a single retention aggregate for one cohort bucket, time bucket, and breakdown combination.
@@ -372,11 +375,29 @@ func GroupFunnelSeries(rows []FunnelRow, properties []string) ([]*insightsv1.Fun
 			}
 			entriesByKey[key] = &seriesEntry{breakdown: bd}
 		}
-		entriesByKey[key].steps = append(entriesByKey[key].steps, &insightsv1.FunnelStep{
-			EventKind:               proto.String(r.EventKind),
-			Total:                   proto.Float64(r.Value),
-			AvgTimeToConvertSeconds: proto.Float64(r.AvgConvertSeconds),
-		})
+		step := &insightsv1.FunnelStep{
+			EventKind:                  proto.String(r.EventKind),
+			Total:                      proto.Float64(r.Value),
+			AvgTimeToConvertSeconds:    proto.Float64(r.AvgConvertSeconds),
+			MedianTimeToConvertSeconds: proto.Float64(r.MedianConvertSeconds),
+			P95TimeToConvertSeconds:    proto.Float64(r.P95ConvertSeconds),
+		}
+		if r.ConvertSecondsDistribution != nil {
+			last := len(funnelTimingBucketUpperSec) - 1
+			buckets := make([]*insightsv1.DistributionBucket, len(r.ConvertSecondsDistribution))
+			for i, count := range r.ConvertSecondsDistribution {
+				b := &insightsv1.DistributionBucket{
+					Label: proto.String(funnelTimingBucketLabels[i]),
+					Count: proto.Int64(count),
+				}
+				if i < last {
+					b.UpperBoundSeconds = proto.Float64(funnelTimingBucketUpperSec[i])
+				}
+				buckets[i] = b
+			}
+			step.ConvertTimeDistribution = buckets
+		}
+		entriesByKey[key].steps = append(entriesByKey[key].steps, step)
 	}
 
 	series := make([]*insightsv1.FunnelSeries, 0, len(orderedKeys))

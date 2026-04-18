@@ -140,6 +140,19 @@ Breakdowns are supported for trends, funnel, and retention. Segmentation does no
   - `RetentionResult.series` → `repeated RetentionSeries` with `breakdown map<string,string>` + `cohorts repeated RetentionCohort`
   - When no breakdowns are requested, a single series with an empty `breakdown` map is returned.
 
+### Funnel Timing Statistics
+
+When `include_step_timing` is true, each `FunnelStep` includes per-step conversion time statistics computed in Go from per-user event timestamps (no extra ClickHouse query needed):
+
+- `avg_time_to_convert_seconds` — mean
+- `median_time_to_convert_seconds` — average-of-two-middles median
+- `p95_time_to_convert_seconds` — nearest-rank ceiling p95
+- `convert_time_distribution` — `repeated DistributionBucket` histogram across 8 fixed buckets: `0-30s`, `30s-2m`, `2-5m`, `5-15m`, `15-60m`, `1-6h`, `6-24h`, `24h+`
+
+All four fields are zero/empty for step 0 (the entry step has no conversion time). Steps with zero converters get a zero-filled distribution slice (not absent) — this distinguishes "timing not applicable" (step 0, `nil`) from "nobody converted yet" (allocated zeros).
+
+**Implementation:** `internal/core/insights/funnel_buckets.go` holds bucket constants (`funnelTimingBucketUpperSec`, `funnelTimingBucketLabels`) and the three helper functions (`medianFloat`, `percentileFloat`, `distributionCounts`). `ComputeFunnelTiming` collects raw per-user deltas into `stepAcc.times`, sorts once at output time, then calls the helpers.
+
 ### Insights Filter Model
 
 - Top-level insights filters are **group-based only**. In `shared.insights.v1`, use `filter_groups` and `filter_groups_operator` on `QueryRequest` and `SegmentUsersRequest`.
