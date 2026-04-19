@@ -140,6 +140,22 @@ Breakdowns are supported for trends, funnel, and retention. Segmentation does no
   - `RetentionResult.series` → `repeated RetentionSeries` with `breakdown map<string,string>` + `cohorts repeated RetentionCohort`
   - When no breakdowns are requested, a single series with an empty `breakdown` map is returned.
 
+### Insights Granularity
+
+`QueryRequest.granularity` controls the time-bucket size for trends and retention queries. Supported values (ordered finest → coarsest):
+
+| Enum value             | ClickHouse function  | Max time range |
+| ---------------------- | -------------------- | -------------- |
+| `GRANULARITY_MINUTE`   | `toStartOfMinute`    | 6 hours        |
+| `GRANULARITY_HOUR`     | `toStartOfHour`      | 14 days        |
+| `GRANULARITY_DAY`      | `toStartOfDay`       | 365 days       |
+| `GRANULARITY_WEEK`     | `toStartOfWeek`      | 4 years        |
+| `GRANULARITY_MONTH`    | `toStartOfMonth`     | unlimited      |
+
+- Limits are enforced by `ValidateGranularityForRange` in `internal/core/insights/builder.go`, called in the `Query` handler before the insight-type switch. Violations return `CodeInvalidArgument`.
+- The limits are sized to keep per-series data point counts in the 300–400 range, consistent across granularities.
+- `GRANULARITY_UNSPECIFIED` bypasses the check (no limit); the query builder defaults it to `toStartOfDay`.
+
 ### Insights Filter Model
 
 - Top-level insights filters are **group-based only**. In `shared.insights.v1`, use `filter_groups` and `filter_groups_operator` on `QueryRequest` and `SegmentUsersRequest`.

@@ -24,7 +24,7 @@
 
 ## Performance
 
-- [ ] Minute granularity — currently limited to hour+ to avoid expensive queries
+- [x] Minute granularity — currently limited to hour+ to avoid expensive queries
 - [ ] Precomputed segment cache — for faster campaign delivery
 - [ ] Query result caching — cache hot queries with TTL
 

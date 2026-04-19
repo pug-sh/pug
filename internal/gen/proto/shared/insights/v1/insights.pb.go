@@ -83,27 +83,30 @@ type Granularity int32
 
 const (
 	Granularity_GRANULARITY_UNSPECIFIED Granularity = 0
-	Granularity_GRANULARITY_HOUR        Granularity = 1
-	Granularity_GRANULARITY_DAY         Granularity = 2
-	Granularity_GRANULARITY_WEEK        Granularity = 3
-	Granularity_GRANULARITY_MONTH       Granularity = 4
+	Granularity_GRANULARITY_MINUTE      Granularity = 1
+	Granularity_GRANULARITY_HOUR        Granularity = 2
+	Granularity_GRANULARITY_DAY         Granularity = 3
+	Granularity_GRANULARITY_WEEK        Granularity = 4
+	Granularity_GRANULARITY_MONTH       Granularity = 5
 )
 
 // Enum value maps for Granularity.
 var (
 	Granularity_name = map[int32]string{
 		0: "GRANULARITY_UNSPECIFIED",
-		1: "GRANULARITY_HOUR",
-		2: "GRANULARITY_DAY",
-		3: "GRANULARITY_WEEK",
-		4: "GRANULARITY_MONTH",
+		1: "GRANULARITY_MINUTE",
+		2: "GRANULARITY_HOUR",
+		3: "GRANULARITY_DAY",
+		4: "GRANULARITY_WEEK",
+		5: "GRANULARITY_MONTH",
 	}
 	Granularity_value = map[string]int32{
 		"GRANULARITY_UNSPECIFIED": 0,
-		"GRANULARITY_HOUR":        1,
-		"GRANULARITY_DAY":         2,
-		"GRANULARITY_WEEK":        3,
-		"GRANULARITY_MONTH":       4,
+		"GRANULARITY_MINUTE":      1,
+		"GRANULARITY_HOUR":        2,
+		"GRANULARITY_DAY":         3,
+		"GRANULARITY_WEEK":        4,
+		"GRANULARITY_MONTH":       5,
 	}
 )
 
@@ -1600,13 +1603,14 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x13INSIGHT_TYPE_TRENDS\x10\x01\x12\x1d\n" +
 	"\x19INSIGHT_TYPE_SEGMENTATION\x10\x02\x12\x17\n" +
 	"\x13INSIGHT_TYPE_FUNNEL\x10\x03\x12\x1a\n" +
-	"\x16INSIGHT_TYPE_RETENTION\x10\x04*\x82\x01\n" +
+	"\x16INSIGHT_TYPE_RETENTION\x10\x04*\x9a\x01\n" +
 	"\vGranularity\x12\x1b\n" +
-	"\x17GRANULARITY_UNSPECIFIED\x10\x00\x12\x14\n" +
-	"\x10GRANULARITY_HOUR\x10\x01\x12\x13\n" +
-	"\x0fGRANULARITY_DAY\x10\x02\x12\x14\n" +
-	"\x10GRANULARITY_WEEK\x10\x03\x12\x15\n" +
-	"\x11GRANULARITY_MONTH\x10\x04*\xfd\x01\n" +
+	"\x17GRANULARITY_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12GRANULARITY_MINUTE\x10\x01\x12\x14\n" +
+	"\x10GRANULARITY_HOUR\x10\x02\x12\x13\n" +
+	"\x0fGRANULARITY_DAY\x10\x03\x12\x14\n" +
+	"\x10GRANULARITY_WEEK\x10\x04\x12\x15\n" +
+	"\x11GRANULARITY_MONTH\x10\x05*\xfd\x01\n" +
 	"\x0fAggregationType\x12 \n" +
 	"\x1cAGGREGATION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16AGGREGATION_TYPE_TOTAL\x10\x01\x12!\n" +
