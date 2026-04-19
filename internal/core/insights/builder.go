@@ -972,7 +972,7 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 //
 // WARNING for direct callers (workers, scripts) bypassing the RPC interceptor: passing an empty
 // property with SUM/AVG/MIN/MAX produces valid SQL that silently returns 0 rather than erroring —
-// the generated expression `sum(toFloat64OrNull(ifNull(nullIf(auto_properties[''], ''), …)))`
+// the generated expression `sum(toFloat64OrNull(ifNull(nullIf(auto_properties[”], ”), …)))`
 // matches no rows. Pre-validate or accept the silent-zero behavior.
 //
 // AVG/MIN/MAX use ifNull(..., 0) because these ClickHouse aggregates return NULL when all
