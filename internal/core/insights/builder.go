@@ -16,6 +16,7 @@ const DefaultPageSize int32 = 100
 // Also used as the cache exhaustion threshold in Service.GetPropertyValues.
 const PropertyValuesLimit = 100
 
+
 // Typed query structs link builder output to the correct executor method at compile time.
 
 // TrendsQuery is the compiled SQL for a trends insight.
@@ -81,7 +82,11 @@ func (q RetentionQuery) Properties() []string { return q.properties }
 
 // BuildTrendsQuery builds a trends insight query with breakdown metadata.
 func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
-	sql, args, err := buildTrends(req, projectID)
+	q, err := buildTrends(req, projectID)
+	if err != nil {
+		return TrendsQuery{}, err
+	}
+	sql, args, err := q.Setting("use_query_cache", 1).Setting("query_cache_ttl", 60).Build()
 	if err != nil {
 		return TrendsQuery{}, err
 	}
@@ -90,7 +95,11 @@ func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQue
 
 // BuildSegmentationQuery builds a segmentation insight query.
 func BuildSegmentationQuery(req *insightsv1.QueryRequest, projectID string) (ScalarQuery, error) {
-	sql, args, err := buildSegmentation(req, projectID)
+	q, err := buildSegmentation(req, projectID)
+	if err != nil {
+		return ScalarQuery{}, err
+	}
+	sql, args, err := q.Setting("use_query_cache", 1).Setting("query_cache_ttl", 60).Build()
 	if err != nil {
 		return ScalarQuery{}, err
 	}
@@ -99,7 +108,11 @@ func BuildSegmentationQuery(req *insightsv1.QueryRequest, projectID string) (Sca
 
 // BuildFunnelCountsQuery builds a funnel step-counts query using windowFunnel().
 func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (FunnelQuery, error) {
-	sql, args, err := buildFunnelWindowFunnel(req, projectID)
+	q, err := buildFunnelWindowFunnel(req, projectID)
+	if err != nil {
+		return FunnelQuery{}, err
+	}
+	sql, args, err := q.Setting("use_query_cache", 1).Setting("query_cache_ttl", 60).Build()
 	if err != nil {
 		return FunnelQuery{}, err
 	}
@@ -108,7 +121,11 @@ func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 
 // BuildFunnelTimingQuery builds a funnel query for per-user event arrays with timing metadata.
 func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (FunnelTimingQuery, error) {
-	sql, args, err := buildFunnelWithTiming(req, projectID)
+	q, err := buildFunnelWithTiming(req, projectID)
+	if err != nil {
+		return FunnelTimingQuery{}, err
+	}
+	sql, args, err := q.Setting("use_query_cache", 1).Setting("query_cache_ttl", 60).Build()
 	if err != nil {
 		return FunnelTimingQuery{}, err
 	}
@@ -128,7 +145,11 @@ func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 
 // BuildRetentionQuery builds a retention cohort analysis query.
 func BuildRetentionQuery(req *insightsv1.QueryRequest, projectID string) (RetentionQuery, error) {
-	sql, args, err := buildRetention(req, projectID)
+	q, err := buildRetention(req, projectID)
+	if err != nil {
+		return RetentionQuery{}, err
+	}
+	sql, args, err := q.Setting("use_query_cache", 1).Setting("query_cache_ttl", 60).Build()
 	if err != nil {
 		return RetentionQuery{}, err
 	}
@@ -194,7 +215,7 @@ func bucketRawExpr(i int) string {
 	)
 }
 
-func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
+func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.UnionQuery, error) {
 	granFn := granularityFunc(req.GetGranularity())
 	breakdowns := req.GetBreakdowns()
 	events := req.GetEvents()
@@ -210,7 +231,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	// Pre-build top-level filter condition — reused in CTE and every sub-query.
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
-		return "", nil, fmt.Errorf("trends: %w", err)
+		return nil, fmt.Errorf("trends: %w", err)
 	}
 
 	// CTE for top-N breakdown values (shared across all event sub-queries).
@@ -218,7 +239,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 	if len(breakdowns) > 0 {
 		eventCond, err := buildEventCondition(events, projectID)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 		topValsCTE = buildTopValsCTE(breakdowns, projectID,
 			req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime(),
@@ -245,7 +266,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 
 		aggExpr, err := aggregationExpr(agg, ev.GetAggregationProperty())
 		if err != nil {
-			return "", nil, fmt.Errorf("trends: events[%d]: %w", i, err)
+			return nil, fmt.Errorf("trends: events[%d]: %w", i, err)
 		}
 
 		query := chq.NewQuery().
@@ -262,7 +283,7 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 		for _, f := range ev.GetEvent().GetFilters() {
 			cond, err := chq.PropertyCondition(f, projectID)
 			if err != nil {
-				return "", nil, fmt.Errorf("trends: events[%d]: %w", i, err)
+				return nil, fmt.Errorf("trends: events[%d]: %w", i, err)
 			}
 			query.Where(cond)
 		}
@@ -284,10 +305,10 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (string, []any,
 		orderBy = append(orderBy, fmt.Sprintf("breakdown_%d ASC", j))
 	}
 
-	return chq.UnionAll(queries...).OrderBy(orderBy...).Build()
+	return chq.UnionAll(queries...).OrderBy(orderBy...), nil
 }
 
-func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
+func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	firstEvent := func() *insightsv1.EventQuery {
 		if len(req.GetEvents()) > 0 {
 			return req.GetEvents()[0]
@@ -300,17 +321,17 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 	}
 	aggExpr, err := aggregationExpr(aggregationType(req), aggProp)
 	if err != nil {
-		return "", nil, fmt.Errorf("segmentation: %w", err)
+		return nil, fmt.Errorf("segmentation: %w", err)
 	}
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
-		return "", nil, fmt.Errorf("segmentation: %w", err)
+		return nil, fmt.Errorf("segmentation: %w", err)
 	}
 
 	eventCond, err := buildEventCondition(req.GetEvents(), projectID)
 	if err != nil {
-		return "", nil, fmt.Errorf("segmentation: %w", err)
+		return nil, fmt.Errorf("segmentation: %w", err)
 	}
 
 	return chq.NewQuery().
@@ -322,8 +343,7 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
 			topLevelFilterCond,
 			eventCond,
-		).
-		Build()
+		), nil
 }
 
 // buildFunnelWindowFunnel generates a funnel counts query using ClickHouse's windowFunnel() aggregate.
@@ -333,13 +353,13 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 // Breakdown attribution: when breakdowns are requested, each user is assigned a breakdown
 // value from their earliest step-matching event in the time range (first-touch attribution). windowFunnel
 // then runs over the step-filtered events, and results are grouped by breakdown value.
-func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
+func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*chq.UnionQuery, error) {
 	steps := req.GetEvents()
 	breakdowns := req.GetBreakdowns()
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
-		return "", nil, fmt.Errorf("funnel: %w", err)
+		return nil, fmt.Errorf("funnel: %w", err)
 	}
 
 	// Build step conditions for windowFunnel boolean expressions and OR filter.
@@ -351,7 +371,7 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (st
 	for i, step := range steps {
 		cond, err := buildFunnelStepCondition(step, projectID, i)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 		stepExprs[i] = cond.SQL()
 		stepArgs = append(stepArgs, cond.Args()...)
@@ -426,7 +446,7 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (st
 	}
 
 	orderBy := append([]string{"step_index ASC"}, bdOrderBy...)
-	return chq.UnionAll(unionQueries...).OrderBy(orderBy...).Build()
+	return chq.UnionAll(unionQueries...).OrderBy(orderBy...), nil
 }
 
 // buildFunnelWithTiming generates a single-scan funnel query that returns per-user
@@ -443,13 +463,13 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (st
 // Breakdown attribution: when breakdowns are requested, each user's breakdown value is taken
 // from their earliest step-matching event (first-touch attribution). The value is bucketed
 // against the top-N CTE and falls back to '$others'.
-func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
+func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	steps := req.GetEvents()
 	breakdowns := req.GetBreakdowns()
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
-		return "", nil, fmt.Errorf("funnel: %w", err)
+		return nil, fmt.Errorf("funnel: %w", err)
 	}
 
 	from := req.GetTimeRange().GetFrom().AsTime()
@@ -463,7 +483,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (stri
 	for i, step := range steps {
 		cond, err := buildFunnelStepCondition(step, projectID, i)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 		multiIfParts = append(multiIfParts, fmt.Sprintf("%s, %d", cond.SQL(), i))
 		multiIfArgs = append(multiIfArgs, cond.Args()...)
@@ -527,7 +547,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (stri
 			outerQ.Select(bucketRawExpr(i))
 		}
 		outerQ.From("user_arrays")
-		return outerQ.Build()
+		return outerQ, nil
 	}
 
 	// No breakdowns: single aggregation, no top_vals needed.
@@ -540,16 +560,15 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (stri
 		).
 		From("tagged").
 		Where(chq.RawCond("step_match >= 0")).
-		GroupBy("distinct_id").
-		Build()
+		GroupBy("distinct_id"), nil
 }
 
-func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
+func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	events := req.GetEvents()
 	breakdowns := req.GetBreakdowns()
 
 	if len(events) == 0 {
-		return "", nil, fmt.Errorf("retention: requires at least one event")
+		return nil, fmt.Errorf("retention: requires at least one event")
 	}
 
 	startEvent := events[0]
@@ -560,29 +579,29 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
-		return "", nil, fmt.Errorf("retention: %w", err)
+		return nil, fmt.Errorf("retention: %w", err)
 	}
 
 	startCond, err := buildEventCondition([]*insightsv1.EventQuery{startEvent}, projectID)
 	if err != nil {
-		return "", nil, fmt.Errorf("retention start event: %w", err)
+		return nil, fmt.Errorf("retention start event: %w", err)
 	}
 	if startCond.IsZero() {
-		return "", nil, fmt.Errorf("retention start event: empty event filter")
+		return nil, fmt.Errorf("retention start event: empty event filter")
 	}
 
 	// Build return event and top-level filter conditions with "e" alias for the JOINed CTE.
 	returnCondAliased, err := buildEventConditionAliased([]*insightsv1.EventQuery{returnEvent}, projectID, "e")
 	if err != nil {
-		return "", nil, fmt.Errorf("retention return event: %w", err)
+		return nil, fmt.Errorf("retention return event: %w", err)
 	}
 	if returnCondAliased.IsZero() {
-		return "", nil, fmt.Errorf("retention return event: empty event filter")
+		return nil, fmt.Errorf("retention return event: empty event filter")
 	}
 
 	topLevelFilterCondAliased, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "e")
 	if err != nil {
-		return "", nil, fmt.Errorf("retention: %w", err)
+		return nil, fmt.Errorf("retention: %w", err)
 	}
 
 	granFn := granularityFunc(req.GetGranularity())
@@ -705,8 +724,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (string, []a
 		Select(finalSelect...).
 		From(fmt.Sprintf("retained r INNER JOIN cohort_sizes cs ON %s", joinCond)).
 		Where(chq.RawCond("r.t >= r.cohort_time")).
-		OrderBy(orderBy...).
-		Build()
+		OrderBy(orderBy...), nil
 }
 
 // buildEventCondition extracts EventFilter from each EventQuery and delegates

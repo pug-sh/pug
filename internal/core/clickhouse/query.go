@@ -138,6 +138,12 @@ type Query struct {
 	orderBy    []string
 	limit      *int64
 	ctes       []cte
+	settings   []setting
+}
+
+type setting struct {
+	key string
+	val any
 }
 
 // NewQuery returns a new empty Query.
@@ -192,6 +198,12 @@ func (q *Query) OrderBy(exprs ...string) *Query {
 // Limit sets the LIMIT value.
 func (q *Query) Limit(n int64) *Query {
 	q.limit = &n
+	return q
+}
+
+// Setting appends a ClickHouse SETTINGS key=value pair to the query.
+func (q *Query) Setting(key string, val any) *Query {
+	q.settings = append(q.settings, setting{key: key, val: val})
 	return q
 }
 
@@ -276,13 +288,25 @@ func (q *Query) Build() (string, []any, error) {
 		args = append(args, *q.limit)
 	}
 
-	return strings.TrimRight(sb.String(), "\n"), args, nil
+	sql := strings.TrimRight(sb.String(), "\n")
+
+	// SETTINGS
+	if len(q.settings) > 0 {
+		parts := make([]string, len(q.settings))
+		for i, s := range q.settings {
+			parts[i] = formatSetting(s)
+		}
+		sql += "\nSETTINGS " + strings.Join(parts, ", ")
+	}
+
+	return sql, args, nil
 }
 
 // UnionQuery composes multiple Queries with UNION ALL.
 type UnionQuery struct {
-	queries []*Query
-	orderBy []string
+	queries  []*Query
+	orderBy  []string
+	settings []setting
 }
 
 // UnionAll creates a new UnionQuery from the given queries.
@@ -299,6 +323,12 @@ func UnionAll(queries ...*Query) *UnionQuery {
 // OrderBy sets the ORDER BY for the outer UNION ALL query.
 func (u *UnionQuery) OrderBy(exprs ...string) *UnionQuery {
 	u.orderBy = append(u.orderBy, exprs...)
+	return u
+}
+
+// Setting appends a ClickHouse SETTINGS key=value pair to the UNION ALL query.
+func (u *UnionQuery) Setting(key string, val any) *UnionQuery {
+	u.settings = append(u.settings, setting{key: key, val: val})
 	return u
 }
 
@@ -327,5 +357,23 @@ func (u *UnionQuery) Build() (string, []any, error) {
 		sb.WriteString(strings.Join(u.orderBy, ", "))
 	}
 
+	if len(u.settings) > 0 {
+		parts := make([]string, len(u.settings))
+		for i, s := range u.settings {
+			parts[i] = formatSetting(s)
+		}
+		sb.WriteString("\nSETTINGS ")
+		sb.WriteString(strings.Join(parts, ", "))
+	}
+
 	return sb.String(), args, nil
+}
+
+func formatSetting(s setting) string {
+	switch v := s.val.(type) {
+	case string:
+		return fmt.Sprintf("%s = '%s'", s.key, v)
+	default:
+		return fmt.Sprintf("%s = %v", s.key, v)
+	}
 }
