@@ -2,15 +2,13 @@ package events
 
 import (
 	"fmt"
-	"strings"
 
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
 )
 
-const reservedPrefix = "cotton."
-
-// ValidateExternalEvents validates SDK-submitted events: no duplicate event IDs,
-// no reserved "cotton." kind prefix, and all auto_properties keys must start with '$'.
+// ValidateExternalEvents validates batch-level constraints across the repeated
+// events field that proto CEL rules cannot express (CEL rules on repeated fields
+// evaluate per-element, not across elements): no duplicate event IDs within a single batch.
 func ValidateExternalEvents(events []*eventsv1.Event) error {
 	seen := make(map[string]struct{}, len(events))
 	for i, e := range events {
@@ -18,14 +16,6 @@ func ValidateExternalEvents(events []*eventsv1.Event) error {
 			return fmt.Errorf("event[%d]: duplicate event_id %q in batch", i, e.GetEventId())
 		}
 		seen[e.GetEventId()] = struct{}{}
-		if strings.HasPrefix(e.GetKind(), reservedPrefix) {
-			return fmt.Errorf("event[%d]: kind %q uses reserved prefix %q", i, e.GetKind(), reservedPrefix)
-		}
-		for k := range e.AutoProperties {
-			if !strings.HasPrefix(k, "$") {
-				return fmt.Errorf("event[%d]: auto_properties key %q must start with '$'", i, k)
-			}
-		}
 	}
 	return nil
 }
