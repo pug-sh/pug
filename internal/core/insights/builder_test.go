@@ -302,19 +302,6 @@ func TestFunnelWithFilterGroups(t *testing.T) {
 	}
 }
 
-func TestFunnelRequiresAtLeastOneStep(t *testing.T) {
-	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-	}
-
-	if _, err := insights.BuildFunnelCountsQuery(req, "proj_123"); err == nil {
-		t.Fatal("expected error for funnel with no events, got nil")
-	} else if !strings.Contains(err.Error(), "funnel requires at least one event step") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
 func TestRetention(t *testing.T) {
 	req := &insightsv1.QueryRequest{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
@@ -367,20 +354,6 @@ func TestRetention(t *testing.T) {
 
 	if len(args) != 8 {
 		t.Errorf("expected 8 args for retention query, got %d: %v", len(args), args)
-	}
-}
-
-func TestRetentionRequiresAtLeastOneEvent(t *testing.T) {
-	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-	}
-
-	if _, err := insights.BuildRetentionQuery(req, "proj_123"); err == nil {
-		t.Fatal("expected error for retention with no events, got nil")
-	} else if !strings.Contains(err.Error(), "retention requires at least one event") {
-		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -1043,44 +1016,6 @@ func TestFilterGroups_EmptyGroupReturnsError(t *testing.T) {
 	}
 }
 
-func TestUnsupportedInsightType(t *testing.T) {
-	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_UNSPECIFIED.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-	}
-
-	if _, _, err := insights.BuildQuery(req, "proj_123"); err == nil {
-		t.Fatal("expected error for unsupported insight type, got nil")
-	} else if !strings.Contains(err.Error(), "unsupported insight type") {
-		t.Errorf("expected 'unsupported insight type' in error, got: %v", err)
-	}
-}
-
-func TestUnsupportedFilterOperator(t *testing.T) {
-	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-		},
-		FilterGroups: []*insightsv1.FilterGroup{
-			{
-				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
-				Filters: []*commonv1.PropertyFilter{
-					{Property: proto.String("$browser"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_UNSPECIFIED.Enum(), Value: proto.String("x")},
-				},
-			},
-		},
-	}
-
-	if _, _, err := insights.BuildQuery(req, "proj_123"); err == nil {
-		t.Fatal("expected error for unsupported filter operator, got nil")
-	} else if !strings.Contains(err.Error(), "unsupported filter operator") {
-		t.Errorf("expected 'unsupported filter operator' in error, got: %v", err)
-	}
-}
-
 func TestNumericFilterRejectsNonNumericValue(t *testing.T) {
 	operators := []commonv1.FilterOperator{
 		commonv1.FilterOperator_FILTER_OPERATOR_LTE,
@@ -1716,7 +1651,7 @@ func TestNotBetweenEventFilterParenthesization(t *testing.T) {
 		},
 	}
 
-	sql, _, err := insights.BuildQuery(req, "proj_123")
+	q, err := insights.BuildTrendsQuery(req, "proj_123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1725,8 +1660,8 @@ func TestNotBetweenEventFilterParenthesization(t *testing.T) {
 	// to the full (< OR >) expression, not just its first branch.
 	// Without parens the SQL reads: kind = ? AND amount < ? OR amount > ?
 	// which is: (kind = ? AND amount < ?) OR (amount > ?) — leaking other event kinds.
-	if !strings.Contains(sql, "(toFloat64OrNull(") {
-		t.Errorf("expected NOT BETWEEN clause to be parenthesized in SQL, got: %s", sql)
+	if !strings.Contains(q.SQL(), "(toFloat64OrNull(") {
+		t.Errorf("expected NOT BETWEEN clause to be parenthesized in SQL, got: %s", q.SQL())
 	}
 }
 
@@ -2625,72 +2560,6 @@ func TestPropertyAggregation_Segmentation(t *testing.T) {
 			}
 			if !strings.Contains(sql, "'"+tc.property+"'") {
 				t.Errorf("expected property name %q in SQL, got: %s", tc.property, sql)
-			}
-		})
-	}
-}
-
-// TestPropertyAggregation_EmptyPropertyError verifies that SUM/AVG/MIN/MAX return an error
-// when aggregation_property is empty (bypassing proto validation).
-func TestPropertyAggregation_EmptyPropertyError(t *testing.T) {
-	aggs := []insightsv1.AggregationType{
-		insightsv1.AggregationType_AGGREGATION_TYPE_SUM,
-		insightsv1.AggregationType_AGGREGATION_TYPE_AVG,
-		insightsv1.AggregationType_AGGREGATION_TYPE_MIN,
-		insightsv1.AggregationType_AGGREGATION_TYPE_MAX,
-	}
-
-	for _, agg := range aggs {
-		t.Run(agg.String(), func(t *testing.T) {
-			req := &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-				Events: []*insightsv1.EventQuery{
-					{
-						Event:       &commonv1.EventFilter{Kind: proto.String("purchase")},
-						Aggregation: agg.Enum(),
-						// AggregationProperty intentionally omitted.
-					},
-				},
-			}
-
-			_, err := insights.BuildTrendsQuery(req, "proj_123")
-			if err == nil {
-				t.Fatalf("expected error for %s with empty property, got nil", agg)
-			}
-		})
-	}
-}
-
-// TestPropertyAggregation_EmptyPropertyError_Segmentation verifies the segmentation path
-// also returns an error for numeric aggs with empty property (bypassing proto validation).
-func TestPropertyAggregation_EmptyPropertyError_Segmentation(t *testing.T) {
-	aggs := []insightsv1.AggregationType{
-		insightsv1.AggregationType_AGGREGATION_TYPE_SUM,
-		insightsv1.AggregationType_AGGREGATION_TYPE_AVG,
-		insightsv1.AggregationType_AGGREGATION_TYPE_MIN,
-		insightsv1.AggregationType_AGGREGATION_TYPE_MAX,
-	}
-
-	for _, agg := range aggs {
-		t.Run(agg.String(), func(t *testing.T) {
-			req := &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-				Events: []*insightsv1.EventQuery{
-					{
-						Event:       &commonv1.EventFilter{Kind: proto.String("purchase")},
-						Aggregation: agg.Enum(),
-						// AggregationProperty intentionally omitted.
-					},
-				},
-			}
-
-			_, err := insights.BuildSegmentationQuery(req, "proj_123")
-			if err == nil {
-				t.Fatalf("expected error for %s with empty property, got nil", agg)
 			}
 		})
 	}

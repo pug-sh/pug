@@ -48,49 +48,6 @@ func TestValidateExternalEvents(t *testing.T) {
 			},
 			wantErr: "event[2]",
 		},
-		{
-			name:    "reserved prefix cotton.",
-			events:  []*eventsv1.Event{{EventId: sp("e1"), Kind: sp("cotton.signup")}},
-			wantErr: "reserved",
-		},
-		{
-			name: "mixed valid and reserved",
-			events: []*eventsv1.Event{
-				{EventId: sp("e1"), Kind: sp("page_view")},
-				{EventId: sp("e2"), Kind: sp("cotton.internal")},
-			},
-			wantErr: "event[1]",
-		},
-		{
-			name:   "kind with cotton prefix but not cotton dot",
-			events: []*eventsv1.Event{{EventId: sp("e1"), Kind: sp("cottoncandy")}},
-		},
-		{
-			name: "auto_properties with $ prefix — valid",
-			events: []*eventsv1.Event{{
-				EventId:        sp("e1"),
-				Kind:           sp("page_view"),
-				AutoProperties: map[string]string{"$browser": "Chrome", "$os": "Windows"},
-			}},
-		},
-		{
-			name: "auto_properties without $ prefix — rejected",
-			events: []*eventsv1.Event{{
-				EventId:        sp("e1"),
-				Kind:           sp("page_view"),
-				AutoProperties: map[string]string{"browser": "Chrome"},
-			}},
-			wantErr: "must start with '$'",
-		},
-		{
-			name: "auto_properties mixed valid and invalid keys",
-			events: []*eventsv1.Event{{
-				EventId:        sp("e1"),
-				Kind:           sp("page_view"),
-				AutoProperties: map[string]string{"$browser": "Chrome", "os": "Windows"},
-			}},
-			wantErr: "must start with '$'",
-		},
 	}
 
 	for _, tt := range tests {

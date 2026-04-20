@@ -92,13 +92,25 @@ message PropertyFilter {
       "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_IS_NOT_SET)"
       "|| this.value == ''"
   };
+  option (buf.validate.message).cel = {
+    id: "property_filter.between_ordered_values"
+    message: "between/not_between requires values[0] <= values[1]"
+    // Relies on `numeric_value_required` running first for non-numeric input:
+    // `double(str)` raises a CEL runtime error (not NaN) on non-numeric strings,
+    // so a self-equality NaN guard would be dead code here.
+    expression:
+      "!(this.operator == common.v1.FilterOperator.FILTER_OPERATOR_BETWEEN"
+      "|| this.operator == common.v1.FilterOperator.FILTER_OPERATOR_NOT_BETWEEN)"
+      "|| this.values.size() < 2"
+      "|| double(this.values[0]) <= double(this.values[1])"
+  };
   string property = 1 [(buf.validate.field) = {
     required: true
     string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}
   }];
   FilterOperator operator = 2 [(buf.validate.field) = {
     required: true
-    enum: {defined_only: true}
+    enum: {defined_only: true, not_in: [0]}
   }];
   string value = 3;
   repeated string values = 4;
