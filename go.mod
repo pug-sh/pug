@@ -6,7 +6,7 @@ require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260209202127-80ab13bee0bf.1
 	buf.build/go/protovalidate v1.1.3
 	connectrpc.com/authn v0.2.0
-	connectrpc.com/connect v1.19.1
+	connectrpc.com/connect v1.19.2
 	connectrpc.com/cors v0.1.0
 	connectrpc.com/grpcreflect v1.3.0
 	connectrpc.com/otelconnect v0.9.0
@@ -18,9 +18,9 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
-	github.com/jackc/pgx/v5 v5.9.1
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/joho/godotenv v1.5.1
-	github.com/nats-io/nats.go v1.50.0
+	github.com/nats-io/nats.go v1.51.0
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/redis/go-redis/extra/redisotel/v9 v9.18.0
 	github.com/redis/go-redis/v9 v9.18.0
@@ -46,7 +46,7 @@ require (
 	golang.org/x/crypto v0.50.0
 	golang.org/x/net v0.53.0
 	golang.org/x/sync v0.20.0
-	google.golang.org/api v0.275.0
+	google.golang.org/api v0.276.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v2 v2.4.0
 )
