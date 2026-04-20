@@ -3,7 +3,7 @@ module github.com/fivebitsio/cotton
 go 1.26.1
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260209202127-80ab13bee0bf.1
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1
 	buf.build/go/protovalidate v1.1.3
 	connectrpc.com/authn v0.2.0
 	connectrpc.com/connect v1.19.2
