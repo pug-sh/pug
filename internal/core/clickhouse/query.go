@@ -372,7 +372,7 @@ func (u *UnionQuery) Build() (string, []any, error) {
 func formatSetting(s setting) string {
 	switch v := s.val.(type) {
 	case string:
-		return fmt.Sprintf("%s = '%s'", s.key, v)
+		return fmt.Sprintf("%s = '%s'", s.key, strings.ReplaceAll(v, "'", "''"))
 	default:
 		return fmt.Sprintf("%s = %v", s.key, v)
 	}

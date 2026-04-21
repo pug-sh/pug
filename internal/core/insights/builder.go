@@ -16,6 +16,18 @@ const DefaultPageSize int32 = 100
 // Also used as the cache exhaustion threshold in Service.GetPropertyValues.
 const PropertyValuesLimit = 100
 
+// analyticsCacheTTL is the ClickHouse query cache TTL (seconds) applied to all analytics queries.
+const analyticsCacheTTL = 60
+
+// withAnalyticsCache applies the standard analytics query-cache settings to a regular query.
+func withAnalyticsCache(q *chq.Query) *chq.Query {
+	return q.Setting("use_query_cache", 1).Setting("query_cache_ttl", analyticsCacheTTL)
+}
+
+// withAnalyticsCacheUnion applies the standard analytics query-cache settings to a UNION ALL query.
+func withAnalyticsCacheUnion(q *chq.UnionQuery) *chq.UnionQuery {
+	return q.Setting("use_query_cache", 1).Setting("query_cache_ttl", analyticsCacheTTL)
+}
 
 // Typed query structs link builder output to the correct executor method at compile time.
 
@@ -86,7 +98,7 @@ func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQue
 	if err != nil {
 		return TrendsQuery{}, err
 	}
-	sql, args, err := q.Setting("use_query_cache", 1).Setting("query_cache_ttl", 60).Build()
+	sql, args, err := withAnalyticsCacheUnion(q).Build()
 	if err != nil {
 		return TrendsQuery{}, err
 	}
@@ -99,7 +111,7 @@ func BuildSegmentationQuery(req *insightsv1.QueryRequest, projectID string) (Sca
 	if err != nil {
 		return ScalarQuery{}, err
 	}
-	sql, args, err := q.Setting("use_query_cache", 1).Setting("query_cache_ttl", 60).Build()
+	sql, args, err := withAnalyticsCache(q).Build()
 	if err != nil {
 		return ScalarQuery{}, err
 	}
@@ -112,7 +124,7 @@ func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	if err != nil {
 		return FunnelQuery{}, err
 	}
-	sql, args, err := q.Setting("use_query_cache", 1).Setting("query_cache_ttl", 60).Build()
+	sql, args, err := withAnalyticsCacheUnion(q).Build()
 	if err != nil {
 		return FunnelQuery{}, err
 	}
@@ -125,7 +137,7 @@ func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	if err != nil {
 		return FunnelTimingQuery{}, err
 	}
-	sql, args, err := q.Setting("use_query_cache", 1).Setting("query_cache_ttl", 60).Build()
+	sql, args, err := withAnalyticsCache(q).Build()
 	if err != nil {
 		return FunnelTimingQuery{}, err
 	}
@@ -149,7 +161,7 @@ func BuildRetentionQuery(req *insightsv1.QueryRequest, projectID string) (Retent
 	if err != nil {
 		return RetentionQuery{}, err
 	}
-	sql, args, err := q.Setting("use_query_cache", 1).Setting("query_cache_ttl", 60).Build()
+	sql, args, err := withAnalyticsCache(q).Build()
 	if err != nil {
 		return RetentionQuery{}, err
 	}
