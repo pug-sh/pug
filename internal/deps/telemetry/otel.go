@@ -89,14 +89,14 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 		defer cancel()
 		var errs []error
 		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(ctx, "failed to shutdown tracer provider", slogx.Error(err))
+			slog.ErrorContext(shutdownCtx, "failed to shutdown tracer provider", slogx.Error(err))
 			errs = append(errs, err)
 		}
 		if err := meterProvider.Shutdown(shutdownCtx); err != nil {
-			// ErrReaderShutdown is a benign race: the periodic reader's background
-			// goroutine may attempt a final export after Shutdown() returns.
+			// ErrReaderShutdown is returned when the periodic reader detects it has
+			// already been shut down during the final collect inside Shutdown(). Benign.
 			if !errors.Is(err, sdkmetric.ErrReaderShutdown) {
-				slog.ErrorContext(ctx, "failed to shutdown meter provider", slogx.Error(err))
+				slog.ErrorContext(shutdownCtx, "failed to shutdown meter provider", slogx.Error(err))
 				errs = append(errs, err)
 			}
 		}
@@ -104,7 +104,7 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 		// provider so its own shutdown error can still be logged.
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 		if err := loggerProvider.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(ctx, "failed to shutdown logger provider", slogx.Error(err))
+			slog.ErrorContext(shutdownCtx, "failed to shutdown logger provider", slogx.Error(err))
 			errs = append(errs, err)
 		}
 		return errors.Join(errs...)
