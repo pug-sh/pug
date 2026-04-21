@@ -2598,3 +2598,115 @@ func TestPropertyAggregation_MixedEventAggregations(t *testing.T) {
 		t.Errorf("expected count(*) for page_view event, got: %s", sql)
 	}
 }
+
+func TestAnalyticsCacheSettings(t *testing.T) {
+	tr := timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z")
+	pageView := &insightsv1.EventQuery{
+		Event:       &commonv1.EventFilter{Kind: proto.String("page_view")},
+		Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+	}
+
+	tests := []struct {
+		name string
+		sql  func(t *testing.T) string
+	}{
+		{
+			name: "BuildTrendsQuery",
+			sql: func(t *testing.T) string {
+				t.Helper()
+				q, err := insights.BuildTrendsQuery(&insightsv1.QueryRequest{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+					TimeRange:   tr,
+					Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+					Events:      []*insightsv1.EventQuery{pageView},
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL()
+			},
+		},
+		{
+			name: "BuildSegmentationQuery",
+			sql: func(t *testing.T) string {
+				t.Helper()
+				q, err := insights.BuildSegmentationQuery(&insightsv1.QueryRequest{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+					TimeRange:   tr,
+					Events:      []*insightsv1.EventQuery{pageView},
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL()
+			},
+		},
+		{
+			name: "BuildFunnelCountsQuery",
+			sql: func(t *testing.T) string {
+				t.Helper()
+				q, err := insights.BuildFunnelCountsQuery(&insightsv1.QueryRequest{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+					TimeRange:   tr,
+					Events:      []*insightsv1.EventQuery{pageView, pageView},
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL()
+			},
+		},
+		{
+			name: "BuildFunnelTimingQuery",
+			sql: func(t *testing.T) string {
+				t.Helper()
+				q, err := insights.BuildFunnelTimingQuery(&insightsv1.QueryRequest{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+					TimeRange:   tr,
+					Events:      []*insightsv1.EventQuery{pageView, pageView},
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL()
+			},
+		},
+		{
+			name: "BuildRetentionQuery",
+			sql: func(t *testing.T) string {
+				t.Helper()
+				q, err := insights.BuildRetentionQuery(&insightsv1.QueryRequest{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+					TimeRange:   tr,
+					Events:      []*insightsv1.EventQuery{pageView},
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL()
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sql := tc.sql(t)
+			if !strings.Contains(sql, "use_query_cache = 1") {
+				t.Errorf("expected use_query_cache = 1 in SQL, got: %s", sql)
+			}
+			if !strings.Contains(sql, "query_cache_ttl = 60") {
+				t.Errorf("expected query_cache_ttl = 60 in SQL, got: %s", sql)
+			}
+			settingsIdx := strings.Index(sql, "SETTINGS")
+			if settingsIdx < 0 {
+				t.Fatalf("expected SETTINGS clause, got: %s", sql)
+			}
+			// SETTINGS must appear after all query clauses (SELECT/FROM/WHERE/etc.)
+			for _, clause := range []string{"SELECT", "FROM", "WHERE"} {
+				if idx := strings.Index(sql, clause); idx >= 0 && settingsIdx < idx {
+					t.Errorf("SETTINGS appears before %s in SQL: %s", clause, sql)
+				}
+			}
+		})
+	}
+}
