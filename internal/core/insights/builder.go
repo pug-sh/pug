@@ -920,7 +920,7 @@ var granularityMaxRange = map[insightsv1.Granularity]time.Duration{
 	insightsv1.Granularity_GRANULARITY_MINUTE: 6 * time.Hour,
 	insightsv1.Granularity_GRANULARITY_HOUR:   14 * 24 * time.Hour,
 	insightsv1.Granularity_GRANULARITY_DAY:    365 * 24 * time.Hour,
-	insightsv1.Granularity_GRANULARITY_WEEK:   4*365*24*time.Hour + 24*time.Hour, // 4 years + 1 leap day
+	insightsv1.Granularity_GRANULARITY_WEEK:   4*365*24*time.Hour + 24*time.Hour, // ~4 years (accounts for up to 1 leap day)
 }
 
 // ValidateGranularityForRange returns an error if the selected granularity is too fine for the
@@ -972,7 +972,7 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 //
 // WARNING for direct callers (workers, scripts) bypassing the RPC interceptor: passing an empty
 // property with SUM/AVG/MIN/MAX produces valid SQL that silently returns 0 rather than erroring —
-// the generated expression `sum(toFloat64OrNull(ifNull(nullIf(auto_properties[”], ”), …)))`
+// the generated expression `sum(toFloat64OrNull(ifNull(nullIf(auto_properties[''], ''), …)))`
 // matches no rows. Pre-validate or accept the silent-zero behavior.
 //
 // AVG/MIN/MAX use ifNull(..., 0) because these ClickHouse aggregates return NULL when all

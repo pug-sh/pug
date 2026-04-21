@@ -65,7 +65,7 @@ func (s *server) Query(
 	projectID := principal.Project.ID
 
 	if err := coreinsights.ValidateGranularityForRange(req.Msg.GetTimeRange(), req.Msg.GetGranularity()); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("time range is too large for the selected granularity"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
 	resp := &insightsv1.QueryResponse{}
