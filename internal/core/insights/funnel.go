@@ -36,8 +36,7 @@ func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []
 	numSteps := len(kinds)
 	if numSteps == 0 {
 		err := fmt.Errorf("kinds must not be empty")
-		slog.ErrorContext(ctx, "insights: compute funnel timing failed", slogx.Error(err),
-			slog.Any("kinds", kinds))
+		slog.ErrorContext(ctx, "insights: compute funnel timing failed", slogx.Error(err))
 		return nil, err
 	}
 
