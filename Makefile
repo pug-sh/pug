@@ -78,7 +78,7 @@ build:
 
 .PHONY: fmt
 fmt:
-	goimports -w .
+	rg --files -g '*.go' -g '!internal/gen/**' | xargs -r goimports -w
 
 .PHONY: test
 test:

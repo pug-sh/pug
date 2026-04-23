@@ -393,18 +393,18 @@ func TestUnionAll(t *testing.T) {
 	})
 }
 
-// --- Setting ---
+// --- SETTINGS helpers ---
 
-func TestSetting(t *testing.T) {
-	t.Run("single setting appended after SELECT/FROM", func(t *testing.T) {
+func TestSettingsHelpers(t *testing.T) {
+	t.Run("WithQueryCache appends settings after SELECT/FROM", func(t *testing.T) {
 		sql, args := build(t,
 			chq.NewQuery().
 				Select("count(*)").
 				From("events").
 				Where(chq.Eq("project_id", "p")).
-				Setting("use_query_cache", 1),
+				WithQueryCache(60),
 		)
-		want := "SELECT count(*)\nFROM events\nWHERE project_id = ?\nSETTINGS use_query_cache = 1"
+		want := "SELECT count(*)\nFROM events\nWHERE project_id = ?\nSETTINGS use_query_cache = 1, query_cache_ttl = 60"
 		if sql != want {
 			t.Errorf("sql:\ngot  %q\nwant %q", sql, want)
 		}
@@ -413,38 +413,27 @@ func TestSetting(t *testing.T) {
 		}
 	})
 
-	t.Run("multiple settings comma-separated", func(t *testing.T) {
+	t.Run("multiple settings are comma-separated", func(t *testing.T) {
 		sql, _ := build(t,
 			chq.NewQuery().
 				Select("1").
 				From("events").
-				Setting("use_query_cache", 1).
-				Setting("query_cache_ttl", 60),
+				WithQueryCache(60).
+				WithMaxExecutionTime(30).
+				WithMaxResultRows(200),
 		)
-		if !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60") {
+		if !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60, max_execution_time = 30, max_result_rows = 200") {
 			t.Errorf("expected SETTINGS clause, got: %s", sql)
 		}
 	})
 
-	t.Run("string value is single-quoted", func(t *testing.T) {
-		sql, _ := build(t,
-			chq.NewQuery().
-				Select("1").
-				From("events").
-				Setting("query_cache_policy", "default"),
-		)
-		if !containsStr(sql, "SETTINGS query_cache_policy = 'default'") {
-			t.Errorf("expected single-quoted string value, got: %s", sql)
-		}
-	})
-
-	t.Run("settings after LIMIT", func(t *testing.T) {
+	t.Run("settings are appended after LIMIT", func(t *testing.T) {
 		sql, _ := build(t,
 			chq.NewQuery().
 				Select("1").
 				From("events").
 				Limit(10).
-				Setting("use_query_cache", 1),
+				WithMaxExecutionTime(30),
 		)
 		if !containsStr(sql, "LIMIT ?") || !containsStr(sql, "SETTINGS") {
 			t.Errorf("expected both LIMIT and SETTINGS, got: %s", sql)
@@ -456,7 +445,7 @@ func TestSetting(t *testing.T) {
 		}
 	})
 
-	t.Run("no settings omits SETTINGS clause", func(t *testing.T) {
+	t.Run("no helper calls omits SETTINGS clause", func(t *testing.T) {
 		sql, _ := build(t, chq.NewQuery().Select("1").From("events"))
 		if containsStr(sql, "SETTINGS") {
 			t.Errorf("expected no SETTINGS clause, got: %s", sql)
@@ -464,19 +453,19 @@ func TestSetting(t *testing.T) {
 	})
 }
 
-func TestUnionAllSetting(t *testing.T) {
+func TestUnionAllSettingsHelpers(t *testing.T) {
 	q1 := chq.NewQuery().Select("1 AS x").From("events").Where(chq.Eq("project_id", "p"))
 	q2 := chq.NewQuery().Select("2 AS x").From("events").Where(chq.Eq("project_id", "p"))
 
-	t.Run("single setting appended after ORDER BY", func(t *testing.T) {
+	t.Run("WithQueryCache appends settings after ORDER BY", func(t *testing.T) {
 		sql, _, err := chq.UnionAll(q1, q2).
 			OrderBy("x ASC").
-			Setting("use_query_cache", 1).
+			WithQueryCache(60).
 			Build()
 		if err != nil {
 			t.Fatalf("Build() error: %v", err)
 		}
-		if !containsStr(sql, "ORDER BY x ASC") || !containsStr(sql, "SETTINGS use_query_cache = 1") {
+		if !containsStr(sql, "ORDER BY x ASC") || !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60") {
 			t.Errorf("expected ORDER BY and SETTINGS, got: %s", sql)
 		}
 		orderIdx := indexStr(sql, "ORDER BY")
@@ -486,15 +475,16 @@ func TestUnionAllSetting(t *testing.T) {
 		}
 	})
 
-	t.Run("multiple settings comma-separated", func(t *testing.T) {
+	t.Run("multiple helper calls are comma-separated", func(t *testing.T) {
 		sql, _, err := chq.UnionAll(q1, q2).
-			Setting("use_query_cache", 1).
-			Setting("query_cache_ttl", 60).
+			WithQueryCache(60).
+			WithMaxExecutionTime(30).
+			WithMaxResultRows(100).
 			Build()
 		if err != nil {
 			t.Fatalf("Build() error: %v", err)
 		}
-		if !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60") {
+		if !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60, max_execution_time = 30, max_result_rows = 100") {
 			t.Errorf("expected SETTINGS clause, got: %s", sql)
 		}
 	})
