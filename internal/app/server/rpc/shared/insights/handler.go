@@ -76,7 +76,6 @@ func (s *server) Query(
 		}
 		rows, err := s.executor.QueryTrends(ctx, q)
 		if err != nil {
-			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		series, err := coreinsights.GroupSeries(rows, q.Properties())
@@ -99,7 +98,6 @@ func (s *server) Query(
 		}
 		value, err := s.executor.QueryScalar(ctx, q)
 		if err != nil {
-			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Segmentation{
@@ -118,7 +116,6 @@ func (s *server) Query(
 			}
 			users, err := s.executor.QueryFunnelUserEvents(ctx, q)
 			if err != nil {
-				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelRows, err = coreinsights.ComputeFunnelTiming(ctx, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
@@ -136,7 +133,6 @@ func (s *server) Query(
 			}
 			funnelRows, err = s.executor.QueryFunnel(ctx, q)
 			if err != nil {
-				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelProperties = q.Properties()
@@ -161,7 +157,6 @@ func (s *server) Query(
 		}
 		rows, err := s.executor.QueryRetention(ctx, q)
 		if err != nil {
-			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		retentionSeries, err := coreinsights.GroupRetentionSeries(rows, q.Properties())
@@ -214,7 +209,6 @@ func (s *server) SegmentUsers(
 
 	ids, err := s.executor.QueryStringColumn(ctx, sql, args)
 	if err != nil {
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
