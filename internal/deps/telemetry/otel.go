@@ -14,7 +14,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
 const shutdownTimeout = 5 * time.Second
@@ -28,8 +27,8 @@ var (
 // SetupSDK bootstraps the OpenTelemetry pipeline (propagator, tracer, meter, and
 // logger providers). It is safe to call from multiple goroutines; only the first
 // call initializes the SDK. Subsequent calls return the same shutdown function.
-// The returned shutdown is safe to call multiple times (OTel providers are no-ops
-// after the first shutdown).
+// The returned shutdown is idempotent — only the first call performs the actual
+// shutdown; subsequent calls are no-ops that return nil.
 func SetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	setupOnce.Do(func() {
 		setupResult, setupErr = doSetupSDK(ctx)
@@ -84,30 +83,31 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	}
 	slog.SetDefault(otelslog.NewLogger(serviceName, otelslog.WithLoggerProvider(loggerProvider), otelslog.WithSource(true)))
 
+	var shutdownOnce sync.Once
+	var shutdownErr error
 	shutdown := func(ctx context.Context) error {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		var errs []error
-		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "failed to shutdown tracer provider", slogx.Error(err))
-			errs = append(errs, err)
-		}
-		if err := meterProvider.Shutdown(shutdownCtx); err != nil {
-			// ErrReaderShutdown is returned when the periodic reader detects it has
-			// already been shut down during the final collect inside Shutdown(). Benign.
-			if !errors.Is(err, sdkmetric.ErrReaderShutdown) {
+		shutdownOnce.Do(func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			defer cancel()
+			var errs []error
+			if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
+				slog.ErrorContext(shutdownCtx, "failed to shutdown tracer provider", slogx.Error(err))
+				errs = append(errs, err)
+			}
+			if err := meterProvider.Shutdown(shutdownCtx); err != nil {
 				slog.ErrorContext(shutdownCtx, "failed to shutdown meter provider", slogx.Error(err))
 				errs = append(errs, err)
 			}
-		}
-		// Restore a plain stderr logger before shutting down the OTel logger
-		// provider so its own shutdown error can still be logged.
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-		if err := loggerProvider.Shutdown(shutdownCtx); err != nil {
-			slog.ErrorContext(shutdownCtx, "failed to shutdown logger provider", slogx.Error(err))
-			errs = append(errs, err)
-		}
-		return errors.Join(errs...)
+			// Restore a plain stderr logger before shutting down the OTel logger
+			// provider so its own shutdown error can still be logged.
+			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+			if err := loggerProvider.Shutdown(shutdownCtx); err != nil {
+				slog.ErrorContext(shutdownCtx, "failed to shutdown logger provider", slogx.Error(err))
+				errs = append(errs, err)
+			}
+			shutdownErr = errors.Join(errs...)
+		})
+		return shutdownErr
 	}
 
 	success = true
