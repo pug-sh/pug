@@ -76,6 +76,10 @@ build:
 	go build -o bin/cotton-worker-profile-upsert ./cmd/workers/profile/upsert
 	go build -o bin/cotton-worker-scheduler ./cmd/workers/scheduler
 
+.PHONY: fmt
+fmt:
+	goimports -w .
+
 .PHONY: test
 test:
 	go test ./...

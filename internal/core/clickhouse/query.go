@@ -138,12 +138,7 @@ type Query struct {
 	orderBy    []string
 	limit      *int64
 	ctes       []cte
-	settings   []setting
-}
-
-type setting struct {
-	key string
-	val any
+	settings   []string // pre-formatted SETTINGS key=value pairs
 }
 
 // NewQuery returns a new empty Query.
@@ -201,9 +196,21 @@ func (q *Query) Limit(n int64) *Query {
 	return q
 }
 
-// Setting appends a ClickHouse SETTINGS key=value pair to the query.
-func (q *Query) Setting(key string, val any) *Query {
-	q.settings = append(q.settings, setting{key: key, val: val})
+// WithQueryCache enables the ClickHouse query cache with the given TTL in seconds.
+func (q *Query) WithQueryCache(ttlSeconds int) *Query {
+	q.settings = append(q.settings, "use_query_cache = 1", fmt.Sprintf("query_cache_ttl = %d", ttlSeconds))
+	return q
+}
+
+// WithMaxExecutionTime sets the maximum query execution time in seconds.
+func (q *Query) WithMaxExecutionTime(seconds int) *Query {
+	q.settings = append(q.settings, fmt.Sprintf("max_execution_time = %d", seconds))
+	return q
+}
+
+// WithMaxResultRows sets the maximum number of rows in the result set.
+func (q *Query) WithMaxResultRows(n int) *Query {
+	q.settings = append(q.settings, fmt.Sprintf("max_result_rows = %d", n))
 	return q
 }
 
@@ -290,13 +297,8 @@ func (q *Query) Build() (string, []any, error) {
 
 	sql := strings.TrimRight(sb.String(), "\n")
 
-	// SETTINGS
 	if len(q.settings) > 0 {
-		parts := make([]string, len(q.settings))
-		for i, s := range q.settings {
-			parts[i] = formatSetting(s)
-		}
-		sql += "\nSETTINGS " + strings.Join(parts, ", ")
+		sql += "\nSETTINGS " + strings.Join(q.settings, ", ")
 	}
 
 	return sql, args, nil
@@ -306,7 +308,7 @@ func (q *Query) Build() (string, []any, error) {
 type UnionQuery struct {
 	queries  []*Query
 	orderBy  []string
-	settings []setting
+	settings []string // pre-formatted SETTINGS key=value pairs
 }
 
 // UnionAll creates a new UnionQuery from the given queries.
@@ -326,9 +328,21 @@ func (u *UnionQuery) OrderBy(exprs ...string) *UnionQuery {
 	return u
 }
 
-// Setting appends a ClickHouse SETTINGS key=value pair to the UNION ALL query.
-func (u *UnionQuery) Setting(key string, val any) *UnionQuery {
-	u.settings = append(u.settings, setting{key: key, val: val})
+// WithQueryCache enables the ClickHouse query cache with the given TTL in seconds.
+func (u *UnionQuery) WithQueryCache(ttlSeconds int) *UnionQuery {
+	u.settings = append(u.settings, "use_query_cache = 1", fmt.Sprintf("query_cache_ttl = %d", ttlSeconds))
+	return u
+}
+
+// WithMaxExecutionTime sets the maximum query execution time in seconds.
+func (u *UnionQuery) WithMaxExecutionTime(seconds int) *UnionQuery {
+	u.settings = append(u.settings, fmt.Sprintf("max_execution_time = %d", seconds))
+	return u
+}
+
+// WithMaxResultRows sets the maximum number of rows in the result set.
+func (u *UnionQuery) WithMaxResultRows(n int) *UnionQuery {
+	u.settings = append(u.settings, fmt.Sprintf("max_result_rows = %d", n))
 	return u
 }
 
@@ -358,22 +372,9 @@ func (u *UnionQuery) Build() (string, []any, error) {
 	}
 
 	if len(u.settings) > 0 {
-		parts := make([]string, len(u.settings))
-		for i, s := range u.settings {
-			parts[i] = formatSetting(s)
-		}
 		sb.WriteString("\nSETTINGS ")
-		sb.WriteString(strings.Join(parts, ", "))
+		sb.WriteString(strings.Join(u.settings, ", "))
 	}
 
 	return sb.String(), args, nil
-}
-
-func formatSetting(s setting) string {
-	switch v := s.val.(type) {
-	case string:
-		return fmt.Sprintf("%s = '%s'", s.key, strings.ReplaceAll(v, "'", "''"))
-	default:
-		return fmt.Sprintf("%s = %v", s.key, v)
-	}
 }

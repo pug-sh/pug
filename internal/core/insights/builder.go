@@ -21,12 +21,12 @@ const analyticsCacheTTL = 60
 
 // withAnalyticsCache applies the standard analytics query-cache settings to a regular query.
 func withAnalyticsCache(q *chq.Query) *chq.Query {
-	return q.Setting("use_query_cache", 1).Setting("query_cache_ttl", analyticsCacheTTL)
+	return q.WithQueryCache(analyticsCacheTTL)
 }
 
 // withAnalyticsCacheUnion applies the standard analytics query-cache settings to a UNION ALL query.
 func withAnalyticsCacheUnion(q *chq.UnionQuery) *chq.UnionQuery {
-	return q.Setting("use_query_cache", 1).Setting("query_cache_ttl", analyticsCacheTTL)
+	return q.WithQueryCache(analyticsCacheTTL)
 }
 
 // Typed query structs link builder output to the correct executor method at compile time.
@@ -975,9 +975,9 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 // via `event_query.property_required_for_numeric_agg`).
 //
 // WARNING for direct callers (workers, scripts) bypassing the RPC interceptor: passing an empty
-// property with SUM/AVG/MIN/MAX produces valid SQL that silently returns 0 rather than erroring —
-// the generated expression `sum(toFloat64OrNull(ifNull(nullIf(auto_properties[”], ”), …)))`
-// matches no rows. Pre-validate or accept the silent-zero behavior.
+// property with SUM/AVG/MIN/MAX produces valid SQL that silently returns 0 rather than erroring.
+// The generated expression uses nullIf(auto_properties[key], empty-string) which matches no rows.
+// Pre-validate or accept the silent-zero behavior.
 //
 // AVG/MIN/MAX use ifNull(..., 0) because these ClickHouse aggregates return NULL when all
 // inputs are NULL (e.g. all property values are non-numeric). SUM does not need this because
