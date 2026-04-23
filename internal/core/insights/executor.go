@@ -11,6 +11,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -64,6 +65,7 @@ func (e *Executor) QueryTrends(ctx context.Context, q TrendsQuery) ([]TrendRow, 
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query trends failed", slogx.Error(err),
 			slog.String("sql", sql), slog.Any("args", args))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryTrends: %w", err)
 	}
 	defer func() {
@@ -100,6 +102,7 @@ func (e *Executor) QueryScalar(ctx context.Context, q ScalarQuery) (float64, err
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query scalar failed", slogx.Error(err),
 			slog.String("sql", sql), slog.Any("args", args))
+		telemetry.RecordError(ctx, err)
 		return 0, fmt.Errorf("QueryScalar: %w", err)
 	}
 	defer func() {
@@ -134,6 +137,7 @@ func (e *Executor) QueryAggregateKeys(ctx context.Context, sql string, args []an
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query aggregate keys failed", slogx.Error(err),
 			slog.String("sql", sql), slog.Any("args", args))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryAggregateKeys: %w", err)
 	}
 	defer func() {
@@ -162,6 +166,7 @@ func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query string column failed", slogx.Error(err),
 			slog.String("sql", sql), slog.Any("args", args))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryStringColumn: %w", err)
 	}
 	defer func() {
@@ -193,6 +198,7 @@ func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow,
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query funnel failed", slogx.Error(err),
 			slog.String("sql", sql), slog.Any("args", args))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryFunnel: %w", err)
 	}
 	defer func() {
@@ -248,6 +254,7 @@ func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuer
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query funnel user events failed", slogx.Error(err),
 			slog.String("sql", sql), slog.Any("args", args))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryFunnelUserEvents: %w", err)
 	}
 	defer func() {
@@ -284,6 +291,7 @@ func (e *Executor) QueryRetention(ctx context.Context, q RetentionQuery) ([]Rete
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query retention failed", slogx.Error(err),
 			slog.String("sql", sql), slog.Any("args", args))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryRetention: %w", err)
 	}
 	defer func() {

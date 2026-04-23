@@ -8,6 +8,7 @@ import (
 	"time"
 
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
@@ -37,6 +38,7 @@ func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []
 	if numSteps == 0 {
 		err := fmt.Errorf("kinds must not be empty")
 		slog.ErrorContext(ctx, "insights: compute funnel timing failed", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 
@@ -53,6 +55,7 @@ func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []
 				u.DistinctID, len(u.Breakdowns), expectedBDs)
 			slog.ErrorContext(ctx, "insights: compute funnel timing failed", slogx.Error(err),
 				slog.String("userID", u.DistinctID))
+			telemetry.RecordError(ctx, err)
 			return nil, err
 		}
 	}
@@ -67,6 +70,7 @@ func ComputeFunnelTiming(ctx context.Context, users []FunnelUserEvents, kinds []
 				u.DistinctID, len(u.Times), len(u.StepMatches))
 			slog.ErrorContext(ctx, "insights: compute funnel timing failed", slogx.Error(err),
 				slog.String("userID", u.DistinctID))
+			telemetry.RecordError(ctx, err)
 			return nil, err
 		}
 

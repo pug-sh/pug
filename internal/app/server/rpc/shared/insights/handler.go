@@ -120,7 +120,6 @@ func (s *server) Query(
 			}
 			funnelRows, err = coreinsights.ComputeFunnelTiming(ctx, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
 			if err != nil {
-				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelProperties = q.Properties()

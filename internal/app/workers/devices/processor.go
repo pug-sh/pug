@@ -43,6 +43,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 
 	if err := protovalidate.Validate(msg); err != nil {
 		slog.ErrorContext(ctx, "device operation message failed validation", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "devices")
 	}
