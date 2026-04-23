@@ -15,6 +15,7 @@ import (
 
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
@@ -152,6 +153,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	if data, err := proto.Marshal(resp); err != nil {
 		slog.ErrorContext(ctx, "failed to marshal filter schema for cache", slogx.Error(err),
 			slog.String("projectID", projectID))
+		telemetry.RecordError(ctx, err)
 	} else if err := s.redis.Set(ctx, cacheKey, data, schemaCacheTTL).Err(); err != nil {
 		slog.WarnContext(ctx, "failed to cache filter schema", slogx.Error(err),
 			slog.String("projectID", projectID))
@@ -217,6 +219,7 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	if data, err := json.Marshal(values); err != nil {
 		slog.ErrorContext(ctx, "failed to marshal property values for cache", slogx.Error(err),
 			slog.String("projectID", projectID), slog.String("key", propertyKey))
+		telemetry.RecordError(ctx, err)
 	} else if err := s.redis.Set(ctx, cacheKey, data, ttl).Err(); err != nil {
 		slog.WarnContext(ctx, "failed to cache property values", slogx.Error(err),
 			slog.String("projectID", projectID), slog.String("key", propertyKey))

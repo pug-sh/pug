@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -80,11 +81,13 @@ func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, d
 	privKey, err := NewPrivateKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return dbwrite.Project{}, err
 	}
 	pubKey, err := NewPublicKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return dbwrite.Project{}, err
 	}
 	project, err := s.write.CreateProjectAsAdmin(ctx, dbwrite.CreateProjectAsAdminParams{
@@ -114,11 +117,13 @@ func (s *Service) CreateProject(ctx context.Context, orgID, displayName string) 
 	privKey, err := NewPrivateKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return dbwrite.Project{}, err
 	}
 	pubKey, err := NewPublicKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return dbwrite.Project{}, err
 	}
 	project, err := s.write.CreateProject(ctx, dbwrite.CreateProjectParams{

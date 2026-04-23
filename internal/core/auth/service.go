@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fivebitsio/cotton/internal/core/projects"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
@@ -50,17 +51,20 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to hash password", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 
 	privKey, err := projects.NewPrivateKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 	pubKey, err := projects.NewPublicKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 
@@ -70,6 +74,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
@@ -88,6 +93,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 			return "", ErrEmailAlreadyExists
 		}
 		slog.ErrorContext(ctx, "failed to create customer", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 
@@ -96,6 +102,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		DisplayName: "default",
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to create default org", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 
@@ -105,6 +112,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to add customer to default org", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 
@@ -116,17 +124,20 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		PublicApiKey:  pubKey,
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to create default project", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 
 	if err = tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed to commit signup transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 
 	token, err := s.generateJWT(customerID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate JWT", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 
@@ -140,6 +151,7 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 			return "", ErrInvalidCredentials
 		}
 		slog.ErrorContext(ctx, "failed to get customer by email", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 
@@ -149,12 +161,14 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 			return "", ErrInvalidCredentials
 		}
 		slog.ErrorContext(ctx, "failed to compare password hash", slogx.Error(err), slog.String("customerID", customer.ID))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 
 	token, err := s.generateJWT(customer.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate JWT", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 

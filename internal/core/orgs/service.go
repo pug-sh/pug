@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
@@ -189,6 +190,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin accept invite transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
@@ -201,6 +203,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 			return dbread.Org{}, ErrInviteNotFound
 		}
 		slog.ErrorContext(ctx, "failed to get org invitation by token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
 
@@ -224,6 +227,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 			return dbread.Org{}, ErrAlreadyMember
 		}
 		slog.ErrorContext(ctx, "failed to create org member on invite accept", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
 
@@ -232,11 +236,13 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		Status: orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String(),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to update invitation status", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed to commit accept invite transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
 
@@ -244,6 +250,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 	wOrg, err := s.write.GetOrgByID(ctx, inv.OrgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("orgID", inv.OrgID))
+		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
 	return dbread.Org{

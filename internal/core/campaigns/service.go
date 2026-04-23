@@ -9,6 +9,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -49,6 +50,7 @@ func (s *Service) CreateCampaign(ctx context.Context, arg dbwrite.CreateCampaign
 
 	if err := s.sendCampaignToNATS(ctx, campaign, scheduledTime); err != nil {
 		slog.ErrorContext(ctx, "failed to send campaign to NATS", slogx.Error(err), slog.String("campaignId", campaign.ID))
+		telemetry.RecordError(ctx, err)
 	}
 
 	return campaign, nil
@@ -90,6 +92,7 @@ func (s *Service) UpdateCampaign(ctx context.Context, arg dbwrite.UpdateCampaign
 
 	if err := s.sendCampaignToNATS(ctx, campaign, scheduledTime); err != nil {
 		slog.ErrorContext(ctx, "failed to send updated campaign to NATS", slogx.Error(err), slog.String("campaignId", campaign.ID))
+		telemetry.RecordError(ctx, err)
 	}
 
 	return campaign, nil
