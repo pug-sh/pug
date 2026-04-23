@@ -83,35 +83,39 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	}
 	slog.SetDefault(otelslog.NewLogger(serviceName, otelslog.WithLoggerProvider(loggerProvider), otelslog.WithSource(true)))
 
-	var shutdownOnce sync.Once
-	var shutdownErr error
-	shutdown := func(ctx context.Context) error {
-		shutdownOnce.Do(func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-			defer cancel()
-			var errs []error
-			if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
-				slog.ErrorContext(shutdownCtx, "failed to shutdown tracer provider", slogx.Error(err))
-				errs = append(errs, err)
-			}
-			if err := meterProvider.Shutdown(shutdownCtx); err != nil {
-				slog.ErrorContext(shutdownCtx, "failed to shutdown meter provider", slogx.Error(err))
-				errs = append(errs, err)
-			}
-			// Restore a plain stderr logger before shutting down the OTel logger
-			// provider so its own shutdown error can still be logged.
-			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-			if err := loggerProvider.Shutdown(shutdownCtx); err != nil {
-				slog.ErrorContext(shutdownCtx, "failed to shutdown logger provider", slogx.Error(err))
-				errs = append(errs, err)
-			}
-			shutdownErr = errors.Join(errs...)
-		})
-		return shutdownErr
-	}
-
 	success = true
-	return shutdown, nil
+	return onceShutdown(func() error {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		var errs []error
+		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
+			slog.ErrorContext(shutdownCtx, "failed to shutdown tracer provider", slogx.Error(err))
+			errs = append(errs, err)
+		}
+		if err := meterProvider.Shutdown(shutdownCtx); err != nil {
+			slog.ErrorContext(shutdownCtx, "failed to shutdown meter provider", slogx.Error(err))
+			errs = append(errs, err)
+		}
+		// Restore a plain stderr logger before shutting down the OTel logger
+		// provider so its own shutdown error can still be logged.
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+		if err := loggerProvider.Shutdown(shutdownCtx); err != nil {
+			slog.ErrorContext(shutdownCtx, "failed to shutdown logger provider", slogx.Error(err))
+			errs = append(errs, err)
+		}
+		return errors.Join(errs...)
+	}), nil
+}
+
+// onceShutdown wraps a shutdown function so that only the first call executes it;
+// subsequent calls return the same result without re-running the function.
+func onceShutdown(fn func() error) func(context.Context) error {
+	var once sync.Once
+	var err error
+	return func(context.Context) error {
+		once.Do(func() { err = fn() })
+		return err
+	}
 }
 
 // NewOtelInterceptor initializes the OpenTelemetry SDK and returns a Connect RPC
