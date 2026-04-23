@@ -1134,44 +1134,6 @@ func TestGranularityHourAndMonth(t *testing.T) {
 	}
 }
 
-func TestValidateGranularityForRange(t *testing.T) {
-	tests := []struct {
-		name        string
-		from, to    string
-		granularity insightsv1.Granularity
-		wantErr     bool
-	}{
-		// minute: ≤ 6h
-		{"minute within 6h", "2024-01-01T00:00:00Z", "2024-01-01T05:59:59Z", insightsv1.Granularity_GRANULARITY_MINUTE, false},
-		{"minute over 6h", "2024-01-01T00:00:00Z", "2024-01-01T07:00:00Z", insightsv1.Granularity_GRANULARITY_MINUTE, true},
-		// hour: ≤ 14 days
-		{"hour within 14d", "2024-01-01T00:00:00Z", "2024-01-14T23:59:59Z", insightsv1.Granularity_GRANULARITY_HOUR, false},
-		{"hour over 14d", "2024-01-01T00:00:00Z", "2024-01-16T00:00:00Z", insightsv1.Granularity_GRANULARITY_HOUR, true},
-		// day: ≤ 365 days
-		{"day within 365d", "2023-01-01T00:00:00Z", "2023-12-31T23:59:59Z", insightsv1.Granularity_GRANULARITY_DAY, false},
-		{"day over 365d", "2023-01-01T00:00:00Z", "2024-06-01T00:00:00Z", insightsv1.Granularity_GRANULARITY_DAY, true},
-		// week: ≤ 4 years
-		{"week within 4y", "2021-01-01T00:00:00Z", "2024-06-01T00:00:00Z", insightsv1.Granularity_GRANULARITY_WEEK, false},
-		{"week over 4y", "2019-01-01T00:00:00Z", "2024-06-01T00:00:00Z", insightsv1.Granularity_GRANULARITY_WEEK, true},
-		// month: no limit
-		{"month any range", "2010-01-01T00:00:00Z", "2024-12-31T23:59:59Z", insightsv1.Granularity_GRANULARITY_MONTH, false},
-		// unspecified: no limit (treated same as month)
-		{"unspecified any range", "2010-01-01T00:00:00Z", "2024-12-31T23:59:59Z", insightsv1.Granularity_GRANULARITY_UNSPECIFIED, false},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := insights.ValidateGranularityForRange(timeRange(tc.from, tc.to), tc.granularity)
-			if tc.wantErr && err == nil {
-				t.Error("expected error, got nil")
-			}
-			if !tc.wantErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
-}
-
 func TestGroupSeries_Breakdowns(t *testing.T) {
 	rows := []insights.TrendRow{
 		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 10},

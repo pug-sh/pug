@@ -86,6 +86,36 @@ message QueryRequest {
       "|| this.events.size() <= 20"
   };
 
+  // Finer granularities are capped to avoid expensive queries and unreadable result sets.
+  option (buf.validate.message).cel = {
+    id: "query_request.granularity_minute_max_range"
+    message: "GRANULARITY_MINUTE requires a time range of at most 6 hours"
+    expression:
+      "this.granularity != shared.insights.v1.Granularity.GRANULARITY_MINUTE"
+      "|| this.time_range.to - this.time_range.from <= duration('6h')"
+  };
+  option (buf.validate.message).cel = {
+    id: "query_request.granularity_hour_max_range"
+    message: "GRANULARITY_HOUR requires a time range of at most 14 days"
+    expression:
+      "this.granularity != shared.insights.v1.Granularity.GRANULARITY_HOUR"
+      "|| this.time_range.to - this.time_range.from <= duration('336h')"
+  };
+  option (buf.validate.message).cel = {
+    id: "query_request.granularity_day_max_range"
+    message: "GRANULARITY_DAY requires a time range of at most 365 days"
+    expression:
+      "this.granularity != shared.insights.v1.Granularity.GRANULARITY_DAY"
+      "|| this.time_range.to - this.time_range.from <= duration('8760h')"
+  };
+  option (buf.validate.message).cel = {
+    id: "query_request.granularity_week_max_range"
+    message: "GRANULARITY_WEEK requires a time range of at most 4 years"
+    expression:
+      "this.granularity != shared.insights.v1.Granularity.GRANULARITY_WEEK"
+      "|| this.time_range.to - this.time_range.from <= duration('35064h')"
+  };
+
   // SUM/AVG/MIN/MAX are only meaningful for trends and segmentation.
   // Funnel and retention builders ignore the aggregation field, so reject early.
   option (buf.validate.message).cel = {

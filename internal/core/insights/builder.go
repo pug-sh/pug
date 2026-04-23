@@ -914,30 +914,6 @@ func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any
 		Build()
 }
 
-// granularityMaxRange is the maximum time range duration allowed per granularity level.
-// Finer granularities are capped to avoid extremely expensive queries and unreadable result sets.
-var granularityMaxRange = map[insightsv1.Granularity]time.Duration{
-	insightsv1.Granularity_GRANULARITY_MINUTE: 6 * time.Hour,
-	insightsv1.Granularity_GRANULARITY_HOUR:   14 * 24 * time.Hour,
-	insightsv1.Granularity_GRANULARITY_DAY:    365 * 24 * time.Hour,
-	insightsv1.Granularity_GRANULARITY_WEEK:   4*365*24*time.Hour + 24*time.Hour, // ~4 years (accounts for up to 1 leap day)
-}
-
-// ValidateGranularityForRange returns an error if the selected granularity is too fine for the
-// given time range. Month granularity is unrestricted; all finer levels have a maximum duration.
-func ValidateGranularityForRange(tr *commonv1.TimeRange, g insightsv1.Granularity) error {
-	max, ok := granularityMaxRange[g]
-	if !ok {
-		return nil // GRANULARITY_MONTH or UNSPECIFIED — no limit
-	}
-	span := tr.GetTo().AsTime().Sub(tr.GetFrom().AsTime())
-	if span > max {
-		return fmt.Errorf("granularity %s requires a time range of at most %v (got %v)",
-			g, max, span.Truncate(time.Minute))
-	}
-	return nil
-}
-
 // granularityFunc returns the ClickHouse time-bucketing function name for the given granularity.
 func granularityFunc(g insightsv1.Granularity) string {
 	switch g {
