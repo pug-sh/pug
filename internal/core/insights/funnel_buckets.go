@@ -1,40 +1,81 @@
 package insights
 
-import "math"
+import (
+	"math"
+	"time"
+)
 
-// funnelTimingBucketUpperSec[i] is the exclusive upper bound in seconds for bucket i; last entry is MaxFloat64 ("24h+").
-var funnelTimingBucketUpperSec = []float64{30, 120, 300, 900, 3600, 21600, 86400, math.MaxFloat64}
+// funnelBucket is one entry of a histogram-bucket table. openEnded marks the final bucket;
+// its upper field is a sentinel and is not consulted for classification.
+type funnelBucket struct {
+	upper     time.Duration
+	label     string
+	openEnded bool
+}
 
-var funnelTimingBucketLabels = []string{"0-30s", "30s-2m", "2-5m", "5-15m", "15-60m", "1-6h", "6-24h", "24h+"}
+// funnelTimingBuckets defines the 8 fixed buckets for funnel conversion-time histograms.
+// Each upper bound is exclusive. Last bucket is open-ended; upper is a math.MaxInt64
+// sentinel — the openEnded flag short-circuits classification first, but the sentinel
+// also keeps "v >= upper" false for any plausible finite duration, so a future caller
+// that forgets the flag still terminates correctly.
+var funnelTimingBuckets = []funnelBucket{
+	{30 * time.Second, "0-30s", false},
+	{2 * time.Minute, "30s-2m", false},
+	{5 * time.Minute, "2-5m", false},
+	{15 * time.Minute, "5-15m", false},
+	{1 * time.Hour, "15-60m", false},
+	{6 * time.Hour, "1-6h", false},
+	{24 * time.Hour, "6-24h", false},
+	{time.Duration(math.MaxInt64), "24h+", true},
+}
 
-// medianFloat returns the median of a pre-sorted slice (average-of-two-middles for even length; 0 for empty).
-func medianFloat(sorted []float64) float64 {
+// newStepTiming returns a *StepTiming with a zero-filled Distribution of canonical
+// length len(funnelTimingBuckets). Centralising allocation here makes the
+// "Distribution length matches the bucket table" invariant structural, so the
+// proto-translation layer can index bucket metadata in lock-step without bounds checks.
+func newStepTiming() *StepTiming {
+	return &StepTiming{Distribution: make([]int64, len(funnelTimingBuckets))}
+}
+
+// medianSorted returns the median of a pre-sorted slice using average-of-two-middles for even length.
+// The bool is false when sorted is empty, distinguishing "no data" from a real zero median.
+func medianSorted(sorted []time.Duration) (time.Duration, bool) {
 	n := len(sorted)
 	if n == 0 {
-		return 0
+		return 0, false
 	}
 	if n%2 == 1 {
-		return sorted[n/2]
+		return sorted[n/2], true
 	}
-	return (sorted[n/2-1] + sorted[n/2]) / 2
+	return (sorted[n/2-1] + sorted[n/2]) / 2, true
 }
 
-// percentileFloat returns the p-th percentile of a pre-sorted slice using nearest-rank ceiling; 0 for empty.
-func percentileFloat(sorted []float64, p float64) float64 {
+// percentileSorted returns the p-th percentile of a pre-sorted slice using nearest-rank ceiling.
+// p must be in (0, 1]; NaN or out-of-range p yields (0, false), as does an empty slice.
+// The bool distinguishes valid results from "no data" or invalid input.
+func percentileSorted(sorted []time.Duration, p float64) (time.Duration, bool) {
 	n := len(sorted)
-	if n == 0 {
-		return 0
+	if n == 0 || math.IsNaN(p) || p <= 0 || p > 1 {
+		return 0, false
 	}
 	idx := max(int(math.Ceil(p*float64(n)))-1, 0)
-	return sorted[idx]
+	if idx >= n {
+		idx = n - 1
+	}
+	return sorted[idx], true
 }
 
-// distributionCounts buckets a pre-sorted slice into upperBounds-defined ranges (exclusive); O(n) two-pointer.
-func distributionCounts(sorted []float64, upperBounds []float64) []int64 {
-	counts := make([]int64, len(upperBounds))
+// distributionCountsSorted buckets a pre-sorted slice into the package-level
+// funnelTimingBuckets table (exclusive upper bounds). Single-pass: walks the input once
+// while advancing a non-decreasing bucket index. Empty input returns a zero-filled slice
+// of length len(funnelTimingBuckets), preserving "no converters" as all-zero counts.
+// The inner advance halts on the open-ended bucket, which catches everything beyond the
+// last finite bound.
+func distributionCountsSorted(sorted []time.Duration) []int64 {
+	counts := make([]int64, len(funnelTimingBuckets))
 	b := 0
 	for _, v := range sorted {
-		for b < len(upperBounds)-1 && v >= upperBounds[b] {
+		for !funnelTimingBuckets[b].openEnded && v >= funnelTimingBuckets[b].upper {
 			b++
 		}
 		counts[b]++

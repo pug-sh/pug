@@ -112,6 +112,10 @@ func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	if err != nil {
 		return FunnelTimingQuery{}, err
 	}
+	windowSec, err := EffectiveWindowSec(req)
+	if err != nil {
+		return FunnelTimingQuery{}, err
+	}
 	steps := req.GetEvents()
 	kinds := make([]string, len(steps))
 	for i, s := range steps {
@@ -121,7 +125,7 @@ func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 		sql:        sql,
 		args:       args,
 		kinds:      kinds,
-		windowSec:  EffectiveWindowSec(req),
+		windowSec:  windowSec,
 		properties: breakdownProps(req.GetBreakdowns()),
 	}, nil
 }
@@ -338,6 +342,9 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (string, 
 // then runs over the step-filtered events, and results are grouped by breakdown value.
 func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	steps := req.GetEvents()
+	if len(steps) == 0 {
+		return "", nil, fmt.Errorf("funnel: at least one step required")
+	}
 	breakdowns := req.GetBreakdowns()
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
@@ -364,7 +371,10 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (st
 
 	from := req.GetTimeRange().GetFrom().AsTime()
 	to := req.GetTimeRange().GetTo().AsTime()
-	windowSec := EffectiveWindowSec(req)
+	windowSec, err := EffectiveWindowSec(req)
+	if err != nil {
+		return "", nil, fmt.Errorf("funnel: %w", err)
+	}
 
 	windowFunnelExpr := fmt.Sprintf(
 		"windowFunnel(%d)(toDateTime(occur_time), %s) AS level",
@@ -413,7 +423,6 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (st
 		}
 		q.Select(
 			fmt.Sprintf("toFloat64(countIf(level >= %d)) AS value", i+1),
-			"toFloat64(0) AS avg_time_seconds",
 		).
 			From("funnel")
 		if len(bdGroupBy) > 0 {
@@ -448,6 +457,9 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (st
 // against the top-N CTE and falls back to '$others'.
 func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (string, []any, error) {
 	steps := req.GetEvents()
+	if len(steps) == 0 {
+		return "", nil, fmt.Errorf("funnel: at least one step required")
+	}
 	breakdowns := req.GetBreakdowns()
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")

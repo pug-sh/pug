@@ -5,6 +5,7 @@ import "buf/validate/validate.proto";
 import "common/v1/filter_schema.proto";
 import "common/v1/filters.proto";
 import "common/v1/time.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1;insightsv1";
@@ -27,10 +28,10 @@ message QueryRequest {
   };
   option (buf.validate.message).cel = {
     id: "query_request.funnel_only_conversion_window"
-    message: "conversion_window_seconds is only valid for funnel insight type"
+    message: "conversion_window is only valid for funnel insight type"
     expression:
       "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
-      "|| this.conversion_window_seconds == 0"
+      "|| !has(this.conversion_window)"
   };
   option (buf.validate.message).cel = {
     id: "query_request.funnel_only_step_timing"
@@ -77,7 +78,8 @@ message QueryRequest {
       "|| this.events.size() <= 2"
   };
 
-  // Cap funnel steps to avoid expensive windowFunnel() queries.
+  // Cap funnel steps to bound query cost — applies to both `windowFunnel()` (counts) and
+  // the array-based timing path (per-user array sizes and one StepTiming per non-entry step).
   option (buf.validate.message).cel = {
     id: "query_request.funnel_max_steps"
     message: "funnel supports at most 20 steps"
@@ -158,6 +160,9 @@ message QueryRequest {
     lte: 100
   }];
   reserved 5;
+  // tag 10 was `int32 conversion_window_seconds` before the durationpb migration; reserved
+  // to prevent the wire-incompatible legacy field from being silently re-introduced.
+  reserved conversion_window_seconds;
 
   // Optional grouped filters for top-level conditions.
   // Each group combines its filters via group.operator.
@@ -165,12 +170,22 @@ message QueryRequest {
   repeated FilterGroup filter_groups = 8;
   common.v1.LogicalOperator filter_groups_operator = 9;
 
-  // Funnel conversion window in seconds. Only used for INSIGHT_TYPE_FUNNEL.
+  // Funnel conversion window. Only used for INSIGHT_TYPE_FUNNEL.
   // The maximum time allowed from the first step to the last step per user.
-  // 0 means use the full time range as the window (no constraint).
-  int32 conversion_window_seconds = 10 [(buf.validate.field).int32.gte = 0];
+  // Absent means use the full time range as the window (no constraint).
+  // Must be a whole-second value of at least 1 second — windowFunnel only accepts
+  // integer-second windows, so sub-second precision would be silently truncated.
+  google.protobuf.Duration conversion_window = 10 [
+    (buf.validate.field).duration.gte = {seconds: 1},
+    (buf.validate.field).cel = {
+      id: "conversion_window.whole_seconds"
+      message: "conversion_window must be a whole-second value (windowFunnel only accepts integer seconds)"
+      expression: "this == duration(string(this.getSeconds()) + 's')"
+    }
+  ];
 
-  // When true, funnel queries include per-step average time-to-convert.
+  // When true, funnel queries include per-step conversion-time statistics:
+  // average, median, p95, and an 8-bucket distribution histogram.
   // Uses an array-based single-scan query that captures per-step timestamps,
   // then computes timing in Go. When false (default), uses windowFunnel() for faster counts only.
   bool include_step_timing = 11;
@@ -306,29 +321,48 @@ message FunnelSeries {
 // DistributionBucket is a single histogram bucket for conversion time distribution.
 message DistributionBucket {
   // Human-readable label, e.g. "0-30s", "30s-2m".
-  string label = 1;
-  // Exclusive upper bound in seconds. Absent for the last open-ended bucket ("24h+"); use the label instead.
-  double upper_bound_seconds = 2;
+  string label = 1 [(buf.validate.field).string.min_len = 1];
+  // Exclusive upper bound. Absent for the last open-ended bucket ("24h+"); use the label instead.
+  google.protobuf.Duration upper_bound = 2 [(buf.validate.field).duration.gte = {seconds: 0}];
   // Number of users whose conversion time fell in this bucket.
-  int64 count = 3;
+  int64 count = 3 [(buf.validate.field).int64.gte = 0];
+}
+
+// StepTiming captures conversion-time statistics for a single funnel step
+// relative to the previous step. Present on every non-entry step when
+// include_step_timing is true; absent on the entry step (no previous step
+// to convert from) and when include_step_timing is false on the request.
+// When the step has zero converters, all four fields are zero-valued: the
+// scalar durations are zero and every distribution bucket has count=0.
+// Clients should consult FunnelStep.total to distinguish "no conversion"
+// (count=0) from "fast conversion" (count>0 with low p95). When present,
+// distribution always contains exactly 8 buckets in the canonical order
+// documented on each bucket's label.
+message StepTiming {
+  // Average time from the previous step to this one.
+  google.protobuf.Duration avg = 1 [(buf.validate.field).duration.gte = {seconds: 0}];
+  // Median time from the previous step to this one.
+  google.protobuf.Duration median = 2 [(buf.validate.field).duration.gte = {seconds: 0}];
+  // 95th-percentile time from the previous step to this one.
+  google.protobuf.Duration p95 = 3 [(buf.validate.field).duration.gte = {seconds: 0}];
+  // Histogram of conversion times across 8 fixed buckets in canonical order.
+  // Length is exactly 8 by contract; clients can index by position.
+  repeated DistributionBucket distribution = 4 [(buf.validate.field).repeated = {
+    min_items: 8
+    max_items: 8
+  }];
 }
 
 // FunnelStep is a single stage in a funnel.
 message FunnelStep {
   string event_kind = 1;
   double total = 2;
-  // Average seconds from the previous step to this one.
-  // Zero for the first step or when include_step_timing is false.
-  double avg_time_to_convert_seconds = 3;
-  // Median seconds from the previous step to this one.
-  // Zero for the first step or when include_step_timing is false.
-  double median_time_to_convert_seconds = 4;
-  // 95th-percentile seconds from the previous step to this one.
-  // Zero for the first step or when include_step_timing is false.
-  double p95_time_to_convert_seconds = 5;
-  // Histogram of conversion times from the previous step to this one.
-  // Empty for the first step or when include_step_timing is false.
-  repeated DistributionBucket convert_time_distribution = 6;
+  // Conversion-time stats for this step. Absent for the first step (no previous
+  // step to convert from) and when include_step_timing is false on the request.
+  StepTiming timing = 3;
+  // tag 3 was `double avg_time_to_convert_seconds` before the durationpb migration; reserved
+  // to prevent the wire-incompatible legacy field from being silently re-introduced.
+  reserved avg_time_to_convert_seconds;
 }
 
 // RetentionResult contains one RetentionSeries per breakdown combination.
