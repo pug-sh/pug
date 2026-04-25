@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
@@ -197,7 +198,7 @@ func TestFunnelWithConversionWindow(t *testing.T) {
 			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
 			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
 		},
-		ConversionWindowSeconds: proto.Int32(86400), // 1 day
+		ConversionWindow: durationpb.New(24 * time.Hour),
 	}
 
 	q, err := insights.BuildFunnelCountsQuery(req, "proj_123")
@@ -213,9 +214,9 @@ func TestFunnelWithConversionWindow(t *testing.T) {
 
 func TestFunnelDefaultWindowIsTimeRange(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType:             insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:               timeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"), // 7 days = 604800 seconds
-		ConversionWindowSeconds: proto.Int32(0),                                            // should default to time range
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"), // 7 days = 604800 seconds
+		// ConversionWindow absent → should default to time range
 		Events: []*insightsv1.EventQuery{
 			{Event: &commonv1.EventFilter{Kind: proto.String("a")}},
 			{Event: &commonv1.EventFilter{Kind: proto.String("b")}},
@@ -238,6 +239,7 @@ func TestFunnelWithStepTiming(t *testing.T) {
 		InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
 		TimeRange:         timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		IncludeStepTiming: proto.Bool(true),
+		ConversionWindow:  durationpb.New(2 * time.Hour),
 		Events: []*insightsv1.EventQuery{
 			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
 			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
@@ -247,6 +249,12 @@ func TestFunnelWithStepTiming(t *testing.T) {
 	q, err := insights.BuildFunnelTimingQuery(req, "proj_123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	// Pin window propagation alongside SQL shape — a regression that wires the wrong window
+	// into FunnelTimingQuery would silently disable the conversion-window check in the timing
+	// path while the SQL substring assertions below still pass.
+	if got, want := q.WindowSec(), int64(2*60*60); got != want {
+		t.Errorf("WindowSec(): got %d, want %d", got, want)
 	}
 	sql, args := q.SQL(), q.Args()
 
@@ -2098,7 +2106,7 @@ func TestGroupFunnelSeries_NoBreakdown(t *testing.T) {
 		{StepIndex: 0, EventKind: "sign_up", Value: 100},
 		{StepIndex: 1, EventKind: "purchase", Value: 60},
 	}
-	series, err := insights.GroupFunnelSeries(rows, nil)
+	series, err := insights.GroupFunnelSeries(ctx, rows, nil)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -2124,7 +2132,7 @@ func TestGroupFunnelSeries_WithBreakdown(t *testing.T) {
 		{StepIndex: 0, EventKind: "sign_up", Breakdowns: []string{"Safari"}, Value: 20},
 		{StepIndex: 1, EventKind: "purchase", Breakdowns: []string{"Safari"}, Value: 10},
 	}
-	series, err := insights.GroupFunnelSeries(rows, []string{"$browser"})
+	series, err := insights.GroupFunnelSeries(ctx, rows, []string{"$browser"})
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -2191,14 +2199,14 @@ func TestGroupRetentionSeries_WithBreakdown(t *testing.T) {
 
 // TestGroupFunnelSeries_Empty verifies that nil and empty-slice inputs produce an empty result.
 func TestGroupFunnelSeries_Empty(t *testing.T) {
-	series, err := insights.GroupFunnelSeries(nil, nil)
+	series, err := insights.GroupFunnelSeries(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries(nil): %v", err)
 	}
 	if len(series) != 0 {
 		t.Errorf("expected 0 series for nil input, got %d", len(series))
 	}
-	series, err = insights.GroupFunnelSeries([]insights.FunnelRow{}, nil)
+	series, err = insights.GroupFunnelSeries(ctx, []insights.FunnelRow{}, nil)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries(empty): %v", err)
 	}
@@ -2215,7 +2223,7 @@ func TestGroupFunnelSeries_MultiBreakdown(t *testing.T) {
 		{StepIndex: 0, EventKind: "sign_up", Breakdowns: []string{"US", "Safari"}, Value: 20},
 		{StepIndex: 1, EventKind: "purchase", Breakdowns: []string{"US", "Safari"}, Value: 10},
 	}
-	series, err := insights.GroupFunnelSeries(rows, []string{"$country", "$browser"})
+	series, err := insights.GroupFunnelSeries(ctx, rows, []string{"$country", "$browser"})
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -2235,7 +2243,7 @@ func TestGroupFunnelSeries_BreakdownMismatchError(t *testing.T) {
 	rows := []insights.FunnelRow{
 		{StepIndex: 0, EventKind: "sign_up", Breakdowns: []string{}, Value: 10},
 	}
-	if _, err := insights.GroupFunnelSeries(rows, []string{"$browser"}); err == nil {
+	if _, err := insights.GroupFunnelSeries(ctx, rows, []string{"$browser"}); err == nil {
 		t.Error("expected error for mismatched breakdowns/properties")
 	}
 }
@@ -2425,7 +2433,7 @@ func TestGroupFunnelSeries_SortedInputPreservesOrder(t *testing.T) {
 		{StepIndex: 1, EventKind: "purchase", Breakdowns: []string{"US"}, Value: 30},
 	}
 
-	series, err := insights.GroupFunnelSeries(rows, []string{"$country"})
+	series, err := insights.GroupFunnelSeries(ctx, rows, []string{"$country"})
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -2449,6 +2457,145 @@ func TestGroupFunnelSeries_SortedInputPreservesOrder(t *testing.T) {
 	}
 	if series[1].Breakdown["$country"] != "US" {
 		t.Errorf("expected second series US, got %v", series[1].Breakdown)
+	}
+}
+
+// TestGroupFunnelSeries_TimingFieldsProtoTranslation verifies that a populated *StepTiming on
+// FunnelRow is correctly translated into the proto FunnelStep.timing sub-message:
+//   - median, p95, avg durations are copied.
+//   - bucket labels are applied from the package-level bucket table.
+//   - upper_bound is set on all but the open-ended last bucket.
+//   - counts are copied from the histogram slice.
+func TestGroupFunnelSeries_TimingFieldsProtoTranslation(t *testing.T) {
+	dist := []int64{3, 0, 1, 0, 0, 2, 0, 0}
+	rows := []insights.FunnelRow{
+		{StepIndex: 0, EventKind: "sign_up", Value: 10},
+		{
+			StepIndex: 1,
+			EventKind: "purchase",
+			Value:     6,
+			Timing: &insights.StepTiming{
+				Avg:          1000 * time.Second,
+				Median:       700 * time.Second,
+				P95:          5800 * time.Second,
+				Distribution: dist,
+			},
+		},
+	}
+	series, err := insights.GroupFunnelSeries(ctx, rows, nil)
+	if err != nil {
+		t.Fatalf("GroupFunnelSeries: %v", err)
+	}
+	if len(series) != 1 {
+		t.Fatalf("expected 1 series, got %d", len(series))
+	}
+	steps := series[0].Steps
+	if len(steps) != 2 {
+		t.Fatalf("expected 2 steps, got %d", len(steps))
+	}
+
+	// Step 0: no timing input → timing sub-message must be absent on the wire.
+	if steps[0].GetTiming() != nil {
+		t.Errorf("step 0 timing: expected nil, got %+v", steps[0].GetTiming())
+	}
+
+	// Step 1: durations copied verbatim through the sub-message.
+	timing := steps[1].GetTiming()
+	if timing == nil {
+		t.Fatal("step 1 timing: expected non-nil")
+	}
+	if got, want := timing.GetAvg().AsDuration(), 1000*time.Second; got != want {
+		t.Errorf("step 1 avg: got %v, want %v", got, want)
+	}
+	if got, want := timing.GetMedian().AsDuration(), 700*time.Second; got != want {
+		t.Errorf("step 1 median: got %v, want %v", got, want)
+	}
+	if got, want := timing.GetP95().AsDuration(), 5800*time.Second; got != want {
+		t.Errorf("step 1 p95: got %v, want %v", got, want)
+	}
+
+	// Step 1: distribution has 8 buckets with labels in canonical order and correct counts.
+	buckets := timing.GetDistribution()
+	if len(buckets) != 8 {
+		t.Fatalf("step 1 distribution: expected 8 buckets, got %d", len(buckets))
+	}
+	wantLabels := []string{"0-30s", "30s-2m", "2-5m", "5-15m", "15-60m", "1-6h", "6-24h", "24h+"}
+	wantUpper := []time.Duration{
+		30 * time.Second,
+		2 * time.Minute,
+		5 * time.Minute,
+		15 * time.Minute,
+		1 * time.Hour,
+		6 * time.Hour,
+		24 * time.Hour,
+	} // last bucket is open-ended
+	for i, b := range buckets {
+		if b.GetLabel() != wantLabels[i] {
+			t.Errorf("bucket %d label: got %q, want %q", i, b.GetLabel(), wantLabels[i])
+		}
+		if b.GetCount() != dist[i] {
+			t.Errorf("bucket %d count: got %d, want %d", i, b.GetCount(), dist[i])
+		}
+		if i < len(wantUpper) {
+			if b.UpperBound == nil {
+				t.Errorf("bucket %d: upper_bound should be set", i)
+				continue
+			}
+			if got := b.GetUpperBound().AsDuration(); got != wantUpper[i] {
+				t.Errorf("bucket %d upper bound: got %v, want %v", i, got, wantUpper[i])
+			}
+		} else if b.UpperBound != nil {
+			t.Errorf("bucket %d (last): upper_bound should be absent, got %v", i, b.GetUpperBound().AsDuration())
+		}
+	}
+}
+
+// TestGroupFunnelSeries_ZeroConverterStepEmitsZeroFilledBuckets verifies the nil-vs-zero-filled
+// contract survives the proto boundary: a Timing with an 8-element zero-filled distribution
+// becomes 8 proto buckets with count=0 (never coalesced to empty).
+func TestGroupFunnelSeries_ZeroConverterStepEmitsZeroFilledBuckets(t *testing.T) {
+	rows := []insights.FunnelRow{
+		{StepIndex: 0, EventKind: "sign_up", Value: 10},
+		{
+			StepIndex: 1,
+			EventKind: "purchase",
+			Value:     0,
+			Timing:    &insights.StepTiming{Distribution: make([]int64, 8)},
+		},
+	}
+	series, err := insights.GroupFunnelSeries(ctx, rows, nil)
+	if err != nil {
+		t.Fatalf("GroupFunnelSeries: %v", err)
+	}
+	step1 := series[0].Steps[1]
+	timing := step1.GetTiming()
+	if timing == nil {
+		t.Fatal("zero-converter step: timing should be present, got nil")
+	}
+	if len(timing.GetDistribution()) != 8 {
+		t.Fatalf("zero-converter step: expected 8 buckets, got %d", len(timing.GetDistribution()))
+	}
+	for i, b := range timing.GetDistribution() {
+		if b.GetCount() != 0 {
+			t.Errorf("bucket %d count: got %d, want 0", i, b.GetCount())
+		}
+	}
+}
+
+// TestGroupFunnelSeries_NilTimingOmitsSubMessage verifies step 0's semantics: a nil Timing on
+// FunnelRow produces no Timing sub-message on the proto FunnelStep, distinct from the zero-converter
+// case above where Timing is present with a zero-filled distribution.
+func TestGroupFunnelSeries_NilTimingOmitsSubMessage(t *testing.T) {
+	rows := []insights.FunnelRow{
+		{StepIndex: 0, EventKind: "sign_up", Value: 10, Timing: nil},
+	}
+	series, err := insights.GroupFunnelSeries(ctx, rows, nil)
+	if err != nil {
+		t.Fatalf("GroupFunnelSeries: %v", err)
+	}
+	if series[0].Steps[0].GetTiming() != nil {
+		t.Errorf("nil-Timing row: expected absent proto Timing sub-message, got %+v",
+			series[0].Steps[0].GetTiming())
 	}
 }
 
@@ -2747,4 +2894,152 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestEffectiveWindowSec covers all paths of the funnel-window helper directly:
+// explicit window, absent window with a finite range, and the error paths for
+// inverted/empty time ranges. Indirect tests (TestFunnelWithConversionWindow,
+// TestFunnelDefaultWindowIsTimeRange) only assert on SQL substrings, which
+// would not catch a regression that returns the wrong number of seconds.
+func TestEffectiveWindowSec(t *testing.T) {
+	from := mustTime("2024-01-01T00:00:00Z")
+	to := from.Add(7 * 24 * time.Hour)
+
+	cases := []struct {
+		name        string
+		req         *insightsv1.QueryRequest
+		want        int64
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "explicit conversion_window wins",
+			req: &insightsv1.QueryRequest{
+				TimeRange:        &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
+				ConversionWindow: durationpb.New(24 * time.Hour),
+			},
+			want: 86400,
+		},
+		{
+			name: "absent conversion_window falls back to time range",
+			req: &insightsv1.QueryRequest{
+				TimeRange: &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
+			},
+			want: 7 * 86400,
+		},
+		{
+			name: "inverted time range with no conversion_window errors",
+			req: &insightsv1.QueryRequest{
+				TimeRange: &commonv1.TimeRange{From: timestamppb.New(to), To: timestamppb.New(from)},
+			},
+			wantErr:     true,
+			errContains: "time_range",
+		},
+		{
+			name: "zero-length time range with no conversion_window errors",
+			req: &insightsv1.QueryRequest{
+				TimeRange: &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(from)},
+			},
+			wantErr:     true,
+			errContains: "time_range",
+		},
+		{
+			// Direct callers (workers/scripts/tests) bypass protovalidate's gte: 1s rule;
+			// the in-source `s <= 0` guard catches the sub-second case here.
+			name: "sub-second positive window errors (defends non-RPC callers)",
+			req: &insightsv1.QueryRequest{
+				TimeRange:        &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
+				ConversionWindow: durationpb.New(500 * time.Millisecond),
+			},
+			wantErr:     true,
+			errContains: "conversion_window",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := insights.EffectiveWindowSec(tc.req)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil (returned %d)", got)
+				}
+				if tc.errContains != "" && !strings.Contains(err.Error(), tc.errContains) {
+					t.Errorf("error message: got %q, want substring %q", err.Error(), tc.errContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestGroupFunnelSeries_TimingFieldsSubSecondTranslation pins that fractional-second
+// internal durations survive the proto-translation seam without truncation. A regression
+// that converts time.Duration through a float-seconds intermediate (e.g.
+// `time.Duration(s.Seconds()) * time.Second`) would silently round 500ms to 0.
+func TestGroupFunnelSeries_TimingFieldsSubSecondTranslation(t *testing.T) {
+	rows := []insights.FunnelRow{
+		{StepIndex: 0, EventKind: "sign_up", Value: 5},
+		{
+			StepIndex: 1,
+			EventKind: "purchase",
+			Value:     3,
+			Timing: &insights.StepTiming{
+				Avg:          500 * time.Millisecond,
+				Median:       250 * time.Millisecond,
+				P95:          1500 * time.Millisecond,
+				Distribution: make([]int64, 8),
+			},
+		},
+	}
+	series, err := insights.GroupFunnelSeries(ctx, rows, nil)
+	if err != nil {
+		t.Fatalf("GroupFunnelSeries: %v", err)
+	}
+	if len(series) != 1 {
+		t.Fatalf("expected 1 series, got %d", len(series))
+	}
+	timing := series[0].Steps[1].GetTiming()
+	if got, want := timing.GetAvg().AsDuration(), 500*time.Millisecond; got != want {
+		t.Errorf("avg: got %v, want %v", got, want)
+	}
+	if got, want := timing.GetMedian().AsDuration(), 250*time.Millisecond; got != want {
+		t.Errorf("median: got %v, want %v", got, want)
+	}
+	if got, want := timing.GetP95().AsDuration(), 1500*time.Millisecond; got != want {
+		t.Errorf("p95: got %v, want %v", got, want)
+	}
+}
+
+// TestComputeFunnelTimingMatchesCountsAtBoundary verifies that the timing path
+// (Go-side window check using strict `>`) and the counts path (windowFunnel using `<=`)
+// agree on step counts for a window-boundary scenario. Without parity, requesting
+// include_step_timing would silently change visible step counts.
+func TestComputeFunnelTimingMatchesCountsAtBoundary(t *testing.T) {
+	t0 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	users := []insights.FunnelUserEvents{
+		// Exactly at the 1-hour boundary — both paths must include this user at step 1.
+		{DistinctID: "u-boundary", Times: []time.Time{t0, t0.Add(1 * time.Hour)}, StepMatches: []int64{0, 1}},
+		// One nanosecond past the boundary — both paths must exclude this user at step 1.
+		{DistinctID: "u-just-past", Times: []time.Time{t0, t0.Add(1*time.Hour + time.Nanosecond)}, StepMatches: []int64{0, 1}},
+	}
+	rows, err := insights.ComputeFunnelTiming(ctx, "", users, []string{"a", "b"}, 3600, 0)
+	if err != nil {
+		t.Fatalf("ComputeFunnelTiming: %v", err)
+	}
+	// Expect: step 0 = 2 (both users), step 1 = 1 (only u-boundary).
+	if rows[0].Value != 2 {
+		t.Errorf("timing path step 0: got %v, want 2", rows[0].Value)
+	}
+	if rows[1].Value != 1 {
+		t.Errorf("timing path step 1 at boundary: got %v, want 1 (boundary inclusive)", rows[1].Value)
+	}
+	// windowFunnel uses `<=` for window inclusion — same result.
+	// We can't easily run windowFunnel from a unit test, but TestComputeFunnelTiming_WindowExactBoundary
+	// pins the timing-path side; this test pairs with that to cement boundary semantics.
+	// See integration_test.go for the end-to-end CH-side equivalence.
 }
