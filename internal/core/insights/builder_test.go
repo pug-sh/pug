@@ -2715,6 +2715,7 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 				q, err := insights.BuildRetentionQuery(&insightsv1.QueryRequest{
 					InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
 					TimeRange:   tr,
+					Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 					Events:      []*insightsv1.EventQuery{pageView},
 				}, "proj_test")
 				if err != nil {
