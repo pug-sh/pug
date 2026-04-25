@@ -86,6 +86,45 @@ message QueryRequest {
       "|| this.events.size() <= 20"
   };
 
+  // Per-granularity time-range caps bound query cost (partition scan range) and result set size
+  // (data points per series). Values are sized in hours; CLAUDE.md documents the human-friendly
+  // approximations.
+  option (buf.validate.message).cel = {
+    id: "query_request.granularity_minute_max_range"
+    message: "GRANULARITY_MINUTE requires a time range of at most 6 hours"
+    expression:
+      "this.granularity != shared.insights.v1.Granularity.GRANULARITY_MINUTE"
+      "|| this.time_range.to - this.time_range.from <= duration('6h')"
+  };
+  option (buf.validate.message).cel = {
+    id: "query_request.granularity_hour_max_range"
+    message: "GRANULARITY_HOUR requires a time range of at most 14 days"
+    expression:
+      "this.granularity != shared.insights.v1.Granularity.GRANULARITY_HOUR"
+      "|| this.time_range.to - this.time_range.from <= duration('336h')"
+  };
+  option (buf.validate.message).cel = {
+    id: "query_request.granularity_day_max_range"
+    message: "GRANULARITY_DAY requires a time range of at most 365 days"
+    expression:
+      "this.granularity != shared.insights.v1.Granularity.GRANULARITY_DAY"
+      "|| this.time_range.to - this.time_range.from <= duration('8760h')"
+  };
+  option (buf.validate.message).cel = {
+    id: "query_request.granularity_week_max_range"
+    message: "GRANULARITY_WEEK requires a time range of at most 1461 days (~4 years)"
+    expression:
+      "this.granularity != shared.insights.v1.Granularity.GRANULARITY_WEEK"
+      "|| this.time_range.to - this.time_range.from <= duration('35064h')"
+  };
+  option (buf.validate.message).cel = {
+    id: "query_request.granularity_month_max_range"
+    message: "GRANULARITY_MONTH requires a time range of at most 3652 days (~10 years)"
+    expression:
+      "this.granularity != shared.insights.v1.Granularity.GRANULARITY_MONTH"
+      "|| this.time_range.to - this.time_range.from <= duration('87660h')"
+  };
+
   // SUM/AVG/MIN/MAX are only meaningful for trends and segmentation.
   // Funnel and retention builders ignore the aggregation field, so reject early.
   option (buf.validate.message).cel = {
@@ -110,7 +149,7 @@ message QueryRequest {
   common.v1.TimeRange time_range = 2 [(buf.validate.field).required = true];
   Granularity granularity = 3 [(buf.validate.field) = {
     required: true
-    enum: {defined_only: true}
+    enum: {defined_only: true, not_in: [0]}
   }];
   repeated EventQuery events = 4;
   repeated Breakdown breakdowns = 6 [(buf.validate.field).repeated.max_items = 5];
@@ -175,12 +214,17 @@ enum InsightType {
   INSIGHT_TYPE_RETENTION = 4;
 }
 
+// Granularity values are listed finest → coarsest by source-order convention.
+// Going forward (post-deployment of this enum): do not reorder or renumber existing
+// values — protobuf identity is the numeric tag, not the symbol. Add new values at
+// the next free ordinal.
 enum Granularity {
   GRANULARITY_UNSPECIFIED = 0;
-  GRANULARITY_HOUR = 1;
-  GRANULARITY_DAY = 2;
-  GRANULARITY_WEEK = 3;
-  GRANULARITY_MONTH = 4;
+  GRANULARITY_MINUTE = 1;
+  GRANULARITY_HOUR = 2;
+  GRANULARITY_DAY = 3;
+  GRANULARITY_WEEK = 4;
+  GRANULARITY_MONTH = 5;
 }
 
 enum AggregationType {
