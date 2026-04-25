@@ -456,28 +456,6 @@ func TestPerUserAvg(t *testing.T) {
 	}
 }
 
-// TestGranularityDefault verifies UNSPECIFIED granularity defaults to DAY.
-func TestGranularityDefault(t *testing.T) {
-	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Granularity: insightsv1.Granularity_GRANULARITY_UNSPECIFIED.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-		},
-	}
-
-	q, err := insights.BuildTrendsQuery(req, "proj_123")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	sql := q.SQL()
-
-	if !strings.Contains(sql, "toStartOfDay") {
-		t.Errorf("expected default granularity toStartOfDay in SQL, got: %s", sql)
-	}
-}
-
 // TestBuildTrendsQuery_WithBreakdown verifies single breakdown generates CTE + conditional bucketing.
 func TestBuildTrendsQuery_WithBreakdown(t *testing.T) {
 	req := &insightsv1.QueryRequest{
@@ -1101,14 +1079,20 @@ func TestMultipleCombinedFilters(t *testing.T) {
 	}
 }
 
-func TestGranularityHourAndMonth(t *testing.T) {
+func TestGranularityFunc(t *testing.T) {
 	tests := []struct {
 		name        string
 		granularity insightsv1.Granularity
-		wantFunc    string
+		wantFunc    string // empty when wantErr is true
+		wantErr     bool
 	}{
+		{name: "minute", granularity: insightsv1.Granularity_GRANULARITY_MINUTE, wantFunc: "toStartOfMinute"},
 		{name: "hour", granularity: insightsv1.Granularity_GRANULARITY_HOUR, wantFunc: "toStartOfHour"},
+		{name: "day", granularity: insightsv1.Granularity_GRANULARITY_DAY, wantFunc: "toStartOfDay"},
+		{name: "week", granularity: insightsv1.Granularity_GRANULARITY_WEEK, wantFunc: "toStartOfWeek"},
 		{name: "month", granularity: insightsv1.Granularity_GRANULARITY_MONTH, wantFunc: "toStartOfMonth"},
+		{name: "unspecified_errors", granularity: insightsv1.Granularity_GRANULARITY_UNSPECIFIED, wantErr: true},
+		{name: "undefined_value_errors", granularity: insightsv1.Granularity(999), wantErr: true},
 	}
 
 	for _, tc := range tests {
@@ -1123,6 +1107,59 @@ func TestGranularityHourAndMonth(t *testing.T) {
 			}
 
 			q, err := insights.BuildTrendsQuery(req, "proj_123")
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(q.SQL(), tc.wantFunc) {
+				t.Errorf("expected %s in SQL, got: %s", tc.wantFunc, q.SQL())
+			}
+		})
+	}
+}
+
+// TestGranularityFunc_Retention mirrors TestGranularityFunc through BuildRetentionQuery,
+// pinning that granularityFunc routing is consistent across both insights builders.
+func TestGranularityFunc_Retention(t *testing.T) {
+	tests := []struct {
+		name        string
+		granularity insightsv1.Granularity
+		wantFunc    string // empty when wantErr is true
+		wantErr     bool
+	}{
+		{name: "minute", granularity: insightsv1.Granularity_GRANULARITY_MINUTE, wantFunc: "toStartOfMinute"},
+		{name: "hour", granularity: insightsv1.Granularity_GRANULARITY_HOUR, wantFunc: "toStartOfHour"},
+		{name: "day", granularity: insightsv1.Granularity_GRANULARITY_DAY, wantFunc: "toStartOfDay"},
+		{name: "week", granularity: insightsv1.Granularity_GRANULARITY_WEEK, wantFunc: "toStartOfWeek"},
+		{name: "month", granularity: insightsv1.Granularity_GRANULARITY_MONTH, wantFunc: "toStartOfMonth"},
+		{name: "unspecified_errors", granularity: insightsv1.Granularity_GRANULARITY_UNSPECIFIED, wantErr: true},
+		{name: "undefined_value_errors", granularity: insightsv1.Granularity(999), wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &insightsv1.QueryRequest{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+				Granularity: tc.granularity.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
+					{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
+				},
+			}
+
+			q, err := insights.BuildRetentionQuery(req, "proj_123")
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

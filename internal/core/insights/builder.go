@@ -228,7 +228,10 @@ func bucketRawExpr(i int) string {
 }
 
 func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.UnionQuery, error) {
-	granFn := granularityFunc(req.GetGranularity())
+	granFn, err := granularityFunc(req.GetGranularity())
+	if err != nil {
+		return nil, fmt.Errorf("trends: %w", err)
+	}
 	breakdowns := req.GetBreakdowns()
 	events := req.GetEvents()
 
@@ -616,7 +619,10 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 		return nil, fmt.Errorf("retention: %w", err)
 	}
 
-	granFn := granularityFunc(req.GetGranularity())
+	granFn, err := granularityFunc(req.GetGranularity())
+	if err != nil {
+		return nil, fmt.Errorf("retention: %w", err)
+	}
 	from := req.GetTimeRange().GetFrom().AsTime()
 	to := req.GetTimeRange().GetTo().AsTime()
 
@@ -945,16 +951,23 @@ func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any
 }
 
 // granularityFunc returns the ClickHouse time-bucketing function name for the given granularity.
-func granularityFunc(g insightsv1.Granularity) string {
+// Returns an error for UNSPECIFIED or undefined enum values. The RPC interceptor rejects UNSPECIFIED
+// at the field level via not_in:[0], so this only fires for direct callers (workers, scripts) that
+// bypass validation, or for future enum values not yet wired into this switch.
+func granularityFunc(g insightsv1.Granularity) (string, error) {
 	switch g {
+	case insightsv1.Granularity_GRANULARITY_MINUTE:
+		return "toStartOfMinute", nil
 	case insightsv1.Granularity_GRANULARITY_HOUR:
-		return "toStartOfHour"
+		return "toStartOfHour", nil
+	case insightsv1.Granularity_GRANULARITY_DAY:
+		return "toStartOfDay", nil
 	case insightsv1.Granularity_GRANULARITY_WEEK:
-		return "toStartOfWeek"
+		return "toStartOfWeek", nil
 	case insightsv1.Granularity_GRANULARITY_MONTH:
-		return "toStartOfMonth"
-	default: // DAY and UNSPECIFIED both default to day
-		return "toStartOfDay"
+		return "toStartOfMonth", nil
+	default:
+		return "", fmt.Errorf("granularityFunc: unsupported granularity %v", g)
 	}
 }
 
@@ -975,15 +988,24 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 // via `event_query.property_required_for_numeric_agg`).
 //
 // WARNING for direct callers (workers, scripts) bypassing the RPC interceptor: passing an empty
-// property with SUM/AVG/MIN/MAX produces valid SQL that silently returns 0 rather than erroring.
-// The generated expression uses nullIf(auto_properties[key], empty-string) which matches no rows.
-// Pre-validate or accept the silent-zero behavior.
+// property with any numeric aggregation (SUM/AVG/MIN/MAX) produces valid SQL that silently
+// returns 0 rather than erroring. For SUM the generated expression is:
 //
-// AVG/MIN/MAX use ifNull(..., 0) because these ClickHouse aggregates return NULL when all
-// inputs are NULL (e.g. all property values are non-numeric). SUM does not need this because
-// ClickHouse sum() returns 0 for all-NULL inputs. The tradeoff is that "no data" and "actual
-// zero" are indistinguishable in the result — consumers should check event counts separately
-// if the distinction matters.
+//	sum(toFloat64OrNull(ifNull(nullIf(auto_properties[EMPTY], EMPTY), custom_properties[EMPTY])))
+//
+// where EMPTY is the SQL empty-string literal (two single-quotes). For an empty property name:
+// auto_properties[EMPTY] returns empty string, nullIf maps empty → NULL, ifNull falls back to
+// custom_properties[EMPTY] (also empty), toFloat64OrNull(empty) returns NULL, sum(NULL,…) = 0.
+// AVG/MIN/MAX wrap the same toFloat64OrNull(...) in ifNull(agg(...), 0) (see switch arms below)
+// so all-NULL inputs collapse to 0 too — same observable result, different mechanism. Pre-validate
+// or accept the silent-zero behavior.
+// (Literal SQL omitted because gofmt rewrites two consecutive ASCII single-quotes into U+201D.)
+//
+// The AVG/MIN/MAX ifNull(..., 0) wrapper is also load-bearing for non-numeric data: if all
+// property values fail toFloat64OrNull (e.g. strings), the aggregate returns NULL and the wrapper
+// coerces it to 0. SUM doesn't need the wrapper because ClickHouse sum() returns 0 for all-NULL
+// natively. Either way: "no data" and "actual zero" are indistinguishable in the result —
+// consumers should check event counts separately if the distinction matters.
 func aggregationExpr(agg insightsv1.AggregationType, property string) (string, error) {
 	switch agg {
 	case insightsv1.AggregationType_AGGREGATION_TYPE_SUM,
