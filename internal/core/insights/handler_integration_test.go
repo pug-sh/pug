@@ -1,0 +1,134 @@
+package insights_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"connectrpc.com/authn"
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/fivebitsio/cotton/internal/app/server/rpc"
+	insightshandler "github.com/fivebitsio/cotton/internal/app/server/rpc/shared/insights"
+	"github.com/fivebitsio/cotton/internal/core/insights"
+	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/testutil"
+)
+
+// TestIntegration_FunnelHandlerIncludeStepTimingDispatch verifies the handler-level
+// dispatch at handler.go:116 — the `if req.Msg.GetIncludeStepTiming()` branch must
+// route to the timing-aware path. A regression that drops the check (or wires the
+// wrong builder) would silently downgrade timing requests to the counts-only path,
+// returning zero medians/p95s and an empty distribution. Earlier core-package
+// integration tests bypass the handler and so cannot catch such a dispatch error.
+func TestIntegration_FunnelHandlerIncludeStepTimingDispatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	rd := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	seedFunnelEvents(t, ctx, ch)
+
+	executor := insights.NewExecutor(ch.Conn)
+	service := insights.NewService(executor, rd.Client)
+	srv := insightshandler.NewServer(service, executor)
+
+	principal := &rpc.Principal{Project: &dbread.Project{ID: testProjectID}}
+	authedCtx := authn.SetInfo(ctx, principal)
+
+	makeReq := func(includeTiming bool) *connect.Request[insightsv1.QueryRequest] {
+		return connect.NewRequest(&insightsv1.QueryRequest{
+			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			IncludeStepTiming: proto.Bool(includeTiming),
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 2, 8, 0, 0, 0, 0, time.UTC)),
+			},
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("add_to_cart")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			},
+		})
+	}
+
+	t.Run("include_step_timing_true_populates_distribution", func(t *testing.T) {
+		resp, err := srv.Query(authedCtx, makeReq(true))
+		if err != nil {
+			t.Fatalf("Query: %v", err)
+		}
+
+		series := resp.Msg.GetFunnel().GetSeries()
+		if len(series) != 1 {
+			t.Fatalf("expected 1 series, got %d", len(series))
+		}
+		steps := series[0].GetSteps()
+		if len(steps) != 3 {
+			t.Fatalf("expected 3 steps, got %d", len(steps))
+		}
+
+		// Step 0 (entry): timing sub-message must be absent.
+		if steps[0].GetTiming() != nil {
+			t.Errorf("step 0 timing: expected nil (entry step), got %+v", steps[0].GetTiming())
+		}
+
+		// Step 1 has converters (alice, bob) — timing must be present with the full 8-bucket
+		// histogram and a positive median. If the dispatch silently routed to the counts-only
+		// path, Timing would be nil.
+		timing := steps[1].GetTiming()
+		if timing == nil {
+			t.Fatal("step 1 timing: expected non-nil (timing path not dispatched?)")
+		}
+		if got := len(timing.GetDistribution()); got != 8 {
+			t.Errorf("step 1 distribution: got len=%d, want 8", got)
+		}
+		if median := timing.GetMedian().AsDuration(); median <= 0 {
+			t.Errorf("step 1 median: got %v, want > 0", median)
+		}
+		if p95 := timing.GetP95().AsDuration(); p95 <= 0 {
+			t.Errorf("step 1 p95: got %v, want > 0", p95)
+		}
+
+		// Presence-aware bucket shape: finite buckets carry UpperBound, the open-ended last
+		// bucket has UpperBound absent. Verifies the proto-translation contract end-to-end
+		// at the dispatch path (not just at the unit-level GroupFunnelSeries test).
+		buckets := timing.GetDistribution()
+		if buckets[0].UpperBound == nil {
+			t.Errorf("bucket 0 (finite): UpperBound should be set")
+		}
+		if buckets[7].UpperBound != nil {
+			t.Errorf("bucket 7 (open-ended): UpperBound should be absent, got %v", buckets[7].GetUpperBound().AsDuration())
+		}
+	})
+
+	t.Run("include_step_timing_false_omits_timing", func(t *testing.T) {
+		resp, err := srv.Query(authedCtx, makeReq(false))
+		if err != nil {
+			t.Fatalf("Query: %v", err)
+		}
+
+		series := resp.Msg.GetFunnel().GetSeries()
+		if len(series) != 1 {
+			t.Fatalf("expected 1 series, got %d", len(series))
+		}
+		steps := series[0].GetSteps()
+		if len(steps) != 3 {
+			t.Fatalf("expected 3 steps, got %d", len(steps))
+		}
+
+		// All steps must have an absent timing sub-message when timing is disabled.
+		// If a regression always took the timing path, Timing would be populated.
+		for i, s := range steps {
+			if s.GetTiming() != nil {
+				t.Errorf("step %d timing: expected nil (timing disabled), got %+v", i, s.GetTiming())
+			}
+		}
+	})
+}

@@ -14,6 +14,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -27,12 +28,23 @@ type TrendRow struct {
 }
 
 // FunnelRow is a single funnel step aggregate for one breakdown combination.
+// Timing is nil for step 0 (entry step has no conversion time) and when timing is not requested.
 type FunnelRow struct {
-	StepIndex         int64
-	EventKind         string
-	Breakdowns        []string
-	Value             float64
-	AvgConvertSeconds float64 // average seconds from previous step; 0 for step 0 or when timing is not requested
+	StepIndex  int64
+	EventKind  string
+	Breakdowns []string
+	Value      float64
+	Timing     *StepTiming
+}
+
+// StepTiming holds the conversion-time statistics for one funnel step relative to the previous one.
+// Instances produced by ComputeFunnelTiming have Distribution of length len(funnelTimingBuckets);
+// callers constructing StepTiming directly (e.g. tests) are responsible for that invariant.
+type StepTiming struct {
+	Avg          time.Duration
+	Median       time.Duration
+	P95          time.Duration
+	Distribution []int64
 }
 
 // RetentionRow is a single retention aggregate for one cohort bucket, time bucket, and breakdown combination.
@@ -190,7 +202,7 @@ func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any
 }
 
 // QueryFunnel executes a funnel query and returns rows of
-// (step_index, event_kind[, breakdown_0..N], value, avg_time_seconds).
+// (step_index, event_kind[, breakdown_0..N], value).
 func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow, error) {
 	sql := q.SQL()
 	args := q.Args()
@@ -210,12 +222,12 @@ func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow,
 	var result []FunnelRow
 	for rows.Next() {
 		row := FunnelRow{Breakdowns: make([]string, q.NumBreakdowns())}
-		dest := make([]any, 0, 4+q.NumBreakdowns())
+		dest := make([]any, 0, 3+q.NumBreakdowns())
 		dest = append(dest, &row.StepIndex, &row.EventKind)
 		for i := range row.Breakdowns {
 			dest = append(dest, &row.Breakdowns[i])
 		}
-		dest = append(dest, &row.Value, &row.AvgConvertSeconds)
+		dest = append(dest, &row.Value)
 		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("QueryFunnel: scan: %w", err)
 		}
@@ -382,7 +394,7 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 
 // GroupFunnelSeries groups FunnelRow results into FunnelSeries, keyed by breakdown tuple.
 // The properties slice provides the property name for each breakdown dimension.
-func GroupFunnelSeries(rows []FunnelRow, properties []string) ([]*insightsv1.FunnelSeries, error) {
+func GroupFunnelSeries(ctx context.Context, rows []FunnelRow, properties []string) ([]*insightsv1.FunnelSeries, error) {
 	type seriesEntry struct {
 		breakdown map[string]string
 		steps     []*insightsv1.FunnelStep
@@ -393,7 +405,9 @@ func GroupFunnelSeries(rows []FunnelRow, properties []string) ([]*insightsv1.Fun
 
 	for _, r := range rows {
 		if len(r.Breakdowns) != len(properties) {
-			return nil, fmt.Errorf("funnel row has %d breakdowns but expected %d", len(r.Breakdowns), len(properties))
+			err := fmt.Errorf("funnel row has %d breakdowns but expected %d", len(r.Breakdowns), len(properties))
+			slog.ErrorContext(ctx, "GroupFunnelSeries: breakdown/property length mismatch", slogx.Error(err))
+			return nil, err
 		}
 		key := breakdownKey(r.Breakdowns)
 		if _, ok := entriesByKey[key]; !ok {
@@ -404,11 +418,32 @@ func GroupFunnelSeries(rows []FunnelRow, properties []string) ([]*insightsv1.Fun
 			}
 			entriesByKey[key] = &seriesEntry{breakdown: bd}
 		}
-		entriesByKey[key].steps = append(entriesByKey[key].steps, &insightsv1.FunnelStep{
-			EventKind:               proto.String(r.EventKind),
-			Total:                   proto.Float64(r.Value),
-			AvgTimeToConvertSeconds: proto.Float64(r.AvgConvertSeconds),
-		})
+		step := &insightsv1.FunnelStep{
+			EventKind: proto.String(r.EventKind),
+			Total:     proto.Float64(r.Value),
+		}
+		if r.Timing != nil {
+			// Distribution length is fixed at len(funnelTimingBuckets) by newStepTiming();
+			// no runtime check needed here.
+			buckets := make([]*insightsv1.DistributionBucket, len(r.Timing.Distribution))
+			for i, count := range r.Timing.Distribution {
+				bucket := &insightsv1.DistributionBucket{
+					Label: proto.String(funnelTimingBuckets[i].label),
+					Count: proto.Int64(count),
+				}
+				if !funnelTimingBuckets[i].openEnded {
+					bucket.UpperBound = durationpb.New(funnelTimingBuckets[i].upper)
+				}
+				buckets[i] = bucket
+			}
+			step.Timing = &insightsv1.StepTiming{
+				Avg:          durationpb.New(r.Timing.Avg),
+				Median:       durationpb.New(r.Timing.Median),
+				P95:          durationpb.New(r.Timing.P95),
+				Distribution: buckets,
+			}
+		}
+		entriesByKey[key].steps = append(entriesByKey[key].steps, step)
 	}
 
 	series := make([]*insightsv1.FunnelSeries, 0, len(orderedKeys))

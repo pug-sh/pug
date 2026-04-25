@@ -118,8 +118,10 @@ func (s *server) Query(
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
-			funnelRows, err = coreinsights.ComputeFunnelTiming(ctx, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
+			funnelRows, err = coreinsights.ComputeFunnelTiming(ctx, projectID, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
 			if err != nil {
+				// ComputeFunnelTiming logs at source; just record telemetry and translate to client error.
+				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelProperties = q.Properties()
@@ -136,10 +138,9 @@ func (s *server) Query(
 			}
 			funnelProperties = q.Properties()
 		}
-		funnelSeries, err := coreinsights.GroupFunnelSeries(funnelRows, funnelProperties)
+		funnelSeries, err := coreinsights.GroupFunnelSeries(ctx, funnelRows, funnelProperties)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to group funnel series", slogx.Error(err),
-				slog.String("projectID", projectID))
+			// GroupFunnelSeries logs at source; just record telemetry and translate to client error.
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
