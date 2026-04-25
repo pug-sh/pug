@@ -112,10 +112,12 @@ func (s *server) Query(
 			if err != nil {
 				slog.WarnContext(ctx, "failed to build funnel timing query", slogx.Error(err),
 					slog.String("projectID", projectID))
+				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 			}
 			users, err := s.executor.QueryFunnelUserEvents(ctx, q)
 			if err != nil {
+				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelRows, err = coreinsights.ComputeFunnelTiming(ctx, projectID, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
