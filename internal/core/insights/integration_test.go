@@ -541,7 +541,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryFunnelUserEvents: %v", err)
 		}
 
-		rows, err := insights.ComputeFunnelTiming(ctx, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
+		rows, err := insights.ComputeFunnelTiming(ctx, "", users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
 		if err != nil {
 			t.Fatalf("ComputeFunnelTiming: %v", err)
 		}
@@ -558,9 +558,32 @@ func TestIntegration(t *testing.T) {
 		if rows[2].Value != 1 {
 			t.Errorf("step 2 (purchase): expected 1 user, got %v", rows[2].Value)
 		}
-		// Step 1 avg time should be positive (sign_up → add_to_cart gap).
-		if rows[1].AvgConvertSeconds <= 0 {
-			t.Errorf("step 1 avg time should be > 0, got %v", rows[1].AvgConvertSeconds)
+		// Step 0 has no timing (entry step) — Timing must be nil.
+		if rows[0].Timing != nil {
+			t.Errorf("step 0 timing should be nil, got %+v", rows[0].Timing)
+		}
+		// Step 1 has 2 converters; Timing must be populated with positive avg/median/p95 and 8-bucket distribution.
+		if rows[1].Timing == nil {
+			t.Fatal("step 1 timing should be non-nil")
+		}
+		if rows[1].Timing.Avg <= 0 {
+			t.Errorf("step 1 avg time should be > 0, got %v", rows[1].Timing.Avg)
+		}
+		if rows[1].Timing.Median <= 0 {
+			t.Errorf("step 1 median should be > 0, got %v", rows[1].Timing.Median)
+		}
+		if rows[1].Timing.P95 < rows[1].Timing.Median {
+			t.Errorf("step 1 p95 (%v) should be >= median (%v)", rows[1].Timing.P95, rows[1].Timing.Median)
+		}
+		if len(rows[1].Timing.Distribution) != 8 {
+			t.Errorf("step 1 distribution length: got %d, want 8", len(rows[1].Timing.Distribution))
+		}
+		var total int64
+		for _, c := range rows[1].Timing.Distribution {
+			total += c
+		}
+		if total != 2 {
+			t.Errorf("step 1 distribution bucket sum: got %d, want 2 (matches converter count)", total)
 		}
 	})
 
@@ -640,7 +663,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryFunnel: %v", err)
 		}
 
-		series, err := insights.GroupFunnelSeries(rows, q.Properties())
+		series, err := insights.GroupFunnelSeries(ctx, rows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupFunnelSeries: %v", err)
 		}
@@ -730,7 +753,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryFunnel: %v", err)
 		}
 
-		series, err := insights.GroupFunnelSeries(rows, q.Properties())
+		series, err := insights.GroupFunnelSeries(ctx, rows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupFunnelSeries: %v", err)
 		}
@@ -783,17 +806,39 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryFunnelUserEvents: %v", err)
 		}
 
-		funnelRows, err := insights.ComputeFunnelTiming(ctx, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
+		funnelRows, err := insights.ComputeFunnelTiming(ctx, "", users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
 		if err != nil {
 			t.Fatalf("ComputeFunnelTiming: %v", err)
 		}
 
-		series, err := insights.GroupFunnelSeries(funnelRows, q.Properties())
+		series, err := insights.GroupFunnelSeries(ctx, funnelRows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupFunnelSeries: %v", err)
 		}
 		if len(series) < 2 {
 			t.Fatalf("expected at least 2 breakdown series, got %d", len(series))
+		}
+		// Each series should have 2 proto steps; step 1 with converters should populate Timing with an 8-bucket distribution.
+		for _, s := range series {
+			if len(s.Steps) != 2 {
+				t.Fatalf("series %v: expected 2 steps, got %d", s.Breakdown, len(s.Steps))
+			}
+			if s.Steps[1].GetTotal() > 0 {
+				timing := s.Steps[1].GetTiming()
+				if timing == nil {
+					t.Errorf("series %v step 1: expected non-nil Timing, got nil", s.Breakdown)
+					continue
+				}
+				if len(timing.GetDistribution()) != 8 {
+					t.Errorf("series %v step 1: expected 8 distribution buckets, got %d",
+						s.Breakdown, len(timing.GetDistribution()))
+				}
+				// Open-ended last bucket must omit upper_bound.
+				if last := timing.GetDistribution()[7]; last.UpperBound != nil {
+					t.Errorf("series %v last bucket: upper_bound should be absent, got %v",
+						s.Breakdown, last.GetUpperBound().AsDuration())
+				}
+			}
 		}
 	})
 

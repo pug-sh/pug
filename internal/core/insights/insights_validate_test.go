@@ -2,12 +2,14 @@ package insights_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"buf.build/go/protovalidate"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
@@ -377,6 +379,510 @@ func TestGranularityValidation(t *testing.T) {
 				}
 				if tt.wantField != "" && !strings.Contains(err.Error(), tt.wantField) {
 					t.Errorf("expected violation referencing field %q, got: %v", tt.wantField, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestFunnelOnlyConversionWindow exercises the funnel_only_conversion_window CEL rule.
+// The rule changed semantics this PR — from "conversion_window_seconds == 0" to
+// "!has(this.conversion_window)" — so any *set* (even zero-Duration) field on a non-funnel
+// insight type now fails validation.
+func TestFunnelOnlyConversionWindow(t *testing.T) {
+	tests := []struct {
+		name        string
+		insightType insightsv1.InsightType
+		window      *durationpb.Duration
+		wantErr     bool
+		wantRule    string
+	}{
+		{
+			name:        "funnel with window — accepted",
+			insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			window:      durationpb.New(1 * time.Hour),
+		},
+		{
+			name:        "funnel without window — accepted",
+			insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			window:      nil,
+		},
+		{
+			name:        "trends without window — accepted",
+			insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			window:      nil,
+		},
+		{
+			name:        "trends with explicit window — rejected",
+			insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			window:      durationpb.New(1 * time.Hour),
+			wantErr:     true,
+			wantRule:    "funnel_only_conversion_window",
+		},
+		{
+			name:        "retention with window — rejected",
+			insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION,
+			window:      durationpb.New(30 * time.Minute),
+			wantErr:     true,
+			wantRule:    "funnel_only_conversion_window",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validQueryRequest()
+			req.InsightType = tt.insightType.Enum()
+			req.ConversionWindow = tt.window
+			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_FUNNEL ||
+				tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_RETENTION {
+				req.Events = append(req.Events, &insightsv1.EventQuery{
+					Event: &commonv1.EventFilter{Kind: proto.String("purchase")},
+				})
+			}
+			err := protovalidate.Validate(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if tt.wantRule != "" && !hasRule(err, tt.wantRule) {
+					t.Errorf("expected rule %q in violations, got: %v", tt.wantRule, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestFunnelOnlyStepTiming exercises the funnel_only_step_timing CEL rule.
+// include_step_timing must be false on non-funnel requests.
+func TestFunnelOnlyStepTiming(t *testing.T) {
+	tests := []struct {
+		name        string
+		insightType insightsv1.InsightType
+		include     bool
+		wantErr     bool
+		wantRule    string
+	}{
+		{
+			name:        "funnel with include_step_timing=true — accepted",
+			insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			include:     true,
+		},
+		{
+			name:        "funnel with include_step_timing=false — accepted",
+			insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL,
+			include:     false,
+		},
+		{
+			name:        "trends with include_step_timing=false — accepted",
+			insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			include:     false,
+		},
+		{
+			name:        "trends with include_step_timing=true — rejected",
+			insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
+			include:     true,
+			wantErr:     true,
+			wantRule:    "funnel_only_step_timing",
+		},
+		{
+			name:        "segmentation with include_step_timing=true — rejected",
+			insightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION,
+			include:     true,
+			wantErr:     true,
+			wantRule:    "funnel_only_step_timing",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validQueryRequest()
+			req.InsightType = tt.insightType.Enum()
+			req.IncludeStepTiming = proto.Bool(tt.include)
+			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_FUNNEL {
+				req.Events = append(req.Events, &insightsv1.EventQuery{
+					Event: &commonv1.EventFilter{Kind: proto.String("purchase")},
+				})
+			}
+			err := protovalidate.Validate(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if tt.wantRule != "" && !hasRule(err, tt.wantRule) {
+					t.Errorf("expected rule %q in violations, got: %v", tt.wantRule, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestConversionWindowMinimum verifies the field-level duration.gte = {seconds: 1}
+// constraint: sub-second windows must be rejected at the boundary, since windowFunnel
+// only accepts whole-second windows.
+func TestConversionWindowMinimum(t *testing.T) {
+	tests := []struct {
+		name    string
+		window  *durationpb.Duration
+		wantErr bool
+	}{
+		{name: "1s — accepted", window: durationpb.New(1 * time.Second)},
+		{name: "1h — accepted", window: durationpb.New(1 * time.Hour)},
+		{name: "500ms — rejected (sub-second)", window: durationpb.New(500 * time.Millisecond), wantErr: true},
+		{name: "0s — rejected (sub-second)", window: durationpb.New(0), wantErr: true},
+		{name: "negative — rejected", window: durationpb.New(-1 * time.Second), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validQueryRequest()
+			req.InsightType = insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum()
+			req.Events = append(req.Events, &insightsv1.EventQuery{
+				Event: &commonv1.EventFilter{Kind: proto.String("purchase")},
+			})
+			req.ConversionWindow = tt.window
+			err := protovalidate.Validate(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestConversionWindowWholeSeconds verifies the conversion_window.whole_seconds CEL rule:
+// fractional-second durations are rejected at the boundary because windowFunnel only
+// accepts integer seconds (sub-second precision would silently truncate).
+func TestConversionWindowWholeSeconds(t *testing.T) {
+	tests := []struct {
+		name    string
+		window  *durationpb.Duration
+		wantErr bool
+	}{
+		{name: "1s — accepted", window: durationpb.New(1 * time.Second)},
+		{name: "30s — accepted", window: durationpb.New(30 * time.Second)},
+		{name: "1h — accepted", window: durationpb.New(1 * time.Hour)},
+		{name: "1500ms — rejected (sub-second precision)", window: durationpb.New(1500 * time.Millisecond), wantErr: true},
+		{name: "1s + 1ns — rejected", window: durationpb.New(time.Second + time.Nanosecond), wantErr: true},
+		{name: "2700ms — rejected", window: durationpb.New(2700 * time.Millisecond), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validQueryRequest()
+			req.InsightType = insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum()
+			req.Events = append(req.Events, &insightsv1.EventQuery{
+				Event: &commonv1.EventFilter{Kind: proto.String("purchase")},
+			})
+			req.ConversionWindow = tt.window
+			err := protovalidate.Validate(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if !hasRule(err, "conversion_window.whole_seconds") {
+					t.Errorf("expected rule conversion_window.whole_seconds in violations, got: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestStepTiming_DistributionExactly8Buckets exercises the StepTiming.distribution
+// repeated min_items: 8 / max_items: 8 constraint. StepTiming is a response message
+// (server-emitted), so this rule mainly protects against future server-side paths
+// that construct StepTiming outside newStepTiming(). The rule is verified by
+// constructing StepTiming directly and validating.
+func TestStepTiming_DistributionExactly8Buckets(t *testing.T) {
+	mkBuckets := func(n int) []*insightsv1.DistributionBucket {
+		out := make([]*insightsv1.DistributionBucket, n)
+		for i := range out {
+			out[i] = &insightsv1.DistributionBucket{Label: proto.String("bucket"), Count: proto.Int64(0)}
+		}
+		return out
+	}
+	tests := []struct {
+		name    string
+		n       int
+		wantErr bool
+	}{
+		{name: "seven_rejected", n: 7, wantErr: true},
+		{name: "eight_accepted", n: 8, wantErr: false},
+		{name: "nine_rejected", n: 9, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &insightsv1.StepTiming{Distribution: mkBuckets(tt.n)}
+			err := protovalidate.Validate(st)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected validation error for %d-bucket distribution, got nil", tt.n)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid 8-bucket distribution, got error: %v", err)
+			}
+		})
+	}
+}
+
+// mkSequentialEvents returns n EventQuery values with kinds step_0, step_1, ...
+// Used by tests that need to exercise per-event-count CEL rules.
+func mkSequentialEvents(n int) []*insightsv1.EventQuery {
+	events := make([]*insightsv1.EventQuery, n)
+	for i := range events {
+		events[i] = &insightsv1.EventQuery{
+			Event: &commonv1.EventFilter{Kind: proto.String(fmt.Sprintf("step_%d", i))},
+		}
+	}
+	return events
+}
+
+// TestFunnelMaxSteps exercises the funnel_max_steps CEL rule:
+// funnel insights cap at 20 steps; other insight types are unaffected.
+func TestFunnelMaxSteps(t *testing.T) {
+	tests := []struct {
+		name        string
+		insightType insightsv1.InsightType
+		n           int
+		wantErr     bool
+		wantRule    string
+	}{
+		{name: "funnel_1_step_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, n: 1},
+		{name: "funnel_20_steps_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, n: 20},
+		{name: "funnel_21_steps_rejected", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, n: 21, wantErr: true, wantRule: "funnel_max_steps"},
+		// Cap fires only on funnel; trends accepts arbitrarily many events.
+		{name: "trends_30_events_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS, n: 30},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validQueryRequest()
+			req.InsightType = tt.insightType.Enum()
+			req.Events = mkSequentialEvents(tt.n)
+			err := protovalidate.Validate(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if tt.wantRule != "" && !hasRule(err, tt.wantRule) {
+					t.Errorf("expected rule %q in violations, got: %v", tt.wantRule, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestRetentionMaxEvents exercises the retention_max_events CEL rule:
+// retention accepts at most 2 events (start + optional return).
+func TestRetentionMaxEvents(t *testing.T) {
+	tests := []struct {
+		name        string
+		insightType insightsv1.InsightType
+		n           int
+		wantErr     bool
+		wantRule    string
+	}{
+		{name: "retention_1_event_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, n: 1},
+		{name: "retention_2_events_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, n: 2},
+		{name: "retention_3_events_rejected", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, n: 3, wantErr: true, wantRule: "retention_max_events"},
+		// Cap fires only on retention; trends accepts arbitrarily many events.
+		{name: "trends_5_events_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS, n: 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validQueryRequest()
+			req.InsightType = tt.insightType.Enum()
+			req.Events = mkSequentialEvents(tt.n)
+			err := protovalidate.Validate(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if tt.wantRule != "" && !hasRule(err, tt.wantRule) {
+					t.Errorf("expected rule %q in violations, got: %v", tt.wantRule, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestUniqueBreakdownProperties exercises the unique_breakdown_properties CEL rule:
+// duplicate breakdown property names produce silently wrong aggregation, so reject early.
+func TestUniqueBreakdownProperties(t *testing.T) {
+	bd := func(prop string) *insightsv1.Breakdown {
+		return &insightsv1.Breakdown{Property: proto.String(prop)}
+	}
+	tests := []struct {
+		name       string
+		breakdowns []*insightsv1.Breakdown
+		wantErr    bool
+		wantRule   string
+	}{
+		{name: "no_breakdowns_accepted", breakdowns: nil},
+		{name: "single_breakdown_accepted", breakdowns: []*insightsv1.Breakdown{bd("$country")}},
+		{name: "two_unique_breakdowns_accepted", breakdowns: []*insightsv1.Breakdown{bd("$country"), bd("$browser")}},
+		{name: "two_duplicate_breakdowns_rejected", breakdowns: []*insightsv1.Breakdown{bd("$country"), bd("$country")}, wantErr: true, wantRule: "unique_breakdown_properties"},
+		{name: "duplicate_among_three_rejected", breakdowns: []*insightsv1.Breakdown{bd("$country"), bd("$browser"), bd("$country")}, wantErr: true, wantRule: "unique_breakdown_properties"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validQueryRequest()
+			req.Breakdowns = tt.breakdowns
+			err := protovalidate.Validate(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if tt.wantRule != "" && !hasRule(err, tt.wantRule) {
+					t.Errorf("expected rule %q in violations, got: %v", tt.wantRule, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestBreakdownLimitRequiresBreakdowns exercises the breakdown_limit_requires_breakdowns
+// CEL rule: a non-zero breakdown_limit without any breakdowns is a no-op (likely a client mistake).
+func TestBreakdownLimitRequiresBreakdowns(t *testing.T) {
+	bd := []*insightsv1.Breakdown{{Property: proto.String("$country")}}
+	tests := []struct {
+		name       string
+		limit      int32
+		breakdowns []*insightsv1.Breakdown
+		wantErr    bool
+		wantRule   string
+	}{
+		{name: "limit_zero_no_breakdowns_accepted", limit: 0, breakdowns: nil},
+		{name: "limit_zero_with_breakdowns_accepted", limit: 0, breakdowns: bd},
+		{name: "limit_set_with_breakdowns_accepted", limit: 10, breakdowns: bd},
+		{name: "limit_set_no_breakdowns_rejected", limit: 10, breakdowns: nil, wantErr: true, wantRule: "breakdown_limit_requires_breakdowns"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validQueryRequest()
+			req.BreakdownLimit = proto.Int32(tt.limit)
+			req.Breakdowns = tt.breakdowns
+			err := protovalidate.Validate(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if tt.wantRule != "" && !hasRule(err, tt.wantRule) {
+					t.Errorf("expected rule %q in violations, got: %v", tt.wantRule, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestSegmentationNoBreakdowns exercises the segmentation_no_breakdowns CEL rule:
+// segmentation insights ignore breakdowns at query-build time, so reject at the boundary.
+func TestSegmentationNoBreakdowns(t *testing.T) {
+	bd := []*insightsv1.Breakdown{{Property: proto.String("$country")}}
+	tests := []struct {
+		name        string
+		insightType insightsv1.InsightType
+		breakdowns  []*insightsv1.Breakdown
+		wantErr     bool
+		wantRule    string
+	}{
+		{name: "trends_with_breakdowns_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS, breakdowns: bd},
+		{name: "funnel_with_breakdowns_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, breakdowns: bd},
+		{name: "retention_with_breakdowns_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, breakdowns: bd},
+		{name: "segmentation_no_breakdowns_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION, breakdowns: nil},
+		{name: "segmentation_with_breakdowns_rejected", insightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION, breakdowns: bd, wantErr: true, wantRule: "segmentation_no_breakdowns"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validQueryRequest()
+			req.InsightType = tt.insightType.Enum()
+			req.Breakdowns = tt.breakdowns
+			// Funnel and retention require at least one event (already provided by validQueryRequest);
+			// no extra setup needed.
+			err := protovalidate.Validate(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if tt.wantRule != "" && !hasRule(err, tt.wantRule) {
+					t.Errorf("expected rule %q in violations, got: %v", tt.wantRule, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestNumericAggOnlyTrendsSegmentation exercises the numeric_agg_only_trends_segmentation CEL rule:
+// SUM/AVG/MIN/MAX are only meaningful for trends and segmentation; funnel and retention reject them.
+func TestNumericAggOnlyTrendsSegmentation(t *testing.T) {
+	tests := []struct {
+		name        string
+		insightType insightsv1.InsightType
+		agg         insightsv1.AggregationType
+		wantErr     bool
+		wantRule    string
+	}{
+		{name: "trends_SUM_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS, agg: insightsv1.AggregationType_AGGREGATION_TYPE_SUM},
+		{name: "trends_AVG_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS, agg: insightsv1.AggregationType_AGGREGATION_TYPE_AVG},
+		{name: "segmentation_MIN_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION, agg: insightsv1.AggregationType_AGGREGATION_TYPE_MIN},
+		{name: "funnel_SUM_rejected", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, agg: insightsv1.AggregationType_AGGREGATION_TYPE_SUM, wantErr: true, wantRule: "numeric_agg_only_trends_segmentation"},
+		{name: "retention_MAX_rejected", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, agg: insightsv1.AggregationType_AGGREGATION_TYPE_MAX, wantErr: true, wantRule: "numeric_agg_only_trends_segmentation"},
+		// TOTAL is non-numeric; allowed on every insight type.
+		{name: "funnel_TOTAL_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, agg: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validQueryRequest()
+			req.InsightType = tt.insightType.Enum()
+			req.Events = []*insightsv1.EventQuery{{
+				Event:               &commonv1.EventFilter{Kind: proto.String("purchase")},
+				Aggregation:         tt.agg.Enum(),
+				AggregationProperty: proto.String("amount"), // satisfies property_required_for_numeric_agg
+			}}
+			err := protovalidate.Validate(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				if tt.wantRule != "" && !hasRule(err, tt.wantRule) {
+					t.Errorf("expected rule %q in violations, got: %v", tt.wantRule, err)
 				}
 				return
 			}

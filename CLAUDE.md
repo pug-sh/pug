@@ -140,6 +140,21 @@ Breakdowns are supported for trends, funnel, and retention. Segmentation does no
   - `RetentionResult.series` → `repeated RetentionSeries` with `breakdown map<string,string>` + `cohorts repeated RetentionCohort`
   - When no breakdowns are requested, a single series with an empty `breakdown` map is returned.
 
+### Funnel Timing Statistics
+
+When `include_step_timing` is true, each `FunnelStep` includes a `StepTiming` sub-message with per-step conversion time statistics computed in Go from per-user event timestamps (no extra ClickHouse query needed). All timing scalars are `google.protobuf.Duration`:
+
+- `StepTiming.avg` — mean
+- `StepTiming.median` — average-of-two-middles median
+- `StepTiming.p95` — nearest-rank ceiling p95
+- `StepTiming.distribution` — `repeated DistributionBucket` histogram across 8 fixed buckets: `0-30s`, `30s-2m`, `2-5m`, `5-15m`, `15-60m`, `1-6h`, `6-24h`, `24h+`
+
+`FunnelStep.timing` is **absent** (nil) for step 0 (the entry step has no conversion time) and when `include_step_timing` is false. Steps with zero converters still emit `Timing` with a zero-filled distribution slice (not absent) — this distinguishes "timing not applicable" (step 0, `nil`) from "nobody converted yet" (allocated zeros). `DistributionBucket.upper_bound` (`google.protobuf.Duration`) is absent on the open-ended last bucket; clients should use `label` for display in that case.
+
+The request-side `QueryRequest.conversion_window` is also a `google.protobuf.Duration`. Validated by two rules at the interceptor: a field-level `gte: 1s` rejects sub-second values (e.g. `500ms`), and a CEL `whole_seconds` rule rejects fractional-second values (e.g. `2.5s`, `1s + 1ns`) — `windowFunnel` accepts only integer-second windows, so anything else would silently truncate. When absent, the conversion window defaults to the full time range.
+
+**Implementation:** `internal/core/insights/funnel_buckets.go` holds the bucket table (`funnelBucket` struct: `upper time.Duration`, `label string`, `openEnded bool`) and three pure helpers for median, percentile, and bucketing a pre-sorted slice. The funnel-timing compute function collects raw per-user deltas (`time.Duration`), sorts once, and calls the helpers; the proto-translation layer wraps the `time.Duration` results in `*durationpb.Duration` at the package boundary. Tests pin both the structural bucket invariants (strictly ascending bounds, `time.Duration(math.MaxInt64)` sentinel for the open-ended last bucket, exactly one open-ended bucket) and the user-visible nil-vs-zero-filled distribution distinction.
+
 ### Insights Granularity
 
 `QueryRequest.granularity` controls the time-bucket size for trends and retention queries. Supported values (ordered finest → coarsest):
