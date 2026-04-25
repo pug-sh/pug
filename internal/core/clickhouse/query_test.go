@@ -418,11 +418,9 @@ func TestSettingsHelpers(t *testing.T) {
 			chq.NewQuery().
 				Select("1").
 				From("events").
-				WithQueryCache(60).
-				WithMaxExecutionTime(30).
-				WithMaxResultRows(200),
+				WithQueryCache(60),
 		)
-		if !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60, max_execution_time = 30, max_result_rows = 200") {
+		if !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60") {
 			t.Errorf("expected SETTINGS clause, got: %s", sql)
 		}
 	})
@@ -433,7 +431,7 @@ func TestSettingsHelpers(t *testing.T) {
 				Select("1").
 				From("events").
 				Limit(10).
-				WithMaxExecutionTime(30),
+				WithQueryCache(60),
 		)
 		if !containsStr(sql, "LIMIT ?") || !containsStr(sql, "SETTINGS") {
 			t.Errorf("expected both LIMIT and SETTINGS, got: %s", sql)
@@ -478,13 +476,11 @@ func TestUnionAllSettingsHelpers(t *testing.T) {
 	t.Run("multiple helper calls are comma-separated", func(t *testing.T) {
 		sql, _, err := chq.UnionAll(q1, q2).
 			WithQueryCache(60).
-			WithMaxExecutionTime(30).
-			WithMaxResultRows(100).
 			Build()
 		if err != nil {
 			t.Fatalf("Build() error: %v", err)
 		}
-		if !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60, max_execution_time = 30, max_result_rows = 100") {
+		if !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60") {
 			t.Errorf("expected SETTINGS clause, got: %s", sql)
 		}
 	})

@@ -202,18 +202,6 @@ func (q *Query) WithQueryCache(ttlSeconds int) *Query {
 	return q
 }
 
-// WithMaxExecutionTime sets the maximum query execution time in seconds.
-func (q *Query) WithMaxExecutionTime(seconds int) *Query {
-	q.settings = append(q.settings, fmt.Sprintf("max_execution_time = %d", seconds))
-	return q
-}
-
-// WithMaxResultRows sets the maximum number of rows in the result set.
-func (q *Query) WithMaxResultRows(n int) *Query {
-	q.settings = append(q.settings, fmt.Sprintf("max_result_rows = %d", n))
-	return q
-}
-
 // With adds a named CTE. The sub-query's args are emitted before the main query's args.
 // Panics if sub is nil — pass a non-nil *Query or guard with a nil check before calling.
 func (q *Query) With(name string, sub *Query) *Query {
@@ -331,18 +319,6 @@ func (u *UnionQuery) OrderBy(exprs ...string) *UnionQuery {
 // WithQueryCache enables the ClickHouse query cache with the given TTL in seconds.
 func (u *UnionQuery) WithQueryCache(ttlSeconds int) *UnionQuery {
 	u.settings = append(u.settings, "use_query_cache = 1", fmt.Sprintf("query_cache_ttl = %d", ttlSeconds))
-	return u
-}
-
-// WithMaxExecutionTime sets the maximum query execution time in seconds.
-func (u *UnionQuery) WithMaxExecutionTime(seconds int) *UnionQuery {
-	u.settings = append(u.settings, fmt.Sprintf("max_execution_time = %d", seconds))
-	return u
-}
-
-// WithMaxResultRows sets the maximum number of rows in the result set.
-func (u *UnionQuery) WithMaxResultRows(n int) *UnionQuery {
-	u.settings = append(u.settings, fmt.Sprintf("max_result_rows = %d", n))
 	return u
 }
 

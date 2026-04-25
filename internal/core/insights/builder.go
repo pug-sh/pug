@@ -16,7 +16,9 @@ const DefaultPageSize int32 = 100
 // Also used as the cache exhaustion threshold in Service.GetPropertyValues.
 const PropertyValuesLimit = 100
 
-// analyticsCacheTTL is the ClickHouse query cache TTL (seconds) applied to all analytics queries.
+// analyticsCacheTTL is the ClickHouse query cache TTL (seconds) for cacheable insight builders.
+// Cached reads can lag freshly written data for up to this TTL, and ReplacingMergeTree merges
+// can make that staleness more noticeable immediately after inserts.
 const analyticsCacheTTL = 60
 
 // withAnalyticsCache applies the standard analytics query-cache settings to a regular query.
@@ -100,7 +102,7 @@ func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQue
 	}
 	sql, args, err := withAnalyticsCacheUnion(q).Build()
 	if err != nil {
-		return TrendsQuery{}, err
+		return TrendsQuery{}, fmt.Errorf("trends: %w", err)
 	}
 	return TrendsQuery{sql: sql, args: args, properties: breakdownProps(req.GetBreakdowns())}, nil
 }
@@ -113,7 +115,7 @@ func BuildSegmentationQuery(req *insightsv1.QueryRequest, projectID string) (Sca
 	}
 	sql, args, err := withAnalyticsCache(q).Build()
 	if err != nil {
-		return ScalarQuery{}, err
+		return ScalarQuery{}, fmt.Errorf("segmentation: %w", err)
 	}
 	return ScalarQuery{sql: sql, args: args}, nil
 }
@@ -126,7 +128,7 @@ func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	}
 	sql, args, err := withAnalyticsCacheUnion(q).Build()
 	if err != nil {
-		return FunnelQuery{}, err
+		return FunnelQuery{}, fmt.Errorf("funnel counts: %w", err)
 	}
 	return FunnelQuery{sql: sql, args: args, properties: breakdownProps(req.GetBreakdowns())}, nil
 }
@@ -139,7 +141,7 @@ func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	}
 	sql, args, err := withAnalyticsCache(q).Build()
 	if err != nil {
-		return FunnelTimingQuery{}, err
+		return FunnelTimingQuery{}, fmt.Errorf("funnel timing: %w", err)
 	}
 	steps := req.GetEvents()
 	kinds := make([]string, len(steps))
@@ -163,7 +165,7 @@ func BuildRetentionQuery(req *insightsv1.QueryRequest, projectID string) (Retent
 	}
 	sql, args, err := withAnalyticsCache(q).Build()
 	if err != nil {
-		return RetentionQuery{}, err
+		return RetentionQuery{}, fmt.Errorf("retention: %w", err)
 	}
 	return RetentionQuery{sql: sql, args: args, properties: breakdownProps(req.GetBreakdowns())}, nil
 }
@@ -999,7 +1001,7 @@ func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
 // AVG/MIN/MAX wrap the same toFloat64OrNull(...) in ifNull(agg(...), 0) (see switch arms below)
 // so all-NULL inputs collapse to 0 too — same observable result, different mechanism. Pre-validate
 // or accept the silent-zero behavior.
-// (Literal SQL omitted because gofmt rewrites two consecutive ASCII single-quotes into U+201D.)
+// (Literal SQL omitted to keep formatter substitutions out of this comment block.)
 //
 // The AVG/MIN/MAX ifNull(..., 0) wrapper is also load-bearing for non-numeric data: if all
 // property values fail toFloat64OrNull (e.g. strings), the aggregate returns NULL and the wrapper
