@@ -160,9 +160,6 @@ message QueryRequest {
     lte: 100
   }];
   reserved 5;
-  // tag 10 was `int32 conversion_window_seconds` before the durationpb migration; reserved
-  // to prevent the wire-incompatible legacy field from being silently re-introduced.
-  reserved conversion_window_seconds;
 
   // Optional grouped filters for top-level conditions.
   // Each group combines its filters via group.operator.
@@ -360,9 +357,6 @@ message FunnelStep {
   // Conversion-time stats for this step. Absent for the first step (no previous
   // step to convert from) and when include_step_timing is false on the request.
   StepTiming timing = 3;
-  // tag 3 was `double avg_time_to_convert_seconds` before the durationpb migration; reserved
-  // to prevent the wire-incompatible legacy field from being silently re-introduced.
-  reserved avg_time_to_convert_seconds;
 }
 
 // RetentionResult contains one RetentionSeries per breakdown combination.
