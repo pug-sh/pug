@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	protovalidatemw "connectrpc.com/validate"
 	"connectrpc.com/connect"
+	protovalidatemw "connectrpc.com/validate"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -82,4 +82,3 @@ func (s *interceptorTestServer) Query(
 	s.onQuery()
 	return connect.NewResponse(&insightsv1.QueryResponse{}), nil
 }
-
