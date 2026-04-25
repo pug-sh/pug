@@ -1640,7 +1640,7 @@ var File_shared_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8a\"\n" +
+	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x84\"\n" +
 	"\fQueryRequest\x12Q\n" +
 	"\finsight_type\x18\x01 \x01(\x0e2\x1f.shared.insights.v1.InsightTypeB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\vinsightType\x12;\n" +
@@ -1672,7 +1672,7 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"'query_request.granularity_day_max_range\x129GRANULARITY_DAY requires a time range of at most 365 days\x1a\x83\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_DAY|| this.time_range.to - this.time_range.from <= duration('8760h')\x1a\xfa\x01\n" +
 	"(query_request.granularity_week_max_range\x12FGRANULARITY_WEEK requires a time range of at most 1461 days (~4 years)\x1a\x85\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_WEEK|| this.time_range.to - this.time_range.from <= duration('35064h')\x1a\xfe\x01\n" +
 	")query_request.granularity_month_max_range\x12HGRANULARITY_MONTH requires a time range of at most 3652 days (~10 years)\x1a\x86\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_MONTH|| this.time_range.to - this.time_range.from <= duration('87660h')\x1a\xaf\x04\n" +
-	"2query_request.numeric_agg_only_trends_segmentation\x12PSUM/AVG/MIN/MAX aggregation types are only supported for trends and segmentation\x1a\xa6\x03this.insight_type in [  shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS,  shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION] || this.events.all(e,  !(e.aggregation in [    shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,    shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX  ]))J\x04\b\x05\x10\x06\"\xaa\x02\n" +
+	"2query_request.numeric_agg_only_trends_segmentation\x12PSUM/AVG/MIN/MAX aggregation types are only supported for trends and segmentation\x1a\xa6\x03this.insight_type in [  shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS,  shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION] || this.events.all(e,  !(e.aggregation in [    shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,    shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX  ]))\"\xaa\x02\n" +
 	"\rQueryResponse\x12:\n" +
 	"\x06trends\x18\x02 \x01(\v2 .shared.insights.v1.TrendsResultH\x00R\x06trends\x12L\n" +
 	"\fsegmentation\x18\x03 \x01(\v2&.shared.insights.v1.SegmentationResultH\x00R\fsegmentation\x12:\n" +
@@ -1714,9 +1714,9 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"*\n" +
 	"\x12SegmentationResult\x12\x14\n" +
-	"\x05total\x18\x01 \x01(\x01R\x05total\"O\n" +
+	"\x05total\x18\x01 \x01(\x01R\x05total\"H\n" +
 	"\fFunnelResult\x128\n" +
-	"\x06series\x18\x01 \x03(\v2 .shared.insights.v1.FunnelSeriesR\x06seriesR\x05steps\"\xd1\x01\n" +
+	"\x06series\x18\x01 \x03(\v2 .shared.insights.v1.FunnelSeriesR\x06series\"\xd1\x01\n" +
 	"\fFunnelSeries\x12M\n" +
 	"\tbreakdown\x18\x01 \x03(\v2/.shared.insights.v1.FunnelSeries.BreakdownEntryR\tbreakdown\x124\n" +
 	"\x05steps\x18\x02 \x03(\v2\x1e.shared.insights.v1.FunnelStepR\x05steps\x1a<\n" +
@@ -1740,9 +1740,9 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
 	"event_kind\x18\x01 \x01(\tR\teventKind\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x01R\x05total\x126\n" +
-	"\x06timing\x18\x03 \x01(\v2\x1e.shared.insights.v1.StepTimingR\x06timing\"W\n" +
+	"\x06timing\x18\x03 \x01(\v2\x1e.shared.insights.v1.StepTimingR\x06timing\"N\n" +
 	"\x0fRetentionResult\x12;\n" +
-	"\x06series\x18\x01 \x03(\v2#.shared.insights.v1.RetentionSeriesR\x06seriesR\acohorts\"\xe0\x01\n" +
+	"\x06series\x18\x01 \x03(\v2#.shared.insights.v1.RetentionSeriesR\x06series\"\xe0\x01\n" +
 	"\x0fRetentionSeries\x12P\n" +
 	"\tbreakdown\x18\x01 \x03(\v22.shared.insights.v1.RetentionSeries.BreakdownEntryR\tbreakdown\x12=\n" +
 	"\acohorts\x18\x02 \x03(\v2#.shared.insights.v1.RetentionCohortR\acohorts\x1a<\n" +

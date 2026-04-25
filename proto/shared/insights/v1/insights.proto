@@ -159,7 +159,6 @@ message QueryRequest {
     gte: 0
     lte: 100
   }];
-  reserved 5;
 
   // Optional grouped filters for top-level conditions.
   // Each group combines its filters via group.operator.
@@ -304,7 +303,6 @@ message SegmentationResult {
 // FunnelResult contains one FunnelSeries per breakdown combination.
 // When no breakdown is requested, there is exactly one series with an empty breakdown map.
 message FunnelResult {
-  reserved steps; // previously held flat FunnelStep list before series-based breakdown support
   repeated FunnelSeries series = 1;
 }
 
@@ -362,7 +360,6 @@ message FunnelStep {
 // RetentionResult contains one RetentionSeries per breakdown combination.
 // When no breakdown is requested, there is exactly one series with an empty breakdown map.
 message RetentionResult {
-  reserved cohorts; // previously held flat RetentionCohort list before series-based breakdown support
   repeated RetentionSeries series = 1;
 }
 
