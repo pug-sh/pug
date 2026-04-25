@@ -84,8 +84,8 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	slog.SetDefault(otelslog.NewLogger(serviceName, otelslog.WithLoggerProvider(loggerProvider), otelslog.WithSource(true)))
 
 	success = true
-	return onceShutdown(func() error {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	return onceShutdown(func(ctx context.Context) error {
+		shutdownCtx, cancel := shutdownContext(ctx)
 		defer cancel()
 		var errs []error
 		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
@@ -107,13 +107,25 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	}), nil
 }
 
+// shutdownContext preserves the caller's deadline when present and applies a
+// fallback timeout only when the caller provides no deadline.
+func shutdownContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		return context.WithTimeout(context.Background(), shutdownTimeout)
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, shutdownTimeout)
+}
+
 // onceShutdown wraps a shutdown function so that only the first call executes it;
 // subsequent calls return the same result without re-running the function.
-func onceShutdown(fn func() error) func(context.Context) error {
+func onceShutdown(fn func(context.Context) error) func(context.Context) error {
 	var once sync.Once
 	var err error
-	return func(context.Context) error {
-		once.Do(func() { err = fn() })
+	return func(ctx context.Context) error {
+		once.Do(func() { err = fn(ctx) })
 		return err
 	}
 }
