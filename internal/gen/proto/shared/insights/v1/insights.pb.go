@@ -79,6 +79,10 @@ func (InsightType) EnumDescriptor() ([]byte, []int) {
 	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{0}
 }
 
+// Granularity values are listed finest → coarsest by source-order convention.
+// Going forward (post-deployment of this enum): do not reorder or renumber existing
+// values — protobuf identity is the numeric tag, not the symbol. Add new values at
+// the next free ordinal.
 type Granularity int32
 
 const (
@@ -1485,13 +1489,14 @@ var File_shared_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc3\x1e\n" +
+	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd3 \n" +
 	"\fQueryRequest\x12Q\n" +
 	"\finsight_type\x18\x01 \x01(\x0e2\x1f.shared.insights.v1.InsightTypeB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\vinsightType\x12;\n" +
 	"\n" +
-	"time_range\x18\x02 \x01(\v2\x14.common.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x12N\n" +
-	"\vgranularity\x18\x03 \x01(\x0e2\x1f.shared.insights.v1.GranularityB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\vgranularity\x126\n" +
+	"time_range\x18\x02 \x01(\v2\x14.common.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x12P\n" +
+	"\vgranularity\x18\x03 \x01(\x0e2\x1f.shared.insights.v1.GranularityB\r\xbaH\n" +
+	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\vgranularity\x126\n" +
 	"\x06events\x18\x04 \x03(\v2\x1e.shared.insights.v1.EventQueryR\x06events\x12G\n" +
 	"\n" +
 	"breakdowns\x18\x06 \x03(\v2\x1d.shared.insights.v1.BreakdownB\b\xbaH\x05\x92\x01\x02\x10\x05R\n" +
@@ -1501,7 +1506,7 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x16filter_groups_operator\x18\t \x01(\x0e2\x1a.common.v1.LogicalOperatorR\x14filterGroupsOperator\x12C\n" +
 	"\x19conversion_window_seconds\x18\n" +
 	" \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x17conversionWindowSeconds\x12.\n" +
-	"\x13include_step_timing\x18\v \x01(\bR\x11includeStepTiming:\x8a\x19\xbaH\x86\x19\x1a\xa0\x02\n" +
+	"\x13include_step_timing\x18\v \x01(\bR\x11includeStepTiming:\x98\x1b\xbaH\x94\x1b\x1a\xa0\x02\n" +
 	"-query_request.funnel_retention_require_events\x12=funnel and retention insight types require at least one event\x1a\xaf\x01(this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL&& this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION)|| this.events.size() > 0\x1a\xdd\x01\n" +
 	"+query_request.funnel_only_conversion_window\x12?conversion_window_seconds is only valid for funnel insight type\x1amthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| this.conversion_window_seconds == 0\x1a\xc7\x01\n" +
 	"%query_request.funnel_only_step_timing\x129include_step_timing is only valid for funnel insight type\x1acthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| !this.include_step_timing\x1a\xd3\x01\n" +
@@ -1512,8 +1517,9 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x1equery_request.funnel_max_steps\x12 funnel supports at most 20 steps\x1abthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| this.events.size() <= 20\x1a\xef\x01\n" +
 	"*query_request.granularity_minute_max_range\x12;GRANULARITY_MINUTE requires a time range of at most 6 hours\x1a\x83\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_MINUTE|| this.time_range.to - this.time_range.from <= duration('6h')\x1a\xeb\x01\n" +
 	"(query_request.granularity_hour_max_range\x129GRANULARITY_HOUR requires a time range of at most 14 days\x1a\x83\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_HOUR|| this.time_range.to - this.time_range.from <= duration('336h')\x1a\xea\x01\n" +
-	"'query_request.granularity_day_max_range\x129GRANULARITY_DAY requires a time range of at most 365 days\x1a\x83\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_DAY|| this.time_range.to - this.time_range.from <= duration('8760h')\x1a\xed\x01\n" +
-	"(query_request.granularity_week_max_range\x129GRANULARITY_WEEK requires a time range of at most 4 years\x1a\x85\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_WEEK|| this.time_range.to - this.time_range.from <= duration('35064h')\x1a\xaf\x04\n" +
+	"'query_request.granularity_day_max_range\x129GRANULARITY_DAY requires a time range of at most 365 days\x1a\x83\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_DAY|| this.time_range.to - this.time_range.from <= duration('8760h')\x1a\xfa\x01\n" +
+	"(query_request.granularity_week_max_range\x12FGRANULARITY_WEEK requires a time range of at most 1461 days (~4 years)\x1a\x85\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_WEEK|| this.time_range.to - this.time_range.from <= duration('35064h')\x1a\xfe\x01\n" +
+	")query_request.granularity_month_max_range\x12HGRANULARITY_MONTH requires a time range of at most 3652 days (~10 years)\x1a\x86\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_MONTH|| this.time_range.to - this.time_range.from <= duration('87660h')\x1a\xaf\x04\n" +
 	"2query_request.numeric_agg_only_trends_segmentation\x12PSUM/AVG/MIN/MAX aggregation types are only supported for trends and segmentation\x1a\xa6\x03this.insight_type in [  shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS,  shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION] || this.events.all(e,  !(e.aggregation in [    shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,    shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX  ]))J\x04\b\x05\x10\x06\"\xaa\x02\n" +
 	"\rQueryResponse\x12:\n" +
 	"\x06trends\x18\x02 \x01(\v2 .shared.insights.v1.TrendsResultH\x00R\x06trends\x12L\n" +

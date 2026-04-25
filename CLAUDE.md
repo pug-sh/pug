@@ -150,11 +150,14 @@ Breakdowns are supported for trends, funnel, and retention. Segmentation does no
 | `GRANULARITY_HOUR`     | `toStartOfHour`      | 14 days        |
 | `GRANULARITY_DAY`      | `toStartOfDay`       | 365 days       |
 | `GRANULARITY_WEEK`     | `toStartOfWeek`      | 4 years        |
-| `GRANULARITY_MONTH`    | `toStartOfMonth`     | unlimited      |
+| `GRANULARITY_MONTH`    | `toStartOfMonth`     | 10 years       |
 
-- Limits are enforced by `ValidateGranularityForRange` in `internal/core/insights/builder.go`, called in the `Query` handler before the insight-type switch. Violations return `CodeInvalidArgument`.
-- The limits are sized to keep per-series data point counts in the 300–400 range, consistent across granularities.
-- `GRANULARITY_UNSPECIFIED` bypasses the check (no limit); the query builder defaults it to `toStartOfDay`.
+- Limits are enforced by five `buf.validate.message.cel` rules on `QueryRequest` in `proto/shared/insights/v1/insights.proto` (ids `query_request.granularity_{minute,hour,day,week,month}_max_range`). The `validate.NewInterceptor()` wired on the Connect handler rejects violating requests with `CodeInvalidArgument` before the handler runs.
+- The minute/hour/day limits are sized to keep per-series data point counts at ≤365 (MINUTE=360, HOUR=336, DAY=365). WEEK is capped at 1461 days (~4 years, ~209 buckets); MONTH is capped at 3652 days (~10 years, ~120 buckets), bounding partition scan range since the events table partitions monthly.
+- **Retention caveat**: retention queries multiply cohort buckets × follow-up buckets (filtered to a triangular shape via `r.t >= r.cohort_time`). At WEEK granularity over the 4-year cap that's roughly (209 × 210)/2 ≈ 21,945 rows per series before breakdowns — substantially larger than the trends-equivalent ≤365 bound. The cap protects against unbounded scan cost, not against large retention result sets.
+- **MINUTE granularity caveat**: charts visualize at the same boundary as the ClickHouse dedup key (`toStartOfMinute(occur_time)`), so any pre-merge transient duplicates show at full magnitude per bucket. Coarser granularities amortize duplicates across multiple minutes per bucket. See "ClickHouse Events Table" for dedup details.
+- The caps fire for any `QueryRequest` regardless of `insight_type`, so funnel/segmentation requests with an oversized `granularity`/`time_range` combo are also rejected even though those insight types ignore granularity at query-build time.
+- `GRANULARITY_UNSPECIFIED` is rejected at the field level via `not_in: [0]` — clients must explicitly choose a granularity. `granularityFunc` returns an error for UNSPECIFIED and any undefined enum value (e.g. a future enum added to the proto but not yet wired into the switch); the error surfaces through the `Build*Query` error path. Direct callers (workers, scripts) bypassing the interceptor must set `Granularity` explicitly.
 
 ### Insights Filter Model
 

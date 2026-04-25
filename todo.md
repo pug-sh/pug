@@ -24,7 +24,7 @@
 
 ## Performance
 
-- [x] Minute granularity — currently limited to hour+ to avoid expensive queries
+- [x] Minute granularity — added with per-granularity time-range caps enforced at proto validation
 - [ ] Precomputed segment cache — for faster campaign delivery
 - [ ] Query result caching — cache hot queries with TTL
 
