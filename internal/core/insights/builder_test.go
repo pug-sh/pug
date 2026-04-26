@@ -2790,13 +2790,18 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 		Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
 	}
 
+	// structure is an insight-specific SQL substring asserting the inner query
+	// shape survived the wrapper unchanged (catches regressions that drop or
+	// truncate inner SQL when WithQueryCache(...).Build() is applied).
 	tests := []struct {
-		name string
-		sql  func(t *testing.T) string
+		name      string
+		structure string
+		run       func(t *testing.T) (string, []any)
 	}{
 		{
-			name: "BuildTrendsQuery",
-			sql: func(t *testing.T) string {
+			name:      "BuildTrendsQuery",
+			structure: "toStartOfDay(occur_time) AS t",
+			run: func(t *testing.T) (string, []any) {
 				t.Helper()
 				q, err := insights.BuildTrendsQuery(&insightsv1.QueryRequest{
 					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
@@ -2807,12 +2812,13 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				return q.SQL()
+				return q.SQL(), q.Args()
 			},
 		},
 		{
-			name: "BuildSegmentationQuery",
-			sql: func(t *testing.T) string {
+			name:      "BuildSegmentationQuery",
+			structure: "toFloat64(count(*))",
+			run: func(t *testing.T) (string, []any) {
 				t.Helper()
 				q, err := insights.BuildSegmentationQuery(&insightsv1.QueryRequest{
 					InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
@@ -2822,12 +2828,13 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				return q.SQL()
+				return q.SQL(), q.Args()
 			},
 		},
 		{
-			name: "BuildFunnelCountsQuery",
-			sql: func(t *testing.T) string {
+			name:      "BuildFunnelCountsQuery",
+			structure: "windowFunnel(",
+			run: func(t *testing.T) (string, []any) {
 				t.Helper()
 				q, err := insights.BuildFunnelCountsQuery(&insightsv1.QueryRequest{
 					InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
@@ -2837,12 +2844,13 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				return q.SQL()
+				return q.SQL(), q.Args()
 			},
 		},
 		{
-			name: "BuildFunnelTimingQuery",
-			sql: func(t *testing.T) string {
+			name:      "BuildFunnelTimingQuery",
+			structure: "groupArray(",
+			run: func(t *testing.T) (string, []any) {
 				t.Helper()
 				q, err := insights.BuildFunnelTimingQuery(&insightsv1.QueryRequest{
 					InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
@@ -2852,12 +2860,13 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				return q.SQL()
+				return q.SQL(), q.Args()
 			},
 		},
 		{
-			name: "BuildRetentionQuery",
-			sql: func(t *testing.T) string {
+			name:      "BuildRetentionQuery",
+			structure: "cohort_sizes",
+			run: func(t *testing.T) (string, []any) {
 				t.Helper()
 				q, err := insights.BuildRetentionQuery(&insightsv1.QueryRequest{
 					InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
@@ -2868,14 +2877,16 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				return q.SQL()
+				return q.SQL(), q.Args()
 			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			sql := tc.sql(t)
+			sql, args := tc.run(t)
+
+			// SETTINGS clause is present and well-formed.
 			if !strings.Contains(sql, "use_query_cache = 1") {
 				t.Errorf("expected use_query_cache = 1 in SQL, got: %s", sql)
 			}
@@ -2886,11 +2897,39 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 			if settingsIdx < 0 {
 				t.Fatalf("expected SETTINGS clause, got: %s", sql)
 			}
-			// SETTINGS must appear after all query clauses (SELECT/FROM/WHERE/etc.)
-			for _, clause := range []string{"SELECT", "FROM", "WHERE"} {
-				if idx := strings.Index(sql, clause); idx >= 0 && settingsIdx < idx {
-					t.Errorf("SETTINGS appears before %s in SQL: %s", clause, sql)
+
+			// SETTINGS must appear after the LAST occurrence of every relevant clause —
+			// strings.Index returns the first occurrence, which is misleading for queries
+			// with multiple SELECT/FROM/WHERE/ORDER BY (UNIONs and CTEs).
+			for _, clause := range []string{"SELECT", "FROM", "WHERE", "GROUP BY", "ORDER BY"} {
+				if idx := strings.LastIndex(sql, clause); idx >= 0 && settingsIdx < idx {
+					t.Errorf("SETTINGS appears before last %s in SQL: %s", clause, sql)
 				}
+			}
+
+			// Inner SQL structure survived the wrapper (catches a regression that drops
+			// or truncates inner SQL when WithQueryCache(...).Build() is applied).
+			if !strings.Contains(sql, tc.structure) {
+				t.Errorf("expected %q in SQL, got: %s", tc.structure, sql)
+			}
+
+			// Args survived the wrapper. Every insight binds project_id "proj_test"
+			// somewhere in its args slice — exact position varies by insight (funnel uses
+			// SelectExpr for windowFunnel kind args which emit before WHERE), so we assert
+			// presence rather than position. Catches a regression that drops args after
+			// WithQueryCache(...).Build().
+			if len(args) == 0 {
+				t.Fatalf("expected at least one arg, got: %v", args)
+			}
+			found := false
+			for _, a := range args {
+				if a == "proj_test" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected project_id %q somewhere in args, got: %v", "proj_test", args)
 			}
 		})
 	}
