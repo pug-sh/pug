@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -288,12 +289,13 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 	procCtx, span := startConsumerSpan(procCtx, msg.Subject(), w.config.StreamName, w.config.ConsumerName, numDelivered, streamSeq, consumerSeq)
 	defer span.End()
 
-	err := w.processor(procCtx, msg)
-	if err != nil {
-		telemetry.RecordError(procCtx, err)
-	}
-
-	switch {
+	// processor logs+records its own errors per the log-at-source convention.
+	// The wrapper logs the disposition (term/nak/ack/DLQ) it decided on plus
+	// any wrapper-detected secondary failures. The disposition log includes
+	// slogx.Error(err) as annotation — it is a different log line than the
+	// processor's source log (different message, different fact), so attaching
+	// the cause is not "re-logging the same error" per the convention.
+	switch err := w.processor(procCtx, msg); {
 	case IsPermanentError(err):
 		slog.ErrorContext(procCtx, "terminating poison message",
 			slog.String("stream", w.config.StreamName),
@@ -309,6 +311,7 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 			slog.ErrorContext(procCtx, "failed to terminate message",
 				slog.String("stream", w.config.StreamName),
 				slogx.Error(termErr))
+			telemetry.RecordError(procCtx, termErr)
 		}
 	case err != nil:
 		slog.ErrorContext(procCtx, "message processing failed",
@@ -327,12 +330,14 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 				slog.ErrorContext(procCtx, "failed to term message",
 					slog.String("stream", w.config.StreamName),
 					slogx.Error(termErr))
+				telemetry.RecordError(procCtx, termErr)
 			}
 		} else {
 			if nakErr := msg.Nak(); nakErr != nil {
 				slog.ErrorContext(procCtx, "failed to nak message",
 					slog.String("stream", w.config.StreamName),
 					slogx.Error(nakErr))
+				telemetry.RecordError(procCtx, nakErr)
 			}
 		}
 	default:
@@ -340,6 +345,7 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 			slog.ErrorContext(procCtx, "failed to ack message",
 				slog.String("stream", w.config.StreamName),
 				slogx.Error(ackErr))
+			telemetry.RecordError(procCtx, ackErr)
 		}
 	}
 }
@@ -351,6 +357,7 @@ func (w *natsWorker) isLastDelivery(ctx context.Context, msg jetstream.Msg) bool
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
 			slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return true
 	}
 	return int(meta.NumDelivered) >= w.config.MaxDeliver
@@ -370,9 +377,7 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, proces
 		Header:  nats.Header{},
 	}
 	// Copy original message headers for tracing and debugging.
-	for k, v := range msg.Headers() {
-		dlqMsg.Header[k] = v
-	}
+	maps.Copy(dlqMsg.Header, msg.Headers())
 	dlqMsg.Header.Set("original_subject", msg.Subject())
 	dlqMsg.Header.Set("original_stream", w.config.StreamName)
 	dlqMsg.Header.Set("original_consumer", w.config.ConsumerName)
@@ -388,6 +393,15 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, proces
 	if meta, err := msg.Metadata(); err == nil {
 		dlqMsg.Header.Set("delivery_count", fmt.Sprintf("%d", meta.NumDelivered))
 		dlqMsg.Header.Set("stream_sequence", fmt.Sprintf("%d", meta.Sequence.Stream))
+	} else {
+		// Warn (not Error) — metadata is best-effort for DLQ debugging headers, the
+		// message still gets DLQ'd. RecordError surfaces systemic failures on the span
+		// without escalating individual events.
+		slog.WarnContext(ctx, "failed to read message metadata for DLQ headers",
+			slog.String("stream", w.config.StreamName),
+			slog.String("dlq_subject", w.config.DLQSubject),
+			slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 	}
 
 	if _, err := w.js.PublishMsg(ctx, dlqMsg); err != nil {
@@ -395,6 +409,7 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, proces
 			slog.String("stream", w.config.StreamName),
 			slog.String("dlq_subject", w.config.DLQSubject),
 			slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return false
 	}
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	chq "github.com/fivebitsio/cotton/internal/core/clickhouse"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	"github.com/fivebitsio/cotton/internal/geo"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -71,16 +72,23 @@ func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) (
 		Where(chq.Eq("project_id", projectID), chq.Eq("profile_id", profileID)).
 		Build()
 	if err != nil {
+		slog.ErrorContext(ctx, "getAliasIDs: build query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("profile_id", profileID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("getAliasIDs: build query for project %s profile %s: %w", projectID, profileID, err)
 	}
 
 	rows, err := r.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "getAliasIDs: clickhouse query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("profile_id", profileID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("getAliasIDs: query failed for project %s profile %s: %w", projectID, profileID, err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
 			slog.ErrorContext(ctx, "failed to close ClickHouse rows", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -88,12 +96,18 @@ func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) (
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			slog.ErrorContext(ctx, "getAliasIDs: scan failed", slogx.Error(err),
+				slog.String("project_id", projectID), slog.String("profile_id", profileID))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("getAliasIDs: scan failed for project %s profile %s: %w", projectID, profileID, err)
 		}
 		ids = append(ids, id)
 	}
 
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "getAliasIDs: row iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("profile_id", profileID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("getAliasIDs: row iteration failed for project %s profile %s: %w", projectID, profileID, err)
 	}
 	return ids, nil
@@ -104,10 +118,17 @@ func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) (
 // guaranteed by MustGetPrincipalWithProject and proto validation (required = true).
 func (r *Reader) resolveProfileIDs(ctx context.Context, projectID, distinctID string) ([]string, error) {
 	if projectID == "" {
-		return nil, fmt.Errorf("resolveProfileIDs: projectID must not be empty")
+		err := fmt.Errorf("resolveProfileIDs: projectID must not be empty")
+		slog.ErrorContext(ctx, "resolveProfileIDs called with empty project_id", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return nil, err
 	}
 	if distinctID == "" {
-		return nil, fmt.Errorf("resolveProfileIDs: distinctID must not be empty")
+		err := fmt.Errorf("resolveProfileIDs: distinctID must not be empty")
+		slog.ErrorContext(ctx, "resolveProfileIDs called with empty distinct_id", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return nil, err
 	}
 	aliasIDs, err := r.getAliasIDs(ctx, projectID, distinctID)
 	if err != nil {
@@ -244,16 +265,23 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 
 	sql, args, err := q.OrderBy("occur_time DESC", "event_id DESC").Limit(int64(pageSize)).Build()
 	if err != nil {
+		slog.ErrorContext(ctx, "GetEventExplorer: build query failed", slogx.Error(err),
+			slog.String("project_id", params.ProjectID))
+		telemetry.RecordError(ctx, err)
 		return nil, nil, fmt.Errorf("GetEventExplorer: build query failed for project %s: %w", params.ProjectID, err)
 	}
 
 	rows, err := r.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "GetEventExplorer: clickhouse query failed", slogx.Error(err),
+			slog.String("project_id", params.ProjectID))
+		telemetry.RecordError(ctx, err)
 		return nil, nil, fmt.Errorf("GetEventExplorer: query failed for project %s: %w", params.ProjectID, err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
 			slog.ErrorContext(ctx, "failed to close ClickHouse rows", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -261,12 +289,18 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 	for rows.Next() {
 		e, err := scanEvent(rows)
 		if err != nil {
+			slog.ErrorContext(ctx, "GetEventExplorer: scan failed", slogx.Error(err),
+				slog.String("project_id", params.ProjectID))
+			telemetry.RecordError(ctx, err)
 			return nil, nil, fmt.Errorf("GetEventExplorer: scan failed: %w", err)
 		}
 		events = append(events, e)
 	}
 
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "GetEventExplorer: row iteration failed", slogx.Error(err),
+			slog.String("project_id", params.ProjectID))
+		telemetry.RecordError(ctx, err)
 		return nil, nil, fmt.Errorf("GetEventExplorer: row iteration failed: %w", err)
 	}
 
@@ -332,16 +366,23 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 
 	sql, args, err := q.OrderBy("occur_time DESC", "event_id DESC").Limit(int64(pageSize)).Build()
 	if err != nil {
+		slog.ErrorContext(ctx, "GetActivityFeed: build query failed", slogx.Error(err),
+			slog.String("project_id", params.ProjectID))
+		telemetry.RecordError(ctx, err)
 		return nil, nil, fmt.Errorf("GetActivityFeed: build query failed for project %s: %w", params.ProjectID, err)
 	}
 
 	rows, err := r.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "GetActivityFeed: clickhouse query failed", slogx.Error(err),
+			slog.String("project_id", params.ProjectID))
+		telemetry.RecordError(ctx, err)
 		return nil, nil, fmt.Errorf("GetActivityFeed: query failed for project %s: %w", params.ProjectID, err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
 			slog.ErrorContext(ctx, "failed to close ClickHouse rows", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -349,12 +390,18 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 	for rows.Next() {
 		e, err := scanEvent(rows)
 		if err != nil {
+			slog.ErrorContext(ctx, "GetActivityFeed: scan failed", slogx.Error(err),
+				slog.String("project_id", params.ProjectID))
+			telemetry.RecordError(ctx, err)
 			return nil, nil, fmt.Errorf("GetActivityFeed: scan failed: %w", err)
 		}
 		events = append(events, e)
 	}
 
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "GetActivityFeed: row iteration failed", slogx.Error(err),
+			slog.String("project_id", params.ProjectID))
+		telemetry.RecordError(ctx, err)
 		return nil, nil, fmt.Errorf("GetActivityFeed: row iteration failed: %w", err)
 	}
 
@@ -378,17 +425,21 @@ type HeatmapDay struct {
 
 // scanHeatmapDays scans per-day event counts from a ClickHouse result set.
 // Expects columns: (day string, cnt uint64).
-func scanHeatmapDays(rows driver.Rows) ([]HeatmapDay, error) {
+func scanHeatmapDays(ctx context.Context, rows driver.Rows) ([]HeatmapDay, error) {
 	var days []HeatmapDay
 	for rows.Next() {
 		var day string
 		var cnt uint64
 		if err := rows.Scan(&day, &cnt); err != nil {
+			slog.ErrorContext(ctx, "scanHeatmapDays: scan failed", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("scan heatmap day: %w", err)
 		}
 		days = append(days, HeatmapDay{Date: day, Count: int64(cnt)})
 	}
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "scanHeatmapDays: row iteration failed", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("heatmap row iteration: %w", err)
 	}
 	return days, nil
@@ -409,20 +460,27 @@ func (r *Reader) queryHeatmap(ctx context.Context, projectID string, ids []strin
 
 	sql, args, err := q.GroupBy("day").OrderBy("day").Build()
 	if err != nil {
+		slog.ErrorContext(ctx, "queryHeatmap: build query failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("queryHeatmap: build query failed for project %s: %w", projectID, err)
 	}
 
 	rows, err := r.ch.Query(ctx, sql, args...)
 	if err != nil {
+		slog.ErrorContext(ctx, "queryHeatmap: clickhouse query failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("queryHeatmap: query failed for project %s: %w", projectID, err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
 			slog.ErrorContext(ctx, "failed to close ClickHouse rows", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
-	return scanHeatmapDays(rows)
+	return scanHeatmapDays(ctx, rows)
 }
 
 // ActivityHeatmapParams configures the GetActivityHeatmap query.
@@ -449,7 +507,11 @@ func (r *Reader) GetActivityHeatmap(ctx context.Context, params ActivityHeatmapP
 	var from, to time.Time
 	if params.TimeRange != nil {
 		if params.TimeRange.GetFrom() == nil || params.TimeRange.GetTo() == nil {
-			return nil, fmt.Errorf("GetActivityHeatmap: TimeRange.From and TimeRange.To must be set when TimeRange is provided")
+			err := fmt.Errorf("GetActivityHeatmap: TimeRange.From and TimeRange.To must be set when TimeRange is provided")
+			slog.ErrorContext(ctx, "GetActivityHeatmap called with partial TimeRange", slogx.Error(err),
+				slog.String("project_id", params.ProjectID))
+			telemetry.RecordError(ctx, err)
+			return nil, err
 		}
 		from = params.TimeRange.GetFrom().AsTime()
 		to = params.TimeRange.GetTo().AsTime()
@@ -496,16 +558,23 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 		).
 		Build()
 	if err != nil {
+		slog.ErrorContext(ctx, "queryProfileStats: build query failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("queryProfileStats: build query failed for project %s: %w", projectID, err)
 	}
 
 	rows, err := r.ch.Query(ctx, statSQL, statArgs...)
 	if err != nil {
+		slog.ErrorContext(ctx, "queryProfileStats: clickhouse query failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("queryProfileStats: query failed for project %s: %w", projectID, err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
 			slog.ErrorContext(ctx, "failed to close ClickHouse rows", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -513,18 +582,31 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 	// indicates a driver bug or connection issue — return an error.
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
+			slog.ErrorContext(ctx, "queryProfileStats: row iteration failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("queryProfileStats: row iteration failed: %w", err)
 		}
-		return nil, fmt.Errorf("queryProfileStats: aggregate query returned no rows (unexpected)")
+		err := fmt.Errorf("queryProfileStats: aggregate query returned no rows (unexpected)")
+		slog.ErrorContext(ctx, "queryProfileStats: aggregate returned zero rows", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return nil, err
 	}
 
 	var stats ProfileStats
 	var totalEvents uint64
 	var latestProps map[string]string
 	if err := rows.Scan(&stats.FirstSeen, &stats.LastSeen, &totalEvents, &latestProps); err != nil {
+		slog.ErrorContext(ctx, "queryProfileStats: scan failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("queryProfileStats: scan failed: %w", err)
 	}
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "queryProfileStats: row iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("queryProfileStats: row iteration failed: %w", err)
 	}
 

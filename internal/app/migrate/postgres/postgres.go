@@ -37,7 +37,7 @@ func Up(ctx context.Context, num int) error {
 		return err
 	}
 
-	slog.InfoContext(ctx, "applied migrations", slog.Int("appliedMigrations", num))
+	slog.InfoContext(ctx, "applied migrations", slog.Int("applied_migrations", num))
 	return nil
 }
 
@@ -74,7 +74,7 @@ func Down(ctx context.Context, num int) error {
 		}
 	}
 
-	slog.InfoContext(ctx, "rolled back migrations", slog.Int("rolledBackMigrations", num))
+	slog.InfoContext(ctx, "rolled back migrations", slog.Int("rolled_back_migrations", num))
 	return nil
 }
 

@@ -32,7 +32,7 @@ func (s *server) requireOrgMember(ctx context.Context, orgID string) (*rpc.Princ
 
 	isMember, err := s.service.IsOrgMember(ctx, orgID, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", orgID), slog.String("customerId", principal.Customer.ID))
+		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -56,7 +56,7 @@ func (s *server) requireOrgAdmin(ctx context.Context, orgID string) (*rpc.Princi
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
 		}
-		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err), slog.String("orgId", orgID), slog.String("customerId", principal.Customer.ID))
+		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err), slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -82,7 +82,7 @@ func (s *server) List(
 
 	orgs, err := s.service.GetOrgsByCustomerID(ctx, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to list orgs", slogx.Error(err), slog.String("customerID", principal.Customer.ID))
+		slog.ErrorContext(ctx, "failed to list orgs", slogx.Error(err), slog.String("customer_id", principal.Customer.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -112,7 +112,7 @@ func (s *server) Get(
 		if errors.Is(err, coreorgs.ErrOrgNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("org not found"))
 		}
-		slog.ErrorContext(ctx, "failed to get org", slogx.Error(err), slog.String("orgId", req.Msg.GetOrgId()))
+		slog.ErrorContext(ctx, "failed to get org", slogx.Error(err), slog.String("org_id", req.Msg.GetOrgId()))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -137,7 +137,7 @@ func (s *server) UpdateDisplayName(
 		if errors.Is(err, coreorgs.ErrOrgNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("org not found"))
 		}
-		slog.ErrorContext(ctx, "failed to update org", slogx.Error(err), slog.String("orgId", req.Msg.GetOrgId()))
+		slog.ErrorContext(ctx, "failed to update org", slogx.Error(err), slog.String("org_id", req.Msg.GetOrgId()))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -159,7 +159,7 @@ func (s *server) ListMembers(
 
 	members, err := s.service.ListMembers(ctx, req.Msg.GetOrgId())
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to list members", slogx.Error(err), slog.String("orgId", req.Msg.GetOrgId()))
+		slog.ErrorContext(ctx, "failed to list members", slogx.Error(err), slog.String("org_id", req.Msg.GetOrgId()))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -202,8 +202,7 @@ func (s *server) RemoveMember(
 		if errors.Is(err, coreorgs.ErrLastAdmin) {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cannot remove the last admin"))
 		}
-		slog.ErrorContext(ctx, "failed to remove member", slogx.Error(err), slog.String("orgId", req.Msg.GetOrgId()), slog.String("customerId", req.Msg.GetCustomerId()))
-		telemetry.RecordError(ctx, err)
+		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -231,8 +230,7 @@ func (s *server) InviteMember(
 		if errors.Is(err, coreorgs.ErrInviteAlreadyPending) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("a pending invitation already exists for this email"))
 		}
-		slog.ErrorContext(ctx, "failed to create invitation", slogx.Error(err), slog.String("orgId", req.Msg.GetOrgId()))
-		telemetry.RecordError(ctx, err)
+		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -269,8 +267,6 @@ func (s *server) AcceptInvite(
 		if errors.Is(err, coreorgs.ErrInviteNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("invitation not found"))
 		}
-		slog.ErrorContext(ctx, "failed to accept invitation", slogx.Error(err), slog.String("customerId", principal.Customer.ID))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -291,7 +287,7 @@ func (s *server) ListInvitations(
 
 	invitations, err := s.service.ListInvitations(ctx, req.Msg.GetOrgId())
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to list invitations", slogx.Error(err), slog.String("orgId", req.Msg.GetOrgId()))
+		slog.ErrorContext(ctx, "failed to list invitations", slogx.Error(err), slog.String("org_id", req.Msg.GetOrgId()))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

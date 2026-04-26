@@ -42,6 +42,8 @@ func (s *stubProjectKeyLookup) GetProjectByPrivateApiKey(_ context.Context, key 
 	return p, nil
 }
 
+func (s *stubProjectKeyLookup) InvalidateProjectKeys(_ context.Context, _, _ string) {}
+
 func newStubLookup() *stubProjectKeyLookup {
 	return &stubProjectKeyLookup{
 		publicProjects: map[string]dbread.Project{

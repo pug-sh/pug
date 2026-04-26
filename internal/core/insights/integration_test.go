@@ -46,7 +46,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, q)
+		rows, err := executor.QueryTrends(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -84,7 +84,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, q)
+		rows, err := executor.QueryTrends(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -124,12 +124,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, q)
+		rows, err := executor.QueryTrends(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(rows, q.Properties())
+		series, err := insights.GroupSeries(ctx, rows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -155,7 +155,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildSegmentationQuery: %v", err)
 		}
 
-		value, err := executor.QueryScalar(ctx, q)
+		value, err := executor.QueryScalar(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryScalar: %v", err)
 		}
@@ -191,7 +191,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildSegmentationQuery: %v", err)
 		}
 
-		value, err := executor.QueryScalar(ctx, q)
+		value, err := executor.QueryScalar(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryScalar: %v", err)
 		}
@@ -220,7 +220,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, q)
+		rows, err := executor.QueryTrends(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -250,7 +250,7 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BuildSegmentUsersQuery page1: %v", err)
 		}
-		page1, err := executor.QueryStringColumn(ctx, sql1, args1)
+		page1, err := executor.QueryStringColumn(ctx, testProjectID, sql1, args1)
 		if err != nil {
 			t.Fatalf("QueryStringColumn page1: %v", err)
 		}
@@ -266,7 +266,7 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BuildSegmentUsersQuery page2: %v", err)
 		}
-		page2, err := executor.QueryStringColumn(ctx, sql2, args2)
+		page2, err := executor.QueryStringColumn(ctx, testProjectID, sql2, args2)
 		if err != nil {
 			t.Fatalf("QueryStringColumn page2: %v", err)
 		}
@@ -307,12 +307,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, q)
+		rows, err := executor.QueryTrends(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(rows, q.Properties())
+		series, err := insights.GroupSeries(ctx, rows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -353,12 +353,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, q)
+		rows, err := executor.QueryTrends(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(rows, q.Properties())
+		series, err := insights.GroupSeries(ctx, rows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -392,7 +392,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildSegmentUsersQuery: %v", err)
 		}
 
-		ids, err := executor.QueryStringColumn(ctx, sql, args)
+		ids, err := executor.QueryStringColumn(ctx, testProjectID, sql, args)
 		if err != nil {
 			t.Fatalf("QueryStringColumn: %v", err)
 		}
@@ -459,7 +459,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildTrendsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryTrends(ctx, q)
+		rows, err := executor.QueryTrends(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryTrends: %v", err)
 		}
@@ -495,7 +495,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildFunnelCountsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryFunnel(ctx, q)
+		rows, err := executor.QueryFunnel(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryFunnel: %v", err)
 		}
@@ -536,7 +536,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildFunnelTimingQuery: %v", err)
 		}
 
-		users, err := executor.QueryFunnelUserEvents(ctx, q)
+		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryFunnelUserEvents: %v", err)
 		}
@@ -608,12 +608,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildRetentionQuery: %v", err)
 		}
 
-		rows, err := executor.QueryRetention(ctx, q)
+		rows, err := executor.QueryRetention(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		series, err := insights.GroupRetentionSeries(rows, nil)
+		series, err := insights.GroupRetentionSeries(ctx, rows, nil)
 		if err != nil {
 			t.Fatalf("GroupRetentionSeries: %v", err)
 		}
@@ -658,7 +658,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildFunnelCountsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryFunnel(ctx, q)
+		rows, err := executor.QueryFunnel(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryFunnel: %v", err)
 		}
@@ -705,12 +705,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildRetentionQuery: %v", err)
 		}
 
-		rows, err := executor.QueryRetention(ctx, q)
+		rows, err := executor.QueryRetention(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		series, err := insights.GroupRetentionSeries(rows, q.Properties())
+		series, err := insights.GroupRetentionSeries(ctx, rows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupRetentionSeries: %v", err)
 		}
@@ -748,7 +748,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildFunnelCountsQuery: %v", err)
 		}
 
-		rows, err := executor.QueryFunnel(ctx, q)
+		rows, err := executor.QueryFunnel(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryFunnel: %v", err)
 		}
@@ -801,7 +801,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildFunnelTimingQuery: %v", err)
 		}
 
-		users, err := executor.QueryFunnelUserEvents(ctx, q)
+		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryFunnelUserEvents: %v", err)
 		}
@@ -865,12 +865,12 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("BuildRetentionQuery: %v", err)
 		}
 
-		rows, err := executor.QueryRetention(ctx, q)
+		rows, err := executor.QueryRetention(ctx, testProjectID, q)
 		if err != nil {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		series, err := insights.GroupRetentionSeries(rows, q.Properties())
+		series, err := insights.GroupRetentionSeries(ctx, rows, q.Properties())
 		if err != nil {
 			t.Fatalf("GroupRetentionSeries: %v", err)
 		}

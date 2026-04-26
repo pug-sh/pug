@@ -249,7 +249,7 @@ func (q *Query) WithQueryCache(ttlSeconds int) *Query {
 //
 // The sub-query is held by reference; do not mutate it after passing it here. In
 // particular, calling sub.WithQueryCache(...) after With() will cause this query's
-// Build() to error, since SETTINGS are only valid on the outermost query.
+// Build() to panic, since SETTINGS are only valid on the outermost query.
 func (q *Query) With(name string, sub *Query) *Query {
 	if sub == nil {
 		panic("clickhouse: With called with nil sub-query for CTE " + name)
@@ -360,7 +360,7 @@ type UnionQuery struct {
 // Panics if any query is nil — pass non-nil *Query values or guard with a nil check before calling.
 //
 // Each query is held by reference; do not mutate one after passing it here. In particular,
-// calling q.WithQueryCache(...) on an inner query after UnionAll() will cause Build() to error,
+// calling q.WithQueryCache(...) on an inner query after UnionAll() will cause Build() to panic,
 // since SETTINGS are only valid on the outermost UnionQuery.
 func UnionAll(queries ...*Query) *UnionQuery {
 	for i, q := range queries {

@@ -38,14 +38,14 @@ func (s *server) Get(
 	campaignID := req.Msg.GetId()
 	campaign, err := s.service.GetCampaignByIDAndProjectID(ctx, campaignID, principal.Project.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed getting campaign", slogx.Error(err), slog.String("campaignId", campaignID))
+		slog.ErrorContext(ctx, "failed getting campaign", slogx.Error(err), slog.String("campaign_id", campaignID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProto, err := roToRPCMsg(campaign)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", campaignID))
+		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaign_id", campaignID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -68,7 +68,7 @@ func (s *server) BatchGet(
 
 	campaigns, err := s.service.GetCampaignsByProjectID(ctx, projectID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed getting campaigns by project ID", slogx.Error(err), slog.String("projectId", projectID))
+		slog.ErrorContext(ctx, "failed getting campaigns by project ID", slogx.Error(err), slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -77,7 +77,7 @@ func (s *server) BatchGet(
 	for i, c := range campaigns {
 		proto, err := roToRPCMsg(c)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", c.ID))
+			slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaign_id", c.ID))
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
@@ -121,14 +121,13 @@ func (s *server) Create(
 		Status:           campaigns.StatusScheduled,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed creating campaign", slogx.Error(err), slog.String("projectId", projectID), slog.String("campaignName", req.Msg.GetName()))
-		telemetry.RecordError(ctx, err)
+		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProto, err := wToRPCMsg(campaign)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", campaign.ID))
+		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaign_id", campaign.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -152,7 +151,7 @@ func (s *server) Delete(
 	campaignID := req.Msg.GetId()
 	err = s.service.DeleteCampaign(ctx, campaignID, projectID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed deleting campaign", slogx.Error(err), slog.String("campaignId", campaignID))
+		slog.ErrorContext(ctx, "failed deleting campaign", slogx.Error(err), slog.String("campaign_id", campaignID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -180,14 +179,13 @@ func (s *server) Update(
 		ScheduledTime:    postgres.TimestampToTimestamptz(req.Msg.GetScheduledTime()),
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed updating campaign", slogx.Error(err), slog.String("campaignId", req.Msg.GetId()))
-		telemetry.RecordError(ctx, err)
+		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	campaignProto, err := wToRPCMsg(campaign)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaignId", campaign.ID))
+		slog.ErrorContext(ctx, "failed to convert campaign to proto", slogx.Error(err), slog.String("campaign_id", campaign.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
