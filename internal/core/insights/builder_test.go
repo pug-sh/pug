@@ -2783,6 +2783,158 @@ func TestPropertyAggregation_MixedEventAggregations(t *testing.T) {
 	}
 }
 
+func TestAnalyticsCacheSettings(t *testing.T) {
+	tr := timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z")
+	pageView := &insightsv1.EventQuery{
+		Event:       &commonv1.EventFilter{Kind: proto.String("page_view")},
+		Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+	}
+
+	// structure is an insight-specific SQL substring asserting the inner query
+	// shape survived the wrapper unchanged (catches regressions that drop or
+	// truncate inner SQL when WithQueryCache(...).Build() is applied).
+	tests := []struct {
+		name      string
+		structure string
+		run       func(t *testing.T) (string, []any)
+	}{
+		{
+			name:      "BuildTrendsQuery",
+			structure: "toStartOfDay(occur_time) AS t",
+			run: func(t *testing.T) (string, []any) {
+				t.Helper()
+				q, err := insights.BuildTrendsQuery(&insightsv1.QueryRequest{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+					TimeRange:   tr,
+					Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+					Events:      []*insightsv1.EventQuery{pageView},
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL(), q.Args()
+			},
+		},
+		{
+			name:      "BuildSegmentationQuery",
+			structure: "toFloat64(count(*))",
+			run: func(t *testing.T) (string, []any) {
+				t.Helper()
+				q, err := insights.BuildSegmentationQuery(&insightsv1.QueryRequest{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+					TimeRange:   tr,
+					Events:      []*insightsv1.EventQuery{pageView},
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL(), q.Args()
+			},
+		},
+		{
+			name:      "BuildFunnelCountsQuery",
+			structure: "windowFunnel(",
+			run: func(t *testing.T) (string, []any) {
+				t.Helper()
+				q, err := insights.BuildFunnelCountsQuery(&insightsv1.QueryRequest{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+					TimeRange:   tr,
+					Events:      []*insightsv1.EventQuery{pageView, pageView},
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL(), q.Args()
+			},
+		},
+		{
+			name:      "BuildFunnelTimingQuery",
+			structure: "groupArray(",
+			run: func(t *testing.T) (string, []any) {
+				t.Helper()
+				q, err := insights.BuildFunnelTimingQuery(&insightsv1.QueryRequest{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+					TimeRange:   tr,
+					Events:      []*insightsv1.EventQuery{pageView, pageView},
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL(), q.Args()
+			},
+		},
+		{
+			name:      "BuildRetentionQuery",
+			structure: "cohort_sizes",
+			run: func(t *testing.T) (string, []any) {
+				t.Helper()
+				q, err := insights.BuildRetentionQuery(&insightsv1.QueryRequest{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+					TimeRange:   tr,
+					Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+					Events:      []*insightsv1.EventQuery{pageView},
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL(), q.Args()
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sql, args := tc.run(t)
+
+			// SETTINGS clause is present and well-formed.
+			if !strings.Contains(sql, "use_query_cache = 1") {
+				t.Errorf("expected use_query_cache = 1 in SQL, got: %s", sql)
+			}
+			if !strings.Contains(sql, "query_cache_ttl = 60") {
+				t.Errorf("expected query_cache_ttl = 60 in SQL, got: %s", sql)
+			}
+			settingsIdx := strings.Index(sql, "SETTINGS")
+			if settingsIdx < 0 {
+				t.Fatalf("expected SETTINGS clause, got: %s", sql)
+			}
+
+			// SETTINGS must appear after the LAST occurrence of every relevant clause —
+			// strings.Index returns the first occurrence, which is misleading for queries
+			// with multiple SELECT/FROM/WHERE/ORDER BY (UNIONs and CTEs).
+			for _, clause := range []string{"SELECT", "FROM", "WHERE", "GROUP BY", "ORDER BY"} {
+				if idx := strings.LastIndex(sql, clause); idx >= 0 && settingsIdx < idx {
+					t.Errorf("SETTINGS appears before last %s in SQL: %s", clause, sql)
+				}
+			}
+
+			// Inner SQL structure survived the wrapper (catches a regression that drops
+			// or truncates inner SQL when WithQueryCache(...).Build() is applied).
+			if !strings.Contains(sql, tc.structure) {
+				t.Errorf("expected %q in SQL, got: %s", tc.structure, sql)
+			}
+
+			// Args survived the wrapper. Every insight binds project_id "proj_test"
+			// somewhere in its args slice — exact position varies by insight (funnel uses
+			// SelectExpr for windowFunnel kind args which emit before WHERE), so we assert
+			// presence rather than position. Catches a regression that drops args after
+			// WithQueryCache(...).Build().
+			if len(args) == 0 {
+				t.Fatalf("expected at least one arg, got: %v", args)
+			}
+			found := false
+			for _, a := range args {
+				if a == "proj_test" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected project_id %q somewhere in args, got: %v", "proj_test", args)
+			}
+		})
+	}
+}
+
 // TestEffectiveWindowSec covers all paths of the funnel-window helper directly:
 // explicit window, absent window with a finite range, and the error paths for
 // inverted/empty time ranges. Indirect tests (TestFunnelWithConversionWindow,
