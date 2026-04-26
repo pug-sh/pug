@@ -1,6 +1,7 @@
 package clickhouse_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -393,6 +394,309 @@ func TestUnionAll(t *testing.T) {
 	})
 }
 
+// --- SETTINGS helpers ---
+
+func TestSettingsHelpers(t *testing.T) {
+	t.Run("WithQueryCache appends settings after SELECT/FROM", func(t *testing.T) {
+		sql, args := build(t,
+			chq.NewQuery().
+				Select("count(*)").
+				From("events").
+				Where(chq.Eq("project_id", "p")).
+				WithQueryCache(60),
+		)
+		want := "SELECT count(*)\nFROM events\nWHERE project_id = ?\nSETTINGS use_query_cache = 1, query_cache_ttl = 60"
+		if sql != want {
+			t.Errorf("sql:\ngot  %q\nwant %q", sql, want)
+		}
+		if diff := cmp.Diff([]any{"p"}, args); diff != "" {
+			t.Errorf("args: %s", diff)
+		}
+	})
+
+	t.Run("single call emits both settings comma-separated", func(t *testing.T) {
+		sql, _ := build(t,
+			chq.NewQuery().
+				Select("1").
+				From("events").
+				WithQueryCache(60),
+		)
+		if !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60") {
+			t.Errorf("expected SETTINGS clause, got: %s", sql)
+		}
+	})
+
+	t.Run("repeated WithQueryCache calls dedup by key — last TTL wins", func(t *testing.T) {
+		sql, _ := build(t,
+			chq.NewQuery().
+				Select("1").
+				From("events").
+				WithQueryCache(60).
+				WithQueryCache(120),
+		)
+		want := "SETTINGS use_query_cache = 1, query_cache_ttl = 120"
+		if !strings.HasSuffix(sql, want) {
+			t.Errorf("expected SETTINGS to end with %q, got: %s", want, sql)
+		}
+		// Ensure the superseded value is gone (no duplicate emission).
+		if containsStr(sql, "query_cache_ttl = 60") {
+			t.Errorf("expected superseded TTL to be removed, got: %s", sql)
+		}
+	})
+
+	t.Run("Build is idempotent under repeated calls", func(t *testing.T) {
+		q := chq.NewQuery().
+			Select("1").
+			From("events").
+			Where(chq.Eq("project_id", "p")).
+			WithQueryCache(60)
+		sql1, args1, err := q.Build()
+		if err != nil {
+			t.Fatalf("first Build() error: %v", err)
+		}
+		sql2, args2, err := q.Build()
+		if err != nil {
+			t.Fatalf("second Build() error: %v", err)
+		}
+		if sql1 != sql2 {
+			t.Errorf("Build() not idempotent:\nfirst : %q\nsecond: %q", sql1, sql2)
+		}
+		if diff := cmp.Diff(args1, args2); diff != "" {
+			t.Errorf("args drifted between Build() calls: %s", diff)
+		}
+	})
+
+	t.Run("SETTINGS placement holds with Limit(0)", func(t *testing.T) {
+		sql, args := build(t,
+			chq.NewQuery().
+				Select("1").
+				From("events").
+				Limit(0).
+				WithQueryCache(60),
+		)
+		if !strings.HasSuffix(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60") {
+			t.Errorf("expected SETTINGS at end, got: %s", sql)
+		}
+		if !containsStr(sql, "LIMIT ?") {
+			t.Errorf("expected LIMIT clause, got: %s", sql)
+		}
+		if diff := cmp.Diff([]any{int64(0)}, args); diff != "" {
+			t.Errorf("args: %s", diff)
+		}
+	})
+
+	t.Run("WithQueryCache panics on zero TTL", func(t *testing.T) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("expected panic on zero TTL")
+			}
+			msg, ok := r.(string)
+			if !ok {
+				t.Fatalf("expected panic value to be string, got %T: %v", r, r)
+			}
+			if !containsStr(msg, "Query.WithQueryCache") {
+				t.Errorf("expected panic message to mention Query.WithQueryCache, got: %s", msg)
+			}
+			if !containsStr(msg, "ttlSeconds must be positive") {
+				t.Errorf("expected panic message to mention ttlSeconds, got: %s", msg)
+			}
+		}()
+		chq.NewQuery().WithQueryCache(0)
+	})
+
+	t.Run("WithQueryCache panics on negative TTL", func(t *testing.T) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("expected panic on negative TTL")
+			}
+			msg, ok := r.(string)
+			if !ok {
+				t.Fatalf("expected panic value to be string, got %T: %v", r, r)
+			}
+			if !containsStr(msg, "got -1") {
+				t.Errorf("expected panic message to include offending value, got: %s", msg)
+			}
+		}()
+		chq.NewQuery().WithQueryCache(-1)
+	})
+
+	t.Run("SETTINGS is the last clause after LIMIT", func(t *testing.T) {
+		sql, _ := build(t,
+			chq.NewQuery().
+				Select("1").
+				From("events").
+				Limit(10).
+				WithQueryCache(60),
+		)
+		if !strings.HasSuffix(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60") {
+			t.Errorf("expected SETTINGS clause to be the last line of SQL, got: %s", sql)
+		}
+	})
+
+	t.Run("no helper calls omits SETTINGS clause", func(t *testing.T) {
+		sql, _ := build(t, chq.NewQuery().Select("1").From("events"))
+		if containsStr(sql, "SETTINGS") {
+			t.Errorf("expected no SETTINGS clause, got: %s", sql)
+		}
+	})
+}
+
+func TestUnionAllSettingsHelpers(t *testing.T) {
+	q1 := chq.NewQuery().Select("1 AS x").From("events").Where(chq.Eq("project_id", "p"))
+	q2 := chq.NewQuery().Select("2 AS x").From("events").Where(chq.Eq("project_id", "p"))
+
+	t.Run("WithQueryCache appends settings after ORDER BY", func(t *testing.T) {
+		sql, _, err := chq.UnionAll(q1, q2).
+			OrderBy("x ASC").
+			WithQueryCache(60).
+			Build()
+		if err != nil {
+			t.Fatalf("Build() error: %v", err)
+		}
+		if !containsStr(sql, "ORDER BY x ASC") || !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60") {
+			t.Errorf("expected ORDER BY and SETTINGS, got: %s", sql)
+		}
+		orderIdx := indexStr(sql, "ORDER BY")
+		settingsIdx := indexStr(sql, "SETTINGS")
+		if settingsIdx < orderIdx {
+			t.Errorf("expected SETTINGS after ORDER BY, got: %s", sql)
+		}
+	})
+
+	t.Run("multiple helper calls are comma-separated", func(t *testing.T) {
+		sql, _, err := chq.UnionAll(q1, q2).
+			WithQueryCache(60).
+			Build()
+		if err != nil {
+			t.Fatalf("Build() error: %v", err)
+		}
+		if !containsStr(sql, "SETTINGS use_query_cache = 1, query_cache_ttl = 60") {
+			t.Errorf("expected SETTINGS clause, got: %s", sql)
+		}
+	})
+
+	t.Run("no settings omits SETTINGS clause", func(t *testing.T) {
+		sql, _, err := chq.UnionAll(q1, q2).Build()
+		if err != nil {
+			t.Fatalf("Build() error: %v", err)
+		}
+		if containsStr(sql, "SETTINGS") {
+			t.Errorf("expected no SETTINGS clause, got: %s", sql)
+		}
+	})
+
+	t.Run("UnionQuery WithQueryCache panics on zero TTL", func(t *testing.T) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("expected panic on zero TTL")
+			}
+			msg, ok := r.(string)
+			if !ok {
+				t.Fatalf("expected panic value to be string, got %T: %v", r, r)
+			}
+			if !containsStr(msg, "UnionQuery.WithQueryCache") {
+				t.Errorf("expected panic message to mention UnionQuery.WithQueryCache, got: %s", msg)
+			}
+		}()
+		chq.UnionAll(q1, q2).WithQueryCache(0)
+	})
+
+	t.Run("UnionQuery WithQueryCache panics on negative TTL", func(t *testing.T) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("expected panic on negative TTL")
+			}
+			msg, ok := r.(string)
+			if !ok {
+				t.Fatalf("expected panic value to be string, got %T: %v", r, r)
+			}
+			if !containsStr(msg, "got -1") {
+				t.Errorf("expected panic message to include offending value, got: %s", msg)
+			}
+		}()
+		chq.UnionAll(q1, q2).WithQueryCache(-1)
+	})
+
+	t.Run("repeated WithQueryCache calls dedup by key — last TTL wins", func(t *testing.T) {
+		sql, _, err := chq.UnionAll(q1, q2).
+			WithQueryCache(60).
+			WithQueryCache(120).
+			Build()
+		if err != nil {
+			t.Fatalf("Build() error: %v", err)
+		}
+		want := "SETTINGS use_query_cache = 1, query_cache_ttl = 120"
+		if !strings.HasSuffix(sql, want) {
+			t.Errorf("expected SETTINGS to end with %q, got: %s", want, sql)
+		}
+		if containsStr(sql, "query_cache_ttl = 60") {
+			t.Errorf("expected superseded TTL to be removed, got: %s", sql)
+		}
+	})
+}
+
+// TestSettingsBuildGuards verifies that SETTINGS on inner queries panics at Build() time.
+// ClickHouse only accepts SETTINGS at the top level of a SELECT/UNION; emitting SETTINGS
+// inside a CTE body or a UNION branch would produce SQL the server rejects. Since
+// `analyticsCacheTTL` is package-private and only applied to outer queries, this guard
+// is unreachable except via a programmer error — panic surfaces it on the first run.
+func TestSettingsBuildGuards(t *testing.T) {
+	expectPanic := func(t *testing.T, want string, fn func()) {
+		t.Helper()
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("expected panic, got nil")
+			}
+			msg, ok := r.(string)
+			if !ok {
+				t.Fatalf("expected panic value to be string, got %T: %v", r, r)
+			}
+			if !containsStr(msg, want) {
+				t.Errorf("expected panic to contain %q, got: %s", want, msg)
+			}
+		}()
+		fn()
+	}
+
+	t.Run("Query.Build panics when CTE sub-query has SETTINGS", func(t *testing.T) {
+		expectPanic(t, `cte "top_vals"`, func() {
+			inner := chq.NewQuery().Select("1").From("events").WithQueryCache(60)
+			outer := chq.NewQuery().Select("*").From("cte").With("top_vals", inner)
+			_, _, _ = outer.Build()
+		})
+	})
+
+	t.Run("Query.Build panics when nested CTE (depth 2) has SETTINGS", func(t *testing.T) {
+		expectPanic(t, `cte "inner_cte"`, func() {
+			deepest := chq.NewQuery().Select("1").From("events").WithQueryCache(60)
+			middle := chq.NewQuery().Select("*").From("base").With("inner_cte", deepest)
+			outer := chq.NewQuery().Select("*").From("middle").With("middle_cte", middle)
+			_, _, _ = outer.Build()
+		})
+	})
+
+	t.Run("UnionQuery.Build panics when first branch has SETTINGS", func(t *testing.T) {
+		expectPanic(t, "query 0", func() {
+			q1 := chq.NewQuery().Select("1 AS x").From("events").WithQueryCache(60)
+			q2 := chq.NewQuery().Select("2 AS x").From("events")
+			_, _, _ = chq.UnionAll(q1, q2).Build()
+		})
+	})
+
+	t.Run("UnionQuery.Build panics when later branch has SETTINGS", func(t *testing.T) {
+		expectPanic(t, "query 1", func() {
+			q1 := chq.NewQuery().Select("1 AS x").From("events")
+			q2 := chq.NewQuery().Select("2 AS x").From("events").WithQueryCache(60)
+			_, _, _ = chq.UnionAll(q1, q2).Build()
+		})
+	})
+}
+
 // --- Complex integration-style examples ---
 
 func TestComplexQueries(t *testing.T) {
@@ -492,12 +796,16 @@ func TestComplexQueries(t *testing.T) {
 }
 
 func containsStr(s, sub string) bool {
+	return indexStr(s, sub) >= 0
+}
+
+func indexStr(s, sub string) int {
 	for i := 0; i <= len(s)-len(sub); i++ {
 		if s[i:i+len(sub)] == sub {
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 func clamp(n, max int) int {
