@@ -59,7 +59,7 @@ func (s *server) BatchGet(
 	orgID := req.Msg.GetOrgId()
 	isMember, err := s.orgsService.IsOrgMember(ctx, orgID, principal.Customer.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("orgId", orgID), slog.String("customerId", principal.Customer.ID))
+		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -69,7 +69,7 @@ func (s *server) BatchGet(
 
 	projectsData, err := s.service.GetProjectsByOrgID(ctx, orgID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("orgId", orgID))
+		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -104,8 +104,6 @@ func (s *server) Create(
 		if errors.Is(err, projects.ErrProjectNameTaken) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("a project with this name already exists"))
 		}
-		slog.ErrorContext(ctx, "failed to create project", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -135,7 +133,7 @@ func (s *server) Delete(
 		if errors.Is(err, projects.ErrProjectNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
 		}
-		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("orgId", principal.Project.OrgID), slog.String("id", principal.Project.ID))
+		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("org_id", principal.Project.OrgID), slog.String("id", principal.Project.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -163,7 +161,7 @@ func (s *server) UpdateDisplayName(
 		if errors.Is(err, projects.ErrProjectNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
 		}
-		slog.ErrorContext(ctx, "failed to update project display name", slogx.Error(err), slog.String("projectID", wParams.ID))
+		slog.ErrorContext(ctx, "failed to update project display name", slogx.Error(err), slog.String("project_id", wParams.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -194,7 +192,7 @@ func (s *server) UpdateFCMServiceJSON(
 		if errors.Is(err, projects.ErrProjectNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
 		}
-		slog.ErrorContext(ctx, "failed to update project FCM service JSON", slogx.Error(err), slog.String("projectID", wParams.ID), slog.String("orgID", wParams.OrgID))
+		slog.ErrorContext(ctx, "failed to update project FCM service JSON", slogx.Error(err), slog.String("project_id", wParams.ID), slog.String("org_id", wParams.OrgID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

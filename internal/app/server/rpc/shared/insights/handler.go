@@ -71,21 +71,15 @@ func (s *server) Query(
 		q, err := coreinsights.BuildTrendsQuery(req.Msg, projectID)
 		if err != nil {
 			slog.WarnContext(ctx, "failed to build trends query", slogx.Error(err),
-				slog.String("projectID", projectID))
+				slog.String("project_id", projectID))
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 		}
-		rows, err := s.executor.QueryTrends(ctx, q)
+		rows, err := s.executor.QueryTrends(ctx, projectID, q)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to query trends", slogx.Error(err),
-				slog.String("projectID", projectID))
-			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		series, err := coreinsights.GroupSeries(rows, q.Properties())
+		series, err := coreinsights.GroupSeries(ctx, rows, q.Properties())
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to group trend series", slogx.Error(err),
-				slog.String("projectID", projectID))
-			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Trends{
@@ -96,14 +90,11 @@ func (s *server) Query(
 		q, err := coreinsights.BuildSegmentationQuery(req.Msg, projectID)
 		if err != nil {
 			slog.WarnContext(ctx, "failed to build segmentation query", slogx.Error(err),
-				slog.String("projectID", projectID))
+				slog.String("project_id", projectID))
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 		}
-		value, err := s.executor.QueryScalar(ctx, q)
+		value, err := s.executor.QueryScalar(ctx, projectID, q)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to query segmentation", slogx.Error(err),
-				slog.String("projectID", projectID))
-			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Segmentation{
@@ -117,20 +108,15 @@ func (s *server) Query(
 			q, err := coreinsights.BuildFunnelTimingQuery(req.Msg, projectID)
 			if err != nil {
 				slog.WarnContext(ctx, "failed to build funnel timing query", slogx.Error(err),
-					slog.String("projectID", projectID))
+					slog.String("project_id", projectID))
 				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 			}
-			users, err := s.executor.QueryFunnelUserEvents(ctx, q)
+			users, err := s.executor.QueryFunnelUserEvents(ctx, projectID, q)
 			if err != nil {
-				slog.ErrorContext(ctx, "failed to query funnel user events", slogx.Error(err),
-					slog.String("projectID", projectID))
-				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelRows, err = coreinsights.ComputeFunnelTiming(ctx, projectID, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
 			if err != nil {
-				// ComputeFunnelTiming logs at source; just record telemetry and translate to client error.
-				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelProperties = q.Properties()
@@ -138,22 +124,17 @@ func (s *server) Query(
 			q, err := coreinsights.BuildFunnelCountsQuery(req.Msg, projectID)
 			if err != nil {
 				slog.WarnContext(ctx, "failed to build funnel query", slogx.Error(err),
-					slog.String("projectID", projectID))
+					slog.String("project_id", projectID))
 				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 			}
-			funnelRows, err = s.executor.QueryFunnel(ctx, q)
+			funnelRows, err = s.executor.QueryFunnel(ctx, projectID, q)
 			if err != nil {
-				slog.ErrorContext(ctx, "failed to query funnel", slogx.Error(err),
-					slog.String("projectID", projectID))
-				telemetry.RecordError(ctx, err)
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelProperties = q.Properties()
 		}
 		funnelSeries, err := coreinsights.GroupFunnelSeries(ctx, funnelRows, funnelProperties)
 		if err != nil {
-			// GroupFunnelSeries logs at source; just record telemetry and translate to client error.
-			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Funnel{
@@ -164,21 +145,15 @@ func (s *server) Query(
 		q, err := coreinsights.BuildRetentionQuery(req.Msg, projectID)
 		if err != nil {
 			slog.WarnContext(ctx, "failed to build retention query", slogx.Error(err),
-				slog.String("projectID", projectID))
+				slog.String("project_id", projectID))
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 		}
-		rows, err := s.executor.QueryRetention(ctx, q)
+		rows, err := s.executor.QueryRetention(ctx, projectID, q)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to query retention", slogx.Error(err),
-				slog.String("projectID", projectID))
-			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		retentionSeries, err := coreinsights.GroupRetentionSeries(rows, q.Properties())
+		retentionSeries, err := coreinsights.GroupRetentionSeries(ctx, rows, q.Properties())
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to group retention series", slogx.Error(err),
-				slog.String("projectID", projectID))
-			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		resp.Result = &insightsv1.QueryResponse_Retention{
@@ -188,14 +163,15 @@ func (s *server) Query(
 	default:
 		// Defensive: protovalidate rejects undefined/UNSPECIFIED insight_type values at the interceptor,
 		// so this arm is unreachable via the RPC path. A new enum variant added to the proto without a
-		// matching case here would land here — log it so operators notice.
+		// matching case here would land here — that is a server-side bug (proto/Go drift), not client
+		// input, so log + record at source and return CodeInternal.
 		err := errors.New("unsupported insight type")
-		slog.WarnContext(ctx, "unsupported insight type reached handler default",
+		slog.ErrorContext(ctx, "unsupported insight type reached handler default",
 			slogx.Error(err),
-			slog.String("projectID", projectID),
-			slog.String("insightType", req.Msg.GetInsightType().String()))
+			slog.String("project_id", projectID),
+			slog.String("insight_type", req.Msg.GetInsightType().String()))
 		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(resp), nil
@@ -218,15 +194,12 @@ func (s *server) SegmentUsers(
 	sql, args, err := coreinsights.BuildSegmentUsersQuery(req.Msg, principal.Project.ID)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to build segment users query", slogx.Error(err),
-			slog.String("projectID", principal.Project.ID))
+			slog.String("project_id", principal.Project.ID))
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters"))
 	}
 
-	ids, err := s.executor.QueryStringColumn(ctx, sql, args)
+	ids, err := s.executor.QueryStringColumn(ctx, principal.Project.ID, sql, args)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to query distinct IDs", slogx.Error(err),
-			slog.String("projectID", principal.Project.ID))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -268,9 +241,6 @@ func (s *server) GetFilterSchema(
 
 	schema, err := s.service.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind())
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get filter schema", slogx.Error(err),
-			slog.String("projectID", projectID))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -294,10 +264,6 @@ func (s *server) GetPropertyValues(
 
 	values, err := s.service.GetPropertyValues(ctx, projectID, req.Msg.GetPropertyKey(), req.Msg.GetEventKind(), req.Msg.GetSource())
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get property values", slogx.Error(err),
-			slog.String("projectID", projectID),
-			slog.String("propertyKey", req.Msg.GetPropertyKey()))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

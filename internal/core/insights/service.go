@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -53,17 +54,17 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		var resp insightsv1.GetFilterSchemaResponse
 		if err := proto.Unmarshal(cachedSchema, &resp); err != nil {
 			slog.WarnContext(ctx, "failed to unmarshal cached filter schema, evicting",
-				slogx.Error(err), slog.String("projectID", projectID))
+				slogx.Error(err), slog.String("project_id", projectID))
 			if delErr := s.redis.Del(ctx, cacheKey).Err(); delErr != nil {
 				slog.WarnContext(ctx, "failed to evict corrupt filter schema cache",
-					slogx.Error(delErr), slog.String("projectID", projectID))
+					slogx.Error(delErr), slog.String("project_id", projectID))
 			}
 		} else {
 			return &resp, nil
 		}
 	} else if !errors.Is(cacheErr, redis.Nil) {
 		slog.WarnContext(ctx, "redis get failed for filter schema cache", slogx.Error(cacheErr),
-			slog.String("projectID", projectID))
+			slog.String("project_id", projectID))
 	}
 
 	var eventMetas []AggregateKeyMeta
@@ -76,9 +77,12 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	eg.Go(func() error {
 		sql, args, err := BuildEventNamesQuery(projectID)
 		if err != nil {
+			slog.ErrorContext(egCtx, "build event names query failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(egCtx, err)
 			return fmt.Errorf("build event names query: %w", err)
 		}
-		eventMetas, err = s.executor.QueryAggregateKeys(egCtx, sql, args)
+		eventMetas, err = s.executor.QueryAggregateKeys(egCtx, projectID, sql, args)
 		if err != nil {
 			return fmt.Errorf("query event names: %w", err)
 		}
@@ -87,9 +91,12 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	eg.Go(func() error {
 		sql, args, err := BuildAutoPropertyKeysQuery(projectID, eventKind)
 		if err != nil {
+			slog.ErrorContext(egCtx, "build auto property keys query failed", slogx.Error(err),
+				slog.String("project_id", projectID), slog.String("event_kind", eventKind))
+			telemetry.RecordError(egCtx, err)
 			return fmt.Errorf("build auto property keys query: %w", err)
 		}
-		autoPropKeys, err = s.executor.QueryAggregateKeys(egCtx, sql, args)
+		autoPropKeys, err = s.executor.QueryAggregateKeys(egCtx, projectID, sql, args)
 		if err != nil {
 			return fmt.Errorf("query auto property keys: %w", err)
 		}
@@ -98,9 +105,12 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	eg.Go(func() error {
 		sql, args, err := BuildCustomPropertyKeysQuery(projectID, eventKind)
 		if err != nil {
+			slog.ErrorContext(egCtx, "build custom property keys query failed", slogx.Error(err),
+				slog.String("project_id", projectID), slog.String("event_kind", eventKind))
+			telemetry.RecordError(egCtx, err)
 			return fmt.Errorf("build custom property keys query: %w", err)
 		}
-		customPropKeys, err = s.executor.QueryAggregateKeys(egCtx, sql, args)
+		customPropKeys, err = s.executor.QueryAggregateKeys(egCtx, projectID, sql, args)
 		if err != nil {
 			return fmt.Errorf("query custom property keys: %w", err)
 		}
@@ -109,9 +119,12 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	eg.Go(func() error {
 		sql, args, err := BuildProfilePropertyKeysQuery(projectID)
 		if err != nil {
+			slog.ErrorContext(egCtx, "build profile property keys query failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(egCtx, err)
 			return fmt.Errorf("build profile property keys query: %w", err)
 		}
-		keys, err := s.executor.QueryAggregateKeys(egCtx, sql, args)
+		keys, err := s.executor.QueryAggregateKeys(egCtx, projectID, sql, args)
 		if err != nil {
 			return fmt.Errorf("query profile property keys: %w", err)
 		}
@@ -151,10 +164,11 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 
 	if data, err := proto.Marshal(resp); err != nil {
 		slog.ErrorContext(ctx, "failed to marshal filter schema for cache", slogx.Error(err),
-			slog.String("projectID", projectID))
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 	} else if err := s.redis.Set(ctx, cacheKey, data, schemaCacheTTL).Err(); err != nil {
 		slog.WarnContext(ctx, "failed to cache filter schema", slogx.Error(err),
-			slog.String("projectID", projectID))
+			slog.String("project_id", projectID))
 	}
 
 	return resp, nil
@@ -168,17 +182,17 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 		var vals []string
 		if err := json.Unmarshal(cached, &vals); err != nil {
 			slog.WarnContext(ctx, "failed to unmarshal cached property values, evicting",
-				slogx.Error(err), slog.String("projectID", projectID), slog.String("key", propertyKey))
+				slogx.Error(err), slog.String("project_id", projectID), slog.String("key", propertyKey))
 			if delErr := s.redis.Del(ctx, cacheKey).Err(); delErr != nil {
 				slog.WarnContext(ctx, "failed to evict corrupt property values cache",
-					slogx.Error(delErr), slog.String("projectID", projectID))
+					slogx.Error(delErr), slog.String("project_id", projectID))
 			}
 		} else {
 			return vals, nil
 		}
 	} else if !errors.Is(cacheErr, redis.Nil) {
 		slog.WarnContext(ctx, "redis get failed for property values cache", slogx.Error(cacheErr),
-			slog.String("projectID", projectID), slog.String("key", propertyKey))
+			slog.String("project_id", projectID), slog.String("key", propertyKey))
 	}
 
 	var values []string
@@ -188,23 +202,37 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	case commonv1.PropertySource_PROPERTY_SOURCE_AUTO:
 		sql, args, buildErr := BuildAutoPropertyValuesQuery(projectID, propertyKey, eventKind)
 		if buildErr != nil {
+			slog.ErrorContext(ctx, "build auto property values query failed", slogx.Error(buildErr),
+				slog.String("project_id", projectID), slog.String("property_key", propertyKey), slog.String("event_kind", eventKind))
+			telemetry.RecordError(ctx, buildErr)
 			return nil, fmt.Errorf("build property values query: %w", buildErr)
 		}
-		values, err = s.executor.QueryStringColumn(ctx, sql, args)
+		values, err = s.executor.QueryStringColumn(ctx, projectID, sql, args)
 	case commonv1.PropertySource_PROPERTY_SOURCE_CUSTOM:
 		sql, args, buildErr := BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind)
 		if buildErr != nil {
+			slog.ErrorContext(ctx, "build custom property values query failed", slogx.Error(buildErr),
+				slog.String("project_id", projectID), slog.String("property_key", propertyKey), slog.String("event_kind", eventKind))
+			telemetry.RecordError(ctx, buildErr)
 			return nil, fmt.Errorf("build property values query: %w", buildErr)
 		}
-		values, err = s.executor.QueryStringColumn(ctx, sql, args)
+		values, err = s.executor.QueryStringColumn(ctx, projectID, sql, args)
 	case commonv1.PropertySource_PROPERTY_SOURCE_PROFILE:
 		sql, args, buildErr := BuildProfilePropertyValuesQuery(projectID, propertyKey)
 		if buildErr != nil {
+			slog.ErrorContext(ctx, "build profile property values query failed", slogx.Error(buildErr),
+				slog.String("project_id", projectID), slog.String("property_key", propertyKey))
+			telemetry.RecordError(ctx, buildErr)
 			return nil, fmt.Errorf("build profile property values query: %w", buildErr)
 		}
-		values, err = s.executor.QueryStringColumn(ctx, sql, args)
+		values, err = s.executor.QueryStringColumn(ctx, projectID, sql, args)
 	default:
-		return nil, fmt.Errorf("unsupported property source: %v", source)
+		err := fmt.Errorf("unsupported property source: %v", source)
+		slog.ErrorContext(ctx, "unsupported property source reached service default", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("property_key", propertyKey),
+			slog.String("source", source.String()))
+		telemetry.RecordError(ctx, err)
+		return nil, err
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query property values: %w", err)
@@ -216,10 +244,11 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	}
 	if data, err := json.Marshal(values); err != nil {
 		slog.ErrorContext(ctx, "failed to marshal property values for cache", slogx.Error(err),
-			slog.String("projectID", projectID), slog.String("key", propertyKey))
+			slog.String("project_id", projectID), slog.String("key", propertyKey))
+		telemetry.RecordError(ctx, err)
 	} else if err := s.redis.Set(ctx, cacheKey, data, ttl).Err(); err != nil {
 		slog.WarnContext(ctx, "failed to cache property values", slogx.Error(err),
-			slog.String("projectID", projectID), slog.String("key", propertyKey))
+			slog.String("project_id", projectID), slog.String("key", propertyKey))
 	}
 
 	return values, nil

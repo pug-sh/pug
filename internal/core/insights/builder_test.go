@@ -1187,7 +1187,7 @@ func TestGroupSeries_Breakdowns(t *testing.T) {
 		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 3},
 	}
 
-	series, err := insights.GroupSeries(rows, []string{"$country"})
+	series, err := insights.GroupSeries(t.Context(), rows, []string{"$country"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1434,7 +1434,7 @@ func TestGroupSeries_MultiEvent(t *testing.T) {
 		{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 5},
 	}
 
-	series, err := insights.GroupSeries(rows, nil)
+	series, err := insights.GroupSeries(t.Context(), rows, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1466,7 +1466,7 @@ func TestGroupSeries_SortsPointsByTime(t *testing.T) {
 		{Time: mustTime("2024-01-02T00:00:00Z"), EventKind: "page_view", Value: 20},
 	}
 
-	series, err := insights.GroupSeries(rows, nil)
+	series, err := insights.GroupSeries(t.Context(), rows, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1499,7 +1499,7 @@ func TestGroupSeries_SortsPointsByTime_Breakdowns(t *testing.T) {
 		{Time: mustTime("2024-01-02T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 20},
 	}
 
-	series, err := insights.GroupSeries(rows, []string{"$country"})
+	series, err := insights.GroupSeries(t.Context(), rows, []string{"$country"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1537,7 +1537,7 @@ func TestGroupSeries_SortsPointsByTime_MultiEvent(t *testing.T) {
 		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 3},
 	}
 
-	series, err := insights.GroupSeries(rows, nil)
+	series, err := insights.GroupSeries(t.Context(), rows, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1563,7 +1563,7 @@ func TestGroupSeries_SortsPointsByTime_MultiEvent(t *testing.T) {
 }
 
 func TestGroupSeries_Empty(t *testing.T) {
-	series, err := insights.GroupSeries(nil, nil)
+	series, err := insights.GroupSeries(t.Context(), nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1594,7 +1594,7 @@ func TestGroupRetentionSeries(t *testing.T) {
 		},
 	}
 
-	series, err := insights.GroupRetentionSeries(rows, nil)
+	series, err := insights.GroupRetentionSeries(t.Context(), rows, nil)
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries: %v", err)
 	}
@@ -1828,14 +1828,14 @@ func TestSingleEventRetention(t *testing.T) {
 }
 
 func TestGroupRetentionSeries_Empty(t *testing.T) {
-	series, err := insights.GroupRetentionSeries(nil, nil)
+	series, err := insights.GroupRetentionSeries(t.Context(), nil, nil)
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries(nil): %v", err)
 	}
 	if len(series) != 0 {
 		t.Errorf("expected 0 series for nil input, got %d", len(series))
 	}
-	series, err = insights.GroupRetentionSeries([]insights.RetentionRow{}, nil)
+	series, err = insights.GroupRetentionSeries(t.Context(), []insights.RetentionRow{}, nil)
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries(empty): %v", err)
 	}
@@ -1935,7 +1935,7 @@ func TestGroupSeries_BreakdownMismatchError(t *testing.T) {
 	rows := []insights.TrendRow{
 		{EventKind: "page_view", Breakdowns: []string{}, Value: 10},
 	}
-	if _, err := insights.GroupSeries(rows, []string{"$country"}); err == nil {
+	if _, err := insights.GroupSeries(t.Context(), rows, []string{"$country"}); err == nil {
 		t.Error("expected error for mismatched breakdowns/properties")
 	}
 }
@@ -2176,7 +2176,7 @@ func TestGroupRetentionSeries_WithBreakdown(t *testing.T) {
 		},
 	}
 
-	series, err := insights.GroupRetentionSeries(rows, []string{"$country"})
+	series, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country"})
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries: %v", err)
 	}
@@ -2255,7 +2255,7 @@ func TestGroupRetentionSeries_MultiBreakdown(t *testing.T) {
 		{CohortTime: ct, Time: ct, Value: 100, CohortSize: 10, Breakdowns: []string{"US", "Chrome"}},
 		{CohortTime: ct, Time: ct, Value: 100, CohortSize: 5, Breakdowns: []string{"GB", "Safari"}},
 	}
-	series, err := insights.GroupRetentionSeries(rows, []string{"$country", "$browser"})
+	series, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country", "$browser"})
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries: %v", err)
 	}
@@ -2276,7 +2276,7 @@ func TestGroupRetentionSeries_BreakdownMismatchError(t *testing.T) {
 	rows := []insights.RetentionRow{
 		{CohortTime: ct, Time: ct, Value: 100, CohortSize: 10, Breakdowns: []string{}},
 	}
-	if _, err := insights.GroupRetentionSeries(rows, []string{"$country"}); err == nil {
+	if _, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country"}); err == nil {
 		t.Error("expected error for mismatched breakdowns/properties")
 	}
 }
@@ -2351,7 +2351,7 @@ func TestGroupSeries_MultiBreakdown(t *testing.T) {
 		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"GB", "Safari"}, Value: 5},
 	}
 
-	series, err := insights.GroupSeries(rows, []string{"$country", "$browser"})
+	series, err := insights.GroupSeries(t.Context(), rows, []string{"$country", "$browser"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2386,7 +2386,7 @@ func TestGroupRetentionSeries_MultiCohortWithBreakdown(t *testing.T) {
 		{CohortTime: ct2, Time: ct2, Value: 100, CohortSize: 10, Breakdowns: []string{"GB"}},
 	}
 
-	series, err := insights.GroupRetentionSeries(rows, []string{"$country"})
+	series, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country"})
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries: %v", err)
 	}

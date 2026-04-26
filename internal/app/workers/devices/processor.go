@@ -14,6 +14,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/devices"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -35,12 +36,14 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	msg := &devicesv1.DeviceOperationMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal device operation message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "devices")
 	}
 
 	if err := protovalidate.Validate(msg); err != nil {
 		slog.ErrorContext(ctx, "device operation message failed validation", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "devices")
 	}
@@ -53,8 +56,10 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	case *devicesv1.DeviceOperationMessage_Subscribe:
 		return w.handleSubscribe(ctx, msg)
 	default:
-		slog.WarnContext(ctx, "unknown device operation type")
-		return natsworker.NewPermanentError(errors.New("unknown operation type")).
+		err := errors.New("unknown operation type")
+		slog.WarnContext(ctx, "unknown device operation type", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return natsworker.NewPermanentError(err).
 			With("worker", "devices").
 			With("device_id", msg.GetDeviceId()).
 			With("project_id", msg.GetProjectId())
@@ -73,12 +78,13 @@ func (w *Worker) resolveProfileID(ctx context.Context, msg *devicesv1.DeviceOper
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.WarnContext(ctx, "profile not found for device subscription, retrying (will DLQ if profile never exists)",
-				slog.String("externalId", subscribe.GetProfileExternalId()),
-				slog.String("projectId", msg.GetProjectId()))
+				slog.String("external_id", subscribe.GetProfileExternalId()),
+				slog.String("project_id", msg.GetProjectId()))
 		} else {
 			slog.ErrorContext(ctx, "failed to find profile for device upsert", slogx.Error(err),
-				slog.String("externalId", subscribe.GetProfileExternalId()),
-				slog.String("projectId", msg.GetProjectId()))
+				slog.String("external_id", subscribe.GetProfileExternalId()),
+				slog.String("project_id", msg.GetProjectId()))
+			telemetry.RecordError(ctx, err)
 		}
 		return "", err
 	}
@@ -106,9 +112,10 @@ func (w *Worker) handleSubscribe(ctx context.Context, msg *devicesv1.DeviceOpera
 
 	if _, err := w.deviceService.SaveDevice(ctx, msg.GetDeviceId(), subscribe.GetPlatform(), profileID, msg.GetProjectId(), subscribe.GetToken(), properties); err != nil {
 		slog.ErrorContext(ctx, "failed to save device", slogx.Error(err),
-			slog.String("deviceId", msg.GetDeviceId()),
-			slog.String("profileId", profileID),
-			slog.String("projectId", msg.GetProjectId()))
+			slog.String("device_id", msg.GetDeviceId()),
+			slog.String("profile_id", profileID),
+			slog.String("project_id", msg.GetProjectId()))
+		telemetry.RecordError(ctx, err)
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.ForeignKeyViolation {
 			return natsworker.NewPermanentError(err).
 				With("worker", "devices").
@@ -128,13 +135,16 @@ func (w *Worker) handleUpdateStatus(ctx context.Context, msg *devicesv1.DeviceOp
 	if _, err := w.deviceService.UpdateDeviceStatus(ctx, msg.GetDeviceId(), msg.GetProjectId(), updateStatus.GetStatus()); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.WarnContext(ctx, "device not found for status update, terminating",
-				slog.String("deviceId", msg.GetDeviceId()))
+				slog.String("device_id", msg.GetDeviceId()))
 			return natsworker.NewPermanentError(err).
 				With("worker", "devices").
 				With("device_id", msg.GetDeviceId()).
 				With("project_id", msg.GetProjectId())
 		}
-		slog.ErrorContext(ctx, "failed to update device status", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to update device status", slogx.Error(err),
+			slog.String("device_id", msg.GetDeviceId()),
+			slog.String("project_id", msg.GetProjectId()))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	return nil
@@ -146,13 +156,16 @@ func (w *Worker) handleUpdateToken(ctx context.Context, msg *devicesv1.DeviceOpe
 	if _, err := w.deviceService.UpdateDeviceToken(ctx, msg.GetDeviceId(), msg.GetProjectId(), updateToken.GetToken()); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.WarnContext(ctx, "device not found for token update, terminating",
-				slog.String("deviceId", msg.GetDeviceId()))
+				slog.String("device_id", msg.GetDeviceId()))
 			return natsworker.NewPermanentError(err).
 				With("worker", "devices").
 				With("device_id", msg.GetDeviceId()).
 				With("project_id", msg.GetProjectId())
 		}
-		slog.ErrorContext(ctx, "failed to update device token", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to update device token", slogx.Error(err),
+			slog.String("device_id", msg.GetDeviceId()),
+			slog.String("project_id", msg.GetProjectId()))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	return nil

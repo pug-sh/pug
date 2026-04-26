@@ -9,6 +9,7 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/core/projects"
 	"github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -42,13 +43,17 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, projectsSvc *projects.Ser
 func (s *Service) CreateCampaign(ctx context.Context, arg dbwrite.CreateCampaignParams) (dbwrite.Campaign, error) {
 	campaign, err := s.write.CreateCampaign(ctx, arg)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to create campaign", slogx.Error(err),
+			slog.String("project_id", arg.ProjectID), slog.String("campaign_name", arg.Name))
+		telemetry.RecordError(ctx, err)
 		return campaign, err
 	}
 
 	scheduledTime := arg.ScheduledTime.Time
 
 	if err := s.sendCampaignToNATS(ctx, campaign, scheduledTime); err != nil {
-		slog.ErrorContext(ctx, "failed to send campaign to NATS", slogx.Error(err), slog.String("campaignId", campaign.ID))
+		slog.ErrorContext(ctx, "failed to send campaign to NATS", slogx.Error(err), slog.String("campaign_id", campaign.ID))
+		telemetry.RecordError(ctx, err)
 	}
 
 	return campaign, nil
@@ -83,13 +88,17 @@ func (s *Service) DeleteCampaign(ctx context.Context, id string, projectID strin
 func (s *Service) UpdateCampaign(ctx context.Context, arg dbwrite.UpdateCampaignParams) (dbwrite.Campaign, error) {
 	campaign, err := s.write.UpdateCampaign(ctx, arg)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to update campaign", slogx.Error(err),
+			slog.String("campaign_id", arg.ID), slog.String("project_id", arg.ProjectID))
+		telemetry.RecordError(ctx, err)
 		return campaign, err
 	}
 
 	scheduledTime := arg.ScheduledTime.Time
 
 	if err := s.sendCampaignToNATS(ctx, campaign, scheduledTime); err != nil {
-		slog.ErrorContext(ctx, "failed to send updated campaign to NATS", slogx.Error(err), slog.String("campaignId", campaign.ID))
+		slog.ErrorContext(ctx, "failed to send updated campaign to NATS", slogx.Error(err), slog.String("campaign_id", campaign.ID))
+		telemetry.RecordError(ctx, err)
 	}
 
 	return campaign, nil

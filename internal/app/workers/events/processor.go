@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
@@ -26,12 +27,14 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	batch := &eventsv1.EventBatch{}
 	if err := proto.Unmarshal(data, batch); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal event batch", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "events")
 	}
 
 	if err := protovalidate.Validate(batch); err != nil {
 		slog.ErrorContext(ctx, "event batch failed validation", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(err).
 			With("worker", "events")
 	}
@@ -63,6 +66,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	chBatch, err := p.ch.PrepareBatch(ctx, "INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id)")
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()), slog.Int("count", len(batch.Events)))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 
@@ -71,17 +75,21 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		if !sent {
 			if err := chBatch.Abort(); err != nil {
 				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()))
+				telemetry.RecordError(ctx, err)
 			}
 		}
 	}()
 
 	for i, e := range batch.Events {
 		if e.OccurTime == nil {
+			err := fmt.Errorf("event[%d]: occur_time is required for dedup", i)
 			slog.ErrorContext(ctx, "event missing required occur_time",
+				slogx.Error(err),
 				slog.String("project_id", batch.GetProjectId()),
 				slog.String("event_id", e.GetEventId()),
 				slog.Int("event_index", i))
-			return natsworker.NewPermanentError(fmt.Errorf("event[%d]: occur_time is required for dedup", i)).
+			telemetry.RecordError(ctx, err)
+			return natsworker.NewPermanentError(err).
 				With("worker", "events").
 				With("project_id", batch.GetProjectId()).
 				With("event_id", e.GetEventId()).
@@ -100,6 +108,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			e.GetSessionId(),
 		); err != nil {
 			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()), slog.Int("count", len(batch.Events)), slog.String("event_id", e.GetEventId()), slog.Int("event_index", i))
+			telemetry.RecordError(ctx, err)
 			return natsworker.NewPermanentError(err).
 				With("worker", "events").
 				With("project_id", batch.GetProjectId()).
@@ -109,6 +118,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 
 	if err := chBatch.Send(); err != nil {
 		slog.ErrorContext(ctx, "failed to send ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()), slog.Int("count", len(batch.Events)))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	sent = true
