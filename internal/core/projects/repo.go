@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/jackc/pgx/v5"
 	goredis "github.com/redis/go-redis/v9"
 )
 
@@ -38,7 +40,7 @@ func (r *Repo) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey stri
 		if err := json.Unmarshal(data, &project); err != nil {
 			slog.WarnContext(ctx, "failed to unmarshal cached project by private api key, deleting corrupt entry", slogx.Error(err))
 			if err := r.cache.Del(ctx, cacheKey).Err(); err != nil {
-				slog.WarnContext(ctx, "failed to delete corrupt cache entry", slogx.Error(err), slog.String("cacheKey", cacheKey))
+				slog.WarnContext(ctx, "failed to delete corrupt cache entry", slogx.Error(err), slog.String("cache_key", cacheKey))
 			}
 		} else {
 			return project, nil
@@ -47,6 +49,12 @@ func (r *Repo) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey stri
 
 	project, err := r.queries.GetProjectByPrivateApiKey(ctx, privateApiKey)
 	if err != nil {
+		// pgx.ErrNoRows is the expected "invalid API key" miss — caller translates to authn error.
+		// Real DB failures (connection, timeout, etc.) log + record at source.
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "failed to query project by private api key", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+		}
 		return dbread.Project{}, err
 	}
 
@@ -67,7 +75,7 @@ func (r *Repo) InvalidateProjectKeys(ctx context.Context, privateKey, publicKey 
 	}
 	for _, cacheKey := range keys {
 		if err := r.cache.Del(ctx, cacheKey).Err(); err != nil {
-			slog.WarnContext(ctx, "failed to invalidate project cache", slogx.Error(err), slog.String("cacheKey", cacheKey))
+			slog.WarnContext(ctx, "failed to invalidate project cache", slogx.Error(err), slog.String("cache_key", cacheKey))
 		}
 	}
 }
@@ -83,7 +91,7 @@ func (r *Repo) GetProjectByPublicApiKey(ctx context.Context, publicApiKey string
 		if err := json.Unmarshal(data, &project); err != nil {
 			slog.WarnContext(ctx, "failed to unmarshal cached project by public api key, deleting corrupt entry", slogx.Error(err))
 			if err := r.cache.Del(ctx, cacheKey).Err(); err != nil {
-				slog.WarnContext(ctx, "failed to delete corrupt cache entry", slogx.Error(err), slog.String("cacheKey", cacheKey))
+				slog.WarnContext(ctx, "failed to delete corrupt cache entry", slogx.Error(err), slog.String("cache_key", cacheKey))
 			}
 		} else {
 			return project, nil
@@ -92,6 +100,12 @@ func (r *Repo) GetProjectByPublicApiKey(ctx context.Context, publicApiKey string
 
 	project, err := r.queries.GetProjectByPublicApiKey(ctx, publicApiKey)
 	if err != nil {
+		// pgx.ErrNoRows is the expected "invalid API key" miss — caller translates to authn error.
+		// Real DB failures (connection, timeout, etc.) log + record at source.
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "failed to query project by public api key", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+		}
 		return dbread.Project{}, err
 	}
 

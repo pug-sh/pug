@@ -114,9 +114,10 @@ func (s *Scheduler) pollAndPublish(ctx context.Context) {
 
 		if _, err := s.producer.Publish(ctx, nats.CampaignScheduledSubject, data); err != nil {
 			failCount++
-			slog.ErrorContext(ctx, "failed to publish scheduled campaign",
+			// tracedJetStream.Publish records the error against its producer span at source;
+			// this Warn captures only the scheduler-loop disposition (one campaign skipped).
+			slog.WarnContext(ctx, "scheduled campaign publish counted as failed",
 				slogx.Error(err), slog.String("campaign_id", c.ID))
-			telemetry.RecordError(ctx, err)
 			continue
 		}
 

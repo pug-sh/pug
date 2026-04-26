@@ -74,26 +74,14 @@ func (s *server) GetActivityFeed(
 		if errors.Is(err, events.ErrInvalidFilter) {
 			slog.WarnContext(ctx, "invalid filter in activity feed request",
 				slogx.Error(err),
-				slog.String("projectID", principal.Project.ID))
+				slog.String("project_id", principal.Project.ID))
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid filter parameters"))
 		}
-		slog.ErrorContext(ctx, "failed to get activity feed",
-			slogx.Error(err),
-			slog.String("projectID", principal.Project.ID),
-			slog.String("distinctID", req.Msg.GetDistinctId()),
-			slog.String("sessionID", req.Msg.GetSessionId()),
-			slog.Int("filterCount", len(req.Msg.GetPropertyFilters())),
-			slog.Int("eventFilterCount", len(req.Msg.GetEvents())))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	protoEvents, err := eventsToProto(ctx, evts, principal.Project.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to convert events in GetActivityFeed",
-			slogx.Error(err),
-			slog.String("projectID", principal.Project.ID),
-			slog.String("distinctID", req.Msg.GetDistinctId()))
 		return nil, err
 	}
 
@@ -149,26 +137,14 @@ func (s *server) GetEventExplorer(
 		if errors.Is(err, events.ErrInvalidFilter) {
 			slog.WarnContext(ctx, "invalid filter in event explorer request",
 				slogx.Error(err),
-				slog.String("projectID", principal.Project.ID))
+				slog.String("project_id", principal.Project.ID))
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid filter parameters"))
 		}
-		slog.ErrorContext(ctx, "failed to get event explorer",
-			slogx.Error(err),
-			slog.String("projectID", principal.Project.ID),
-			slog.String("distinctID", req.Msg.GetDistinctId()),
-			slog.String("sessionID", req.Msg.GetSessionId()),
-			slog.Int("filterCount", len(req.Msg.GetPropertyFilters())),
-			slog.Int("eventFilterCount", len(req.Msg.GetEvents())))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	protoEvents, err := eventsToProto(ctx, evts, principal.Project.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to convert events in GetEventExplorer",
-			slogx.Error(err),
-			slog.String("projectID", principal.Project.ID),
-			slog.String("distinctID", req.Msg.GetDistinctId()))
 		return nil, err
 	}
 
@@ -196,8 +172,9 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to convert auto_properties",
 				slogx.Error(err),
-				slog.String("eventID", e.EventID),
-				slog.String("projectID", projectID))
+				slog.String("event_id", e.EventID),
+				slog.String("distinct_id", e.DistinctID),
+				slog.String("project_id", projectID))
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
@@ -205,8 +182,9 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to convert custom_properties",
 				slogx.Error(err),
-				slog.String("eventID", e.EventID),
-				slog.String("projectID", projectID))
+				slog.String("event_id", e.EventID),
+				slog.String("distinct_id", e.DistinctID),
+				slog.String("project_id", projectID))
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
@@ -259,13 +237,6 @@ func (s *server) GetActivityHeatmap(
 		TimeRange:  tr,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get activity heatmap",
-			slogx.Error(err),
-			slog.String("projectID", principal.Project.ID),
-			slog.String("distinctID", req.Msg.GetDistinctId()),
-			slog.Time("from", tr.GetFrom().AsTime()),
-			slog.Time("to", tr.GetTo().AsTime()))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -292,11 +263,6 @@ func (s *server) GetProfileStats(
 
 	stats, heatmap, err := s.eventsReader.GetProfileStats(ctx, principal.Project.ID, req.Msg.GetDistinctId())
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get profile stats",
-			slogx.Error(err),
-			slog.String("projectID", principal.Project.ID),
-			slog.String("distinctID", req.Msg.GetDistinctId()))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -330,8 +296,8 @@ func (s *server) GetProfileStats(
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "failed to get profile properties",
 			slogx.Error(err),
-			slog.String("projectID", principal.Project.ID),
-			slog.String("distinctID", req.Msg.GetDistinctId()))
+			slog.String("project_id", principal.Project.ID),
+			slog.String("distinct_id", req.Msg.GetDistinctId()))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -340,8 +306,8 @@ func (s *server) GetProfileStats(
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to convert profile properties to struct",
 				slogx.Error(err),
-				slog.String("projectID", principal.Project.ID),
-				slog.String("distinctID", req.Msg.GetDistinctId()))
+				slog.String("project_id", principal.Project.ID),
+				slog.String("distinct_id", req.Msg.GetDistinctId()))
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
@@ -368,9 +334,6 @@ func (s *server) GetFilterSchema(
 
 	schema, err := s.insightsService.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind())
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get filter schema", slogx.Error(err),
-			slog.String("projectID", projectID))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -399,10 +362,6 @@ func (s *server) GetPropertyValues(
 
 	values, err := s.insightsService.GetPropertyValues(ctx, projectID, req.Msg.GetPropertyKey(), req.Msg.GetEventKind(), req.Msg.GetSource())
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get property values", slogx.Error(err),
-			slog.String("projectID", projectID),
-			slog.String("propertyKey", req.Msg.GetPropertyKey()))
-		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

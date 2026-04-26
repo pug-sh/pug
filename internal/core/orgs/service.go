@@ -139,6 +139,9 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 		CustomerID: customerID,
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to delete org member", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
 		return err
 	}
 	if n == 0 {
@@ -151,6 +154,10 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrMemberNotFound
 			}
+			slog.ErrorContext(ctx, "failed to disambiguate last-admin block from missing member",
+				slogx.Error(err),
+				slog.String("org_id", orgID), slog.String("customer_id", customerID))
+			telemetry.RecordError(ctx, err)
 			return err
 		}
 		return ErrLastAdmin
@@ -161,6 +168,9 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email string) (dbwrite.OrgInvitation, error) {
 	token, err := newInviteToken()
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate invite token", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
 		return dbwrite.OrgInvitation{}, fmt.Errorf("generate invite token: %w", err)
 	}
 	inv, err := s.write.CreateOrgInvitation(ctx, dbwrite.CreateOrgInvitationParams{
@@ -181,6 +191,9 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			return dbwrite.OrgInvitation{}, ErrInviteAlreadyPending
 		}
+		slog.ErrorContext(ctx, "failed to create org invitation", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
 		return dbwrite.OrgInvitation{}, err
 	}
 	return inv, nil
@@ -193,7 +206,12 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back accept invite transaction", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+		}
+	}()
 
 	w := dbwrite.New(tx)
 
@@ -249,7 +267,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 	// Read from write pool to avoid read-replica lag after the commit.
 	wOrg, err := s.write.GetOrgByID(ctx, inv.OrgID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("orgID", inv.OrgID))
+		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("org_id", inv.OrgID))
 		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}

@@ -34,8 +34,9 @@ type FunnelUserEvents struct {
 // funnel is truncated there. A windowSec of 0 means no window constraint; negative
 // values are rejected as invalid.
 //
-// projectID is included in log records for operability — pass an empty string when
-// calling from contexts that don't have one (e.g. unit tests).
+// projectID is included in log records and attached to the span via telemetry.RecordError
+// for operability. Pass an empty string only from non-RPC paths (unit tests, scripts) — an
+// empty value will appear as project_id="" on production spans.
 //
 // Users with no breakdowns (empty Breakdowns slice) are all grouped together,
 // producing a single series.
@@ -44,14 +45,14 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 	if numSteps == 0 {
 		err := errors.New("kinds must not be empty")
 		slog.ErrorContext(ctx, "ComputeFunnelTiming: invalid input", slogx.Error(err),
-			slog.String("projectID", projectID))
+			slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
 	if windowSec < 0 {
 		err := fmt.Errorf("windowSec must be >= 0, got %d", windowSec)
 		slog.ErrorContext(ctx, "ComputeFunnelTiming: invalid input", slogx.Error(err),
-			slog.String("projectID", projectID))
+			slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
@@ -69,7 +70,7 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 			err := fmt.Errorf("user %s: has %d breakdowns but expected %d",
 				u.DistinctID, len(u.Breakdowns), expectedBDs)
 			slog.ErrorContext(ctx, "ComputeFunnelTiming: breakdown length mismatch", slogx.Error(err),
-				slog.String("projectID", projectID), slog.String("distinct_id", u.DistinctID))
+				slog.String("project_id", projectID), slog.String("distinct_id", u.DistinctID))
 			telemetry.RecordError(ctx, err)
 			return nil, err
 		}
@@ -86,7 +87,7 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 			err := fmt.Errorf("user %s: mismatched array lengths (times=%d, step_matches=%d)",
 				u.DistinctID, len(u.Times), len(u.StepMatches))
 			slog.ErrorContext(ctx, "ComputeFunnelTiming: array length mismatch", slogx.Error(err),
-				slog.String("projectID", projectID), slog.String("distinct_id", u.DistinctID))
+				slog.String("project_id", projectID), slog.String("distinct_id", u.DistinctID))
 			telemetry.RecordError(ctx, err)
 			return nil, err
 		}
@@ -133,7 +134,7 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 					// time.Time.Sub on a sorted-ascending slice cannot produce negative deltas.
 					err := fmt.Errorf("user %s: negative delta at step %d (events not sorted)", u.DistinctID, s)
 					slog.ErrorContext(ctx, "ComputeFunnelTiming: negative delta", slogx.Error(err),
-						slog.String("projectID", projectID), slog.String("distinct_id", u.DistinctID), slog.Int("step", s))
+						slog.String("project_id", projectID), slog.String("distinct_id", u.DistinctID), slog.Int("step", s))
 					telemetry.RecordError(ctx, err)
 					return nil, err
 				}
@@ -149,7 +150,7 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 	// a real key during the loop, avoiding a spurious duplicate entry for the empty-breakdown key.
 	if len(orderedKeys) == 0 {
 		slog.InfoContext(ctx, "funnel timing: no matching users, returning zero-count rows",
-			slog.String("projectID", projectID),
+			slog.String("project_id", projectID),
 			slog.Int("steps", numSteps),
 			slog.Int("users", len(users)))
 		emptyBDs := make([]string, expectedBDs)

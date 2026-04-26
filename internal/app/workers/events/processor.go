@@ -75,6 +75,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		if !sent {
 			if err := chBatch.Abort(); err != nil {
 				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()))
+				telemetry.RecordError(ctx, err)
 			}
 		}
 	}()
@@ -83,6 +84,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		if e.OccurTime == nil {
 			err := fmt.Errorf("event[%d]: occur_time is required for dedup", i)
 			slog.ErrorContext(ctx, "event missing required occur_time",
+				slogx.Error(err),
 				slog.String("project_id", batch.GetProjectId()),
 				slog.String("event_id", e.GetEventId()),
 				slog.Int("event_index", i))

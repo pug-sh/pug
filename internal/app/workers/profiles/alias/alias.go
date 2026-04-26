@@ -112,7 +112,7 @@ func handleAlias(ctx context.Context, ch driver.Conn, data []byte) error {
 		aliasID, profileID, externalID, projectID,
 	); err != nil {
 		slog.ErrorContext(ctx, "failed inserting profile alias into ClickHouse", slogx.Error(err),
-			slog.String("aliasId", aliasID), slog.String("profileId", profileID))
+			slog.String("alias_id", aliasID), slog.String("profile_id", profileID))
 		telemetry.RecordError(ctx, err)
 		return err
 	}

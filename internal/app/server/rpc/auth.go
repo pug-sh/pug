@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"connectrpc.com/authn"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/golang-jwt/jwt/v5"
@@ -53,10 +54,17 @@ func maskKey(key string) string {
 }
 
 // projectKeyLookup abstracts API key → project resolution for auth functions.
-// Implementations must return pgx.ErrNoRows when no project matches the key.
+// Implementations must return pgx.ErrNoRows when no project matches the key, and must
+// log + record non-ErrNoRows DB failures at source per CLAUDE.md (the auth boundary
+// only translates errors).
+//
+// InvalidateProjectKeys is required as a structural marker so the sqlc-generated
+// *dbread.Queries cannot accidentally satisfy this interface — its presence ensures
+// callers wire a repo that respects the log-at-source contract.
 type projectKeyLookup interface {
 	GetProjectByPublicApiKey(ctx context.Context, key string) (dbread.Project, error)
 	GetProjectByPrivateApiKey(ctx context.Context, key string) (dbread.Project, error)
+	InvalidateProjectKeys(ctx context.Context, privateKey, publicKey string)
 }
 
 // WithSDKAuth authenticates via API key from the x-api-key header
@@ -95,11 +103,11 @@ func WithSDKAuth(repo projectKeyLookup) authn.AuthFunc {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, authn.Errorf("invalid API key")
 			}
-			slog.ErrorContext(ctx, "error querying project by API key", slogx.Error(err))
+			// Repo logs + records non-ErrNoRows DB failures at source.
 			return nil, authn.Errorf("failed to validate API key")
 		}
 
-		slog.DebugContext(ctx, "SDK auth succeeded", slog.String("authType", string(authType)), slog.String("projectID", project.ID))
+		slog.DebugContext(ctx, "SDK auth succeeded", slog.String("auth_type", string(authType)), slog.String("project_id", project.ID))
 
 		return &Principal{
 			AuthType:     authType,
@@ -145,6 +153,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 		customerID, err := parsedJWT.Claims.GetSubject()
 		if err != nil {
 			slog.ErrorContext(ctx, "unable to get subject from JWT", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 			return nil, authn.Errorf("invalid token claims")
 		}
 
@@ -163,6 +172,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 		if err != nil {
 			if !errors.Is(err, pgx.ErrNoRows) {
 				slog.ErrorContext(ctx, "unable to get customer", slogx.Error(err))
+				telemetry.RecordError(ctx, err)
 			}
 			return nil, authn.Errorf("invalid authorization")
 		}
@@ -184,6 +194,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 					return nil, authn.Errorf("project not found or access denied")
 				}
 				slog.ErrorContext(ctx, "unable to get project", slogx.Error(err))
+				telemetry.RecordError(ctx, err)
 				return nil, authn.Errorf("failed to verify project access")
 			}
 			principal.Project = &project
@@ -208,7 +219,7 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return nil, authn.Errorf("invalid API key")
 				}
-				slog.ErrorContext(ctx, "error querying project by private API key", slogx.Error(err))
+				// Repo logs + records non-ErrNoRows DB failures at source.
 				return nil, authn.Errorf("failed to validate API key")
 			}
 			return &Principal{

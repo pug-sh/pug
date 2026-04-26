@@ -34,19 +34,25 @@ func NewWorker(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Worker {
 func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	var msg campaigns.CampaignMessage
 	if err := json.Unmarshal(data, &msg); err != nil {
+		slog.ErrorContext(ctx, "failed to unmarshal campaign message", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
 		return natsworker.NewPermanentError(fmt.Errorf("failed to unmarshal campaign message: %w", err)).
 			With("worker", "campaigns")
 	}
 
 	if msg.CampaignID == "" {
-		return natsworker.NewPermanentError(fmt.Errorf("campaign message missing campaign_id")).
-			With("worker", "campaigns")
+		err := fmt.Errorf("campaign message missing campaign_id")
+		slog.ErrorContext(ctx, "campaign message missing campaign_id", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return natsworker.NewPermanentError(err).With("worker", "campaigns")
 	}
 
 	slog.InfoContext(ctx, "Processing campaign", slog.String("campaign_id", msg.CampaignID))
 
 	campaign, err := w.campaignService.GetCampaignByID(ctx, msg.CampaignID)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to get campaign", slogx.Error(err), slog.String("campaign_id", msg.CampaignID))
+		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("failed to get campaign %s: %w", msg.CampaignID, err)
 	}
 
@@ -65,17 +71,20 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	for {
 		devices, err := w.deviceService.GetActiveDevicesByProject(ctx, campaign.ProjectID, afterID, pageSize)
 		if err != nil {
+			slog.ErrorContext(ctx, "failed to get active devices", slogx.Error(err), slog.String("project_id", campaign.ProjectID), slog.String("campaign_id", campaign.ID))
+			telemetry.RecordError(ctx, err)
 			return fmt.Errorf("failed to get active devices for project %s: %w", campaign.ProjectID, err)
 		}
 
 		for _, device := range devices {
 			if err := w.deliveryService.SendNotification(ctx, campaign, device); err != nil {
 				failCount++
-				slog.ErrorContext(ctx, "failed to send notification",
+				// SendNotification logs+records at source per the log-at-source convention;
+				// this Warn captures only the wrapper disposition (one device counted as failed).
+				slog.WarnContext(ctx, "device notification counted as failed",
 					slog.String("device_id", device.ID),
 					slog.String("campaign_id", campaign.ID),
 					slogx.Error(err))
-				telemetry.RecordError(ctx, err)
 			}
 		}
 
@@ -88,7 +97,10 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 
 	// All deliveries failed — return error to retry via Nak (campaign stays InProgress).
 	if failCount > 0 && failCount == totalCount {
-		return fmt.Errorf("campaign %s: all %d deliveries failed", campaign.ID, totalCount)
+		err := fmt.Errorf("campaign %s: all %d deliveries failed", campaign.ID, totalCount)
+		slog.ErrorContext(ctx, "all campaign deliveries failed", slogx.Error(err), slog.String("campaign_id", campaign.ID), slog.Int("total_count", totalCount))
+		telemetry.RecordError(ctx, err)
+		return err
 	}
 
 	finalStatus := campaigns.StatusComplete
@@ -101,6 +113,8 @@ func (w *Worker) ProcessMessage(ctx context.Context, data []byte) error {
 	}
 
 	if err := w.campaignService.UpdateCampaignStatus(ctx, campaign.ID, finalStatus); err != nil {
+		slog.ErrorContext(ctx, "failed to update campaign status", slogx.Error(err), slog.String("campaign_id", campaign.ID), slog.String("status", finalStatus))
+		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("failed to update campaign %s status to %s: %w", campaign.ID, finalStatus, err)
 	}
 

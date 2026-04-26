@@ -9,7 +9,9 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
 	"github.com/fivebitsio/cotton/internal/core/projects"
+	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/fivebitsio/cotton/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/option"
@@ -56,11 +58,17 @@ func (f *FCMService) getMessagingClient(ctx context.Context, projectID, fcmServi
 		opt := option.WithCredentialsJSON([]byte(fcmServiceJSON)) //nolint:staticcheck
 		app, err := firebase.NewApp(ctx, nil, opt)
 		if err != nil {
+			slog.ErrorContext(ctx, "error initializing Firebase app", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("error initializing Firebase app: %w", err)
 		}
 
 		client, err := app.Messaging(ctx)
 		if err != nil {
+			slog.ErrorContext(ctx, "error getting Firebase Messaging client", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("error getting Firebase Messaging client: %w", err)
 		}
 
@@ -83,14 +91,21 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 	// Get project details to access FCM service JSON
 	project, err := f.projectsSvc.GetProjectByID(ctx, campaign.ProjectID)
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to get project for FCM send", slogx.Error(err),
+			slog.String("project_id", campaign.ProjectID),
+			slog.String("campaign_id", campaign.ID))
+		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("failed to get project: %w", err)
 	}
 
 	// Check if FCM service JSON is available for the project
 	if project.FcmServiceJson.String == "" {
-		slog.WarnContext(ctx, "No FCM service JSON configured for project",
-			slog.String("project_id", campaign.ProjectID))
-		return fmt.Errorf("no FCM service configuration for project: %s", campaign.ProjectID)
+		err := fmt.Errorf("no FCM service configuration for project: %s", campaign.ProjectID)
+		slog.ErrorContext(ctx, "no FCM service JSON configured for project", slogx.Error(err),
+			slog.String("project_id", campaign.ProjectID),
+			slog.String("campaign_id", campaign.ID))
+		telemetry.RecordError(ctx, err)
+		return err
 	}
 
 	// Extract title and body from notification data
@@ -129,6 +144,11 @@ func (f *FCMService) SendNotification(ctx context.Context, campaign dbread.Campa
 	// Send the message
 	response, err := client.Send(ctx, fcmMsg)
 	if err != nil {
+		slog.ErrorContext(ctx, "error sending FCM message", slogx.Error(err),
+			slog.String("project_id", campaign.ProjectID),
+			slog.String("campaign_id", campaign.ID),
+			slog.String("device_id", device.ID))
+		telemetry.RecordError(ctx, err)
 		return fmt.Errorf("error sending FCM message: %w", err)
 	}
 

@@ -77,7 +77,12 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		telemetry.RecordError(ctx, err)
 		return "", err
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back signup transaction", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+		}
+	}()
 
 	w := dbwrite.New(tx)
 
@@ -160,7 +165,7 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 			return "", ErrInvalidCredentials
 		}
-		slog.ErrorContext(ctx, "failed to compare password hash", slogx.Error(err), slog.String("customerID", customer.ID))
+		slog.ErrorContext(ctx, "failed to compare password hash", slogx.Error(err), slog.String("customer_id", customer.ID))
 		telemetry.RecordError(ctx, err)
 		return "", err
 	}

@@ -108,6 +108,9 @@ func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, d
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			return dbwrite.Project{}, ErrProjectNameTaken
 		}
+		slog.ErrorContext(ctx, "failed to create project as admin", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
 		return dbwrite.Project{}, err
 	}
 	return project, nil
@@ -138,6 +141,9 @@ func (s *Service) CreateProject(ctx context.Context, orgID, displayName string) 
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			return dbwrite.Project{}, ErrProjectNameTaken
 		}
+		slog.ErrorContext(ctx, "failed to create project", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
 		return dbwrite.Project{}, err
 	}
 	return project, nil
@@ -190,7 +196,7 @@ func (s *Service) UpdateFCMServiceJSON(ctx context.Context, arg dbwrite.UpdateFC
 
 func (s *Service) invalidateProject(ctx context.Context, project dbwrite.Project) {
 	if s.repo == nil {
-		slog.WarnContext(ctx, "cache repo not set; skipping project cache invalidation", slog.String("projectID", project.ID))
+		slog.WarnContext(ctx, "cache repo not set; skipping project cache invalidation", slog.String("project_id", project.ID))
 		return
 	}
 	s.repo.InvalidateProjectKeys(ctx, project.PrivateApiKey, project.PublicApiKey)

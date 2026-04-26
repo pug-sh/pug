@@ -274,7 +274,7 @@ Always use the type-specific builders — they provide compile-time safety betwe
 
 All query types expose `.SQL()` and `.Args()`. All types except `ScalarQuery` also expose `.Properties()` and `.NumBreakdowns()`. `FunnelTimingQuery` also exposes `.Kinds()` and `.WindowSec()`.
 
-All five emit `SETTINGS use_query_cache = 1, query_cache_ttl = 60` via `WithQueryCache(analyticsCacheTTL)` on the outermost query. Cache isolation between projects relies on `project_id` being a positional parameter on every cached builder. Property-keys/values, segment-users, and event-names builders intentionally omit the cache. See `analyticsCacheTTL` in `internal/core/insights/builder.go` for staleness mechanics with ReplacingMergeTree.
+All five emit `SETTINGS use_query_cache = 1, query_cache_ttl = 60` via `WithQueryCache(analyticsCacheTTL)` on the outermost query. Cache isolation between projects relies on `project_id` being a positional parameter on every cached builder; a builder that interpolates `project_id` into raw SQL would silently break tenant isolation. Property keys/values (including profile property keys/values), segment-users, and event-names builders intentionally omit the cache. See `analyticsCacheTTL` in `internal/core/insights/builder.go` for staleness mechanics with ReplacingMergeTree.
 
 ### OpenTelemetry Instrumentation
 
@@ -297,11 +297,27 @@ All telemetry is bootstrapped in `internal/deps/telemetry/`. The server initiali
 
 **Configuration:** Set `OTEL_SERVICE_NAME` (strongly recommended — telemetry data will lack a service identifier without it) and `OTEL_EXPORTER_OTLP_ENDPOINT` (default `localhost:4317`). TLS is disabled by default (`OTEL_EXPORTER_OTLP_INSECURE` defaults to `true` when unset); set `OTEL_EXPORTER_OTLP_INSECURE=false` to enable TLS for production OTLP endpoints.
 
-**Recording errors in spans:** Use `telemetry.RecordError(ctx, err)` to record an error on the current span, set the span status to `Error`, and attach stack traces. All RPC handlers should call `telemetry.RecordError(ctx, err)` in error-handling paths for business logic errors. Auth extraction failures (`MustGetPrincipal*`) do not need `RecordError` since they are expected and handled by returning `CodeUnauthenticated`.
+**Recording errors in spans:** Use `telemetry.RecordError(ctx, err)` to record an error on the current span, set the span status to `Error`, and attach stack traces.
+
+Pair `slog.ErrorContext` with `telemetry.RecordError` **at the layer that detects the error** — typically the executor, service, worker, or query helper where the error first surfaces. Downstream layers (handlers, wrappers) must NOT re-log or re-record the same error: `slog.ErrorContext` would emit a duplicate log line, and `telemetry.RecordError` would attach a duplicate event to the same span. Handlers that propagate an already-recorded error should only translate it to the appropriate `connect.NewError(...)` and return.
+
+This convention is enforced by code review, not by tests — no slog/span assertions exist in CI, so a regression that re-introduces duplicate logging or drops source-layer instrumentation will not fail the build.
+
+Exceptions:
+
+- **Client-input errors** (`CodeInvalidArgument`, `CodeUnauthenticated`, etc.) do not need `RecordError`. The default treatment is `slog.WarnContext` at the boundary that detects them, but log level and location vary by case:
+  - **Auth extraction failures** (`MustGetPrincipal*`) — log at `slog.DebugContext` at the source (`internal/app/server/rpc/auth.go`). Auth-extraction is high-volume probe noise (every unauthenticated request hits it), so Debug keeps the noise floor low. The handler boundary skips the log entirely and only translates to `connect.NewError(connect.CodeUnauthenticated, ...)`.
+  - **`Build*Query` validation errors with client-supplied free-form input** (`BuildTrendsQuery`, `BuildSegmentationQuery`, `BuildFunnelTimingQuery`, `BuildFunnelCountsQuery`, `BuildRetentionQuery`, `BuildSegmentUsersQuery`) — log at `slog.WarnContext` at the boundary. Other `Build*Query` callers in `internal/core/insights/service.go` (filter-schema and property-values builders) take only `projectID` plus a validated `eventKind`/`propertyKey`; their `Build()` failures are programmer-error / proto-enum drift, not client input, so they log + record at source like internal errors.
+  - **Other client-input validators** vary based on whether the failure carries diagnostic value:
+    - `events.ErrInvalidFilter` — log at `slog.WarnContext` at the boundary (carries which property/operator the client got wrong).
+    - `coreevents.ValidateExternalEvents`, `events.DecodeEventCursor` — no log at all at the boundary; the handler just translates to `CodeInvalidArgument`. The rejection itself is the diagnostic (malformed page tokens, batch-dedup mismatches), and the request body is already in the access log.
+- **Defer-rollback / cleanup failures** (e.g. `tx.Rollback`, `rows.Close`) should pair slog + RecordError at the deferred site since no caller can see them.
+- **Wrapper disposition logs.** A wrapper that emits its own log for a wrapper-specific decision (e.g. the NATS worker's "terminating poison message" / "message processing failed" lines) MAY include the underlying processor error as a `slogx.Error(err)` attribute. That log line is a *different fact* (the disposition the wrapper decided on, plus wrapper-only metadata like stream/consumer) than the processor's source log, so it is not a duplicate. The wrapper must still skip `telemetry.RecordError` on the original error — the processor already recorded it.
+- **Pure-passthrough services.** When a service method is a one-line wrapper around a generated `dbread`/`dbwrite` query (no business logic, no enrichment to add), the *handler* is effectively the lowest layer with meaningful context (project_id, customer_id, etc.) — logging the DB error at the handler is acceptable in that case. Services with non-trivial logic (e.g. transactions, orchestration of multiple writes, cross-cutting validation) must log + record at source like everyone else.
 
 ## Code Style
 
-- Standard Go conventions. Use slog for logging. Run `go fmt ./...` after each change. A PostToolUse hook auto-runs `goimports` on every `.go` file edit.
+- Standard Go conventions. Use slog for logging. Run `goimports -w` (a strict superset of `go fmt`) on edited files. A PostToolUse hook auto-runs `goimports` on every `Edit`/`Write` tool use, so manual invocation is only needed when edits bypass the hook (batch refactors, IDE edits, merge resolutions).
 - Always use context-aware slog variants (`slog.InfoContext`, `slog.ErrorContext`, `slog.WarnContext`, `slog.DebugContext`) instead of `slog.Info`, `slog.Error`, etc.
 - Always use `slogx.Error(err)` (from `internal/slogx`) for logging errors. Never use `slog.Any("error", err)` or `slog.Any("err", err)`.
 - Never pass sentinel errors directly to `connect.NewError`. Always create an explicit client-facing message with `errors.New("...")`. Sentinel errors are internal and their strings must not leak to API consumers.

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
+	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -56,6 +56,19 @@ type RetentionRow struct {
 	Breakdowns []string
 }
 
+// maxLoggedSQLLen bounds the SQL length attached to error logs. Trends/funnel/retention
+// queries with breakdowns and top_vals can run several KB; on sustained ClickHouse
+// timeouts that multiplies log volume. Truncated SQL still identifies the failing query
+// shape; the wrapped error and arg_count attribute carry the full failure context.
+const maxLoggedSQLLen = 2048
+
+func truncateSQL(sql string) string {
+	if len(sql) <= maxLoggedSQLLen {
+		return sql
+	}
+	return sql[:maxLoggedSQLLen] + "...[truncated]"
+}
+
 // Executor runs pre-built ClickHouse queries and scans the results.
 type Executor struct {
 	ch driver.Conn
@@ -70,19 +83,21 @@ func NewExecutor(ch driver.Conn) *Executor {
 }
 
 // QueryTrends executes a trends query and returns rows of (time, event_kind, [breakdown_0..N], value).
-func (e *Executor) QueryTrends(ctx context.Context, q TrendsQuery) ([]TrendRow, error) {
+func (e *Executor) QueryTrends(ctx context.Context, projectID string, q TrendsQuery) ([]TrendRow, error) {
 	sql := q.SQL()
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query trends failed", slogx.Error(err),
-			slog.String("sql", sql), slog.Any("args", args))
+			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
 		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryTrends: %w", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -96,40 +111,54 @@ func (e *Executor) QueryTrends(ctx context.Context, q TrendsQuery) ([]TrendRow, 
 		}
 		dest = append(dest, &row.Value)
 		if err := rows.Scan(dest...); err != nil {
+			slog.ErrorContext(ctx, "clickhouse: query trends scan failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("QueryTrends: scan: %w", err)
 		}
 		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query trends iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryTrends: %w", err)
 	}
 	return result, nil
 }
 
 // QueryScalar executes a query that returns a single float64 value.
-func (e *Executor) QueryScalar(ctx context.Context, q ScalarQuery) (float64, error) {
+func (e *Executor) QueryScalar(ctx context.Context, projectID string, q ScalarQuery) (float64, error) {
 	sql := q.SQL()
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query scalar failed", slogx.Error(err),
-			slog.String("sql", sql), slog.Any("args", args))
+			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
 		telemetry.RecordError(ctx, err)
 		return 0, fmt.Errorf("QueryScalar: %w", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
 	var value float64
 	if rows.Next() {
 		if err := rows.Scan(&value); err != nil {
+			slog.ErrorContext(ctx, "clickhouse: query scalar scan failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 			return 0, fmt.Errorf("QueryScalar: scan: %w", err)
 		}
 	}
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query scalar iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return 0, fmt.Errorf("QueryScalar: %w", err)
 	}
 	return value, nil
@@ -144,17 +173,19 @@ type AggregateKeyMeta struct {
 
 // QueryAggregateKeys executes a query against event_names or property_keys and returns rows of
 // (kind/key, count, last_seen).
-func (e *Executor) QueryAggregateKeys(ctx context.Context, sql string, args []any) ([]AggregateKeyMeta, error) {
+func (e *Executor) QueryAggregateKeys(ctx context.Context, projectID string, sql string, args []any) ([]AggregateKeyMeta, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query aggregate keys failed", slogx.Error(err),
-			slog.String("sql", sql), slog.Any("args", args))
+			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
 		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryAggregateKeys: %w", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -162,28 +193,36 @@ func (e *Executor) QueryAggregateKeys(ctx context.Context, sql string, args []an
 	for rows.Next() {
 		var row AggregateKeyMeta
 		if err := rows.Scan(&row.Key, &row.Count, &row.LastSeen); err != nil {
+			slog.ErrorContext(ctx, "clickhouse: query aggregate keys scan failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("QueryAggregateKeys: scan: %w", err)
 		}
 		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query aggregate keys iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryAggregateKeys: %w", err)
 	}
 	return result, nil
 }
 
 // QueryStringColumn executes a query and returns a list of string values from the first column.
-func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any) ([]string, error) {
+func (e *Executor) QueryStringColumn(ctx context.Context, projectID string, sql string, args []any) ([]string, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query string column failed", slogx.Error(err),
-			slog.String("sql", sql), slog.Any("args", args))
+			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
 		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryStringColumn: %w", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -191,11 +230,17 @@ func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			slog.ErrorContext(ctx, "clickhouse: query string column scan failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("QueryStringColumn: scan: %w", err)
 		}
 		result = append(result, id)
 	}
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query string column iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryStringColumn: %w", err)
 	}
 	return result, nil
@@ -203,19 +248,21 @@ func (e *Executor) QueryStringColumn(ctx context.Context, sql string, args []any
 
 // QueryFunnel executes a funnel query and returns rows of
 // (step_index, event_kind[, breakdown_0..N], value).
-func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow, error) {
+func (e *Executor) QueryFunnel(ctx context.Context, projectID string, q FunnelQuery) ([]FunnelRow, error) {
 	sql := q.SQL()
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query funnel failed", slogx.Error(err),
-			slog.String("sql", sql), slog.Any("args", args))
+			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
 		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryFunnel: %w", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -229,11 +276,17 @@ func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow,
 		}
 		dest = append(dest, &row.Value)
 		if err := rows.Scan(dest...); err != nil {
+			slog.ErrorContext(ctx, "clickhouse: query funnel scan failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("QueryFunnel: scan: %w", err)
 		}
 		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query funnel iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryFunnel: %w", err)
 	}
 	// ClickHouse UNION ALL does not reliably apply a trailing ORDER BY across
@@ -259,19 +312,21 @@ func (e *Executor) QueryFunnel(ctx context.Context, q FunnelQuery) ([]FunnelRow,
 // QueryFunnelUserEvents executes the array-based funnel query and returns per-user
 // event arrays for Go-side step matching and timing computation.
 // Columns: (distinct_id, times, step_matches[, breakdown_0..N]).
-func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuery) ([]FunnelUserEvents, error) {
+func (e *Executor) QueryFunnelUserEvents(ctx context.Context, projectID string, q FunnelTimingQuery) ([]FunnelUserEvents, error) {
 	sql := q.SQL()
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query funnel user events failed", slogx.Error(err),
-			slog.String("sql", sql), slog.Any("args", args))
+			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
 		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryFunnelUserEvents: %w", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -284,11 +339,17 @@ func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuer
 			dest = append(dest, &row.Breakdowns[i])
 		}
 		if err := rows.Scan(dest...); err != nil {
+			slog.ErrorContext(ctx, "clickhouse: query funnel user events scan failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("QueryFunnelUserEvents: scan: %w", err)
 		}
 		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query funnel user events iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryFunnelUserEvents: %w", err)
 	}
 	return result, nil
@@ -296,19 +357,21 @@ func (e *Executor) QueryFunnelUserEvents(ctx context.Context, q FunnelTimingQuer
 
 // QueryRetention executes a retention query and returns rows of
 // (cohort_time, time, value, cohort_size[, breakdown_0..N]).
-func (e *Executor) QueryRetention(ctx context.Context, q RetentionQuery) ([]RetentionRow, error) {
+func (e *Executor) QueryRetention(ctx context.Context, projectID string, q RetentionQuery) ([]RetentionRow, error) {
 	sql := q.SQL()
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
 		slog.ErrorContext(ctx, "clickhouse: query retention failed", slogx.Error(err),
-			slog.String("sql", sql), slog.Any("args", args))
+			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
 		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryRetention: %w", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err))
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 		}
 	}()
 
@@ -321,11 +384,17 @@ func (e *Executor) QueryRetention(ctx context.Context, q RetentionQuery) ([]Rete
 			dest = append(dest, &row.Breakdowns[i])
 		}
 		if err := rows.Scan(dest...); err != nil {
+			slog.ErrorContext(ctx, "clickhouse: query retention scan failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("QueryRetention: scan: %w", err)
 		}
 		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query retention iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryRetention: %w", err)
 	}
 	return result, nil
@@ -340,7 +409,9 @@ func breakdownKey(vals []string) string {
 // GroupSeries groups TrendRow results into TrendSeries, keyed by (event_kind, breakdown_tuple).
 // The properties slice provides the property name for each breakdown dimension.
 // Insertion order is preserved.
-func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSeries, error) {
+//
+// Validation errors (breakdown/property length mismatch) are logged and recorded against ctx's span.
+func GroupSeries(ctx context.Context, rows []TrendRow, properties []string) ([]*insightsv1.TrendSeries, error) {
 	type seriesKey struct {
 		eventKind string
 		breakdown string
@@ -355,7 +426,10 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 
 	for _, r := range rows {
 		if len(r.Breakdowns) != len(properties) {
-			return nil, fmt.Errorf("row has %d breakdowns but expected %d", len(r.Breakdowns), len(properties))
+			err := fmt.Errorf("row has %d breakdowns but expected %d", len(r.Breakdowns), len(properties))
+			slog.ErrorContext(ctx, "GroupSeries: breakdown/property length mismatch", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return nil, err
 		}
 		key := seriesKey{eventKind: r.EventKind, breakdown: breakdownKey(r.Breakdowns)}
 		if _, ok := entriesByKey[key]; !ok {
@@ -394,6 +468,8 @@ func GroupSeries(rows []TrendRow, properties []string) ([]*insightsv1.TrendSerie
 
 // GroupFunnelSeries groups FunnelRow results into FunnelSeries, keyed by breakdown tuple.
 // The properties slice provides the property name for each breakdown dimension.
+//
+// Validation errors (breakdown/property length mismatch) are logged and recorded against ctx's span.
 func GroupFunnelSeries(ctx context.Context, rows []FunnelRow, properties []string) ([]*insightsv1.FunnelSeries, error) {
 	type seriesEntry struct {
 		breakdown map[string]string
@@ -407,6 +483,7 @@ func GroupFunnelSeries(ctx context.Context, rows []FunnelRow, properties []strin
 		if len(r.Breakdowns) != len(properties) {
 			err := fmt.Errorf("funnel row has %d breakdowns but expected %d", len(r.Breakdowns), len(properties))
 			slog.ErrorContext(ctx, "GroupFunnelSeries: breakdown/property length mismatch", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
 			return nil, err
 		}
 		key := breakdownKey(r.Breakdowns)
@@ -461,7 +538,9 @@ func GroupFunnelSeries(ctx context.Context, rows []FunnelRow, properties []strin
 // GroupRetentionSeries groups RetentionRow results into RetentionSeries, keyed by breakdown tuple.
 // Within each series, rows are grouped into cohorts. Insertion order is preserved for both
 // series and cohorts.
-func GroupRetentionSeries(rows []RetentionRow, properties []string) ([]*insightsv1.RetentionSeries, error) {
+//
+// Validation errors (breakdown/property length mismatch) are logged and recorded against ctx's span.
+func GroupRetentionSeries(ctx context.Context, rows []RetentionRow, properties []string) ([]*insightsv1.RetentionSeries, error) {
 	type cohortEntry struct {
 		order  []time.Time
 		byTime map[time.Time]*insightsv1.RetentionCohort
@@ -476,7 +555,10 @@ func GroupRetentionSeries(rows []RetentionRow, properties []string) ([]*insights
 
 	for _, row := range rows {
 		if len(row.Breakdowns) != len(properties) {
-			return nil, fmt.Errorf("retention row has %d breakdowns but expected %d", len(row.Breakdowns), len(properties))
+			err := fmt.Errorf("retention row has %d breakdowns but expected %d", len(row.Breakdowns), len(properties))
+			slog.ErrorContext(ctx, "GroupRetentionSeries: breakdown/property length mismatch", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return nil, err
 		}
 		key := breakdownKey(row.Breakdowns)
 		if _, ok := entriesByKey[key]; !ok {
