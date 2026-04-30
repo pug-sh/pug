@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	chq "github.com/fivebitsio/cotton/internal/core/clickhouse"
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
@@ -19,8 +20,11 @@ import (
 )
 
 type Event struct {
-	AutoProperties   map[string]string
-	CustomProperties map[string]string
+	AutoProperties map[string]string
+	// CustomProperties decodes from Map(String, Variant(String, Int64, Float64, Bool, DateTime64(3))).
+	// Values come back as chcol.Variant; call .Any() to retrieve the underlying native Go type
+	// (string, int64, float64, bool, or time.Time matching the active variant tag).
+	CustomProperties map[string]chcol.Variant
 	DistinctID       string
 	EventID          string
 	InsertTime       time.Time

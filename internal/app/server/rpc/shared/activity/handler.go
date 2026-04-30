@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/core/events"
@@ -178,7 +179,7 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		customProps, err := mapToStruct(e.CustomProperties)
+		customProps, err := variantMapToStruct(e.CustomProperties)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to convert custom_properties",
 				slogx.Error(err),
@@ -205,6 +206,17 @@ func mapToStruct(m map[string]string) (*structpb.Struct, error) {
 	fields := make(map[string]any, len(m))
 	for k, v := range m {
 		fields[k] = v
+	}
+	return structpb.NewStruct(fields)
+}
+
+// variantMapToStruct converts a Map(String, Variant(...)) scan result into a
+// structpb.Struct for the activity API response. Each chcol.Variant value is
+// unwrapped to its native Go type via .Any() before being passed to structpb.
+func variantMapToStruct(m map[string]chcol.Variant) (*structpb.Struct, error) {
+	fields := make(map[string]any, len(m))
+	for k, v := range m {
+		fields[k] = v.Any()
 	}
 	return structpb.NewStruct(fields)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"buf.build/go/protovalidate"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -11,9 +12,49 @@ import (
 
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
+	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
+
+// propertyValueToVariant converts a proto PropertyValue oneof into the Go value
+// the clickhouse-go driver maps to a Variant(String, Int64, Float64, Bool, DateTime64(3)) column.
+// Returns nil for unset/nil values; the Variant column accepts NULL via the absent-variant path.
+func propertyValueToVariant(pv *commonv1.PropertyValue) any {
+	if pv == nil {
+		return nil
+	}
+	switch v := pv.GetValue().(type) {
+	case *commonv1.PropertyValue_StringValue:
+		return v.StringValue
+	case *commonv1.PropertyValue_IntValue:
+		return v.IntValue
+	case *commonv1.PropertyValue_DoubleValue:
+		return v.DoubleValue
+	case *commonv1.PropertyValue_BoolValue:
+		return v.BoolValue
+	case *commonv1.PropertyValue_TimestampValue:
+		return v.TimestampValue.AsTime().UTC().Truncate(time.Millisecond)
+	default:
+		return nil
+	}
+}
+
+// customPropertiesToVariantMap converts a proto custom_properties map into a
+// map[string]any suitable for inserting into a Map(String, Variant(...)) column.
+// The clickhouse-go driver's Variant.AppendRow auto-selects the inner type from the
+// native Go value (string, int64, float64, bool, time.Time). Returns nil for an
+// empty input so the column receives an empty map rather than NULL.
+func customPropertiesToVariantMap(props map[string]*commonv1.PropertyValue) map[string]any {
+	if len(props) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(props))
+	for k, v := range props {
+		out[k] = propertyValueToVariant(v)
+	}
+	return out
+}
 
 type Processor struct {
 	ch driver.Conn
@@ -103,7 +144,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			e.GetDistinctId(),
 			e.GetKind(),
 			e.AutoProperties,
-			e.CustomProperties,
+			customPropertiesToVariantMap(e.CustomProperties),
 			e.OccurTime.AsTime(),
 			e.GetSessionId(),
 		); err != nil {
