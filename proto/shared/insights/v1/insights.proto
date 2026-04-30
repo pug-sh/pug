@@ -405,7 +405,11 @@ message GetFilterSchemaRequest {
   string event_kind = 1 [(buf.validate.field) = {
     string: {pattern: "^[a-zA-Z0-9_.-]*$"}
   }];
-  repeated common.v1.PropertyValueType allowed_types = 2;
+  repeated common.v1.PropertyValueType allowed_types = 2 [
+    (buf.validate.field).repeated.items = {
+      enum: {defined_only: true, not_in: [0]}
+    }
+  ];
 }
 
 message GetFilterSchemaResponse {

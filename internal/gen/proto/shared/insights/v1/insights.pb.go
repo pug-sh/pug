@@ -1771,11 +1771,11 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
 	"event_kind\x18\x03 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"3\n" +
 	"\x19GetPropertyValuesResponse\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values\"\x94\x01\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values\"\xa5\x01\n" +
 	"\x16GetFilterSchemaRequest\x127\n" +
 	"\n" +
-	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\x12A\n" +
-	"\rallowed_types\x18\x02 \x03(\x0e2\x1c.common.v1.PropertyValueTypeR\fallowedTypes\"\xb3\x02\n" +
+	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\x12R\n" +
+	"\rallowed_types\x18\x02 \x03(\x0e2\x1c.common.v1.PropertyValueTypeB\x0f\xbaH\f\x92\x01\t\"\a\x82\x01\x04\x10\x01 \x00R\fallowedTypes\"\xb3\x02\n" +
 	"\x17GetFilterSchemaResponse\x120\n" +
 	"\x06events\x18\x01 \x03(\v2\x18.common.v1.EventNameMetaR\x06events\x12H\n" +
 	"\x12auto_property_keys\x18\x02 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x10autoPropertyKeys\x12L\n" +

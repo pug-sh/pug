@@ -1093,11 +1093,11 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"(event_explorer.events_non_empty_in_multi\x12Eeach event filter must specify a kind or at least one property filter\x1aRthis.events.size() <= 1|| this.events.all(e, e.kind != '' || e.filters.size() > 0)\"}\n" +
 	"\x18GetEventExplorerResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x94\x01\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xa5\x01\n" +
 	"\x16GetFilterSchemaRequest\x127\n" +
 	"\n" +
-	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\x12A\n" +
-	"\rallowed_types\x18\x02 \x03(\x0e2\x1c.common.v1.PropertyValueTypeR\fallowedTypes\"\xb3\x02\n" +
+	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\x12R\n" +
+	"\rallowed_types\x18\x02 \x03(\x0e2\x1c.common.v1.PropertyValueTypeB\x0f\xbaH\f\x92\x01\t\"\a\x82\x01\x04\x10\x01 \x00R\fallowedTypes\"\xb3\x02\n" +
 	"\x17GetFilterSchemaResponse\x120\n" +
 	"\x06events\x18\x01 \x03(\v2\x18.common.v1.EventNameMetaR\x06events\x12H\n" +
 	"\x12auto_property_keys\x18\x02 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x10autoPropertyKeys\x12L\n" +

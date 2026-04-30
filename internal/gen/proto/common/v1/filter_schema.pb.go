@@ -199,11 +199,12 @@ func (x *EventNameMeta) GetLastSeenAt() *timestamppb.Timestamp {
 }
 
 type PropertyKeyMeta struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	Count         *uint64                `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
-	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
-	ValueType     *PropertyValueType     `protobuf:"varint,4,opt,name=value_type,json=valueType,enum=common.v1.PropertyValueType" json:"value_type,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Name       *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	Count      *uint64                `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
+	LastSeenAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
+	// Dominant type of values observed for this property key.
+	ValueType     *PropertyValueType `protobuf:"varint,4,opt,name=value_type,json=valueType,enum=common.v1.PropertyValueType" json:"value_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

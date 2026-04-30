@@ -37,5 +37,6 @@ message PropertyKeyMeta {
   string name = 1;
   uint64 count = 2;
   google.protobuf.Timestamp last_seen_at = 3;
+  // Dominant type of values observed for this property key.
   PropertyValueType value_type = 4;
 }
