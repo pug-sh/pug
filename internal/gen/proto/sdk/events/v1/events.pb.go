@@ -8,6 +8,7 @@ package eventsv1
 
 import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
+	v1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -112,14 +113,14 @@ func (x *BatchCreateResponse) GetAccepted() uint32 {
 }
 
 type Event struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	EventId          *string                `protobuf:"bytes,1,opt,name=event_id,json=eventId" json:"event_id,omitempty"`
-	AutoProperties   map[string]string      `protobuf:"bytes,2,rep,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	CustomProperties map[string]string      `protobuf:"bytes,3,rep,name=custom_properties,json=customProperties" json:"custom_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	DistinctId       *string                `protobuf:"bytes,4,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
-	Kind             *string                `protobuf:"bytes,5,opt,name=kind" json:"kind,omitempty"`
-	OccurTime        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
-	SessionId        *string                `protobuf:"bytes,7,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	EventId          *string                      `protobuf:"bytes,1,opt,name=event_id,json=eventId" json:"event_id,omitempty"`
+	AutoProperties   map[string]string            `protobuf:"bytes,2,rep,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	CustomProperties map[string]*v1.PropertyValue `protobuf:"bytes,3,rep,name=custom_properties,json=customProperties" json:"custom_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	DistinctId       *string                      `protobuf:"bytes,4,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
+	Kind             *string                      `protobuf:"bytes,5,opt,name=kind" json:"kind,omitempty"`
+	OccurTime        *timestamppb.Timestamp       `protobuf:"bytes,6,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
+	SessionId        *string                      `protobuf:"bytes,7,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -168,7 +169,7 @@ func (x *Event) GetAutoProperties() map[string]string {
 	return nil
 }
 
-func (x *Event) GetCustomProperties() map[string]string {
+func (x *Event) GetCustomProperties() map[string]*v1.PropertyValue {
 	if x != nil {
 		return x.CustomProperties
 	}
@@ -259,11 +260,11 @@ var File_sdk_events_v1_events_proto protoreflect.FileDescriptor
 
 const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"\n" +
-	"\x1asdk/events/v1/events.proto\x12\rsdk.events.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"M\n" +
+	"\x1asdk/events/v1/events.proto\x12\rsdk.events.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1ecommon/v1/property_value.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"M\n" +
 	"\x12BatchCreateRequest\x127\n" +
 	"\x06events\x18\x01 \x03(\v2\x14.sdk.events.v1.EventB\t\xbaH\x06\x92\x01\x03\x10\xe8\aR\x06events\"1\n" +
 	"\x13BatchCreateResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\rR\baccepted\"\x9a\x06\n" +
+	"\baccepted\x18\x01 \x01(\rR\baccepted\"\xe7\a\n" +
 	"\x05Event\x12&\n" +
 	"\bevent_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\aeventId\x12Q\n" +
 	"\x0fauto_properties\x18\x02 \x03(\v2(.sdk.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12W\n" +
@@ -277,12 +278,13 @@ const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"session_id\x18\a \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\tsessionId\x1aA\n" +
 	"\x13AutoPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a]\n" +
 	"\x15CustomPropertiesEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x80\x02\xbaH\xfc\x01\x1at\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12.\n" +
+	"\x05value\x18\x02 \x01(\v2\x18.common.v1.PropertyValueR\x05value:\x028\x01:\xb3\x03\xbaH\xaf\x03\x1at\n" +
 	"\x1devent.kind_no_reserved_prefix\x121event kind must not use reserved prefix 'cotton.'\x1a !this.kind.startsWith('cotton.')\x1a\x83\x01\n" +
-	"#event.auto_properties_dollar_prefix\x12(auto_properties keys must start with '$'\x1a2this.auto_properties.all(key, key.startsWith('$'))\"e\n" +
+	"#event.auto_properties_dollar_prefix\x12(auto_properties keys must start with '$'\x1a2this.auto_properties.all(key, key.startsWith('$'))\x1a\xb0\x01\n" +
+	"(event.custom_properties_no_dollar_prefix\x12Mcustom_properties keys must not start with '$' (reserved for auto-properties)\x1a5this.custom_properties.all(key, !key.startsWith('$'))\"e\n" +
 	"\n" +
 	"EventBatch\x12,\n" +
 	"\x06events\x18\x01 \x03(\v2\x14.sdk.events.v1.EventR\x06events\x12)\n" +
@@ -313,6 +315,7 @@ var file_sdk_events_v1_events_proto_goTypes = []any{
 	nil,                           // 4: sdk.events.v1.Event.AutoPropertiesEntry
 	nil,                           // 5: sdk.events.v1.Event.CustomPropertiesEntry
 	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(*v1.PropertyValue)(nil),      // 7: common.v1.PropertyValue
 }
 var file_sdk_events_v1_events_proto_depIdxs = []int32{
 	2, // 0: sdk.events.v1.BatchCreateRequest.events:type_name -> sdk.events.v1.Event
@@ -320,13 +323,14 @@ var file_sdk_events_v1_events_proto_depIdxs = []int32{
 	5, // 2: sdk.events.v1.Event.custom_properties:type_name -> sdk.events.v1.Event.CustomPropertiesEntry
 	6, // 3: sdk.events.v1.Event.occur_time:type_name -> google.protobuf.Timestamp
 	2, // 4: sdk.events.v1.EventBatch.events:type_name -> sdk.events.v1.Event
-	0, // 5: sdk.events.v1.EventsService.BatchCreate:input_type -> sdk.events.v1.BatchCreateRequest
-	1, // 6: sdk.events.v1.EventsService.BatchCreate:output_type -> sdk.events.v1.BatchCreateResponse
-	6, // [6:7] is the sub-list for method output_type
-	5, // [5:6] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	7, // 5: sdk.events.v1.Event.CustomPropertiesEntry.value:type_name -> common.v1.PropertyValue
+	0, // 6: sdk.events.v1.EventsService.BatchCreate:input_type -> sdk.events.v1.BatchCreateRequest
+	1, // 7: sdk.events.v1.EventsService.BatchCreate:output_type -> sdk.events.v1.BatchCreateResponse
+	7, // [7:8] is the sub-list for method output_type
+	6, // [6:7] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_sdk_events_v1_events_proto_init() }

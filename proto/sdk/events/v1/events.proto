@@ -2,6 +2,7 @@ edition = "2023";
 package sdk.events.v1;
 
 import "buf/validate/validate.proto";
+import "common/v1/property_value.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1;eventsv1";
@@ -29,12 +30,18 @@ message Event {
     message: "auto_properties keys must start with '$'"
     expression: "this.auto_properties.all(key, key.startsWith('$'))"
   };
+  option (buf.validate.message).cel = {
+    id: "event.custom_properties_no_dollar_prefix"
+    message: "custom_properties keys must not start with '$' (reserved for auto-properties)"
+    expression: "this.custom_properties.all(key, !key.startsWith('$'))"
+  };
+
   string event_id = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  map<string, string> auto_properties = 2;
-  map<string, string> custom_properties = 3;
+  map<string, string>                  auto_properties   = 2;
+  map<string, common.v1.PropertyValue> custom_properties = 3;
   string distinct_id = 4 [(buf.validate.field).required = true];
   string kind = 5 [(buf.validate.field).required = true];
   google.protobuf.Timestamp occur_time = 6 [(buf.validate.field).required = true];

@@ -427,6 +427,7 @@ func (x *GetEventExplorerResponse) GetNextPageToken() string {
 type GetFilterSchemaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EventKind     *string                `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	AllowedTypes  []v1.PropertyValueType `protobuf:"varint,2,rep,packed,name=allowed_types,json=allowedTypes,enum=common.v1.PropertyValueType" json:"allowed_types,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -466,6 +467,13 @@ func (x *GetFilterSchemaRequest) GetEventKind() string {
 		return *x.EventKind
 	}
 	return ""
+}
+
+func (x *GetFilterSchemaRequest) GetAllowedTypes() []v1.PropertyValueType {
+	if x != nil {
+		return x.AllowedTypes
+	}
+	return nil
 }
 
 type GetFilterSchemaResponse struct {
@@ -1085,10 +1093,11 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"(event_explorer.events_non_empty_in_multi\x12Eeach event filter must specify a kind or at least one property filter\x1aRthis.events.size() <= 1|| this.events.all(e, e.kind != '' || e.filters.size() > 0)\"}\n" +
 	"\x18GetEventExplorerResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"Q\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x94\x01\n" +
 	"\x16GetFilterSchemaRequest\x127\n" +
 	"\n" +
-	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"\xb3\x02\n" +
+	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\x12A\n" +
+	"\rallowed_types\x18\x02 \x03(\x0e2\x1c.common.v1.PropertyValueTypeR\fallowedTypes\"\xb3\x02\n" +
 	"\x17GetFilterSchemaResponse\x120\n" +
 	"\x06events\x18\x01 \x03(\v2\x18.common.v1.EventNameMetaR\x06events\x12H\n" +
 	"\x12auto_property_keys\x18\x02 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x10autoPropertyKeys\x12L\n" +
@@ -1178,9 +1187,10 @@ var file_shared_activity_v1_activity_proto_goTypes = []any{
 	(*v1.EventFilter)(nil),             // 17: common.v1.EventFilter
 	(*timestamppb.Timestamp)(nil),      // 18: google.protobuf.Timestamp
 	(*structpb.Struct)(nil),            // 19: google.protobuf.Struct
-	(*v1.EventNameMeta)(nil),           // 20: common.v1.EventNameMeta
-	(*v1.PropertyKeyMeta)(nil),         // 21: common.v1.PropertyKeyMeta
-	(v1.PropertySource)(0),             // 22: common.v1.PropertySource
+	(v1.PropertyValueType)(0),          // 20: common.v1.PropertyValueType
+	(*v1.EventNameMeta)(nil),           // 21: common.v1.EventNameMeta
+	(*v1.PropertyKeyMeta)(nil),         // 22: common.v1.PropertyKeyMeta
+	(v1.PropertySource)(0),             // 23: common.v1.PropertySource
 }
 var file_shared_activity_v1_activity_proto_depIdxs = []int32{
 	15, // 0: shared.activity.v1.GetActivityFeedRequest.time_range:type_name -> common.v1.TimeRange
@@ -1194,35 +1204,36 @@ var file_shared_activity_v1_activity_proto_depIdxs = []int32{
 	16, // 8: shared.activity.v1.GetEventExplorerRequest.property_filters:type_name -> common.v1.PropertyFilter
 	17, // 9: shared.activity.v1.GetEventExplorerRequest.events:type_name -> common.v1.EventFilter
 	1,  // 10: shared.activity.v1.GetEventExplorerResponse.events:type_name -> shared.activity.v1.ActivityEvent
-	20, // 11: shared.activity.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
-	21, // 12: shared.activity.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
-	21, // 13: shared.activity.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
-	21, // 14: shared.activity.v1.GetFilterSchemaResponse.profile_property_keys:type_name -> common.v1.PropertyKeyMeta
-	22, // 15: shared.activity.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
-	15, // 16: shared.activity.v1.GetActivityHeatmapRequest.time_range:type_name -> common.v1.TimeRange
-	10, // 17: shared.activity.v1.GetActivityHeatmapResponse.days:type_name -> shared.activity.v1.HeatmapDay
-	18, // 18: shared.activity.v1.ProfileStats.first_seen:type_name -> google.protobuf.Timestamp
-	18, // 19: shared.activity.v1.ProfileStats.last_seen:type_name -> google.protobuf.Timestamp
-	13, // 20: shared.activity.v1.GetProfileStatsResponse.stats:type_name -> shared.activity.v1.ProfileStats
-	10, // 21: shared.activity.v1.GetProfileStatsResponse.heatmap:type_name -> shared.activity.v1.HeatmapDay
-	19, // 22: shared.activity.v1.GetProfileStatsResponse.properties:type_name -> google.protobuf.Struct
-	0,  // 23: shared.activity.v1.ActivityService.GetActivityFeed:input_type -> shared.activity.v1.GetActivityFeedRequest
-	3,  // 24: shared.activity.v1.ActivityService.GetEventExplorer:input_type -> shared.activity.v1.GetEventExplorerRequest
-	5,  // 25: shared.activity.v1.ActivityService.GetFilterSchema:input_type -> shared.activity.v1.GetFilterSchemaRequest
-	7,  // 26: shared.activity.v1.ActivityService.GetPropertyValues:input_type -> shared.activity.v1.GetPropertyValuesRequest
-	9,  // 27: shared.activity.v1.ActivityService.GetActivityHeatmap:input_type -> shared.activity.v1.GetActivityHeatmapRequest
-	12, // 28: shared.activity.v1.ActivityService.GetProfileStats:input_type -> shared.activity.v1.GetProfileStatsRequest
-	2,  // 29: shared.activity.v1.ActivityService.GetActivityFeed:output_type -> shared.activity.v1.GetActivityFeedResponse
-	4,  // 30: shared.activity.v1.ActivityService.GetEventExplorer:output_type -> shared.activity.v1.GetEventExplorerResponse
-	6,  // 31: shared.activity.v1.ActivityService.GetFilterSchema:output_type -> shared.activity.v1.GetFilterSchemaResponse
-	8,  // 32: shared.activity.v1.ActivityService.GetPropertyValues:output_type -> shared.activity.v1.GetPropertyValuesResponse
-	11, // 33: shared.activity.v1.ActivityService.GetActivityHeatmap:output_type -> shared.activity.v1.GetActivityHeatmapResponse
-	14, // 34: shared.activity.v1.ActivityService.GetProfileStats:output_type -> shared.activity.v1.GetProfileStatsResponse
-	29, // [29:35] is the sub-list for method output_type
-	23, // [23:29] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	20, // 11: shared.activity.v1.GetFilterSchemaRequest.allowed_types:type_name -> common.v1.PropertyValueType
+	21, // 12: shared.activity.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
+	22, // 13: shared.activity.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
+	22, // 14: shared.activity.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
+	22, // 15: shared.activity.v1.GetFilterSchemaResponse.profile_property_keys:type_name -> common.v1.PropertyKeyMeta
+	23, // 16: shared.activity.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
+	15, // 17: shared.activity.v1.GetActivityHeatmapRequest.time_range:type_name -> common.v1.TimeRange
+	10, // 18: shared.activity.v1.GetActivityHeatmapResponse.days:type_name -> shared.activity.v1.HeatmapDay
+	18, // 19: shared.activity.v1.ProfileStats.first_seen:type_name -> google.protobuf.Timestamp
+	18, // 20: shared.activity.v1.ProfileStats.last_seen:type_name -> google.protobuf.Timestamp
+	13, // 21: shared.activity.v1.GetProfileStatsResponse.stats:type_name -> shared.activity.v1.ProfileStats
+	10, // 22: shared.activity.v1.GetProfileStatsResponse.heatmap:type_name -> shared.activity.v1.HeatmapDay
+	19, // 23: shared.activity.v1.GetProfileStatsResponse.properties:type_name -> google.protobuf.Struct
+	0,  // 24: shared.activity.v1.ActivityService.GetActivityFeed:input_type -> shared.activity.v1.GetActivityFeedRequest
+	3,  // 25: shared.activity.v1.ActivityService.GetEventExplorer:input_type -> shared.activity.v1.GetEventExplorerRequest
+	5,  // 26: shared.activity.v1.ActivityService.GetFilterSchema:input_type -> shared.activity.v1.GetFilterSchemaRequest
+	7,  // 27: shared.activity.v1.ActivityService.GetPropertyValues:input_type -> shared.activity.v1.GetPropertyValuesRequest
+	9,  // 28: shared.activity.v1.ActivityService.GetActivityHeatmap:input_type -> shared.activity.v1.GetActivityHeatmapRequest
+	12, // 29: shared.activity.v1.ActivityService.GetProfileStats:input_type -> shared.activity.v1.GetProfileStatsRequest
+	2,  // 30: shared.activity.v1.ActivityService.GetActivityFeed:output_type -> shared.activity.v1.GetActivityFeedResponse
+	4,  // 31: shared.activity.v1.ActivityService.GetEventExplorer:output_type -> shared.activity.v1.GetEventExplorerResponse
+	6,  // 32: shared.activity.v1.ActivityService.GetFilterSchema:output_type -> shared.activity.v1.GetFilterSchemaResponse
+	8,  // 33: shared.activity.v1.ActivityService.GetPropertyValues:output_type -> shared.activity.v1.GetPropertyValuesResponse
+	11, // 34: shared.activity.v1.ActivityService.GetActivityHeatmap:output_type -> shared.activity.v1.GetActivityHeatmapResponse
+	14, // 35: shared.activity.v1.ActivityService.GetProfileStats:output_type -> shared.activity.v1.GetProfileStatsResponse
+	30, // [30:36] is the sub-list for method output_type
+	24, // [24:30] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_shared_activity_v1_activity_proto_init() }

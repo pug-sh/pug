@@ -74,6 +74,70 @@ func (PropertySource) EnumDescriptor() ([]byte, []int) {
 	return file_common_v1_filter_schema_proto_rawDescGZIP(), []int{0}
 }
 
+// PropertyValueType enumerates the storage-side variant types a property key
+// can have. Mirrors the ClickHouse Variant inner types used in
+// events.custom_properties: String, Int64, Float64, Bool, DateTime64(3).
+// NUMBER covers both Int64 and Float64 (the dashboard treats them uniformly).
+// OTHER is a catch-all for non-primitive types (e.g. JSON objects/arrays in
+// profile properties) that don't map to a specific variant.
+type PropertyValueType int32
+
+const (
+	PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED PropertyValueType = 0
+	PropertyValueType_PROPERTY_VALUE_TYPE_STRING      PropertyValueType = 1
+	PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER      PropertyValueType = 2
+	PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN     PropertyValueType = 3
+	PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME    PropertyValueType = 4
+	PropertyValueType_PROPERTY_VALUE_TYPE_OTHER       PropertyValueType = 5
+)
+
+// Enum value maps for PropertyValueType.
+var (
+	PropertyValueType_name = map[int32]string{
+		0: "PROPERTY_VALUE_TYPE_UNSPECIFIED",
+		1: "PROPERTY_VALUE_TYPE_STRING",
+		2: "PROPERTY_VALUE_TYPE_NUMBER",
+		3: "PROPERTY_VALUE_TYPE_BOOLEAN",
+		4: "PROPERTY_VALUE_TYPE_DATETIME",
+		5: "PROPERTY_VALUE_TYPE_OTHER",
+	}
+	PropertyValueType_value = map[string]int32{
+		"PROPERTY_VALUE_TYPE_UNSPECIFIED": 0,
+		"PROPERTY_VALUE_TYPE_STRING":      1,
+		"PROPERTY_VALUE_TYPE_NUMBER":      2,
+		"PROPERTY_VALUE_TYPE_BOOLEAN":     3,
+		"PROPERTY_VALUE_TYPE_DATETIME":    4,
+		"PROPERTY_VALUE_TYPE_OTHER":       5,
+	}
+)
+
+func (x PropertyValueType) Enum() *PropertyValueType {
+	p := new(PropertyValueType)
+	*p = x
+	return p
+}
+
+func (x PropertyValueType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PropertyValueType) Descriptor() protoreflect.EnumDescriptor {
+	return file_common_v1_filter_schema_proto_enumTypes[1].Descriptor()
+}
+
+func (PropertyValueType) Type() protoreflect.EnumType {
+	return &file_common_v1_filter_schema_proto_enumTypes[1]
+}
+
+func (x PropertyValueType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PropertyValueType.Descriptor instead.
+func (PropertyValueType) EnumDescriptor() ([]byte, []int) {
+	return file_common_v1_filter_schema_proto_rawDescGZIP(), []int{1}
+}
+
 type EventNameMeta struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
@@ -139,6 +203,7 @@ type PropertyKeyMeta struct {
 	Name          *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
 	Count         *uint64                `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
 	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
+	ValueType     *PropertyValueType     `protobuf:"varint,4,opt,name=value_type,json=valueType,enum=common.v1.PropertyValueType" json:"value_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -194,6 +259,13 @@ func (x *PropertyKeyMeta) GetLastSeenAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *PropertyKeyMeta) GetValueType() PropertyValueType {
+	if x != nil && x.ValueType != nil {
+		return *x.ValueType
+	}
+	return PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED
+}
+
 var File_common_v1_filter_schema_proto protoreflect.FileDescriptor
 
 const file_common_v1_filter_schema_proto_rawDesc = "" +
@@ -203,17 +275,26 @@ const file_common_v1_filter_schema_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x04R\x05count\x12<\n" +
 	"\flast_seen_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"lastSeenAt\"y\n" +
+	"lastSeenAt\"\xb6\x01\n" +
 	"\x0fPropertyKeyMeta\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x04R\x05count\x12<\n" +
 	"\flast_seen_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"lastSeenAt*\x84\x01\n" +
+	"lastSeenAt\x12;\n" +
+	"\n" +
+	"value_type\x18\x04 \x01(\x0e2\x1c.common.v1.PropertyValueTypeR\tvalueType*\x84\x01\n" +
 	"\x0ePropertySource\x12\x1f\n" +
 	"\x1bPROPERTY_SOURCE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14PROPERTY_SOURCE_AUTO\x10\x01\x12\x1a\n" +
 	"\x16PROPERTY_SOURCE_CUSTOM\x10\x02\x12\x1b\n" +
-	"\x17PROPERTY_SOURCE_PROFILE\x10\x03BDZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
+	"\x17PROPERTY_SOURCE_PROFILE\x10\x03*\xda\x01\n" +
+	"\x11PropertyValueType\x12#\n" +
+	"\x1fPROPERTY_VALUE_TYPE_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aPROPERTY_VALUE_TYPE_STRING\x10\x01\x12\x1e\n" +
+	"\x1aPROPERTY_VALUE_TYPE_NUMBER\x10\x02\x12\x1f\n" +
+	"\x1bPROPERTY_VALUE_TYPE_BOOLEAN\x10\x03\x12 \n" +
+	"\x1cPROPERTY_VALUE_TYPE_DATETIME\x10\x04\x12\x1d\n" +
+	"\x19PROPERTY_VALUE_TYPE_OTHER\x10\x05BDZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_filter_schema_proto_rawDescOnce sync.Once
@@ -227,22 +308,24 @@ func file_common_v1_filter_schema_proto_rawDescGZIP() []byte {
 	return file_common_v1_filter_schema_proto_rawDescData
 }
 
-var file_common_v1_filter_schema_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_common_v1_filter_schema_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_common_v1_filter_schema_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_common_v1_filter_schema_proto_goTypes = []any{
 	(PropertySource)(0),           // 0: common.v1.PropertySource
-	(*EventNameMeta)(nil),         // 1: common.v1.EventNameMeta
-	(*PropertyKeyMeta)(nil),       // 2: common.v1.PropertyKeyMeta
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(PropertyValueType)(0),        // 1: common.v1.PropertyValueType
+	(*EventNameMeta)(nil),         // 2: common.v1.EventNameMeta
+	(*PropertyKeyMeta)(nil),       // 3: common.v1.PropertyKeyMeta
+	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
 }
 var file_common_v1_filter_schema_proto_depIdxs = []int32{
-	3, // 0: common.v1.EventNameMeta.last_seen_at:type_name -> google.protobuf.Timestamp
-	3, // 1: common.v1.PropertyKeyMeta.last_seen_at:type_name -> google.protobuf.Timestamp
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	4, // 0: common.v1.EventNameMeta.last_seen_at:type_name -> google.protobuf.Timestamp
+	4, // 1: common.v1.PropertyKeyMeta.last_seen_at:type_name -> google.protobuf.Timestamp
+	1, // 2: common.v1.PropertyKeyMeta.value_type:type_name -> common.v1.PropertyValueType
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_common_v1_filter_schema_proto_init() }
@@ -255,7 +338,7 @@ func file_common_v1_filter_schema_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_v1_filter_schema_proto_rawDesc), len(file_common_v1_filter_schema_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,

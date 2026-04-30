@@ -117,6 +117,7 @@ message GetFilterSchemaRequest {
   string event_kind = 1 [(buf.validate.field) = {
     string: {pattern: "^[a-zA-Z0-9_.-]*$"}
   }];
+  repeated common.v1.PropertyValueType allowed_types = 2;
 }
 
 message GetFilterSchemaResponse {

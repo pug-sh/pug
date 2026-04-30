@@ -12,6 +12,21 @@ enum PropertySource {
   PROPERTY_SOURCE_PROFILE = 3;
 }
 
+// PropertyValueType enumerates the storage-side variant types a property key
+// can have. Mirrors the ClickHouse Variant inner types used in
+// events.custom_properties: String, Int64, Float64, Bool, DateTime64(3).
+// NUMBER covers both Int64 and Float64 (the dashboard treats them uniformly).
+// OTHER is a catch-all for non-primitive types (e.g. JSON objects/arrays in
+// profile properties) that don't map to a specific variant.
+enum PropertyValueType {
+  PROPERTY_VALUE_TYPE_UNSPECIFIED = 0;
+  PROPERTY_VALUE_TYPE_STRING      = 1;
+  PROPERTY_VALUE_TYPE_NUMBER      = 2;
+  PROPERTY_VALUE_TYPE_BOOLEAN     = 3;
+  PROPERTY_VALUE_TYPE_DATETIME    = 4;
+  PROPERTY_VALUE_TYPE_OTHER       = 5;
+}
+
 message EventNameMeta {
   string name = 1;
   uint64 count = 2;
@@ -22,4 +37,5 @@ message PropertyKeyMeta {
   string name = 1;
   uint64 count = 2;
   google.protobuf.Timestamp last_seen_at = 3;
+  PropertyValueType value_type = 4;
 }

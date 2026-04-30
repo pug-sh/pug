@@ -1527,6 +1527,7 @@ func (x *GetPropertyValuesResponse) GetValues() []string {
 type GetFilterSchemaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EventKind     *string                `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	AllowedTypes  []v1.PropertyValueType `protobuf:"varint,2,rep,packed,name=allowed_types,json=allowedTypes,enum=common.v1.PropertyValueType" json:"allowed_types,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1566,6 +1567,13 @@ func (x *GetFilterSchemaRequest) GetEventKind() string {
 		return *x.EventKind
 	}
 	return ""
+}
+
+func (x *GetFilterSchemaRequest) GetAllowedTypes() []v1.PropertyValueType {
+	if x != nil {
+		return x.AllowedTypes
+	}
+	return nil
 }
 
 type GetFilterSchemaResponse struct {
@@ -1763,10 +1771,11 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
 	"event_kind\x18\x03 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"3\n" +
 	"\x19GetPropertyValuesResponse\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values\"Q\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values\"\x94\x01\n" +
 	"\x16GetFilterSchemaRequest\x127\n" +
 	"\n" +
-	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"\xb3\x02\n" +
+	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\x12A\n" +
+	"\rallowed_types\x18\x02 \x03(\x0e2\x1c.common.v1.PropertyValueTypeR\fallowedTypes\"\xb3\x02\n" +
 	"\x17GetFilterSchemaResponse\x120\n" +
 	"\x06events\x18\x01 \x03(\v2\x18.common.v1.EventNameMetaR\x06events\x12H\n" +
 	"\x12auto_property_keys\x18\x02 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x10autoPropertyKeys\x12L\n" +
@@ -1851,8 +1860,9 @@ var file_shared_insights_v1_insights_proto_goTypes = []any{
 	(*v1.EventFilter)(nil),            // 33: common.v1.EventFilter
 	(*timestamppb.Timestamp)(nil),     // 34: google.protobuf.Timestamp
 	(v1.PropertySource)(0),            // 35: common.v1.PropertySource
-	(*v1.EventNameMeta)(nil),          // 36: common.v1.EventNameMeta
-	(*v1.PropertyKeyMeta)(nil),        // 37: common.v1.PropertyKeyMeta
+	(v1.PropertyValueType)(0),         // 36: common.v1.PropertyValueType
+	(*v1.EventNameMeta)(nil),          // 37: common.v1.EventNameMeta
+	(*v1.PropertyKeyMeta)(nil),        // 38: common.v1.PropertyKeyMeta
 }
 var file_shared_insights_v1_insights_proto_depIdxs = []int32{
 	0,  // 0: shared.insights.v1.QueryRequest.insight_type:type_name -> shared.insights.v1.InsightType
@@ -1893,23 +1903,24 @@ var file_shared_insights_v1_insights_proto_depIdxs = []int32{
 	21, // 35: shared.insights.v1.RetentionCohort.points:type_name -> shared.insights.v1.DataPoint
 	34, // 36: shared.insights.v1.DataPoint.time:type_name -> google.protobuf.Timestamp
 	35, // 37: shared.insights.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
-	36, // 38: shared.insights.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
-	37, // 39: shared.insights.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
-	37, // 40: shared.insights.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
-	37, // 41: shared.insights.v1.GetFilterSchemaResponse.profile_property_keys:type_name -> common.v1.PropertyKeyMeta
-	3,  // 42: shared.insights.v1.InsightsService.Query:input_type -> shared.insights.v1.QueryRequest
-	5,  // 43: shared.insights.v1.InsightsService.SegmentUsers:input_type -> shared.insights.v1.SegmentUsersRequest
-	24, // 44: shared.insights.v1.InsightsService.GetFilterSchema:input_type -> shared.insights.v1.GetFilterSchemaRequest
-	22, // 45: shared.insights.v1.InsightsService.GetPropertyValues:input_type -> shared.insights.v1.GetPropertyValuesRequest
-	4,  // 46: shared.insights.v1.InsightsService.Query:output_type -> shared.insights.v1.QueryResponse
-	6,  // 47: shared.insights.v1.InsightsService.SegmentUsers:output_type -> shared.insights.v1.SegmentUsersResponse
-	25, // 48: shared.insights.v1.InsightsService.GetFilterSchema:output_type -> shared.insights.v1.GetFilterSchemaResponse
-	23, // 49: shared.insights.v1.InsightsService.GetPropertyValues:output_type -> shared.insights.v1.GetPropertyValuesResponse
-	46, // [46:50] is the sub-list for method output_type
-	42, // [42:46] is the sub-list for method input_type
-	42, // [42:42] is the sub-list for extension type_name
-	42, // [42:42] is the sub-list for extension extendee
-	0,  // [0:42] is the sub-list for field type_name
+	36, // 38: shared.insights.v1.GetFilterSchemaRequest.allowed_types:type_name -> common.v1.PropertyValueType
+	37, // 39: shared.insights.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
+	38, // 40: shared.insights.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
+	38, // 41: shared.insights.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
+	38, // 42: shared.insights.v1.GetFilterSchemaResponse.profile_property_keys:type_name -> common.v1.PropertyKeyMeta
+	3,  // 43: shared.insights.v1.InsightsService.Query:input_type -> shared.insights.v1.QueryRequest
+	5,  // 44: shared.insights.v1.InsightsService.SegmentUsers:input_type -> shared.insights.v1.SegmentUsersRequest
+	24, // 45: shared.insights.v1.InsightsService.GetFilterSchema:input_type -> shared.insights.v1.GetFilterSchemaRequest
+	22, // 46: shared.insights.v1.InsightsService.GetPropertyValues:input_type -> shared.insights.v1.GetPropertyValuesRequest
+	4,  // 47: shared.insights.v1.InsightsService.Query:output_type -> shared.insights.v1.QueryResponse
+	6,  // 48: shared.insights.v1.InsightsService.SegmentUsers:output_type -> shared.insights.v1.SegmentUsersResponse
+	25, // 49: shared.insights.v1.InsightsService.GetFilterSchema:output_type -> shared.insights.v1.GetFilterSchemaResponse
+	23, // 50: shared.insights.v1.InsightsService.GetPropertyValues:output_type -> shared.insights.v1.GetPropertyValuesResponse
+	47, // [47:51] is the sub-list for method output_type
+	43, // [43:47] is the sub-list for method input_type
+	43, // [43:43] is the sub-list for extension type_name
+	43, // [43:43] is the sub-list for extension extendee
+	0,  // [0:43] is the sub-list for field type_name
 }
 
 func init() { file_shared_insights_v1_insights_proto_init() }
