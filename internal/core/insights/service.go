@@ -18,7 +18,6 @@ import (
 
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
@@ -50,7 +49,7 @@ func (s *Service) GetFilterSchema(
 	ctx context.Context,
 	projectID, eventKind string,
 	allowedTypes []commonv1.PropertyValueType,
-) (*insightsv1.GetFilterSchemaResponse, error) {
+) (*commonv1.GetFilterSchemaResponse, error) {
 	allowedTypes = normalizeAllowedTypes(allowedTypes)
 
 	cacheKey := "filterschema:" + projectID
@@ -67,7 +66,7 @@ func (s *Service) GetFilterSchema(
 
 	cachedSchema, cacheErr := s.redis.Get(ctx, cacheKey).Bytes()
 	if cacheErr == nil {
-		var resp insightsv1.GetFilterSchemaResponse
+		var resp commonv1.GetFilterSchemaResponse
 		if err := proto.Unmarshal(cachedSchema, &resp); err != nil {
 			slog.WarnContext(ctx, "failed to unmarshal cached filter schema, evicting",
 				slogx.Error(err), slog.String("project_id", projectID))
@@ -177,7 +176,7 @@ func (s *Service) GetFilterSchema(
 		return out
 	}
 
-	resp := &insightsv1.GetFilterSchemaResponse{
+	resp := &commonv1.GetFilterSchemaResponse{
 		Events:              toEventMetas(eventMetas),
 		AutoPropertyKeys:    toPropKeyMetas(filterAggregateKeysByType(autoPropKeys, allowedTypes)),
 		CustomPropertyKeys:  toPropKeyMetas(filterAggregateKeysByType(customPropKeys, allowedTypes)),
@@ -350,7 +349,7 @@ func variantTypeToPropertyValueType(s string) commonv1.PropertyValueType {
 	case "Bool":
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN
 	// "DateTime64(3)" must match the Variant precision declared in
-	// schema/clickhouse/migrations/005_typed_custom_properties.sql.
+	// schema/clickhouse/migrations/001_create_events_table.sql.
 	// If the migration changes precision, update this case.
 	case "DateTime64(3)":
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME

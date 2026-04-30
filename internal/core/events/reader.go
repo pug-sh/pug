@@ -22,9 +22,10 @@ import (
 type Event struct {
 	AutoProperties map[string]string
 	// CustomProperties holds custom event properties decoded from
-	// Map(String, Variant(...)). Values come back as native Go types matching
-	// the active variant: string, int64, float64, bool, or time.Time. Storage
-	// of chcol.Variant values is contained to the scan boundary (see scan*).
+	// Map(String, Variant(...)). Values are native Go types matching the
+	// active variant: string, int64, float64, bool. Timestamps are normalised
+	// to RFC3339Nano UTC strings by unwrapCustomProperties, so callers never
+	// see time.Time. chcol.Variant exposure is contained to the scan boundary.
 	CustomProperties map[string]any
 	DistinctID       string
 	EventID          string

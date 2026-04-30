@@ -209,7 +209,6 @@ func mapToStruct(m map[string]string) (*structpb.Struct, error) {
 	return structpb.NewStruct(fields)
 }
 
-
 func (s *server) GetActivityHeatmap(
 	ctx context.Context,
 	req *connect.Request[activityv1.GetActivityHeatmapRequest],
@@ -320,8 +319,8 @@ func (s *server) GetProfileStats(
 
 func (s *server) GetFilterSchema(
 	ctx context.Context,
-	req *connect.Request[activityv1.GetFilterSchemaRequest],
-) (*connect.Response[activityv1.GetFilterSchemaResponse], error) {
+	req *connect.Request[commonv1.GetFilterSchemaRequest],
+) (*connect.Response[commonv1.GetFilterSchemaResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -338,12 +337,7 @@ func (s *server) GetFilterSchema(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&activityv1.GetFilterSchemaResponse{
-		Events:              schema.GetEvents(),
-		AutoPropertyKeys:    schema.GetAutoPropertyKeys(),
-		CustomPropertyKeys:  schema.GetCustomPropertyKeys(),
-		ProfilePropertyKeys: schema.GetProfilePropertyKeys(),
-	}), nil
+	return connect.NewResponse(schema), nil
 }
 
 func (s *server) GetPropertyValues(

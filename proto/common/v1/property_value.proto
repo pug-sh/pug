@@ -21,12 +21,16 @@ message PropertyValue {
     // Cap property string values at 1 KiB on the wire. Large blobs
     // (logs, raw payloads, serialized JSON) should be hashed or referenced
     // upstream rather than embedded as a property value — this limit makes
-    // that a hard rule rather than a soft guideline.
+    // that a hard rule rather than a soft guideline. Limit is bytes, not
+    // codepoints; values exceeding it are rejected at the validate
+    // interceptor with CodeInvalidArgument (not truncated).
     string                    string_value    = 1 [(buf.validate.field).string.max_len = 1024];
 
     int64                     int_value       = 2;
     double                    double_value    = 3 [(buf.validate.field).double.finite = true];
     bool                      bool_value      = 4;
+    // Stored as DateTime64(3); sub-millisecond precision is truncated at
+    // the ingestion boundary to match the ClickHouse Variant slot's precision.
     google.protobuf.Timestamp timestamp_value = 5;
   }
 }

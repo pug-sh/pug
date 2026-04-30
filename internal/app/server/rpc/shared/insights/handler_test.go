@@ -11,6 +11,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 
+	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 )
 
@@ -38,7 +39,7 @@ func TestSegmentUsers_Unauthenticated(t *testing.T) {
 
 func TestGetFilterSchema_Unauthenticated(t *testing.T) {
 	s := &server{}
-	_, err := s.GetFilterSchema(context.Background(), connect.NewRequest(&insightsv1.GetFilterSchemaRequest{}))
+	_, err := s.GetFilterSchema(context.Background(), connect.NewRequest(&commonv1.GetFilterSchemaRequest{}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

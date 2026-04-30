@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"buf.build/go/protovalidate"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"google.golang.org/protobuf/proto"
 
@@ -17,40 +18,55 @@ import (
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
-// propertyValueToVariant converts a proto PropertyValue oneof into the Go value
-// the clickhouse-go driver maps to a Variant(String, Int64, Float64, Bool, DateTime64(3)) column.
-// Returns nil for unset/nil values; the Variant column accepts NULL via the absent-variant path.
-func propertyValueToVariant(pv *commonv1.PropertyValue) any {
+// propertyValueToVariant converts a proto PropertyValue oneof into a chcol.Variant
+// tagged with the matching ClickHouse Variant branch name. Tagging is required:
+// without it the driver dispatches by reflect type in column declaration order
+// (String, Int64, Float64, Bool, DateTime64(3)), which can route values to the
+// wrong slot — e.g. a float64 reaches the Int64 branch via reflect.CanConvert
+// and gets truncated. Returns the zero Variant for unset/nil values, which the
+// column treats as the absent-variant path (NULL).
+//
+// The returned chcol.Variant must stay aligned with both the column definition
+// in 001_create_events_table.sql and the variantTypeToPropertyValueType mapping
+// in insights/service.go — this alignment is asserted in variant_align_test.go.
+func propertyValueToVariant(ctx context.Context, pv *commonv1.PropertyValue) chcol.Variant {
 	if pv == nil {
-		return nil
+		return chcol.Variant{}
 	}
 	switch v := pv.GetValue().(type) {
 	case *commonv1.PropertyValue_StringValue:
-		return v.StringValue
+		return chcol.NewVariantWithType(v.StringValue, "String")
 	case *commonv1.PropertyValue_IntValue:
-		return v.IntValue
+		return chcol.NewVariantWithType(v.IntValue, "Int64")
 	case *commonv1.PropertyValue_DoubleValue:
-		return v.DoubleValue
+		return chcol.NewVariantWithType(v.DoubleValue, "Float64")
 	case *commonv1.PropertyValue_BoolValue:
-		return v.BoolValue
+		return chcol.NewVariantWithType(v.BoolValue, "Bool")
 	case *commonv1.PropertyValue_TimestampValue:
-		return v.TimestampValue.AsTime().UTC().Truncate(time.Millisecond)
+		return chcol.NewVariantWithType(v.TimestampValue.AsTime().UTC().Truncate(time.Millisecond), "DateTime64(3)")
 	default:
-		return nil
+		// Unreachable for batches that pass protovalidate (oneof.required = true).
+		// Fires only on proto-future drift: a new PropertyValue variant added in
+		// proto without a corresponding case here. Surface the drift; drop the
+		// single property; do not fail the batch.
+		err := fmt.Errorf("unsupported PropertyValue variant: %T", pv.GetValue())
+		slog.WarnContext(ctx, "dropping property with unsupported PropertyValue variant", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return chcol.Variant{}
 	}
 }
 
 // customPropertiesToVariantMap converts a proto Map(String, PropertyValue) into
-// the native Go shape clickhouse-go uses to insert into Map(String, Variant(...)).
+// the typed Go shape clickhouse-go uses to insert into Map(String, Variant(...)).
 // Returns nil for empty input — the driver maps a nil map to an empty CH Map
 // (zero entries), which is the correct shape for an event with no custom_properties.
-func customPropertiesToVariantMap(props map[string]*commonv1.PropertyValue) map[string]any {
+func customPropertiesToVariantMap(ctx context.Context, props map[string]*commonv1.PropertyValue) map[string]chcol.Variant {
 	if len(props) == 0 {
 		return nil
 	}
-	out := make(map[string]any, len(props))
+	out := make(map[string]chcol.Variant, len(props))
 	for k, v := range props {
-		out[k] = propertyValueToVariant(v)
+		out[k] = propertyValueToVariant(ctx, v)
 	}
 	return out
 }
@@ -143,7 +159,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			e.GetDistinctId(),
 			e.GetKind(),
 			e.AutoProperties,
-			customPropertiesToVariantMap(e.CustomProperties),
+			customPropertiesToVariantMap(ctx, e.CustomProperties),
 			e.OccurTime.AsTime(),
 			e.GetSessionId(),
 		); err != nil {

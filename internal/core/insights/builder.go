@@ -850,12 +850,15 @@ func BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind string) (s
 // non-empty filter operate on a string projection.
 func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) (string, []any, error) {
 	var selectExpr, propertyNotEmptyClause string
-	if mapCol == "custom_properties" {
+	switch mapCol {
+	case "custom_properties":
 		selectExpr = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) AS value", mapCol)
 		propertyNotEmptyClause = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) != ''", mapCol)
-	} else {
+	case "auto_properties":
 		selectExpr = fmt.Sprintf("%s[?] AS value", mapCol)
 		propertyNotEmptyClause = fmt.Sprintf("%s[?] != ''", mapCol)
+	default:
+		return "", nil, fmt.Errorf("buildPropertyValuesQuery: unsupported map_col %q", mapCol)
 	}
 
 	return chq.NewQuery().
@@ -971,12 +974,14 @@ func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any
 	return chq.NewQuery().
 		Select(
 			"key",
-			// any(value_type): a property key can have rows for multiple value_types
-			// when the underlying values drift over time (rare in practice). any() picks
-			// one non-deterministically — the API surfaces a single dominant type.
-			// We deliberately do not expose has_mixed_types (it was considered and
-			// dropped in the proto design — typed Variant storage makes drift detection
-			// a separate query if ever needed).
+			// A property key can have rows for multiple value_types when the
+			// underlying values drift across types over time (rare in practice).
+			// any() returns an arbitrary, non-deterministic value_type from the
+			// rows in the group — clients should treat it as "one of the types
+			// observed for this key", not "the most common type". Returning a
+			// deterministic dominant type would require an extra aggregation
+			// pass over the AggregatingMergeTree state, which is not currently
+			// justified for the rarity of drift.
 			"any(value_type) AS value_type",
 			"countMerge(event_count) AS count",
 			"maxMerge(last_seen) AS last_seen",

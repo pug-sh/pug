@@ -8,6 +8,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
+	v11 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	v1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	http "net/http"
 	strings "strings"
@@ -50,7 +51,12 @@ const (
 type InsightsServiceClient interface {
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
 	SegmentUsers(context.Context, *connect.Request[v1.SegmentUsersRequest]) (*connect.Response[v1.SegmentUsersResponse], error)
-	GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error)
+	// The filter-schema concept is service-agnostic; both shared.insights and
+	// shared.activity expose the same shape via common.v1.
+	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFilterSchema(context.Context, *connect.Request[v11.GetFilterSchemaRequest]) (*connect.Response[v11.GetFilterSchemaResponse], error)
 	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 }
 
@@ -77,7 +83,7 @@ func NewInsightsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(insightsServiceMethods.ByName("SegmentUsers")),
 			connect.WithClientOptions(opts...),
 		),
-		getFilterSchema: connect.NewClient[v1.GetFilterSchemaRequest, v1.GetFilterSchemaResponse](
+		getFilterSchema: connect.NewClient[v11.GetFilterSchemaRequest, v11.GetFilterSchemaResponse](
 			httpClient,
 			baseURL+InsightsServiceGetFilterSchemaProcedure,
 			connect.WithSchema(insightsServiceMethods.ByName("GetFilterSchema")),
@@ -96,7 +102,7 @@ func NewInsightsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 type insightsServiceClient struct {
 	query             *connect.Client[v1.QueryRequest, v1.QueryResponse]
 	segmentUsers      *connect.Client[v1.SegmentUsersRequest, v1.SegmentUsersResponse]
-	getFilterSchema   *connect.Client[v1.GetFilterSchemaRequest, v1.GetFilterSchemaResponse]
+	getFilterSchema   *connect.Client[v11.GetFilterSchemaRequest, v11.GetFilterSchemaResponse]
 	getPropertyValues *connect.Client[v1.GetPropertyValuesRequest, v1.GetPropertyValuesResponse]
 }
 
@@ -111,7 +117,7 @@ func (c *insightsServiceClient) SegmentUsers(ctx context.Context, req *connect.R
 }
 
 // GetFilterSchema calls shared.insights.v1.InsightsService.GetFilterSchema.
-func (c *insightsServiceClient) GetFilterSchema(ctx context.Context, req *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error) {
+func (c *insightsServiceClient) GetFilterSchema(ctx context.Context, req *connect.Request[v11.GetFilterSchemaRequest]) (*connect.Response[v11.GetFilterSchemaResponse], error) {
 	return c.getFilterSchema.CallUnary(ctx, req)
 }
 
@@ -124,7 +130,12 @@ func (c *insightsServiceClient) GetPropertyValues(ctx context.Context, req *conn
 type InsightsServiceHandler interface {
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
 	SegmentUsers(context.Context, *connect.Request[v1.SegmentUsersRequest]) (*connect.Response[v1.SegmentUsersResponse], error)
-	GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error)
+	// The filter-schema concept is service-agnostic; both shared.insights and
+	// shared.activity expose the same shape via common.v1.
+	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetFilterSchema(context.Context, *connect.Request[v11.GetFilterSchemaRequest]) (*connect.Response[v11.GetFilterSchemaResponse], error)
 	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 }
 
@@ -186,7 +197,7 @@ func (UnimplementedInsightsServiceHandler) SegmentUsers(context.Context, *connec
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.insights.v1.InsightsService.SegmentUsers is not implemented"))
 }
 
-func (UnimplementedInsightsServiceHandler) GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error) {
+func (UnimplementedInsightsServiceHandler) GetFilterSchema(context.Context, *connect.Request[v11.GetFilterSchemaRequest]) (*connect.Response[v11.GetFilterSchemaResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.insights.v1.InsightsService.GetFilterSchema is not implemented"))
 }
 

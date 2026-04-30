@@ -135,7 +135,9 @@ type PropertyValue_StringValue struct {
 	// Cap property string values at 1 KiB on the wire. Large blobs
 	// (logs, raw payloads, serialized JSON) should be hashed or referenced
 	// upstream rather than embedded as a property value — this limit makes
-	// that a hard rule rather than a soft guideline.
+	// that a hard rule rather than a soft guideline. Limit is bytes, not
+	// codepoints; values exceeding it are rejected at the validate
+	// interceptor with CodeInvalidArgument (not truncated).
 	StringValue string `protobuf:"bytes,1,opt,name=string_value,json=stringValue,oneof"`
 }
 
@@ -152,6 +154,8 @@ type PropertyValue_BoolValue struct {
 }
 
 type PropertyValue_TimestampValue struct {
+	// Stored as DateTime64(3); sub-millisecond precision is truncated at
+	// the ingestion boundary to match the ClickHouse Variant slot's precision.
 	TimestampValue *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=timestamp_value,json=timestampValue,oneof"`
 }
 

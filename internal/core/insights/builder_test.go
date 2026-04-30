@@ -1311,6 +1311,27 @@ func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 		if strings.Contains(sql, "auto_properties") {
 			t.Error("should not contain auto_properties")
 		}
+		// Pin the Variant CAST shape on both the SELECT and the non-empty
+		// guard. Dropping CAST(... AS Nullable(String)) silently returns raw
+		// Variant strings (e.g. "42 :: Int64") and breaks the != '' filter.
+		if !strings.Contains(sql, "CAST(custom_properties[?] AS Nullable(String)) AS value") {
+			t.Errorf("expected CAST(custom_properties[?] AS Nullable(String)) AS value in SQL, got: %s", sql)
+		}
+		if !strings.Contains(sql, "CAST(custom_properties[?] AS Nullable(String)) != ''") {
+			t.Errorf("expected CAST(custom_properties[?] AS Nullable(String)) != '' in SQL, got: %s", sql)
+		}
+	})
+
+	t.Run("auto_does_not_use_cast", func(t *testing.T) {
+		sql, _, err := insights.BuildAutoPropertyValuesQuery("proj_1", "$browser", "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// auto_properties is Map(String, String), so no CAST is needed. Pinning
+		// the absence catches accidental homogenization with the custom path.
+		if strings.Contains(sql, "CAST(auto_properties") {
+			t.Errorf("auto_properties query should not CAST, got: %s", sql)
+		}
 	})
 }
 
@@ -1375,6 +1396,19 @@ func TestBuildPropertyKeysQuery(t *testing.T) {
 		}
 		if args[2] != int64(500) {
 			t.Errorf("expected limit 500, got %v", args[2])
+		}
+	})
+
+	t.Run("selects_value_type_aggregate", func(t *testing.T) {
+		// Pin the value_type aggregation. Dropping it produces a column-count
+		// mismatch in QueryAggregateKeys (which dispatches on column presence);
+		// silently replacing it with a non-aggregate would break the GROUP BY.
+		sql, _, err := insights.BuildCustomPropertyKeysQuery("proj_1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(sql, "any(value_type) AS value_type") {
+			t.Errorf("expected any(value_type) AS value_type in SQL, got: %s", sql)
 		}
 	})
 }

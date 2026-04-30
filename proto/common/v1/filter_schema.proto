@@ -1,6 +1,7 @@
 edition = "2023";
 package common.v1;
 
+import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1";
@@ -37,6 +38,32 @@ message PropertyKeyMeta {
   string name = 1;
   uint64 count = 2;
   google.protobuf.Timestamp last_seen_at = 3;
-  // Dominant type of values observed for this property key.
+  // One of the value types observed for this property key. When values for
+  // the same key span multiple types (rare drift), this is non-deterministic
+  // and may change between calls — clients should treat it as a hint, not a
+  // contract.
   PropertyValueType value_type = 4;
+}
+
+// GetFilterSchemaRequest is shared by every service that exposes a
+// GetFilterSchema RPC (currently shared.activity.v1 and shared.insights.v1).
+// Keeping the request shape here avoids drift between services and is also a
+// signal that the filter-schema concept is service-agnostic.
+message GetFilterSchemaRequest {
+  string event_kind = 1 [(buf.validate.field) = {
+    string: {pattern: "^[a-zA-Z0-9_.-]*$"}
+  }];
+  repeated PropertyValueType allowed_types = 2 [
+    (buf.validate.field).repeated.items = {
+      enum: {defined_only: true, not_in: [0]}
+    }
+  ];
+}
+
+// GetFilterSchemaResponse mirrors the shared request shape — same reason.
+message GetFilterSchemaResponse {
+  repeated EventNameMeta events = 1;
+  repeated PropertyKeyMeta auto_property_keys = 2;
+  repeated PropertyKeyMeta custom_property_keys = 3;
+  repeated PropertyKeyMeta profile_property_keys = 4;
 }

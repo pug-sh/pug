@@ -12,6 +12,7 @@ import (
 	"github.com/fivebitsio/cotton/internal/app/server/rpc"
 	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
+	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
 	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/fivebitsio/cotton/internal/slogx"
@@ -226,8 +227,8 @@ func (s *server) SegmentUsers(
 
 func (s *server) GetFilterSchema(
 	ctx context.Context,
-	req *connect.Request[insightsv1.GetFilterSchemaRequest],
-) (*connect.Response[insightsv1.GetFilterSchemaResponse], error) {
+	req *connect.Request[commonv1.GetFilterSchemaRequest],
+) (*connect.Response[commonv1.GetFilterSchemaResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, connectCtxErr(err)
 	}

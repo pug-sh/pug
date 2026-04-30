@@ -132,3 +132,55 @@ func TestIntegration_FunnelHandlerIncludeStepTimingDispatch(t *testing.T) {
 		}
 	})
 }
+
+// TestIntegration_GetFilterSchemaHandlerForwardsAllowedTypes verifies the
+// handler reads req.Msg.GetAllowedTypes() and forwards it to the service. The
+// service-level test (TestServiceGetFilterSchema/allowed_types_filters_custom_keys)
+// exercises the same path but bypasses the handler — a regression that drops
+// the field forwarding (e.g., passing nil) would silently disable filtering on
+// every dashboard request and the service-level test would not catch it.
+func TestIntegration_GetFilterSchemaHandlerForwardsAllowedTypes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	rd := testutil.SetupRedis(t)
+	pg := testutil.SetupPostgres(t)
+
+	projectID := seedTestProject(t, ctx, pg)
+	seedServiceEvents(t, ctx, ch, projectID)
+
+	executor := insights.NewExecutor(ch.Conn)
+	service := insights.NewService(executor, rd.Client)
+	srv := insightshandler.NewServer(service, executor)
+
+	authedCtx := authn.SetInfo(ctx, &rpc.Principal{Project: &dbread.Project{ID: projectID}})
+
+	// NUMBER filter: seedServiceEvents seeds Float64 (load_time, revenue) and
+	// Int64 (user_id) custom properties. If the handler forwards allowed_types,
+	// the response must contain only those keys; if it drops the field, the
+	// response includes Bool/String/DateTime keys too.
+	resp, err := srv.GetFilterSchema(authedCtx, connect.NewRequest(&commonv1.GetFilterSchemaRequest{
+		AllowedTypes: []commonv1.PropertyValueType{commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER},
+	}))
+	if err != nil {
+		t.Fatalf("GetFilterSchema: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, k := range resp.Msg.GetCustomPropertyKeys() {
+		got[k.GetName()] = true
+	}
+	for _, name := range []string{"load_time", "user_id", "revenue"} {
+		if !got[name] {
+			t.Errorf("expected %q in NUMBER-filtered response, got keys: %v (handler may not be forwarding allowed_types)", name, got)
+		}
+	}
+	for _, name := range []string{"is_cached", "plan_name", "shipped_at", "coupon"} {
+		if got[name] {
+			t.Errorf("did not expect %q in NUMBER-filtered response — handler may be passing nil for allowed_types", name)
+		}
+	}
+}

@@ -20,16 +20,14 @@ import (
 // correctly preserves NULL for absent keys so IS_SET / IS_NOT_SET work correctly
 // via the existing prop != "" / prop = "" checks.
 //
-// Empty-string handling differs between the two maps:
-//   - An explicitly empty value in auto_properties is treated as ABSENT (the nullIf
-//     converts '' to NULL, allowing fallback to custom_properties).
-//   - An explicitly empty Variant String value in custom_properties is treated as
-//     PRESENT-but-empty — it surfaces as '' through the CAST, and IS_SET (prop != '')
-//     correctly returns false for it.
+// Empty-value behavior is unified — IS_SET (prop != '') returns false in all of these:
+//   - Property absent from both maps.
+//   - Auto value is '' (nullIf collapses to NULL, falls through to custom).
+//   - Custom Variant String value is '' (CAST surfaces '' through the coalesce).
 //
-// This asymmetry is intentional: auto-properties are server-injected and meant to be
-// overrideable; custom-properties values are user-supplied and should be preserved
-// faithfully (including the explicit-empty case).
+// The trailing `, ''` sentinel in the coalesce is load-bearing: it converts the
+// fully-absent case into '' so all downstream string operators (=, LIKE, IN, IS_SET)
+// see a non-NULL projection. Removing it would break IS_SET semantics.
 //
 // SAFETY: The name is interpolated directly into SQL (not parameterized) because ClickHouse
 // map key access requires it. Callers MUST ensure name is validated before calling this function.

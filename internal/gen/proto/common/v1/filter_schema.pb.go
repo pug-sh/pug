@@ -7,6 +7,7 @@
 package commonv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -203,7 +204,10 @@ type PropertyKeyMeta struct {
 	Name       *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
 	Count      *uint64                `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
 	LastSeenAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
-	// Dominant type of values observed for this property key.
+	// One of the value types observed for this property key. When values for
+	// the same key span multiple types (rare drift), this is non-deterministic
+	// and may change between calls — clients should treat it as a hint, not a
+	// contract.
 	ValueType     *PropertyValueType `protobuf:"varint,4,opt,name=value_type,json=valueType,enum=common.v1.PropertyValueType" json:"value_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -267,11 +271,136 @@ func (x *PropertyKeyMeta) GetValueType() PropertyValueType {
 	return PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED
 }
 
+// GetFilterSchemaRequest is shared by every service that exposes a
+// GetFilterSchema RPC (currently shared.activity.v1 and shared.insights.v1).
+// Keeping the request shape here avoids drift between services and is also a
+// signal that the filter-schema concept is service-agnostic.
+type GetFilterSchemaRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventKind     *string                `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	AllowedTypes  []PropertyValueType    `protobuf:"varint,2,rep,packed,name=allowed_types,json=allowedTypes,enum=common.v1.PropertyValueType" json:"allowed_types,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetFilterSchemaRequest) Reset() {
+	*x = GetFilterSchemaRequest{}
+	mi := &file_common_v1_filter_schema_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFilterSchemaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFilterSchemaRequest) ProtoMessage() {}
+
+func (x *GetFilterSchemaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_common_v1_filter_schema_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFilterSchemaRequest.ProtoReflect.Descriptor instead.
+func (*GetFilterSchemaRequest) Descriptor() ([]byte, []int) {
+	return file_common_v1_filter_schema_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetFilterSchemaRequest) GetEventKind() string {
+	if x != nil && x.EventKind != nil {
+		return *x.EventKind
+	}
+	return ""
+}
+
+func (x *GetFilterSchemaRequest) GetAllowedTypes() []PropertyValueType {
+	if x != nil {
+		return x.AllowedTypes
+	}
+	return nil
+}
+
+// GetFilterSchemaResponse mirrors the shared request shape — same reason.
+type GetFilterSchemaResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Events              []*EventNameMeta       `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
+	AutoPropertyKeys    []*PropertyKeyMeta     `protobuf:"bytes,2,rep,name=auto_property_keys,json=autoPropertyKeys" json:"auto_property_keys,omitempty"`
+	CustomPropertyKeys  []*PropertyKeyMeta     `protobuf:"bytes,3,rep,name=custom_property_keys,json=customPropertyKeys" json:"custom_property_keys,omitempty"`
+	ProfilePropertyKeys []*PropertyKeyMeta     `protobuf:"bytes,4,rep,name=profile_property_keys,json=profilePropertyKeys" json:"profile_property_keys,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *GetFilterSchemaResponse) Reset() {
+	*x = GetFilterSchemaResponse{}
+	mi := &file_common_v1_filter_schema_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFilterSchemaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFilterSchemaResponse) ProtoMessage() {}
+
+func (x *GetFilterSchemaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_common_v1_filter_schema_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFilterSchemaResponse.ProtoReflect.Descriptor instead.
+func (*GetFilterSchemaResponse) Descriptor() ([]byte, []int) {
+	return file_common_v1_filter_schema_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetFilterSchemaResponse) GetEvents() []*EventNameMeta {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetAutoPropertyKeys() []*PropertyKeyMeta {
+	if x != nil {
+		return x.AutoPropertyKeys
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetCustomPropertyKeys() []*PropertyKeyMeta {
+	if x != nil {
+		return x.CustomPropertyKeys
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetProfilePropertyKeys() []*PropertyKeyMeta {
+	if x != nil {
+		return x.ProfilePropertyKeys
+	}
+	return nil
+}
+
 var File_common_v1_filter_schema_proto protoreflect.FileDescriptor
 
 const file_common_v1_filter_schema_proto_rawDesc = "" +
 	"\n" +
-	"\x1dcommon/v1/filter_schema.proto\x12\tcommon.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"w\n" +
+	"\x1dcommon/v1/filter_schema.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"w\n" +
 	"\rEventNameMeta\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x04R\x05count\x12<\n" +
@@ -283,7 +412,16 @@ const file_common_v1_filter_schema_proto_rawDesc = "" +
 	"\flast_seen_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"lastSeenAt\x12;\n" +
 	"\n" +
-	"value_type\x18\x04 \x01(\x0e2\x1c.common.v1.PropertyValueTypeR\tvalueType*\x84\x01\n" +
+	"value_type\x18\x04 \x01(\x0e2\x1c.common.v1.PropertyValueTypeR\tvalueType\"\xa5\x01\n" +
+	"\x16GetFilterSchemaRequest\x127\n" +
+	"\n" +
+	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\x12R\n" +
+	"\rallowed_types\x18\x02 \x03(\x0e2\x1c.common.v1.PropertyValueTypeB\x0f\xbaH\f\x92\x01\t\"\a\x82\x01\x04\x10\x01 \x00R\fallowedTypes\"\xb3\x02\n" +
+	"\x17GetFilterSchemaResponse\x120\n" +
+	"\x06events\x18\x01 \x03(\v2\x18.common.v1.EventNameMetaR\x06events\x12H\n" +
+	"\x12auto_property_keys\x18\x02 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x10autoPropertyKeys\x12L\n" +
+	"\x14custom_property_keys\x18\x03 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x12customPropertyKeys\x12N\n" +
+	"\x15profile_property_keys\x18\x04 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x13profilePropertyKeys*\x84\x01\n" +
 	"\x0ePropertySource\x12\x1f\n" +
 	"\x1bPROPERTY_SOURCE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14PROPERTY_SOURCE_AUTO\x10\x01\x12\x1a\n" +
@@ -310,23 +448,30 @@ func file_common_v1_filter_schema_proto_rawDescGZIP() []byte {
 }
 
 var file_common_v1_filter_schema_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_common_v1_filter_schema_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_common_v1_filter_schema_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_common_v1_filter_schema_proto_goTypes = []any{
-	(PropertySource)(0),           // 0: common.v1.PropertySource
-	(PropertyValueType)(0),        // 1: common.v1.PropertyValueType
-	(*EventNameMeta)(nil),         // 2: common.v1.EventNameMeta
-	(*PropertyKeyMeta)(nil),       // 3: common.v1.PropertyKeyMeta
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
+	(PropertySource)(0),             // 0: common.v1.PropertySource
+	(PropertyValueType)(0),          // 1: common.v1.PropertyValueType
+	(*EventNameMeta)(nil),           // 2: common.v1.EventNameMeta
+	(*PropertyKeyMeta)(nil),         // 3: common.v1.PropertyKeyMeta
+	(*GetFilterSchemaRequest)(nil),  // 4: common.v1.GetFilterSchemaRequest
+	(*GetFilterSchemaResponse)(nil), // 5: common.v1.GetFilterSchemaResponse
+	(*timestamppb.Timestamp)(nil),   // 6: google.protobuf.Timestamp
 }
 var file_common_v1_filter_schema_proto_depIdxs = []int32{
-	4, // 0: common.v1.EventNameMeta.last_seen_at:type_name -> google.protobuf.Timestamp
-	4, // 1: common.v1.PropertyKeyMeta.last_seen_at:type_name -> google.protobuf.Timestamp
+	6, // 0: common.v1.EventNameMeta.last_seen_at:type_name -> google.protobuf.Timestamp
+	6, // 1: common.v1.PropertyKeyMeta.last_seen_at:type_name -> google.protobuf.Timestamp
 	1, // 2: common.v1.PropertyKeyMeta.value_type:type_name -> common.v1.PropertyValueType
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	1, // 3: common.v1.GetFilterSchemaRequest.allowed_types:type_name -> common.v1.PropertyValueType
+	2, // 4: common.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
+	3, // 5: common.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
+	3, // 6: common.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
+	3, // 7: common.v1.GetFilterSchemaResponse.profile_property_keys:type_name -> common.v1.PropertyKeyMeta
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_common_v1_filter_schema_proto_init() }
@@ -340,7 +485,7 @@ func file_common_v1_filter_schema_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_v1_filter_schema_proto_rawDesc), len(file_common_v1_filter_schema_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
