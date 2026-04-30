@@ -239,7 +239,7 @@ func (s *server) GetFilterSchema(
 
 	projectID := principal.Project.ID
 
-	schema, err := s.service.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind())
+	schema, err := s.service.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind(), req.Msg.GetAllowedTypes())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

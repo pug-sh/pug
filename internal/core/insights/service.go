@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -43,10 +46,23 @@ func NewService(executor *Executor, redis *redis.Client) *Service {
 	}
 }
 
-func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind string) (*insightsv1.GetFilterSchemaResponse, error) {
+func (s *Service) GetFilterSchema(
+	ctx context.Context,
+	projectID, eventKind string,
+	allowedTypes []commonv1.PropertyValueType,
+) (*insightsv1.GetFilterSchemaResponse, error) {
+	allowedTypes = normalizeAllowedTypes(allowedTypes)
+
 	cacheKey := "filterschema:" + projectID
 	if eventKind != "" {
 		cacheKey += ":" + eventKind
+	}
+	if len(allowedTypes) > 0 {
+		parts := make([]string, len(allowedTypes))
+		for i, t := range allowedTypes {
+			parts[i] = strconv.Itoa(int(t))
+		}
+		cacheKey += ":types=" + strings.Join(parts, ",")
 	}
 
 	cachedSchema, cacheErr := s.redis.Get(ctx, cacheKey).Bytes()
@@ -163,9 +179,9 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 
 	resp := &insightsv1.GetFilterSchemaResponse{
 		Events:              toEventMetas(eventMetas),
-		AutoPropertyKeys:    toPropKeyMetas(autoPropKeys),
-		CustomPropertyKeys:  toPropKeyMetas(customPropKeys),
-		ProfilePropertyKeys: toPropKeyMetas(profilePropKeys),
+		AutoPropertyKeys:    toPropKeyMetas(filterAggregateKeysByType(autoPropKeys, allowedTypes)),
+		CustomPropertyKeys:  toPropKeyMetas(filterAggregateKeysByType(customPropKeys, allowedTypes)),
+		ProfilePropertyKeys: toPropKeyMetas(filterAggregateKeysByType(profilePropKeys, allowedTypes)),
 	}
 
 	if data, err := proto.Marshal(resp); err != nil {
@@ -258,6 +274,53 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	}
 
 	return values, nil
+}
+
+// normalizeAllowedTypes sorts and dedupes a list of PropertyValueType values
+// and drops UNSPECIFIED. Returns nil if no meaningful types remain — the canonical
+// "no filter" form.
+func normalizeAllowedTypes(types []commonv1.PropertyValueType) []commonv1.PropertyValueType {
+	if len(types) == 0 {
+		return nil
+	}
+	seen := make(map[commonv1.PropertyValueType]struct{}, len(types))
+	out := make([]commonv1.PropertyValueType, 0, len(types))
+	for _, t := range types {
+		if t == commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED {
+			continue
+		}
+		if _, dup := seen[t]; dup {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// filterAggregateKeysByType returns only rows whose ValueType maps to a proto
+// enum value in the allowed set. allowedTypes is assumed normalized (sorted, no
+// UNSPECIFIED, no duplicates). nil/empty allowedTypes means "no filter".
+func filterAggregateKeysByType(rows []AggregateKeyMeta, allowedTypes []commonv1.PropertyValueType) []AggregateKeyMeta {
+	if len(allowedTypes) == 0 {
+		return rows
+	}
+	allowed := make(map[commonv1.PropertyValueType]struct{}, len(allowedTypes))
+	for _, t := range allowedTypes {
+		allowed[t] = struct{}{}
+	}
+	out := make([]AggregateKeyMeta, 0, len(rows))
+	for _, row := range rows {
+		protoType := variantTypeToPropertyValueType(row.ValueType)
+		if _, ok := allowed[protoType]; ok {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // variantTypeToPropertyValueType maps the string emitted by the property_keys

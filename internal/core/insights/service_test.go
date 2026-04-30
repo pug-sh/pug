@@ -32,7 +32,7 @@ func TestServiceGetFilterSchema(t *testing.T) {
 	svc := insights.NewService(executor, rd.Client)
 
 	t.Run("returns_events_and_keys", func(t *testing.T) {
-		resp, err := svc.GetFilterSchema(ctx, projectID, "")
+		resp, err := svc.GetFilterSchema(ctx, projectID, "", nil)
 		if err != nil {
 			t.Fatalf("GetFilterSchema: %v", err)
 		}
@@ -69,11 +69,11 @@ func TestServiceGetFilterSchema(t *testing.T) {
 	})
 
 	t.Run("cache_hit_returns_same_response", func(t *testing.T) {
-		resp1, err := svc.GetFilterSchema(ctx, projectID, "")
+		resp1, err := svc.GetFilterSchema(ctx, projectID, "", nil)
 		if err != nil {
 			t.Fatalf("GetFilterSchema (first): %v", err)
 		}
-		resp2, err := svc.GetFilterSchema(ctx, projectID, "")
+		resp2, err := svc.GetFilterSchema(ctx, projectID, "", nil)
 		if err != nil {
 			t.Fatalf("GetFilterSchema (cached): %v", err)
 		}
@@ -83,7 +83,7 @@ func TestServiceGetFilterSchema(t *testing.T) {
 	})
 
 	t.Run("scoped_by_event_kind", func(t *testing.T) {
-		resp, err := svc.GetFilterSchema(ctx, projectID, "page_view")
+		resp, err := svc.GetFilterSchema(ctx, projectID, "page_view", nil)
 		if err != nil {
 			t.Fatalf("GetFilterSchema: %v", err)
 		}
