@@ -845,9 +845,18 @@ func BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind string) (s
 }
 
 // buildPropertyValuesQuery returns distinct values from mapCol for the given key over the last 30 days.
+// auto_properties is Map(String, String) and is read directly. custom_properties is
+// Map(String, Variant(...)) and must be CAST to Nullable(String) so DISTINCT and the
+// non-empty filter operate on a string projection.
 func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) (string, []any, error) {
-	selectExpr := mapCol + `[?] AS value`
-	propertyNotEmptyClause := mapCol + `[?] != ''`
+	var selectExpr, propertyNotEmptyClause string
+	if mapCol == "custom_properties" {
+		selectExpr = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) AS value", mapCol)
+		propertyNotEmptyClause = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) != ''", mapCol)
+	} else {
+		selectExpr = fmt.Sprintf("%s[?] AS value", mapCol)
+		propertyNotEmptyClause = fmt.Sprintf("%s[?] != ''", mapCol)
+	}
 
 	return chq.NewQuery().
 		SelectExpr("DISTINCT "+selectExpr, propertyKey).
@@ -960,7 +969,12 @@ func BuildProfilePropertyValuesQuery(projectID, propertyKey string) (string, []a
 
 func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any, error) {
 	return chq.NewQuery().
-		Select("key", "countMerge(event_count) AS count", "maxMerge(last_seen) AS last_seen").
+		Select(
+			"key",
+			"any(value_type) AS value_type",
+			"countMerge(event_count) AS count",
+			"maxMerge(last_seen) AS last_seen",
+		).
 		From("property_keys").
 		Where(
 			chq.Eq("project_id", projectID),
