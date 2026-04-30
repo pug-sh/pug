@@ -20,6 +20,17 @@ import (
 // correctly preserves NULL for absent keys so IS_SET / IS_NOT_SET work correctly
 // via the existing prop != "" / prop = "" checks.
 //
+// Empty-string handling differs between the two maps:
+//   - An explicitly empty value in auto_properties is treated as ABSENT (the nullIf
+//     converts '' to NULL, allowing fallback to custom_properties).
+//   - An explicitly empty Variant String value in custom_properties is treated as
+//     PRESENT-but-empty — it surfaces as '' through the CAST, and IS_SET (prop != '')
+//     correctly returns false for it.
+//
+// This asymmetry is intentional: auto-properties are server-injected and meant to be
+// overrideable; custom-properties values are user-supplied and should be preserved
+// faithfully (including the explicit-empty case).
+//
 // SAFETY: The name is interpolated directly into SQL (not parameterized) because ClickHouse
 // map key access requires it. Callers MUST ensure name is validated before calling this function.
 // At the RPC boundary, proto validation enforces the pattern ^\$?[a-zA-Z0-9_.-]+$ which
@@ -33,7 +44,7 @@ func propertyExpr(name, alias string) string {
 	if alias != "" {
 		prefix = alias + "."
 	}
-	return fmt.Sprintf("ifNull(nullIf(%sauto_properties['%s'], ''), ifNull(CAST(%scustom_properties['%s'] AS Nullable(String)), ''))", prefix, name, prefix, name)
+	return fmt.Sprintf("coalesce(nullIf(%sauto_properties['%s'], ''), CAST(%scustom_properties['%s'] AS Nullable(String)), '')", prefix, name, prefix, name)
 }
 
 // ProfilePropertyExpr returns the ClickHouse expression to read a profile property.
