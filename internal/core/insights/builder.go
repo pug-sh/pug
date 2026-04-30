@@ -971,6 +971,12 @@ func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any
 	return chq.NewQuery().
 		Select(
 			"key",
+			// any(value_type): a property key can have rows for multiple value_types
+			// when the underlying values drift over time (rare in practice). any() picks
+			// one non-deterministically — the API surfaces a single dominant type.
+			// We deliberately do not expose has_mixed_types (it was considered and
+			// dropped in the proto design — typed Variant storage makes drift detection
+			// a separate query if ever needed).
 			"any(value_type) AS value_type",
 			"countMerge(event_count) AS count",
 			"maxMerge(last_seen) AS last_seen",

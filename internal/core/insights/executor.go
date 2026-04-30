@@ -193,7 +193,9 @@ func (e *Executor) QueryAggregateKeys(ctx context.Context, projectID string, sql
 		}
 	}()
 
-	hasValueType := len(rows.Columns()) == 4
+	// Dispatch on the presence of the value_type column rather than column count —
+	// less brittle if either query ever adds an unrelated projection.
+	hasValueType := slices.Contains(rows.Columns(), "value_type")
 
 	var result []AggregateKeyMeta
 	for rows.Next() {

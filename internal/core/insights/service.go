@@ -150,7 +150,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		for i, m := range rows {
 			key := m.Key
 			count := m.Count
-			vt := chValueTypeToProto(m.ValueType)
+			vt := variantTypeToPropertyValueType(m.ValueType)
 			out[i] = &commonv1.PropertyKeyMeta{
 				Name:       proto.String(key),
 				Count:      &count,
@@ -260,21 +260,38 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	return values, nil
 }
 
-// chValueTypeToProto maps a ClickHouse LowCardinality(String) value_type column value from the
-// property_keys materialized view to the proto PropertyValueType enum. The column stores the
-// ClickHouse Variant inner-type name written by the property_keys worker (e.g. "String",
-// "Int64", "Float64", "Bool", "DateTime64(3)"). Unrecognised values map to UNSPECIFIED.
-func chValueTypeToProto(chType string) commonv1.PropertyValueType {
-	switch chType {
+// variantTypeToPropertyValueType maps the string emitted by the property_keys
+// MV's value_type column into the proto PropertyValueType enum.
+//
+// The custom_properties MV emits CH-native variant type names from variantType():
+//
+//	"String", "Int64", "Float64", "Bool", "DateTime64(3)".
+//
+// The profile MV emits JSON-shape names from its hand-built multiIf:
+//
+//	"String", "Number", "Bool", "Object", "Array", "None".
+//
+// The auto_properties MV emits the constant "String".
+//
+// "" (empty) maps to UNSPECIFIED — used when no value_type was scanned (e.g.
+// event_names rows, which have no type column). Anything else not matched
+// explicitly maps to OTHER (the catch-all for non-primitive shapes).
+func variantTypeToPropertyValueType(s string) commonv1.PropertyValueType {
+	switch s {
+	case "":
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED
 	case "String":
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING
-	case "Int64", "Float64":
+	case "Int64", "Float64", "Number":
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER
 	case "Bool":
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN
+	// "DateTime64(3)" must match the Variant precision declared in
+	// schema/clickhouse/migrations/005_typed_custom_properties.sql.
+	// If the migration changes precision, update this case.
 	case "DateTime64(3)":
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME
 	default:
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER
 	}
 }
