@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	chcol "github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/google/uuid"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
@@ -65,6 +66,90 @@ func TestServiceGetFilterSchema(t *testing.T) {
 		}
 		if !profileKeys["plan"] || !profileKeys["role"] {
 			t.Errorf("expected plan and role in profile keys, got: %v", profileKeys)
+		}
+
+		// Verify custom property keys include value_type metadata.
+		customByName := map[string]commonv1.PropertyValueType{}
+		for _, k := range resp.GetCustomPropertyKeys() {
+			customByName[k.GetName()] = k.GetValueType()
+		}
+		expectedTypes := map[string]commonv1.PropertyValueType{
+			"load_time":  commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+			"is_cached":  commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN,
+			"plan_name":  commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING,
+			"user_id":    commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+			"shipped_at": commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME,
+		}
+		for name, want := range expectedTypes {
+			if got := customByName[name]; got != want {
+				t.Errorf("custom key %q: got value_type %v, want %v", name, got, want)
+			}
+		}
+	})
+
+	t.Run("allowed_types_filters_custom_keys", func(t *testing.T) {
+		// NUMBER filter: only load_time (Float64), user_id (Int64), revenue (Float64).
+		respNum, err := svc.GetFilterSchema(ctx, projectID, "", []commonv1.PropertyValueType{
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+		})
+		if err != nil {
+			t.Fatalf("GetFilterSchema (NUMBER): %v", err)
+		}
+		numKeys := map[string]bool{}
+		for _, k := range respNum.GetCustomPropertyKeys() {
+			numKeys[k.GetName()] = true
+		}
+		wantPresent := []string{"load_time", "user_id", "revenue"}
+		wantAbsent := []string{"is_cached", "plan_name", "coupon", "shipped_at"}
+		for _, name := range wantPresent {
+			if !numKeys[name] {
+				t.Errorf("NUMBER filter: expected %q in custom keys, got keys: %v", name, numKeys)
+			}
+		}
+		for _, name := range wantAbsent {
+			if numKeys[name] {
+				t.Errorf("NUMBER filter: unexpected %q in custom keys", name)
+			}
+		}
+
+		// BOOLEAN filter: only is_cached.
+		respBool, err := svc.GetFilterSchema(ctx, projectID, "", []commonv1.PropertyValueType{
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN,
+		})
+		if err != nil {
+			t.Fatalf("GetFilterSchema (BOOLEAN): %v", err)
+		}
+		boolKeys := map[string]bool{}
+		for _, k := range respBool.GetCustomPropertyKeys() {
+			boolKeys[k.GetName()] = true
+		}
+		if !boolKeys["is_cached"] {
+			t.Errorf("BOOLEAN filter: expected is_cached in custom keys, got: %v", boolKeys)
+		}
+		for _, name := range []string{"load_time", "user_id", "plan_name", "coupon", "shipped_at", "revenue"} {
+			if boolKeys[name] {
+				t.Errorf("BOOLEAN filter: unexpected %q in custom keys", name)
+			}
+		}
+
+		// DATETIME filter: only shipped_at.
+		respDT, err := svc.GetFilterSchema(ctx, projectID, "", []commonv1.PropertyValueType{
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME,
+		})
+		if err != nil {
+			t.Fatalf("GetFilterSchema (DATETIME): %v", err)
+		}
+		dtKeys := map[string]bool{}
+		for _, k := range respDT.GetCustomPropertyKeys() {
+			dtKeys[k.GetName()] = true
+		}
+		if !dtKeys["shipped_at"] {
+			t.Errorf("DATETIME filter: expected shipped_at in custom keys, got: %v", dtKeys)
+		}
+		for _, name := range []string{"load_time", "user_id", "plan_name", "coupon", "is_cached", "revenue"} {
+			if dtKeys[name] {
+				t.Errorf("DATETIME filter: unexpected %q in custom keys", name)
+			}
 		}
 	})
 
@@ -216,29 +301,69 @@ func seedServiceEvents(t *testing.T, ctx context.Context, ch *testutil.TestClick
 	t.Helper()
 
 	now := time.Now().UTC().Truncate(time.Hour)
-	events := []struct {
-		kind    string
-		user    string
-		country string
-	}{
-		{"page_view", "alice", "US"},
-		{"page_view", "bob", "GB"},
-		{"purchase", "alice", "US"},
+
+	type eventRow struct {
+		kind   string
+		user   string
+		auto   map[string]string
+		custom map[string]chcol.Variant
+	}
+
+	// chcol.NewVariantWithType explicitly tags each value with the ClickHouse
+	// Variant branch name, matching the column declaration:
+	//   Variant(String, Int64, Float64, Bool, DateTime64(3)).
+	// Without explicit type the driver tries each branch in declaration order,
+	// which can pick the wrong branch for int64 and time.Time values.
+	events := []eventRow{
+		{
+			kind: "page_view", user: "alice",
+			auto: map[string]string{"$country": "US"},
+			custom: map[string]chcol.Variant{
+				"load_time":  chcol.NewVariantWithType(1.25, "Float64"),
+				"is_cached":  chcol.NewVariantWithType(true, "Bool"),
+				"plan_name":  chcol.NewVariantWithType("pro", "String"),
+				"user_id":    chcol.NewVariantWithType(int64(42), "Int64"),
+				"shipped_at": chcol.NewVariantWithType(time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC), "DateTime64(3)"),
+			},
+		},
+		{
+			kind: "page_view", user: "bob",
+			auto: map[string]string{"$country": "GB"},
+			custom: map[string]chcol.Variant{
+				"load_time":  chcol.NewVariantWithType(0.95, "Float64"),
+				"is_cached":  chcol.NewVariantWithType(false, "Bool"),
+				"plan_name":  chcol.NewVariantWithType("free", "String"),
+				"user_id":    chcol.NewVariantWithType(int64(43), "Int64"),
+				"shipped_at": chcol.NewVariantWithType(time.Date(2026, 4, 30, 10, 5, 0, 0, time.UTC), "DateTime64(3)"),
+			},
+		},
+		{
+			kind: "purchase", user: "alice",
+			auto: map[string]string{"$country": "US"},
+			custom: map[string]chcol.Variant{
+				"revenue": chcol.NewVariantWithType(99.50, "Float64"),
+				"coupon":  chcol.NewVariantWithType("SPRING", "String"),
+			},
+		},
+	}
+
+	// Use PrepareBatch (binary native protocol) for Map(String, Variant(...))
+	// to ensure the typed Variant branches land correctly. Exec (HTTP) does
+	// not reliably carry Variant type discriminators for map values.
+	batch, err := ch.Conn.PrepareBatch(ctx,
+		"INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties, custom_properties)")
+	if err != nil {
+		t.Fatalf("prepare batch: %v", err)
 	}
 
 	for _, e := range events {
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
-			projectID,
-			uuid.New().String(),
-			e.kind,
-			e.user,
-			now,
-			map[string]string{"$country": e.country},
-		)
-		if err != nil {
-			t.Fatalf("insert event: %v", err)
+		if err := batch.Append(projectID, uuid.New().String(), e.kind, e.user, now, e.auto, e.custom); err != nil {
+			t.Fatalf("append event: %v", err)
 		}
+	}
+
+	if err := batch.Send(); err != nil {
+		t.Fatalf("send event batch: %v", err)
 	}
 }
 
