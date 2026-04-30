@@ -11,7 +11,7 @@ import (
 
 func TestPropertyExpr(t *testing.T) {
 	got := clickhouse.PropertyExpr("$country")
-	want := "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country'])"
+	want := "coalesce(nullIf(auto_properties['$country'], ''), CAST(custom_properties['$country'] AS Nullable(String)), '')"
 	if got != want {
 		t.Errorf("PropertyExpr($country) = %q, want %q", got, want)
 	}
@@ -46,7 +46,7 @@ func TestPropertyCondition_Equals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country']) = ?"
+	want := "coalesce(nullIf(auto_properties['$country'], ''), CAST(custom_properties['$country'] AS Nullable(String)), '') = ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -65,7 +65,7 @@ func TestPropertyCondition_Contains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "ifNull(nullIf(auto_properties['name'], ''), custom_properties['name']) LIKE ?"
+	want := "coalesce(nullIf(auto_properties['name'], ''), CAST(custom_properties['name'] AS Nullable(String)), '') LIKE ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -83,7 +83,7 @@ func TestPropertyCondition_IsSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "ifNull(nullIf(auto_properties['email'], ''), custom_properties['email']) != ''"
+	want := "coalesce(nullIf(auto_properties['email'], ''), CAST(custom_properties['email'] AS Nullable(String)), '') != ''"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -102,7 +102,7 @@ func TestPropertyCondition_GTE_Numeric(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "toFloat64OrNull(ifNull(nullIf(auto_properties['score'], ''), custom_properties['score'])) >= ?"
+	want := "toFloat64OrNull(coalesce(nullIf(auto_properties['score'], ''), CAST(custom_properties['score'] AS Nullable(String)), '')) >= ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -132,7 +132,7 @@ func TestPropertyCondition_In(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country']) IN (?, ?, ?)"
+	want := "coalesce(nullIf(auto_properties['$country'], ''), CAST(custom_properties['$country'] AS Nullable(String)), '') IN (?, ?, ?)"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -151,7 +151,7 @@ func TestPropertyCondition_NotEquals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "ifNull(nullIf(auto_properties['status'], ''), custom_properties['status']) != ?"
+	want := "coalesce(nullIf(auto_properties['status'], ''), CAST(custom_properties['status'] AS Nullable(String)), '') != ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -170,7 +170,7 @@ func TestPropertyCondition_NotContains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "ifNull(nullIf(auto_properties['url'], ''), custom_properties['url']) NOT LIKE ?"
+	want := "coalesce(nullIf(auto_properties['url'], ''), CAST(custom_properties['url'] AS Nullable(String)), '') NOT LIKE ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -188,7 +188,7 @@ func TestPropertyCondition_IsNotSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "ifNull(nullIf(auto_properties['email'], ''), custom_properties['email']) = ''"
+	want := "coalesce(nullIf(auto_properties['email'], ''), CAST(custom_properties['email'] AS Nullable(String)), '') = ''"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -207,7 +207,7 @@ func TestPropertyCondition_LTE(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "toFloat64OrNull(ifNull(nullIf(auto_properties['age'], ''), custom_properties['age'])) <= ?"
+	want := "toFloat64OrNull(coalesce(nullIf(auto_properties['age'], ''), CAST(custom_properties['age'] AS Nullable(String)), '')) <= ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -226,7 +226,7 @@ func TestPropertyCondition_LT(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "toFloat64OrNull(ifNull(nullIf(auto_properties['score'], ''), custom_properties['score'])) < ?"
+	want := "toFloat64OrNull(coalesce(nullIf(auto_properties['score'], ''), CAST(custom_properties['score'] AS Nullable(String)), '')) < ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -242,7 +242,7 @@ func TestPropertyCondition_GT(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "toFloat64OrNull(ifNull(nullIf(auto_properties['revenue'], ''), custom_properties['revenue'])) > ?"
+	want := "toFloat64OrNull(coalesce(nullIf(auto_properties['revenue'], ''), CAST(custom_properties['revenue'] AS Nullable(String)), '')) > ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -261,7 +261,7 @@ func TestPropertyCondition_NotIn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country']) NOT IN (?, ?)"
+	want := "coalesce(nullIf(auto_properties['$country'], ''), CAST(custom_properties['$country'] AS Nullable(String)), '') NOT IN (?, ?)"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -608,7 +608,7 @@ func TestPropertyConditionAliased_NotBetween(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "(toFloat64OrNull(ifNull(nullIf(e.auto_properties['amount'], ''), e.custom_properties['amount'])) < ? OR toFloat64OrNull(ifNull(nullIf(e.auto_properties['amount'], ''), e.custom_properties['amount'])) > ?)"
+	want := "(toFloat64OrNull(coalesce(nullIf(e.auto_properties['amount'], ''), CAST(e.custom_properties['amount'] AS Nullable(String)), '')) < ? OR toFloat64OrNull(coalesce(nullIf(e.auto_properties['amount'], ''), CAST(e.custom_properties['amount'] AS Nullable(String)), '')) > ?)"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL:\n got: %s\nwant: %s", cond.SQL(), want)
 	}
@@ -630,7 +630,7 @@ func TestPropertyCondition_Between(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "(toFloat64OrNull(ifNull(nullIf(auto_properties['amount'], ''), custom_properties['amount'])) >= ? AND toFloat64OrNull(ifNull(nullIf(auto_properties['amount'], ''), custom_properties['amount'])) <= ?)"
+	want := "(toFloat64OrNull(coalesce(nullIf(auto_properties['amount'], ''), CAST(custom_properties['amount'] AS Nullable(String)), '')) >= ? AND toFloat64OrNull(coalesce(nullIf(auto_properties['amount'], ''), CAST(custom_properties['amount'] AS Nullable(String)), '')) <= ?)"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL:\n got: %s\nwant: %s", cond.SQL(), want)
 	}
@@ -652,7 +652,7 @@ func TestPropertyCondition_NotBetween(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "(toFloat64OrNull(ifNull(nullIf(auto_properties['amount'], ''), custom_properties['amount'])) < ? OR toFloat64OrNull(ifNull(nullIf(auto_properties['amount'], ''), custom_properties['amount'])) > ?)"
+	want := "(toFloat64OrNull(coalesce(nullIf(auto_properties['amount'], ''), CAST(custom_properties['amount'] AS Nullable(String)), '')) < ? OR toFloat64OrNull(coalesce(nullIf(auto_properties['amount'], ''), CAST(custom_properties['amount'] AS Nullable(String)), '')) > ?)"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL:\n got: %s\nwant: %s", cond.SQL(), want)
 	}

@@ -102,7 +102,7 @@ func TestTrendsWithFilters(t *testing.T) {
 	if !strings.Contains(sql, "toFloat64(count(DISTINCT distinct_id))") {
 		t.Errorf("expected toFloat64(count(DISTINCT distinct_id)) in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country'])") {
+	if !strings.Contains(sql, "coalesce(nullIf(auto_properties['$country'], ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
 		t.Errorf("expected property resolution expression in SQL, got: %s", sql)
 	}
 
@@ -804,7 +804,7 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 	if !strings.Contains(sql, "LIMIT ?") {
 		t.Errorf("expected LIMIT ? in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country'])") {
+	if !strings.Contains(sql, "coalesce(nullIf(auto_properties['$country'], ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
 		t.Errorf("expected property filter expression in SQL, got: %s", sql)
 	}
 
