@@ -9,7 +9,16 @@ import (
 )
 
 // PropertyExpr returns the ClickHouse expression to resolve an event property.
-// It checks auto_properties first; if the value is empty or missing, it falls back to custom_properties.
+// It checks auto_properties first; if the value is empty or missing, it falls back
+// to custom_properties. Both maps' values are coerced to string for unified operator
+// handling (custom_properties stores Variant — CAST(v AS Nullable(String)) collapses
+// any active variant type to its string representation; numeric operators downstream
+// re-parse via toFloat64OrNull).
+//
+// CAST to Nullable(String) is used (not toString) because toString(NULL Variant)
+// produces the display string "ᴺᵁᴸᴸ" rather than NULL or ""; the Nullable cast
+// correctly preserves NULL for absent keys so IS_SET / IS_NOT_SET work correctly
+// via the existing prop != "" / prop = "" checks.
 //
 // SAFETY: The name is interpolated directly into SQL (not parameterized) because ClickHouse
 // map key access requires it. Callers MUST ensure name is validated before calling this function.
@@ -24,7 +33,7 @@ func propertyExpr(name, alias string) string {
 	if alias != "" {
 		prefix = alias + "."
 	}
-	return fmt.Sprintf("ifNull(nullIf(%sauto_properties['%s'], ''), %scustom_properties['%s'])", prefix, name, prefix, name)
+	return fmt.Sprintf("ifNull(nullIf(%sauto_properties['%s'], ''), ifNull(CAST(%scustom_properties['%s'] AS Nullable(String)), ''))", prefix, name, prefix, name)
 }
 
 // ProfilePropertyExpr returns the ClickHouse expression to read a profile property.
