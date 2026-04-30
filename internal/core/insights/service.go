@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -295,7 +295,7 @@ func normalizeAllowedTypes(types []commonv1.PropertyValueType) []commonv1.Proper
 		seen[t] = struct{}{}
 		out = append(out, t)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	slices.Sort(out)
 	if len(out) == 0 {
 		return nil
 	}
