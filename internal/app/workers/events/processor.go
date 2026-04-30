@@ -40,11 +40,10 @@ func propertyValueToVariant(pv *commonv1.PropertyValue) any {
 	}
 }
 
-// customPropertiesToVariantMap converts a proto custom_properties map into a
-// map[string]any suitable for inserting into a Map(String, Variant(...)) column.
-// The clickhouse-go driver's Variant.AppendRow auto-selects the inner type from the
-// native Go value (string, int64, float64, bool, time.Time). Returns nil for an
-// empty input so the column receives an empty map rather than NULL.
+// customPropertiesToVariantMap converts a proto Map(String, PropertyValue) into
+// the native Go shape clickhouse-go uses to insert into Map(String, Variant(...)).
+// Returns nil for empty input — the driver maps a nil map to an empty CH Map
+// (zero entries), which is the correct shape for an event with no custom_properties.
 func customPropertiesToVariantMap(props map[string]*commonv1.PropertyValue) map[string]any {
 	if len(props) == 0 {
 		return nil

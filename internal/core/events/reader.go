@@ -21,10 +21,11 @@ import (
 
 type Event struct {
 	AutoProperties map[string]string
-	// CustomProperties decodes from Map(String, Variant(String, Int64, Float64, Bool, DateTime64(3))).
-	// Values come back as chcol.Variant; call .Any() to retrieve the underlying native Go type
-	// (string, int64, float64, bool, or time.Time matching the active variant tag).
-	CustomProperties map[string]chcol.Variant
+	// CustomProperties holds custom event properties decoded from
+	// Map(String, Variant(...)). Values come back as native Go types matching
+	// the active variant: string, int64, float64, bool, or time.Time. Storage
+	// of chcol.Variant values is contained to the scan boundary (see scan*).
+	CustomProperties map[string]any
 	DistinctID       string
 	EventID          string
 	InsertTime       time.Time
@@ -40,9 +41,10 @@ const eventColumns = `auto_properties, custom_properties, distinct_id, event_id,
 
 func scanEvent(rows driver.Rows) (Event, error) {
 	var e Event
+	var rawCustom map[string]chcol.Variant
 	if err := rows.Scan(
 		&e.AutoProperties,
-		&e.CustomProperties,
+		&rawCustom,
 		&e.DistinctID,
 		&e.EventID,
 		&e.InsertTime,
@@ -53,7 +55,28 @@ func scanEvent(rows driver.Rows) (Event, error) {
 	); err != nil {
 		return Event{}, err
 	}
+	e.CustomProperties = unwrapCustomProperties(rawCustom)
 	return e, nil
+}
+
+// unwrapCustomProperties unwraps the driver's map[string]chcol.Variant scan
+// type into native Go values. Timestamps are normalised to RFC3339Nano UTC
+// strings so JSON marshalers and structpb consumers don't need a time.Time
+// special case.
+func unwrapCustomProperties(raw map[string]chcol.Variant) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(raw))
+	for k, v := range raw {
+		switch x := v.Any().(type) {
+		case time.Time:
+			out[k] = x.UTC().Format(time.RFC3339Nano)
+		default:
+			out[k] = x
+		}
+	}
+	return out
 }
 
 type Reader struct {
