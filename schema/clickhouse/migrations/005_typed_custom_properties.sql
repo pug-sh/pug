@@ -46,12 +46,12 @@ ORDER BY (project_id, map_type, kind, key, value_type);
 CREATE MATERIALIZED VIEW IF NOT EXISTS property_keys_auto_mv TO property_keys AS
 SELECT
     project_id,
-    'auto'              AS map_type,
+    'auto'                          AS map_type,
     kind,
-    tupleElement(kv, 1) AS key,
-    'String'            AS value_type,
-    countState()        AS event_count,
-    maxState(occur_time) AS last_seen
+    tupleElement(kv, 1)             AS key,
+    'String'                        AS value_type,
+    countState()                    AS event_count,
+    maxState(occur_time)            AS last_seen
 FROM events
 ARRAY JOIN arrayZip(mapKeys(auto_properties), mapValues(auto_properties)) AS kv
 WHERE notEmpty(auto_properties)
@@ -79,12 +79,19 @@ SELECT
     ''                    AS kind,
     tupleElement(kv, 1)   AS key,
     multiIf(
+        -- JSON null literal
         tupleElement(kv, 2) = 'null', 'None',
+        -- JSON object/array
         startsWith(tupleElement(kv, 2), '{'), 'Object',
         startsWith(tupleElement(kv, 2), '['), 'Array',
-        lowerUTF8(replaceRegexpAll(tupleElement(kv, 2), '^"|"$', '')) IN ('true','false'), 'Bool',
+        -- JSON string (must come before Bool: "true"/"false" as JSON strings would
+        -- otherwise be misclassified as Bool after stripping quotes).
         startsWith(tupleElement(kv, 2), '"'), 'String',
+        -- JSON boolean — bare true/false (no quotes by construction at this point).
+        lowerUTF8(tupleElement(kv, 2)) IN ('true', 'false'), 'Bool',
+        -- JSON number — anything parseable as float that isn't a string/object/array/bool.
         toFloat64OrNull(tupleElement(kv, 2)) IS NOT NULL, 'Number',
+        -- Fallback (should be unreachable in valid JSON).
         'String'
     )                     AS value_type,
     countState()          AS event_count,
@@ -95,6 +102,9 @@ WHERE is_deleted = 0 AND notEmpty(properties)
 GROUP BY project_id, map_type, kind, key, value_type;
 
 -- +goose Down
+-- This Down only drops the migration's objects; it does NOT restore the
+-- pre-migration shape of `events` or `property_keys`. To roll the database
+-- back to the pre-005 state, re-run migrations 001-004 Up after this.
 DROP VIEW IF EXISTS property_keys_profile_mv;
 DROP VIEW IF EXISTS property_keys_custom_mv;
 DROP VIEW IF EXISTS property_keys_auto_mv;
