@@ -18,12 +18,13 @@ message PropertyValue {
   oneof value {
     option (buf.validate.oneof).required = true;
 
-    // Cap property string values at 1 KiB on the wire. Large blobs
+    // Cap property string values at 1024 Unicode codepoints. Large blobs
     // (logs, raw payloads, serialized JSON) should be hashed or referenced
-    // upstream rather than embedded as a property value — this limit makes
-    // that a hard rule rather than a soft guideline. Limit is bytes, not
-    // codepoints; values exceeding it are rejected at the validate
-    // interceptor with CodeInvalidArgument (not truncated).
+    // upstream rather than embedded as a property value. Note: max_len
+    // counts codepoints, not bytes — multi-byte UTF-8 (emoji, CJK) can
+    // exceed 1 KiB on the wire at this limit. Switch to max_bytes if a
+    // hard byte cap is required. Values exceeding the limit are rejected
+    // at the validate interceptor with CodeInvalidArgument (not truncated).
     string                    string_value    = 1 [(buf.validate.field).string.max_len = 1024];
 
     int64                     int_value       = 2;

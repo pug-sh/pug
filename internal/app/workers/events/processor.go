@@ -47,10 +47,12 @@ func propertyValueToVariant(ctx context.Context, pv *commonv1.PropertyValue) chc
 	default:
 		// Unreachable for batches that pass protovalidate (oneof.required = true).
 		// Fires only on proto-future drift: a new PropertyValue variant added in
-		// proto without a corresponding case here. Surface the drift; drop the
-		// single property; do not fail the batch.
+		// proto without a corresponding case here. Surface the drift; the key
+		// is preserved in the row but its value is stored as the absent-variant
+		// slot (NULL on read), so the SDK still sees accepted=N back without
+		// a per-property signal. Do not fail the batch.
 		err := fmt.Errorf("unsupported PropertyValue variant: %T", pv.GetValue())
-		slog.WarnContext(ctx, "dropping property with unsupported PropertyValue variant", slogx.Error(err))
+		slog.WarnContext(ctx, "storing property with unsupported PropertyValue variant as NULL", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return chcol.Variant{}
 	}

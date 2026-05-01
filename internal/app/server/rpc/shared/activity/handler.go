@@ -43,7 +43,7 @@ func (s *server) GetActivityFeed(
 	req *connect.Request[activityv1.GetActivityFeedRequest],
 ) (*connect.Response[activityv1.GetActivityFeedResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -106,7 +106,7 @@ func (s *server) GetEventExplorer(
 	req *connect.Request[activityv1.GetEventExplorerRequest],
 ) (*connect.Response[activityv1.GetEventExplorerResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -214,7 +214,7 @@ func (s *server) GetActivityHeatmap(
 	req *connect.Request[activityv1.GetActivityHeatmapRequest],
 ) (*connect.Response[activityv1.GetActivityHeatmapResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -253,7 +253,7 @@ func (s *server) GetProfileStats(
 	req *connect.Request[activityv1.GetProfileStatsRequest],
 ) (*connect.Response[activityv1.GetProfileStatsResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -322,7 +322,7 @@ func (s *server) GetFilterSchema(
 	req *connect.Request[commonv1.GetFilterSchemaRequest],
 ) (*connect.Response[commonv1.GetFilterSchemaResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -345,7 +345,7 @@ func (s *server) GetPropertyValues(
 	req *connect.Request[activityv1.GetPropertyValuesRequest],
 ) (*connect.Response[activityv1.GetPropertyValuesResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)

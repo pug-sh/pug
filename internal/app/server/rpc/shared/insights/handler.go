@@ -18,17 +18,6 @@ import (
 	"github.com/fivebitsio/cotton/internal/slogx"
 )
 
-// connectCtxErr wraps a context error in the appropriate Connect error code.
-func connectCtxErr(err error) error {
-	code := connect.CodeCanceled
-	msg := "request canceled"
-	if errors.Is(err, context.DeadlineExceeded) {
-		code = connect.CodeDeadlineExceeded
-		msg = "request timed out"
-	}
-	return connect.NewError(code, errors.New(msg))
-}
-
 type server struct {
 	service  *coreinsights.Service
 	executor *coreinsights.Executor
@@ -55,7 +44,7 @@ func (s *server) Query(
 	req *connect.Request[insightsv1.QueryRequest],
 ) (*connect.Response[insightsv1.QueryResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, connectCtxErr(err)
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -184,7 +173,7 @@ func (s *server) SegmentUsers(
 	req *connect.Request[insightsv1.SegmentUsersRequest],
 ) (*connect.Response[insightsv1.SegmentUsersResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, connectCtxErr(err)
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -230,7 +219,7 @@ func (s *server) GetFilterSchema(
 	req *connect.Request[commonv1.GetFilterSchemaRequest],
 ) (*connect.Response[commonv1.GetFilterSchemaResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, connectCtxErr(err)
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -253,7 +242,7 @@ func (s *server) GetPropertyValues(
 	req *connect.Request[insightsv1.GetPropertyValuesRequest],
 ) (*connect.Response[insightsv1.GetPropertyValuesResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, connectCtxErr(err)
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)

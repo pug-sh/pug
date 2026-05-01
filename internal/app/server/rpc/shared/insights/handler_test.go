@@ -62,14 +62,14 @@ func TestGetPropertyValues_Unauthenticated(t *testing.T) {
 func TestConnectCtxErr_Canceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := connectCtxErr(ctx.Err())
+	err := rpc.ConnectCtxErr(ctx.Err())
 	if code := connect.CodeOf(err); code != connect.CodeCanceled {
 		t.Errorf("got code %v, want CodeCanceled", code)
 	}
 }
 
 func TestConnectCtxErr_DeadlineExceeded(t *testing.T) {
-	err := connectCtxErr(context.DeadlineExceeded)
+	err := rpc.ConnectCtxErr(context.DeadlineExceeded)
 	if code := connect.CodeOf(err); code != connect.CodeDeadlineExceeded {
 		t.Errorf("got code %v, want CodeDeadlineExceeded", code)
 	}

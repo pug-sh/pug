@@ -120,7 +120,7 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
 - **`proto/sdk/`** — API key auth (public or private). Write-only — never expose read endpoints or return sensitive data. Public keys are extractable from client apps, so SDK endpoints must assume an untrusted caller regardless of key type.
 - **`proto/dashboard/`** — JWT only (e.g., orgs, projects, insights)
 - **`proto/shared/`** — private API key or JWT (e.g., campaigns, delivery, profiles read/delete)
-- **`proto/common/v1/`** — shared message types with no service definitions, accessible from any auth level. Only put types here if they are needed across auth boundaries. If a message is only used behind private key + JWT, it belongs in `shared/`.
+- **`proto/common/v1/`** — shared message types with no service definitions, accessible from any auth level. Put types here when (a) they are needed across auth boundaries, or (b) they are reused across multiple services within the same auth boundary and copying would create drift risk (e.g., `GetFilterSchemaRequest`/`Response` is consumed by both `shared.activity` and `shared.insights`). A message used by exactly one service belongs in that service's package, not `common/v1/`.
 
 ### Insights Breakdown
 
@@ -252,6 +252,7 @@ Key types and functions:
 - **Dedup key (ORDER BY):** `(project_id, toStartOfMinute(occur_time), kind, event_id)` — minute granularity matches the finest time resolution dashboards use (per-minute charts). Full-precision `occur_time` is stored in the column.
 - **Partitioning:** `PARTITION BY toYYYYMM(occur_time)` — ReplacingMergeTree **never** deduplicates across partitions.
 - **occur_time stability:** `occur_time` is required (enforced by proto validation). Clients must send a stable value on retries — a different value that crosses a minute boundary lands in a different sort-key bucket (dedup fails); if it crosses a month boundary it lands in a different partition (permanent duplicate).
+- **Unknown PropertyValue variants are stored as NULL.** `propertyValueToVariant` in `internal/app/workers/events/processor.go` maps oneof cases to typed Variant slots. The default arm logs+records and returns the absent-variant slot, so the property key is preserved in the row but the value reads back as `nil`. This path is unreachable through the validated RPC ingress (oneof.required) and only fires on proto-future drift. The SDK is not signalled per-property; it still sees `accepted=N` for the batch.
 
 ### ClickHouse Query Builder Conventions
 
