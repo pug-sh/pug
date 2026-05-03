@@ -305,7 +305,7 @@ func seedServiceEvents(t *testing.T, ctx context.Context, ch *testutil.TestClick
 	type eventRow struct {
 		kind   string
 		user   string
-		auto   map[string]string
+		auto   map[string]chcol.Variant
 		custom map[string]chcol.Variant
 	}
 
@@ -317,7 +317,7 @@ func seedServiceEvents(t *testing.T, ctx context.Context, ch *testutil.TestClick
 	events := []eventRow{
 		{
 			kind: "page_view", user: "alice",
-			auto: map[string]string{"$country": "US"},
+			auto: map[string]chcol.Variant{"$country": chcol.NewVariantWithType("US", "String")},
 			custom: map[string]chcol.Variant{
 				"load_time":  chcol.NewVariantWithType(1.25, "Float64"),
 				"is_cached":  chcol.NewVariantWithType(true, "Bool"),
@@ -328,7 +328,7 @@ func seedServiceEvents(t *testing.T, ctx context.Context, ch *testutil.TestClick
 		},
 		{
 			kind: "page_view", user: "bob",
-			auto: map[string]string{"$country": "GB"},
+			auto: map[string]chcol.Variant{"$country": chcol.NewVariantWithType("GB", "String")},
 			custom: map[string]chcol.Variant{
 				"load_time":  chcol.NewVariantWithType(0.95, "Float64"),
 				"is_cached":  chcol.NewVariantWithType(false, "Bool"),
@@ -339,7 +339,7 @@ func seedServiceEvents(t *testing.T, ctx context.Context, ch *testutil.TestClick
 		},
 		{
 			kind: "purchase", user: "alice",
-			auto: map[string]string{"$country": "US"},
+			auto: map[string]chcol.Variant{"$country": chcol.NewVariantWithType("US", "String")},
 			custom: map[string]chcol.Variant{
 				"revenue": chcol.NewVariantWithType(99.50, "Float64"),
 				"coupon":  chcol.NewVariantWithType("SPRING", "String"),

@@ -20,7 +20,7 @@ import (
 )
 
 type Event struct {
-	AutoProperties map[string]string
+	AutoProperties map[string]any
 	// CustomProperties holds custom event properties decoded from
 	// Map(String, Variant(...)). Values are native Go types matching the
 	// active variant: string, int64, float64, bool. Timestamps are normalised
@@ -42,9 +42,10 @@ const eventColumns = `auto_properties, custom_properties, distinct_id, event_id,
 
 func scanEvent(rows driver.Rows) (Event, error) {
 	var e Event
+	var rawAuto map[string]chcol.Variant
 	var rawCustom map[string]chcol.Variant
 	if err := rows.Scan(
-		&e.AutoProperties,
+		&rawAuto,
 		&rawCustom,
 		&e.DistinctID,
 		&e.EventID,
@@ -56,15 +57,16 @@ func scanEvent(rows driver.Rows) (Event, error) {
 	); err != nil {
 		return Event{}, err
 	}
+	e.AutoProperties = unwrapPropertyMap(rawAuto)
 	e.CustomProperties = unwrapCustomProperties(rawCustom)
 	return e, nil
 }
 
-// unwrapCustomProperties unwraps the driver's map[string]chcol.Variant scan
+// unwrapPropertyMap unwraps the driver's map[string]chcol.Variant scan
 // type into native Go values. Timestamps are normalised to RFC3339Nano UTC
 // strings so JSON marshalers and structpb consumers don't need a time.Time
 // special case.
-func unwrapCustomProperties(raw map[string]chcol.Variant) map[string]any {
+func unwrapPropertyMap(raw map[string]chcol.Variant) map[string]any {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -78,6 +80,10 @@ func unwrapCustomProperties(raw map[string]chcol.Variant) map[string]any {
 		}
 	}
 	return out
+}
+
+func unwrapCustomProperties(raw map[string]chcol.Variant) map[string]any {
+	return unwrapPropertyMap(raw)
 }
 
 type Reader struct {
@@ -624,8 +630,8 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 
 	var stats ProfileStats
 	var totalEvents uint64
-	var latestProps map[string]string
-	if err := rows.Scan(&stats.FirstSeen, &stats.LastSeen, &totalEvents, &latestProps); err != nil {
+	var rawLatestProps map[string]chcol.Variant
+	if err := rows.Scan(&stats.FirstSeen, &stats.LastSeen, &totalEvents, &rawLatestProps); err != nil {
 		slog.ErrorContext(ctx, "queryProfileStats: scan failed", slogx.Error(err),
 			slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
@@ -643,16 +649,25 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 		return nil, nil
 	}
 
-	stats.Browser = latestProps[useragent.PropBrowser]
-	stats.BrowserVersion = latestProps[useragent.PropBrowserVersion]
-	stats.OS = latestProps[useragent.PropOS]
-	stats.OSVersion = latestProps[useragent.PropOSVersion]
-	stats.Device = latestProps[useragent.PropDevice]
-	stats.Country = latestProps[geo.PropCountry]
-	stats.City = latestProps[geo.PropCity]
-	stats.IP = latestProps[geo.PropIP]
+	latestProps := unwrapPropertyMap(rawLatestProps)
+
+	stats.Browser = stringProp(latestProps, useragent.PropBrowser)
+	stats.BrowserVersion = stringProp(latestProps, useragent.PropBrowserVersion)
+	stats.OS = stringProp(latestProps, useragent.PropOS)
+	stats.OSVersion = stringProp(latestProps, useragent.PropOSVersion)
+	stats.Device = stringProp(latestProps, useragent.PropDevice)
+	stats.Country = stringProp(latestProps, geo.PropCountry)
+	stats.City = stringProp(latestProps, geo.PropCity)
+	stats.IP = stringProp(latestProps, geo.PropIP)
 
 	return &stats, nil
+}
+
+func stringProp(props map[string]any, key string) string {
+	if v, ok := props[key].(string); ok {
+		return v
+	}
+	return ""
 }
 
 // GetProfileStats returns aggregate event statistics and latest-event context (over all time),

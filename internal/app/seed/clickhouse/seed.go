@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
+	"github.com/fivebitsio/cotton/internal/autoprop"
 	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -64,6 +65,32 @@ func stringMapToVariantMap(props map[string]string) map[string]chcol.Variant {
 	out := make(map[string]chcol.Variant, len(props))
 	for k, v := range props {
 		out[k] = stringToVariant(v)
+	}
+
+	return out
+}
+
+func autoAnyMapToVariantMap(props map[string]any) map[string]chcol.Variant {
+	if len(props) == 0 {
+		return nil
+	}
+
+	out := make(map[string]chcol.Variant, len(props))
+	for k, v := range props {
+		switch x := v.(type) {
+		case string:
+			out[k] = autoprop.Variant(k, x)
+		case bool:
+			out[k] = chcol.NewVariantWithType(x, "Bool")
+		case int:
+			out[k] = chcol.NewVariantWithType(int64(x), "Int64")
+		case int64:
+			out[k] = chcol.NewVariantWithType(x, "Int64")
+		case float64:
+			out[k] = chcol.NewVariantWithType(x, "Float64")
+		default:
+			out[k] = chcol.NewVariantWithType(fmt.Sprint(x), "String")
+		}
 	}
 
 	return out
@@ -160,7 +187,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]eve
 				projectID,
 				e.distinctID,
 				e.kind,
-				e.autoProperties,
+				autoAnyMapToVariantMap(e.autoProperties),
 				stringMapToVariantMap(e.customProperties),
 				e.occurTime,
 				e.sessionID,
@@ -313,7 +340,7 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 				projectID,
 				e.distinctID,
 				e.kind,
-				e.autoProperties,
+				autoAnyMapToVariantMap(e.autoProperties),
 				stringMapToVariantMap(e.customProperties),
 				e.occurTime,
 				uuid.NewString(),

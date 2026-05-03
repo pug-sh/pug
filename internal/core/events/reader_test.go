@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	chcol "github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/fivebitsio/cotton/internal/core/events"
 	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
 	"github.com/fivebitsio/cotton/internal/testutil"
@@ -41,8 +42,8 @@ func TestGetActivityFeed(t *testing.T) {
 		err := ch.Conn.Exec(ctx,
 			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			eid, "proj-1", "user-1", se.kind,
-			map[string]string{"$country": "US"},
-			map[string]string{"plan": "pro"},
+			variantStringMap(map[string]string{"$country": "US"}),
+			variantStringMap(map[string]string{"plan": "pro"}),
 			now.Add(se.offset),
 			se.sessionID,
 		)
@@ -63,8 +64,8 @@ func TestGetActivityFeed(t *testing.T) {
 	err = ch.Conn.Exec(ctx,
 		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		anonEID, "proj-1", "anon-1", "anon_action",
-		map[string]string{},
-		map[string]string{},
+		variantStringMap(nil),
+		variantStringMap(nil),
 		now.Add(-5*time.Minute),
 		sessionB,
 	)
@@ -76,8 +77,8 @@ func TestGetActivityFeed(t *testing.T) {
 	err = ch.Conn.Exec(ctx,
 		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), "proj-2", "user-1", "other_project_event",
-		map[string]string{},
-		map[string]string{},
+		variantStringMap(nil),
+		variantStringMap(nil),
 		now,
 		uuid.NewString(),
 	)
@@ -541,8 +542,8 @@ func TestGetEventExplorer(t *testing.T) {
 		err := ch.Conn.Exec(ctx,
 			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			uuid.NewString(), "proj-1", se.distinctID, se.kind,
-			map[string]string{"$country": se.country},
-			map[string]string{},
+			variantStringMap(map[string]string{"$country": se.country}),
+			variantStringMap(nil),
 			now.Add(se.offset),
 			se.sessionID,
 		)
@@ -564,8 +565,8 @@ func TestGetEventExplorer(t *testing.T) {
 	err = ch.Conn.Exec(ctx,
 		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), "proj-1", "anon-1", "anon_action",
-		map[string]string{},
-		map[string]string{},
+		variantStringMap(nil),
+		variantStringMap(nil),
 		now.Add(-5*time.Minute),
 		sessionB,
 	)
@@ -577,8 +578,8 @@ func TestGetEventExplorer(t *testing.T) {
 	err = ch.Conn.Exec(ctx,
 		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), "proj-2", "user-1", "other_project",
-		map[string]string{},
-		map[string]string{},
+		variantStringMap(nil),
+		variantStringMap(nil),
 		now,
 		uuid.NewString(),
 	)
@@ -939,8 +940,8 @@ func TestGetActivityHeatmap(t *testing.T) {
 			err := ch.Conn.Exec(ctx,
 				`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 				uuid.NewString(), "proj-1", "user-1", se.kind,
-				map[string]string{},
-				map[string]string{},
+				variantStringMap(nil),
+				variantStringMap(nil),
 				se.day.Add(time.Duration(i)*time.Hour),
 				uuid.NewString(),
 			)
@@ -963,8 +964,8 @@ func TestGetActivityHeatmap(t *testing.T) {
 	err = ch.Conn.Exec(ctx,
 		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), "proj-1", "anon-1", "anon_action",
-		map[string]string{},
-		map[string]string{},
+		variantStringMap(nil),
+		variantStringMap(nil),
 		now.AddDate(0, 0, -1).Add(30*time.Minute),
 		uuid.NewString(),
 	)
@@ -976,8 +977,8 @@ func TestGetActivityHeatmap(t *testing.T) {
 	err = ch.Conn.Exec(ctx,
 		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), "proj-2", "user-1", "other_project",
-		map[string]string{},
-		map[string]string{},
+		variantStringMap(nil),
+		variantStringMap(nil),
 		now,
 		uuid.NewString(),
 	)
@@ -1159,8 +1160,8 @@ func TestGetActivityHeatmap(t *testing.T) {
 		err = ch.Conn.Exec(ctx,
 			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			uuid.NewString(), "proj-1", "anon-alias-only", "page_view",
-			map[string]string{},
-			map[string]string{},
+			variantStringMap(nil),
+			variantStringMap(nil),
 			now,
 			uuid.NewString(),
 		)
@@ -1198,7 +1199,7 @@ func TestGetProfileStats(t *testing.T) {
 	// Seed events with auto_properties for user-1 in proj-1.
 	// Oldest event (day -5): browser=Firefox.
 	// Latest event (day 0): browser=Chrome — should be picked by argMax.
-	oldProps := map[string]string{
+	oldProps := variantStringMap(map[string]string{
 		"$browser":        "Firefox",
 		"$browserVersion": "120",
 		"$os":             "Linux",
@@ -1206,8 +1207,8 @@ func TestGetProfileStats(t *testing.T) {
 		"$country":        "Germany",
 		"$city":           "Berlin",
 		"$ip":             "10.0.0.1",
-	}
-	latestProps := map[string]string{
+	})
+	latestProps := variantStringMap(map[string]string{
 		"$browser":        "Chrome",
 		"$browserVersion": "124",
 		"$os":             "Mac OS X",
@@ -1216,13 +1217,13 @@ func TestGetProfileStats(t *testing.T) {
 		"$country":        "United States",
 		"$city":           "San Francisco",
 		"$ip":             "10.0.0.2",
-	}
+	})
 
 	// Day -5: 1 event with old props.
 	err := ch.Conn.Exec(ctx,
 		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), "proj-1", "user-1", "signup",
-		oldProps, map[string]string{},
+		oldProps, variantStringMap(nil),
 		now.AddDate(0, 0, -5),
 		uuid.NewString(),
 	)
@@ -1235,7 +1236,7 @@ func TestGetProfileStats(t *testing.T) {
 		err = ch.Conn.Exec(ctx,
 			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			uuid.NewString(), "proj-1", "user-1", "page_view",
-			latestProps, map[string]string{},
+			latestProps, variantStringMap(nil),
 			now.Add(time.Duration(i)*time.Hour),
 			uuid.NewString(),
 		)
@@ -1257,7 +1258,7 @@ func TestGetProfileStats(t *testing.T) {
 	err = ch.Conn.Exec(ctx,
 		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), "proj-1", "anon-1", "anon_action",
-		map[string]string{"$browser": "Safari"}, map[string]string{},
+		variantStringMap(map[string]string{"$browser": "Safari"}), variantStringMap(nil),
 		now.AddDate(0, 0, -2),
 		uuid.NewString(),
 	)
@@ -1269,7 +1270,7 @@ func TestGetProfileStats(t *testing.T) {
 	err = ch.Conn.Exec(ctx,
 		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), "proj-2", "user-1", "other_project",
-		map[string]string{}, map[string]string{},
+		variantStringMap(nil), variantStringMap(nil),
 		now,
 		uuid.NewString(),
 	)
@@ -1372,7 +1373,7 @@ func TestGetProfileStats(t *testing.T) {
 		err := ch.Conn.Exec(ctx,
 			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			uuid.NewString(), "proj-1", "user-1", "old_event",
-			map[string]string{}, map[string]string{},
+			variantStringMap(nil), variantStringMap(nil),
 			now.AddDate(0, 0, -90),
 			uuid.NewString(),
 		)
@@ -1404,14 +1405,14 @@ func TestGetProfileStats(t *testing.T) {
 
 	t.Run("sparse auto_properties returns empty strings for missing keys", func(t *testing.T) {
 		// Seed a newer event with only $os and $device — no $browser, $country, etc.
-		sparseProps := map[string]string{
+		sparseProps := variantStringMap(map[string]string{
 			"$os":     "Android",
 			"$device": "Pixel 8",
-		}
+		})
 		err := ch.Conn.Exec(ctx,
 			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			uuid.NewString(), "proj-1", "user-1", "sparse_event",
-			sparseProps, map[string]string{},
+			sparseProps, variantStringMap(nil),
 			now.Add(10*time.Hour), // latest event
 			uuid.NewString(),
 		)
@@ -1446,6 +1447,17 @@ func TestGetProfileStats(t *testing.T) {
 			t.Errorf("IP: got %q, want empty string", stats.IP)
 		}
 	})
+}
+
+func variantStringMap(props map[string]string) map[string]chcol.Variant {
+	if len(props) == 0 {
+		return nil
+	}
+	out := make(map[string]chcol.Variant, len(props))
+	for k, v := range props {
+		out[k] = chcol.NewVariantWithType(v, "String")
+	}
+	return out
 }
 
 func TestGetActivityHeatmap_EmptyInputsReturnError(t *testing.T) {

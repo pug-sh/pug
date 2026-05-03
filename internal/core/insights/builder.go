@@ -845,18 +845,15 @@ func BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind string) (s
 }
 
 // buildPropertyValuesQuery returns distinct values from mapCol for the given key over the last 30 days.
-// auto_properties is Map(String, String) and is read directly. custom_properties is
-// Map(String, Variant(...)) and must be CAST to Nullable(String) so DISTINCT and the
-// non-empty filter operate on a string projection.
+// Both auto_properties and custom_properties are Map(String, Variant(...)) and must
+// be CAST to Nullable(String) so DISTINCT and the non-empty filter operate on a
+// string projection.
 func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) (string, []any, error) {
 	var selectExpr, propertyNotEmptyClause string
 	switch mapCol {
-	case "custom_properties":
+	case "auto_properties", "custom_properties":
 		selectExpr = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) AS value", mapCol)
 		propertyNotEmptyClause = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) != ''", mapCol)
-	case "auto_properties":
-		selectExpr = fmt.Sprintf("%s[?] AS value", mapCol)
-		propertyNotEmptyClause = fmt.Sprintf("%s[?] != ''", mapCol)
 	default:
 		return "", nil, fmt.Errorf("buildPropertyValuesQuery: unsupported map_col %q", mapCol)
 	}

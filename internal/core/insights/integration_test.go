@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	chcol "github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -414,7 +415,7 @@ func TestIntegration(t *testing.T) {
 			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
 			testProjectID, uuid.New().String(), "page_view", "alice_anon",
 			time.Date(2024, 1, 1, 14, 0, 0, 0, time.UTC),
-			map[string]string{"$country": "US"},
+			variantStringMap(map[string]string{"$country": "US"}),
 		); err != nil {
 			t.Fatalf("insert alias event: %v", err)
 		}
@@ -425,7 +426,7 @@ func TestIntegration(t *testing.T) {
 			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
 			testProjectID, uuid.New().String(), "page_view", "deleted",
 			time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC),
-			map[string]string{"$country": "US"},
+			variantStringMap(map[string]string{"$country": "US"}),
 		); err != nil {
 			t.Fatalf("insert deleted-profile event: %v", err)
 		}
@@ -934,7 +935,7 @@ func seedFunnelEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickH
 			e.kind,
 			e.user,
 			occurTime,
-			map[string]string{},
+			variantStringMap(nil),
 		)
 		if err != nil {
 			t.Fatalf("insert funnel event: %v", err)
@@ -985,7 +986,7 @@ func seedRetentionEvents(t *testing.T, ctx context.Context, ch *testutil.TestCli
 			e.kind,
 			e.user,
 			occurTime,
-			map[string]string{},
+			variantStringMap(nil),
 		)
 		if err != nil {
 			t.Fatalf("insert retention event: %v", err)
@@ -1073,7 +1074,7 @@ func seedEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) 
 			"page_view",
 			e.user,
 			occurTime,
-			map[string]string{"$country": e.country},
+			variantStringMap(map[string]string{"$country": e.country}),
 		)
 		if err != nil {
 			t.Fatalf("insert event: %v", err)
@@ -1115,7 +1116,7 @@ func seedFunnelEventsWithCountry(t *testing.T, ctx context.Context, ch *testutil
 			e.kind,
 			e.user,
 			occurTime,
-			map[string]string{"$country": e.country},
+			variantStringMap(map[string]string{"$country": e.country}),
 		)
 		if err != nil {
 			t.Fatalf("insert funnel event: %v", err)
@@ -1158,7 +1159,7 @@ func seedRetentionEventsWithCountry(t *testing.T, ctx context.Context, ch *testu
 			e.kind,
 			e.user,
 			occurTime,
-			map[string]string{"$country": e.country},
+			variantStringMap(map[string]string{"$country": e.country}),
 		)
 		if err != nil {
 			t.Fatalf("insert retention event: %v", err)
@@ -1206,7 +1207,7 @@ func seedRetentionEventsForOthersBucket(t *testing.T, ctx context.Context, ch *t
 			e.kind,
 			e.user,
 			occurTime,
-			map[string]string{"$country": e.country},
+			variantStringMap(map[string]string{"$country": e.country}),
 		)
 		if err != nil {
 			t.Fatalf("insert retention event: %v", err)
@@ -1245,10 +1246,21 @@ func seedPurchases(t *testing.T, ctx context.Context, ch *testutil.TestClickHous
 			"purchase",
 			e.user,
 			occurTime,
-			map[string]string{"$country": e.country},
+			variantStringMap(map[string]string{"$country": e.country}),
 		)
 		if err != nil {
 			t.Fatalf("insert purchase event: %v", err)
 		}
 	}
+}
+
+func variantStringMap(props map[string]string) map[string]chcol.Variant {
+	if len(props) == 0 {
+		return nil
+	}
+	out := make(map[string]chcol.Variant, len(props))
+	for k, v := range props {
+		out[k] = chcol.NewVariantWithType(v, "String")
+	}
+	return out
 }

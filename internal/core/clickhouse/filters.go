@@ -9,10 +9,11 @@ import (
 )
 
 // PropertyExpr returns the ClickHouse expression to resolve an event property.
-// It checks auto_properties first; if the value is empty or missing, it falls back
-// to custom_properties. Both maps' values are coerced to string for unified operator
+// It checks auto_properties first; if the value is missing, null, or the empty
+// string, it falls back to custom_properties. Both maps' values are coerced to string for unified operator
 // handling (custom_properties stores Variant — CAST(v AS Nullable(String)) collapses
-// any active variant type to its string representation; numeric operators downstream
+// any active variant type to its string representation; auto_properties now uses the
+// same Variant shape and cast. Numeric operators downstream
 // re-parse via toFloat64OrNull).
 //
 // CAST to Nullable(String) is used (not toString) because toString(NULL Variant)
@@ -20,13 +21,13 @@ import (
 // correctly preserves NULL for absent keys so IS_SET / IS_NOT_SET work correctly
 // via the existing prop != "" / prop = "" checks.
 //
-// Empty-value behavior is unified — IS_SET (prop != '') returns false in all of these:
+// Empty-value behavior is unified — IS_SET (prop != ”) returns false in all of these:
 //   - Property absent from both maps.
-//   - Auto value is '' (nullIf collapses to NULL, falls through to custom).
-//   - Custom Variant String value is '' (CAST surfaces '' through the coalesce).
+//   - Auto value is ” (nullIf collapses to NULL, falls through to custom).
+//   - Custom Variant String value is ” (CAST surfaces ” through the coalesce).
 //
-// The trailing `, ''` sentinel in the coalesce is load-bearing: it converts the
-// fully-absent case into '' so all downstream string operators (=, LIKE, IN, IS_SET)
+// The trailing `, ”` sentinel in the coalesce is load-bearing: it converts the
+// fully-absent case into ” so all downstream string operators (=, LIKE, IN, IS_SET)
 // see a non-NULL projection. Removing it would break IS_SET semantics.
 //
 // SAFETY: The name is interpolated directly into SQL (not parameterized) because ClickHouse
@@ -42,7 +43,7 @@ func propertyExpr(name, alias string) string {
 	if alias != "" {
 		prefix = alias + "."
 	}
-	return fmt.Sprintf("coalesce(nullIf(%sauto_properties['%s'], ''), CAST(%scustom_properties['%s'] AS Nullable(String)), '')", prefix, name, prefix, name)
+	return fmt.Sprintf("coalesce(nullIf(CAST(%sauto_properties['%s'] AS Nullable(String)), ''), CAST(%scustom_properties['%s'] AS Nullable(String)), '')", prefix, name, prefix, name)
 }
 
 // ProfilePropertyExpr returns the ClickHouse expression to read a profile property.

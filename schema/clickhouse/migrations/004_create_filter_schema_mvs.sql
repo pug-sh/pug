@@ -27,8 +27,8 @@ GROUP BY project_id, kind;
 -- replace whole rows and need current FINAL state to avoid stale/deleted keys.
 -- Query the property_keys view with sum(event_count) and max(last_seen).
 -- value_type is the actual variantType() of the value — exact, not inferred.
--- For auto_properties (always strings), value_type is constant 'String'.
--- For custom_properties (Variant), value_type tracks the actual Variant inner type.
+-- For auto_properties/custom_properties (Variant), value_type tracks the actual
+-- Variant inner type.
 -- For profile (JSON String), value_type is derived from JSON shape.
 CREATE TABLE IF NOT EXISTS property_keys_event_buckets (
     project_id  String,
@@ -57,13 +57,13 @@ SELECT
 FROM (
     SELECT
         project_id,
-        'auto'              AS map_type,
+        'auto'                           AS map_type,
         kind,
         toStartOfFiveMinutes(occur_time) AS bucket_time,
-        tupleElement(kv, 1) AS key,
-        'String'            AS value_type,
-        count()             AS event_count,
-        max(occur_time)     AS last_seen
+        tupleElement(kv, 1)              AS key,
+        variantType(tupleElement(kv, 2)) AS value_type,
+        count()                          AS event_count,
+        max(occur_time)                  AS last_seen
     FROM events FINAL
     ARRAY JOIN arrayZip(mapKeys(auto_properties), mapValues(auto_properties)) AS kv
     WHERE

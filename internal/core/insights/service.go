@@ -333,7 +333,8 @@ func filterAggregateKeysByType(rows []AggregateKeyMeta, allowedTypes []commonv1.
 //
 //	"String", "Number", "Bool", "Object", "Array", "None".
 //
-// The auto_properties MV emits the constant "String".
+// The auto_properties MV emits the same CH-native variant type names for the
+// typed auto-property slots stored in events.auto_properties.
 //
 // "" (empty) maps to UNSPECIFIED — used when no value_type was scanned (e.g.
 // event_names rows, which have no type column). Anything else not matched

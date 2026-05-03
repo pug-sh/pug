@@ -201,7 +201,7 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 	return protoEvents, nil
 }
 
-func mapToStruct(m map[string]string) (*structpb.Struct, error) {
+func mapToStruct(m map[string]any) (*structpb.Struct, error) {
 	fields := make(map[string]any, len(m))
 	for k, v := range m {
 		fields[k] = v

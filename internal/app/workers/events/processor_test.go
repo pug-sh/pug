@@ -160,11 +160,11 @@ func TestPropertyValueToVariant(t *testing.T) {
 	})
 }
 
-func TestCustomPropertiesToVariantMap(t *testing.T) {
+func TestPropertyMapToVariantMap(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("nil_input_returns_nil", func(t *testing.T) {
-		got := customPropertiesToVariantMap(ctx, nil)
+		got := propertyMapToVariantMap(ctx, nil)
 		if got != nil {
 			t.Errorf("expected nil for nil input, got %v", got)
 		}
@@ -172,11 +172,11 @@ func TestCustomPropertiesToVariantMap(t *testing.T) {
 
 	t.Run("empty_input_returns_nil", func(t *testing.T) {
 		// Load-bearing: the driver maps a nil Go map to an empty CH Map (zero
-		// entries), which is what the property_keys MV's notEmpty(custom_properties)
+		// entries), which is what the property_keys MV's notEmpty(map)
 		// guard expects. An empty (but non-nil) map would also produce zero entries
 		// but the contract is the nil shape — pin it to catch regressions like
 		// returning make(map[string]chcol.Variant) for empty input.
-		got := customPropertiesToVariantMap(ctx, map[string]*commonv1.PropertyValue{})
+		got := propertyMapToVariantMap(ctx, map[string]*commonv1.PropertyValue{})
 		if got != nil {
 			t.Errorf("expected nil for empty input, got %v", got)
 		}
@@ -188,7 +188,7 @@ func TestCustomPropertiesToVariantMap(t *testing.T) {
 			"revenue":  {Value: &commonv1.PropertyValue_DoubleValue{DoubleValue: 9.99}},
 			"is_trial": {Value: &commonv1.PropertyValue_BoolValue{BoolValue: false}},
 		}
-		got := customPropertiesToVariantMap(ctx, props)
+		got := propertyMapToVariantMap(ctx, props)
 		if len(got) != 3 {
 			t.Fatalf("expected 3 entries, got %d", len(got))
 		}

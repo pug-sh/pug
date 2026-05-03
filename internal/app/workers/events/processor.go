@@ -58,11 +58,11 @@ func propertyValueToVariant(ctx context.Context, pv *commonv1.PropertyValue) chc
 	}
 }
 
-// customPropertiesToVariantMap converts a proto Map(String, PropertyValue) into
+// propertyMapToVariantMap converts a proto Map(String, PropertyValue) into
 // the typed Go shape clickhouse-go uses to insert into Map(String, Variant(...)).
 // Returns nil for empty input — the driver maps a nil map to an empty CH Map
-// (zero entries), which is the correct shape for an event with no custom_properties.
-func customPropertiesToVariantMap(ctx context.Context, props map[string]*commonv1.PropertyValue) map[string]chcol.Variant {
+// (zero entries), which is the correct shape for an event with no properties.
+func propertyMapToVariantMap(ctx context.Context, props map[string]*commonv1.PropertyValue) map[string]chcol.Variant {
 	if len(props) == 0 {
 		return nil
 	}
@@ -160,8 +160,8 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			batch.GetProjectId(),
 			e.GetDistinctId(),
 			e.GetKind(),
-			e.AutoProperties,
-			customPropertiesToVariantMap(ctx, e.CustomProperties),
+			propertyMapToVariantMap(ctx, e.AutoProperties),
+			propertyMapToVariantMap(ctx, e.CustomProperties),
 			e.OccurTime.AsTime(),
 			e.GetSessionId(),
 		); err != nil {

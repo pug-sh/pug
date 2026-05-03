@@ -102,7 +102,7 @@ func TestTrendsWithFilters(t *testing.T) {
 	if !strings.Contains(sql, "toFloat64(count(DISTINCT distinct_id))") {
 		t.Errorf("expected toFloat64(count(DISTINCT distinct_id)) in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "coalesce(nullIf(auto_properties['$country'], ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
+	if !strings.Contains(sql, "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
 		t.Errorf("expected property resolution expression in SQL, got: %s", sql)
 	}
 
@@ -804,7 +804,7 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 	if !strings.Contains(sql, "LIMIT ?") {
 		t.Errorf("expected LIMIT ? in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "coalesce(nullIf(auto_properties['$country'], ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
+	if !strings.Contains(sql, "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
 		t.Errorf("expected property filter expression in SQL, got: %s", sql)
 	}
 
@@ -1322,15 +1322,16 @@ func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 		}
 	})
 
-	t.Run("auto_does_not_use_cast", func(t *testing.T) {
+	t.Run("auto_uses_cast_like_custom", func(t *testing.T) {
 		sql, _, err := insights.BuildAutoPropertyValuesQuery("proj_1", "$browser", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		// auto_properties is Map(String, String), so no CAST is needed. Pinning
-		// the absence catches accidental homogenization with the custom path.
-		if strings.Contains(sql, "CAST(auto_properties") {
-			t.Errorf("auto_properties query should not CAST, got: %s", sql)
+		if !strings.Contains(sql, "CAST(auto_properties[?] AS Nullable(String)) AS value") {
+			t.Errorf("expected CAST(auto_properties[?] AS Nullable(String)) AS value in SQL, got: %s", sql)
+		}
+		if !strings.Contains(sql, "CAST(auto_properties[?] AS Nullable(String)) != ''") {
+			t.Errorf("expected CAST(auto_properties[?] AS Nullable(String)) != '' in SQL, got: %s", sql)
 		}
 	})
 }

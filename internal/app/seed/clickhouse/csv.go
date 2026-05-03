@@ -15,7 +15,7 @@ type rees46Event struct {
 	distinctID       string
 	kind             string
 	occurTime        time.Time
-	autoProperties   map[string]string
+	autoProperties   map[string]any
 	customProperties map[string]string
 }
 
@@ -108,7 +108,7 @@ func (r *rees46Reader) Read() (*rees46Event, error) {
 		distinctID:       userID,
 		kind:             kind,
 		occurTime:        eventTime,
-		autoProperties:   map[string]string{},
+		autoProperties:   map[string]any{},
 		customProperties: customProps,
 	}, nil
 }

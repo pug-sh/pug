@@ -83,3 +83,33 @@ func TestStringMapToVariantMap(t *testing.T) {
 		t.Fatalf("expected empty input to return nil, got %#v", got)
 	}
 }
+
+func TestAutoAnyMapToVariantMap(t *testing.T) {
+	got := autoAnyMapToVariantMap(map[string]any{
+		"$country":      "US",
+		"$mobile":       true,
+		"$screenWidth":  390,
+		"$latitude":     37.7749,
+		"$verified_bot": false,
+	})
+
+	assertVariant := func(key, wantType string, wantValue any) {
+		t.Helper()
+		v, ok := got[key]
+		if !ok {
+			t.Fatalf("missing key %q", key)
+		}
+		if gotType := v.Type(); gotType != wantType {
+			t.Fatalf("expected key %q to have type %q, got %q", key, wantType, gotType)
+		}
+		if gotValue := v.Any(); gotValue != wantValue {
+			t.Fatalf("expected key %q value %#v, got %#v", key, wantValue, gotValue)
+		}
+	}
+
+	assertVariant("$country", "String", "US")
+	assertVariant("$mobile", "Bool", true)
+	assertVariant("$screenWidth", "Int64", int64(390))
+	assertVariant("$latitude", "Float64", 37.7749)
+	assertVariant("$verified_bot", "Bool", false)
+}
