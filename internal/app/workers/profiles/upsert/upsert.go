@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"buf.build/go/protovalidate"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
 	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
 	"github.com/fivebitsio/cotton/internal/deps/telemetry"
@@ -57,7 +56,11 @@ func Run(ctx context.Context) error {
 	return StartWorker(ctx, chDB.Conn, natsClient)
 }
 
-func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NATSClient) error {
+type asyncInserter interface {
+	AsyncInsert(ctx context.Context, query string, wait bool, args ...any) error
+}
+
+func StartWorker(ctx context.Context, ch asyncInserter, natsClient *natsworker.NATSClient) error {
 	consumerConfig, err := natsClient.GetConsumerConfigByName("profile-upsert-processor-durable")
 	if err != nil {
 		return fmt.Errorf("failed to get profile upsert consumer config: %w", err)
@@ -87,7 +90,7 @@ func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NAT
 	return worker.Start(ctx)
 }
 
-func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
+func handleUpsert(ctx context.Context, ch asyncInserter, data []byte) error {
 	msg := &workerprofilesv1.ProfileUpsertMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal profile upsert message", slogx.Error(err))
@@ -126,43 +129,18 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 	createTime := msg.GetCreateTime().AsTime()
 	updateTime := msg.GetUpdateTime().AsTime()
 
-	batch, err := ch.PrepareBatch(ctx, "INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time)")
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err),
+	// Profile upserts are single-row writes. Let ClickHouse buffer them server-side
+	// instead of paying a full round trip and part creation cost per message.
+	if err := ch.AsyncInsert(ctx,
+		"INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		true,
+		msg.GetProfileId(), msg.GetProjectId(), msg.GetExternalId(), string(propsJSON), isDeleted, createTime, updateTime,
+	); err != nil {
+		slog.ErrorContext(ctx, "failed to async insert profile into ClickHouse", slogx.Error(err),
 			slog.String("profile_id", msg.GetProfileId()))
 		telemetry.RecordError(ctx, err)
-		return err
+		return fmt.Errorf("async insert profile: %w", err)
 	}
-
-	sent := false
-	defer func() {
-		if !sent {
-			if err := batch.Abort(); err != nil {
-				slog.ErrorContext(ctx, "failed to abort ClickHouse batch", slogx.Error(err),
-					slog.String("profile_id", msg.GetProfileId()))
-				telemetry.RecordError(ctx, err)
-			}
-		}
-	}()
-
-	if err := batch.Append(msg.GetProfileId(), msg.GetProjectId(), msg.GetExternalId(), string(propsJSON), isDeleted, createTime, updateTime); err != nil {
-		slog.ErrorContext(ctx, "failed to append profile to batch", slogx.Error(err),
-			slog.String("profile_id", msg.GetProfileId()))
-		telemetry.RecordError(ctx, err)
-		return natsworker.NewPermanentError(err).
-			With("worker", "profile-upsert").
-			With("profile_id", msg.GetProfileId())
-	}
-
-	// Send errors are kept retryable: most failures are transient (network, server overload).
-	// Permanent schema-mismatch errors are rare and bounded by MaxDeliver.
-	if err := batch.Send(); err != nil {
-		slog.ErrorContext(ctx, "failed to send profile batch to ClickHouse", slogx.Error(err),
-			slog.String("profile_id", msg.GetProfileId()))
-		telemetry.RecordError(ctx, err)
-		return fmt.Errorf("send profile batch: %w", err)
-	}
-	sent = true
 
 	return nil
 }
