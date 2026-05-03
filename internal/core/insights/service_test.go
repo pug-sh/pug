@@ -300,7 +300,7 @@ func seedTestProject(t *testing.T, ctx context.Context, pg *testutil.TestPostgre
 func seedServiceEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string) {
 	t.Helper()
 
-	now := time.Now().UTC().Truncate(time.Hour)
+	now := time.Now().UTC().Add(-10 * time.Minute).Truncate(5 * time.Minute)
 
 	type eventRow struct {
 		kind   string
@@ -365,6 +365,26 @@ func seedServiceEvents(t *testing.T, ctx context.Context, ch *testutil.TestClick
 	if err := batch.Send(); err != nil {
 		t.Fatalf("send event batch: %v", err)
 	}
+
+	bucketTime := now
+	for _, e := range events {
+		for key, v := range e.auto {
+			if err := ch.Conn.Exec(ctx,
+				`INSERT INTO property_keys_event_buckets (project_id, map_type, kind, bucket_time, key, value_type, event_count, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				projectID, "auto", e.kind, bucketTime, key, v.Type(), uint64(1), now,
+			); err != nil {
+				t.Fatalf("insert auto property key bucket: %v", err)
+			}
+		}
+		for key, v := range e.custom {
+			if err := ch.Conn.Exec(ctx,
+				`INSERT INTO property_keys_event_buckets (project_id, map_type, kind, bucket_time, key, value_type, event_count, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				projectID, "custom", e.kind, bucketTime, key, v.Type(), uint64(1), now,
+			); err != nil {
+				t.Fatalf("insert custom property key bucket: %v", err)
+			}
+		}
+	}
 }
 
 func seedServiceProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, pg *testutil.TestPostgres, projectID string) {
@@ -405,6 +425,15 @@ func seedServiceProfiles(t *testing.T, ctx context.Context, ch *testutil.TestCli
 			now,
 		); err != nil {
 			t.Fatalf("insert profile (clickhouse): %v", err)
+		}
+
+		for _, key := range []string{"plan", "role"} {
+			if err := ch.Conn.Exec(ctx,
+				`INSERT INTO property_keys_profile_current (project_id, map_type, kind, key, value_type, event_count, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				projectID, "profile", "", key, "String", uint64(1), now,
+			); err != nil {
+				t.Fatalf("insert profile property key current: %v", err)
+			}
 		}
 	}
 }
