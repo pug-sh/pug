@@ -983,8 +983,8 @@ func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any
 			// pass over the AggregatingMergeTree state, which is not currently
 			// justified for the rarity of drift.
 			"any(value_type) AS value_type",
-			"countMerge(event_count) AS count",
-			"maxMerge(last_seen) AS last_seen",
+			"sum(event_count) AS count",
+			"max(last_seen) AS last_seen",
 		).
 		From("property_keys").
 		Where(

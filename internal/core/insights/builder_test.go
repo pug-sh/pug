@@ -1410,6 +1410,12 @@ func TestBuildPropertyKeysQuery(t *testing.T) {
 		if !strings.Contains(sql, "any(value_type) AS value_type") {
 			t.Errorf("expected any(value_type) AS value_type in SQL, got: %s", sql)
 		}
+		if !strings.Contains(sql, "sum(event_count) AS count") {
+			t.Errorf("expected sum(event_count) AS count in SQL, got: %s", sql)
+		}
+		if !strings.Contains(sql, "max(last_seen) AS last_seen") {
+			t.Errorf("expected max(last_seen) AS last_seen in SQL, got: %s", sql)
+		}
 	})
 }
 
