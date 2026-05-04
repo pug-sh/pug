@@ -7,8 +7,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
+	natsworker "github.com/pug-sh/pug/internal/deps/nats"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 )
 
 func TestProcessMessage_UnmarshalFailure(t *testing.T) {

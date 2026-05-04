@@ -9,10 +9,10 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 
-	"github.com/fivebitsio/cotton/internal/core/insights"
+	"github.com/pug-sh/pug/internal/core/insights"
 )
 
 func mustTime(s string) time.Time {

@@ -5,7 +5,7 @@ import "buf/validate/validate.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1;workerprofilesv1";
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/workers/profiles/v1;workerprofilesv1";
 
 message ProfileAliasMessage {
   string alias_id = 1 [

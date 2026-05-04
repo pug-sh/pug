@@ -5,10 +5,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/fivebitsio/cotton/internal/deps/postgres"
-	campaignsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/deps/postgres"
+	campaignsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/campaigns/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
 // wToRPCMsg and roToRPCMsg must be kept in sync — they convert

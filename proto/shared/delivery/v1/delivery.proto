@@ -4,7 +4,7 @@ package shared.delivery.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/delivery/v1;deliveryv1";
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/shared/delivery/v1;deliveryv1";
 
 service DeliveryService {
   rpc RecordEvent(RecordEventRequest) returns (RecordEventResponse);

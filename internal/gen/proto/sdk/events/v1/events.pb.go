@@ -263,7 +263,7 @@ const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"\x12BatchCreateRequest\x127\n" +
 	"\x06events\x18\x01 \x03(\v2\x14.sdk.events.v1.EventB\t\xbaH\x06\x92\x01\x03\x10\xe8\aR\x06events\"1\n" +
 	"\x13BatchCreateResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\rR\baccepted\"\x9a\x06\n" +
+	"\baccepted\x18\x01 \x01(\rR\baccepted\"\x94\x06\n" +
 	"\x05Event\x12&\n" +
 	"\bevent_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\aeventId\x12Q\n" +
 	"\x0fauto_properties\x18\x02 \x03(\v2(.sdk.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12W\n" +
@@ -280,8 +280,8 @@ const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aC\n" +
 	"\x15CustomPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x80\x02\xbaH\xfc\x01\x1at\n" +
-	"\x1devent.kind_no_reserved_prefix\x121event kind must not use reserved prefix 'cotton.'\x1a !this.kind.startsWith('cotton.')\x1a\x83\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\xfa\x01\xbaH\xf6\x01\x1an\n" +
+	"\x1devent.kind_no_reserved_prefix\x12.event kind must not use reserved prefix 'pug.'\x1a\x1d!this.kind.startsWith('pug.')\x1a\x83\x01\n" +
 	"#event.auto_properties_dollar_prefix\x12(auto_properties keys must start with '$'\x1a2this.auto_properties.all(key, key.startsWith('$'))\"e\n" +
 	"\n" +
 	"EventBatch\x12,\n" +
@@ -290,7 +290,7 @@ const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"project_id\x18\x02 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x10\x01R\tprojectId2e\n" +
 	"\rEventsService\x12T\n" +
-	"\vBatchCreate\x12!.sdk.events.v1.BatchCreateRequest\x1a\".sdk.events.v1.BatchCreateResponseBHZFgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1;eventsv1b\beditionsp\xe8\a"
+	"\vBatchCreate\x12!.sdk.events.v1.BatchCreateRequest\x1a\".sdk.events.v1.BatchCreateResponseBAZ?github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1;eventsv1b\beditionsp\xe8\a"
 
 var (
 	file_sdk_events_v1_events_proto_rawDescOnce sync.Once

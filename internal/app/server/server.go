@@ -10,36 +10,36 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"connectrpc.com/validate"
-	cottonrpc "github.com/fivebitsio/cotton/internal/app/server/rpc"
-	orgsrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/dashboard/orgs"
-	"github.com/fivebitsio/cotton/internal/app/server/rpc/dashboard/projects"
-	"github.com/fivebitsio/cotton/internal/app/server/rpc/public/auth"
-	devicesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/devices"
-	eventsrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/events"
-	sdkprofilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/sdk/profiles"
-	activityrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/shared/activity"
-	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/campaigns"
-	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/delivery"
-	"github.com/fivebitsio/cotton/internal/app/server/rpc/shared/insights"
-	sharedprofilesrpc "github.com/fivebitsio/cotton/internal/app/server/rpc/shared/profiles"
-	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
-	coreorgs "github.com/fivebitsio/cotton/internal/core/orgs"
-	coreprojects "github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/public/auth/v1/authv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1/devicesv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1/eventsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1/activityv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1/campaignsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/shared/delivery/v1/deliveryv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1/insightsv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1/profilesv1connect"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/geo"
-	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/fivebitsio/cotton/internal/useragent"
+	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
+	orgsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
+	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/projects"
+	"github.com/pug-sh/pug/internal/app/server/rpc/public/auth"
+	devicesrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/devices"
+	eventsrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/events"
+	sdkprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/profiles"
+	activityrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/activity"
+	"github.com/pug-sh/pug/internal/app/server/rpc/shared/campaigns"
+	"github.com/pug-sh/pug/internal/app/server/rpc/shared/delivery"
+	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
+	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
+	coreinsights "github.com/pug-sh/pug/internal/core/insights"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/public/auth/v1/authv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/sdk/devices/v1/devicesv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1/eventsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/campaigns/v1/campaignsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/delivery/v1/deliveryv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/geo"
+	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/pug-sh/pug/internal/useragent"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -59,10 +59,10 @@ func start(ctx context.Context, d *deps) error {
 
 	handlerOpts := connect.WithInterceptors(
 		d.otelInterceptor,
-		cottonrpc.LoggingInterceptor(),
+		pogrpc.LoggingInterceptor(),
 		validate.NewInterceptor(),
-		cottonrpc.ErrorInterceptor(),
-		cottonrpc.PrincipalInterceptor(),
+		pogrpc.ErrorInterceptor(),
+		pogrpc.PrincipalInterceptor(),
 	)
 
 	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
@@ -73,9 +73,9 @@ func start(ctx context.Context, d *deps) error {
 	// - Dashboard: JWT auth only (for dashboard-only services)
 	// - SDK: API key auth (public or private, no JWT fallback) for SDK-only services
 	// - Shared: Dual auth - private API key or JWT fallback (for services accessible from both)
-	dashboardMW := authn.NewMiddleware(cottonrpc.WithJWTAuth(d.jwtKey, queriesRo))
-	sdkMW := authn.NewMiddleware(cottonrpc.WithSDKAuth(projectsRepo))
-	sharedMW := authn.NewMiddleware(cottonrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo))
+	dashboardMW := authn.NewMiddleware(pogrpc.WithJWTAuth(d.jwtKey, queriesRo))
+	sdkMW := authn.NewMiddleware(pogrpc.WithSDKAuth(projectsRepo))
+	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(d.jwtKey, queriesRo, projectsRepo))
 
 	// Handlers — grouped by auth boundary
 
@@ -119,18 +119,18 @@ func start(ctx context.Context, d *deps) error {
 	mux := http.NewServeMux()
 
 	// Public (CORS, no auth)
-	mux.Handle(authPath, cottonrpc.WithCORS(d.corsOrigins, authHandler))
+	mux.Handle(authPath, pogrpc.WithCORS(d.corsOrigins, authHandler))
 
 	// Dashboard only (CORS + JWT auth)
-	mux.Handle(orgsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
-	mux.Handle(projectsPath, cottonrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
+	mux.Handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
+	mux.Handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
-	mux.Handle(insightsPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
-	mux.Handle(campaignsPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(campaignsHandler)))
-	mux.Handle(deliveryPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(deliveryHandler)))
-	mux.Handle(activityPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
-	mux.Handle(sharedProfilesPath, cottonrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
+	mux.Handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
+	mux.Handle(campaignsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(campaignsHandler)))
+	mux.Handle(deliveryPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(deliveryHandler)))
+	mux.Handle(activityPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
+	mux.Handle(sharedProfilesPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
 
 	// SDK only (API key auth, no CORS)
 	mux.Handle(devicesPath, sdkMW.Wrap(devicesHandler))

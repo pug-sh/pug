@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/fivebitsio/cotton/internal/core/campaigns"
-	"github.com/fivebitsio/cotton/internal/core/delivery"
-	devicessvc "github.com/fivebitsio/cotton/internal/core/devices"
-	"github.com/fivebitsio/cotton/internal/core/projects"
-	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/core/campaigns"
+	"github.com/pug-sh/pug/internal/core/delivery"
+	devicessvc "github.com/pug-sh/pug/internal/core/devices"
+	"github.com/pug-sh/pug/internal/core/projects"
+	natsworker "github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

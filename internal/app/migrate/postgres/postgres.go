@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/fivebitsio/cotton/internal/deps/postgres"
+	"github.com/pug-sh/pug/internal/deps/postgres"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/sethvargo/go-envconfig"

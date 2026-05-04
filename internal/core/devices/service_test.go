@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/fivebitsio/cotton/internal/core/devices"
-	"github.com/fivebitsio/cotton/internal/testutil"
+	"github.com/pug-sh/pug/internal/core/devices"
+	"github.com/pug-sh/pug/internal/testutil"
 )
 
 func TestDevicesService(t *testing.T) {

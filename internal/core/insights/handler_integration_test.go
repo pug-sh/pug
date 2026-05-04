@@ -10,13 +10,13 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	insightshandler "github.com/fivebitsio/cotton/internal/app/server/rpc/shared/insights"
-	"github.com/fivebitsio/cotton/internal/core/insights"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/testutil"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	insightshandler "github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
+	"github.com/pug-sh/pug/internal/core/insights"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/testutil"
 )
 
 // TestIntegration_FunnelHandlerIncludeStepTimingDispatch verifies the handler-level

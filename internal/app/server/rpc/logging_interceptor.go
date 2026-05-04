@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 // LoggingInterceptor logs every RPC request. Since slog is bridged to OTel via

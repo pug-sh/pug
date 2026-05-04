@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/testutil"
+	"github.com/pug-sh/pug/internal/core/projects"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/testutil"
 )
 
 func TestProjectsRepo(t *testing.T) {

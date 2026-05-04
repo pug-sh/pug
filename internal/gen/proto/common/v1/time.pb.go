@@ -83,7 +83,7 @@ const file_common_v1_time_proto_rawDesc = "" +
 	"\tTimeRange\x126\n" +
 	"\x04from\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x04from\x122\n" +
 	"\x02to\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x02to:c\xbaH`\x1a^\n" +
-	"\x19time_range.from_before_to\x12,time_range.from must be before time_range.to\x1a\x13this.from < this.toBDZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
+	"\x19time_range.from_before_to\x12,time_range.from must be before time_range.to\x1a\x13this.from < this.toB=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_time_proto_rawDescOnce sync.Once

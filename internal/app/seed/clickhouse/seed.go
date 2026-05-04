@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/google/uuid"
 )
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
 func TestRouterPlatformErrors(t *testing.T) {

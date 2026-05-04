@@ -233,7 +233,7 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\x05token\x18\x01 \x01(\tR\x05token2\xd9\x01\n" +
 	"\vAuthService\x12d\n" +
 	"\x0fSignInWithEmail\x12&.public.auth.v1.SignInWithEmailRequest\x1a'.public.auth.v1.SignInWithEmailResponse\"\x00\x12d\n" +
-	"\x0fSignUpWithEmail\x12&.public.auth.v1.SignUpWithEmailRequest\x1a'.public.auth.v1.SignUpWithEmailResponse\"\x00BGZEgithub.com/fivebitsio/cotton/internal/gen/proto/public/auth/v1;authv1b\beditionsp\xe8\a"
+	"\x0fSignUpWithEmail\x12&.public.auth.v1.SignUpWithEmailRequest\x1a'.public.auth.v1.SignUpWithEmailResponse\"\x00B@Z>github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1b\beditionsp\xe8\a"
 
 var (
 	file_public_auth_v1_auth_proto_rawDescOnce sync.Once

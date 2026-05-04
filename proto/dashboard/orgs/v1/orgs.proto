@@ -3,7 +3,7 @@ package dashboard.orgs.v1;
 
 import "buf/validate/validate.proto";
 
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1;orgsv1";
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1";
 
 enum OrgRole {
   ORG_ROLE_UNSPECIFIED = 0;

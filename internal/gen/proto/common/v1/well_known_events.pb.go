@@ -1358,7 +1358,7 @@ const file_common_v1_well_known_events_proto_rawDesc = "" +
 	"\x17ErrorOccurredProperties\x12%\n" +
 	"\n" +
 	"error_code\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\terrorCode\"\x11\n" +
-	"\x0fSharePropertiesBDZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
+	"\x0fSharePropertiesB=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_well_known_events_proto_rawDescOnce sync.Once
