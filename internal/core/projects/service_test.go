@@ -5,13 +5,19 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/postgres"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestProjectsService(t *testing.T) {
@@ -210,6 +216,91 @@ func TestProjectsService(t *testing.T) {
 			t.Fatal("expected error when getting deleted project, got nil")
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			t.Errorf("expected pgx.ErrNoRows, got: %v", err)
+		}
+	})
+
+	t.Run("DashboardCRUD", func(t *testing.T) {
+		if projectID == "" {
+			t.Skip("skipping: CreateProject did not produce a project ID")
+		}
+
+		dashboard, err := svc.CreateDashboard(ctx, projectID, "Overview", "Executive metrics")
+		if err != nil {
+			t.Fatalf("CreateDashboard: %v", err)
+		}
+
+		createdInsight, err := svc.CreateDashboardInsight(ctx, projectID, dashboard.ID, "Signups", "Tracks signup volume", &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Now().Add(-24 * time.Hour)),
+				To:   timestamppb.New(time.Now()),
+			},
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
+			},
+		}, []*dashboardsv1.ResponsiveGridLayout{
+			{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
+		})
+		if err != nil {
+			t.Fatalf("CreateDashboardInsight: %v", err)
+		}
+
+		gotDashboard, err := svc.GetDashboard(ctx, projectID, dashboard.ID)
+		if err != nil {
+			t.Fatalf("GetDashboard: %v", err)
+		}
+		if gotDashboard.Dashboard.DisplayName != "Overview" {
+			t.Fatalf("DisplayName = %q, want %q", gotDashboard.Dashboard.DisplayName, "Overview")
+		}
+		if gotDashboard.Dashboard.Description != "Executive metrics" {
+			t.Fatalf("Description = %q, want %q", gotDashboard.Dashboard.Description, "Executive metrics")
+		}
+		if len(gotDashboard.Insights) != 1 {
+			t.Fatalf("insights = %d, want 1", len(gotDashboard.Insights))
+		}
+		if gotDashboard.Insights[0].Description != "Tracks signup volume" {
+			t.Fatalf("Insight description = %q, want %q", gotDashboard.Insights[0].Description, "Tracks signup volume")
+		}
+
+		updatedInsight, err := svc.UpsertDashboardInsight(ctx, projectID, dashboard.ID, createdInsight.ID, "Activated Users", "Tracks activation volume", &insightsv1.QueryRequest{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Now().Add(-7 * 24 * time.Hour)),
+				To:   timestamppb.New(time.Now()),
+			},
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("activated")}},
+			},
+		}, []*dashboardsv1.ResponsiveGridLayout{
+			{Breakpoint: proto.String("lg"), X: proto.Int32(6), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(5)},
+			{Breakpoint: proto.String("md"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(10), H: proto.Int32(6)},
+		})
+		if err != nil {
+			t.Fatalf("UpsertDashboardInsight: %v", err)
+		}
+		if updatedInsight.DisplayName != "Activated Users" {
+			t.Fatalf("DisplayName = %q, want %q", updatedInsight.DisplayName, "Activated Users")
+		}
+		if updatedInsight.Description != "Tracks activation volume" {
+			t.Fatalf("Description = %q, want %q", updatedInsight.Description, "Tracks activation volume")
+		}
+
+		list, err := svc.ListDashboards(ctx, projectID)
+		if err != nil {
+			t.Fatalf("ListDashboards: %v", err)
+		}
+		if len(list) == 0 {
+			t.Fatal("expected at least one dashboard")
+		}
+
+		if err := svc.DeleteDashboardInsight(ctx, projectID, dashboard.ID, createdInsight.ID); err != nil {
+			t.Fatalf("DeleteDashboardInsight: %v", err)
+		}
+
+		if err := svc.DeleteDashboard(ctx, projectID, dashboard.ID); err != nil {
+			t.Fatalf("DeleteDashboard: %v", err)
 		}
 	})
 }

@@ -31,6 +31,26 @@ type Customer struct {
 	UpdateTime   pgtype.Timestamptz
 }
 
+type Dashboard struct {
+	CreateTime  pgtype.Timestamptz
+	Description string
+	DisplayName string
+	ID          string
+	ProjectID   string
+	UpdateTime  pgtype.Timestamptz
+}
+
+type DashboardInsight struct {
+	CreateTime   pgtype.Timestamptz
+	DashboardID  string
+	Description  string
+	DisplayName  string
+	ID           string
+	InsightQuery map[string]any
+	Layouts      map[string]any
+	UpdateTime   pgtype.Timestamptz
+}
+
 type Org struct {
 	CreateTime  pgtype.Timestamptz
 	DisplayName string
