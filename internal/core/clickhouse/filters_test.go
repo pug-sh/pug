@@ -102,7 +102,7 @@ func TestPropertyCondition_GTE_Numeric(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "toFloat64OrNull(coalesce(nullIf(CAST(auto_properties['score'] AS Nullable(String)), ''), CAST(custom_properties['score'] AS Nullable(String)), '')) >= ?"
+	want := "if(nullIf(CAST(auto_properties['score'] AS Nullable(String)), '') IS NOT NULL, coalesce(CAST(variantElement(auto_properties['score'], 'Float64') AS Nullable(Float64)), CAST(variantElement(auto_properties['score'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(auto_properties['score'] AS Nullable(String)))), coalesce(CAST(variantElement(custom_properties['score'], 'Float64') AS Nullable(Float64)), CAST(variantElement(custom_properties['score'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(custom_properties['score'] AS Nullable(String))))) >= ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -207,7 +207,7 @@ func TestPropertyCondition_LTE(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "toFloat64OrNull(coalesce(nullIf(CAST(auto_properties['age'] AS Nullable(String)), ''), CAST(custom_properties['age'] AS Nullable(String)), '')) <= ?"
+	want := "if(nullIf(CAST(auto_properties['age'] AS Nullable(String)), '') IS NOT NULL, coalesce(CAST(variantElement(auto_properties['age'], 'Float64') AS Nullable(Float64)), CAST(variantElement(auto_properties['age'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(auto_properties['age'] AS Nullable(String)))), coalesce(CAST(variantElement(custom_properties['age'], 'Float64') AS Nullable(Float64)), CAST(variantElement(custom_properties['age'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(custom_properties['age'] AS Nullable(String))))) <= ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -226,7 +226,7 @@ func TestPropertyCondition_LT(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "toFloat64OrNull(coalesce(nullIf(CAST(auto_properties['score'] AS Nullable(String)), ''), CAST(custom_properties['score'] AS Nullable(String)), '')) < ?"
+	want := "if(nullIf(CAST(auto_properties['score'] AS Nullable(String)), '') IS NOT NULL, coalesce(CAST(variantElement(auto_properties['score'], 'Float64') AS Nullable(Float64)), CAST(variantElement(auto_properties['score'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(auto_properties['score'] AS Nullable(String)))), coalesce(CAST(variantElement(custom_properties['score'], 'Float64') AS Nullable(Float64)), CAST(variantElement(custom_properties['score'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(custom_properties['score'] AS Nullable(String))))) < ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -242,7 +242,7 @@ func TestPropertyCondition_GT(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "toFloat64OrNull(coalesce(nullIf(CAST(auto_properties['revenue'] AS Nullable(String)), ''), CAST(custom_properties['revenue'] AS Nullable(String)), '')) > ?"
+	want := "if(nullIf(CAST(auto_properties['revenue'] AS Nullable(String)), '') IS NOT NULL, coalesce(CAST(variantElement(auto_properties['revenue'], 'Float64') AS Nullable(Float64)), CAST(variantElement(auto_properties['revenue'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(auto_properties['revenue'] AS Nullable(String)))), coalesce(CAST(variantElement(custom_properties['revenue'], 'Float64') AS Nullable(Float64)), CAST(variantElement(custom_properties['revenue'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(custom_properties['revenue'] AS Nullable(String))))) > ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -608,7 +608,7 @@ func TestPropertyConditionAliased_NotBetween(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "(toFloat64OrNull(coalesce(nullIf(CAST(e.auto_properties['amount'] AS Nullable(String)), ''), CAST(e.custom_properties['amount'] AS Nullable(String)), '')) < ? OR toFloat64OrNull(coalesce(nullIf(CAST(e.auto_properties['amount'] AS Nullable(String)), ''), CAST(e.custom_properties['amount'] AS Nullable(String)), '')) > ?)"
+	want := "(if(nullIf(CAST(e.auto_properties['amount'] AS Nullable(String)), '') IS NOT NULL, coalesce(CAST(variantElement(e.auto_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(e.auto_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(e.auto_properties['amount'] AS Nullable(String)))), coalesce(CAST(variantElement(e.custom_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(e.custom_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(e.custom_properties['amount'] AS Nullable(String))))) < ? OR if(nullIf(CAST(e.auto_properties['amount'] AS Nullable(String)), '') IS NOT NULL, coalesce(CAST(variantElement(e.auto_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(e.auto_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(e.auto_properties['amount'] AS Nullable(String)))), coalesce(CAST(variantElement(e.custom_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(e.custom_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(e.custom_properties['amount'] AS Nullable(String))))) > ?)"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL:\n got: %s\nwant: %s", cond.SQL(), want)
 	}
@@ -630,7 +630,7 @@ func TestPropertyCondition_Between(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "(toFloat64OrNull(coalesce(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), ''), CAST(custom_properties['amount'] AS Nullable(String)), '')) >= ? AND toFloat64OrNull(coalesce(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), ''), CAST(custom_properties['amount'] AS Nullable(String)), '')) <= ?)"
+	want := "(if(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), '') IS NOT NULL, coalesce(CAST(variantElement(auto_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(auto_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(auto_properties['amount'] AS Nullable(String)))), coalesce(CAST(variantElement(custom_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(custom_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(custom_properties['amount'] AS Nullable(String))))) >= ? AND if(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), '') IS NOT NULL, coalesce(CAST(variantElement(auto_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(auto_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(auto_properties['amount'] AS Nullable(String)))), coalesce(CAST(variantElement(custom_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(custom_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(custom_properties['amount'] AS Nullable(String))))) <= ?)"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL:\n got: %s\nwant: %s", cond.SQL(), want)
 	}
@@ -652,7 +652,7 @@ func TestPropertyCondition_NotBetween(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "(toFloat64OrNull(coalesce(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), ''), CAST(custom_properties['amount'] AS Nullable(String)), '')) < ? OR toFloat64OrNull(coalesce(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), ''), CAST(custom_properties['amount'] AS Nullable(String)), '')) > ?)"
+	want := "(if(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), '') IS NOT NULL, coalesce(CAST(variantElement(auto_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(auto_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(auto_properties['amount'] AS Nullable(String)))), coalesce(CAST(variantElement(custom_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(custom_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(custom_properties['amount'] AS Nullable(String))))) < ? OR if(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), '') IS NOT NULL, coalesce(CAST(variantElement(auto_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(auto_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(auto_properties['amount'] AS Nullable(String)))), coalesce(CAST(variantElement(custom_properties['amount'], 'Float64') AS Nullable(Float64)), CAST(variantElement(custom_properties['amount'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(custom_properties['amount'] AS Nullable(String))))) > ?)"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL:\n got: %s\nwant: %s", cond.SQL(), want)
 	}
