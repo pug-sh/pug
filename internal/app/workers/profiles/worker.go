@@ -1,7 +1,7 @@
 package profiles
 
 import (
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

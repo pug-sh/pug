@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 )
 
 // PropertyExpr returns the ClickHouse expression to resolve an event property.

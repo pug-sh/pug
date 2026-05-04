@@ -748,7 +748,7 @@ const file_shared_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x10PLATFORM_ANDROID\x10\x01\x12\x10\n" +
 	"\fPLATFORM_IOS\x10\x022q\n" +
 	"\x0fDeliveryService\x12^\n" +
-	"\vRecordEvent\x12&.shared.delivery.v1.RecordEventRequest\x1a'.shared.delivery.v1.RecordEventResponseBOZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/delivery/v1;deliveryv1b\beditionsp\xe8\a"
+	"\vRecordEvent\x12&.shared.delivery.v1.RecordEventRequest\x1a'.shared.delivery.v1.RecordEventResponseBHZFgithub.com/pug-sh/pug/internal/gen/proto/shared/delivery/v1;deliveryv1b\beditionsp\xe8\a"
 
 var (
 	file_shared_delivery_v1_delivery_proto_rawDescOnce sync.Once

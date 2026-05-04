@@ -8,8 +8,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v11 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	v1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1"
+	v1 "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1"
 	http "net/http"
 	strings "strings"
 )
@@ -63,12 +62,7 @@ type ActivityServiceClient interface {
 	// in a project. Does not resolve aliases.
 	GetEventExplorer(context.Context, *connect.Request[v1.GetEventExplorerRequest]) (*connect.Response[v1.GetEventExplorerResponse], error)
 	// GetFilterSchema returns event names, property keys, and profile property keys for filter UIs.
-	// The filter-schema concept is service-agnostic; both shared.activity and
-	// shared.insights expose the same shape via common.v1.
-	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
-	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	GetFilterSchema(context.Context, *connect.Request[v11.GetFilterSchemaRequest]) (*connect.Response[v11.GetFilterSchemaResponse], error)
+	GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error)
 	// GetPropertyValues returns distinct values for a given property key.
 	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 	// GetActivityHeatmap returns per-day event counts for a user profile over a time window.
@@ -103,7 +97,7 @@ func NewActivityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(activityServiceMethods.ByName("GetEventExplorer")),
 			connect.WithClientOptions(opts...),
 		),
-		getFilterSchema: connect.NewClient[v11.GetFilterSchemaRequest, v11.GetFilterSchemaResponse](
+		getFilterSchema: connect.NewClient[v1.GetFilterSchemaRequest, v1.GetFilterSchemaResponse](
 			httpClient,
 			baseURL+ActivityServiceGetFilterSchemaProcedure,
 			connect.WithSchema(activityServiceMethods.ByName("GetFilterSchema")),
@@ -134,7 +128,7 @@ func NewActivityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 type activityServiceClient struct {
 	getActivityFeed    *connect.Client[v1.GetActivityFeedRequest, v1.GetActivityFeedResponse]
 	getEventExplorer   *connect.Client[v1.GetEventExplorerRequest, v1.GetEventExplorerResponse]
-	getFilterSchema    *connect.Client[v11.GetFilterSchemaRequest, v11.GetFilterSchemaResponse]
+	getFilterSchema    *connect.Client[v1.GetFilterSchemaRequest, v1.GetFilterSchemaResponse]
 	getPropertyValues  *connect.Client[v1.GetPropertyValuesRequest, v1.GetPropertyValuesResponse]
 	getActivityHeatmap *connect.Client[v1.GetActivityHeatmapRequest, v1.GetActivityHeatmapResponse]
 	getProfileStats    *connect.Client[v1.GetProfileStatsRequest, v1.GetProfileStatsResponse]
@@ -151,7 +145,7 @@ func (c *activityServiceClient) GetEventExplorer(ctx context.Context, req *conne
 }
 
 // GetFilterSchema calls shared.activity.v1.ActivityService.GetFilterSchema.
-func (c *activityServiceClient) GetFilterSchema(ctx context.Context, req *connect.Request[v11.GetFilterSchemaRequest]) (*connect.Response[v11.GetFilterSchemaResponse], error) {
+func (c *activityServiceClient) GetFilterSchema(ctx context.Context, req *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error) {
 	return c.getFilterSchema.CallUnary(ctx, req)
 }
 
@@ -179,12 +173,7 @@ type ActivityServiceHandler interface {
 	// in a project. Does not resolve aliases.
 	GetEventExplorer(context.Context, *connect.Request[v1.GetEventExplorerRequest]) (*connect.Response[v1.GetEventExplorerResponse], error)
 	// GetFilterSchema returns event names, property keys, and profile property keys for filter UIs.
-	// The filter-schema concept is service-agnostic; both shared.activity and
-	// shared.insights expose the same shape via common.v1.
-	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
-	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
-	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	GetFilterSchema(context.Context, *connect.Request[v11.GetFilterSchemaRequest]) (*connect.Response[v11.GetFilterSchemaResponse], error)
+	GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error)
 	// GetPropertyValues returns distinct values for a given property key.
 	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 	// GetActivityHeatmap returns per-day event counts for a user profile over a time window.
@@ -270,7 +259,7 @@ func (UnimplementedActivityServiceHandler) GetEventExplorer(context.Context, *co
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.activity.v1.ActivityService.GetEventExplorer is not implemented"))
 }
 
-func (UnimplementedActivityServiceHandler) GetFilterSchema(context.Context, *connect.Request[v11.GetFilterSchemaRequest]) (*connect.Response[v11.GetFilterSchemaResponse], error) {
+func (UnimplementedActivityServiceHandler) GetFilterSchema(context.Context, *connect.Request[v1.GetFilterSchemaRequest]) (*connect.Response[v1.GetFilterSchemaResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.activity.v1.ActivityService.GetFilterSchema is not implemented"))
 }
 

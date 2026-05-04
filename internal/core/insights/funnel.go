@@ -8,9 +8,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 // FunnelUserEvents holds per-user event data from the array-based funnel query.

@@ -9,14 +9,24 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
-	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1/insightsv1connect"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	coreinsights "github.com/pug-sh/pug/internal/core/insights"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
+	"github.com/pug-sh/pug/internal/slogx"
 )
+
+// connectCtxErr wraps a context error in the appropriate Connect error code.
+func connectCtxErr(err error) error {
+	code := connect.CodeCanceled
+	msg := "request canceled"
+	if errors.Is(err, context.DeadlineExceeded) {
+		code = connect.CodeDeadlineExceeded
+		msg = "request timed out"
+	}
+	return connect.NewError(code, errors.New(msg))
+}
 
 type server struct {
 	service  *coreinsights.Service
@@ -44,7 +54,7 @@ func (s *server) Query(
 	req *connect.Request[insightsv1.QueryRequest],
 ) (*connect.Response[insightsv1.QueryResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, rpc.ConnectCtxErr(err)
+		return nil, connectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -173,7 +183,7 @@ func (s *server) SegmentUsers(
 	req *connect.Request[insightsv1.SegmentUsersRequest],
 ) (*connect.Response[insightsv1.SegmentUsersResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, rpc.ConnectCtxErr(err)
+		return nil, connectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -216,10 +226,10 @@ func (s *server) SegmentUsers(
 
 func (s *server) GetFilterSchema(
 	ctx context.Context,
-	req *connect.Request[commonv1.GetFilterSchemaRequest],
-) (*connect.Response[commonv1.GetFilterSchemaResponse], error) {
+	req *connect.Request[insightsv1.GetFilterSchemaRequest],
+) (*connect.Response[insightsv1.GetFilterSchemaResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, rpc.ConnectCtxErr(err)
+		return nil, connectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -229,7 +239,7 @@ func (s *server) GetFilterSchema(
 
 	projectID := principal.Project.ID
 
-	schema, err := s.service.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind(), req.Msg.GetAllowedTypes())
+	schema, err := s.service.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -242,7 +252,7 @@ func (s *server) GetPropertyValues(
 	req *connect.Request[insightsv1.GetPropertyValuesRequest],
 ) (*connect.Response[insightsv1.GetPropertyValuesResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, rpc.ConnectCtxErr(err)
+		return nil, connectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)

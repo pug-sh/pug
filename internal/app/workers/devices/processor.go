@@ -12,12 +12,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/fivebitsio/cotton/internal/core/devices"
-	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/core/devices"
+	natsworker "github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	devicesv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/devices/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 type Worker struct {

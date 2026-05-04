@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"buf.build/go/protovalidate"
-	"github.com/fivebitsio/cotton/internal/deps/clickhouse"
-	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/pug-sh/pug/internal/deps/clickhouse"
+	natsworker "github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	workerprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/workers/profiles/v1"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
@@ -55,11 +56,7 @@ func Run(ctx context.Context) error {
 	return StartWorker(ctx, chDB.Conn, natsClient)
 }
 
-type asyncInserter interface {
-	AsyncInsert(ctx context.Context, query string, wait bool, args ...any) error
-}
-
-func StartWorker(ctx context.Context, ch asyncInserter, natsClient *natsworker.NATSClient) error {
+func StartWorker(ctx context.Context, ch driver.Conn, natsClient *natsworker.NATSClient) error {
 	consumerConfig, err := natsClient.GetConsumerConfigByName("profile-alias-processor-durable")
 	if err != nil {
 		return fmt.Errorf("failed to get profile alias consumer config: %w", err)
@@ -89,7 +86,7 @@ func StartWorker(ctx context.Context, ch asyncInserter, natsClient *natsworker.N
 	return worker.Start(ctx)
 }
 
-func handleAlias(ctx context.Context, ch asyncInserter, data []byte) error {
+func handleAlias(ctx context.Context, ch driver.Conn, data []byte) error {
 	msg := &workerprofilesv1.ProfileAliasMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal alias message", slogx.Error(err))
@@ -110,12 +107,11 @@ func handleAlias(ctx context.Context, ch asyncInserter, data []byte) error {
 	externalID := msg.GetExternalId()
 	projectID := msg.GetProjectId()
 
-	if err := ch.AsyncInsert(ctx,
+	if err := ch.Exec(ctx,
 		"INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)",
-		true,
 		aliasID, profileID, externalID, projectID,
 	); err != nil {
-		slog.ErrorContext(ctx, "failed async inserting profile alias into ClickHouse", slogx.Error(err),
+		slog.ErrorContext(ctx, "failed inserting profile alias into ClickHouse", slogx.Error(err),
 			slog.String("alias_id", aliasID), slog.String("profile_id", profileID))
 		telemetry.RecordError(ctx, err)
 		return err

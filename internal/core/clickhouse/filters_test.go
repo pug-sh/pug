@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fivebitsio/cotton/internal/core/clickhouse"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	"github.com/pug-sh/pug/internal/core/clickhouse"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	"google.golang.org/protobuf/proto"
 )
 

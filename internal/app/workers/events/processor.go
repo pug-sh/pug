@@ -4,74 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"buf.build/go/protovalidate"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"google.golang.org/protobuf/proto"
 
-	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	natsworker "github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
+	"github.com/pug-sh/pug/internal/slogx"
 )
-
-// propertyValueToVariant converts a proto PropertyValue oneof into a chcol.Variant
-// tagged with the matching ClickHouse Variant branch name. Tagging is required:
-// without it the driver dispatches by reflect type in column declaration order
-// (String, Int64, Float64, Bool, DateTime64(3)), which can route values to the
-// wrong slot — e.g. a float64 reaches the Int64 branch via reflect.CanConvert
-// and gets truncated. Returns the zero Variant for unset/nil values, which the
-// column treats as the absent-variant path (NULL).
-//
-// The returned chcol.Variant must stay aligned with both the column definition
-// in 001_create_events_table.sql and the variantTypeToPropertyValueType mapping
-// in insights/service.go — this alignment is asserted in variant_align_test.go.
-func propertyValueToVariant(ctx context.Context, pv *commonv1.PropertyValue) chcol.Variant {
-	if pv == nil {
-		return chcol.Variant{}
-	}
-	switch v := pv.GetValue().(type) {
-	case *commonv1.PropertyValue_StringValue:
-		return chcol.NewVariantWithType(v.StringValue, "String")
-	case *commonv1.PropertyValue_IntValue:
-		return chcol.NewVariantWithType(v.IntValue, "Int64")
-	case *commonv1.PropertyValue_DoubleValue:
-		return chcol.NewVariantWithType(v.DoubleValue, "Float64")
-	case *commonv1.PropertyValue_BoolValue:
-		return chcol.NewVariantWithType(v.BoolValue, "Bool")
-	case *commonv1.PropertyValue_TimestampValue:
-		return chcol.NewVariantWithType(v.TimestampValue.AsTime().UTC().Truncate(time.Millisecond), "DateTime64(3)")
-	default:
-		// Unreachable for batches that pass protovalidate (oneof.required = true).
-		// Fires only on proto-future drift: a new PropertyValue variant added in
-		// proto without a corresponding case here. Surface the drift; the key
-		// is preserved in the row but its value is stored as the absent-variant
-		// slot (NULL on read), so the SDK still sees accepted=N back without
-		// a per-property signal. Do not fail the batch.
-		err := fmt.Errorf("unsupported PropertyValue variant: %T", pv.GetValue())
-		slog.WarnContext(ctx, "storing property with unsupported PropertyValue variant as NULL", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return chcol.Variant{}
-	}
-}
-
-// propertyMapToVariantMap converts a proto Map(String, PropertyValue) into
-// the typed Go shape clickhouse-go uses to insert into Map(String, Variant(...)).
-// Returns nil for empty input — the driver maps a nil map to an empty CH Map
-// (zero entries), which is the correct shape for an event with no properties.
-func propertyMapToVariantMap(ctx context.Context, props map[string]*commonv1.PropertyValue) map[string]chcol.Variant {
-	if len(props) == 0 {
-		return nil
-	}
-	out := make(map[string]chcol.Variant, len(props))
-	for k, v := range props {
-		out[k] = propertyValueToVariant(ctx, v)
-	}
-	return out
-}
 
 type Processor struct {
 	ch driver.Conn
@@ -160,8 +102,8 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			batch.GetProjectId(),
 			e.GetDistinctId(),
 			e.GetKind(),
-			propertyMapToVariantMap(ctx, e.AutoProperties),
-			propertyMapToVariantMap(ctx, e.CustomProperties),
+			e.AutoProperties,
+			e.CustomProperties,
 			e.OccurTime.AsTime(),
 			e.GetSessionId(),
 		); err != nil {

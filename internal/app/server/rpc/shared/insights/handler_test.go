@@ -8,11 +8,10 @@ import (
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
 func TestQuery_Unauthenticated(t *testing.T) {
@@ -39,7 +38,7 @@ func TestSegmentUsers_Unauthenticated(t *testing.T) {
 
 func TestGetFilterSchema_Unauthenticated(t *testing.T) {
 	s := &server{}
-	_, err := s.GetFilterSchema(context.Background(), connect.NewRequest(&commonv1.GetFilterSchemaRequest{}))
+	_, err := s.GetFilterSchema(context.Background(), connect.NewRequest(&insightsv1.GetFilterSchemaRequest{}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -62,14 +61,14 @@ func TestGetPropertyValues_Unauthenticated(t *testing.T) {
 func TestConnectCtxErr_Canceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := rpc.ConnectCtxErr(ctx.Err())
+	err := connectCtxErr(ctx.Err())
 	if code := connect.CodeOf(err); code != connect.CodeCanceled {
 		t.Errorf("got code %v, want CodeCanceled", code)
 	}
 }
 
 func TestConnectCtxErr_DeadlineExceeded(t *testing.T) {
-	err := rpc.ConnectCtxErr(context.DeadlineExceeded)
+	err := connectCtxErr(context.DeadlineExceeded)
 	if code := connect.CodeOf(err); code != connect.CodeDeadlineExceeded {
 		t.Errorf("got code %v, want CodeDeadlineExceeded", code)
 	}

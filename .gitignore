@@ -8,3 +8,4 @@ pr-*review.md
 .agents/
 docs/superpowers
 /server
+.cache/

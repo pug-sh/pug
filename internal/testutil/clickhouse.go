@@ -13,7 +13,7 @@ import (
 	"github.com/pressly/goose/v3"
 	tcclickhouse "github.com/testcontainers/testcontainers-go/modules/clickhouse"
 
-	chdep "github.com/fivebitsio/cotton/internal/deps/clickhouse"
+	chdep "github.com/pug-sh/pug/internal/deps/clickhouse"
 )
 
 // TestClickHouse holds the container and connection for a test ClickHouse instance.
@@ -30,7 +30,7 @@ func SetupClickHouse(t *testing.T) *TestClickHouse {
 	ctx := context.Background()
 
 	ctr, err := tcclickhouse.Run(ctx, "clickhouse/clickhouse-server:26.3-alpine",
-		tcclickhouse.WithDatabase("cotton_test"),
+		tcclickhouse.WithDatabase("pug_test"),
 		tcclickhouse.WithUsername("default"),
 		tcclickhouse.WithPassword("test"),
 	)
@@ -74,7 +74,7 @@ func SetupBareClickHouse(t *testing.T) *TestClickHouse {
 	ctx := context.Background()
 
 	ctr, err := tcclickhouse.Run(ctx, "clickhouse/clickhouse-server:26.3-alpine",
-		tcclickhouse.WithDatabase("cotton_test"),
+		tcclickhouse.WithDatabase("pug_test"),
 		tcclickhouse.WithUsername("default"),
 		tcclickhouse.WithPassword("test"),
 	)

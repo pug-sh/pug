@@ -699,7 +699,7 @@ const file_shared_campaigns_v1_campaigns_proto_rawDesc = "" +
 	"\x06Create\x12\".shared.campaigns.v1.CreateRequest\x1a#.shared.campaigns.v1.CreateResponse\"\x00\x12S\n" +
 	"\x06Delete\x12\".shared.campaigns.v1.DeleteRequest\x1a#.shared.campaigns.v1.DeleteResponse\"\x00\x12J\n" +
 	"\x03Get\x12\x1f.shared.campaigns.v1.GetRequest\x1a .shared.campaigns.v1.GetResponse\"\x00\x12S\n" +
-	"\x06Update\x12\".shared.campaigns.v1.UpdateRequest\x1a#.shared.campaigns.v1.UpdateResponse\"\x00BQZOgithub.com/fivebitsio/cotton/internal/gen/proto/shared/campaigns/v1;campaignsv1b\beditionsp\xe8\a"
+	"\x06Update\x12\".shared.campaigns.v1.UpdateRequest\x1a#.shared.campaigns.v1.UpdateResponse\"\x00BJZHgithub.com/pug-sh/pug/internal/gen/proto/shared/campaigns/v1;campaignsv1b\beditionsp\xe8\a"
 
 var (
 	file_shared_campaigns_v1_campaigns_proto_rawDescOnce sync.Once

@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/fivebitsio/cotton/internal/app/migrate/nats"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/app/migrate/nats"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/joho/godotenv"
 )
 

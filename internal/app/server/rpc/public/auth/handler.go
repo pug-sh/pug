@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
-	coreauth "github.com/fivebitsio/cotton/internal/core/auth"
-	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/public/auth/v1"
+	coreauth "github.com/pug-sh/pug/internal/core/auth"
+	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

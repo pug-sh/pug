@@ -6,10 +6,10 @@ import (
 
 	"buf.build/go/protovalidate"
 
-	"github.com/fivebitsio/cotton/internal/deps/nats"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 )

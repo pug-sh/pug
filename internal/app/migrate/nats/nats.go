@@ -6,14 +6,14 @@ import (
 	"log/slog"
 	"strings"
 
-	natsdeps "github.com/fivebitsio/cotton/internal/deps/nats"
+	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
 // TODO: For self-hosting, move stream/consumer initialization to app startup instead of a
 // separate migrate command. This reduces setup friction — users currently need JetStream
 // enabled with specific storage limits, and the 50GB-per-stream defaults break local setups.
-// Consider: auto-create on startup, unified `cotton migrate` for all DBs, env-aware defaults.
+// Consider: auto-create on startup, unified `pug migrate` for all DBs, env-aware defaults.
 
 type initializer struct {
 	client *natsdeps.NATSClient

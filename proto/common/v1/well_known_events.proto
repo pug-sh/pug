@@ -3,7 +3,7 @@ package common.v1;
 
 import "buf/validate/validate.proto";
 
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1";
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1";
 
 // Well-known event property schemas.
 //

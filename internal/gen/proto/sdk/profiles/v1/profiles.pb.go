@@ -236,7 +236,7 @@ const file_sdk_profiles_v1_profiles_proto_rawDesc = "" +
 	"\fanonymous_id\x18\x04 \x01(\tR\vanonymousId\x12\x1b\n" +
 	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId2e\n" +
 	"\x12ProfilesSDKService\x12O\n" +
-	"\bIdentify\x12 .sdk.profiles.v1.IdentifyRequest\x1a!.sdk.profiles.v1.IdentifyResponseBOZMgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1b\beditionsp\xe8\a"
+	"\bIdentify\x12 .sdk.profiles.v1.IdentifyRequest\x1a!.sdk.profiles.v1.IdentifyResponseBHZFgithub.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1b\beditionsp\xe8\a"
 
 var (
 	file_sdk_profiles_v1_profiles_proto_rawDescOnce sync.Once

@@ -5,10 +5,9 @@ import (
 	"net/http"
 	"testing"
 
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
-	"github.com/fivebitsio/cotton/internal/geo"
-	"github.com/fivebitsio/cotton/internal/useragent"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
+	"github.com/pug-sh/pug/internal/geo"
+	"github.com/pug-sh/pug/internal/useragent"
 )
 
 type stubProvider struct {
@@ -22,7 +21,7 @@ func TestEnrichGeo(t *testing.T) {
 		name   string
 		loc    geo.Location
 		events []*eventsv1.Event
-		want   map[string]any // expected auto-properties on each event (nil = no geo keys)
+		want   map[string]string // expected auto-properties on each event (nil = no geo keys)
 	}{
 		{
 			"all geo fields set",
@@ -33,18 +32,18 @@ func TestEnrichGeo(t *testing.T) {
 				geo.PropLatitude: "37.7749", geo.PropLongitude: "-122.4194", geo.PropTimezone: "America/Los_Angeles",
 			},
 			[]*eventsv1.Event{{}},
-			map[string]any{
+			map[string]string{
 				geo.PropIP: "1.2.3.4", geo.PropContinent: "NA", geo.PropCountry: "US",
 				geo.PropRegion: "California", geo.PropCity: "San Francisco",
 				geo.PropPostalCode: "94105", geo.PropMetroCode: "807",
-				geo.PropLatitude: 37.7749, geo.PropLongitude: -122.4194, geo.PropTimezone: "America/Los_Angeles",
+				geo.PropLatitude: "37.7749", geo.PropLongitude: "-122.4194", geo.PropTimezone: "America/Los_Angeles",
 			},
 		},
 		{
 			"partial geo — country only",
 			geo.Location{geo.PropCountry: "DE"},
 			[]*eventsv1.Event{{}},
-			map[string]any{geo.PropCountry: "DE"},
+			map[string]string{geo.PropCountry: "DE"},
 		},
 		{
 			"empty location — no properties set",
@@ -62,25 +61,25 @@ func TestEnrichGeo(t *testing.T) {
 			"multiple events enriched",
 			geo.Location{geo.PropCountry: "JP"},
 			[]*eventsv1.Event{{}, {}},
-			map[string]any{geo.PropCountry: "JP"},
+			map[string]string{geo.PropCountry: "JP"},
 		},
 		{
 			"preserves existing auto-properties",
 			geo.Location{geo.PropCountry: "US"},
-			[]*eventsv1.Event{{AutoProperties: typedProps(map[string]any{"$browser": "Chrome"})}},
-			map[string]any{geo.PropCountry: "US", "$browser": "Chrome"},
+			[]*eventsv1.Event{{AutoProperties: map[string]string{"$browser": "Chrome"}}},
+			map[string]string{geo.PropCountry: "US", "$browser": "Chrome"},
 		},
 		{
 			"geo overwrites existing geo keys",
 			geo.Location{geo.PropCountry: "ServerSide"},
-			[]*eventsv1.Event{{AutoProperties: typedProps(map[string]any{geo.PropCountry: "ClientSide"})}},
-			map[string]any{geo.PropCountry: "ServerSide"},
+			[]*eventsv1.Event{{AutoProperties: map[string]string{geo.PropCountry: "ClientSide"}}},
+			map[string]string{geo.PropCountry: "ServerSide"},
 		},
 		{
 			"metro targeting fields",
 			geo.Location{geo.PropCountry: "US", geo.PropPostalCode: "10001", geo.PropMetroCode: "501"},
 			[]*eventsv1.Event{{}},
-			map[string]any{geo.PropCountry: "US", geo.PropPostalCode: "10001", geo.PropMetroCode: "501"},
+			map[string]string{geo.PropCountry: "US", geo.PropPostalCode: "10001", geo.PropMetroCode: "501"},
 		},
 	}
 
@@ -90,7 +89,25 @@ func TestEnrichGeo(t *testing.T) {
 			s.enrichGeo(context.Background(), "test-project", http.Header{}, tt.events)
 
 			for _, event := range tt.events {
-				assertProps(t, event, tt.want)
+				if tt.want == nil {
+					if len(event.AutoProperties) != 0 {
+						t.Errorf("expected no auto-properties, got %v", event.AutoProperties)
+					}
+					continue
+				}
+				if len(event.AutoProperties) != len(tt.want) {
+					t.Errorf("AutoProperties has %d keys, want %d\ngot:  %v\nwant: %v",
+						len(event.AutoProperties), len(tt.want), event.AutoProperties, tt.want)
+					continue
+				}
+				for k, wantV := range tt.want {
+					gotV, ok := event.AutoProperties[k]
+					if !ok {
+						t.Errorf("missing expected key %q in AutoProperties", k)
+					} else if gotV != wantV {
+						t.Errorf("AutoProperties[%q] = %q, want %q", k, gotV, wantV)
+					}
+				}
 			}
 		})
 	}
@@ -98,7 +115,7 @@ func TestEnrichGeo(t *testing.T) {
 
 const chromeWindowsUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
 
-func assertProps(t *testing.T, event *eventsv1.Event, want map[string]any) {
+func assertProps(t *testing.T, event *eventsv1.Event, want map[string]string) {
 	t.Helper()
 	if want == nil {
 		if len(event.AutoProperties) != 0 {
@@ -112,36 +129,17 @@ func assertProps(t *testing.T, event *eventsv1.Event, want map[string]any) {
 		return
 	}
 	for k, wantV := range want {
-		got := event.AutoProperties[k]
-		if got == nil {
+		gotV, ok := event.AutoProperties[k]
+		if !ok {
 			t.Errorf("missing expected key %q in AutoProperties", k)
-			continue
-		}
-		switch want := wantV.(type) {
-		case string:
-			if got.GetStringValue() != want {
-				t.Errorf("AutoProperties[%q] = %q, want %q", k, got.GetStringValue(), want)
-			}
-		case float64:
-			if got.GetDoubleValue() != want {
-				t.Errorf("AutoProperties[%q] = %v, want %v", k, got.GetDoubleValue(), want)
-			}
-		case int64:
-			if got.GetIntValue() != want {
-				t.Errorf("AutoProperties[%q] = %d, want %d", k, got.GetIntValue(), want)
-			}
-		case bool:
-			if got.GetBoolValue() != want {
-				t.Errorf("AutoProperties[%q] = %t, want %t", k, got.GetBoolValue(), want)
-			}
-		default:
-			t.Fatalf("unsupported expected type %T for key %q", wantV, k)
+		} else if gotV != wantV {
+			t.Errorf("AutoProperties[%q] = %q, want %q", k, gotV, wantV)
 		}
 	}
 }
 
 func TestEnrichUserAgent(t *testing.T) {
-	chromeProps := map[string]any{
+	chromeProps := map[string]string{
 		useragent.PropBrowser:        "Chrome",
 		useragent.PropBrowserVersion: "118",
 		useragent.PropOS:             "Windows",
@@ -152,7 +150,7 @@ func TestEnrichUserAgent(t *testing.T) {
 		name     string
 		uaHeader string // empty = omit header
 		events   []*eventsv1.Event
-		want     map[string]any // expected auto-properties on each event (nil = no UA props)
+		want     map[string]string // expected auto-properties on each event (nil = no UA props)
 	}{
 		{
 			name:     "chrome desktop — browser, os, osVersion set (no device for desktop)",
@@ -175,8 +173,8 @@ func TestEnrichUserAgent(t *testing.T) {
 		{
 			name:     "preserves other auto-properties",
 			uaHeader: chromeWindowsUA,
-			events:   []*eventsv1.Event{{AutoProperties: typedProps(map[string]any{"$custom": "value"})}},
-			want: map[string]any{
+			events:   []*eventsv1.Event{{AutoProperties: map[string]string{"$custom": "value"}}},
+			want: map[string]string{
 				"$custom":                    "value",
 				useragent.PropBrowser:        "Chrome",
 				useragent.PropBrowserVersion: "118",
@@ -188,8 +186,8 @@ func TestEnrichUserAgent(t *testing.T) {
 			// Mobile SDKs send device props explicitly; server must not overwrite them.
 			name:     "client-supplied ua props not overwritten",
 			uaHeader: chromeWindowsUA,
-			events:   []*eventsv1.Event{{AutoProperties: typedProps(map[string]any{useragent.PropDevice: "Mobile", useragent.PropOS: "iOS"})}},
-			want: map[string]any{
+			events:   []*eventsv1.Event{{AutoProperties: map[string]string{useragent.PropDevice: "Mobile", useragent.PropOS: "iOS"}}},
+			want: map[string]string{
 				useragent.PropDevice:         "Mobile", // client value preserved
 				useragent.PropOS:             "iOS",    // client value preserved
 				useragent.PropBrowser:        "Chrome",
@@ -224,79 +222,79 @@ func TestEnrichBotScore(t *testing.T) {
 		name      string
 		header    string // empty = omit header
 		events    []*eventsv1.Event
-		wantScore *int64 // nil = expect absent
+		wantScore string // empty = expect absent
 	}{
 		{
 			name:      "valid score applied to all events",
 			header:    "42",
 			events:    []*eventsv1.Event{{}, {}},
-			wantScore: int64p(42),
+			wantScore: "42",
 		},
 		{
 			name:      "score 0 applied (existing value overwritten)",
 			header:    "0",
-			events:    []*eventsv1.Event{{AutoProperties: typedProps(map[string]any{"$bot_score": int64(99)})}},
-			wantScore: int64p(0),
+			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$bot_score": "99"}}},
+			wantScore: "0",
 		},
 		{
 			name:      "score 99 applied",
 			header:    "99",
 			events:    []*eventsv1.Event{{}},
-			wantScore: int64p(99),
+			wantScore: "99",
 		},
 		{
 			name:      "no header — client-supplied bot_score stripped",
 			header:    "",
-			events:    []*eventsv1.Event{{AutoProperties: typedProps(map[string]any{"$bot_score": int64(50)})}},
-			wantScore: nil,
+			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$bot_score": "50"}}},
+			wantScore: "",
 		},
 		{
 			name:      "invalid header — bot_score absent",
 			header:    "not-a-number",
-			events:    []*eventsv1.Event{{AutoProperties: typedProps(map[string]any{"$bot_score": int64(10)})}},
-			wantScore: nil,
+			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$bot_score": "10"}}},
+			wantScore: "",
 		},
 		{
 			name:      "out of range for UInt8 — bot_score absent",
 			header:    "256",
-			events:    []*eventsv1.Event{{AutoProperties: typedProps(map[string]any{"$bot_score": int64(10)})}},
-			wantScore: nil,
+			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$bot_score": "10"}}},
+			wantScore: "",
 		},
 		{
 			name:      "negative value — bot_score absent",
 			header:    "-1",
 			events:    []*eventsv1.Event{{}},
-			wantScore: nil,
+			wantScore: "",
 		},
 		{
 			name:      "max valid score 255",
 			header:    "255",
 			events:    []*eventsv1.Event{{}},
-			wantScore: int64p(255),
+			wantScore: "255",
 		},
 		{
 			name:      "score 0 on fresh event",
 			header:    "0",
 			events:    []*eventsv1.Event{{}},
-			wantScore: int64p(0),
+			wantScore: "0",
 		},
 		{
 			name:      "whitespace in header rejected",
 			header:    " 42 ",
 			events:    []*eventsv1.Event{{}},
-			wantScore: nil,
+			wantScore: "",
 		},
 		{
 			name:      "preserves other auto-properties",
 			header:    "42",
-			events:    []*eventsv1.Event{{AutoProperties: typedProps(map[string]any{"$browser": "Chrome"})}},
-			wantScore: int64p(42),
+			events:    []*eventsv1.Event{{AutoProperties: map[string]string{"$browser": "Chrome"}}},
+			wantScore: "42",
 		},
 		{
 			name:      "no header, nil AutoProperties — no panic",
 			header:    "",
 			events:    []*eventsv1.Event{{}},
-			wantScore: nil,
+			wantScore: "",
 		},
 	}
 
@@ -310,15 +308,15 @@ func TestEnrichBotScore(t *testing.T) {
 			}
 			s.enrichBotScore(context.Background(), "test-project", h, tt.events)
 			for _, event := range tt.events {
-				got := event.AutoProperties["$bot_score"]
-				if tt.wantScore == nil {
-					if got != nil {
-						t.Errorf("expected $bot_score absent, got %v", got)
+				got, exists := event.AutoProperties["$bot_score"]
+				if tt.wantScore == "" {
+					if exists {
+						t.Errorf("expected $bot_score absent, got %q", got)
 					}
-				} else if got == nil {
-					t.Errorf("expected $bot_score = %d, got absent", *tt.wantScore)
-				} else if got.GetIntValue() != *tt.wantScore {
-					t.Errorf("$bot_score = %d, want %d", got.GetIntValue(), *tt.wantScore)
+				} else if !exists {
+					t.Errorf("expected $bot_score = %q, got absent", tt.wantScore)
+				} else if got != tt.wantScore {
+					t.Errorf("$bot_score = %q, want %q", got, tt.wantScore)
 				}
 			}
 		})
@@ -330,55 +328,55 @@ func TestEnrichVerifiedBot(t *testing.T) {
 		name   string
 		header string // empty = omit header
 		events []*eventsv1.Event
-		want   *bool // nil = expect absent
+		want   string // empty = expect absent
 	}{
 		{
 			name:   "true applied to all events",
 			header: "true",
 			events: []*eventsv1.Event{{}, {}},
-			want:   boolp(true),
+			want:   "true",
 		},
 		{
 			name:   "false applied",
 			header: "false",
 			events: []*eventsv1.Event{{}},
-			want:   boolp(false),
+			want:   "false",
 		},
 		{
 			name:   "no header — client-supplied value stripped",
 			header: "",
-			events: []*eventsv1.Event{{AutoProperties: typedProps(map[string]any{"$verified_bot": true})}},
-			want:   nil,
+			events: []*eventsv1.Event{{AutoProperties: map[string]string{"$verified_bot": "true"}}},
+			want:   "",
 		},
 		{
 			name:   "invalid header — value absent",
 			header: "yes",
 			events: []*eventsv1.Event{{}},
-			want:   nil,
+			want:   "",
 		},
 		{
 			name:   "client-supplied value overwritten",
 			header: "false",
-			events: []*eventsv1.Event{{AutoProperties: typedProps(map[string]any{"$verified_bot": true})}},
-			want:   boolp(false),
+			events: []*eventsv1.Event{{AutoProperties: map[string]string{"$verified_bot": "true"}}},
+			want:   "false",
 		},
 		{
 			name:   "preserves other auto-properties",
 			header: "true",
-			events: []*eventsv1.Event{{AutoProperties: typedProps(map[string]any{"$browser": "Chrome"})}},
-			want:   boolp(true),
+			events: []*eventsv1.Event{{AutoProperties: map[string]string{"$browser": "Chrome"}}},
+			want:   "true",
 		},
 		{
 			name:   "no header, nil AutoProperties — no panic",
 			header: "",
 			events: []*eventsv1.Event{{}},
-			want:   nil,
+			want:   "",
 		},
 		{
 			name:   "case-sensitive — True rejected",
 			header: "True",
 			events: []*eventsv1.Event{{}},
-			want:   nil,
+			want:   "",
 		},
 	}
 
@@ -392,15 +390,15 @@ func TestEnrichVerifiedBot(t *testing.T) {
 			}
 			s.enrichVerifiedBot(context.Background(), "test-project", h, tt.events)
 			for _, event := range tt.events {
-				got := event.AutoProperties["$verified_bot"]
-				if tt.want == nil {
-					if got != nil {
-						t.Errorf("expected $verified_bot absent, got %v", got)
+				got, exists := event.AutoProperties["$verified_bot"]
+				if tt.want == "" {
+					if exists {
+						t.Errorf("expected $verified_bot absent, got %q", got)
 					}
-				} else if got == nil {
-					t.Errorf("expected $verified_bot = %t, got absent", *tt.want)
-				} else if got.GetBoolValue() != *tt.want {
-					t.Errorf("$verified_bot = %t, want %t", got.GetBoolValue(), *tt.want)
+				} else if !exists {
+					t.Errorf("expected $verified_bot = %q, got absent", tt.want)
+				} else if got != tt.want {
+					t.Errorf("$verified_bot = %q, want %q", got, tt.want)
 				}
 			}
 		})
@@ -417,7 +415,7 @@ func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 	s := &Server{geoProvider: stubProvider{loc: loc}, uaParser: uaParser}
 
 	events := []*eventsv1.Event{{
-		AutoProperties: typedProps(map[string]any{useragent.PropOS: "iOS", "$bot_score": int64(99), "$verified_bot": true}),
+		AutoProperties: map[string]string{useragent.PropOS: "iOS", "$bot_score": "99", "$verified_bot": "true"},
 	}}
 
 	h := http.Header{}
@@ -431,7 +429,7 @@ func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 	s.enrichBotScore(context.Background(), "test-project", h, events)
 	s.enrichVerifiedBot(context.Background(), "test-project", h, events)
 
-	want := map[string]any{
+	want := map[string]string{
 		// Geo props (always overwrite).
 		geo.PropCountry: "US",
 		geo.PropCity:    "San Francisco",
@@ -441,35 +439,9 @@ func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 		useragent.PropBrowserVersion: "118",
 		useragent.PropOSVersion:      "10",
 		// Bot management (CDN headers overwrite client-supplied values).
-		"$bot_score":    int64(5),
-		"$verified_bot": false,
+		"$bot_score":    "5",
+		"$verified_bot": "false",
 	}
 
 	assertProps(t, events[0], want)
 }
-
-func typedProps(values map[string]any) map[string]*commonv1.PropertyValue {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make(map[string]*commonv1.PropertyValue, len(values))
-	for k, v := range values {
-		switch x := v.(type) {
-		case string:
-			out[k] = &commonv1.PropertyValue{Value: &commonv1.PropertyValue_StringValue{StringValue: x}}
-		case int64:
-			out[k] = &commonv1.PropertyValue{Value: &commonv1.PropertyValue_IntValue{IntValue: x}}
-		case float64:
-			out[k] = &commonv1.PropertyValue{Value: &commonv1.PropertyValue_DoubleValue{DoubleValue: x}}
-		case bool:
-			out[k] = &commonv1.PropertyValue{Value: &commonv1.PropertyValue_BoolValue{BoolValue: x}}
-		default:
-			panic("unsupported typedProps value")
-		}
-	}
-	return out
-}
-
-func int64p(v int64) *int64 { return &v }
-
-func boolp(v bool) *bool { return &v }

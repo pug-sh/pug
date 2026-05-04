@@ -6,10 +6,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/fivebitsio/cotton/internal/core/events"
-	natsdep "github.com/fivebitsio/cotton/internal/deps/nats"
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
-	"github.com/fivebitsio/cotton/internal/testutil"
+	"github.com/pug-sh/pug/internal/core/events"
+	natsdep "github.com/pug-sh/pug/internal/deps/nats"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
+	"github.com/pug-sh/pug/internal/testutil"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"

@@ -3,7 +3,7 @@ package events
 import (
 	"fmt"
 
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 )
 
 // ValidateExternalEvents validates batch-level constraints across the repeated

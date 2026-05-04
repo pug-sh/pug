@@ -7,18 +7,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
-	"github.com/fivebitsio/cotton/internal/autoprop"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
-
-var ErrNoProjectsFound = errors.New("no projects found")
 
 type Seeder struct {
 	deps *deps
@@ -26,74 +20,6 @@ type Seeder struct {
 
 func NewSeeder(deps *deps) *Seeder {
 	return &Seeder{deps: deps}
-}
-
-func stringToVariant(v string) chcol.Variant {
-	if b, err := strconv.ParseBool(v); err == nil {
-		return chcol.NewVariantWithType(b, "Bool")
-	}
-
-	if i, err := strconv.ParseInt(v, 10, 64); err == nil {
-		return chcol.NewVariantWithType(i, "Int64")
-	}
-
-	if f, err := strconv.ParseFloat(v, 64); err == nil {
-		return chcol.NewVariantWithType(f, "Float64")
-	}
-
-	for _, layout := range []string{
-		time.RFC3339Nano,
-		time.RFC3339,
-		"2006-01-02 15:04:05.999",
-		"2006-01-02 15:04:05",
-		"2006-01-02T15:04:05.999",
-		"2006-01-02T15:04:05",
-	} {
-		if ts, err := time.Parse(layout, v); err == nil {
-			return chcol.NewVariantWithType(ts.UTC().Truncate(time.Millisecond), "DateTime64(3)")
-		}
-	}
-
-	return chcol.NewVariantWithType(v, "String")
-}
-
-func stringMapToVariantMap(props map[string]string) map[string]chcol.Variant {
-	if len(props) == 0 {
-		return nil
-	}
-
-	out := make(map[string]chcol.Variant, len(props))
-	for k, v := range props {
-		out[k] = stringToVariant(v)
-	}
-
-	return out
-}
-
-func autoAnyMapToVariantMap(props map[string]any) map[string]chcol.Variant {
-	if len(props) == 0 {
-		return nil
-	}
-
-	out := make(map[string]chcol.Variant, len(props))
-	for k, v := range props {
-		switch x := v.(type) {
-		case string:
-			out[k] = autoprop.Variant(k, x)
-		case bool:
-			out[k] = chcol.NewVariantWithType(x, "Bool")
-		case int:
-			out[k] = chcol.NewVariantWithType(int64(x), "Int64")
-		case int64:
-			out[k] = chcol.NewVariantWithType(x, "Int64")
-		case float64:
-			out[k] = chcol.NewVariantWithType(x, "Float64")
-		default:
-			out[k] = chcol.NewVariantWithType(fmt.Sprint(x), "String")
-		}
-	}
-
-	return out
 }
 
 func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file string, truncate bool) error {
@@ -187,8 +113,8 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]eve
 				projectID,
 				e.distinctID,
 				e.kind,
-				autoAnyMapToVariantMap(e.autoProperties),
-				stringMapToVariantMap(e.customProperties),
+				e.autoProperties,
+				e.customProperties,
 				e.occurTime,
 				e.sessionID,
 			); err != nil {
@@ -207,10 +133,7 @@ func (s *Seeder) resolveProjectID(ctx context.Context) (string, error) {
 		"SELECT p.id FROM projects p JOIN org_members om ON om.org_id = p.org_id JOIN customers c ON c.id = om.customer_id ORDER BY p.create_time LIMIT 1",
 	).Scan(&projectID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", fmt.Errorf("%w: %v", ErrNoProjectsFound, err)
-		}
-		return "", fmt.Errorf("resolve project id: %w", err)
+		return "", fmt.Errorf("no projects found: %w", err)
 	}
 
 	slog.InfoContext(ctx, "resolved target",
@@ -340,8 +263,8 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 				projectID,
 				e.distinctID,
 				e.kind,
-				autoAnyMapToVariantMap(e.autoProperties),
-				stringMapToVariantMap(e.customProperties),
+				e.autoProperties,
+				e.customProperties,
 				e.occurTime,
 				uuid.NewString(),
 			); err != nil {

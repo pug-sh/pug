@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	activityv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1"
+	activityv1 "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 

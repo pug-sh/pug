@@ -653,7 +653,7 @@ const file_sdk_devices_v1_devices_proto_rawDesc = "" +
 	"\x0eDevicesService\x12R\n" +
 	"\tSubscribe\x12 .sdk.devices.v1.SubscribeRequest\x1a!.sdk.devices.v1.SubscribeResponse\"\x00\x12[\n" +
 	"\fUpdateStatus\x12#.sdk.devices.v1.UpdateStatusRequest\x1a$.sdk.devices.v1.UpdateStatusResponse\"\x00\x12X\n" +
-	"\vUpdateToken\x12\".sdk.devices.v1.UpdateTokenRequest\x1a#.sdk.devices.v1.UpdateTokenResponse\"\x00BJZHgithub.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1;devicesv1b\beditionsp\xe8\a"
+	"\vUpdateToken\x12\".sdk.devices.v1.UpdateTokenRequest\x1a#.sdk.devices.v1.UpdateTokenResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/sdk/devices/v1;devicesv1b\beditionsp\xe8\a"
 
 var (
 	file_sdk_devices_v1_devices_proto_rawDescOnce sync.Once

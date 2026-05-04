@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/fivebitsio/cotton/internal/app/workers/profiles/alias"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/app/workers/profiles/alias"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/joho/godotenv"
 )
 

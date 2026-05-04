@@ -10,15 +10,13 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	"github.com/fivebitsio/cotton/internal/autoprop"
-	coreevents "github.com/fivebitsio/cotton/internal/core/events"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
-	"github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1/eventsv1connect"
-	"github.com/fivebitsio/cotton/internal/geo"
-	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/fivebitsio/cotton/internal/useragent"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	coreevents "github.com/pug-sh/pug/internal/core/events"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
+	"github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1/eventsv1connect"
+	"github.com/pug-sh/pug/internal/geo"
+	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/pug-sh/pug/internal/useragent"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -93,11 +91,11 @@ func (s *Server) enrichUserAgent(ctx context.Context, projectID string, h http.H
 	}
 	for _, event := range events {
 		if event.AutoProperties == nil {
-			event.AutoProperties = make(map[string]*commonv1.PropertyValue, len(props))
+			event.AutoProperties = make(map[string]string, len(props))
 		}
 		for k, v := range props {
 			if _, exists := event.AutoProperties[k]; !exists {
-				event.AutoProperties[k] = autoprop.PropertyValue(k, v)
+				event.AutoProperties[k] = v
 			}
 		}
 	}
@@ -111,10 +109,10 @@ func (s *Server) enrichGeo(ctx context.Context, projectID string, h http.Header,
 	}
 	for _, event := range events {
 		if event.AutoProperties == nil {
-			event.AutoProperties = make(map[string]*commonv1.PropertyValue, len(loc))
+			event.AutoProperties = make(map[string]string, len(loc))
 		}
 		for k, v := range loc {
-			event.AutoProperties[k] = autoprop.PropertyValue(k, v)
+			event.AutoProperties[k] = v
 		}
 	}
 }
@@ -140,11 +138,12 @@ func (s *Server) enrichBotScore(ctx context.Context, projectID string, h http.He
 		return
 	}
 
+	score := strconv.FormatUint(val, 10)
 	for _, event := range events {
 		if event.AutoProperties == nil {
-			event.AutoProperties = make(map[string]*commonv1.PropertyValue)
+			event.AutoProperties = make(map[string]string)
 		}
-		event.AutoProperties["$bot_score"] = intPropertyValue(int64(val))
+		event.AutoProperties["$bot_score"] = score
 	}
 }
 
@@ -168,26 +167,8 @@ func (s *Server) enrichVerifiedBot(ctx context.Context, projectID string, h http
 
 	for _, event := range events {
 		if event.AutoProperties == nil {
-			event.AutoProperties = make(map[string]*commonv1.PropertyValue)
+			event.AutoProperties = make(map[string]string)
 		}
-		event.AutoProperties["$verified_bot"] = boolPropertyValue(val == "true")
-	}
-}
-
-func stringPropertyValue(v string) *commonv1.PropertyValue {
-	return &commonv1.PropertyValue{
-		Value: &commonv1.PropertyValue_StringValue{StringValue: v},
-	}
-}
-
-func intPropertyValue(v int64) *commonv1.PropertyValue {
-	return &commonv1.PropertyValue{
-		Value: &commonv1.PropertyValue_IntValue{IntValue: v},
-	}
-}
-
-func boolPropertyValue(v bool) *commonv1.PropertyValue {
-	return &commonv1.PropertyValue{
-		Value: &commonv1.PropertyValue_BoolValue{BoolValue: v},
+		event.AutoProperties["$verified_bot"] = val
 	}
 }

@@ -228,7 +228,7 @@ func (q *Query) Limit(n int64) *Query {
 
 // WithQueryCache enables the ClickHouse query cache with the given TTL in seconds.
 //
-// Apply only to the outermost query. The Cotton builder rejects SETTINGS on any
+// Apply only to the outermost query. The Pug builder rejects SETTINGS on any
 // non-outermost query (CTE sub-query, UNION branch, or any future nesting form);
 // calling WithQueryCache on such a query causes the outer Build() to panic.
 // Repeated calls overwrite the previous TTL — the SETTINGS clause always contains
@@ -379,7 +379,7 @@ func (u *UnionQuery) OrderBy(exprs ...string) *UnionQuery {
 
 // WithQueryCache enables the ClickHouse query cache with the given TTL in seconds.
 //
-// Apply only to the outermost UnionQuery. The Cotton builder rejects SETTINGS on any
+// Apply only to the outermost UnionQuery. The Pug builder rejects SETTINGS on any
 // non-outermost query; calling WithQueryCache on a Query passed to UnionAll(...) causes
 // the outer Build() to panic. Repeated calls overwrite the previous TTL — the SETTINGS
 // clause always contains exactly one (use_query_cache, query_cache_ttl) pair.

@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/core/projects"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
@@ -27,8 +27,8 @@ var (
 )
 
 const (
-	aud = "cotton/dashboard"
-	iss = "cotton/auth"
+	aud = "pug/dashboard"
+	iss = "pug/auth"
 )
 
 type Service struct {

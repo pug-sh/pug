@@ -5,7 +5,7 @@ import "buf/validate/validate.proto";
 import "common/v1/property_value.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1;eventsv1";
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1;eventsv1";
 
 service EventsService {
   rpc BatchCreate(BatchCreateRequest) returns (BatchCreateResponse);
@@ -22,8 +22,8 @@ message BatchCreateResponse {
 message Event {
   option (buf.validate.message).cel = {
     id: "event.kind_no_reserved_prefix"
-    message: "event kind must not use reserved prefix 'cotton.'"
-    expression: "!this.kind.startsWith('cotton.')"
+    message: "event kind must not use reserved prefix 'pug.'"
+    expression: "!this.kind.startsWith('pug.')"
   };
   option (buf.validate.message).cel = {
     id: "event.auto_properties_dollar_prefix"

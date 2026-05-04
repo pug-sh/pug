@@ -23,7 +23,7 @@ import (
     "os/signal"
     "time"
 
-    "github.com/fivebitsio/cotton/pkg/nats"
+    "github.com/pug-sh/pug/internal/deps/nats"
     "github.com/nats-io/nats.go/jetstream"
 )
 

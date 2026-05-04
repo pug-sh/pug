@@ -9,11 +9,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/rs/xid"
 
-	"github.com/fivebitsio/cotton/internal/core/campaigns"
-	"github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/deps/postgres"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/testutil"
+	"github.com/pug-sh/pug/internal/core/campaigns"
+	"github.com/pug-sh/pug/internal/core/projects"
+	"github.com/pug-sh/pug/internal/deps/postgres"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/testutil"
 )
 
 func TestCampaignsService(t *testing.T) {

@@ -30,7 +30,7 @@ func SetupPostgres(t *testing.T) *TestPostgres {
 	ctx := context.Background()
 
 	ctr, err := tcpostgres.Run(ctx, "postgres:18-alpine",
-		tcpostgres.WithDatabase("cotton_test"),
+		tcpostgres.WithDatabase("pug_test"),
 		tcpostgres.WithUsername("postgres"),
 		tcpostgres.WithPassword("postgres"),
 		tcpostgres.WithSQLDriver("pgx"),
@@ -80,7 +80,7 @@ func SetupBarePostgres(t *testing.T) *TestPostgres {
 	ctx := context.Background()
 
 	ctr, err := tcpostgres.Run(ctx, "postgres:18-alpine",
-		tcpostgres.WithDatabase("cotton_test"),
+		tcpostgres.WithDatabase("pug_test"),
 		tcpostgres.WithUsername("postgres"),
 		tcpostgres.WithPassword("postgres"),
 		tcpostgres.WithSQLDriver("pgx"),

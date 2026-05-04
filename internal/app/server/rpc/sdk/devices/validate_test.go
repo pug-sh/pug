@@ -6,7 +6,7 @@ import (
 	"buf.build/go/protovalidate"
 	"google.golang.org/protobuf/proto"
 
-	devicesv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1"
+	devicesv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/devices/v1"
 )
 
 func TestSubscribeRequest_PlatformRequired(t *testing.T) {

@@ -6,9 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -16,9 +13,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 const (
@@ -45,28 +43,15 @@ func NewService(executor *Executor, redis *redis.Client) *Service {
 	}
 }
 
-func (s *Service) GetFilterSchema(
-	ctx context.Context,
-	projectID, eventKind string,
-	allowedTypes []commonv1.PropertyValueType,
-) (*commonv1.GetFilterSchemaResponse, error) {
-	allowedTypes = normalizeAllowedTypes(allowedTypes)
-
+func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind string) (*insightsv1.GetFilterSchemaResponse, error) {
 	cacheKey := "filterschema:" + projectID
 	if eventKind != "" {
 		cacheKey += ":" + eventKind
 	}
-	if len(allowedTypes) > 0 {
-		parts := make([]string, len(allowedTypes))
-		for i, t := range allowedTypes {
-			parts[i] = strconv.Itoa(int(t))
-		}
-		cacheKey += ":types=" + strings.Join(parts, ",")
-	}
 
 	cachedSchema, cacheErr := s.redis.Get(ctx, cacheKey).Bytes()
 	if cacheErr == nil {
-		var resp commonv1.GetFilterSchemaResponse
+		var resp insightsv1.GetFilterSchemaResponse
 		if err := proto.Unmarshal(cachedSchema, &resp); err != nil {
 			slog.WarnContext(ctx, "failed to unmarshal cached filter schema, evicting",
 				slogx.Error(err), slog.String("project_id", projectID))
@@ -165,22 +150,16 @@ func (s *Service) GetFilterSchema(
 		for i, m := range rows {
 			key := m.Key
 			count := m.Count
-			vt := variantTypeToPropertyValueType(m.ValueType)
-			out[i] = &commonv1.PropertyKeyMeta{
-				Name:       proto.String(key),
-				Count:      &count,
-				LastSeenAt: timestamppb.New(m.LastSeen),
-				ValueType:  &vt,
-			}
+			out[i] = &commonv1.PropertyKeyMeta{Name: proto.String(key), Count: &count, LastSeenAt: timestamppb.New(m.LastSeen)}
 		}
 		return out
 	}
 
-	resp := &commonv1.GetFilterSchemaResponse{
+	resp := &insightsv1.GetFilterSchemaResponse{
 		Events:              toEventMetas(eventMetas),
-		AutoPropertyKeys:    toPropKeyMetas(filterAggregateKeysByType(autoPropKeys, allowedTypes)),
-		CustomPropertyKeys:  toPropKeyMetas(filterAggregateKeysByType(customPropKeys, allowedTypes)),
-		ProfilePropertyKeys: toPropKeyMetas(filterAggregateKeysByType(profilePropKeys, allowedTypes)),
+		AutoPropertyKeys:    toPropKeyMetas(autoPropKeys),
+		CustomPropertyKeys:  toPropKeyMetas(customPropKeys),
+		ProfilePropertyKeys: toPropKeyMetas(profilePropKeys),
 	}
 
 	if data, err := proto.Marshal(resp); err != nil {
@@ -273,88 +252,4 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 	}
 
 	return values, nil
-}
-
-// normalizeAllowedTypes sorts and dedupes a list of PropertyValueType values
-// and drops UNSPECIFIED. Returns nil if no meaningful types remain — the canonical
-// "no filter" form.
-func normalizeAllowedTypes(types []commonv1.PropertyValueType) []commonv1.PropertyValueType {
-	if len(types) == 0 {
-		return nil
-	}
-	seen := make(map[commonv1.PropertyValueType]struct{}, len(types))
-	out := make([]commonv1.PropertyValueType, 0, len(types))
-	for _, t := range types {
-		if t == commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED {
-			continue
-		}
-		if _, dup := seen[t]; dup {
-			continue
-		}
-		seen[t] = struct{}{}
-		out = append(out, t)
-	}
-	slices.Sort(out)
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// filterAggregateKeysByType returns only rows whose ValueType maps to a proto
-// enum value in the allowed set. allowedTypes is assumed normalized (sorted, no
-// UNSPECIFIED, no duplicates). nil/empty allowedTypes means "no filter".
-func filterAggregateKeysByType(rows []AggregateKeyMeta, allowedTypes []commonv1.PropertyValueType) []AggregateKeyMeta {
-	if len(allowedTypes) == 0 {
-		return rows
-	}
-	allowed := make(map[commonv1.PropertyValueType]struct{}, len(allowedTypes))
-	for _, t := range allowedTypes {
-		allowed[t] = struct{}{}
-	}
-	out := make([]AggregateKeyMeta, 0, len(rows))
-	for _, row := range rows {
-		protoType := variantTypeToPropertyValueType(row.ValueType)
-		if _, ok := allowed[protoType]; ok {
-			out = append(out, row)
-		}
-	}
-	return out
-}
-
-// variantTypeToPropertyValueType maps the string emitted by the property_keys
-// MV's value_type column into the proto PropertyValueType enum.
-//
-// The custom_properties MV emits CH-native variant type names from variantType():
-//
-//	"String", "Int64", "Float64", "Bool", "DateTime64(3)".
-//
-// The profile MV emits JSON-shape names from its hand-built multiIf:
-//
-//	"String", "Number", "Bool", "Object", "Array", "None".
-//
-// The auto_properties MV emits the same CH-native variant type names for the
-// typed auto-property slots stored in events.auto_properties.
-//
-// "" (empty) maps to UNSPECIFIED — used when no value_type was scanned (e.g.
-// event_names rows, which have no type column). Anything else not matched
-// explicitly maps to OTHER (the catch-all for non-primitive shapes).
-func variantTypeToPropertyValueType(s string) commonv1.PropertyValueType {
-	switch s {
-	case "":
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED
-	case "String":
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING
-	case "Int64", "Float64", "Number":
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER
-	case "Bool":
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN
-	// "DateTime64(3)" must match the Variant precision declared in
-	// schema/clickhouse/migrations/001_create_events_table.sql.
-	// If the migration changes precision, update this case.
-	case "DateTime64(3)":
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME
-	default:
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER
-	}
 }

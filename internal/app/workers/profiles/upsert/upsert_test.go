@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
-	workerprofilesv1 "github.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1"
+	natsworker "github.com/pug-sh/pug/internal/deps/nats"
+	workerprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/workers/profiles/v1"
 	"google.golang.org/protobuf/proto"
 )
 

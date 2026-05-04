@@ -3,9 +3,9 @@
 # tracing. After running this, open HyperDX at http://localhost:3001 and search
 # for "send events.ingest" — you should see a three-span trace:
 #
-#   sdk.events.v1.EventsService/BatchCreate  [cotton-server]
-#     └─ send events.ingest                  [cotton-server]
-#          └─ process events.ingest          [cotton-worker-events]
+#   sdk.events.v1.EventsService/BatchCreate  [pug-server]
+#     └─ send events.ingest                  [pug-server]
+#          └─ process events.ingest          [pug-worker-events]
 #
 # Usage:
 #   SDK_KEY=<your-public-sdk-key> ./scripts/test-otel-nats.sh

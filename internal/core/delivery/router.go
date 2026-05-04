@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/core/projects"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
