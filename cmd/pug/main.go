@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/joho/godotenv"
 	"github.com/pug-sh/pug/internal/app/migrate/clickhouse"
 	migratenats "github.com/pug-sh/pug/internal/app/migrate/nats"
 	"github.com/pug-sh/pug/internal/app/migrate/postgres"
@@ -21,7 +22,6 @@ import (
 	"github.com/pug-sh/pug/internal/app/workers/profiles/upsert"
 	"github.com/pug-sh/pug/internal/app/workers/scheduler"
 	"github.com/pug-sh/pug/internal/slogx"
-	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
