@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
@@ -17,7 +18,6 @@ import (
 	"github.com/pug-sh/pug/internal/geo"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/pug-sh/pug/internal/useragent"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 const (

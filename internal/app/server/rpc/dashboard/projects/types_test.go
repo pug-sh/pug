@@ -3,8 +3,8 @@ package projects
 import (
 	"testing"
 
-	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pug-sh/pug/internal/deps/postgres"
 
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"

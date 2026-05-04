@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
-	clickhousedeps "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pressly/goose/v3"
+	clickhousedeps "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/sethvargo/go-envconfig"
 )
 

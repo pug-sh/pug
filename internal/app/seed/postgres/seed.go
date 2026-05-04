@@ -8,12 +8,12 @@ import (
 	"math/rand/v2"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/pug-sh/pug/internal/core/projects"
 	dbtypes "github.com/pug-sh/pug/internal/deps/postgres"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
-	"github.com/jackc/pgx/v5"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 )
