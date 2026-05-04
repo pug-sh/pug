@@ -8,7 +8,7 @@ package insightsv1
 
 import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
-	v1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	v1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
@@ -1798,7 +1798,7 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x05Query\x12 .shared.insights.v1.QueryRequest\x1a!.shared.insights.v1.QueryResponse\x12a\n" +
 	"\fSegmentUsers\x12'.shared.insights.v1.SegmentUsersRequest\x1a(.shared.insights.v1.SegmentUsersResponse\x12j\n" +
 	"\x0fGetFilterSchema\x12*.shared.insights.v1.GetFilterSchemaRequest\x1a+.shared.insights.v1.GetFilterSchemaResponse\x12p\n" +
-	"\x11GetPropertyValues\x12,.shared.insights.v1.GetPropertyValuesRequest\x1a-.shared.insights.v1.GetPropertyValuesResponseBOZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1;insightsv1b\beditionsp\xe8\a"
+	"\x11GetPropertyValues\x12,.shared.insights.v1.GetPropertyValuesRequest\x1a-.shared.insights.v1.GetPropertyValuesResponseBHZFgithub.com/pug-sh/pug/internal/gen/proto/shared/insights/v1;insightsv1b\beditionsp\xe8\a"
 
 var (
 	file_shared_insights_v1_insights_proto_rawDescOnce sync.Once

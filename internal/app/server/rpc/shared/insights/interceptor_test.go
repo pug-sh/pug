@@ -13,9 +13,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
-	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1/insightsv1connect"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
 )
 
 // TestValidateInterceptor_RejectsInvalidQueryRequest is a seam test: it verifies that when a

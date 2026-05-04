@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 )
 
 // hasRule returns true if err is a *protovalidate.ValidationError and any of
@@ -49,13 +49,13 @@ func TestEventValidation_KindNoReservedPrefix(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "valid_kind", kind: "page_view", wantErr: false},
-		{name: "reserved_prefix_rejected", kind: "cotton.signup", wantErr: true},
-		{name: "prefix_not_substring", kind: "cottoncandy", wantErr: false},
-		{name: "exact_prefix_rejected", kind: "cotton.", wantErr: true},
+		{name: "reserved_prefix_rejected", kind: "pug.signup", wantErr: true},
+		{name: "prefix_not_substring", kind: "pugcandy", wantErr: false},
+		{name: "exact_prefix_rejected", kind: "pug.", wantErr: true},
 		// Case-sensitivity: startsWith is byte-exact, so upper/mixed-case variants must be accepted.
-		{name: "case_sensitive_upper_accepted", kind: "Cotton.foo", wantErr: false},
-		{name: "case_sensitive_shouting_accepted", kind: "COTTON.foo", wantErr: false},
-		{name: "case_sensitive_mixed_accepted", kind: "CoTtOn.abc", wantErr: false},
+		{name: "case_sensitive_upper_accepted", kind: "Pug.foo", wantErr: false},
+		{name: "case_sensitive_shouting_accepted", kind: "PUG.foo", wantErr: false},
+		{name: "case_sensitive_mixed_accepted", kind: "PuG.abc", wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

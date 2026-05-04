@@ -3,9 +3,9 @@ package projects
 import (
 	"google.golang.org/protobuf/proto"
 
-	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
+	projectsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
 // roToRPCMsg and wToRPCMsg must be kept in sync — they convert

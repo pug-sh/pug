@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	chq "github.com/fivebitsio/cotton/internal/core/clickhouse"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
 const DefaultPageSize int32 = 100
@@ -25,10 +25,10 @@ const PropertyValuesLimit = 100
 // WithQueryCache — they either include `now()` (BuildAutoPropertyValuesQuery) or back
 // dashboard typeahead where freshness matters more than the saved compute.
 //
-// Cache isolation: ClickHouse keys the query cache by query text + parameters. Cotton binds
+// Cache isolation: ClickHouse keys the query cache by query text + parameters. Pug binds
 // project_id as a positional parameter on every cached builder, so per-project isolation
 // holds as long as project_id is in the parameter set (verified by the BuildXxxQuery tests).
-// Because Cotton uses a single ClickHouse user, the server-level per-user partitioning of
+// Because Pug uses a single ClickHouse user, the server-level per-user partitioning of
 // the cache does not provide additional tenant isolation — project_id binding is the
 // load-bearing mechanism.
 //

@@ -13,10 +13,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 const (

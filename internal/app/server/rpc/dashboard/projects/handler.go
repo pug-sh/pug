@@ -6,14 +6,14 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	"github.com/fivebitsio/cotton/internal/core/orgs"
-	"github.com/fivebitsio/cotton/internal/core/projects"
-	"github.com/fivebitsio/cotton/internal/deps/postgres"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	projectsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbwrite"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/core/orgs"
+	"github.com/pug-sh/pug/internal/core/projects"
+	"github.com/pug-sh/pug/internal/deps/postgres"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	projectsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 type server struct {

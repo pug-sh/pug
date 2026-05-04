@@ -7,8 +7,8 @@ import (
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
 	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/slogx"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"

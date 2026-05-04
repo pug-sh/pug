@@ -8,7 +8,7 @@ import (
 	"buf.build/go/protovalidate"
 	"google.golang.org/protobuf/proto"
 
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 )
 
 func opp(o commonv1.FilterOperator) *commonv1.FilterOperator { return &o }

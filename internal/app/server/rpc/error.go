@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 func ErrorInterceptor() connect.Interceptor {

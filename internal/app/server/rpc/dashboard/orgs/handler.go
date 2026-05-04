@@ -8,11 +8,11 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	coreorgs "github.com/fivebitsio/cotton/internal/core/orgs"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	orgsv1 "github.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 type server struct {

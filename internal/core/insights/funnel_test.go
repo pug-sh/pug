@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fivebitsio/cotton/internal/core/insights"
+	"github.com/pug-sh/pug/internal/core/insights"
 )
 
 var ctx = context.Background()

@@ -9,12 +9,12 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	coreinsights "github.com/fivebitsio/cotton/internal/core/insights"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
-	"github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1/insightsv1connect"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	coreinsights "github.com/pug-sh/pug/internal/core/insights"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 // connectCtxErr wraps a context error in the appropriate Connect error code.

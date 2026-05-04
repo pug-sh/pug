@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"connectrpc.com/otelconnect"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/slogx"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/log/global"

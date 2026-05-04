@@ -330,7 +330,7 @@ const file_common_v1_filters_proto_rawDesc = "" +
 	"\x0fLogicalOperator\x12 \n" +
 	"\x1cLOGICAL_OPERATOR_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14LOGICAL_OPERATOR_AND\x10\x01\x12\x17\n" +
-	"\x13LOGICAL_OPERATOR_OR\x10\x02BDZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
+	"\x13LOGICAL_OPERATOR_OR\x10\x02B=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_filters_proto_rawDescOnce sync.Once

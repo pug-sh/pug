@@ -11,7 +11,7 @@ import (
 func WithCORS(allowedOrigins []string, connectHandler http.Handler) http.Handler {
 	for _, o := range allowedOrigins {
 		if o == "*" {
-			slog.Warn("CORS: using wildcard origin with credentials is insecure, set COTTON_CORS_ORIGINS to specific origins in production")
+			slog.Warn("CORS: using wildcard origin with credentials is insecure, set PUG_CORS_ORIGINS to specific origins in production")
 			break
 		}
 	}

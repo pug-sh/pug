@@ -60,7 +60,7 @@ func New(ctx context.Context) (*NATSClient, error) {
 		return nil, fmt.Errorf("failed to process NATS configuration: %w", err)
 	}
 
-	opts := []nats.Option{nats.Name("cotton-nats-client")}
+	opts := []nats.Option{nats.Name("pug-nats-client")}
 
 	if cfg.JWT != "" && cfg.Seed != "" {
 		opts = append(opts, nats.UserJWTAndSeed(cfg.JWT, cfg.Seed))

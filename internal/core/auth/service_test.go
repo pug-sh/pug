@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fivebitsio/cotton/internal/core/auth"
-	"github.com/fivebitsio/cotton/internal/testutil"
+	"github.com/pug-sh/pug/internal/core/auth"
+	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -89,16 +89,16 @@ func TestAuthService(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetIssuer: %v", err)
 		}
-		if iss != "cotton/auth" {
-			t.Errorf("issuer = %q, want %q", iss, "cotton/auth")
+		if iss != "pug/auth" {
+			t.Errorf("issuer = %q, want %q", iss, "pug/auth")
 		}
 
 		aud, err := parsed.Claims.GetAudience()
 		if err != nil {
 			t.Fatalf("GetAudience: %v", err)
 		}
-		if len(aud) != 1 || aud[0] != "cotton/dashboard" {
-			t.Errorf("audience = %v, want [cotton/dashboard]", aud)
+		if len(aud) != 1 || aud[0] != "pug/dashboard" {
+			t.Errorf("audience = %v, want [pug/dashboard]", aud)
 		}
 
 		sub, err := parsed.Claims.GetSubject()

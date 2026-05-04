@@ -9,10 +9,10 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"google.golang.org/protobuf/proto"
 
-	natsworker "github.com/fivebitsio/cotton/internal/deps/nats"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	natsworker "github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 type Processor struct {

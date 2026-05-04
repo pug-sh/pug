@@ -227,7 +227,7 @@ const file_workers_profiles_v1_profiles_proto_rawDesc = "" +
 	"\vcreate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12;\n" +
 	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTimeBVZTgithub.com/fivebitsio/cotton/internal/gen/proto/workers/profiles/v1;workerprofilesv1b\beditionsp\xe8\a"
+	"updateTimeBOZMgithub.com/pug-sh/pug/internal/gen/proto/workers/profiles/v1;workerprofilesv1b\beditionsp\xe8\a"
 
 var (
 	file_workers_profiles_v1_profiles_proto_rawDescOnce sync.Once

@@ -4,7 +4,7 @@ package sdk.devices.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/struct.proto";
 
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/devices/v1;devicesv1";
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/sdk/devices/v1;devicesv1";
 
 service DevicesService {
   rpc Subscribe(SubscribeRequest) returns (SubscribeResponse) {}

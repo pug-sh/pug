@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	chq "github.com/fivebitsio/cotton/internal/core/clickhouse"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	"github.com/fivebitsio/cotton/internal/geo"
-	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/fivebitsio/cotton/internal/useragent"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	"github.com/pug-sh/pug/internal/geo"
+	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/pug-sh/pug/internal/useragent"
 )
 
 type Event struct {

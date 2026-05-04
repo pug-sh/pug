@@ -650,7 +650,7 @@ const file_dashboard_projects_v1_projects_proto_rawDesc = "" +
 	"\x06Delete\x12$.dashboard.projects.v1.DeleteRequest\x1a%.dashboard.projects.v1.DeleteResponse\"\x00\x12N\n" +
 	"\x03Get\x12!.dashboard.projects.v1.GetRequest\x1a\".dashboard.projects.v1.GetResponse\"\x00\x12x\n" +
 	"\x11UpdateDisplayName\x12/.dashboard.projects.v1.UpdateDisplayNameRequest\x1a0.dashboard.projects.v1.UpdateDisplayNameResponse\"\x00\x12\x81\x01\n" +
-	"\x14UpdateFCMServiceJSON\x122.dashboard.projects.v1.UpdateFCMServiceJSONRequest\x1a3.dashboard.projects.v1.UpdateFCMServiceJSONResponse\"\x00BRZPgithub.com/fivebitsio/cotton/internal/gen/proto/dashboard/projects/v1;projectsv1b\beditionsp\xe8\a"
+	"\x14UpdateFCMServiceJSON\x122.dashboard.projects.v1.UpdateFCMServiceJSONRequest\x1a3.dashboard.projects.v1.UpdateFCMServiceJSONResponse\"\x00BKZIgithub.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1;projectsv1b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_projects_v1_projects_proto_rawDescOnce sync.Once

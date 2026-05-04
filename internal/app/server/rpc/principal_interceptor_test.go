@@ -6,7 +6,7 @@ import (
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )

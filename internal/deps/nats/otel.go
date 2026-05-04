@@ -5,7 +5,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel"
@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "cotton/nats"
+const tracerName = "pug/nats"
 
 var (
 	attrMessagingSystem      = attribute.Key("messaging.system")

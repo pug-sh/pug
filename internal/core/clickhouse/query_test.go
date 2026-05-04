@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	chq "github.com/fivebitsio/cotton/internal/core/clickhouse"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 )
 
 // build calls Build on q and fatals on error.

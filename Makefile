@@ -63,18 +63,18 @@ gen-ts: lint-proto
 
 .PHONY: build
 build:
-	go build -o bin/cotton ./cmd/cotton
-	go build -o bin/cotton-migrate-clickhouse ./cmd/migrate/clickhouse
-	go build -o bin/cotton-migrate-nats ./cmd/migrate/nats
-	go build -o bin/cotton-migrate-postgres ./cmd/migrate/postgres
-	go build -o bin/cotton-server ./cmd/server
-	go build -o bin/cotton-worker-campaign ./cmd/workers/campaign
-	go build -o bin/cotton-worker-device ./cmd/workers/device
-	go build -o bin/cotton-worker-events ./cmd/workers/events
-	go build -o bin/cotton-worker-profile-identify ./cmd/workers/profile/identify
-	go build -o bin/cotton-worker-profile-alias ./cmd/workers/profile/alias
-	go build -o bin/cotton-worker-profile-upsert ./cmd/workers/profile/upsert
-	go build -o bin/cotton-worker-scheduler ./cmd/workers/scheduler
+	go build -o bin/pug ./cmd/pug
+	go build -o bin/pug-migrate-clickhouse ./cmd/migrate/clickhouse
+	go build -o bin/pug-migrate-nats ./cmd/migrate/nats
+	go build -o bin/pug-migrate-postgres ./cmd/migrate/postgres
+	go build -o bin/pug-server ./cmd/server
+	go build -o bin/pug-worker-campaign ./cmd/workers/campaign
+	go build -o bin/pug-worker-device ./cmd/workers/device
+	go build -o bin/pug-worker-events ./cmd/workers/events
+	go build -o bin/pug-worker-profile-identify ./cmd/workers/profile/identify
+	go build -o bin/pug-worker-profile-alias ./cmd/workers/profile/alias
+	go build -o bin/pug-worker-profile-upsert ./cmd/workers/profile/upsert
+	go build -o bin/pug-worker-scheduler ./cmd/workers/scheduler
 
 .PHONY: fmt
 fmt:
@@ -86,11 +86,11 @@ test:
 
 .PHONY: psql
 psql:
-	docker compose -f infra/dev/docker-compose.yaml exec postgres psql -U postgres -d cotton
+	docker compose -f infra/dev/docker-compose.yaml exec postgres psql -U postgres -d pug
 
 .PHONY: chql
 chql:
-	docker compose -f infra/dev/docker-compose.yaml exec clickhouse clickhouse-client -d cotton
+	docker compose -f infra/dev/docker-compose.yaml exec clickhouse clickhouse-client -d pug
 
 .PHONY: infra infra-up infra-up-fg infra-down
 infra: infra-up
