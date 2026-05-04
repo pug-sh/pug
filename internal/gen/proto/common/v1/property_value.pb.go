@@ -139,6 +139,12 @@ type PropertyValue_StringValue struct {
 	// exceed 1 KiB on the wire at this limit. Switch to max_bytes if a
 	// hard byte cap is required. Values exceeding the limit are rejected
 	// at the validate interceptor with CodeInvalidArgument (not truncated).
+	//
+	// Empty-string note: the filter expression cannot distinguish a
+	// custom_properties value of "" from an absent key — both project to ”
+	// in propertyExpr (filters.go), so EQUALS ” and IS_NOT_SET match
+	// identically. If the empty case is meaningful, encode it differently
+	// (e.g. a sentinel value) on the producer side.
 	StringValue string `protobuf:"bytes,1,opt,name=string_value,json=stringValue,oneof"`
 }
 
@@ -155,8 +161,9 @@ type PropertyValue_BoolValue struct {
 }
 
 type PropertyValue_TimestampValue struct {
-	// Stored as DateTime64(3); sub-millisecond precision is truncated at
-	// the ingestion boundary to match the ClickHouse Variant slot's precision.
+	// Stored as a DateTime64(3) Variant slot. Sub-millisecond precision is
+	// truncated by ClickHouse on insert to match the slot's precision; no
+	// Go-side truncation is performed in the worker.
 	TimestampValue *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=timestamp_value,json=timestampValue,oneof"`
 }
 

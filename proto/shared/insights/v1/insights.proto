@@ -405,5 +405,3 @@ message GetPropertyValuesRequest {
 message GetPropertyValuesResponse {
   repeated string values = 1;
 }
-
-// GetFilterSchemaRequest and GetFilterSchemaResponse moved to common.v1.

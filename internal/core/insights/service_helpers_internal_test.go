@@ -10,9 +10,9 @@ func TestVariantTypeToPropertyValueType(t *testing.T) {
 	cases := map[string]commonv1.PropertyValueType{
 		"":              commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED,
 		"String":        commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING,
-		"Int64":         commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
-		"Float64":       commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
-		"Number":        commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+		"Int64":         commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
+		"Float64":       commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT,
+		"Number":        commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT,
 		"Bool":          commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN,
 		"DateTime64(3)": commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME,
 		"Object":        commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,
@@ -61,13 +61,13 @@ func TestNormalizeAllowedTypes(t *testing.T) {
 
 	t.Run("duplicates_are_deduped", func(t *testing.T) {
 		input := []commonv1.PropertyValueType{
-			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
-			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
-			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
 		}
 		got := normalizeAllowedTypes(input)
-		if len(got) != 1 || got[0] != commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER {
-			t.Errorf("expected deduped [NUMBER], got %v", got)
+		if len(got) != 1 || got[0] != commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER {
+			t.Errorf("expected deduped [INTEGER], got %v", got)
 		}
 	})
 
@@ -77,12 +77,12 @@ func TestNormalizeAllowedTypes(t *testing.T) {
 			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED,
 			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING,
 			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN,
-			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
 		}
 		got := normalizeAllowedTypes(input)
 		want := []commonv1.PropertyValueType{
 			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING,
-			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
 			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN,
 			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME,
 		}
@@ -99,12 +99,12 @@ func TestNormalizeAllowedTypes(t *testing.T) {
 	t.Run("mixed_with_duplicates_deduped_and_sorted", func(t *testing.T) {
 		input := []commonv1.PropertyValueType{
 			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN,
-			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
 			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN,
 		}
 		got := normalizeAllowedTypes(input)
 		want := []commonv1.PropertyValueType{
-			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
 			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN,
 		}
 		if len(got) != len(want) {
@@ -134,18 +134,37 @@ func TestFilterAggregateKeysByType(t *testing.T) {
 		}
 	})
 
-	t.Run("number_filter_returns_float64_and_int64", func(t *testing.T) {
-		allowed := []commonv1.PropertyValueType{commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER}
+	t.Run("integer_filter_returns_only_int64", func(t *testing.T) {
+		allowed := []commonv1.PropertyValueType{commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER}
+		got := filterAggregateKeysByType(rows, allowed)
+		if len(got) != 1 || got[0].Key != "user_id" {
+			t.Errorf("expected [user_id] for INTEGER filter, got: %v", got)
+		}
+	})
+
+	t.Run("float_filter_returns_only_float64", func(t *testing.T) {
+		allowed := []commonv1.PropertyValueType{commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT}
+		got := filterAggregateKeysByType(rows, allowed)
+		if len(got) != 1 || got[0].Key != "load_time" {
+			t.Errorf("expected [load_time] for FLOAT filter, got: %v", got)
+		}
+	})
+
+	t.Run("integer_and_float_filter_returns_both", func(t *testing.T) {
+		allowed := []commonv1.PropertyValueType{
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT,
+		}
 		got := filterAggregateKeysByType(rows, allowed)
 		if len(got) != 2 {
-			t.Fatalf("expected 2 rows for NUMBER filter, got %d: %v", len(got), got)
+			t.Fatalf("expected 2 rows for INTEGER+FLOAT filter, got %d: %v", len(got), got)
 		}
 		keys := map[string]bool{}
 		for _, r := range got {
 			keys[r.Key] = true
 		}
 		if !keys["load_time"] || !keys["user_id"] {
-			t.Errorf("expected load_time and user_id in NUMBER filter result, got: %v", keys)
+			t.Errorf("expected load_time and user_id, got: %v", keys)
 		}
 	})
 

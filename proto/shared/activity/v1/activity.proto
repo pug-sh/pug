@@ -118,8 +118,6 @@ message GetEventExplorerResponse {
   string next_page_token = 2;
 }
 
-// GetFilterSchemaRequest and GetFilterSchemaResponse moved to common.v1.
-
 message GetPropertyValuesRequest {
   string property_key = 1 [(buf.validate.field) = {
     required: true

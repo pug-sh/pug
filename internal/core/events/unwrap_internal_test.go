@@ -1,6 +1,8 @@
 package events
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,13 +17,13 @@ import (
 // and the format.
 func TestUnwrapCustomProperties(t *testing.T) {
 	t.Run("nil_input_returns_nil", func(t *testing.T) {
-		if got := unwrapCustomProperties(nil); got != nil {
+		if got := unwrapCustomProperties(context.Background(), nil); got != nil {
 			t.Errorf("expected nil for nil input, got %v", got)
 		}
 	})
 
 	t.Run("empty_input_returns_nil", func(t *testing.T) {
-		got := unwrapCustomProperties(map[string]chcol.Variant{})
+		got := unwrapCustomProperties(context.Background(), map[string]chcol.Variant{})
 		if got != nil {
 			t.Errorf("expected nil for empty input, got %v", got)
 		}
@@ -34,7 +36,7 @@ func TestUnwrapCustomProperties(t *testing.T) {
 			"revenue":  chcol.NewVariantWithType(9.99, "Float64"),
 			"is_trial": chcol.NewVariantWithType(false, "Bool"),
 		}
-		got := unwrapCustomProperties(raw)
+		got := unwrapCustomProperties(context.Background(), raw)
 		assertEqual(t, got, "plan", "pro")
 		assertEqual(t, got, "user_id", int64(42))
 		assertEqual(t, got, "revenue", 9.99)
@@ -50,7 +52,7 @@ func TestUnwrapCustomProperties(t *testing.T) {
 		raw := map[string]chcol.Variant{
 			"shipped_at": chcol.NewVariantWithType(ts, "DateTime64(3)"),
 		}
-		got := unwrapCustomProperties(raw)
+		got := unwrapCustomProperties(context.Background(), raw)
 		s, ok := got["shipped_at"].(string)
 		if !ok {
 			t.Fatalf("expected shipped_at to be string, got %T %v", got["shipped_at"], got["shipped_at"])
@@ -67,11 +69,30 @@ func TestUnwrapCustomProperties(t *testing.T) {
 		raw := map[string]chcol.Variant{
 			"missing": {},
 		}
-		got := unwrapCustomProperties(raw)
+		got := unwrapCustomProperties(context.Background(), raw)
 		if v, ok := got["missing"]; !ok {
 			t.Error("expected missing key to be present in output")
 		} else if v != nil {
 			t.Errorf("expected nil for absent variant, got %T %v", v, v)
+		}
+	})
+
+	t.Run("unrecognised_slot_type_is_coerced_to_string_with_sentinel", func(t *testing.T) {
+		// Pin the future-drift contract: a Variant slot whose .Any() returns a
+		// type the switch doesn't recognise must NOT crash structpb downstream,
+		// and the coerced value must include a sentinel prefix so dashboard
+		// users see something obviously broken rather than a malformed-looking
+		// real value.
+		raw := map[string]chcol.Variant{
+			"weird": chcol.NewVariantWithType([]byte("hello"), "String"),
+		}
+		got := unwrapCustomProperties(context.Background(), raw)
+		s, ok := got["weird"].(string)
+		if !ok {
+			t.Fatalf("expected unrecognised slot to coerce to string, got %T %v", got["weird"], got["weird"])
+		}
+		if !strings.HasPrefix(s, "<unrecognized variant:") {
+			t.Errorf("expected sentinel prefix, got %q", s)
 		}
 	})
 }

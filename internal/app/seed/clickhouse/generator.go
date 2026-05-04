@@ -187,7 +187,7 @@ type event struct {
 	kind             string
 	occurTime        time.Time
 	autoProperties   map[string]any
-	customProperties map[string]string
+	customProperties map[string]any
 }
 
 // buildSessionPool pre-generates all sessions for the pool.
@@ -432,70 +432,70 @@ func copyProps(src map[string]any) map[string]any {
 	return dst
 }
 
-func customPropsForKind(kind string) map[string]string {
+func customPropsForKind(kind string) map[string]any {
 	switch kind {
 	case "page_view":
-		return map[string]string{}
+		return map[string]any{}
 	case "click":
-		return map[string]string{
+		return map[string]any{
 			"class": fmt.Sprintf("btn-%s", []string{"primary", "secondary", "link", "icon"}[rand.IntN(4)]),
 			"id":    fmt.Sprintf("el-%04d", rand.IntN(200)),
 			"tag":   cssTags[rand.IntN(len(cssTags))],
 			"text":  []string{"Buy now", "Add to cart", "Learn more", "Sign up", "Close", "Submit", ""}[rand.IntN(7)],
-			"x":     fmt.Sprintf("%d", rand.IntN(1920)),
-			"y":     fmt.Sprintf("%d", rand.IntN(1080)),
+			"x":     rand.IntN(1920),
+			"y":     rand.IntN(1080),
 		}
 	case "rage_click":
-		return map[string]string{
-			"click_count": fmt.Sprintf("%d", 3+rand.IntN(5)),
+		return map[string]any{
+			"click_count": 3 + rand.IntN(5),
 			"element":     cssTags[rand.IntN(len(cssTags))],
-			"x":           fmt.Sprintf("%d", rand.IntN(1920)),
-			"y":           fmt.Sprintf("%d", rand.IntN(1080)),
+			"x":           rand.IntN(1920),
+			"y":           rand.IntN(1080),
 		}
 	case "dead_click":
-		return map[string]string{
+		return map[string]any{
 			"element": cssTags[rand.IntN(len(cssTags))],
 			"text":    []string{"Buy now", "Submit", "Continue", "Next", "Confirm", ""}[rand.IntN(6)],
-			"x":       fmt.Sprintf("%d", rand.IntN(1920)),
-			"y":       fmt.Sprintf("%d", rand.IntN(1080)),
+			"x":       rand.IntN(1920),
+			"y":       rand.IntN(1080),
 		}
 	case "scroll":
 		percent := rand.IntN(101)
-		return map[string]string{
-			"percent":  fmt.Sprintf("%d", percent),
-			"scroll_y": fmt.Sprintf("%d", percent*50),
+		return map[string]any{
+			"percent":  percent,
+			"scroll_y": percent * 50,
 		}
 	case "form_start":
 		forms := []string{"login", "signup", "checkout", "newsletter", "contact"}
 		f := forms[rand.IntN(len(forms))]
-		return map[string]string{"form_id": f + "-form", "form_name": f}
+		return map[string]any{"form_id": f + "-form", "form_name": f}
 	case "form_submit":
 		forms := []string{"login", "signup", "checkout", "newsletter", "contact"}
 		f := forms[rand.IntN(len(forms))]
-		return map[string]string{"action": "/api/" + f, "form_id": f + "-form", "form_name": f}
+		return map[string]any{"action": "/api/" + f, "form_id": f + "-form", "form_name": f}
 	case "purchase", "add_to_cart", "checkout_started", "checkout_completed":
-		return map[string]string{
+		return map[string]any{
 			"product_id": fmt.Sprintf("prod-%04d", rand.IntN(500)),
-			"amount":     fmt.Sprintf("%.2f", rand.Float64()*500),
+			"amount":     rand.Float64() * 500,
 			"currency":   "USD",
 		}
 	case "notification_received", "notification_clicked", "notification_dismissed":
-		return map[string]string{
+		return map[string]any{
 			"campaign_id":       fmt.Sprintf("camp-%04d", rand.IntN(100)),
 			"notification_type": []string{"push", "in-app", "email"}[rand.IntN(3)],
 		}
 	case "search":
 		terms := []string{"shoes", "laptop", "coffee", "book", "headphones", "shirt", "camera"}
-		return map[string]string{"query": terms[rand.IntN(len(terms))]}
+		return map[string]any{"query": terms[rand.IntN(len(terms))]}
 	case "video_play", "video_pause":
-		return map[string]string{
+		return map[string]any{
 			"video_id":   fmt.Sprintf("vid-%04d", rand.IntN(200)),
-			"position_s": fmt.Sprintf("%d", rand.IntN(3600)),
+			"position_s": rand.IntN(3600),
 		}
 	case "error_occurred":
 		codes := []string{"500", "404", "403", "timeout", "network"}
-		return map[string]string{"error_code": codes[rand.IntN(len(codes))]}
+		return map[string]any{"error_code": codes[rand.IntN(len(codes))]}
 	default:
-		return map[string]string{}
+		return map[string]any{}
 	}
 }

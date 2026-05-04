@@ -1404,18 +1404,21 @@ func TestBuildPropertyKeysQuery(t *testing.T) {
 		// Pin the value_type aggregation. Dropping it produces a column-count
 		// mismatch in QueryAggregateKeys (which dispatches on column presence);
 		// silently replacing it with a non-aggregate would break the GROUP BY.
+		// argMin gives first-touch semantics so dashboards see a stable type
+		// across calls. The max(last_seen) projection is aliased to
+		// last_seen_max to avoid ClickHouse aliasing the column inside argMin.
 		sql, _, err := insights.BuildCustomPropertyKeysQuery("proj_1", "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(sql, "any(value_type) AS value_type") {
-			t.Errorf("expected any(value_type) AS value_type in SQL, got: %s", sql)
+		if !strings.Contains(sql, "argMin(value_type, last_seen) AS value_type") {
+			t.Errorf("expected argMin(value_type, last_seen) AS value_type in SQL, got: %s", sql)
 		}
 		if !strings.Contains(sql, "sum(event_count) AS count") {
 			t.Errorf("expected sum(event_count) AS count in SQL, got: %s", sql)
 		}
-		if !strings.Contains(sql, "max(last_seen) AS last_seen") {
-			t.Errorf("expected max(last_seen) AS last_seen in SQL, got: %s", sql)
+		if !strings.Contains(sql, "max(last_seen) AS last_seen_max") {
+			t.Errorf("expected max(last_seen) AS last_seen_max in SQL, got: %s", sql)
 		}
 	})
 }

@@ -74,10 +74,10 @@ func TestServiceGetFilterSchema(t *testing.T) {
 			customByName[k.GetName()] = k.GetValueType()
 		}
 		expectedTypes := map[string]commonv1.PropertyValueType{
-			"load_time":  commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+			"load_time":  commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT,
 			"is_cached":  commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN,
 			"plan_name":  commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING,
-			"user_id":    commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+			"user_id":    commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
 			"shipped_at": commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME,
 		}
 		for name, want := range expectedTypes {
@@ -88,12 +88,13 @@ func TestServiceGetFilterSchema(t *testing.T) {
 	})
 
 	t.Run("allowed_types_filters_custom_keys", func(t *testing.T) {
-		// NUMBER filter: only load_time (Float64), user_id (Int64), revenue (Float64).
+		// INTEGER+FLOAT filter: load_time (Float64), revenue (Float64), user_id (Int64).
 		respNum, err := svc.GetFilterSchema(ctx, projectID, "", []commonv1.PropertyValueType{
-			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER,
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT,
 		})
 		if err != nil {
-			t.Fatalf("GetFilterSchema (NUMBER): %v", err)
+			t.Fatalf("GetFilterSchema (INTEGER+FLOAT): %v", err)
 		}
 		numKeys := map[string]bool{}
 		for _, k := range respNum.GetCustomPropertyKeys() {
@@ -103,12 +104,12 @@ func TestServiceGetFilterSchema(t *testing.T) {
 		wantAbsent := []string{"is_cached", "plan_name", "coupon", "shipped_at"}
 		for _, name := range wantPresent {
 			if !numKeys[name] {
-				t.Errorf("NUMBER filter: expected %q in custom keys, got keys: %v", name, numKeys)
+				t.Errorf("INTEGER+FLOAT filter: expected %q in custom keys, got keys: %v", name, numKeys)
 			}
 		}
 		for _, name := range wantAbsent {
 			if numKeys[name] {
-				t.Errorf("NUMBER filter: unexpected %q in custom keys", name)
+				t.Errorf("INTEGER+FLOAT filter: unexpected %q in custom keys", name)
 			}
 		}
 

@@ -25,7 +25,9 @@ func TestMigration001VariantPrecision(t *testing.T) {
 
 	// Pin the exact Variant declaration. Reordering, expanding, or changing
 	// any slot type is a cross-cutting change that must be reflected in
-	// propertyValueToVariant, the alignment test, and this switch case.
+	// propertyValueToVariant (write side, in internal/app/workers/events/variant.go),
+	// the alignment test (variant_align_test.go::TestPropertyValueOneofCoverage),
+	// and variantTypeToPropertyValueType (read side, in this package).
 	const wantVariant = "Variant(String, Int64, Float64, Bool, DateTime64(3))"
 	if !strings.Contains(got, wantVariant) {
 		t.Errorf("migration 001 must contain %q — propertyValueToVariant and variantTypeToPropertyValueType are pinned to this slot order/precision", wantVariant)
@@ -46,10 +48,12 @@ func TestMigration001VariantSlotsCoveredByGoSwitch(t *testing.T) {
 		t.Fatalf("read migration: %v", err)
 	}
 
-	// Match the custom_properties Variant(...) declaration. The lazy `[^)]*`
-	// would stop at the first `)`, which would mis-match parameterized inner
-	// types like `DateTime64(3)`. Use a balanced match instead: any chars,
-	// then an inner `(...)` precision spec, then close.
+	// Match the first Map(String, Variant(...)) declaration. Both auto_properties
+	// and custom_properties share the same shape, so picking either is fine; in
+	// practice this captures auto_properties (declared first in migration 001).
+	// The lazy `[^)]*` would stop at the first `)`, which would mis-match
+	// parameterized inner types like `DateTime64(3)`. Use a balanced match
+	// instead: any chars, then an inner `(...)` precision spec, then close.
 	re := regexp.MustCompile(`Map\(String, Variant\(([^()]*(?:\([^)]*\)[^()]*)*)\)\)`)
 	m := re.FindStringSubmatch(string(data))
 	if len(m) != 2 {
@@ -69,6 +73,36 @@ func TestMigration001VariantSlotsCoveredByGoSwitch(t *testing.T) {
 			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER:
 			t.Errorf("migration slot %q maps to %v — add a case to variantTypeToPropertyValueType", slot, got)
 		}
+	}
+}
+
+// TestPropertyValueTypeReverseCoverage asserts every defined PropertyValueType
+// (other than UNSPECIFIED and OTHER, which are sentinels) is producible from
+// some input to variantTypeToPropertyValueType. Pairs with
+// TestMigration001VariantSlotsCoveredByGoSwitch which catches drift in the
+// other direction (migration adds slot, Go switch missing). This test catches
+// the inverse: proto adds a PropertyValueType value, no MV path produces it.
+func TestPropertyValueTypeReverseCoverage(t *testing.T) {
+	// Inputs covering every Variant slot shipped by migration 001 plus the
+	// profile MV's value_type strings emitted by the multiIf in migration 004.
+	covered := map[commonv1.PropertyValueType]bool{}
+	for _, raw := range []string{
+		"String", "Int64", "Float64", "Bool", "DateTime64(3)", "Number",
+	} {
+		covered[variantTypeToPropertyValueType(raw)] = true
+	}
+
+	exempt := map[commonv1.PropertyValueType]bool{
+		commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED: true,
+		commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER:       true,
+	}
+
+	for v, name := range commonv1.PropertyValueType_name {
+		pvt := commonv1.PropertyValueType(v)
+		if exempt[pvt] || covered[pvt] {
+			continue
+		}
+		t.Errorf("PropertyValueType %s is not produced by any input to variantTypeToPropertyValueType — add a case in service.go or extend the inputs list above", name)
 	}
 }
 

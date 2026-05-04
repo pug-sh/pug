@@ -76,20 +76,25 @@ func (PropertySource) EnumDescriptor() ([]byte, []int) {
 }
 
 // PropertyValueType enumerates the storage-side variant types a property key
-// can have. Mirrors the ClickHouse Variant inner types used in
-// events.custom_properties: String, Int64, Float64, Bool, DateTime64(3).
-// NUMBER covers both Int64 and Float64 (the dashboard treats them uniformly).
-// OTHER is a catch-all for non-primitive types (e.g. JSON objects/arrays in
-// profile properties) that don't map to a specific variant.
+// can have. Mirrors the ClickHouse Variant inner types used in events
+// auto_properties and custom_properties: String, Int64, Float64, Bool,
+// DateTime64(3). INTEGER and FLOAT are kept distinct so future filters can
+// express integer-only constraints (counts, ages, enum-as-int) without
+// re-versioning. Profile properties are stored as JSON; their value_type is
+// derived from the JSON shape (Number → FLOAT, Object/Array/null → OTHER) and
+// loses the integer-vs-float distinction. OTHER is a catch-all for
+// non-primitive types (e.g. JSON objects/arrays in profile properties) that
+// don't map to a specific variant.
 type PropertyValueType int32
 
 const (
 	PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED PropertyValueType = 0
 	PropertyValueType_PROPERTY_VALUE_TYPE_STRING      PropertyValueType = 1
-	PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER      PropertyValueType = 2
-	PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN     PropertyValueType = 3
-	PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME    PropertyValueType = 4
-	PropertyValueType_PROPERTY_VALUE_TYPE_OTHER       PropertyValueType = 5
+	PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER     PropertyValueType = 2
+	PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT       PropertyValueType = 3
+	PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN     PropertyValueType = 4
+	PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME    PropertyValueType = 5
+	PropertyValueType_PROPERTY_VALUE_TYPE_OTHER       PropertyValueType = 6
 )
 
 // Enum value maps for PropertyValueType.
@@ -97,18 +102,20 @@ var (
 	PropertyValueType_name = map[int32]string{
 		0: "PROPERTY_VALUE_TYPE_UNSPECIFIED",
 		1: "PROPERTY_VALUE_TYPE_STRING",
-		2: "PROPERTY_VALUE_TYPE_NUMBER",
-		3: "PROPERTY_VALUE_TYPE_BOOLEAN",
-		4: "PROPERTY_VALUE_TYPE_DATETIME",
-		5: "PROPERTY_VALUE_TYPE_OTHER",
+		2: "PROPERTY_VALUE_TYPE_INTEGER",
+		3: "PROPERTY_VALUE_TYPE_FLOAT",
+		4: "PROPERTY_VALUE_TYPE_BOOLEAN",
+		5: "PROPERTY_VALUE_TYPE_DATETIME",
+		6: "PROPERTY_VALUE_TYPE_OTHER",
 	}
 	PropertyValueType_value = map[string]int32{
 		"PROPERTY_VALUE_TYPE_UNSPECIFIED": 0,
 		"PROPERTY_VALUE_TYPE_STRING":      1,
-		"PROPERTY_VALUE_TYPE_NUMBER":      2,
-		"PROPERTY_VALUE_TYPE_BOOLEAN":     3,
-		"PROPERTY_VALUE_TYPE_DATETIME":    4,
-		"PROPERTY_VALUE_TYPE_OTHER":       5,
+		"PROPERTY_VALUE_TYPE_INTEGER":     2,
+		"PROPERTY_VALUE_TYPE_FLOAT":       3,
+		"PROPERTY_VALUE_TYPE_BOOLEAN":     4,
+		"PROPERTY_VALUE_TYPE_DATETIME":    5,
+		"PROPERTY_VALUE_TYPE_OTHER":       6,
 	}
 )
 
@@ -204,10 +211,10 @@ type PropertyKeyMeta struct {
 	Name       *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
 	Count      *uint64                `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
 	LastSeenAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
-	// One of the value types observed for this property key. When values for
-	// the same key span multiple types (rare drift), this is non-deterministic
-	// and may change between calls — clients should treat it as a hint, not a
-	// contract.
+	// The value_type observed at the earliest last_seen for this key
+	// (first-touch). Deterministic across calls. When values for the same key
+	// span multiple types (rare drift), this stays pinned to the first-observed
+	// type, matching the funnel/retention breakdown attribution rule.
 	ValueType     *PropertyValueType `protobuf:"varint,4,opt,name=value_type,json=valueType,enum=common.v1.PropertyValueType" json:"value_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -426,14 +433,15 @@ const file_common_v1_filter_schema_proto_rawDesc = "" +
 	"\x1bPROPERTY_SOURCE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14PROPERTY_SOURCE_AUTO\x10\x01\x12\x1a\n" +
 	"\x16PROPERTY_SOURCE_CUSTOM\x10\x02\x12\x1b\n" +
-	"\x17PROPERTY_SOURCE_PROFILE\x10\x03*\xda\x01\n" +
+	"\x17PROPERTY_SOURCE_PROFILE\x10\x03*\xfa\x01\n" +
 	"\x11PropertyValueType\x12#\n" +
 	"\x1fPROPERTY_VALUE_TYPE_UNSPECIFIED\x10\x00\x12\x1e\n" +
-	"\x1aPROPERTY_VALUE_TYPE_STRING\x10\x01\x12\x1e\n" +
-	"\x1aPROPERTY_VALUE_TYPE_NUMBER\x10\x02\x12\x1f\n" +
-	"\x1bPROPERTY_VALUE_TYPE_BOOLEAN\x10\x03\x12 \n" +
-	"\x1cPROPERTY_VALUE_TYPE_DATETIME\x10\x04\x12\x1d\n" +
-	"\x19PROPERTY_VALUE_TYPE_OTHER\x10\x05B=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
+	"\x1aPROPERTY_VALUE_TYPE_STRING\x10\x01\x12\x1f\n" +
+	"\x1bPROPERTY_VALUE_TYPE_INTEGER\x10\x02\x12\x1d\n" +
+	"\x19PROPERTY_VALUE_TYPE_FLOAT\x10\x03\x12\x1f\n" +
+	"\x1bPROPERTY_VALUE_TYPE_BOOLEAN\x10\x04\x12 \n" +
+	"\x1cPROPERTY_VALUE_TYPE_DATETIME\x10\x05\x12\x1d\n" +
+	"\x19PROPERTY_VALUE_TYPE_OTHER\x10\x06B=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_filter_schema_proto_rawDescOnce sync.Once

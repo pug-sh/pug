@@ -11,6 +11,10 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
@@ -19,13 +23,23 @@ import (
 	"github.com/pug-sh/pug/internal/useragent"
 )
 
+var unrecognisedVariantSlotCounter metric.Int64Counter
+
+func init() {
+	meter := otel.Meter("github.com/pug-sh/pug/internal/core/events")
+	unrecognisedVariantSlotCounter, _ = meter.Int64Counter(
+		"events.unrecognized_variant_slot_total",
+		metric.WithDescription("Variant slots returned by ClickHouse whose Go type the unwrap switch doesn't recognise. Coerced to string. Indicates schema drift."),
+	)
+}
+
 type Event struct {
-	AutoProperties map[string]any
-	// CustomProperties holds custom event properties decoded from
-	// Map(String, Variant(...)). Values are native Go types matching the
+	// AutoProperties and CustomProperties both hold event properties decoded
+	// from Map(String, Variant(...)). Values are native Go types matching the
 	// active variant: string, int64, float64, bool. Timestamps are normalised
-	// to RFC3339Nano UTC strings by unwrapCustomProperties, so callers never
-	// see time.Time. chcol.Variant exposure is contained to the scan boundary.
+	// to RFC3339Nano UTC strings by unwrapPropertyMap, so callers never see
+	// time.Time. chcol.Variant exposure is contained to the scan boundary.
+	AutoProperties   map[string]any
 	CustomProperties map[string]any
 	DistinctID       string
 	EventID          string
@@ -40,7 +54,7 @@ type Event struct {
 // Order must match scanEvent.
 const eventColumns = `auto_properties, custom_properties, distinct_id, event_id, insert_time, kind, occur_time, project_id, session_id`
 
-func scanEvent(rows driver.Rows) (Event, error) {
+func scanEvent(ctx context.Context, rows driver.Rows) (Event, error) {
 	var e Event
 	var rawAuto map[string]chcol.Variant
 	var rawCustom map[string]chcol.Variant
@@ -57,33 +71,52 @@ func scanEvent(rows driver.Rows) (Event, error) {
 	); err != nil {
 		return Event{}, err
 	}
-	e.AutoProperties = unwrapPropertyMap(rawAuto)
-	e.CustomProperties = unwrapCustomProperties(rawCustom)
+	e.AutoProperties = unwrapPropertyMap(ctx, rawAuto)
+	e.CustomProperties = unwrapCustomProperties(ctx, rawCustom)
 	return e, nil
 }
 
 // unwrapPropertyMap unwraps the driver's map[string]chcol.Variant scan
 // type into native Go values. Timestamps are normalised to RFC3339Nano UTC
 // strings so JSON marshalers and structpb consumers don't need a time.Time
-// special case.
-func unwrapPropertyMap(raw map[string]chcol.Variant) map[string]any {
+// special case. Currently-known Variant slot types (string, int64, float64,
+// bool, time.Time) pass through as native Go values; any future slot type the
+// switch doesn't recognise is coerced to its fmt-default string so downstream
+// structpb consumers don't 500, and the drift is logged at WARN.
+func unwrapPropertyMap(ctx context.Context, raw map[string]chcol.Variant) map[string]any {
 	if len(raw) == 0 {
 		return nil
 	}
 	out := make(map[string]any, len(raw))
 	for k, v := range raw {
 		switch x := v.Any().(type) {
+		case nil:
+			out[k] = nil
+		case string, int64, float64, bool:
+			out[k] = x
 		case time.Time:
 			out[k] = x.UTC().Format(time.RFC3339Nano)
 		default:
-			out[k] = x
+			goType := fmt.Sprintf("%T", x)
+			err := fmt.Errorf("unrecognised Variant slot type %s for key %q", goType, k)
+			slog.WarnContext(ctx, "unwrapPropertyMap: coercing unrecognised Variant slot to string",
+				slogx.Error(err), slog.String("property_key", k), slog.String("go_type", goType))
+			telemetry.RecordError(ctx, err)
+			unrecognisedVariantSlotCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("go_type", goType),
+			))
+			// Prefix the coerced value with a sentinel so dashboard users
+			// see something obviously broken rather than a malformed-looking
+			// real value (e.g. byte-slice "[10 11 12]"). Pairs with the WARN
+			// log + counter for operator visibility.
+			out[k] = fmt.Sprintf("<unrecognized variant: %s> %v", goType, x)
 		}
 	}
 	return out
 }
 
-func unwrapCustomProperties(raw map[string]chcol.Variant) map[string]any {
-	return unwrapPropertyMap(raw)
+func unwrapCustomProperties(ctx context.Context, raw map[string]chcol.Variant) map[string]any {
+	return unwrapPropertyMap(ctx, raw)
 }
 
 type Reader struct {
@@ -321,7 +354,7 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 
 	var events []Event
 	for rows.Next() {
-		e, err := scanEvent(rows)
+		e, err := scanEvent(ctx, rows)
 		if err != nil {
 			slog.ErrorContext(ctx, "GetEventExplorer: scan failed", slogx.Error(err),
 				slog.String("project_id", params.ProjectID))
@@ -422,7 +455,7 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 
 	var events []Event
 	for rows.Next() {
-		e, err := scanEvent(rows)
+		e, err := scanEvent(ctx, rows)
 		if err != nil {
 			slog.ErrorContext(ctx, "GetActivityFeed: scan failed", slogx.Error(err),
 				slog.String("project_id", params.ProjectID))
@@ -649,7 +682,7 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 		return nil, nil
 	}
 
-	latestProps := unwrapPropertyMap(rawLatestProps)
+	latestProps := unwrapPropertyMap(ctx, rawLatestProps)
 
 	stats.Browser = stringProp(latestProps, useragent.PropBrowser)
 	stats.BrowserVersion = stringProp(latestProps, useragent.PropBrowserVersion)

@@ -855,7 +855,7 @@ func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) 
 		selectExpr = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) AS value", mapCol)
 		propertyNotEmptyClause = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) != ''", mapCol)
 	default:
-		return "", nil, fmt.Errorf("buildPropertyValuesQuery: unsupported map_col %q", mapCol)
+		return "", nil, fmt.Errorf("unsupported property source %q", mapCol)
 	}
 
 	return chq.NewQuery().
@@ -973,15 +973,19 @@ func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any
 			"key",
 			// A property key can have rows for multiple value_types when the
 			// underlying values drift across types over time (rare in practice).
-			// any() returns an arbitrary, non-deterministic value_type from the
-			// rows in the group — clients should treat it as "one of the types
-			// observed for this key", not "the most common type". Returning a
-			// deterministic dominant type would require an extra aggregation
-			// pass over the AggregatingMergeTree state, which is not currently
-			// justified for the rarity of drift.
-			"any(value_type) AS value_type",
+			// argMin(value_type, last_seen) deterministically returns the
+			// value_type observed at the earliest last_seen timestamp in the
+			// group — first-touch semantics, matching the funnel/retention
+			// breakdown rule. Stable across calls so dashboards don't flicker
+			// on every refresh when a key has mixed types.
+			//
+			// The max(last_seen) projection is aliased to last_seen_max (not
+			// last_seen) because ClickHouse resolves a bare `last_seen` inside
+			// the same SELECT to the aggregate alias rather than the column,
+			// which would re-enter argMin and trip "aggregate inside aggregate".
+			"argMin(value_type, last_seen) AS value_type",
 			"sum(event_count) AS count",
-			"max(last_seen) AS last_seen",
+			"max(last_seen) AS last_seen_max",
 		).
 		From("property_keys").
 		Where(
@@ -1013,7 +1017,7 @@ func granularityFunc(g insightsv1.Granularity) (string, error) {
 	case insightsv1.Granularity_GRANULARITY_MONTH:
 		return "toStartOfMonth", nil
 	default:
-		return "", fmt.Errorf("granularityFunc: unsupported granularity %v", g)
+		return "", fmt.Errorf("unsupported granularity %v", g)
 	}
 }
 
@@ -1068,7 +1072,7 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 		case insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
 			return "ifNull(max(" + numeric + "), 0)", nil
 		default:
-			return "", fmt.Errorf("aggregationExpr: unexpected numeric aggregation type %s", agg)
+			return "", fmt.Errorf("unsupported aggregation type %s", agg)
 		}
 	case insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS:
 		return "toFloat64(count(DISTINCT distinct_id))", nil

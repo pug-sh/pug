@@ -50,15 +50,24 @@ func variantTypeToPropertyValueType(raw string) commonv1.PropertyValueType {
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED
 	case "String":
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING
-	case "Int64", "Float64", "Number":
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_NUMBER
+	case "Int64":
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER
+	case "Float64":
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT
+	case "Number":
+		// Legacy alias for profile JSON values that landed in the MV before the
+		// Int64/Float64 split. Newer refreshes emit Int64 or Float64 directly.
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT
 	case "Bool":
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN
-	case "DateTime64(3)":
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME
-	default:
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER
 	}
+	// Match any DateTime64(precision) so a future precision change in the
+	// migration doesn't silently demote dates to OTHER. The pin tests catch
+	// the migration drift independently.
+	if strings.HasPrefix(raw, "DateTime64(") {
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME
+	}
+	return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER
 }
 
 func normalizeAllowedTypes(in []commonv1.PropertyValueType) []commonv1.PropertyValueType {
@@ -124,8 +133,12 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 			slog.WarnContext(ctx, "failed to unmarshal cached filter schema, evicting",
 				slogx.Error(err), slog.String("project_id", projectID))
 			if delErr := s.redis.Del(ctx, cacheKey).Err(); delErr != nil {
-				slog.WarnContext(ctx, "failed to evict corrupt filter schema cache",
+				// Eviction failure is Error (not Warn): the corrupt blob will
+				// be re-read by the next request and trigger another failed
+				// eviction. Without escalation, the loop is silent at Warn.
+				slog.ErrorContext(ctx, "failed to evict corrupt filter schema cache",
 					slogx.Error(delErr), slog.String("project_id", projectID))
+				telemetry.RecordError(ctx, delErr)
 			}
 		} else {
 			return &resp, nil
@@ -204,7 +217,9 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		return nil, err
 	}
 
+	autoPropKeys = filterAggregateKeysByType(autoPropKeys, allowedTypes)
 	customPropKeys = filterAggregateKeysByType(customPropKeys, allowedTypes)
+	profilePropKeys = filterAggregateKeysByType(profilePropKeys, allowedTypes)
 
 	toEventMetas := func(rows []AggregateKeyMeta) []*commonv1.EventNameMeta {
 		out := make([]*commonv1.EventNameMeta, len(rows))
@@ -255,8 +270,11 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 			slog.WarnContext(ctx, "failed to unmarshal cached property values, evicting",
 				slogx.Error(err), slog.String("project_id", projectID), slog.String("key", propertyKey))
 			if delErr := s.redis.Del(ctx, cacheKey).Err(); delErr != nil {
-				slog.WarnContext(ctx, "failed to evict corrupt property values cache",
+				// See note above on the filter-schema eviction path: corrupt
+				// blob persists if Del fails, so escalate to Error.
+				slog.ErrorContext(ctx, "failed to evict corrupt property values cache",
 					slogx.Error(delErr), slog.String("project_id", projectID))
+				telemetry.RecordError(ctx, delErr)
 			}
 		} else {
 			return vals, nil

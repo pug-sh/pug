@@ -9,26 +9,38 @@ import (
 )
 
 // PropertyExpr returns the ClickHouse string expression to resolve an event property.
-// It checks auto_properties first; if the value is missing, null, or the empty
-// string, it falls back to custom_properties. Both maps' values are coerced to string for unified operator
-// handling (custom_properties stores Variant — CAST(v AS Nullable(String)) collapses
-// any active variant type to its string representation; auto_properties now uses the
-// same Variant shape and cast. Numeric operators downstream
-// re-parse via toFloat64OrNull).
+// It reads auto_properties first and falls back to custom_properties only when
+// auto's String representation is genuinely empty (i.e. the auto Variant is an
+// empty String slot, OR auto is fully absent). Non-empty stringifications of
+// typed auto slots (e.g. Int64 0 → '0', Bool false → 'false') BLOCK the
+// fallthrough — custom is not consulted in that case. Both maps' values are
+// coerced to string for unified operator handling (custom_properties stores
+// Variant — CAST(v AS Nullable(String)) collapses any active variant type to
+// its string representation; auto_properties uses the same Variant shape and
+// cast. Numeric operators downstream re-parse via toFloat64OrNull).
 //
 // CAST to Nullable(String) is used (not toString) because toString(NULL Variant)
 // produces the display string "ᴺᵁᴸᴸ" rather than NULL or ""; the Nullable cast
 // correctly preserves NULL for absent keys so IS_SET / IS_NOT_SET work correctly
 // via the existing prop != "" / prop = "" checks.
 //
-// Empty-value behavior is unified — IS_SET (prop != ”) returns false in all of these:
-//   - Property absent from both maps.
-//   - Auto value is ” (nullIf collapses to NULL, falls through to custom).
-//   - Custom Variant String value is ” (CAST surfaces ” through the coalesce).
+// Empty-value behavior is unified. Using a code block here so gofmt does not
+// rewrite the paired single quotes in the prose into curly quotes:
 //
-// The trailing `, ”` sentinel in the coalesce is load-bearing: it converts the
-// fully-absent case into ” so all downstream string operators (=, LIKE, IN, IS_SET)
-// see a non-NULL projection. Removing it would break IS_SET semantics.
+//	IS_SET (prop != '') returns false in all of these:
+//	  - Property absent from both maps.
+//	  - Auto value is an empty String variant (nullIf collapses '' to NULL,
+//	    falls through to custom). Non-string auto variants project to a
+//	    non-empty string ('0', 'false', etc.) and BLOCK the fallthrough —
+//	    custom is not consulted in that case.
+//	  - Custom Variant String value is '' (CAST surfaces '' through the
+//	    coalesce). NB: empty-string custom values are indistinguishable from
+//	    absent-key here.
+//
+//	The trailing `, ''` sentinel in the coalesce is load-bearing: it converts
+//	the fully-absent case into '' so all downstream string operators
+//	(=, LIKE, IN, IS_SET) see a non-NULL projection. Removing it would break
+//	IS_SET semantics.
 //
 // SAFETY: The name is interpolated directly into SQL (not parameterized) because ClickHouse
 // map key access requires it. Callers MUST ensure name is validated before calling this function.
@@ -173,7 +185,7 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 	args = append(args, propertyCond.Args()...)
 
 	if n := strings.Count(sql, "?"); n != len(args) {
-		return Condition{}, fmt.Errorf("profile filter: placeholder count (%d) != arg count (%d)", n, len(args))
+		return Condition{}, fmt.Errorf("internal: filter placeholder count mismatch (%d != %d)", n, len(args))
 	}
 	return RawCond(sql, args...), nil
 }

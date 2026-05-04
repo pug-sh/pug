@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"testing"
 
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
@@ -42,14 +43,11 @@ func propString(v *commonv1.PropertyValue) string {
 	case *commonv1.PropertyValue_StringValue:
 		return x.StringValue
 	case *commonv1.PropertyValue_BoolValue:
-		if x.BoolValue {
-			return "true"
-		}
-		return "false"
+		return strconv.FormatBool(x.BoolValue)
 	case *commonv1.PropertyValue_IntValue:
-		return ""
+		return strconv.FormatInt(x.IntValue, 10)
 	case *commonv1.PropertyValue_DoubleValue:
-		return ""
+		return strconv.FormatFloat(x.DoubleValue, 'f', -1, 64)
 	default:
 		return ""
 	}
@@ -483,4 +481,45 @@ func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 	}
 
 	assertProps(t, events[0], want)
+}
+
+// TestEnrichBotAndVerified_TypedSlots pins the oneof contract that the regular
+// string-comparison tests cannot catch: $bot_score must land in IntValue (not
+// StringValue), $verified_bot in BoolValue. A regression that returned the
+// String slot for either would round-trip through propString and pass the
+// existing tests, then write a String slot to the ClickHouse Variant column.
+func TestEnrichBotAndVerified_TypedSlots(t *testing.T) {
+	s := &Server{geoProvider: stubProvider{}}
+
+	t.Run("bot_score is IntValue", func(t *testing.T) {
+		events := []*eventsv1.Event{{}}
+		h := http.Header{}
+		h.Set(cfHeaderBotScore, "42")
+		s.enrichBotScore(context.Background(), "test-project", h, events)
+
+		got := events[0].AutoProperties["$bot_score"]
+		iv, ok := got.GetValue().(*commonv1.PropertyValue_IntValue)
+		if !ok {
+			t.Fatalf("expected IntValue, got %T", got.GetValue())
+		}
+		if iv.IntValue != 42 {
+			t.Errorf("IntValue = %d, want 42", iv.IntValue)
+		}
+	})
+
+	t.Run("verified_bot is BoolValue", func(t *testing.T) {
+		events := []*eventsv1.Event{{}}
+		h := http.Header{}
+		h.Set(cfHeaderVerifiedBot, "true")
+		s.enrichVerifiedBot(context.Background(), "test-project", h, events)
+
+		got := events[0].AutoProperties["$verified_bot"]
+		bv, ok := got.GetValue().(*commonv1.PropertyValue_BoolValue)
+		if !ok {
+			t.Fatalf("expected BoolValue, got %T", got.GetValue())
+		}
+		if !bv.BoolValue {
+			t.Errorf("BoolValue = false, want true")
+		}
+	})
 }

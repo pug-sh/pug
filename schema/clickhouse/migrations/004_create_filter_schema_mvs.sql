@@ -25,11 +25,17 @@ GROUP BY project_id, kind;
 -- only scan a bounded time slice and retries stay in the same dedup bucket. Profile
 -- keys are rebuilt from current-state profiles on a schedule because profile updates
 -- replace whole rows and need current FINAL state to avoid stale/deleted keys.
--- Query the property_keys view with sum(event_count) and max(last_seen).
--- value_type is the actual variantType() of the value — exact, not inferred.
+-- Query the property_keys view with sum(event_count) and argMin(value_type, last_seen).
+-- The Go builder aliases max(last_seen) AS last_seen_max because ClickHouse
+-- otherwise resolves a bare last_seen inside the same SELECT to the aggregate
+-- alias rather than the column.
+-- value_type is captured per source: exact (variantType()) for events, JSON-shape
+-- heuristic for profile.
 -- For auto_properties/custom_properties (Variant), value_type tracks the actual
 -- Variant inner type.
--- For profile (JSON String), value_type is derived from JSON shape.
+-- For profile (JSON String), the multiIf below distinguishes Int64 from Float64
+-- explicitly (toInt64OrNull tested before toFloat64OrNull), so integer-valued
+-- profile properties surface as Int64 rather than collapsing to Float64.
 CREATE TABLE IF NOT EXISTS property_keys_event_buckets (
     project_id  String,
     map_type    LowCardinality(String),
@@ -39,7 +45,7 @@ CREATE TABLE IF NOT EXISTS property_keys_event_buckets (
     value_type  LowCardinality(String),
     event_count UInt64,
     last_seen   DateTime64(3)
-) ENGINE = MergeTree()
+) ENGINE = ReplacingMergeTree(last_seen)
 PARTITION BY toYYYYMM(bucket_time)
 ORDER BY (project_id, map_type, kind, bucket_time, key, value_type);
 
@@ -68,7 +74,8 @@ FROM (
     ARRAY JOIN arrayZip(mapKeys(auto_properties), mapValues(auto_properties)) AS kv
     WHERE
         notEmpty(auto_properties)
-        AND toStartOfFiveMinutes(occur_time) = toStartOfFiveMinutes(now() - INTERVAL 10 MINUTE)
+        AND toStartOfFiveMinutes(occur_time) BETWEEN toStartOfFiveMinutes(now() - INTERVAL 15 MINUTE)
+                                                  AND toStartOfFiveMinutes(now() - INTERVAL 5 MINUTE)
     GROUP BY project_id, map_type, kind, bucket_time, key, value_type
 
     UNION ALL
@@ -86,7 +93,8 @@ FROM (
     ARRAY JOIN arrayZip(mapKeys(custom_properties), mapValues(custom_properties)) AS kv
     WHERE
         notEmpty(custom_properties)
-        AND toStartOfFiveMinutes(occur_time) = toStartOfFiveMinutes(now() - INTERVAL 10 MINUTE)
+        AND toStartOfFiveMinutes(occur_time) BETWEEN toStartOfFiveMinutes(now() - INTERVAL 15 MINUTE)
+                                                  AND toStartOfFiveMinutes(now() - INTERVAL 5 MINUTE)
     GROUP BY project_id, map_type, kind, bucket_time, key, value_type
 )
 ;
@@ -120,8 +128,11 @@ SELECT
         startsWith(tupleElement(kv, 2), '"'), 'String',
         -- JSON boolean — bare true/false (no quotes by construction at this point).
         lowerUTF8(tupleElement(kv, 2)) IN ('true', 'false'), 'Bool',
-        -- JSON number — anything parseable as float that isn't a string/object/array/bool.
-        toFloat64OrNull(tupleElement(kv, 2)) IS NOT NULL, 'Number',
+        -- JSON integer — whole-number value (no decimal, no exponent).
+        -- Detect before Float64 so integer literals are not collapsed to FLOAT.
+        toInt64OrNull(tupleElement(kv, 2)) IS NOT NULL, 'Int64',
+        -- JSON float — anything else parseable as float.
+        toFloat64OrNull(tupleElement(kv, 2)) IS NOT NULL, 'Float64',
         -- Fallback (should be unreachable in valid JSON).
         'String'
     )                   AS value_type,

@@ -14,18 +14,23 @@ enum PropertySource {
 }
 
 // PropertyValueType enumerates the storage-side variant types a property key
-// can have. Mirrors the ClickHouse Variant inner types used in
-// events.custom_properties: String, Int64, Float64, Bool, DateTime64(3).
-// NUMBER covers both Int64 and Float64 (the dashboard treats them uniformly).
-// OTHER is a catch-all for non-primitive types (e.g. JSON objects/arrays in
-// profile properties) that don't map to a specific variant.
+// can have. Mirrors the ClickHouse Variant inner types used in events
+// auto_properties and custom_properties: String, Int64, Float64, Bool,
+// DateTime64(3). INTEGER and FLOAT are kept distinct so future filters can
+// express integer-only constraints (counts, ages, enum-as-int) without
+// re-versioning. Profile properties are stored as JSON; their value_type is
+// derived from the JSON shape (Number → FLOAT, Object/Array/null → OTHER) and
+// loses the integer-vs-float distinction. OTHER is a catch-all for
+// non-primitive types (e.g. JSON objects/arrays in profile properties) that
+// don't map to a specific variant.
 enum PropertyValueType {
   PROPERTY_VALUE_TYPE_UNSPECIFIED = 0;
   PROPERTY_VALUE_TYPE_STRING      = 1;
-  PROPERTY_VALUE_TYPE_NUMBER      = 2;
-  PROPERTY_VALUE_TYPE_BOOLEAN     = 3;
-  PROPERTY_VALUE_TYPE_DATETIME    = 4;
-  PROPERTY_VALUE_TYPE_OTHER       = 5;
+  PROPERTY_VALUE_TYPE_INTEGER     = 2;
+  PROPERTY_VALUE_TYPE_FLOAT       = 3;
+  PROPERTY_VALUE_TYPE_BOOLEAN     = 4;
+  PROPERTY_VALUE_TYPE_DATETIME    = 5;
+  PROPERTY_VALUE_TYPE_OTHER       = 6;
 }
 
 message EventNameMeta {
@@ -38,10 +43,10 @@ message PropertyKeyMeta {
   string name = 1;
   uint64 count = 2;
   google.protobuf.Timestamp last_seen_at = 3;
-  // One of the value types observed for this property key. When values for
-  // the same key span multiple types (rare drift), this is non-deterministic
-  // and may change between calls — clients should treat it as a hint, not a
-  // contract.
+  // The value_type observed at the earliest last_seen for this key
+  // (first-touch). Deterministic across calls. When values for the same key
+  // span multiple types (rare drift), this stays pinned to the first-observed
+  // type, matching the funnel/retention breakdown attribution rule.
   PropertyValueType value_type = 4;
 }
 
