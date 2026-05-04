@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/joho/godotenv"
 	"github.com/pug-sh/pug/internal/app/workers/events"
 	"github.com/pug-sh/pug/internal/slogx"
-	"github.com/joho/godotenv"
 )
 
 func main() {
