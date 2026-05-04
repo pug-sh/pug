@@ -5,8 +5,8 @@ import (
 	"log/slog"
 
 	"github.com/exaring/otelpgx"
-	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 // DB holds pgx pool

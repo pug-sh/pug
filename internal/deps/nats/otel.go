@@ -5,9 +5,9 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"

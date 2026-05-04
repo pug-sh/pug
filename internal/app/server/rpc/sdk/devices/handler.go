@@ -7,12 +7,12 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	devicesv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/devices/v1"
 	"github.com/pug-sh/pug/internal/slogx"
-	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 )
 

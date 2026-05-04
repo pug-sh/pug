@@ -5,9 +5,9 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
+	"github.com/jackc/pgx/v5/pgxpool"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type server struct {

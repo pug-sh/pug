@@ -3,10 +3,10 @@ package devices
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const StatusActive = "active"

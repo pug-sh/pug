@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/core/campaigns"
 	"github.com/pug-sh/pug/internal/core/delivery"
 	devicessvc "github.com/pug-sh/pug/internal/core/devices"
@@ -13,7 +14,6 @@ import (
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/slogx"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Worker struct {
