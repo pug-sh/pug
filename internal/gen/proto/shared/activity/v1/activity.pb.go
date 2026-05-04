@@ -8,7 +8,7 @@ package activityv1
 
 import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
-	v1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	v1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -1142,7 +1142,7 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\x0fGetFilterSchema\x12*.shared.activity.v1.GetFilterSchemaRequest\x1a+.shared.activity.v1.GetFilterSchemaResponse\x12p\n" +
 	"\x11GetPropertyValues\x12,.shared.activity.v1.GetPropertyValuesRequest\x1a-.shared.activity.v1.GetPropertyValuesResponse\x12s\n" +
 	"\x12GetActivityHeatmap\x12-.shared.activity.v1.GetActivityHeatmapRequest\x1a..shared.activity.v1.GetActivityHeatmapResponse\x12j\n" +
-	"\x0fGetProfileStats\x12*.shared.activity.v1.GetProfileStatsRequest\x1a+.shared.activity.v1.GetProfileStatsResponseBOZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/activity/v1;activityv1b\beditionsp\xe8\a"
+	"\x0fGetProfileStats\x12*.shared.activity.v1.GetProfileStatsRequest\x1a+.shared.activity.v1.GetProfileStatsResponseBHZFgithub.com/pug-sh/pug/internal/gen/proto/shared/activity/v1;activityv1b\beditionsp\xe8\a"
 
 var (
 	file_shared_activity_v1_activity_proto_rawDescOnce sync.Once

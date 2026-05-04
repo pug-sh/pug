@@ -6,7 +6,7 @@ import (
 	"buf.build/go/protovalidate"
 	"google.golang.org/protobuf/proto"
 
-	authv1 "github.com/fivebitsio/cotton/internal/gen/proto/public/auth/v1"
+	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
 )
 
 func TestSignInWithEmailRequest_EmailRequired(t *testing.T) {

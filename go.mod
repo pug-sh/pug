@@ -1,4 +1,4 @@
-module github.com/fivebitsio/cotton
+module github.com/pug-sh/pug
 
 go 1.26.1
 

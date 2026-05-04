@@ -1121,7 +1121,7 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\fRemoveMember\x12&.dashboard.orgs.v1.RemoveMemberRequest\x1a'.dashboard.orgs.v1.RemoveMemberResponse\"\x00\x12a\n" +
 	"\fInviteMember\x12&.dashboard.orgs.v1.InviteMemberRequest\x1a'.dashboard.orgs.v1.InviteMemberResponse\"\x00\x12a\n" +
 	"\fAcceptInvite\x12&.dashboard.orgs.v1.AcceptInviteRequest\x1a'.dashboard.orgs.v1.AcceptInviteResponse\"\x00\x12j\n" +
-	"\x0fListInvitations\x12).dashboard.orgs.v1.ListInvitationsRequest\x1a*.dashboard.orgs.v1.ListInvitationsResponse\"\x00BJZHgithub.com/fivebitsio/cotton/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
+	"\x0fListInvitations\x12).dashboard.orgs.v1.ListInvitationsRequest\x1a*.dashboard.orgs.v1.ListInvitationsResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_orgs_v1_orgs_proto_rawDescOnce sync.Once

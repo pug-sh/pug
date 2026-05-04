@@ -503,7 +503,7 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"\x03Get\x12\x1e.shared.profiles.v1.GetRequest\x1a\x1f.shared.profiles.v1.GetResponse\"\x00\x12l\n" +
 	"\x0fGetByExternalId\x12*.shared.profiles.v1.GetByExternalIdRequest\x1a+.shared.profiles.v1.GetByExternalIdResponse\"\x00\x12M\n" +
 	"\x04List\x12\x1f.shared.profiles.v1.ListRequest\x1a .shared.profiles.v1.ListResponse\"\x000\x01\x12Q\n" +
-	"\x06Delete\x12!.shared.profiles.v1.DeleteRequest\x1a\".shared.profiles.v1.DeleteResponse\"\x00BOZMgithub.com/fivebitsio/cotton/internal/gen/proto/shared/profiles/v1;profilesv1b\beditionsp\xe8\a"
+	"\x06Delete\x12!.shared.profiles.v1.DeleteRequest\x1a\".shared.profiles.v1.DeleteResponse\"\x00BHZFgithub.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1;profilesv1b\beditionsp\xe8\a"
 
 var (
 	file_shared_profiles_v1_profiles_proto_rawDescOnce sync.Once

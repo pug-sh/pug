@@ -5,7 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/exaring/otelpgx"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

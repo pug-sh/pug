@@ -10,13 +10,13 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	coreevents "github.com/fivebitsio/cotton/internal/core/events"
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
-	"github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1/eventsv1connect"
-	"github.com/fivebitsio/cotton/internal/geo"
-	"github.com/fivebitsio/cotton/internal/slogx"
-	"github.com/fivebitsio/cotton/internal/useragent"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	coreevents "github.com/pug-sh/pug/internal/core/events"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
+	"github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1/eventsv1connect"
+	"github.com/pug-sh/pug/internal/geo"
+	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/pug-sh/pug/internal/useragent"
 	"github.com/nats-io/nats.go/jetstream"
 )
 

@@ -4,7 +4,7 @@ package common.v1;
 import "buf/validate/validate.proto";
 import "common/v1/filter_schema.proto";
 
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1";
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1";
 
 enum FilterOperator {
   FILTER_OPERATOR_UNSPECIFIED = 0;

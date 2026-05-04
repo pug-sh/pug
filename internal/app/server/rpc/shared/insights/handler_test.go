@@ -8,10 +8,10 @@ import (
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 
-	"github.com/fivebitsio/cotton/internal/app/server/rpc"
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 
-	insightsv1 "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
 func TestQuery_Unauthenticated(t *testing.T) {

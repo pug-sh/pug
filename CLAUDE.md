@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cotton is an events ingestion platform built with Go, using PostgreSQL, ClickHouse, and NATS for data storage and messaging. It also provides push notification capabilities (campaigns, delivery, devices).
+Pug is an events ingestion platform built with Go, using PostgreSQL, ClickHouse, and NATS for data storage and messaging. It also provides push notification capabilities (campaigns, delivery, devices).
 
 ## Build & Run Commands
 
@@ -22,24 +22,24 @@ make infra
 make infra-down
 
 # Run database migrations
-./bin/cotton postgres migrate
-./bin/cotton nats migrate
-./bin/cotton clickhouse migrate
+./bin/pug postgres migrate
+./bin/pug nats migrate
+./bin/pug clickhouse migrate
 
 # Start development server + workers together
-./bin/cotton dev
+./bin/pug dev
 
 # Start server only
-./bin/cotton server
+./bin/pug server
 
 # Start individual workers
-./bin/cotton worker device
-./bin/cotton worker campaign
-./bin/cotton worker events
-./bin/cotton worker profile identify
-./bin/cotton worker profile alias
-./bin/cotton worker profile upsert
-./bin/cotton worker scheduler
+./bin/pug worker device
+./bin/pug worker campaign
+./bin/pug worker events
+./bin/pug worker profile identify
+./bin/pug worker profile alias
+./bin/pug worker profile upsert
+./bin/pug worker scheduler
 ```
 
 ### Code Generation
@@ -226,7 +226,7 @@ The FK uses `ON DELETE SET NULL` as a safety net — if a profile row were ever 
 Use `internal/core/clickhouse/query.go` for building ClickHouse queries. It provides a type-safe query builder with parameterized arguments:
 
 ```go
-import "github.com/fivebitsio/cotton/internal/core/clickhouse"
+import "github.com/pug-sh/pug/internal/core/clickhouse"
 
 q := clickhouse.NewQuery().
     Select("project_id", "kind", "count() AS event_count").

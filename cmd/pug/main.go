@@ -7,20 +7,20 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/fivebitsio/cotton/internal/app/migrate/clickhouse"
-	migratenats "github.com/fivebitsio/cotton/internal/app/migrate/nats"
-	"github.com/fivebitsio/cotton/internal/app/migrate/postgres"
-	chseed "github.com/fivebitsio/cotton/internal/app/seed/clickhouse"
-	pgseed "github.com/fivebitsio/cotton/internal/app/seed/postgres"
-	"github.com/fivebitsio/cotton/internal/app/server"
-	"github.com/fivebitsio/cotton/internal/app/workers/campaigns"
-	"github.com/fivebitsio/cotton/internal/app/workers/devices"
-	eventsworker "github.com/fivebitsio/cotton/internal/app/workers/events"
-	"github.com/fivebitsio/cotton/internal/app/workers/profiles/alias"
-	"github.com/fivebitsio/cotton/internal/app/workers/profiles/identify"
-	"github.com/fivebitsio/cotton/internal/app/workers/profiles/upsert"
-	"github.com/fivebitsio/cotton/internal/app/workers/scheduler"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	"github.com/pug-sh/pug/internal/app/migrate/clickhouse"
+	migratenats "github.com/pug-sh/pug/internal/app/migrate/nats"
+	"github.com/pug-sh/pug/internal/app/migrate/postgres"
+	chseed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
+	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
+	"github.com/pug-sh/pug/internal/app/server"
+	"github.com/pug-sh/pug/internal/app/workers/campaigns"
+	"github.com/pug-sh/pug/internal/app/workers/devices"
+	eventsworker "github.com/pug-sh/pug/internal/app/workers/events"
+	"github.com/pug-sh/pug/internal/app/workers/profiles/alias"
+	"github.com/pug-sh/pug/internal/app/workers/profiles/identify"
+	"github.com/pug-sh/pug/internal/app/workers/profiles/upsert"
+	"github.com/pug-sh/pug/internal/app/workers/scheduler"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -75,13 +75,13 @@ func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cob
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "cotton",
-	Short: "Cotton is a unified command line tool for managing the Cotton application",
+	Use:   "pug",
+	Short: "Pug is a unified command line tool for managing the Pug application",
 }
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "Start the Cotton server",
+	Short: "Start the Pug server",
 	Run:   run(server.Run),
 }
 
@@ -139,7 +139,7 @@ var schedulerCmd = &cobra.Command{
 
 var devCmd = &cobra.Command{
 	Use:   "dev",
-	Short: "Start the Cotton server and workers for development",
+	Short: "Start the Pug server and workers for development",
 	Run: func(cmd *cobra.Command, args []string) {
 		sigCtx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()

@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"testing"
 
-	eventsv1 "github.com/fivebitsio/cotton/internal/gen/proto/sdk/events/v1"
-	"github.com/fivebitsio/cotton/internal/geo"
-	"github.com/fivebitsio/cotton/internal/useragent"
+	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
+	"github.com/pug-sh/pug/internal/geo"
+	"github.com/pug-sh/pug/internal/useragent"
 )
 
 type stubProvider struct {

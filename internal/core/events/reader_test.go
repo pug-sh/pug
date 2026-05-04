@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fivebitsio/cotton/internal/core/events"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	"github.com/fivebitsio/cotton/internal/testutil"
+	"github.com/pug-sh/pug/internal/core/events"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"

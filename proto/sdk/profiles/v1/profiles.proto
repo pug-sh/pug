@@ -4,7 +4,7 @@ package sdk.profiles.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/struct.proto";
 
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1";
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1;sdkprofilesv1";
 
 service ProfilesSDKService {
   // Identify creates or updates a profile by external_id. When anonymous_id

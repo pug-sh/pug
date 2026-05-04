@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"connectrpc.com/otelconnect"
-	chdb "github.com/fivebitsio/cotton/internal/deps/clickhouse"
-	"github.com/fivebitsio/cotton/internal/deps/nats"
-	"github.com/fivebitsio/cotton/internal/deps/postgres"
-	"github.com/fivebitsio/cotton/internal/deps/redis"
-	"github.com/fivebitsio/cotton/internal/deps/telemetry"
-	"github.com/fivebitsio/cotton/internal/slogx"
+	chdb "github.com/pug-sh/pug/internal/deps/clickhouse"
+	"github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/deps/postgres"
+	"github.com/pug-sh/pug/internal/deps/redis"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sethvargo/go-envconfig"
 )

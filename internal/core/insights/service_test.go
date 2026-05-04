@@ -9,9 +9,9 @@ import (
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/fivebitsio/cotton/internal/core/insights"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
-	"github.com/fivebitsio/cotton/internal/testutil"
+	"github.com/pug-sh/pug/internal/core/insights"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	"github.com/pug-sh/pug/internal/testutil"
 )
 
 func TestServiceGetFilterSchema(t *testing.T) {

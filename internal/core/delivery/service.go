@@ -3,7 +3,7 @@ package delivery
 import (
 	"context"
 
-	"github.com/fivebitsio/cotton/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
 // Service defines the interface for sending notifications through different channels

@@ -8,7 +8,7 @@ import "common/v1/time.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/fivebitsio/cotton/internal/gen/proto/shared/insights/v1;insightsv1";
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1;insightsv1";
 
 service InsightsService {
   rpc Query(QueryRequest) returns (QueryResponse);
