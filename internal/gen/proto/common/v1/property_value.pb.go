@@ -182,7 +182,7 @@ const file_common_v1_property_value_proto_rawDesc = "" +
 	"\n" +
 	"bool_value\x18\x04 \x01(\bH\x00R\tboolValue\x12E\n" +
 	"\x0ftimestamp_value\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\x0etimestampValueB\x0e\n" +
-	"\x05value\x12\x05\xbaH\x02\b\x01BDZBgithub.com/fivebitsio/cotton/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
+	"\x05value\x12\x05\xbaH\x02\b\x01B=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_property_value_proto_rawDescOnce sync.Once

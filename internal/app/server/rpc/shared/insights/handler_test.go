@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
@@ -38,7 +39,7 @@ func TestSegmentUsers_Unauthenticated(t *testing.T) {
 
 func TestGetFilterSchema_Unauthenticated(t *testing.T) {
 	s := &server{}
-	_, err := s.GetFilterSchema(context.Background(), connect.NewRequest(&insightsv1.GetFilterSchemaRequest{}))
+	_, err := s.GetFilterSchema(context.Background(), connect.NewRequest(&commonv1.GetFilterSchemaRequest{}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

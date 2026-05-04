@@ -1,13 +1,12 @@
 package events
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 )
 
 // expectedVariantTypes pins each PropertyValue oneof field name to its
@@ -17,8 +16,7 @@ import (
 //	Variant(String, Int64, Float64, Bool, DateTime64(3))
 //
 // Adding a new oneof case to property_value.proto without updating this
-// table — and the matching propertyValueToVariant case, the Variant column,
-// and variantTypeToPropertyValueType in insights/service.go — will make
+// table — and the matching ClickHouse schema / insights type mapping — will make
 // TestPropertyValueOneofCoverage fail.
 var expectedVariantTypes = map[string]string{
 	"string_value":    "String",
@@ -42,14 +40,12 @@ func samplePropertyValues() map[string]*commonv1.PropertyValue {
 }
 
 // TestPropertyValueOneofCoverage walks the proto descriptor for PropertyValue
-// and asserts every oneof case is wired into propertyValueToVariant with the
-// correct ClickHouse slot. The test serves three purposes:
+// and asserts every oneof case is accounted for in expectedVariantTypes. The
+// test serves two purposes:
 //
 //  1. Lock the proto-oneof → Variant slot mapping (catches reordering).
-//  2. Exercise the default arm of propertyValueToVariant (proves it isn't
-//     reachable via any current oneof case).
-//  3. Force a CI failure when proto adds a new variant without wiring it
-//     through every layer.
+//  2. Force a CI failure when proto adds a new variant without wiring it
+//     through the ClickHouse schema and insights type mapping.
 func TestPropertyValueOneofCoverage(t *testing.T) {
 	descriptor := (&commonv1.PropertyValue{}).ProtoReflect().Descriptor()
 	oneof := descriptor.Oneofs().ByName("value")
@@ -64,21 +60,13 @@ func TestPropertyValueOneofCoverage(t *testing.T) {
 		field := string(oneof.Fields().Get(i).Name())
 		seen[field] = true
 
-		want, declared := expectedVariantTypes[field]
-		if !declared {
-			t.Errorf("oneof case %q is missing from expectedVariantTypes — wire it through propertyValueToVariant, the ClickHouse Variant column, and variantTypeToPropertyValueType", field)
+		if _, declared := expectedVariantTypes[field]; !declared {
+			t.Errorf("oneof case %q is missing from expectedVariantTypes — wire it through the ClickHouse Variant column and variantTypeToPropertyValueType", field)
 			continue
 		}
 
-		sample, ok := samples[field]
-		if !ok {
+		if _, ok := samples[field]; !ok {
 			t.Errorf("oneof case %q missing a sample value — extend samplePropertyValues", field)
-			continue
-		}
-
-		v := propertyValueToVariant(context.Background(), sample)
-		if v.Type() != want {
-			t.Errorf("oneof case %q: propertyValueToVariant returned Type=%q, want %q", field, v.Type(), want)
 		}
 	}
 

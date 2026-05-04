@@ -1746,7 +1746,7 @@ func TestNotBetweenEventFilterParenthesization(t *testing.T) {
 	// to the full (< OR >) expression, not just its first branch.
 	// Without parens the SQL reads: kind = ? AND amount < ? OR amount > ?
 	// which is: (kind = ? AND amount < ?) OR (amount > ?) — leaking other event kinds.
-	if !strings.Contains(q.SQL(), "(toFloat64OrNull(") {
+	if !strings.Contains(q.SQL(), "(if(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), '') IS NOT NULL,") {
 		t.Errorf("expected NOT BETWEEN clause to be parenthesized in SQL, got: %s", q.SQL())
 	}
 }

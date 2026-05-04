@@ -12,6 +12,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -226,8 +227,8 @@ func (s *server) SegmentUsers(
 
 func (s *server) GetFilterSchema(
 	ctx context.Context,
-	req *connect.Request[insightsv1.GetFilterSchemaRequest],
-) (*connect.Response[insightsv1.GetFilterSchemaResponse], error) {
+	req *connect.Request[commonv1.GetFilterSchemaRequest],
+) (*connect.Response[commonv1.GetFilterSchemaResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, connectCtxErr(err)
 	}
@@ -239,7 +240,7 @@ func (s *server) GetFilterSchema(
 
 	projectID := principal.Project.ID
 
-	schema, err := s.service.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind())
+	schema, err := s.service.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind(), req.Msg.GetAllowedTypes())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

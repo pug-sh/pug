@@ -4,7 +4,7 @@ import (
 	"strconv"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 )
 
 const (

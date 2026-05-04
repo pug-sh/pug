@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"buf.build/go/protovalidate"
-	commonv1 "github.com/fivebitsio/cotton/internal/gen/proto/common/v1"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
