@@ -102,7 +102,7 @@ func TestTrendsWithFilters(t *testing.T) {
 	if !strings.Contains(sql, "toFloat64(count(DISTINCT distinct_id))") {
 		t.Errorf("expected toFloat64(count(DISTINCT distinct_id)) in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country'])") {
+	if !strings.Contains(sql, "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
 		t.Errorf("expected property resolution expression in SQL, got: %s", sql)
 	}
 
@@ -804,7 +804,7 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 	if !strings.Contains(sql, "LIMIT ?") {
 		t.Errorf("expected LIMIT ? in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "ifNull(nullIf(auto_properties['$country'], ''), custom_properties['$country'])") {
+	if !strings.Contains(sql, "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
 		t.Errorf("expected property filter expression in SQL, got: %s", sql)
 	}
 
@@ -1311,6 +1311,28 @@ func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 		if strings.Contains(sql, "auto_properties") {
 			t.Error("should not contain auto_properties")
 		}
+		// Pin the Variant CAST shape on both the SELECT and the non-empty
+		// guard. Dropping CAST(... AS Nullable(String)) silently returns raw
+		// Variant strings (e.g. "42 :: Int64") and breaks the != '' filter.
+		if !strings.Contains(sql, "CAST(custom_properties[?] AS Nullable(String)) AS value") {
+			t.Errorf("expected CAST(custom_properties[?] AS Nullable(String)) AS value in SQL, got: %s", sql)
+		}
+		if !strings.Contains(sql, "CAST(custom_properties[?] AS Nullable(String)) != ''") {
+			t.Errorf("expected CAST(custom_properties[?] AS Nullable(String)) != '' in SQL, got: %s", sql)
+		}
+	})
+
+	t.Run("auto_uses_cast_like_custom", func(t *testing.T) {
+		sql, _, err := insights.BuildAutoPropertyValuesQuery("proj_1", "$browser", "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(sql, "CAST(auto_properties[?] AS Nullable(String)) AS value") {
+			t.Errorf("expected CAST(auto_properties[?] AS Nullable(String)) AS value in SQL, got: %s", sql)
+		}
+		if !strings.Contains(sql, "CAST(auto_properties[?] AS Nullable(String)) != ''") {
+			t.Errorf("expected CAST(auto_properties[?] AS Nullable(String)) != '' in SQL, got: %s", sql)
+		}
 	})
 }
 
@@ -1375,6 +1397,28 @@ func TestBuildPropertyKeysQuery(t *testing.T) {
 		}
 		if args[2] != int64(500) {
 			t.Errorf("expected limit 500, got %v", args[2])
+		}
+	})
+
+	t.Run("selects_value_type_aggregate", func(t *testing.T) {
+		// Pin the value_type aggregation. Dropping it produces a column-count
+		// mismatch in QueryAggregateKeys (which dispatches on column presence);
+		// silently replacing it with a non-aggregate would break the GROUP BY.
+		// argMin gives first-touch semantics so dashboards see a stable type
+		// across calls. The max(last_seen) projection is aliased to
+		// last_seen_max to avoid ClickHouse aliasing the column inside argMin.
+		sql, _, err := insights.BuildCustomPropertyKeysQuery("proj_1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(sql, "argMin(value_type, last_seen) AS value_type") {
+			t.Errorf("expected argMin(value_type, last_seen) AS value_type in SQL, got: %s", sql)
+		}
+		if !strings.Contains(sql, "sum(event_count) AS count") {
+			t.Errorf("expected sum(event_count) AS count in SQL, got: %s", sql)
+		}
+		if !strings.Contains(sql, "max(last_seen) AS last_seen_max") {
+			t.Errorf("expected max(last_seen) AS last_seen_max in SQL, got: %s", sql)
 		}
 	})
 }
@@ -1705,7 +1749,7 @@ func TestNotBetweenEventFilterParenthesization(t *testing.T) {
 	// to the full (< OR >) expression, not just its first branch.
 	// Without parens the SQL reads: kind = ? AND amount < ? OR amount > ?
 	// which is: (kind = ? AND amount < ?) OR (amount > ?) — leaking other event kinds.
-	if !strings.Contains(q.SQL(), "(toFloat64OrNull(") {
+	if !strings.Contains(q.SQL(), "(if(nullIf(CAST(auto_properties['amount'] AS Nullable(String)), '') IS NOT NULL,") {
 		t.Errorf("expected NOT BETWEEN clause to be parenthesized in SQL, got: %s", q.SQL())
 	}
 }

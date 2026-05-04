@@ -7,6 +7,7 @@
 package commonv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -74,6 +75,77 @@ func (PropertySource) EnumDescriptor() ([]byte, []int) {
 	return file_common_v1_filter_schema_proto_rawDescGZIP(), []int{0}
 }
 
+// PropertyValueType enumerates the storage-side variant types a property key
+// can have. Mirrors the ClickHouse Variant inner types used in events
+// auto_properties and custom_properties: String, Int64, Float64, Bool,
+// DateTime64(3). INTEGER and FLOAT are kept distinct so future filters can
+// express integer-only constraints (counts, ages, enum-as-int) without
+// re-versioning. Profile properties are stored as JSON; their value_type is
+// derived from the JSON shape (Number → FLOAT, Object/Array/null → OTHER) and
+// loses the integer-vs-float distinction. OTHER is a catch-all for
+// non-primitive types (e.g. JSON objects/arrays in profile properties) that
+// don't map to a specific variant.
+type PropertyValueType int32
+
+const (
+	PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED PropertyValueType = 0
+	PropertyValueType_PROPERTY_VALUE_TYPE_STRING      PropertyValueType = 1
+	PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER     PropertyValueType = 2
+	PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT       PropertyValueType = 3
+	PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN     PropertyValueType = 4
+	PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME    PropertyValueType = 5
+	PropertyValueType_PROPERTY_VALUE_TYPE_OTHER       PropertyValueType = 6
+)
+
+// Enum value maps for PropertyValueType.
+var (
+	PropertyValueType_name = map[int32]string{
+		0: "PROPERTY_VALUE_TYPE_UNSPECIFIED",
+		1: "PROPERTY_VALUE_TYPE_STRING",
+		2: "PROPERTY_VALUE_TYPE_INTEGER",
+		3: "PROPERTY_VALUE_TYPE_FLOAT",
+		4: "PROPERTY_VALUE_TYPE_BOOLEAN",
+		5: "PROPERTY_VALUE_TYPE_DATETIME",
+		6: "PROPERTY_VALUE_TYPE_OTHER",
+	}
+	PropertyValueType_value = map[string]int32{
+		"PROPERTY_VALUE_TYPE_UNSPECIFIED": 0,
+		"PROPERTY_VALUE_TYPE_STRING":      1,
+		"PROPERTY_VALUE_TYPE_INTEGER":     2,
+		"PROPERTY_VALUE_TYPE_FLOAT":       3,
+		"PROPERTY_VALUE_TYPE_BOOLEAN":     4,
+		"PROPERTY_VALUE_TYPE_DATETIME":    5,
+		"PROPERTY_VALUE_TYPE_OTHER":       6,
+	}
+)
+
+func (x PropertyValueType) Enum() *PropertyValueType {
+	p := new(PropertyValueType)
+	*p = x
+	return p
+}
+
+func (x PropertyValueType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PropertyValueType) Descriptor() protoreflect.EnumDescriptor {
+	return file_common_v1_filter_schema_proto_enumTypes[1].Descriptor()
+}
+
+func (PropertyValueType) Type() protoreflect.EnumType {
+	return &file_common_v1_filter_schema_proto_enumTypes[1]
+}
+
+func (x PropertyValueType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PropertyValueType.Descriptor instead.
+func (PropertyValueType) EnumDescriptor() ([]byte, []int) {
+	return file_common_v1_filter_schema_proto_rawDescGZIP(), []int{1}
+}
+
 type EventNameMeta struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
@@ -135,10 +207,15 @@ func (x *EventNameMeta) GetLastSeenAt() *timestamppb.Timestamp {
 }
 
 type PropertyKeyMeta struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	Count         *uint64                `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
-	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Name       *string                `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	Count      *uint64                `protobuf:"varint,2,opt,name=count" json:"count,omitempty"`
+	LastSeenAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_seen_at,json=lastSeenAt" json:"last_seen_at,omitempty"`
+	// The value_type observed at the earliest last_seen for this key
+	// (first-touch). Deterministic across calls. When values for the same key
+	// span multiple types (rare drift), this stays pinned to the first-observed
+	// type, matching the funnel/retention breakdown attribution rule.
+	ValueType     *PropertyValueType `protobuf:"varint,4,opt,name=value_type,json=valueType,enum=common.v1.PropertyValueType" json:"value_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -194,26 +271,177 @@ func (x *PropertyKeyMeta) GetLastSeenAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *PropertyKeyMeta) GetValueType() PropertyValueType {
+	if x != nil && x.ValueType != nil {
+		return *x.ValueType
+	}
+	return PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED
+}
+
+// GetFilterSchemaRequest is shared by every service that exposes a
+// GetFilterSchema RPC (currently shared.activity.v1 and shared.insights.v1).
+// Keeping the request shape here avoids drift between services and is also a
+// signal that the filter-schema concept is service-agnostic.
+type GetFilterSchemaRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventKind     *string                `protobuf:"bytes,1,opt,name=event_kind,json=eventKind" json:"event_kind,omitempty"`
+	AllowedTypes  []PropertyValueType    `protobuf:"varint,2,rep,packed,name=allowed_types,json=allowedTypes,enum=common.v1.PropertyValueType" json:"allowed_types,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetFilterSchemaRequest) Reset() {
+	*x = GetFilterSchemaRequest{}
+	mi := &file_common_v1_filter_schema_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFilterSchemaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFilterSchemaRequest) ProtoMessage() {}
+
+func (x *GetFilterSchemaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_common_v1_filter_schema_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFilterSchemaRequest.ProtoReflect.Descriptor instead.
+func (*GetFilterSchemaRequest) Descriptor() ([]byte, []int) {
+	return file_common_v1_filter_schema_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetFilterSchemaRequest) GetEventKind() string {
+	if x != nil && x.EventKind != nil {
+		return *x.EventKind
+	}
+	return ""
+}
+
+func (x *GetFilterSchemaRequest) GetAllowedTypes() []PropertyValueType {
+	if x != nil {
+		return x.AllowedTypes
+	}
+	return nil
+}
+
+// GetFilterSchemaResponse mirrors the shared request shape — same reason.
+type GetFilterSchemaResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Events              []*EventNameMeta       `protobuf:"bytes,1,rep,name=events" json:"events,omitempty"`
+	AutoPropertyKeys    []*PropertyKeyMeta     `protobuf:"bytes,2,rep,name=auto_property_keys,json=autoPropertyKeys" json:"auto_property_keys,omitempty"`
+	CustomPropertyKeys  []*PropertyKeyMeta     `protobuf:"bytes,3,rep,name=custom_property_keys,json=customPropertyKeys" json:"custom_property_keys,omitempty"`
+	ProfilePropertyKeys []*PropertyKeyMeta     `protobuf:"bytes,4,rep,name=profile_property_keys,json=profilePropertyKeys" json:"profile_property_keys,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *GetFilterSchemaResponse) Reset() {
+	*x = GetFilterSchemaResponse{}
+	mi := &file_common_v1_filter_schema_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFilterSchemaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFilterSchemaResponse) ProtoMessage() {}
+
+func (x *GetFilterSchemaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_common_v1_filter_schema_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFilterSchemaResponse.ProtoReflect.Descriptor instead.
+func (*GetFilterSchemaResponse) Descriptor() ([]byte, []int) {
+	return file_common_v1_filter_schema_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetFilterSchemaResponse) GetEvents() []*EventNameMeta {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetAutoPropertyKeys() []*PropertyKeyMeta {
+	if x != nil {
+		return x.AutoPropertyKeys
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetCustomPropertyKeys() []*PropertyKeyMeta {
+	if x != nil {
+		return x.CustomPropertyKeys
+	}
+	return nil
+}
+
+func (x *GetFilterSchemaResponse) GetProfilePropertyKeys() []*PropertyKeyMeta {
+	if x != nil {
+		return x.ProfilePropertyKeys
+	}
+	return nil
+}
+
 var File_common_v1_filter_schema_proto protoreflect.FileDescriptor
 
 const file_common_v1_filter_schema_proto_rawDesc = "" +
 	"\n" +
-	"\x1dcommon/v1/filter_schema.proto\x12\tcommon.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"w\n" +
+	"\x1dcommon/v1/filter_schema.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"w\n" +
 	"\rEventNameMeta\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x04R\x05count\x12<\n" +
 	"\flast_seen_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"lastSeenAt\"y\n" +
+	"lastSeenAt\"\xb6\x01\n" +
 	"\x0fPropertyKeyMeta\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x04R\x05count\x12<\n" +
 	"\flast_seen_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"lastSeenAt*\x84\x01\n" +
+	"lastSeenAt\x12;\n" +
+	"\n" +
+	"value_type\x18\x04 \x01(\x0e2\x1c.common.v1.PropertyValueTypeR\tvalueType\"\xa5\x01\n" +
+	"\x16GetFilterSchemaRequest\x127\n" +
+	"\n" +
+	"event_kind\x18\x01 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\x12R\n" +
+	"\rallowed_types\x18\x02 \x03(\x0e2\x1c.common.v1.PropertyValueTypeB\x0f\xbaH\f\x92\x01\t\"\a\x82\x01\x04\x10\x01 \x00R\fallowedTypes\"\xb3\x02\n" +
+	"\x17GetFilterSchemaResponse\x120\n" +
+	"\x06events\x18\x01 \x03(\v2\x18.common.v1.EventNameMetaR\x06events\x12H\n" +
+	"\x12auto_property_keys\x18\x02 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x10autoPropertyKeys\x12L\n" +
+	"\x14custom_property_keys\x18\x03 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x12customPropertyKeys\x12N\n" +
+	"\x15profile_property_keys\x18\x04 \x03(\v2\x1a.common.v1.PropertyKeyMetaR\x13profilePropertyKeys*\x84\x01\n" +
 	"\x0ePropertySource\x12\x1f\n" +
 	"\x1bPROPERTY_SOURCE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14PROPERTY_SOURCE_AUTO\x10\x01\x12\x1a\n" +
 	"\x16PROPERTY_SOURCE_CUSTOM\x10\x02\x12\x1b\n" +
-	"\x17PROPERTY_SOURCE_PROFILE\x10\x03B=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
+	"\x17PROPERTY_SOURCE_PROFILE\x10\x03*\xfa\x01\n" +
+	"\x11PropertyValueType\x12#\n" +
+	"\x1fPROPERTY_VALUE_TYPE_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aPROPERTY_VALUE_TYPE_STRING\x10\x01\x12\x1f\n" +
+	"\x1bPROPERTY_VALUE_TYPE_INTEGER\x10\x02\x12\x1d\n" +
+	"\x19PROPERTY_VALUE_TYPE_FLOAT\x10\x03\x12\x1f\n" +
+	"\x1bPROPERTY_VALUE_TYPE_BOOLEAN\x10\x04\x12 \n" +
+	"\x1cPROPERTY_VALUE_TYPE_DATETIME\x10\x05\x12\x1d\n" +
+	"\x19PROPERTY_VALUE_TYPE_OTHER\x10\x06B=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_filter_schema_proto_rawDescOnce sync.Once
@@ -227,22 +455,31 @@ func file_common_v1_filter_schema_proto_rawDescGZIP() []byte {
 	return file_common_v1_filter_schema_proto_rawDescData
 }
 
-var file_common_v1_filter_schema_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_common_v1_filter_schema_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_common_v1_filter_schema_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_common_v1_filter_schema_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_common_v1_filter_schema_proto_goTypes = []any{
-	(PropertySource)(0),           // 0: common.v1.PropertySource
-	(*EventNameMeta)(nil),         // 1: common.v1.EventNameMeta
-	(*PropertyKeyMeta)(nil),       // 2: common.v1.PropertyKeyMeta
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(PropertySource)(0),             // 0: common.v1.PropertySource
+	(PropertyValueType)(0),          // 1: common.v1.PropertyValueType
+	(*EventNameMeta)(nil),           // 2: common.v1.EventNameMeta
+	(*PropertyKeyMeta)(nil),         // 3: common.v1.PropertyKeyMeta
+	(*GetFilterSchemaRequest)(nil),  // 4: common.v1.GetFilterSchemaRequest
+	(*GetFilterSchemaResponse)(nil), // 5: common.v1.GetFilterSchemaResponse
+	(*timestamppb.Timestamp)(nil),   // 6: google.protobuf.Timestamp
 }
 var file_common_v1_filter_schema_proto_depIdxs = []int32{
-	3, // 0: common.v1.EventNameMeta.last_seen_at:type_name -> google.protobuf.Timestamp
-	3, // 1: common.v1.PropertyKeyMeta.last_seen_at:type_name -> google.protobuf.Timestamp
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	6, // 0: common.v1.EventNameMeta.last_seen_at:type_name -> google.protobuf.Timestamp
+	6, // 1: common.v1.PropertyKeyMeta.last_seen_at:type_name -> google.protobuf.Timestamp
+	1, // 2: common.v1.PropertyKeyMeta.value_type:type_name -> common.v1.PropertyValueType
+	1, // 3: common.v1.GetFilterSchemaRequest.allowed_types:type_name -> common.v1.PropertyValueType
+	2, // 4: common.v1.GetFilterSchemaResponse.events:type_name -> common.v1.EventNameMeta
+	3, // 5: common.v1.GetFilterSchemaResponse.auto_property_keys:type_name -> common.v1.PropertyKeyMeta
+	3, // 6: common.v1.GetFilterSchemaResponse.custom_property_keys:type_name -> common.v1.PropertyKeyMeta
+	3, // 7: common.v1.GetFilterSchemaResponse.profile_property_keys:type_name -> common.v1.PropertyKeyMeta
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_common_v1_filter_schema_proto_init() }
@@ -255,8 +492,8 @@ func file_common_v1_filter_schema_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_v1_filter_schema_proto_rawDesc), len(file_common_v1_filter_schema_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   2,
+			NumEnums:      2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

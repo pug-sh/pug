@@ -165,14 +165,18 @@ func (e *Executor) QueryScalar(ctx context.Context, projectID string, q ScalarQu
 }
 
 // AggregateKeyMeta holds count and recency metadata for a key (event kind or property key).
+// ValueType is populated only when the query selects a value_type column (property_keys queries);
+// it is empty for event_names queries which do not have that column.
 type AggregateKeyMeta struct {
-	Key      string
-	Count    uint64
-	LastSeen time.Time
+	Key       string
+	ValueType string
+	Count     uint64
+	LastSeen  time.Time
 }
 
 // QueryAggregateKeys executes a query against event_names or property_keys and returns rows of
-// (kind/key, count, last_seen).
+// (kind/key[, value_type], count, last_seen). The value_type column is optional: property_keys
+// queries emit 4 columns; event_names queries emit 3. Column count is detected via rows.Columns().
 func (e *Executor) QueryAggregateKeys(ctx context.Context, projectID string, sql string, args []any) ([]AggregateKeyMeta, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
@@ -189,14 +193,24 @@ func (e *Executor) QueryAggregateKeys(ctx context.Context, projectID string, sql
 		}
 	}()
 
+	// Dispatch on the presence of the value_type column rather than column count —
+	// less brittle if either query ever adds an unrelated projection.
+	hasValueType := slices.Contains(rows.Columns(), "value_type")
+
 	var result []AggregateKeyMeta
 	for rows.Next() {
 		var row AggregateKeyMeta
-		if err := rows.Scan(&row.Key, &row.Count, &row.LastSeen); err != nil {
-			slog.ErrorContext(ctx, "clickhouse: query aggregate keys scan failed", slogx.Error(err),
+		var scanErr error
+		if hasValueType {
+			scanErr = rows.Scan(&row.Key, &row.ValueType, &row.Count, &row.LastSeen)
+		} else {
+			scanErr = rows.Scan(&row.Key, &row.Count, &row.LastSeen)
+		}
+		if scanErr != nil {
+			slog.ErrorContext(ctx, "clickhouse: query aggregate keys scan failed", slogx.Error(scanErr),
 				slog.String("project_id", projectID))
-			telemetry.RecordError(ctx, err)
-			return nil, fmt.Errorf("QueryAggregateKeys: scan: %w", err)
+			telemetry.RecordError(ctx, scanErr)
+			return nil, fmt.Errorf("QueryAggregateKeys: scan: %w", scanErr)
 		}
 		result = append(result, row)
 	}

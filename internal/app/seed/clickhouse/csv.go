@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,8 +16,8 @@ type rees46Event struct {
 	distinctID       string
 	kind             string
 	occurTime        time.Time
-	autoProperties   map[string]string
-	customProperties map[string]string
+	autoProperties   map[string]any
+	customProperties map[string]any
 }
 
 type rees46Reader struct {
@@ -91,12 +92,17 @@ func (r *rees46Reader) Read() (*rees46Event, error) {
 		userID = record[7]
 	}
 
-	customProps := map[string]string{
+	customProps := map[string]any{
 		"product_id":    productID,
 		"category_id":   categoryID,
 		"category_code": categoryCode,
 		"brand":         brand,
-		"price":         price,
+	}
+
+	if priceVal, err := strconv.ParseFloat(price, 64); err == nil {
+		customProps["price"] = priceVal
+	} else if price != "" {
+		customProps["price"] = price
 	}
 
 	if orderID != "" {
@@ -108,7 +114,7 @@ func (r *rees46Reader) Read() (*rees46Event, error) {
 		distinctID:       userID,
 		kind:             kind,
 		occurTime:        eventTime,
-		autoProperties:   map[string]string{},
+		autoProperties:   map[string]any{},
 		customProperties: customProps,
 	}, nil
 }

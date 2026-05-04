@@ -19,7 +19,12 @@ service ActivityService {
   // in a project. Does not resolve aliases.
   rpc GetEventExplorer(GetEventExplorerRequest) returns (GetEventExplorerResponse);
   // GetFilterSchema returns event names, property keys, and profile property keys for filter UIs.
-  rpc GetFilterSchema(GetFilterSchemaRequest) returns (GetFilterSchemaResponse);
+  // The filter-schema concept is service-agnostic; both shared.activity and
+  // shared.insights expose the same shape via common.v1.
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc GetFilterSchema(common.v1.GetFilterSchemaRequest) returns (common.v1.GetFilterSchemaResponse);
   // GetPropertyValues returns distinct values for a given property key.
   rpc GetPropertyValues(GetPropertyValuesRequest) returns (GetPropertyValuesResponse);
   // GetActivityHeatmap returns per-day event counts for a user profile over a time window.
@@ -111,19 +116,6 @@ message GetEventExplorerResponse {
   repeated ActivityEvent events = 1;
   // Empty when there are no more pages.
   string next_page_token = 2;
-}
-
-message GetFilterSchemaRequest {
-  string event_kind = 1 [(buf.validate.field) = {
-    string: {pattern: "^[a-zA-Z0-9_.-]*$"}
-  }];
-}
-
-message GetFilterSchemaResponse {
-  repeated common.v1.EventNameMeta events = 1;
-  repeated common.v1.PropertyKeyMeta auto_property_keys = 2;
-  repeated common.v1.PropertyKeyMeta custom_property_keys = 3;
-  repeated common.v1.PropertyKeyMeta profile_property_keys = 4;
 }
 
 message GetPropertyValuesRequest {
