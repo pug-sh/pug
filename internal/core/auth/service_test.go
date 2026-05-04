@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/pug-sh/pug/internal/core/auth"
 	"github.com/pug-sh/pug/internal/testutil"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestAuthService(t *testing.T) {

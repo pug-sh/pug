@@ -9,12 +9,12 @@ import (
 
 	"buf.build/go/protovalidate"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/deps/clickhouse"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	workerprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/workers/profiles/v1"
 	"github.com/pug-sh/pug/internal/slogx"
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/protobuf/proto"
 )

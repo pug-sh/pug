@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
-	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/nats-io/nats.go/jetstream"
+	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 )
 
 // TODO: For self-hosting, move stream/consumer initialization to app startup instead of a

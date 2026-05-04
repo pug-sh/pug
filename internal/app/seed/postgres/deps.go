@@ -3,8 +3,8 @@ package seed
 import (
 	"context"
 
-	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/sethvargo/go-envconfig"
 )
 

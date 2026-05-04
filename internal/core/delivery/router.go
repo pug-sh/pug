@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Router struct {

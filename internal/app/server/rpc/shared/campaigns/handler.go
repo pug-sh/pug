@@ -7,6 +7,8 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/core/campaigns"
 	"github.com/pug-sh/pug/internal/core/projects"
@@ -15,8 +17,6 @@ import (
 	campaignsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/campaigns/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

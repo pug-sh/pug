@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
 type stubProjectKeyLookup struct {
