@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	devicesv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/devices/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 )

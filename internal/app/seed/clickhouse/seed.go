@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/google/uuid"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
 type Seeder struct {

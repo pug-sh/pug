@@ -8,11 +8,11 @@ import (
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	sdkprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
-	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
