@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/google/uuid"
+	"github.com/pug-sh/pug/internal/autoprop"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
@@ -20,6 +22,35 @@ type Seeder struct {
 
 func NewSeeder(deps *deps) *Seeder {
 	return &Seeder{deps: deps}
+}
+
+// autoAnyMapToVariantMap wraps a map[string]any into the chcol.Variant map
+// shape the clickhouse-go driver expects for Map(String, Variant(...)) columns.
+// Type-routing is by Go static type. String values for $-prefixed auto-property
+// keys are routed through autoprop.Variant for typed inference; custom keys
+// fall through to the String slot.
+func autoAnyMapToVariantMap(ctx context.Context, projectID string, props map[string]any) map[string]chcol.Variant {
+	if len(props) == 0 {
+		return nil
+	}
+	out := make(map[string]chcol.Variant, len(props))
+	for k, v := range props {
+		switch x := v.(type) {
+		case string:
+			out[k] = autoprop.Variant(ctx, projectID, k, x)
+		case bool:
+			out[k] = chcol.NewVariantWithType(x, "Bool")
+		case int:
+			out[k] = chcol.NewVariantWithType(int64(x), "Int64")
+		case int64:
+			out[k] = chcol.NewVariantWithType(x, "Int64")
+		case float64:
+			out[k] = chcol.NewVariantWithType(x, "Float64")
+		default:
+			out[k] = chcol.NewVariantWithType(fmt.Sprint(x), "String")
+		}
+	}
+	return out
 }
 
 func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file string, truncate bool) error {
@@ -113,8 +144,8 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]eve
 				projectID,
 				e.distinctID,
 				e.kind,
-				e.autoProperties,
-				e.customProperties,
+				autoAnyMapToVariantMap(ctx, projectID, e.autoProperties),
+				autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
 				e.occurTime,
 				e.sessionID,
 			); err != nil {
@@ -263,8 +294,8 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 				projectID,
 				e.distinctID,
 				e.kind,
-				e.autoProperties,
-				e.customProperties,
+				autoAnyMapToVariantMap(ctx, projectID, e.autoProperties),
+				autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
 				e.occurTime,
 				uuid.NewString(),
 			); err != nil {

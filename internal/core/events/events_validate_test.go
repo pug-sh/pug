@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"buf.build/go/protovalidate"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -82,19 +83,19 @@ func TestEventValidation_KindNoReservedPrefix(t *testing.T) {
 func TestEventValidation_AutoPropertiesDollarPrefix(t *testing.T) {
 	tests := []struct {
 		name           string
-		autoProperties map[string]string
+		autoProperties map[string]*commonv1.PropertyValue
 		wantErr        bool
 	}{
-		{name: "valid_dollar_prefix", autoProperties: map[string]string{"$browser": "Chrome", "$os": "macOS"}, wantErr: false},
-		{name: "missing_dollar_prefix", autoProperties: map[string]string{"browser": "Chrome"}, wantErr: true},
-		{name: "empty_map_accepted", autoProperties: map[string]string{}, wantErr: false},
+		{name: "valid_dollar_prefix", autoProperties: propMap("$browser", "$os"), wantErr: false},
+		{name: "missing_dollar_prefix", autoProperties: propMap("browser"), wantErr: true},
+		{name: "empty_map_accepted", autoProperties: map[string]*commonv1.PropertyValue{}, wantErr: false},
 		{name: "nil_map_accepted", autoProperties: nil, wantErr: false},
-		{name: "mixed_valid_invalid", autoProperties: map[string]string{"$browser": "Chrome", "os": "macOS"}, wantErr: true},
-		{name: "single_valid_key", autoProperties: map[string]string{"$device": "iPhone"}, wantErr: false},
+		{name: "mixed_valid_invalid", autoProperties: propMap("$browser", "os"), wantErr: true},
+		{name: "single_valid_key", autoProperties: propMap("$device"), wantErr: false},
 		// Edge cases: protobuf map keys can be empty strings, and the literal single-char "$" key
 		// is valid per startsWith("$") semantics.
-		{name: "single_dollar_char_key_accepted", autoProperties: map[string]string{"$": "value"}, wantErr: false},
-		{name: "empty_string_key_rejected", autoProperties: map[string]string{"": "value"}, wantErr: true},
+		{name: "single_dollar_char_key_accepted", autoProperties: propMap("$"), wantErr: false},
+		{name: "empty_string_key_rejected", autoProperties: propMap(""), wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -115,4 +116,17 @@ func TestEventValidation_AutoPropertiesDollarPrefix(t *testing.T) {
 			}
 		})
 	}
+}
+
+func propMap(keys ...string) map[string]*commonv1.PropertyValue {
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make(map[string]*commonv1.PropertyValue, len(keys))
+	for _, key := range keys {
+		out[key] = &commonv1.PropertyValue{
+			Value: &commonv1.PropertyValue_StringValue{StringValue: "value"},
+		}
+	}
+	return out
 }

@@ -19,3 +19,46 @@ Poison messages (e.g. corrupt protobuf) are currently terminated via `msg.Term()
 - On `PermanentError`, publish the raw message bytes to the DLQ before calling `msg.Term()`
 - Add a CLI command (`pug events dlq inspect` / `pug events dlq replay`) to view and replay DLQ messages
 - Add metrics/alerting on DLQ depth
+
+## Client-side SDKs
+
+Create official mobile SDKs in separate repositories that wrap the SDK RPCs:
+
+### Android SDK (Kotlin)
+- HTTP client with OkHttp
+- Event batching with local persistence (Room/SQLite)
+- Device token registration (FCM)
+- Retry logic with exponential backoff
+
+### iOS SDK (Swift)
+- HTTP client with URLSession
+- Event batching with UserDefaults/SQLite
+- Device token registration (APN)
+- Retry logic with exponential backoff
+
+## Data Governance
+
+- Data retention policies (auto-delete events older than N days)
+- GDPR export (export all user data as JSON/CSV)
+- GDPR delete (right to be forgotten - hard-delete profile + events)
+
+## Collaboration
+
+- Teams/workspaces (group projects under a team)
+- Role-based permissions (admin, editor, viewer)
+- Audit logs (track who did what)
+
+## Product Analytics Features
+
+- Computed properties (derived properties from raw events)
+- Saved views (save filter configurations)
+
+## Integrations
+
+- Slack notifications (alert on anomaly thresholds)
+- Export to data warehouses (BigQuery, Snowflake, Redshift)
+
+## Enterprise
+
+- SSO/SAML authentication
+- API rate limiting per project/org

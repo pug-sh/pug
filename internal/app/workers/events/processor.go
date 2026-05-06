@@ -97,22 +97,29 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 				With("kind", e.GetKind())
 		}
 
+		autoVariants := propertyValueMapToVariantMap(ctx, batch.GetProjectId(), e.AutoProperties)
+		customVariants := propertyValueMapToVariantMap(ctx, batch.GetProjectId(), e.CustomProperties)
+
 		if err := chBatch.Append(
 			e.GetEventId(),
 			batch.GetProjectId(),
 			e.GetDistinctId(),
 			e.GetKind(),
-			e.AutoProperties,
-			e.CustomProperties,
+			autoVariants,
+			customVariants,
 			e.OccurTime.AsTime(),
 			e.GetSessionId(),
 		); err != nil {
 			slog.ErrorContext(ctx, "failed to append event to batch", slogx.Error(err), slog.String("project_id", batch.GetProjectId()), slog.Int("count", len(batch.Events)), slog.String("event_id", e.GetEventId()), slog.Int("event_index", i))
 			telemetry.RecordError(ctx, err)
+			// Append builds the batch in memory and only fails on encode-time
+			// errors (Variant slot mismatch, type drift, oversized buffer).
+			// Retry will not fix these — DLQ on first delivery.
 			return natsworker.NewPermanentError(err).
 				With("worker", "events").
 				With("project_id", batch.GetProjectId()).
-				With("event_id", e.GetEventId())
+				With("event_id", e.GetEventId()).
+				With("event_index", fmt.Sprintf("%d", i))
 		}
 	}
 

@@ -8,8 +8,39 @@ import (
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 )
 
-// PropertyExpr returns the ClickHouse expression to resolve an event property.
-// It checks auto_properties first; if the value is empty or missing, it falls back to custom_properties.
+// PropertyExpr returns the ClickHouse string expression to resolve an event property.
+// It reads auto_properties first and falls back to custom_properties only when
+// auto's String representation is genuinely empty (i.e. the auto Variant is an
+// empty String slot, OR auto is fully absent). Non-empty stringifications of
+// typed auto slots (e.g. Int64 0 → '0', Bool false → 'false') BLOCK the
+// fallthrough — custom is not consulted in that case. Both maps' values are
+// coerced to string for unified operator handling (custom_properties stores
+// Variant — CAST(v AS Nullable(String)) collapses any active variant type to
+// its string representation; auto_properties uses the same Variant shape and
+// cast. Numeric operators downstream re-parse via toFloat64OrNull).
+//
+// CAST to Nullable(String) is used (not toString) because toString(NULL Variant)
+// produces the display string "ᴺᵁᴸᴸ" rather than NULL or ""; the Nullable cast
+// correctly preserves NULL for absent keys so IS_SET / IS_NOT_SET work correctly
+// via the existing prop != "" / prop = "" checks.
+//
+// Empty-value behavior is unified. Using a code block here so gofmt does not
+// rewrite the paired single quotes in the prose into curly quotes:
+//
+//	IS_SET (prop != '') returns false in all of these:
+//	  - Property absent from both maps.
+//	  - Auto value is an empty String variant (nullIf collapses '' to NULL,
+//	    falls through to custom). Non-string auto variants project to a
+//	    non-empty string ('0', 'false', etc.) and BLOCK the fallthrough —
+//	    custom is not consulted in that case.
+//	  - Custom Variant String value is '' (CAST surfaces '' through the
+//	    coalesce). NB: empty-string custom values are indistinguishable from
+//	    absent-key here.
+//
+//	The trailing `, ''` sentinel in the coalesce is load-bearing: it converts
+//	the fully-absent case into '' so all downstream string operators
+//	(=, LIKE, IN, IS_SET) see a non-NULL projection. Removing it would break
+//	IS_SET semantics.
 //
 // SAFETY: The name is interpolated directly into SQL (not parameterized) because ClickHouse
 // map key access requires it. Callers MUST ensure name is validated before calling this function.
@@ -24,7 +55,31 @@ func propertyExpr(name, alias string) string {
 	if alias != "" {
 		prefix = alias + "."
 	}
-	return fmt.Sprintf("ifNull(nullIf(%sauto_properties['%s'], ''), %scustom_properties['%s'])", prefix, name, prefix, name)
+	return fmt.Sprintf("coalesce(nullIf(CAST(%sauto_properties['%s'] AS Nullable(String)), ''), CAST(%scustom_properties['%s'] AS Nullable(String)), '')", prefix, name, prefix, name)
+}
+
+// propertyNumericExpr returns a Nullable(Float64) expression for numeric event
+// property operators. It reads Int64/Float64 Variant slots directly and only
+// falls back to string re-parsing for string-typed values, preserving the
+// existing "auto first unless empty" precedence.
+func propertyNumericExpr(name, alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+
+	autoString := fmt.Sprintf("CAST(%sauto_properties['%s'] AS Nullable(String))", prefix, name)
+	customString := fmt.Sprintf("CAST(%scustom_properties['%s'] AS Nullable(String))", prefix, name)
+	autoNumeric := fmt.Sprintf(
+		"coalesce(CAST(variantElement(%sauto_properties['%s'], 'Float64') AS Nullable(Float64)), CAST(variantElement(%sauto_properties['%s'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(%s))",
+		prefix, name, prefix, name, autoString,
+	)
+	customNumeric := fmt.Sprintf(
+		"coalesce(CAST(variantElement(%scustom_properties['%s'], 'Float64') AS Nullable(Float64)), CAST(variantElement(%scustom_properties['%s'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(%s))",
+		prefix, name, prefix, name, customString,
+	)
+
+	return fmt.Sprintf("if(nullIf(%s, '') IS NOT NULL, %s, %s)", autoString, autoNumeric, customNumeric)
 }
 
 // ProfilePropertyExpr returns the ClickHouse expression to read a profile property.
@@ -66,8 +121,19 @@ func propertyCondition(f *commonv1.PropertyFilter, projectID, alias string) (Con
 
 // eventPropertyCondition builds a Condition for auto/custom event property filters.
 func eventPropertyCondition(f *commonv1.PropertyFilter, alias string) (Condition, error) {
-	prop := propertyExpr(f.GetProperty(), alias)
-	return operatorCondition(prop, f)
+	switch f.GetOperator() {
+	case commonv1.FilterOperator_FILTER_OPERATOR_LTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_GTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_LT,
+		commonv1.FilterOperator_FILTER_OPERATOR_GT:
+		return numericCond(propertyNumericExpr(f.GetProperty(), alias), numericSQLComparator(f.GetOperator()), f, false)
+	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
+		return betweenCond(propertyNumericExpr(f.GetProperty(), alias), f, false)
+	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
+		return betweenCond(propertyNumericExpr(f.GetProperty(), alias), f, true)
+	default:
+		return operatorCondition(propertyExpr(f.GetProperty(), alias), f)
+	}
 }
 
 // profileFilterCondition builds a Condition that filters events by matching profile properties.
@@ -119,18 +185,60 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 	args = append(args, propertyCond.Args()...)
 
 	if n := strings.Count(sql, "?"); n != len(args) {
-		return Condition{}, fmt.Errorf("profile filter: placeholder count (%d) != arg count (%d)", n, len(args))
+		return Condition{}, fmt.Errorf("internal: filter placeholder count mismatch (%d != %d)", n, len(args))
 	}
 	return RawCond(sql, args...), nil
 }
 
-// numericCond parses the filter value as float64 and builds a toFloat64OrNull comparison.
-func numericCond(prop, op string, f *commonv1.PropertyFilter) (Condition, error) {
+func numericSQLComparator(op commonv1.FilterOperator) string {
+	switch op {
+	case commonv1.FilterOperator_FILTER_OPERATOR_LTE:
+		return "<="
+	case commonv1.FilterOperator_FILTER_OPERATOR_GTE:
+		return ">="
+	case commonv1.FilterOperator_FILTER_OPERATOR_LT:
+		return "<"
+	case commonv1.FilterOperator_FILTER_OPERATOR_GT:
+		return ">"
+	default:
+		return ""
+	}
+}
+
+// numericCond parses the filter value as float64 and builds a numeric comparison.
+func numericCond(prop, op string, f *commonv1.PropertyFilter, parse bool) (Condition, error) {
 	n, err := strconv.ParseFloat(f.GetValue(), 64)
 	if err != nil {
 		return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValue(), f.GetOperator(), err)
 	}
-	return RawCond("toFloat64OrNull("+prop+") "+op+" ?", n), nil
+	if parse {
+		prop = "toFloat64OrNull(" + prop + ")"
+	}
+	return RawCond(prop+" "+op+" ?", n), nil
+}
+
+func betweenCond(prop string, f *commonv1.PropertyFilter, negate bool) (Condition, error) {
+	opName := "BETWEEN"
+	if negate {
+		opName = "NOT_BETWEEN"
+	}
+	if len(f.GetValues()) != 2 {
+		return Condition{}, fmt.Errorf("%s operator requires exactly 2 values for property %q, got %d", opName, f.GetProperty(), len(f.GetValues()))
+	}
+
+	min, err := strconv.ParseFloat(f.GetValues()[0], 64)
+	if err != nil {
+		return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[0], f.GetOperator(), err)
+	}
+	max, err := strconv.ParseFloat(f.GetValues()[1], 64)
+	if err != nil {
+		return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
+	}
+
+	if negate {
+		return RawCond("("+prop+" < ? OR "+prop+" > ?)", min, max), nil
+	}
+	return RawCond("("+prop+" >= ? AND "+prop+" <= ?)", min, max), nil
 }
 
 // operatorCondition builds a Condition for the given SQL expression and PropertyFilter operator.
@@ -162,13 +270,13 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 	case commonv1.FilterOperator_FILTER_OPERATOR_IS_NOT_SET:
 		return RawCond(prop + " = ''"), nil
 	case commonv1.FilterOperator_FILTER_OPERATOR_LTE:
-		return numericCond(prop, "<=", f)
+		return numericCond(prop, "<=", f, true)
 	case commonv1.FilterOperator_FILTER_OPERATOR_GTE:
-		return numericCond(prop, ">=", f)
+		return numericCond(prop, ">=", f, true)
 	case commonv1.FilterOperator_FILTER_OPERATOR_LT:
-		return numericCond(prop, "<", f)
+		return numericCond(prop, "<", f, true)
 	case commonv1.FilterOperator_FILTER_OPERATOR_GT:
-		return numericCond(prop, ">", f)
+		return numericCond(prop, ">", f, true)
 	case commonv1.FilterOperator_FILTER_OPERATOR_IN:
 		args := make([]any, len(f.GetValues()))
 		for i, v := range f.GetValues() {
@@ -184,31 +292,9 @@ func operatorCondition(prop string, f *commonv1.PropertyFilter) (Condition, erro
 		placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ")
 		return RawCond(prop+" NOT IN ("+placeholders+")", args...), nil
 	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
-		if len(f.GetValues()) != 2 {
-			return Condition{}, fmt.Errorf("BETWEEN operator requires exactly 2 values for property %q, got %d", f.GetProperty(), len(f.GetValues()))
-		}
-		min, err := strconv.ParseFloat(f.GetValues()[0], 64)
-		if err != nil {
-			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[0], f.GetOperator(), err)
-		}
-		max, err := strconv.ParseFloat(f.GetValues()[1], 64)
-		if err != nil {
-			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
-		}
-		return RawCond("(toFloat64OrNull("+prop+") >= ? AND toFloat64OrNull("+prop+") <= ?)", min, max), nil
+		return betweenCond("toFloat64OrNull("+prop+")", f, false)
 	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
-		if len(f.GetValues()) != 2 {
-			return Condition{}, fmt.Errorf("NOT_BETWEEN operator requires exactly 2 values for property %q, got %d", f.GetProperty(), len(f.GetValues()))
-		}
-		min, err := strconv.ParseFloat(f.GetValues()[0], 64)
-		if err != nil {
-			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[0], f.GetOperator(), err)
-		}
-		max, err := strconv.ParseFloat(f.GetValues()[1], 64)
-		if err != nil {
-			return Condition{}, fmt.Errorf("invalid numeric value %q for operator %v: %w", f.GetValues()[1], f.GetOperator(), err)
-		}
-		return RawCond("(toFloat64OrNull("+prop+") < ? OR toFloat64OrNull("+prop+") > ?)", min, max), nil
+		return betweenCond("toFloat64OrNull("+prop+")", f, true)
 	}
 	return Condition{}, fmt.Errorf("unsupported filter operator: %v", f.GetOperator())
 }

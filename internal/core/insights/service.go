@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -15,7 +17,6 @@ import (
 
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
-	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -43,21 +44,101 @@ func NewService(executor *Executor, redis *redis.Client) *Service {
 	}
 }
 
-func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind string) (*insightsv1.GetFilterSchemaResponse, error) {
+func variantTypeToPropertyValueType(raw string) commonv1.PropertyValueType {
+	switch raw {
+	case "":
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED
+	case "String":
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING
+	case "Int64":
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER
+	case "Float64":
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT
+	case "Number":
+		// Legacy alias for profile JSON values that landed in the MV before the
+		// Int64/Float64 split. Newer refreshes emit Int64 or Float64 directly.
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT
+	case "Bool":
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN
+	}
+	// Match any DateTime64(precision) so a future precision change in the
+	// migration doesn't silently demote dates to OTHER. The pin tests catch
+	// the migration drift independently.
+	if strings.HasPrefix(raw, "DateTime64(") {
+		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME
+	}
+	return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER
+}
+
+func normalizeAllowedTypes(in []commonv1.PropertyValueType) []commonv1.PropertyValueType {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[commonv1.PropertyValueType]struct{}, len(in))
+	out := make([]commonv1.PropertyValueType, 0, len(in))
+	for _, t := range in {
+		if t == commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_UNSPECIFIED {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	slices.Sort(out)
+	return out
+}
+
+func filterAggregateKeysByType(rows []AggregateKeyMeta, allowed []commonv1.PropertyValueType) []AggregateKeyMeta {
+	allowed = normalizeAllowedTypes(allowed)
+	if len(allowed) == 0 {
+		return rows
+	}
+	allowedSet := make(map[commonv1.PropertyValueType]struct{}, len(allowed))
+	for _, t := range allowed {
+		allowedSet[t] = struct{}{}
+	}
+
+	out := make([]AggregateKeyMeta, 0, len(rows))
+	for _, row := range rows {
+		if _, ok := allowedSet[variantTypeToPropertyValueType(row.ValueType)]; ok {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind string, allowedTypes []commonv1.PropertyValueType) (*commonv1.GetFilterSchemaResponse, error) {
+	allowedTypes = normalizeAllowedTypes(allowedTypes)
 	cacheKey := "filterschema:" + projectID
 	if eventKind != "" {
 		cacheKey += ":" + eventKind
 	}
+	if len(allowedTypes) > 0 {
+		parts := make([]string, len(allowedTypes))
+		for i, t := range allowedTypes {
+			parts[i] = t.String()
+		}
+		cacheKey += ":types=" + strings.Join(parts, ",")
+	}
 
 	cachedSchema, cacheErr := s.redis.Get(ctx, cacheKey).Bytes()
 	if cacheErr == nil {
-		var resp insightsv1.GetFilterSchemaResponse
+		var resp commonv1.GetFilterSchemaResponse
 		if err := proto.Unmarshal(cachedSchema, &resp); err != nil {
 			slog.WarnContext(ctx, "failed to unmarshal cached filter schema, evicting",
 				slogx.Error(err), slog.String("project_id", projectID))
 			if delErr := s.redis.Del(ctx, cacheKey).Err(); delErr != nil {
-				slog.WarnContext(ctx, "failed to evict corrupt filter schema cache",
+				// Eviction failure is Error (not Warn): the corrupt blob will
+				// be re-read by the next request and trigger another failed
+				// eviction. Without escalation, the loop is silent at Warn.
+				slog.ErrorContext(ctx, "failed to evict corrupt filter schema cache",
 					slogx.Error(delErr), slog.String("project_id", projectID))
+				telemetry.RecordError(ctx, delErr)
 			}
 		} else {
 			return &resp, nil
@@ -136,6 +217,10 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		return nil, err
 	}
 
+	autoPropKeys = filterAggregateKeysByType(autoPropKeys, allowedTypes)
+	customPropKeys = filterAggregateKeysByType(customPropKeys, allowedTypes)
+	profilePropKeys = filterAggregateKeysByType(profilePropKeys, allowedTypes)
+
 	toEventMetas := func(rows []AggregateKeyMeta) []*commonv1.EventNameMeta {
 		out := make([]*commonv1.EventNameMeta, len(rows))
 		for i, m := range rows {
@@ -150,12 +235,13 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		for i, m := range rows {
 			key := m.Key
 			count := m.Count
-			out[i] = &commonv1.PropertyKeyMeta{Name: proto.String(key), Count: &count, LastSeenAt: timestamppb.New(m.LastSeen)}
+			valueType := variantTypeToPropertyValueType(m.ValueType)
+			out[i] = &commonv1.PropertyKeyMeta{Name: proto.String(key), Count: &count, LastSeenAt: timestamppb.New(m.LastSeen), ValueType: &valueType}
 		}
 		return out
 	}
 
-	resp := &insightsv1.GetFilterSchemaResponse{
+	resp := &commonv1.GetFilterSchemaResponse{
 		Events:              toEventMetas(eventMetas),
 		AutoPropertyKeys:    toPropKeyMetas(autoPropKeys),
 		CustomPropertyKeys:  toPropKeyMetas(customPropKeys),
@@ -184,8 +270,11 @@ func (s *Service) GetPropertyValues(ctx context.Context, projectID, propertyKey,
 			slog.WarnContext(ctx, "failed to unmarshal cached property values, evicting",
 				slogx.Error(err), slog.String("project_id", projectID), slog.String("key", propertyKey))
 			if delErr := s.redis.Del(ctx, cacheKey).Err(); delErr != nil {
-				slog.WarnContext(ctx, "failed to evict corrupt property values cache",
+				// See note above on the filter-schema eviction path: corrupt
+				// blob persists if Del fails, so escalate to Error.
+				slog.ErrorContext(ctx, "failed to evict corrupt property values cache",
 					slogx.Error(delErr), slog.String("project_id", projectID))
+				telemetry.RecordError(ctx, delErr)
 			}
 		} else {
 			return vals, nil
