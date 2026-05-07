@@ -2,6 +2,9 @@ package profiles
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"connectrpc.com/authn"
@@ -11,6 +14,7 @@ import (
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	profilesv1 "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1"
+	profilesv1connect "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -247,4 +251,117 @@ func TestDelete_NonExistent(t *testing.T) {
 	if code := connect.CodeOf(err); code != connect.CodeNotFound {
 		t.Errorf("got code %v, want CodeNotFound", code)
 	}
+}
+
+func TestList_ExactPageSizeOmitsNextPageToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	write := dbwrite.New(pg.PgW)
+
+	seedProfiles(t, ctx, write, projectID, pageSize)
+
+	client := newProfilesTestClient(t, NewServer(pg.PgRO, pg.PgW, &natsdeps.NATSClient{}), projectID)
+	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{}))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	var responses []*profilesv1.ListResponse
+	for stream.Receive() {
+		responses = append(responses, stream.Msg())
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream err: %v", err)
+	}
+
+	if len(responses) != 1 {
+		t.Fatalf("responses = %d, want 1", len(responses))
+	}
+	if got := len(responses[0].GetProfiles()); got != pageSize {
+		t.Fatalf("profiles in first response = %d, want %d", got, pageSize)
+	}
+	if got := responses[0].GetNextPageToken(); got != "" {
+		t.Fatalf("next_page_token = %q, want empty", got)
+	}
+}
+
+func TestList_MoreThanPageSizeStreamsSecondPage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	write := dbwrite.New(pg.PgW)
+
+	seedProfiles(t, ctx, write, projectID, pageSize+1)
+
+	client := newProfilesTestClient(t, NewServer(pg.PgRO, pg.PgW, &natsdeps.NATSClient{}), projectID)
+	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{}))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	var responses []*profilesv1.ListResponse
+	for stream.Receive() {
+		responses = append(responses, stream.Msg())
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream err: %v", err)
+	}
+
+	if len(responses) != 2 {
+		t.Fatalf("responses = %d, want 2", len(responses))
+	}
+	if got := len(responses[0].GetProfiles()); got != pageSize {
+		t.Fatalf("profiles in first response = %d, want %d", got, pageSize)
+	}
+	if got := responses[0].GetNextPageToken(); got == "" {
+		t.Fatal("first response next_page_token is empty, want non-empty")
+	}
+	if got := len(responses[1].GetProfiles()); got != 1 {
+		t.Fatalf("profiles in second response = %d, want 1", got)
+	}
+	if got := responses[1].GetNextPageToken(); got != "" {
+		t.Fatalf("second response next_page_token = %q, want empty", got)
+	}
+}
+
+func seedProfiles(t *testing.T, ctx context.Context, write *dbwrite.Queries, projectID string, count int) {
+	t.Helper()
+	for i := range count {
+		profileID := xid.New().String()
+		externalID := fmt.Sprintf("user-%03d@example.com", i)
+		if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
+			ID:         profileID,
+			ProjectID:  projectID,
+			ExternalID: postgres.NewText(externalID),
+			Properties: map[string]any{"index": i},
+		}); err != nil {
+			t.Fatalf("upsert profile %d: %v", i, err)
+		}
+	}
+}
+
+func newProfilesTestClient(t *testing.T, svc *Server, projectID string) profilesv1connect.ProfilesServiceClient {
+	t.Helper()
+
+	path, handler := profilesv1connect.NewProfilesServiceHandler(svc)
+	authMW := authn.NewMiddleware(func(ctx context.Context, req *http.Request) (any, error) {
+		return &rpc.Principal{Project: &dbread.Project{ID: projectID}}, nil
+	})
+
+	mux := http.NewServeMux()
+	mux.Handle(path, authMW.Wrap(handler))
+
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	return profilesv1connect.NewProfilesServiceClient(http.DefaultClient, ts.URL)
 }

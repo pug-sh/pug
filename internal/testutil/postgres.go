@@ -15,6 +15,8 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
+const testPostgresImage = "postgres@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7" // PostgreSQL 18.3-alpine
+
 // TestPostgres holds the container and connection pools for a test database.
 type TestPostgres struct {
 	container *tcpostgres.PostgresContainer
@@ -29,7 +31,7 @@ func SetupPostgres(t *testing.T) *TestPostgres {
 	t.Helper()
 	ctx := context.Background()
 
-	ctr, err := tcpostgres.Run(ctx, "postgres:18-alpine",
+	ctr, err := tcpostgres.Run(ctx, testPostgresImage,
 		tcpostgres.WithDatabase("pug_test"),
 		tcpostgres.WithUsername("postgres"),
 		tcpostgres.WithPassword("postgres"),
@@ -79,7 +81,7 @@ func SetupBarePostgres(t *testing.T) *TestPostgres {
 	t.Helper()
 	ctx := context.Background()
 
-	ctr, err := tcpostgres.Run(ctx, "postgres:18-alpine",
+	ctr, err := tcpostgres.Run(ctx, testPostgresImage,
 		tcpostgres.WithDatabase("pug_test"),
 		tcpostgres.WithUsername("postgres"),
 		tcpostgres.WithPassword("postgres"),
