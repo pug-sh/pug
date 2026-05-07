@@ -10,14 +10,16 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// TestRedis holds a Dragonfly testcontainer (Redis-compatible) for testing.
+const testDragonflyImage = "docker.dragonflydb.io/dragonflydb/dragonfly@sha256:243bf004df5e137d9432c35367d7c86e6d2b5bcb6700be4b6397fcb9306b794b" // v1.38.0
+
+// TestRedis holds a Dragonfly testcontainer for testing.
 type TestRedis struct {
 	container testcontainers.Container
 	URL       string
 	Client    *goredis.Client
 }
 
-// SetupRedis starts a Dragonfly container (Redis-compatible) and returns a connected client.
+// SetupRedis starts a Dragonfly container and returns a connected client.
 // Cleanup is registered via t.Cleanup.
 func SetupRedis(t *testing.T) *TestRedis {
 	t.Helper()
@@ -25,7 +27,7 @@ func SetupRedis(t *testing.T) *TestRedis {
 
 	ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "docker.dragonflydb.io/dragonflydb/dragonfly:latest",
+			Image:        testDragonflyImage,
 			ExposedPorts: []string{"6379/tcp"},
 			WaitingFor:   wait.ForListeningPort("6379/tcp"),
 		},
@@ -56,6 +58,11 @@ func SetupRedis(t *testing.T) *TestRedis {
 	}
 
 	client := goredis.NewClient(opts)
+	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		_ = testcontainers.TerminateContainer(ctr)
+		t.Fatalf("testutil: ping dragonfly: %v", err)
+	}
 
 	tr := &TestRedis{
 		container: ctr,

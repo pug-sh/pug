@@ -232,7 +232,7 @@ func (s *Server) List(
 			HasCursor:  hasCursor,
 			CursorTime: cursorTime,
 			CursorID:   cursorID,
-			PageSize:   pageSize,
+			PageSize:   pageSize + 1,
 		})
 		if err != nil {
 			if ctx.Err() != nil {
@@ -252,8 +252,14 @@ func (s *Server) List(
 			break
 		}
 
-		pbProfiles := make([]*profilesv1.Profile, 0, len(profilesList))
-		for _, p := range profilesList {
+		hasNextPage := len(profilesList) > pageSize
+		pageProfiles := profilesList
+		if hasNextPage {
+			pageProfiles = profilesList[:pageSize]
+		}
+
+		pbProfiles := make([]*profilesv1.Profile, 0, len(pageProfiles))
+		for _, p := range pageProfiles {
 			pbProfile, err := convertProfile(ctx, p)
 			if err != nil {
 				return err
@@ -261,13 +267,13 @@ func (s *Server) List(
 			pbProfiles = append(pbProfiles, pbProfile)
 		}
 
-		last := profilesList[len(profilesList)-1]
+		last := pageProfiles[len(pageProfiles)-1]
 		cursorTime = last.CreateTime
 		cursorID = last.ID
 		hasCursor = true
 
 		nextPageToken := ""
-		if len(profilesList) == pageSize {
+		if hasNextPage {
 			cursor := &profileListCursor{CreateTime: last.CreateTime.Time, ID: last.ID}
 			nextPageToken, err = cursor.encode()
 			if err != nil {
@@ -293,7 +299,7 @@ func (s *Server) List(
 			return connect.NewError(connect.CodeInternal, errors.New("failed to stream profiles"))
 		}
 
-		if len(profilesList) < pageSize {
+		if !hasNextPage {
 			break
 		}
 	}

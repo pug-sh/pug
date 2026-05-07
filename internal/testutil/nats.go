@@ -11,6 +11,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/nats"
 )
 
+const testNATSImage = "nats@sha256:6b2156f7491cdeddfa8b7ca15cd6fd59b9cabadec5019e933c65c01cf82b1c5f" // 2.12.8-alpine
+
 // TestNATS holds a NATS testcontainer for testing.
 type TestNATS struct {
 	container *nats.NATSContainer
@@ -24,7 +26,7 @@ func SetupNATS(t *testing.T) *TestNATS {
 
 	ctx := context.Background()
 
-	ctr, err := nats.Run(ctx, "nats:2.12-alpine")
+	ctr, err := nats.Run(ctx, testNATSImage)
 	if err != nil {
 		t.Fatalf("testutil: start nats container: %v", err)
 	}
