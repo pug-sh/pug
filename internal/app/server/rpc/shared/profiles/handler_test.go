@@ -536,25 +536,6 @@ func TestConvertActivitySummary(t *testing.T) {
 	}
 }
 
-func seedProfiles(t *testing.T, ctx context.Context, write *dbwrite.Queries, projectID string, count int) {
-	t.Helper()
-	for i := range count {
-		seedProfileWithProperties(t, ctx, write, projectID, fmt.Sprintf("user-%03d@example.com", i), map[string]any{"index": i})
-	}
-}
-
-func seedProfileWithProperties(t *testing.T, ctx context.Context, write *dbwrite.Queries, projectID, externalID string, properties map[string]any) {
-	t.Helper()
-	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
-		ID:         xid.New().String(),
-		ProjectID:  projectID,
-		ExternalID: postgres.NewText(externalID),
-		Properties: properties,
-	}); err != nil {
-		t.Fatalf("upsert profile %q: %v", externalID, err)
-	}
-}
-
 func seedCHProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string, count int) {
 	t.Helper()
 	for i := range count {

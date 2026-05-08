@@ -67,12 +67,6 @@ func setupNATSClient(t *testing.T, ctx context.Context) (*natsworker.NATSClient,
 	if err != nil {
 		t.Fatalf("jetstream.New: %v", err)
 	}
-	if _, err := js.CreateStream(ctx, jetstream.StreamConfig{
-		Name:     "profiles",
-		Subjects: []string{"profiles.>"},
-	}); err != nil {
-		t.Fatalf("create stream: %v", err)
-	}
 
 	return client, js
 }
