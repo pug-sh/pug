@@ -120,7 +120,7 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
 - **`proto/sdk/`** — API key auth (public or private). Write-only — never expose read endpoints or return sensitive data. Public keys are extractable from client apps, so SDK endpoints must assume an untrusted caller regardless of key type.
 - **`proto/dashboard/`** — JWT only (e.g., orgs, projects, insights)
 - **`proto/shared/`** — private API key or JWT (e.g., campaigns, delivery, profiles read/delete)
-- **`proto/common/v1/`** — shared message types with no service definitions, accessible from any auth level. Only put types here if they are needed across auth boundaries. If a message is only used behind private key + JWT, it belongs in `shared/`.
+- **`proto/common/v1/`** — shared message types with no service definitions, accessible from any auth level. Put types here when (a) they are needed across auth boundaries, or (b) they are reused across multiple services within the same auth boundary and copying would create drift risk (e.g., `GetFilterSchemaRequest`/`Response` is consumed by both `shared.activity` and `shared.insights`). A message used by exactly one service belongs in that service's package, not `common/v1/`.
 
 ### Insights Breakdown
 
@@ -177,7 +177,7 @@ The request-side `QueryRequest.conversion_window` is also a `google.protobuf.Dur
 ### Insights Filter Model
 
 - Top-level insights filters are **group-based only**. In `shared.insights.v1`, use `filter_groups` and `filter_groups_operator` on `QueryRequest` and `SegmentUsersRequest`.
-- Legacy top-level `filters` fields are removed/reserved in `proto/shared/insights/v1/insights.proto`. Do not reintroduce them.
+- Legacy top-level `filters` fields are removed from `proto/shared/insights/v1/insights.proto`. Tags are intentionally not reserved (pre-release, never shipped). Do not reintroduce them.
 - Group semantics:
   - Within a group, conditions are combined using `FilterGroup.operator` (`AND` by default when unspecified).
   - Between groups, conditions are combined using `filter_groups_operator` (`AND` by default when unspecified).
@@ -203,7 +203,7 @@ Incoming events are enriched with auto-properties before being published to NATS
 
 - **`internal/geo/`** — resolves geo properties (`$country`, `$city`, `$ip`, etc.) from proxy-injected HTTP headers. `geo.Provider` is an interface; the Cloudflare implementation reads from `CF-Connecting-IP` and `CF-*` headers. Geo properties are **always overwritten** (CDN-injected values are trusted).
 - **`internal/useragent/`** — parses the `User-Agent` header using `ua-parser/uap-go` into properties: `$browser`, `$browserVersion`, `$os`, `$osVersion`, `$device`. Both `browserVersion` and `osVersion` use the major version only (e.g. `"17"` not `"17.2.1"`) to avoid analytics fragmentation. UA properties are only written if not already present in `event.AutoProperties` (client-supplied values win). `$device` is only set when the parser identifies a specific device (e.g., "iPhone", "Pixel 8"); desktop browsers typically yield no `$device` property. The parser is initialized once at startup via `useragent.NewParser()` to avoid reloading regex definitions per request.
-- **bot management enrichment** — reads Cloudflare Bot Management headers (injected via Transform Rule) and sets auto-properties: `$bot_score` from `CF-Bot-Score` (string `"0"`–`"255"`, lower = more bot-like) and `$verified_bot` from `CF-Verified-Bot` (`"true"`/`"false"`, identifies known good bots like Googlebot). Both are **always overwritten** by the server; client-supplied values are stripped before enrichment.
+- **bot management enrichment** — reads Cloudflare Bot Management headers (injected via Transform Rule) and sets typed auto-properties: `$bot_score` from `CF-Bot-Score` is parsed as `Int64` (0–255, lower = more bot-like) and `$verified_bot` from `CF-Verified-Bot` is parsed as `Bool` (identifies known good bots like Googlebot). Both are **always overwritten** by the server; client-supplied values are stripped before enrichment. Routing through `internal/autoprop` keeps the typed-Variant story consistent across enrichers (geo `$latitude`/`$longitude` are also stored as `Float64`).
 
 ### Profile Properties
 
@@ -252,6 +252,37 @@ Key types and functions:
 - **Dedup key (ORDER BY):** `(project_id, toStartOfMinute(occur_time), kind, event_id)` — minute granularity matches the finest time resolution dashboards use (per-minute charts). Full-precision `occur_time` is stored in the column.
 - **Partitioning:** `PARTITION BY toYYYYMM(occur_time)` — ReplacingMergeTree **never** deduplicates across partitions.
 - **occur_time stability:** `occur_time` is required (enforced by proto validation). Clients must send a stable value on retries — a different value that crosses a minute boundary lands in a different sort-key bucket (dedup fails); if it crosses a month boundary it lands in a different partition (permanent duplicate).
+- **Unknown PropertyValue variants drop the offending property and continue.** The proto-to-Variant translator maps each `*commonv1.PropertyValue` oneof case to its typed `chcol.Variant` slot; an unsupported variant drops the offending key from the row and the rest of the batch still inserts. Drops are observable via `events.property_dropped_total{stage, reason}` (worker-side `stage="ingestion"`, enrichment-side `stage="enrichment"`). The error path is unreachable through the validated RPC ingress (`oneof.required`) and only fires on proto-future drift or nil values. The SDK is not signalled per-property; it still sees `accepted=N` for the batch.
+
+### ClickHouse Materialized Views
+
+Pure CH→CH aggregation work (read from CH, aggregate, write to a CH rollup table, no external side effects) belongs in a materialized view, not a Go cron worker. CH-native scheduling, lifecycle, and refresh history (`system.view_refreshes`) come for free, and refreshable MVs read `FROM ... FINAL` once per refresh instead of forcing every dashboard query to pay that cost.
+
+Pick the MV flavor based on whether aggregates are mergeable and whether the source needs dedup:
+
+| Flavor                                              | When to use                                                                                              | Mechanics                                                                                                                                |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Incremental (`TO target`, no `REFRESH`)             | Source is append-only and aggregates are partial-state-mergeable (`countState`, `maxState`, `sumState`)  | Runs as an insert trigger. Rollup uses `AggregatingMergeTree` with `*State`/`*Merge` aggregates. No staleness, no watermark, no `FINAL`. |
+| Refreshable rebuild (`REFRESH EVERY ... TO target`) | Whole-table rebuild from a current-state source (e.g. `profiles`) where late-binding `FINAL` matters     | Replaces the entire target on every refresh. Bounded staleness equal to the refresh interval.                                            |
+| Refreshable APPEND (`REFRESH EVERY ... APPEND TO`)  | Need `FROM events FINAL` for dedup and prefer incremental scan to full rebuild                           | Requires a closed-bucket watermark (below). Rollup engine should dedup on bucket key, e.g. `ReplacingMergeTree(last_seen)`.              |
+
+Default to incremental when both conditions hold — refreshable MVs trade refresh-interval staleness and watermark complexity for `FINAL`, only worth it when you actually need it. Concrete examples in `schema/clickhouse/migrations/004_create_filter_schema_mvs.sql`: `event_names_mv` is incremental, `property_keys_event_buckets_mv` is refreshable APPEND, `property_keys_profile_current_mv` is refreshable rebuild.
+
+**Closed-bucket watermark pattern (refreshable APPEND).** To keep refreshes idempotent and avoid double-counting, scope the source filter to closed buckets keyed off **event time**, not insert time:
+
+```sql
+WHERE toStartOfFiveMinutes(occur_time) BETWEEN
+        toStartOfFiveMinutes(now() - INTERVAL 15 MINUTE)
+    AND toStartOfFiveMinutes(now() - INTERVAL 5 MINUTE)
+```
+
+The trailing 5-minute lag ensures the most recent bucket is closed before it's read; the 10-minute window covers retries and slightly-late events. Late-arriving rows still bucket by their original `occur_time`, and the rollup's `ReplacingMergeTree(last_seen)` collapses retried bucket rows on background merge.
+
+**Use a Go worker, not an MV, when** the work has external side effects (NATS publish, API calls, Postgres writes — e.g. the campaign scheduler at `internal/app/workers/scheduler/scheduler.go`), needs multi-step orchestration, or reads from non-CH sources.
+
+**Version requirement.** Refreshable MVs went stable in ClickHouse 24.10. Cotton's dev infra pins `clickhouse/clickhouse-server:26.3` (`infra/dev/docker-compose.yaml`), so the requirement is satisfied; verify before relying on the feature in any new environment.
+
+New MVs go in `schema/clickhouse/migrations/` as goose migrations; pair the rollup table DDL and the `CREATE MATERIALIZED VIEW` statement in the same migration file.
 
 ### ClickHouse Query Builder Conventions
 

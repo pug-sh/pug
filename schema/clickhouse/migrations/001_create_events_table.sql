@@ -1,7 +1,7 @@
 -- +goose Up
 CREATE TABLE IF NOT EXISTS events (
-    auto_properties   Map(String, String),
-    custom_properties Map(String, String),
+    auto_properties   Map(String, Variant(String, Int64, Float64, Bool, DateTime64(3))),
+    custom_properties Map(String, Variant(String, Int64, Float64, Bool, DateTime64(3))),
     distinct_id       String,
     event_id          UUID,
     insert_time       DateTime64(3) DEFAULT now64(3),

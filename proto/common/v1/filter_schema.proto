@@ -1,6 +1,7 @@
 edition = "2023";
 package common.v1;
 
+import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1";
@@ -10,6 +11,26 @@ enum PropertySource {
   PROPERTY_SOURCE_AUTO = 1;
   PROPERTY_SOURCE_CUSTOM = 2;
   PROPERTY_SOURCE_PROFILE = 3;
+}
+
+// PropertyValueType enumerates the storage-side variant types a property key
+// can have. Mirrors the ClickHouse Variant inner types used in events
+// auto_properties and custom_properties: String, Int64, Float64, Bool,
+// DateTime64(3). INTEGER and FLOAT are kept distinct so future filters can
+// express integer-only constraints (counts, ages, enum-as-int) without
+// re-versioning. Profile properties are stored as JSON; their value_type is
+// derived from the JSON shape (Number → FLOAT, Object/Array/null → OTHER) and
+// loses the integer-vs-float distinction. OTHER is a catch-all for
+// non-primitive types (e.g. JSON objects/arrays in profile properties) that
+// don't map to a specific variant.
+enum PropertyValueType {
+  PROPERTY_VALUE_TYPE_UNSPECIFIED = 0;
+  PROPERTY_VALUE_TYPE_STRING      = 1;
+  PROPERTY_VALUE_TYPE_INTEGER     = 2;
+  PROPERTY_VALUE_TYPE_FLOAT       = 3;
+  PROPERTY_VALUE_TYPE_BOOLEAN     = 4;
+  PROPERTY_VALUE_TYPE_DATETIME    = 5;
+  PROPERTY_VALUE_TYPE_OTHER       = 6;
 }
 
 message EventNameMeta {
@@ -22,4 +43,32 @@ message PropertyKeyMeta {
   string name = 1;
   uint64 count = 2;
   google.protobuf.Timestamp last_seen_at = 3;
+  // The value_type observed at the earliest last_seen for this key
+  // (first-touch). Deterministic across calls. When values for the same key
+  // span multiple types (rare drift), this stays pinned to the first-observed
+  // type, matching the funnel/retention breakdown attribution rule.
+  PropertyValueType value_type = 4;
+}
+
+// GetFilterSchemaRequest is shared by every service that exposes a
+// GetFilterSchema RPC (currently shared.activity.v1 and shared.insights.v1).
+// Keeping the request shape here avoids drift between services and is also a
+// signal that the filter-schema concept is service-agnostic.
+message GetFilterSchemaRequest {
+  string event_kind = 1 [(buf.validate.field) = {
+    string: {pattern: "^[a-zA-Z0-9_.-]*$"}
+  }];
+  repeated PropertyValueType allowed_types = 2 [
+    (buf.validate.field).repeated.items = {
+      enum: {defined_only: true, not_in: [0]}
+    }
+  ];
+}
+
+// GetFilterSchemaResponse mirrors the shared request shape — same reason.
+message GetFilterSchemaResponse {
+  repeated EventNameMeta events = 1;
+  repeated PropertyKeyMeta auto_property_keys = 2;
+  repeated PropertyKeyMeta custom_property_keys = 3;
+  repeated PropertyKeyMeta profile_property_keys = 4;
 }

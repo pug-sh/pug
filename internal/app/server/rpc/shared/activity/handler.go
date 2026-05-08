@@ -43,7 +43,7 @@ func (s *server) GetActivityFeed(
 	req *connect.Request[activityv1.GetActivityFeedRequest],
 ) (*connect.Response[activityv1.GetActivityFeedResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -106,7 +106,7 @@ func (s *server) GetEventExplorer(
 	req *connect.Request[activityv1.GetEventExplorerRequest],
 ) (*connect.Response[activityv1.GetEventExplorerResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -178,7 +178,7 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 			telemetry.RecordError(ctx, err)
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		customProps, err := mapToStruct(e.CustomProperties)
+		customProps, err := structpb.NewStruct(e.CustomProperties)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to convert custom_properties",
 				slogx.Error(err),
@@ -201,7 +201,7 @@ func eventsToProto(ctx context.Context, evts []events.Event, projectID string) (
 	return protoEvents, nil
 }
 
-func mapToStruct(m map[string]string) (*structpb.Struct, error) {
+func mapToStruct(m map[string]any) (*structpb.Struct, error) {
 	fields := make(map[string]any, len(m))
 	for k, v := range m {
 		fields[k] = v
@@ -214,7 +214,7 @@ func (s *server) GetActivityHeatmap(
 	req *connect.Request[activityv1.GetActivityHeatmapRequest],
 ) (*connect.Response[activityv1.GetActivityHeatmapResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -253,7 +253,7 @@ func (s *server) GetProfileStats(
 	req *connect.Request[activityv1.GetProfileStatsRequest],
 ) (*connect.Response[activityv1.GetProfileStatsResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -319,10 +319,10 @@ func (s *server) GetProfileStats(
 
 func (s *server) GetFilterSchema(
 	ctx context.Context,
-	req *connect.Request[activityv1.GetFilterSchemaRequest],
-) (*connect.Response[activityv1.GetFilterSchemaResponse], error) {
+	req *connect.Request[commonv1.GetFilterSchemaRequest],
+) (*connect.Response[commonv1.GetFilterSchemaResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
@@ -332,17 +332,12 @@ func (s *server) GetFilterSchema(
 
 	projectID := principal.Project.ID
 
-	schema, err := s.insightsService.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind())
+	schema, err := s.insightsService.GetFilterSchema(ctx, projectID, req.Msg.GetEventKind(), req.Msg.GetAllowedTypes())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&activityv1.GetFilterSchemaResponse{
-		Events:              schema.GetEvents(),
-		AutoPropertyKeys:    schema.GetAutoPropertyKeys(),
-		CustomPropertyKeys:  schema.GetCustomPropertyKeys(),
-		ProfilePropertyKeys: schema.GetProfilePropertyKeys(),
-	}), nil
+	return connect.NewResponse(schema), nil
 }
 
 func (s *server) GetPropertyValues(
@@ -350,7 +345,7 @@ func (s *server) GetPropertyValues(
 	req *connect.Request[activityv1.GetPropertyValuesRequest],
 ) (*connect.Response[activityv1.GetPropertyValuesResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, rpc.ConnectCtxErr(err)
 	}
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)

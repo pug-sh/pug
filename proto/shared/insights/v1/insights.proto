@@ -13,7 +13,12 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1
 service InsightsService {
   rpc Query(QueryRequest) returns (QueryResponse);
   rpc SegmentUsers(SegmentUsersRequest) returns (SegmentUsersResponse);
-  rpc GetFilterSchema(GetFilterSchemaRequest) returns (GetFilterSchemaResponse);
+  // The filter-schema concept is service-agnostic; both shared.insights and
+  // shared.activity expose the same shape via common.v1.
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc GetFilterSchema(common.v1.GetFilterSchemaRequest) returns (common.v1.GetFilterSchemaResponse);
   rpc GetPropertyValues(GetPropertyValuesRequest) returns (GetPropertyValuesResponse);
 }
 
@@ -399,17 +404,4 @@ message GetPropertyValuesRequest {
 
 message GetPropertyValuesResponse {
   repeated string values = 1;
-}
-
-message GetFilterSchemaRequest {
-  string event_kind = 1 [(buf.validate.field) = {
-    string: {pattern: "^[a-zA-Z0-9_.-]*$"}
-  }];
-}
-
-message GetFilterSchemaResponse {
-  repeated common.v1.EventNameMeta events = 1;
-  repeated common.v1.PropertyKeyMeta auto_property_keys = 2;
-  repeated common.v1.PropertyKeyMeta custom_property_keys = 3;
-  repeated common.v1.PropertyKeyMeta profile_property_keys = 4;
 }

@@ -10,8 +10,8 @@ import (
 )
 
 func TestMapToStruct(t *testing.T) {
-	t.Run("converts string map to struct", func(t *testing.T) {
-		m := map[string]string{"$country": "US", "plan": "pro"}
+	t.Run("converts typed map to struct", func(t *testing.T) {
+		m := map[string]any{"$country": "US", "plan": "pro", "$verified_bot": true, "$bot_score": int64(5)}
 		s, err := mapToStruct(m)
 		if err != nil {
 			t.Fatalf("mapToStruct: %v", err)
@@ -22,10 +22,16 @@ func TestMapToStruct(t *testing.T) {
 		if s.Fields["plan"].GetStringValue() != "pro" {
 			t.Errorf("expected plan=pro, got %v", s.Fields["plan"])
 		}
+		if !s.Fields["$verified_bot"].GetBoolValue() {
+			t.Errorf("expected $verified_bot=true, got %v", s.Fields["$verified_bot"])
+		}
+		if got := s.Fields["$bot_score"].GetNumberValue(); got != 5 {
+			t.Errorf("expected $bot_score=5, got %v", got)
+		}
 	})
 
 	t.Run("empty map returns empty struct", func(t *testing.T) {
-		s, err := mapToStruct(map[string]string{})
+		s, err := mapToStruct(map[string]any{})
 		if err != nil {
 			t.Fatalf("mapToStruct: %v", err)
 		}
@@ -49,7 +55,7 @@ func TestMapToStruct(t *testing.T) {
 func TestMapToStruct_AllValuesAreStrings(t *testing.T) {
 	// Verify that all values in the output are protobuf string values,
 	// not some other type.
-	m := map[string]string{"key": "value"}
+	m := map[string]any{"key": "value"}
 	s, err := mapToStruct(m)
 	if err != nil {
 		t.Fatalf("mapToStruct: %v", err)

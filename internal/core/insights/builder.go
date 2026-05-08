@@ -845,9 +845,18 @@ func BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind string) (s
 }
 
 // buildPropertyValuesQuery returns distinct values from mapCol for the given key over the last 30 days.
+// Both auto_properties and custom_properties are Map(String, Variant(...)) and must
+// be CAST to Nullable(String) so DISTINCT and the non-empty filter operate on a
+// string projection.
 func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) (string, []any, error) {
-	selectExpr := mapCol + `[?] AS value`
-	propertyNotEmptyClause := mapCol + `[?] != ''`
+	var selectExpr, propertyNotEmptyClause string
+	switch mapCol {
+	case "auto_properties", "custom_properties":
+		selectExpr = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) AS value", mapCol)
+		propertyNotEmptyClause = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) != ''", mapCol)
+	default:
+		return "", nil, fmt.Errorf("unsupported property source %q", mapCol)
+	}
 
 	return chq.NewQuery().
 		SelectExpr("DISTINCT "+selectExpr, propertyKey).
@@ -960,7 +969,24 @@ func BuildProfilePropertyValuesQuery(projectID, propertyKey string) (string, []a
 
 func buildPropertyKeysQuery(projectID, mapType, eventKind string) (string, []any, error) {
 	return chq.NewQuery().
-		Select("key", "countMerge(event_count) AS count", "maxMerge(last_seen) AS last_seen").
+		Select(
+			"key",
+			// A property key can have rows for multiple value_types when the
+			// underlying values drift across types over time (rare in practice).
+			// argMin(value_type, last_seen) deterministically returns the
+			// value_type observed at the earliest last_seen timestamp in the
+			// group — first-touch semantics, matching the funnel/retention
+			// breakdown rule. Stable across calls so dashboards don't flicker
+			// on every refresh when a key has mixed types.
+			//
+			// The max(last_seen) projection is aliased to last_seen_max (not
+			// last_seen) because ClickHouse resolves a bare `last_seen` inside
+			// the same SELECT to the aggregate alias rather than the column,
+			// which would re-enter argMin and trip "aggregate inside aggregate".
+			"argMin(value_type, last_seen) AS value_type",
+			"sum(event_count) AS count",
+			"max(last_seen) AS last_seen_max",
+		).
 		From("property_keys").
 		Where(
 			chq.Eq("project_id", projectID),
@@ -991,7 +1017,7 @@ func granularityFunc(g insightsv1.Granularity) (string, error) {
 	case insightsv1.Granularity_GRANULARITY_MONTH:
 		return "toStartOfMonth", nil
 	default:
-		return "", fmt.Errorf("granularityFunc: unsupported granularity %v", g)
+		return "", fmt.Errorf("unsupported granularity %v", g)
 	}
 }
 
@@ -1046,7 +1072,7 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 		case insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
 			return "ifNull(max(" + numeric + "), 0)", nil
 		default:
-			return "", fmt.Errorf("aggregationExpr: unexpected numeric aggregation type %s", agg)
+			return "", fmt.Errorf("unsupported aggregation type %s", agg)
 		}
 	case insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS:
 		return "toFloat64(count(DISTINCT distinct_id))", nil

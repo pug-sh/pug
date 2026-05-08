@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	chcol "github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -410,22 +412,20 @@ func TestIntegration(t *testing.T) {
 		seedIntegrationProfiles(t, ctx, ch)
 
 		// Insert an event with an alias distinct_id to exercise the UNION ALL alias branch.
-		if err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+		if err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID, uuid.New().String(), "page_view", "alice_anon",
 			time.Date(2024, 1, 1, 14, 0, 0, 0, time.UTC),
-			map[string]string{"$country": "US"},
+			variantStringMap(map[string]string{"$country": "US"}),
 		); err != nil {
 			t.Fatalf("insert alias event: %v", err)
 		}
 
 		// Insert an event for the soft-deleted profile to verify is_deleted=0 guard.
 		// This event must NOT be included in the profile filter results.
-		if err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+		if err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID, uuid.New().String(), "page_view", "deleted",
 			time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC),
-			map[string]string{"$country": "US"},
+			variantStringMap(map[string]string{"$country": "US"}),
 		); err != nil {
 			t.Fatalf("insert deleted-profile event: %v", err)
 		}
@@ -927,14 +927,13 @@ func seedFunnelEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickH
 
 	for _, e := range events {
 		occurTime := time.Date(2024, 2, 1, e.hour, 0, 0, 0, time.UTC)
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+		err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID,
 			uuid.New().String(),
 			e.kind,
 			e.user,
 			occurTime,
-			map[string]string{},
+			variantStringMap(nil),
 		)
 		if err != nil {
 			t.Fatalf("insert funnel event: %v", err)
@@ -978,14 +977,13 @@ func seedRetentionEvents(t *testing.T, ctx context.Context, ch *testutil.TestCli
 
 	for _, e := range events {
 		occurTime := time.Date(2024, 3, e.day, e.hour, 0, 0, 0, time.UTC)
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+		err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID,
 			uuid.New().String(),
 			e.kind,
 			e.user,
 			occurTime,
-			map[string]string{},
+			variantStringMap(nil),
 		)
 		if err != nil {
 			t.Fatalf("insert retention event: %v", err)
@@ -1066,14 +1064,13 @@ func seedEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) 
 
 	for _, e := range events {
 		occurTime := time.Date(2024, 1, e.day, 12, 0, 0, 0, time.UTC)
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+		err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID,
 			uuid.New().String(),
 			"page_view",
 			e.user,
 			occurTime,
-			map[string]string{"$country": e.country},
+			variantStringMap(map[string]string{"$country": e.country}),
 		)
 		if err != nil {
 			t.Fatalf("insert event: %v", err)
@@ -1108,14 +1105,13 @@ func seedFunnelEventsWithCountry(t *testing.T, ctx context.Context, ch *testutil
 
 	for _, e := range events {
 		occurTime := time.Date(2024, 4, 1, e.hour, 0, 0, 0, time.UTC)
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+		err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID,
 			uuid.New().String(),
 			e.kind,
 			e.user,
 			occurTime,
-			map[string]string{"$country": e.country},
+			variantStringMap(map[string]string{"$country": e.country}),
 		)
 		if err != nil {
 			t.Fatalf("insert funnel event: %v", err)
@@ -1151,14 +1147,13 @@ func seedRetentionEventsWithCountry(t *testing.T, ctx context.Context, ch *testu
 
 	for _, e := range events {
 		occurTime := time.Date(2024, 5, e.day, e.hour, 0, 0, 0, time.UTC)
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+		err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID,
 			uuid.New().String(),
 			e.kind,
 			e.user,
 			occurTime,
-			map[string]string{"$country": e.country},
+			variantStringMap(map[string]string{"$country": e.country}),
 		)
 		if err != nil {
 			t.Fatalf("insert retention event: %v", err)
@@ -1199,14 +1194,13 @@ func seedRetentionEventsForOthersBucket(t *testing.T, ctx context.Context, ch *t
 
 	for _, e := range events {
 		occurTime := time.Date(2024, 6, e.day, e.hour, 0, 0, 0, time.UTC)
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+		err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID,
 			uuid.New().String(),
 			e.kind,
 			e.user,
 			occurTime,
-			map[string]string{"$country": e.country},
+			variantStringMap(map[string]string{"$country": e.country}),
 		)
 		if err != nil {
 			t.Fatalf("insert retention event: %v", err)
@@ -1238,17 +1232,45 @@ func seedPurchases(t *testing.T, ctx context.Context, ch *testutil.TestClickHous
 
 	occurTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 	for _, e := range events {
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties) VALUES (?, ?, ?, ?, ?, ?)`,
+		err := insertAutoEvent(ctx, ch.Conn,
 			testProjectID,
 			uuid.New().String(),
 			"purchase",
 			e.user,
 			occurTime,
-			map[string]string{"$country": e.country},
+			variantStringMap(map[string]string{"$country": e.country}),
 		)
 		if err != nil {
 			t.Fatalf("insert purchase event: %v", err)
 		}
 	}
+}
+
+func variantStringMap(props map[string]string) map[string]chcol.Variant {
+	if len(props) == 0 {
+		return nil
+	}
+	out := make(map[string]chcol.Variant, len(props))
+	for k, v := range props {
+		out[k] = chcol.NewVariantWithType(v, "String")
+	}
+	return out
+}
+
+func insertAutoEvent(
+	ctx context.Context,
+	conn driver.Conn,
+	projectID, eventID, kind, distinctID string,
+	occurTime time.Time,
+	autoProps map[string]chcol.Variant,
+) error {
+	batch, err := conn.PrepareBatch(ctx,
+		"INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties)")
+	if err != nil {
+		return err
+	}
+	if err := batch.Append(projectID, eventID, kind, distinctID, occurTime, autoProps); err != nil {
+		return err
+	}
+	return batch.Send()
 }

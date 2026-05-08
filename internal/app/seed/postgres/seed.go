@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	testEmail    = "test@pug.dev"
+	testEmail    = "test@pug.sh"
 	testPassword = "password"
 	testName     = "Test User"
 )

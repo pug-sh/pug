@@ -16,6 +16,8 @@ import (
 	chdep "github.com/pug-sh/pug/internal/deps/clickhouse"
 )
 
+const testClickHouseImage = "clickhouse/clickhouse-server@sha256:b98554227ed543d21d2cd632df77fb2060454a2caeab47929fa6118c9f8bbe2f" // 26.3.9.8-alpine
+
 // TestClickHouse holds the container and connection for a test ClickHouse instance.
 type TestClickHouse struct {
 	container *tcclickhouse.ClickHouseContainer
@@ -29,7 +31,7 @@ func SetupClickHouse(t *testing.T) *TestClickHouse {
 	t.Helper()
 	ctx := context.Background()
 
-	ctr, err := tcclickhouse.Run(ctx, "clickhouse/clickhouse-server:26.3-alpine",
+	ctr, err := tcclickhouse.Run(ctx, testClickHouseImage,
 		tcclickhouse.WithDatabase("pug_test"),
 		tcclickhouse.WithUsername("default"),
 		tcclickhouse.WithPassword("test"),
@@ -73,7 +75,7 @@ func SetupBareClickHouse(t *testing.T) *TestClickHouse {
 	t.Helper()
 	ctx := context.Background()
 
-	ctr, err := tcclickhouse.Run(ctx, "clickhouse/clickhouse-server:26.3-alpine",
+	ctr, err := tcclickhouse.Run(ctx, testClickHouseImage,
 		tcclickhouse.WithDatabase("pug_test"),
 		tcclickhouse.WithUsername("default"),
 		tcclickhouse.WithPassword("test"),

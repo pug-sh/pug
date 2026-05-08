@@ -39,8 +39,8 @@ type geoEntry struct {
 	city       string
 	postalCode string
 	timezone   string
-	latitude   string
-	longitude  string
+	latitude   float64
+	longitude  float64
 }
 
 // geoPool is a curated set of realistic locations with weighted distribution
@@ -49,37 +49,37 @@ type geoEntry struct {
 // headers (two-letter continent codes, ISO 3166-1 alpha-2 country codes).
 var geoPool = []geoEntry{
 	// United States (highest weight)
-	{"NA", "US", "California", "San Francisco", "94105", "America/Los_Angeles", "37.7749", "-122.4194"},
-	{"NA", "US", "California", "Los Angeles", "90001", "America/Los_Angeles", "34.0522", "-118.2437"},
-	{"NA", "US", "New York", "New York City", "10001", "America/New_York", "40.7128", "-74.0060"},
-	{"NA", "US", "Texas", "Austin", "78701", "America/Chicago", "30.2672", "-97.7431"},
-	{"NA", "US", "Washington", "Seattle", "98101", "America/Los_Angeles", "47.6062", "-122.3321"},
-	{"NA", "US", "Illinois", "Chicago", "60601", "America/Chicago", "41.8781", "-87.6298"},
+	{"NA", "US", "California", "San Francisco", "94105", "America/Los_Angeles", 37.7749, -122.4194},
+	{"NA", "US", "California", "Los Angeles", "90001", "America/Los_Angeles", 34.0522, -118.2437},
+	{"NA", "US", "New York", "New York City", "10001", "America/New_York", 40.7128, -74.0060},
+	{"NA", "US", "Texas", "Austin", "78701", "America/Chicago", 30.2672, -97.7431},
+	{"NA", "US", "Washington", "Seattle", "98101", "America/Los_Angeles", 47.6062, -122.3321},
+	{"NA", "US", "Illinois", "Chicago", "60601", "America/Chicago", 41.8781, -87.6298},
 	// United Kingdom
-	{"EU", "GB", "England", "London", "EC1A", "Europe/London", "51.5074", "-0.1278"},
-	{"EU", "GB", "England", "Manchester", "M1", "Europe/London", "53.4808", "-2.2426"},
+	{"EU", "GB", "England", "London", "EC1A", "Europe/London", 51.5074, -0.1278},
+	{"EU", "GB", "England", "Manchester", "M1", "Europe/London", 53.4808, -2.2426},
 	// Germany
-	{"EU", "DE", "Bavaria", "Munich", "80331", "Europe/Berlin", "48.1351", "11.5820"},
-	{"EU", "DE", "Berlin", "Berlin", "10115", "Europe/Berlin", "52.5200", "13.4050"},
+	{"EU", "DE", "Bavaria", "Munich", "80331", "Europe/Berlin", 48.1351, 11.5820},
+	{"EU", "DE", "Berlin", "Berlin", "10115", "Europe/Berlin", 52.5200, 13.4050},
 	// France
-	{"EU", "FR", "Île-de-France", "Paris", "75001", "Europe/Paris", "48.8566", "2.3522"},
+	{"EU", "FR", "Île-de-France", "Paris", "75001", "Europe/Paris", 48.8566, 2.3522},
 	// Brazil
-	{"SA", "BR", "São Paulo", "São Paulo", "01310", "America/Sao_Paulo", "-23.5505", "-46.6333"},
-	{"SA", "BR", "Rio de Janeiro", "Rio de Janeiro", "20040", "America/Sao_Paulo", "-22.9068", "-43.1729"},
+	{"SA", "BR", "São Paulo", "São Paulo", "01310", "America/Sao_Paulo", -23.5505, -46.6333},
+	{"SA", "BR", "Rio de Janeiro", "Rio de Janeiro", "20040", "America/Sao_Paulo", -22.9068, -43.1729},
 	// India
-	{"AS", "IN", "Maharashtra", "Mumbai", "400001", "Asia/Kolkata", "19.0760", "72.8777"},
-	{"AS", "IN", "Karnataka", "Bengaluru", "560001", "Asia/Kolkata", "12.9716", "77.5946"},
-	{"AS", "IN", "Bihar", "Purnia", "854301", "Asia/Kolkata", "25.7771", "87.4753"},
+	{"AS", "IN", "Maharashtra", "Mumbai", "400001", "Asia/Kolkata", 19.0760, 72.8777},
+	{"AS", "IN", "Karnataka", "Bengaluru", "560001", "Asia/Kolkata", 12.9716, 77.5946},
+	{"AS", "IN", "Bihar", "Purnia", "854301", "Asia/Kolkata", 25.7771, 87.4753},
 	// Japan
-	{"AS", "JP", "Tokyo", "Tokyo", "100-0001", "Asia/Tokyo", "35.6762", "139.6503"},
+	{"AS", "JP", "Tokyo", "Tokyo", "100-0001", "Asia/Tokyo", 35.6762, 139.6503},
 	// Australia
-	{"OC", "AU", "New South Wales", "Sydney", "2000", "Australia/Sydney", "-33.8688", "151.2093"},
+	{"OC", "AU", "New South Wales", "Sydney", "2000", "Australia/Sydney", -33.8688, 151.2093},
 	// Canada
-	{"NA", "CA", "Ontario", "Toronto", "M5H", "America/Toronto", "43.6510", "-79.3470"},
+	{"NA", "CA", "Ontario", "Toronto", "M5H", "America/Toronto", 43.6510, -79.3470},
 	// Netherlands
-	{"EU", "NL", "North Holland", "Amsterdam", "1012", "Europe/Amsterdam", "52.3676", "4.9041"},
+	{"EU", "NL", "North Holland", "Amsterdam", "1012", "Europe/Amsterdam", 52.3676, 4.9041},
 	// Singapore
-	{"AS", "SG", "Central", "Singapore", "018956", "Asia/Singapore", "1.3521", "103.8198"},
+	{"AS", "SG", "Central", "Singapore", "018956", "Asia/Singapore", 1.3521, 103.8198},
 }
 
 var pages = []string{"/", "/home", "/products", "/cart", "/checkout", "/profile", "/search", "/about", "/pricing", "/blog"}
@@ -108,15 +108,15 @@ var referrers = []string{
 var utmSources = []string{"google", "twitter", "newsletter", "github", "linkedin"}
 var utmMediums = []string{"cpc", "social", "email", "organic", "referral"}
 var utmCampaigns = []string{"launch", "q1-promo", "retargeting", "brand", "product-hunt"}
-var screenSizes = [][2]string{
-	{"1920", "1080"},
-	{"1440", "900"},
-	{"1366", "768"},
-	{"2560", "1440"},
-	{"375", "812"},
-	{"390", "844"},
-	{"414", "896"},
-	{"360", "800"},
+var screenSizes = [][2]int{
+	{1920, 1080},
+	{1440, 900},
+	{1366, 768},
+	{2560, 1440},
+	{375, 812},
+	{390, 844},
+	{414, 896},
+	{360, 800},
 }
 var sdkVersion = "0.1.0"
 var cssTags = []string{"BUTTON", "A", "DIV", "SPAN", "INPUT", "LABEL", "LI"}
@@ -186,8 +186,8 @@ type event struct {
 	sessionID        string
 	kind             string
 	occurTime        time.Time
-	autoProperties   map[string]string
-	customProperties map[string]string
+	autoProperties   map[string]any
+	customProperties map[string]any
 }
 
 // buildSessionPool pre-generates all sessions for the pool.
@@ -316,7 +316,7 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 	offset := newStart.Sub(firstTime)
 
 	distinctID := src[0].distinctID
-	platform := src[0].autoProperties["$platform"]
+	platform, _ := src[0].autoProperties["$platform"].(string)
 
 	// If this window overlaps an existing session for the same user on the same platform,
 	// try to rebuild on a different platform (a user can use multiple platforms simultaneously,
@@ -366,8 +366,8 @@ func pickJourney(platform string) journey {
 }
 
 // buildSessionProps returns auto-props that stay consistent for all events in a session.
-func buildSessionProps(platform string) map[string]string {
-	props := map[string]string{
+func buildSessionProps(platform string) map[string]any {
+	props := map[string]any{
 		"$platform":    platform,
 		"$app_version": appVersions[rand.IntN(len(appVersions))],
 		"$locale":      locales[rand.IntN(len(locales))],
@@ -384,12 +384,7 @@ func buildSessionProps(platform string) map[string]string {
 		screen := screenSizes[rand.IntN(len(screenSizes))]
 		props["$screenWidth"] = screen[0]
 		props["$screenHeight"] = screen[1]
-		isMobile := screen[0] == "375" || screen[0] == "390" || screen[0] == "414" || screen[0] == "360"
-		if isMobile {
-			props["$mobile"] = "true"
-		} else {
-			props["$mobile"] = "false"
-		}
+		props["$mobile"] = screen[0] == 375 || screen[0] == 390 || screen[0] == 414 || screen[0] == 360
 
 		// UTM params — only ~15% of sessions are acquisition sessions
 		if rand.Float32() < 0.15 {
@@ -418,7 +413,7 @@ func buildSessionProps(platform string) map[string]string {
 }
 
 // addPerEventWebProps adds URL/referrer which vary per page navigation within a session.
-func addPerEventWebProps(props map[string]string, isFirst bool) {
+func addPerEventWebProps(props map[string]any, isFirst bool) {
 	page := pages[rand.IntN(len(pages))]
 	props["$url"] = "https://example.com" + page
 	props["$pageTitle"] = pageTitles[page]
@@ -429,78 +424,78 @@ func addPerEventWebProps(props map[string]string, isFirst bool) {
 	}
 }
 
-func copyProps(src map[string]string) map[string]string {
-	dst := make(map[string]string, len(src)+4)
+func copyProps(src map[string]any) map[string]any {
+	dst := make(map[string]any, len(src)+4)
 	for k, v := range src {
 		dst[k] = v
 	}
 	return dst
 }
 
-func customPropsForKind(kind string) map[string]string {
+func customPropsForKind(kind string) map[string]any {
 	switch kind {
 	case "page_view":
-		return map[string]string{}
+		return map[string]any{}
 	case "click":
-		return map[string]string{
+		return map[string]any{
 			"class": fmt.Sprintf("btn-%s", []string{"primary", "secondary", "link", "icon"}[rand.IntN(4)]),
 			"id":    fmt.Sprintf("el-%04d", rand.IntN(200)),
 			"tag":   cssTags[rand.IntN(len(cssTags))],
 			"text":  []string{"Buy now", "Add to cart", "Learn more", "Sign up", "Close", "Submit", ""}[rand.IntN(7)],
-			"x":     fmt.Sprintf("%d", rand.IntN(1920)),
-			"y":     fmt.Sprintf("%d", rand.IntN(1080)),
+			"x":     rand.IntN(1920),
+			"y":     rand.IntN(1080),
 		}
 	case "rage_click":
-		return map[string]string{
-			"click_count": fmt.Sprintf("%d", 3+rand.IntN(5)),
+		return map[string]any{
+			"click_count": 3 + rand.IntN(5),
 			"element":     cssTags[rand.IntN(len(cssTags))],
-			"x":           fmt.Sprintf("%d", rand.IntN(1920)),
-			"y":           fmt.Sprintf("%d", rand.IntN(1080)),
+			"x":           rand.IntN(1920),
+			"y":           rand.IntN(1080),
 		}
 	case "dead_click":
-		return map[string]string{
+		return map[string]any{
 			"element": cssTags[rand.IntN(len(cssTags))],
 			"text":    []string{"Buy now", "Submit", "Continue", "Next", "Confirm", ""}[rand.IntN(6)],
-			"x":       fmt.Sprintf("%d", rand.IntN(1920)),
-			"y":       fmt.Sprintf("%d", rand.IntN(1080)),
+			"x":       rand.IntN(1920),
+			"y":       rand.IntN(1080),
 		}
 	case "scroll":
 		percent := rand.IntN(101)
-		return map[string]string{
-			"percent":  fmt.Sprintf("%d", percent),
-			"scroll_y": fmt.Sprintf("%d", percent*50),
+		return map[string]any{
+			"percent":  percent,
+			"scroll_y": percent * 50,
 		}
 	case "form_start":
 		forms := []string{"login", "signup", "checkout", "newsletter", "contact"}
 		f := forms[rand.IntN(len(forms))]
-		return map[string]string{"form_id": f + "-form", "form_name": f}
+		return map[string]any{"form_id": f + "-form", "form_name": f}
 	case "form_submit":
 		forms := []string{"login", "signup", "checkout", "newsletter", "contact"}
 		f := forms[rand.IntN(len(forms))]
-		return map[string]string{"action": "/api/" + f, "form_id": f + "-form", "form_name": f}
+		return map[string]any{"action": "/api/" + f, "form_id": f + "-form", "form_name": f}
 	case "purchase", "add_to_cart", "checkout_started", "checkout_completed":
-		return map[string]string{
+		return map[string]any{
 			"product_id": fmt.Sprintf("prod-%04d", rand.IntN(500)),
-			"amount":     fmt.Sprintf("%.2f", rand.Float64()*500),
+			"amount":     rand.Float64() * 500,
 			"currency":   "USD",
 		}
 	case "notification_received", "notification_clicked", "notification_dismissed":
-		return map[string]string{
+		return map[string]any{
 			"campaign_id":       fmt.Sprintf("camp-%04d", rand.IntN(100)),
 			"notification_type": []string{"push", "in-app", "email"}[rand.IntN(3)],
 		}
 	case "search":
 		terms := []string{"shoes", "laptop", "coffee", "book", "headphones", "shirt", "camera"}
-		return map[string]string{"query": terms[rand.IntN(len(terms))]}
+		return map[string]any{"query": terms[rand.IntN(len(terms))]}
 	case "video_play", "video_pause":
-		return map[string]string{
+		return map[string]any{
 			"video_id":   fmt.Sprintf("vid-%04d", rand.IntN(200)),
-			"position_s": fmt.Sprintf("%d", rand.IntN(3600)),
+			"position_s": rand.IntN(3600),
 		}
 	case "error_occurred":
 		codes := []string{"500", "404", "403", "timeout", "network"}
-		return map[string]string{"error_code": codes[rand.IntN(len(codes))]}
+		return map[string]any{"error_code": codes[rand.IntN(len(codes))]}
 	default:
-		return map[string]string{}
+		return map[string]any{}
 	}
 }
