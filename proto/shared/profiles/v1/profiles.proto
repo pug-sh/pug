@@ -2,6 +2,7 @@ edition = "2023";
 package shared.profiles.v1;
 
 import "buf/validate/validate.proto";
+import "common/v1/filters.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -36,15 +37,38 @@ message GetResponse {
   Profile profile = 1;
 }
 
+message FilterGroup {
+  repeated common.v1.PropertyFilter filters = 1 [(buf.validate.field).repeated.min_items = 1];
+  common.v1.LogicalOperator operator = 2;
+}
+
 message ListRequest {
   // Opaque cursor from a previous response's next_page_token. Empty for the first page.
   string page_token = 1;
+  repeated FilterGroup filter_groups = 2;
+  common.v1.LogicalOperator filter_groups_operator = 3;
 }
 
 message ListResponse {
   repeated Profile profiles = 1;
   // Empty when there are no more pages.
   string next_page_token = 2;
+}
+
+message ProfileActivitySummary {
+  google.protobuf.Timestamp first_seen = 1;
+  google.protobuf.Timestamp last_seen = 2;
+  int64 total_events = 3;
+  int64 pageviews = 4;
+  int64 sessions = 5;
+  string browser = 6;
+  string browser_version = 7;
+  string os = 8;
+  string os_version = 9;
+  string device = 10;
+  string country = 11;
+  string region = 12;
+  string city = 13;
 }
 
 message Profile {
@@ -54,4 +78,5 @@ message Profile {
   google.protobuf.Struct properties = 4;
   string project_id = 5;
   google.protobuf.Timestamp update_time = 6;
+  ProfileActivitySummary activity = 7;
 }

@@ -8,6 +8,7 @@ package profilesv1
 
 import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
+	v1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -280,17 +281,71 @@ func (x *GetResponse) GetProfile() *Profile {
 	return nil
 }
 
-type ListRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
-	PageToken     *string `protobuf:"bytes,1,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+type FilterGroup struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Filters       []*v1.PropertyFilter   `protobuf:"bytes,1,rep,name=filters" json:"filters,omitempty"`
+	Operator      *v1.LogicalOperator    `protobuf:"varint,2,opt,name=operator,enum=common.v1.LogicalOperator" json:"operator,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *FilterGroup) Reset() {
+	*x = FilterGroup{}
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FilterGroup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FilterGroup) ProtoMessage() {}
+
+func (x *FilterGroup) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FilterGroup.ProtoReflect.Descriptor instead.
+func (*FilterGroup) Descriptor() ([]byte, []int) {
+	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *FilterGroup) GetFilters() []*v1.PropertyFilter {
+	if x != nil {
+		return x.Filters
+	}
+	return nil
+}
+
+func (x *FilterGroup) GetOperator() v1.LogicalOperator {
+	if x != nil && x.Operator != nil {
+		return *x.Operator
+	}
+	return v1.LogicalOperator(0)
+}
+
+type ListRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Opaque cursor from a previous response's next_page_token. Empty for the first page.
+	PageToken            *string             `protobuf:"bytes,1,opt,name=page_token,json=pageToken" json:"page_token,omitempty"`
+	FilterGroups         []*FilterGroup      `protobuf:"bytes,2,rep,name=filter_groups,json=filterGroups" json:"filter_groups,omitempty"`
+	FilterGroupsOperator *v1.LogicalOperator `protobuf:"varint,3,opt,name=filter_groups_operator,json=filterGroupsOperator,enum=common.v1.LogicalOperator" json:"filter_groups_operator,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
 func (x *ListRequest) Reset() {
 	*x = ListRequest{}
-	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[6]
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -302,7 +357,7 @@ func (x *ListRequest) String() string {
 func (*ListRequest) ProtoMessage() {}
 
 func (x *ListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[6]
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -315,7 +370,7 @@ func (x *ListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
 func (*ListRequest) Descriptor() ([]byte, []int) {
-	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{6}
+	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListRequest) GetPageToken() string {
@@ -323,6 +378,20 @@ func (x *ListRequest) GetPageToken() string {
 		return *x.PageToken
 	}
 	return ""
+}
+
+func (x *ListRequest) GetFilterGroups() []*FilterGroup {
+	if x != nil {
+		return x.FilterGroups
+	}
+	return nil
+}
+
+func (x *ListRequest) GetFilterGroupsOperator() v1.LogicalOperator {
+	if x != nil && x.FilterGroupsOperator != nil {
+		return *x.FilterGroupsOperator
+	}
+	return v1.LogicalOperator(0)
 }
 
 type ListResponse struct {
@@ -336,7 +405,7 @@ type ListResponse struct {
 
 func (x *ListResponse) Reset() {
 	*x = ListResponse{}
-	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[7]
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -348,7 +417,7 @@ func (x *ListResponse) String() string {
 func (*ListResponse) ProtoMessage() {}
 
 func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[7]
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -361,7 +430,7 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
 func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{7}
+	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListResponse) GetProfiles() []*Profile {
@@ -378,21 +447,162 @@ func (x *ListResponse) GetNextPageToken() string {
 	return ""
 }
 
+type ProfileActivitySummary struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	FirstSeen      *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=first_seen,json=firstSeen" json:"first_seen,omitempty"`
+	LastSeen       *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=last_seen,json=lastSeen" json:"last_seen,omitempty"`
+	TotalEvents    *int64                 `protobuf:"varint,3,opt,name=total_events,json=totalEvents" json:"total_events,omitempty"`
+	Pageviews      *int64                 `protobuf:"varint,4,opt,name=pageviews" json:"pageviews,omitempty"`
+	Sessions       *int64                 `protobuf:"varint,5,opt,name=sessions" json:"sessions,omitempty"`
+	Browser        *string                `protobuf:"bytes,6,opt,name=browser" json:"browser,omitempty"`
+	BrowserVersion *string                `protobuf:"bytes,7,opt,name=browser_version,json=browserVersion" json:"browser_version,omitempty"`
+	Os             *string                `protobuf:"bytes,8,opt,name=os" json:"os,omitempty"`
+	OsVersion      *string                `protobuf:"bytes,9,opt,name=os_version,json=osVersion" json:"os_version,omitempty"`
+	Device         *string                `protobuf:"bytes,10,opt,name=device" json:"device,omitempty"`
+	Country        *string                `protobuf:"bytes,11,opt,name=country" json:"country,omitempty"`
+	Region         *string                `protobuf:"bytes,12,opt,name=region" json:"region,omitempty"`
+	City           *string                `protobuf:"bytes,13,opt,name=city" json:"city,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProfileActivitySummary) Reset() {
+	*x = ProfileActivitySummary{}
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileActivitySummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileActivitySummary) ProtoMessage() {}
+
+func (x *ProfileActivitySummary) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileActivitySummary.ProtoReflect.Descriptor instead.
+func (*ProfileActivitySummary) Descriptor() ([]byte, []int) {
+	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ProfileActivitySummary) GetFirstSeen() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FirstSeen
+	}
+	return nil
+}
+
+func (x *ProfileActivitySummary) GetLastSeen() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSeen
+	}
+	return nil
+}
+
+func (x *ProfileActivitySummary) GetTotalEvents() int64 {
+	if x != nil && x.TotalEvents != nil {
+		return *x.TotalEvents
+	}
+	return 0
+}
+
+func (x *ProfileActivitySummary) GetPageviews() int64 {
+	if x != nil && x.Pageviews != nil {
+		return *x.Pageviews
+	}
+	return 0
+}
+
+func (x *ProfileActivitySummary) GetSessions() int64 {
+	if x != nil && x.Sessions != nil {
+		return *x.Sessions
+	}
+	return 0
+}
+
+func (x *ProfileActivitySummary) GetBrowser() string {
+	if x != nil && x.Browser != nil {
+		return *x.Browser
+	}
+	return ""
+}
+
+func (x *ProfileActivitySummary) GetBrowserVersion() string {
+	if x != nil && x.BrowserVersion != nil {
+		return *x.BrowserVersion
+	}
+	return ""
+}
+
+func (x *ProfileActivitySummary) GetOs() string {
+	if x != nil && x.Os != nil {
+		return *x.Os
+	}
+	return ""
+}
+
+func (x *ProfileActivitySummary) GetOsVersion() string {
+	if x != nil && x.OsVersion != nil {
+		return *x.OsVersion
+	}
+	return ""
+}
+
+func (x *ProfileActivitySummary) GetDevice() string {
+	if x != nil && x.Device != nil {
+		return *x.Device
+	}
+	return ""
+}
+
+func (x *ProfileActivitySummary) GetCountry() string {
+	if x != nil && x.Country != nil {
+		return *x.Country
+	}
+	return ""
+}
+
+func (x *ProfileActivitySummary) GetRegion() string {
+	if x != nil && x.Region != nil {
+		return *x.Region
+	}
+	return ""
+}
+
+func (x *ProfileActivitySummary) GetCity() string {
+	if x != nil && x.City != nil {
+		return *x.City
+	}
+	return ""
+}
+
 type Profile struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
-	ExternalId    *string                `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	Id            *string                `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
-	Properties    *structpb.Struct       `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
-	ProjectId     *string                `protobuf:"bytes,5,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
-	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	CreateTime    *timestamppb.Timestamp  `protobuf:"bytes,1,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
+	ExternalId    *string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	Id            *string                 `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
+	Properties    *structpb.Struct        `protobuf:"bytes,4,opt,name=properties" json:"properties,omitempty"`
+	ProjectId     *string                 `protobuf:"bytes,5,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	UpdateTime    *timestamppb.Timestamp  `protobuf:"bytes,6,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
+	Activity      *ProfileActivitySummary `protobuf:"bytes,7,opt,name=activity" json:"activity,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Profile) Reset() {
 	*x = Profile{}
-	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[8]
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -404,7 +614,7 @@ func (x *Profile) String() string {
 func (*Profile) ProtoMessage() {}
 
 func (x *Profile) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[8]
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -417,7 +627,7 @@ func (x *Profile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Profile.ProtoReflect.Descriptor instead.
 func (*Profile) Descriptor() ([]byte, []int) {
-	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{8}
+	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Profile) GetCreateTime() *timestamppb.Timestamp {
@@ -462,11 +672,18 @@ func (x *Profile) GetUpdateTime() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Profile) GetActivity() *ProfileActivitySummary {
+	if x != nil {
+		return x.Activity
+	}
+	return nil
+}
+
 var File_shared_profiles_v1_profiles_proto protoreflect.FileDescriptor
 
 const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
-	"!shared/profiles/v1/profiles.proto\x12\x12shared.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"'\n" +
+	"!shared/profiles/v1/profiles.proto\x12\x12shared.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x17common/v1/filters.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"'\n" +
 	"\rDeleteRequest\x12\x16\n" +
 	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\"\x10\n" +
 	"\x0eDeleteResponse\"A\n" +
@@ -479,13 +696,35 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"GetRequest\x12\x16\n" +
 	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\"D\n" +
 	"\vGetResponse\x125\n" +
-	"\aprofile\x18\x01 \x01(\v2\x1b.shared.profiles.v1.ProfileR\aprofile\",\n" +
+	"\aprofile\x18\x01 \x01(\v2\x1b.shared.profiles.v1.ProfileR\aprofile\"\x84\x01\n" +
+	"\vFilterGroup\x12=\n" +
+	"\afilters\x18\x01 \x03(\v2\x19.common.v1.PropertyFilterB\b\xbaH\x05\x92\x01\x02\b\x01R\afilters\x126\n" +
+	"\boperator\x18\x02 \x01(\x0e2\x1a.common.v1.LogicalOperatorR\boperator\"\xc4\x01\n" +
 	"\vListRequest\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x01 \x01(\tR\tpageToken\"o\n" +
+	"page_token\x18\x01 \x01(\tR\tpageToken\x12D\n" +
+	"\rfilter_groups\x18\x02 \x03(\v2\x1f.shared.profiles.v1.FilterGroupR\ffilterGroups\x12P\n" +
+	"\x16filter_groups_operator\x18\x03 \x01(\x0e2\x1a.common.v1.LogicalOperatorR\x14filterGroupsOperator\"o\n" +
 	"\fListResponse\x127\n" +
 	"\bprofiles\x18\x01 \x03(\v2\x1b.shared.profiles.v1.ProfileR\bprofiles\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8c\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xb9\x03\n" +
+	"\x16ProfileActivitySummary\x129\n" +
+	"\n" +
+	"first_seen\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tfirstSeen\x127\n" +
+	"\tlast_seen\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\blastSeen\x12!\n" +
+	"\ftotal_events\x18\x03 \x01(\x03R\vtotalEvents\x12\x1c\n" +
+	"\tpageviews\x18\x04 \x01(\x03R\tpageviews\x12\x1a\n" +
+	"\bsessions\x18\x05 \x01(\x03R\bsessions\x12\x18\n" +
+	"\abrowser\x18\x06 \x01(\tR\abrowser\x12'\n" +
+	"\x0fbrowser_version\x18\a \x01(\tR\x0ebrowserVersion\x12\x0e\n" +
+	"\x02os\x18\b \x01(\tR\x02os\x12\x1d\n" +
+	"\n" +
+	"os_version\x18\t \x01(\tR\tosVersion\x12\x16\n" +
+	"\x06device\x18\n" +
+	" \x01(\tR\x06device\x12\x18\n" +
+	"\acountry\x18\v \x01(\tR\acountry\x12\x16\n" +
+	"\x06region\x18\f \x01(\tR\x06region\x12\x12\n" +
+	"\x04city\x18\r \x01(\tR\x04city\"\xd4\x02\n" +
 	"\aProfile\x12;\n" +
 	"\vcreate_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12\x1f\n" +
@@ -498,7 +737,8 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x05 \x01(\tR\tprojectId\x12;\n" +
 	"\vupdate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime2\xeb\x02\n" +
+	"updateTime\x12F\n" +
+	"\bactivity\x18\a \x01(\v2*.shared.profiles.v1.ProfileActivitySummaryR\bactivity2\xeb\x02\n" +
 	"\x0fProfilesService\x12H\n" +
 	"\x03Get\x12\x1e.shared.profiles.v1.GetRequest\x1a\x1f.shared.profiles.v1.GetResponse\"\x00\x12l\n" +
 	"\x0fGetByExternalId\x12*.shared.profiles.v1.GetByExternalIdRequest\x1a+.shared.profiles.v1.GetByExternalIdResponse\"\x00\x12M\n" +
@@ -517,7 +757,7 @@ func file_shared_profiles_v1_profiles_proto_rawDescGZIP() []byte {
 	return file_shared_profiles_v1_profiles_proto_rawDescData
 }
 
-var file_shared_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_shared_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_shared_profiles_v1_profiles_proto_goTypes = []any{
 	(*DeleteRequest)(nil),           // 0: shared.profiles.v1.DeleteRequest
 	(*DeleteResponse)(nil),          // 1: shared.profiles.v1.DeleteResponse
@@ -525,32 +765,43 @@ var file_shared_profiles_v1_profiles_proto_goTypes = []any{
 	(*GetByExternalIdResponse)(nil), // 3: shared.profiles.v1.GetByExternalIdResponse
 	(*GetRequest)(nil),              // 4: shared.profiles.v1.GetRequest
 	(*GetResponse)(nil),             // 5: shared.profiles.v1.GetResponse
-	(*ListRequest)(nil),             // 6: shared.profiles.v1.ListRequest
-	(*ListResponse)(nil),            // 7: shared.profiles.v1.ListResponse
-	(*Profile)(nil),                 // 8: shared.profiles.v1.Profile
-	(*timestamppb.Timestamp)(nil),   // 9: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),         // 10: google.protobuf.Struct
+	(*FilterGroup)(nil),             // 6: shared.profiles.v1.FilterGroup
+	(*ListRequest)(nil),             // 7: shared.profiles.v1.ListRequest
+	(*ListResponse)(nil),            // 8: shared.profiles.v1.ListResponse
+	(*ProfileActivitySummary)(nil),  // 9: shared.profiles.v1.ProfileActivitySummary
+	(*Profile)(nil),                 // 10: shared.profiles.v1.Profile
+	(*v1.PropertyFilter)(nil),       // 11: common.v1.PropertyFilter
+	(v1.LogicalOperator)(0),         // 12: common.v1.LogicalOperator
+	(*timestamppb.Timestamp)(nil),   // 13: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),         // 14: google.protobuf.Struct
 }
 var file_shared_profiles_v1_profiles_proto_depIdxs = []int32{
-	8,  // 0: shared.profiles.v1.GetByExternalIdResponse.profile:type_name -> shared.profiles.v1.Profile
-	8,  // 1: shared.profiles.v1.GetResponse.profile:type_name -> shared.profiles.v1.Profile
-	8,  // 2: shared.profiles.v1.ListResponse.profiles:type_name -> shared.profiles.v1.Profile
-	9,  // 3: shared.profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
-	10, // 4: shared.profiles.v1.Profile.properties:type_name -> google.protobuf.Struct
-	9,  // 5: shared.profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
-	4,  // 6: shared.profiles.v1.ProfilesService.Get:input_type -> shared.profiles.v1.GetRequest
-	2,  // 7: shared.profiles.v1.ProfilesService.GetByExternalId:input_type -> shared.profiles.v1.GetByExternalIdRequest
-	6,  // 8: shared.profiles.v1.ProfilesService.List:input_type -> shared.profiles.v1.ListRequest
-	0,  // 9: shared.profiles.v1.ProfilesService.Delete:input_type -> shared.profiles.v1.DeleteRequest
-	5,  // 10: shared.profiles.v1.ProfilesService.Get:output_type -> shared.profiles.v1.GetResponse
-	3,  // 11: shared.profiles.v1.ProfilesService.GetByExternalId:output_type -> shared.profiles.v1.GetByExternalIdResponse
-	7,  // 12: shared.profiles.v1.ProfilesService.List:output_type -> shared.profiles.v1.ListResponse
-	1,  // 13: shared.profiles.v1.ProfilesService.Delete:output_type -> shared.profiles.v1.DeleteResponse
-	10, // [10:14] is the sub-list for method output_type
-	6,  // [6:10] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	10, // 0: shared.profiles.v1.GetByExternalIdResponse.profile:type_name -> shared.profiles.v1.Profile
+	10, // 1: shared.profiles.v1.GetResponse.profile:type_name -> shared.profiles.v1.Profile
+	11, // 2: shared.profiles.v1.FilterGroup.filters:type_name -> common.v1.PropertyFilter
+	12, // 3: shared.profiles.v1.FilterGroup.operator:type_name -> common.v1.LogicalOperator
+	6,  // 4: shared.profiles.v1.ListRequest.filter_groups:type_name -> shared.profiles.v1.FilterGroup
+	12, // 5: shared.profiles.v1.ListRequest.filter_groups_operator:type_name -> common.v1.LogicalOperator
+	10, // 6: shared.profiles.v1.ListResponse.profiles:type_name -> shared.profiles.v1.Profile
+	13, // 7: shared.profiles.v1.ProfileActivitySummary.first_seen:type_name -> google.protobuf.Timestamp
+	13, // 8: shared.profiles.v1.ProfileActivitySummary.last_seen:type_name -> google.protobuf.Timestamp
+	13, // 9: shared.profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
+	14, // 10: shared.profiles.v1.Profile.properties:type_name -> google.protobuf.Struct
+	13, // 11: shared.profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
+	9,  // 12: shared.profiles.v1.Profile.activity:type_name -> shared.profiles.v1.ProfileActivitySummary
+	4,  // 13: shared.profiles.v1.ProfilesService.Get:input_type -> shared.profiles.v1.GetRequest
+	2,  // 14: shared.profiles.v1.ProfilesService.GetByExternalId:input_type -> shared.profiles.v1.GetByExternalIdRequest
+	7,  // 15: shared.profiles.v1.ProfilesService.List:input_type -> shared.profiles.v1.ListRequest
+	0,  // 16: shared.profiles.v1.ProfilesService.Delete:input_type -> shared.profiles.v1.DeleteRequest
+	5,  // 17: shared.profiles.v1.ProfilesService.Get:output_type -> shared.profiles.v1.GetResponse
+	3,  // 18: shared.profiles.v1.ProfilesService.GetByExternalId:output_type -> shared.profiles.v1.GetByExternalIdResponse
+	8,  // 19: shared.profiles.v1.ProfilesService.List:output_type -> shared.profiles.v1.ListResponse
+	1,  // 20: shared.profiles.v1.ProfilesService.Delete:output_type -> shared.profiles.v1.DeleteResponse
+	17, // [17:21] is the sub-list for method output_type
+	13, // [13:17] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_shared_profiles_v1_profiles_proto_init() }
@@ -564,7 +815,7 @@ func file_shared_profiles_v1_profiles_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_shared_profiles_v1_profiles_proto_rawDesc), len(file_shared_profiles_v1_profiles_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
