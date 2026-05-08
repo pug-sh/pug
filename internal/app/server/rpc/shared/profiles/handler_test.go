@@ -13,6 +13,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	profilesv1 "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1"
 	profilesv1connect "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -333,19 +334,183 @@ func TestList_MoreThanPageSizeStreamsSecondPage(t *testing.T) {
 	}
 }
 
+func TestList_RejectsNonProfileFilterSources(t *testing.T) {
+	s := NewServer(nil, nil, &natsdeps.NATSClient{})
+	err := s.List(authCtx("proj_1"), connect.NewRequest(&profilesv1.ListRequest{
+		FilterGroups: []*profilesv1.FilterGroup{
+			{
+				Filters: []*commonv1.PropertyFilter{
+					{
+						Property: proto.String("plan"),
+						Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+						Value:    proto.String("pro"),
+						Source:   commonv1.PropertySource_PROPERTY_SOURCE_AUTO.Enum(),
+					},
+				},
+			},
+		},
+	}), nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if code := connect.CodeOf(err); code != connect.CodeInvalidArgument {
+		t.Fatalf("got code %v, want CodeInvalidArgument", code)
+	}
+}
+
+func TestList_FiltersProfilesByProperties(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	write := dbwrite.New(pg.PgW)
+
+	seedProfileWithProperties(t, ctx, write, projectID, "alice@example.com", map[string]any{
+		"plan":       "pro",
+		"age":        34,
+		"subscribed": true,
+	})
+	seedProfileWithProperties(t, ctx, write, projectID, "bob@example.com", map[string]any{
+		"plan":       "free",
+		"age":        21,
+		"subscribed": true,
+	})
+	seedProfileWithProperties(t, ctx, write, projectID, "carol@example.com", map[string]any{
+		"plan":       "pro",
+		"age":        18,
+		"subscribed": false,
+	})
+
+	client := newProfilesTestClient(t, NewServer(pg.PgRO, pg.PgW, &natsdeps.NATSClient{}), projectID)
+	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{
+		FilterGroups: []*profilesv1.FilterGroup{
+			{
+				Filters: []*commonv1.PropertyFilter{
+					{
+						Property: proto.String("plan"),
+						Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+						Value:    proto.String("pro"),
+					},
+					{
+						Property: proto.String("age"),
+						Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(),
+						Value:    proto.String("30"),
+					},
+					{
+						Property: proto.String("subscribed"),
+						Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+						Value:    proto.String("true"),
+					},
+				},
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	var got []string
+	for stream.Receive() {
+		for _, p := range stream.Msg().GetProfiles() {
+			got = append(got, p.GetExternalId())
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream err: %v", err)
+	}
+
+	if len(got) != 1 || got[0] != "alice@example.com" {
+		t.Fatalf("external_ids = %v, want [alice@example.com]", got)
+	}
+}
+
+func TestList_FilteredPagination(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+	write := dbwrite.New(pg.PgW)
+
+	for i := range pageSize + 1 {
+		seedProfileWithProperties(t, ctx, write, projectID, fmt.Sprintf("pro-%03d@example.com", i), map[string]any{
+			"segment": "pro",
+		})
+	}
+	for i := range 5 {
+		seedProfileWithProperties(t, ctx, write, projectID, fmt.Sprintf("free-%03d@example.com", i), map[string]any{
+			"segment": "free",
+		})
+	}
+
+	client := newProfilesTestClient(t, NewServer(pg.PgRO, pg.PgW, &natsdeps.NATSClient{}), projectID)
+	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{
+		FilterGroups: []*profilesv1.FilterGroup{
+			{
+				Filters: []*commonv1.PropertyFilter{
+					{
+						Property: proto.String("segment"),
+						Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+						Value:    proto.String("pro"),
+					},
+				},
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	var responses []*profilesv1.ListResponse
+	for stream.Receive() {
+		responses = append(responses, stream.Msg())
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream err: %v", err)
+	}
+
+	if len(responses) != 2 {
+		t.Fatalf("responses = %d, want 2", len(responses))
+	}
+	if got := len(responses[0].GetProfiles()); got != pageSize {
+		t.Fatalf("profiles in first response = %d, want %d", got, pageSize)
+	}
+	if got := responses[0].GetNextPageToken(); got == "" {
+		t.Fatal("first response next_page_token is empty, want non-empty")
+	}
+	if got := len(responses[1].GetProfiles()); got != 1 {
+		t.Fatalf("profiles in second response = %d, want 1", got)
+	}
+	for _, resp := range responses {
+		for _, p := range resp.GetProfiles() {
+			if p.GetProperties().GetFields()["segment"].GetStringValue() != "pro" {
+				t.Fatalf("profile %q has segment %q, want pro", p.GetExternalId(), p.GetProperties().GetFields()["segment"].GetStringValue())
+			}
+		}
+	}
+}
+
 func seedProfiles(t *testing.T, ctx context.Context, write *dbwrite.Queries, projectID string, count int) {
 	t.Helper()
 	for i := range count {
-		profileID := xid.New().String()
-		externalID := fmt.Sprintf("user-%03d@example.com", i)
-		if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
-			ID:         profileID,
-			ProjectID:  projectID,
-			ExternalID: postgres.NewText(externalID),
-			Properties: map[string]any{"index": i},
-		}); err != nil {
-			t.Fatalf("upsert profile %d: %v", i, err)
-		}
+		seedProfileWithProperties(t, ctx, write, projectID, fmt.Sprintf("user-%03d@example.com", i), map[string]any{"index": i})
+	}
+}
+
+func seedProfileWithProperties(t *testing.T, ctx context.Context, write *dbwrite.Queries, projectID, externalID string, properties map[string]any) {
+	t.Helper()
+	if _, err := write.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
+		ID:         xid.New().String(),
+		ProjectID:  projectID,
+		ExternalID: postgres.NewText(externalID),
+		Properties: properties,
+	}); err != nil {
+		t.Fatalf("upsert profile %q: %v", externalID, err)
 	}
 }
 

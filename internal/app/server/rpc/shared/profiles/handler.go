@@ -27,6 +27,7 @@ import (
 
 type Server struct {
 	profilesv1connect.UnimplementedProfilesServiceHandler
+	pgRO     *pgxpool.Pool
 	pgW      *pgxpool.Pool
 	read     *dbread.Queries
 	write    *dbwrite.Queries
@@ -38,6 +39,7 @@ func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nats *natsdeps.NATSClient)
 		panic("profiles: nats is nil")
 	}
 	return &Server{
+		pgRO:     pgRO,
 		pgW:      pgW,
 		read:     dbread.New(pgRO),
 		write:    dbwrite.New(pgW),
@@ -222,17 +224,23 @@ func (s *Server) List(
 		hasCursor = true
 	}
 
+	filterCond, _, err := buildProfileFilterCondition(req.Msg.GetFilterGroups(), req.Msg.GetFilterGroupsOperator(), 5)
+	if err != nil {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid filters"))
+	}
+
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		profilesList, err := s.read.GetProfilesByProjectID(ctx, dbread.GetProfilesByProjectIDParams{
-			ProjectID:  principal.Project.ID,
-			HasCursor:  hasCursor,
-			CursorTime: cursorTime,
-			CursorID:   cursorID,
-			PageSize:   pageSize + 1,
+		profilesList, err := listProfiles(ctx, s.pgRO, listProfilesParams{
+			projectID:  principal.Project.ID,
+			hasCursor:  hasCursor,
+			cursorTime: cursorTime,
+			cursorID:   cursorID,
+			pageSize:   pageSize + 1,
+			filter:     filterCond,
 		})
 		if err != nil {
 			if ctx.Err() != nil {
