@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
-      - postgres-data:/var/lib/postgresql
+      - postgres-data:/var/lib/postgresql/data
     ports:
       - "${DB_PORT:-5433}:5432"
     networks:
@@ -21,7 +21,7 @@ services:
   nats:
     image: nats:2.12
     restart: always
-    command: ["--jetstream"]
+    command: ["--jetstream", "--store_dir=/data"]
     volumes:
       - nats-jetstream-data:/data
     ports:

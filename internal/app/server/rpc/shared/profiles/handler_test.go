@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
@@ -26,24 +28,23 @@ import (
 func TestNewServer_NilNATSPanics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
-			t.Fatal("expected panic for nil nats, got none")
+			t.Fatal("expected panic for nil service, got none")
 		}
 	}()
-	NewServer(nil, nil, nil)
+	NewServer(nil)
 }
 
-func TestNewServer_NonNilNATS(t *testing.T) {
+func TestNewServer_NonNilService(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
 			t.Fatalf("unexpected panic: %v", r)
 		}
 	}()
-	// Provide a non-nil NATSClient; pgRO/pgW can be nil since we won't call DB methods.
-	NewServer(nil, nil, &natsdeps.NATSClient{})
+	NewServer(coreprofiles.NewService(nil, nil, &natsdeps.NATSClient{}))
 }
 
 func TestDelete_Unauthenticated(t *testing.T) {
-	s := NewServer(nil, nil, &natsdeps.NATSClient{})
+	s := NewServer(coreprofiles.NewService(nil, nil, &natsdeps.NATSClient{}))
 	id := proto.String("p1")
 	_, err := s.Delete(context.Background(), connect.NewRequest(&profilesv1.DeleteRequest{Id: id}))
 	if err == nil {
@@ -55,7 +56,7 @@ func TestDelete_Unauthenticated(t *testing.T) {
 }
 
 func TestGet_Unauthenticated(t *testing.T) {
-	s := NewServer(nil, nil, &natsdeps.NATSClient{})
+	s := NewServer(coreprofiles.NewService(nil, nil, &natsdeps.NATSClient{}))
 	id := proto.String("p1")
 	_, err := s.Get(context.Background(), connect.NewRequest(&profilesv1.GetRequest{Id: id}))
 	if err == nil {
@@ -138,7 +139,7 @@ func TestDelete_SoftDeleteAndDeactivateDevices(t *testing.T) {
 		}
 	}
 
-	s := NewServer(pg.PgRO, pg.PgW, natsClient)
+	s := NewServer(coreprofiles.NewService(pg.PgW, nil, natsClient))
 
 	// Delete the profile via the handler.
 	delID := proto.String(profileID)
@@ -204,7 +205,7 @@ func TestDelete_AlreadyDeleted(t *testing.T) {
 		t.Fatalf("upsert profile: %v", err)
 	}
 
-	s := NewServer(pg.PgRO, pg.PgW, natsClient)
+	s := NewServer(coreprofiles.NewService(pg.PgW, nil, natsClient))
 
 	// First delete succeeds.
 	delID := proto.String(profileID)
@@ -242,7 +243,7 @@ func TestDelete_NonExistent(t *testing.T) {
 
 	projectID := seedProject(t, ctx, pg)
 
-	s := NewServer(pg.PgRO, pg.PgW, natsClient)
+	s := NewServer(coreprofiles.NewService(pg.PgW, nil, natsClient))
 
 	delID := proto.String("nonexistent-id")
 	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: delID}))
@@ -266,7 +267,7 @@ func TestList_ExactPageSizeOmitsNextPageToken(t *testing.T) {
 
 	seedProfiles(t, ctx, write, projectID, pageSize)
 
-	client := newProfilesTestClient(t, NewServer(pg.PgRO, pg.PgW, &natsdeps.NATSClient{}), projectID)
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(pg.PgW, nil, &natsdeps.NATSClient{})), projectID)
 	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{}))
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -303,7 +304,7 @@ func TestList_MoreThanPageSizeStreamsSecondPage(t *testing.T) {
 
 	seedProfiles(t, ctx, write, projectID, pageSize+1)
 
-	client := newProfilesTestClient(t, NewServer(pg.PgRO, pg.PgW, &natsdeps.NATSClient{}), projectID)
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(pg.PgW, nil, &natsdeps.NATSClient{})), projectID)
 	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{}))
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -334,8 +335,8 @@ func TestList_MoreThanPageSizeStreamsSecondPage(t *testing.T) {
 	}
 }
 
-func TestList_RejectsNonProfileFilterSources(t *testing.T) {
-	s := NewServer(nil, nil, &natsdeps.NATSClient{})
+func TestList_RejectsUnsupportedFilterSources(t *testing.T) {
+	s := NewServer(coreprofiles.NewService(nil, nil, &natsdeps.NATSClient{}))
 	err := s.List(authCtx("proj_1"), connect.NewRequest(&profilesv1.ListRequest{
 		FilterGroups: []*profilesv1.FilterGroup{
 			{
@@ -344,7 +345,7 @@ func TestList_RejectsNonProfileFilterSources(t *testing.T) {
 						Property: proto.String("plan"),
 						Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
 						Value:    proto.String("pro"),
-						Source:   commonv1.PropertySource_PROPERTY_SOURCE_AUTO.Enum(),
+						Source:   commonv1.PropertySource_PROPERTY_SOURCE_CUSTOM.Enum(),
 					},
 				},
 			},
@@ -384,7 +385,7 @@ func TestList_FiltersProfilesByProperties(t *testing.T) {
 		"subscribed": false,
 	})
 
-	client := newProfilesTestClient(t, NewServer(pg.PgRO, pg.PgW, &natsdeps.NATSClient{}), projectID)
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(pg.PgW, nil, &natsdeps.NATSClient{})), projectID)
 	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{
 		FilterGroups: []*profilesv1.FilterGroup{
 			{
@@ -448,7 +449,7 @@ func TestList_FilteredPagination(t *testing.T) {
 		})
 	}
 
-	client := newProfilesTestClient(t, NewServer(pg.PgRO, pg.PgW, &natsdeps.NATSClient{}), projectID)
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(pg.PgW, nil, &natsdeps.NATSClient{})), projectID)
 	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{
 		FilterGroups: []*profilesv1.FilterGroup{
 			{
@@ -492,6 +493,49 @@ func TestList_FilteredPagination(t *testing.T) {
 				t.Fatalf("profile %q has segment %q, want pro", p.GetExternalId(), p.GetProperties().GetFields()["segment"].GetStringValue())
 			}
 		}
+	}
+}
+
+func TestConvertActivitySummary(t *testing.T) {
+	now := time.Date(2026, 5, 8, 10, 11, 12, 0, time.UTC)
+	got := convertActivitySummary(&coreprofiles.ProfileActivitySummary{
+		FirstSeen:      now.Add(-time.Hour),
+		LastSeen:       now,
+		TotalEvents:    42,
+		Pageviews:      17,
+		Sessions:       5,
+		Browser:        "Chrome",
+		BrowserVersion: "136",
+		OS:             "macOS",
+		OSVersion:      "15",
+		Device:         "Desktop",
+		Country:        "US",
+		Region:         "California",
+		City:           "San Francisco",
+	})
+	if got == nil {
+		t.Fatal("convertActivitySummary() = nil, want non-nil")
+	}
+	if got.GetTotalEvents() != 42 {
+		t.Fatalf("TotalEvents = %d, want 42", got.GetTotalEvents())
+	}
+	if got.GetPageviews() != 17 {
+		t.Fatalf("Pageviews = %d, want 17", got.GetPageviews())
+	}
+	if got.GetSessions() != 5 {
+		t.Fatalf("Sessions = %d, want 5", got.GetSessions())
+	}
+	if got.GetBrowser() != "Chrome" {
+		t.Fatalf("Browser = %q, want Chrome", got.GetBrowser())
+	}
+	if got.GetCountry() != "US" {
+		t.Fatalf("Country = %q, want US", got.GetCountry())
+	}
+	if got.GetFirstSeen().AsTime() != now.Add(-time.Hour) {
+		t.Fatalf("FirstSeen = %v, want %v", got.GetFirstSeen().AsTime(), now.Add(-time.Hour))
+	}
+	if got.GetLastSeen().AsTime() != now {
+		t.Fatalf("LastSeen = %v, want %v", got.GetLastSeen().AsTime(), now)
 	}
 }
 

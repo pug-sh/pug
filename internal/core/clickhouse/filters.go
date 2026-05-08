@@ -90,6 +90,17 @@ func ProfilePropertyExpr(name string) string {
 	return fmt.Sprintf("JSONExtractString(properties, '%s')", name)
 }
 
+func autoPropertyMapExpr(mapExpr, name string) string {
+	return fmt.Sprintf("coalesce(CAST(%s['%s'] AS Nullable(String)), '')", mapExpr, name)
+}
+
+func autoPropertyMapNumericExpr(mapExpr, name string) string {
+	return fmt.Sprintf(
+		"coalesce(CAST(variantElement(%s['%s'], 'Float64') AS Nullable(Float64)), CAST(variantElement(%s['%s'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(%s['%s'] AS Nullable(String))))",
+		mapExpr, name, mapExpr, name, mapExpr, name,
+	)
+}
+
 // EscapeLike escapes ClickHouse LIKE metacharacters in a value.
 func EscapeLike(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
@@ -110,6 +121,75 @@ func PropertyCondition(f *commonv1.PropertyFilter, projectID string) (Condition,
 // Dispatches to profileFilterCondition when source is PROPERTY_SOURCE_PROFILE.
 func PropertyConditionAliased(f *commonv1.PropertyFilter, projectID, alias string) (Condition, error) {
 	return propertyCondition(f, projectID, alias)
+}
+
+// ProfilePropertyCondition builds a Condition for profile JSON properties stored
+// in the ClickHouse profiles table. Only PROFILE and UNSPECIFIED sources are
+// accepted.
+func ProfilePropertyCondition(f *commonv1.PropertyFilter) (Condition, error) {
+	switch f.GetSource() {
+	case commonv1.PropertySource_PROPERTY_SOURCE_UNSPECIFIED, commonv1.PropertySource_PROPERTY_SOURCE_PROFILE:
+	default:
+		return Condition{}, fmt.Errorf("unsupported profile filter source: %v", f.GetSource())
+	}
+	return operatorCondition(ProfilePropertyExpr(f.GetProperty()), f)
+}
+
+// AutoPropertyConditionForMap builds a Condition for auto-properties already
+// materialized into a Map(String, Variant(...)) column on a user/profile summary row.
+func AutoPropertyConditionForMap(f *commonv1.PropertyFilter, mapExpr string) (Condition, error) {
+	switch f.GetSource() {
+	case commonv1.PropertySource_PROPERTY_SOURCE_UNSPECIFIED, commonv1.PropertySource_PROPERTY_SOURCE_AUTO:
+	default:
+		return Condition{}, fmt.Errorf("unsupported auto filter source: %v", f.GetSource())
+	}
+
+	switch f.GetOperator() {
+	case commonv1.FilterOperator_FILTER_OPERATOR_LTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_GTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_LT,
+		commonv1.FilterOperator_FILTER_OPERATOR_GT:
+		return numericCond(autoPropertyMapNumericExpr(mapExpr, f.GetProperty()), numericSQLComparator(f.GetOperator()), f, false)
+	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
+		return betweenCond(autoPropertyMapNumericExpr(mapExpr, f.GetProperty()), f, false)
+	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
+		return betweenCond(autoPropertyMapNumericExpr(mapExpr, f.GetProperty()), f, true)
+	default:
+		return operatorCondition(autoPropertyMapExpr(mapExpr, f.GetProperty()), f)
+	}
+}
+
+// AutoPropertyConditionForColumns builds a Condition for auto-properties that
+// have already been materialized into dedicated string / numeric expressions.
+func AutoPropertyConditionForColumns(f *commonv1.PropertyFilter, stringExpr, numericExpr string) (Condition, error) {
+	switch f.GetSource() {
+	case commonv1.PropertySource_PROPERTY_SOURCE_UNSPECIFIED, commonv1.PropertySource_PROPERTY_SOURCE_AUTO:
+	default:
+		return Condition{}, fmt.Errorf("unsupported auto filter source: %v", f.GetSource())
+	}
+
+	switch f.GetOperator() {
+	case commonv1.FilterOperator_FILTER_OPERATOR_LTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_GTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_LT,
+		commonv1.FilterOperator_FILTER_OPERATOR_GT:
+		if numericExpr == "" {
+			return Condition{}, fmt.Errorf("numeric auto filter is not supported for property %q", f.GetProperty())
+		}
+		return numericCond(numericExpr, numericSQLComparator(f.GetOperator()), f, false)
+	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
+		if numericExpr == "" {
+			return Condition{}, fmt.Errorf("numeric auto filter is not supported for property %q", f.GetProperty())
+		}
+		return betweenCond(numericExpr, f, false)
+	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
+		if numericExpr == "" {
+			return Condition{}, fmt.Errorf("numeric auto filter is not supported for property %q", f.GetProperty())
+		}
+		return betweenCond(numericExpr, f, true)
+	default:
+		return operatorCondition(stringExpr, f)
+	}
 }
 
 func propertyCondition(f *commonv1.PropertyFilter, projectID, alias string) (Condition, error) {

@@ -4,21 +4,15 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"time"
 
 	"connectrpc.com/connect"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
-	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
+	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	profilesv1 "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
-	workerprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/workers/profiles/v1"
-	"github.com/pug-sh/pug/internal/gen/repo/dbread"
-	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -27,23 +21,15 @@ import (
 
 type Server struct {
 	profilesv1connect.UnimplementedProfilesServiceHandler
-	pgRO     *pgxpool.Pool
-	pgW      *pgxpool.Pool
-	read     *dbread.Queries
-	write    *dbwrite.Queries
-	producer *natsdeps.NATSClient
+	service *coreprofiles.Service
 }
 
-func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, nats *natsdeps.NATSClient) *Server {
-	if nats == nil {
-		panic("profiles: nats is nil")
+func NewServer(service *coreprofiles.Service) *Server {
+	if service == nil {
+		panic("profiles: service is nil")
 	}
 	return &Server{
-		pgRO:     pgRO,
-		pgW:      pgW,
-		read:     dbread.New(pgRO),
-		write:    dbwrite.New(pgW),
-		producer: nats,
+		service: service,
 	}
 }
 
@@ -56,77 +42,18 @@ func (s *Server) Delete(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	// Soft-delete profile and deactivate its devices in a single transaction
-	// so devices can't remain active for a deleted profile.
 	profileID := req.Msg.GetId()
-	tx, err := s.pgW.Begin(ctx)
+	err = s.service.Delete(ctx, principal.Project.ID, profileID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed starting delete transaction", slogx.Error(err), slog.String("profile_id", profileID), slog.String("project_id", principal.Project.ID))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
-	}
-	defer func() {
-		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "failed rolling back delete transaction", slogx.Error(err), slog.String("profile_id", profileID), slog.String("project_id", principal.Project.ID))
-			telemetry.RecordError(ctx, err)
+		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
 		}
-	}()
-
-	qtx := s.write.WithTx(tx)
-
-	n, err := qtx.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
-		ID:        profileID,
-		ProjectID: principal.Project.ID,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed soft-deleting profile", slogx.Error(err), slog.String("profile_id", profileID), slog.String("project_id", principal.Project.ID))
+		if errors.Is(err, coreprofiles.ErrProfileDeleteUnavailable) {
+			return nil, connect.NewError(connect.CodeInternal, errors.New("profiles delete is unavailable"))
+		}
+		slog.ErrorContext(ctx, "failed deleting profile", slogx.Error(err), slog.String("profile_id", profileID), slog.String("project_id", principal.Project.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
-	}
-	if n == 0 {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
-	}
-
-	deactivated, err := qtx.DeactivateDevicesByProfileID(ctx, dbwrite.DeactivateDevicesByProfileIDParams{
-		ProfileID: postgres.NewText(profileID),
-		ProjectID: principal.Project.ID,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed deactivating devices for deleted profile", slogx.Error(err),
-			slog.String("profile_id", profileID), slog.String("project_id", principal.Project.ID))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
-	}
-	slog.InfoContext(ctx, "deactivated devices for deleted profile",
-		slog.Int64("count", deactivated),
-		slog.String("profile_id", profileID),
-		slog.String("project_id", principal.Project.ID))
-
-	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed committing delete transaction", slogx.Error(err), slog.String("profile_id", profileID), slog.String("project_id", principal.Project.ID))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
-	}
-
-	// Best-effort publish to sync deletion to ClickHouse. The PG transaction is
-	// already committed, so we return success regardless — a failed NATS publish
-	// is logged for reconciliation but must not fail the client request.
-	now := timestamppb.New(time.Now())
-	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
-		ProfileId:  proto.String(profileID),
-		ProjectId:  proto.String(principal.Project.ID),
-		IsDeleted:  proto.Bool(true),
-		UpdateTime: now,
-	}
-	upsertData, err := proto.Marshal(upsertMsg)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed marshalling profile delete upsert message", slogx.Error(err),
-			slog.String("profile_id", profileID), slog.String("project_id", principal.Project.ID))
-		telemetry.RecordError(ctx, err)
-	} else if err = s.producer.Publish(ctx, natsdeps.ProfileUpsertSubject, upsertData); err != nil {
-		slog.ErrorContext(ctx, "failed publishing profile delete to NATS", slogx.Error(err),
-			slog.String("profile_id", profileID), slog.String("project_id", principal.Project.ID))
-		telemetry.RecordError(ctx, err)
 	}
 
 	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil
@@ -141,20 +68,7 @@ func (s *Server) Get(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	p, err := s.read.GetProfileByIDAndProjectID(ctx, dbread.GetProfileByIDAndProjectIDParams{
-		ID:        req.Msg.GetId(),
-		ProjectID: principal.Project.ID,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
-		}
-		slog.ErrorContext(ctx, "failed reading profile", slogx.Error(err), slog.String("profile_id", req.Msg.GetId()))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
-	}
-
-	pbProfile, err := convertProfile(ctx, p)
+	pbProfile, err := s.getProfile(ctx, principal.Project.ID, req.Msg.GetId())
 	if err != nil {
 		return nil, err
 	}
@@ -173,20 +87,7 @@ func (s *Server) GetByExternalId(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	p, err := s.read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
-		ExternalID: req.Msg.GetExternalId(),
-		ProjectID:  principal.Project.ID,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
-		}
-		slog.ErrorContext(ctx, "failed reading profile by external ID", slogx.Error(err), slog.String("external_id", req.Msg.GetExternalId()))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
-	}
-
-	pbProfile, err := convertProfile(ctx, p)
+	pbProfile, err := s.getProfileByExternalID(ctx, principal.Project.ID, req.Msg.GetExternalId())
 	if err != nil {
 		return nil, err
 	}
@@ -224,9 +125,12 @@ func (s *Server) List(
 		hasCursor = true
 	}
 
-	filterCond, _, err := buildProfileFilterCondition(req.Msg.GetFilterGroups(), req.Msg.GetFilterGroupsOperator(), 5)
+	chFilterCond, err := buildProfileFilterCondition(req.Msg.GetFilterGroups(), req.Msg.GetFilterGroupsOperator())
 	if err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid filters"))
+	}
+	if s.service == nil {
+		return connect.NewError(connect.CodeInternal, errors.New("profiles list is unavailable"))
 	}
 
 	for {
@@ -234,13 +138,13 @@ func (s *Server) List(
 			return err
 		}
 
-		profilesList, err := listProfiles(ctx, s.pgRO, listProfilesParams{
-			projectID:  principal.Project.ID,
-			hasCursor:  hasCursor,
-			cursorTime: cursorTime,
-			cursorID:   cursorID,
-			pageSize:   pageSize + 1,
-			filter:     filterCond,
+		chProfiles, err := s.service.List(ctx, coreprofiles.ListParams{
+			ProjectID:  principal.Project.ID,
+			HasCursor:  hasCursor,
+			CursorTime: cursorTime.Time,
+			CursorID:   cursorID,
+			PageSize:   pageSize + 1,
+			Filter:     chFilterCond,
 		})
 		if err != nil {
 			if ctx.Err() != nil {
@@ -256,33 +160,20 @@ func (s *Server) List(
 			return connect.NewError(connect.CodeInternal, errors.New("failed to list profiles"))
 		}
 
-		if len(profilesList) == 0 {
+		page, err := buildProfilePage(ctx, chProfiles)
+		if err != nil {
+			return err
+		}
+		if page.isEmpty() {
 			break
 		}
-
-		hasNextPage := len(profilesList) > pageSize
-		pageProfiles := profilesList
-		if hasNextPage {
-			pageProfiles = profilesList[:pageSize]
-		}
-
-		pbProfiles := make([]*profilesv1.Profile, 0, len(pageProfiles))
-		for _, p := range pageProfiles {
-			pbProfile, err := convertProfile(ctx, p)
-			if err != nil {
-				return err
-			}
-			pbProfiles = append(pbProfiles, pbProfile)
-		}
-
-		last := pageProfiles[len(pageProfiles)-1]
-		cursorTime = last.CreateTime
-		cursorID = last.ID
+		cursorTime = page.cursorTime
+		cursorID = page.cursorID
 		hasCursor = true
 
 		nextPageToken := ""
-		if hasNextPage {
-			cursor := &profileListCursor{CreateTime: last.CreateTime.Time, ID: last.ID}
+		if page.hasNextPage {
+			cursor := &profileListCursor{CreateTime: cursorTime.Time, ID: cursorID}
 			nextPageToken, err = cursor.encode()
 			if err != nil {
 				slog.ErrorContext(ctx, "failed encoding page token", slogx.Error(err))
@@ -292,7 +183,7 @@ func (s *Server) List(
 		}
 
 		listResp := &profilesv1.ListResponse{
-			Profiles: pbProfiles,
+			Profiles: page.profiles,
 		}
 		if nextPageToken != "" {
 			listResp.NextPageToken = proto.String(nextPageToken)
@@ -307,7 +198,7 @@ func (s *Server) List(
 			return connect.NewError(connect.CodeInternal, errors.New("failed to stream profiles"))
 		}
 
-		if !hasNextPage {
+		if !page.hasNextPage {
 			break
 		}
 	}
@@ -315,25 +206,130 @@ func (s *Server) List(
 	return nil
 }
 
-func convertProfile(ctx context.Context, p dbread.Profile) (*profilesv1.Profile, error) {
+type profilePage struct {
+	profiles    []*profilesv1.Profile
+	hasNextPage bool
+	cursorTime  pgtype.Timestamptz
+	cursorID    string
+}
+
+func (p profilePage) isEmpty() bool {
+	return len(p.profiles) == 0 && p.cursorID == ""
+}
+
+func buildProfilePage(ctx context.Context, profiles []coreprofiles.Profile) (profilePage, error) {
+	if len(profiles) == 0 {
+		return profilePage{}, nil
+	}
+
+	hasNextPage := len(profiles) > pageSize
+	pageProfiles := profiles
+	if hasNextPage {
+		pageProfiles = profiles[:pageSize]
+	}
+
+	out := make([]*profilesv1.Profile, 0, len(pageProfiles))
+	for _, p := range pageProfiles {
+		pbProfile, err := convertProfile(p)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed converting profile", slogx.Error(err), slog.String("profile_id", p.ID))
+			telemetry.RecordError(ctx, err)
+			return profilePage{}, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
+		}
+		out = append(out, pbProfile)
+	}
+
+	last := pageProfiles[len(pageProfiles)-1]
+	return profilePage{
+		profiles:    out,
+		hasNextPage: hasNextPage,
+		cursorTime:  postgres.NewTimestamptz(last.CreateTime),
+		cursorID:    last.ID,
+	}, nil
+}
+
+func (s *Server) getProfile(ctx context.Context, projectID, id string) (*profilesv1.Profile, error) {
+	if s.service == nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("profiles read is unavailable"))
+	}
+	profile, err := s.service.GetByID(ctx, projectID, id)
+	if err != nil {
+		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
+		}
+		slog.ErrorContext(ctx, "failed reading profile from clickhouse", slogx.Error(err), slog.String("profile_id", id))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
+	}
+	pbProfile, err := convertProfile(profile)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed converting profile", slogx.Error(err), slog.String("profile_id", id))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
+	}
+	return pbProfile, nil
+}
+
+func (s *Server) getProfileByExternalID(ctx context.Context, projectID, externalID string) (*profilesv1.Profile, error) {
+	if s.service == nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("profiles read is unavailable"))
+	}
+	profile, err := s.service.GetByExternalID(ctx, projectID, externalID)
+	if err != nil {
+		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
+		}
+		slog.ErrorContext(ctx, "failed reading profile by external ID from clickhouse", slogx.Error(err), slog.String("external_id", externalID))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get profile"))
+	}
+	pbProfile, err := convertProfile(profile)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed converting profile", slogx.Error(err), slog.String("external_id", externalID))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
+	}
+	return pbProfile, nil
+}
+
+func convertProfile(p coreprofiles.Profile) (*profilesv1.Profile, error) {
 	propertiesMap := p.Properties
 	if propertiesMap == nil {
 		propertiesMap = make(map[string]any)
 	}
 	properties, err := structpb.NewStruct(propertiesMap)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed converting properties to protobuf struct",
-			slogx.Error(err), slog.String("profile_id", p.ID))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to convert profile data"))
+		return nil, err
 	}
 
 	return &profilesv1.Profile{
-		CreateTime: timestamppb.New(p.CreateTime.Time),
-		ExternalId: proto.String(p.ExternalID.String),
+		CreateTime: timestamppb.New(p.CreateTime),
+		ExternalId: proto.String(p.ExternalID),
 		Id:         proto.String(p.ID),
 		Properties: properties,
 		ProjectId:  proto.String(p.ProjectID),
-		UpdateTime: timestamppb.New(p.UpdateTime.Time),
+		UpdateTime: timestamppb.New(p.UpdateTime),
+		Activity:   convertActivitySummary(p.Activity),
 	}, nil
+}
+
+func convertActivitySummary(a *coreprofiles.ProfileActivitySummary) *profilesv1.ProfileActivitySummary {
+	if a == nil {
+		return nil
+	}
+	return &profilesv1.ProfileActivitySummary{
+		FirstSeen:      timestamppb.New(a.FirstSeen),
+		LastSeen:       timestamppb.New(a.LastSeen),
+		TotalEvents:    proto.Int64(a.TotalEvents),
+		Pageviews:      proto.Int64(a.Pageviews),
+		Sessions:       proto.Int64(a.Sessions),
+		Browser:        proto.String(a.Browser),
+		BrowserVersion: proto.String(a.BrowserVersion),
+		Os:             proto.String(a.OS),
+		OsVersion:      proto.String(a.OSVersion),
+		Device:         proto.String(a.Device),
+		Country:        proto.String(a.Country),
+		Region:         proto.String(a.Region),
+		City:           proto.String(a.City),
+	}
 }

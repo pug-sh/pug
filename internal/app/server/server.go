@@ -24,6 +24,7 @@ import (
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
@@ -100,8 +101,9 @@ func start(ctx context.Context, d *deps) error {
 		delivery.NewServer(d.nats.GetJetStream()), handlerOpts)
 	activityPath, activityHandler := activityv1connect.NewActivityServiceHandler(
 		activityrpc.NewServer(d.ch, insightsSvc, dbread.New(d.pgRo)), handlerOpts)
+	profilesSvc := coreprofiles.NewService(d.pgW, d.ch, d.nats)
 	sharedProfilesPath, sharedProfilesHandler := profilesv1connect.NewProfilesServiceHandler(
-		sharedprofilesrpc.NewServer(d.pgRo, d.pgW, d.nats), handlerOpts)
+		sharedprofilesrpc.NewServer(profilesSvc), handlerOpts)
 
 	// SDK
 	devicesPath, devicesHandler := devicesv1connect.NewDevicesServiceHandler(

@@ -55,6 +55,22 @@ message ListResponse {
   string next_page_token = 2;
 }
 
+message ProfileActivitySummary {
+  google.protobuf.Timestamp first_seen = 1;
+  google.protobuf.Timestamp last_seen = 2;
+  int64 total_events = 3;
+  int64 pageviews = 4;
+  int64 sessions = 5;
+  string browser = 6;
+  string browser_version = 7;
+  string os = 8;
+  string os_version = 9;
+  string device = 10;
+  string country = 11;
+  string region = 12;
+  string city = 13;
+}
+
 message Profile {
   google.protobuf.Timestamp create_time = 1;
   string external_id = 2;
@@ -62,4 +78,5 @@ message Profile {
   google.protobuf.Struct properties = 4;
   string project_id = 5;
   google.protobuf.Timestamp update_time = 6;
+  ProfileActivitySummary activity = 7;
 }
