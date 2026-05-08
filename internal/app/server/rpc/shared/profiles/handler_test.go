@@ -2,6 +2,7 @@ package profiles
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -261,13 +262,12 @@ func TestList_ExactPageSizeOmitsNextPageToken(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	pg := testutil.SetupPostgres(t)
-	projectID := seedProject(t, ctx, pg)
-	write := dbwrite.New(pg.PgW)
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
 
-	seedProfiles(t, ctx, write, projectID, pageSize)
+	seedCHProfiles(t, ctx, ch, projectID, pageSize)
 
-	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(pg.PgW, nil, &natsdeps.NATSClient{})), projectID)
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{})), projectID)
 	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{}))
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -298,13 +298,12 @@ func TestList_MoreThanPageSizeStreamsSecondPage(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	pg := testutil.SetupPostgres(t)
-	projectID := seedProject(t, ctx, pg)
-	write := dbwrite.New(pg.PgW)
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
 
-	seedProfiles(t, ctx, write, projectID, pageSize+1)
+	seedCHProfiles(t, ctx, ch, projectID, pageSize+1)
 
-	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(pg.PgW, nil, &natsdeps.NATSClient{})), projectID)
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{})), projectID)
 	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{}))
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -365,27 +364,26 @@ func TestList_FiltersProfilesByProperties(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	pg := testutil.SetupPostgres(t)
-	projectID := seedProject(t, ctx, pg)
-	write := dbwrite.New(pg.PgW)
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
 
-	seedProfileWithProperties(t, ctx, write, projectID, "alice@example.com", map[string]any{
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "alice@example.com", map[string]any{
 		"plan":       "pro",
 		"age":        34,
 		"subscribed": true,
 	})
-	seedProfileWithProperties(t, ctx, write, projectID, "bob@example.com", map[string]any{
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "bob@example.com", map[string]any{
 		"plan":       "free",
 		"age":        21,
 		"subscribed": true,
 	})
-	seedProfileWithProperties(t, ctx, write, projectID, "carol@example.com", map[string]any{
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "carol@example.com", map[string]any{
 		"plan":       "pro",
 		"age":        18,
 		"subscribed": false,
 	})
 
-	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(pg.PgW, nil, &natsdeps.NATSClient{})), projectID)
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{})), projectID)
 	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{
 		FilterGroups: []*profilesv1.FilterGroup{
 			{
@@ -434,22 +432,21 @@ func TestList_FilteredPagination(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	pg := testutil.SetupPostgres(t)
-	projectID := seedProject(t, ctx, pg)
-	write := dbwrite.New(pg.PgW)
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
 
 	for i := range pageSize + 1 {
-		seedProfileWithProperties(t, ctx, write, projectID, fmt.Sprintf("pro-%03d@example.com", i), map[string]any{
+		seedCHProfileWithProperties(t, ctx, ch, projectID, fmt.Sprintf("pro-%03d@example.com", i), map[string]any{
 			"segment": "pro",
 		})
 	}
 	for i := range 5 {
-		seedProfileWithProperties(t, ctx, write, projectID, fmt.Sprintf("free-%03d@example.com", i), map[string]any{
+		seedCHProfileWithProperties(t, ctx, ch, projectID, fmt.Sprintf("free-%03d@example.com", i), map[string]any{
 			"segment": "free",
 		})
 	}
 
-	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(pg.PgW, nil, &natsdeps.NATSClient{})), projectID)
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{})), projectID)
 	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{
 		FilterGroups: []*profilesv1.FilterGroup{
 			{
@@ -555,6 +552,36 @@ func seedProfileWithProperties(t *testing.T, ctx context.Context, write *dbwrite
 		Properties: properties,
 	}); err != nil {
 		t.Fatalf("upsert profile %q: %v", externalID, err)
+	}
+}
+
+func seedCHProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string, count int) {
+	t.Helper()
+	for i := range count {
+		seedCHProfileWithProperties(t, ctx, ch, projectID, fmt.Sprintf("user-%03d@example.com", i), map[string]any{"index": i})
+	}
+}
+
+func seedCHProfileWithProperties(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID, externalID string, properties map[string]any) {
+	t.Helper()
+
+	rawProperties, err := json.Marshal(properties)
+	if err != nil {
+		t.Fatalf("marshal properties for %q: %v", externalID, err)
+	}
+
+	now := time.Now().UTC()
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		xid.New().String(),
+		projectID,
+		externalID,
+		string(rawProperties),
+		uint8(0),
+		now,
+		now,
+	); err != nil {
+		t.Fatalf("insert clickhouse profile %q: %v", externalID, err)
 	}
 }
 

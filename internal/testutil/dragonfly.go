@@ -10,7 +10,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-const testDragonflyImage = "docker.dragonflydb.io/dragonflydb/dragonfly@sha256:243bf004df5e137d9432c35367d7c86e6d2b5bcb6700be4b6397fcb9306b794b" // v1.38.0
+const testDragonflyImage = "docker.dragonflydb.io/dragonflydb/dragonfly:v1.38.0"
 
 // TestRedis holds a Dragonfly testcontainer for testing.
 type TestRedis struct {
@@ -54,7 +54,7 @@ func SetupRedis(t *testing.T) *TestRedis {
 	opts, err := goredis.ParseURL(url)
 	if err != nil {
 		_ = testcontainers.TerminateContainer(ctr)
-		t.Fatalf("testutil: parse redis URL: %v", err)
+		t.Fatalf("testutil: parse dragonfly URL: %v", err)
 	}
 
 	client := goredis.NewClient(opts)
