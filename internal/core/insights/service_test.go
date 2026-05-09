@@ -243,7 +243,6 @@ func TestServiceGetPropertyValues(t *testing.T) {
 }
 
 func TestNewServicePanicsOnNilDeps(t *testing.T) {
-	rd := testutil.SetupRedis(t)
 	executor := &insights.Executor{}
 
 	t.Run("nil_executor", func(t *testing.T) {
@@ -252,7 +251,7 @@ func TestNewServicePanicsOnNilDeps(t *testing.T) {
 				t.Error("expected panic for nil executor")
 			}
 		}()
-		insights.NewService(nil, rd.Client)
+		insights.NewService(nil, nil)
 	})
 
 	t.Run("nil_redis", func(t *testing.T) {

@@ -485,6 +485,58 @@ func TestPropertyCondition_ProfileSource_Aliased(t *testing.T) {
 	}
 }
 
+func TestAutoPropertyConditionForMap_Equals(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: proto.String("$country"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+		Value:    proto.String("IN"),
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_AUTO.Enum(),
+	}
+	cond, err := clickhouse.AutoPropertyConditionForMap(f, "activity_summary.latest_auto_properties")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "coalesce(CAST(activity_summary.latest_auto_properties['$country'] AS Nullable(String)), '') = ?"
+	if cond.SQL() != want {
+		t.Fatalf("unexpected SQL: %s", cond.SQL())
+	}
+	if len(cond.Args()) != 1 || cond.Args()[0] != "IN" {
+		t.Fatalf("unexpected args: %v", cond.Args())
+	}
+}
+
+func TestAutoPropertyConditionForMap_GTE(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: proto.String("$bot_score"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(),
+		Value:    proto.String("30"),
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_AUTO.Enum(),
+	}
+	cond, err := clickhouse.AutoPropertyConditionForMap(f, "activity_summary.latest_auto_properties")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "coalesce(CAST(variantElement(activity_summary.latest_auto_properties['$bot_score'], 'Float64') AS Nullable(Float64)), CAST(variantElement(activity_summary.latest_auto_properties['$bot_score'], 'Int64') AS Nullable(Float64)), toFloat64OrNull(CAST(activity_summary.latest_auto_properties['$bot_score'] AS Nullable(String)))) >= ?"
+	if cond.SQL() != want {
+		t.Fatalf("unexpected SQL: %s", cond.SQL())
+	}
+	if len(cond.Args()) != 1 || cond.Args()[0] != float64(30) {
+		t.Fatalf("unexpected args: %v", cond.Args())
+	}
+}
+
+func TestAutoPropertyConditionForMap_RejectsNonAutoSource(t *testing.T) {
+	f := &commonv1.PropertyFilter{
+		Property: proto.String("$country"),
+		Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+		Value:    proto.String("IN"),
+		Source:   commonv1.PropertySource_PROPERTY_SOURCE_CUSTOM.Enum(),
+	}
+	if _, err := clickhouse.AutoPropertyConditionForMap(f, "activity_summary.latest_auto_properties"); err == nil {
+		t.Fatal("expected error for unsupported source")
+	}
+}
+
 func TestPropertyConditionAliased(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: proto.String("$country"),
