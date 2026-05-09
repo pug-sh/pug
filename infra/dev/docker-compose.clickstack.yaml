@@ -60,3 +60,7 @@ services:
 
 volumes:
   mongo-data:
+
+networks:
+  pug-net:
+    driver: bridge

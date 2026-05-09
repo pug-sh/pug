@@ -6,56 +6,53 @@ import (
 	"testing"
 
 	goredis "github.com/redis/go-redis/v9"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
-// TestRedis holds a Dragonfly testcontainer (Redis-compatible) for testing.
+// TestRedis holds a Redis testcontainer for testing.
 type TestRedis struct {
-	container testcontainers.Container
+	container *redis.RedisContainer
 	URL       string
 	Client    *goredis.Client
 }
 
-// SetupRedis starts a Dragonfly container (Redis-compatible) and returns a connected client.
+// SetupRedis starts a Redis container and returns a connected client.
 // Cleanup is registered via t.Cleanup.
 func SetupRedis(t *testing.T) *TestRedis {
 	t.Helper()
 	ctx := context.Background()
 
-	ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "docker.dragonflydb.io/dragonflydb/dragonfly:latest",
-			ExposedPorts: []string{"6379/tcp"},
-			WaitingFor:   wait.ForListeningPort("6379/tcp"),
-		},
-		Started: true,
-	})
+	ctr, err := redis.Run(ctx, "redis:7-alpine")
 	if err != nil {
-		t.Fatalf("testutil: start dragonfly container: %v", err)
+		t.Fatalf("testutil: start redis container: %v", err)
 	}
 
 	host, err := ctr.Host(ctx)
 	if err != nil {
-		_ = testcontainers.TerminateContainer(ctr)
-		t.Fatalf("testutil: get dragonfly host: %v", err)
+		_ = ctr.Terminate(ctx)
+		t.Fatalf("testutil: get redis host: %v", err)
 	}
 
 	port, err := ctr.MappedPort(ctx, "6379")
 	if err != nil {
-		_ = testcontainers.TerminateContainer(ctr)
-		t.Fatalf("testutil: get dragonfly port: %v", err)
+		_ = ctr.Terminate(ctx)
+		t.Fatalf("testutil: get redis port: %v", err)
 	}
 
 	url := fmt.Sprintf("redis://%s:%s", host, port.Port())
 
 	opts, err := goredis.ParseURL(url)
 	if err != nil {
-		_ = testcontainers.TerminateContainer(ctr)
+		_ = ctr.Terminate(ctx)
 		t.Fatalf("testutil: parse redis URL: %v", err)
 	}
 
 	client := goredis.NewClient(opts)
+	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		_ = ctr.Terminate(ctx)
+		t.Fatalf("testutil: ping redis: %v", err)
+	}
 
 	tr := &TestRedis{
 		container: ctr,
@@ -65,8 +62,8 @@ func SetupRedis(t *testing.T) *TestRedis {
 
 	t.Cleanup(func() {
 		_ = client.Close()
-		if err := testcontainers.TerminateContainer(ctr); err != nil {
-			fmt.Printf("testutil: terminate dragonfly container: %v\n", err)
+		if err := ctr.Terminate(ctx); err != nil {
+			fmt.Printf("testutil: terminate redis container: %v\n", err)
 		}
 	})
 

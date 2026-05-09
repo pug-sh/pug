@@ -35,14 +35,6 @@ func TestPublisher(t *testing.T) {
 		t.Fatalf("create JetStream: %v", err)
 	}
 
-	// Create the events stream (normally done by NATS migrations).
-	if _, err = js.CreateStream(ctx, jetstream.StreamConfig{
-		Name:     "events",
-		Subjects: []string{"events.>"},
-	}); err != nil {
-		t.Fatalf("create stream: %v", err)
-	}
-
 	publisher := events.NewPublisher(js)
 
 	t.Run("publish valid batch", func(t *testing.T) {

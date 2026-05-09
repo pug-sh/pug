@@ -209,6 +209,45 @@ Incoming events are enriched with auto-properties before being published to NATS
 
 Profiles store properties as a single JSONB field (`properties`) rather than separate `auto_properties` and `custom_properties` fields. This simplifies the data model while preserving the ability to distinguish between auto-populated and custom properties at the application level through property naming conventions (e.g., `$` prefix for auto-properties).
 
+### Profiles Read API
+
+`shared.profiles.v1.ProfilesService` is backed by ClickHouse for reads and PostgreSQL for delete-side effects.
+
+- `Get`, `GetByExternalId`, and `List` all return the same `Profile` shape from `proto/shared/profiles/v1/profiles.proto`.
+- `Profile` includes the base profile record (`id`, `external_id`, `properties`, timestamps, `project_id`) plus an optional nested `activity` summary.
+- `Delete` is different: it is a write path that soft-deletes in PostgreSQL, deactivates devices in the same transaction, then publishes a `ProfileUpsertMessage` so ClickHouse converges asynchronously.
+
+**Read data sources.**
+
+- Base profile fields come from ClickHouse `profiles` (`schema/clickhouse/migrations/003_create_profiles.sql`), queried through the `latest_profiles` CTE in `internal/core/profiles/service.go`. This is the current-state projection of the `ReplacingMergeTree(insert_time)` table.
+- Alias resolution comes from ClickHouse `profile_aliases` (`schema/clickhouse/migrations/002_create_profile_aliases.sql`), queried through `latest_profile_aliases`.
+- Activity fields come from `distinct_id_activity_states` (`schema/clickhouse/migrations/005_create_profile_activity_summary.sql`), an incremental `AggregatingMergeTree` rollup keyed by `(project_id, distinct_id)`.
+- The per-profile activity summary is built by `profileActivitySummaryCTE`: it unions the canonical profile ID and all alias IDs for that profile, joins those identities to `distinct_id_activity_states`, then re-aggregates to one row per `(project_id, profile_id)`.
+
+**`Profile.activity` semantics.**
+
+- `activity` is omitted (`nil`) when the profile has no recorded events in ClickHouse (`total_events == 0`).
+- `first_seen`, `last_seen`, `total_events`, and `sessions` come from aggregate states over all events for the resolved identity set.
+- `pageviews` is derived as `sum(kind = 'page_view')` in the ClickHouse rollup.
+- `browser`, `browser_version`, `os`, `os_version`, `device`, `country`, `region`, and `city` come from the latest event per distinct ID via `argMaxState(..., occur_time)`, then are merged across aliases at the profile level.
+- There is currently no `channel` field in the profile API. Do not invent one ad hoc in handlers without first defining a stable derivation rule and proto field.
+
+**List / pagination behavior.**
+
+- `ProfilesService.List` is a server-streaming RPC. The server emits `ListResponse` pages until exhaustion.
+- Page size is server-controlled (`const pageSize = 100` in `internal/app/server/rpc/shared/profiles/handler.go`); the client cannot request a custom size.
+- Pagination is keyset-based on `(create_time DESC, id DESC)`. `next_page_token` is an opaque base64url cursor carrying the last row's `create_time` and `id`.
+
+**Profiles filter logic.**
+
+- `ListRequest` uses group-based filters only: `filter_groups` plus `filter_groups_operator`.
+- Within a group, filters are combined with the group's `operator` (`AND` default when unspecified). Between groups, filters are combined with `filter_groups_operator` (`AND` default when unspecified).
+- `PROPERTY_SOURCE_PROFILE` and `PROPERTY_SOURCE_UNSPECIFIED` filter against the JSON `properties` column on the ClickHouse `profiles` row via `internal/core/clickhouse.ProfilePropertyCondition`.
+- `PROPERTY_SOURCE_AUTO` on profile list requests does **not** read directly from event property maps. It filters against already-materialized summary columns from `activity_summary` via `internal/app/server/rpc/shared/profiles/filters.go`.
+- Supported auto filter keys for profile list are exactly: `$browser`, `$browserVersion`, `$os`, `$osVersion`, `$device`, `$country`, `$region`, `$city`.
+- Unsupported auto keys should stay explicit errors. In particular, list filters do not currently support `$ip`, channel/referrer/UTM fields, or typed numeric auto-properties such as `$bot_score`.
+- Numeric auto-property operators (`<`, `<=`, `>`, `>=`, `BETWEEN`, `NOT BETWEEN`) only work for auto fields that provide a numeric expression. The current profile-list auto summary fields are string-only, so numeric operators against them must fail rather than silently coerce.
+
 ### Profile Soft-Delete
 
 Profiles use soft-delete via a `deletion_time timestamptz` column (NULL = active). All read queries filter `deletion_time IS NULL`. The `SoftDeleteProfileByIDAndProjectID` query sets `deletion_time = now()` — it never hard-deletes. The `deletion_time IS NULL` guard makes soft-delete idempotent (returns 0 rows if already deleted).
@@ -283,6 +322,8 @@ The trailing 5-minute lag ensures the most recent bucket is closed before it's r
 **Version requirement.** Refreshable MVs went stable in ClickHouse 24.10. Cotton's dev infra pins `clickhouse/clickhouse-server:26.3` (`infra/dev/docker-compose.yaml`), so the requirement is satisfied; verify before relying on the feature in any new environment.
 
 New MVs go in `schema/clickhouse/migrations/` as goose migrations; pair the rollup table DDL and the `CREATE MATERIALIZED VIEW` statement in the same migration file.
+
+**Migration editing rule.** If a migration has **never** been applied in any environment whose state must be preserved (for example production, staging, or a shared dev DB), it is acceptable to edit that migration in place. Once a migration has been applied anywhere that matters, treat it as immutable and add a new forward migration instead. Do not create a follow-up migration solely to rewrite an unapplied migration.
 
 ### ClickHouse Query Builder Conventions
 
