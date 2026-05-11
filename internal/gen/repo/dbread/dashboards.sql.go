@@ -76,6 +76,43 @@ func (q *Queries) ListDashboardInsightsByDashboardIDAndProjectID(ctx context.Con
 	return items, nil
 }
 
+const listDashboardInsightsByProjectID = `-- name: ListDashboardInsightsByProjectID :many
+select di.create_time, di.dashboard_id, di.description, di.display_name, di.id, di.insight_query, di.layouts, di.update_time
+from dashboard_insights di
+join dashboards d on d.id = di.dashboard_id
+where d.project_id = $1
+order by di.create_time asc
+`
+
+func (q *Queries) ListDashboardInsightsByProjectID(ctx context.Context, projectID string) ([]DashboardInsight, error) {
+	rows, err := q.db.Query(ctx, listDashboardInsightsByProjectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DashboardInsight
+	for rows.Next() {
+		var i DashboardInsight
+		if err := rows.Scan(
+			&i.CreateTime,
+			&i.DashboardID,
+			&i.Description,
+			&i.DisplayName,
+			&i.ID,
+			&i.InsightQuery,
+			&i.Layouts,
+			&i.UpdateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDashboardsByProjectID = `-- name: ListDashboardsByProjectID :many
 select create_time, description, display_name, id, project_id, update_time
 from dashboards

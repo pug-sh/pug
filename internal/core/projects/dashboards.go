@@ -42,18 +42,21 @@ func (s *Service) ListDashboards(ctx context.Context, projectID string) ([]Dashb
 		return nil, err
 	}
 
+	insights, err := s.read.ListDashboardInsightsByProjectID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	insightsByDashboardID := make(map[string][]dbread.DashboardInsight, len(dashboards))
+	for _, insight := range insights {
+		insightsByDashboardID[insight.DashboardID] = append(insightsByDashboardID[insight.DashboardID], insight)
+	}
+
 	result := make([]DashboardWithInsights, 0, len(dashboards))
 	for _, dashboard := range dashboards {
-		insights, err := s.read.ListDashboardInsightsByDashboardIDAndProjectID(ctx, dbread.ListDashboardInsightsByDashboardIDAndProjectIDParams{
-			DashboardID: dashboard.ID,
-			ProjectID:   projectID,
-		})
-		if err != nil {
-			return nil, err
-		}
 		result = append(result, DashboardWithInsights{
 			Dashboard: dashboard,
-			Insights:  insights,
+			Insights:  insightsByDashboardID[dashboard.ID],
 		})
 	}
 

@@ -262,6 +262,16 @@ func TestProjectsService(t *testing.T) {
 		if gotDashboard.Insights[0].Description != "Tracks signup volume" {
 			t.Fatalf("Insight description = %q, want %q", gotDashboard.Insights[0].Description, "Tracks signup volume")
 		}
+		if gotDashboard.Insights[0].InsightQuery["insightType"] != "INSIGHT_TYPE_TRENDS" {
+			t.Fatalf("Insight query insightType = %v, want %q", gotDashboard.Insights[0].InsightQuery["insightType"], "INSIGHT_TYPE_TRENDS")
+		}
+		layout, ok := gotDashboard.Insights[0].Layouts["lg"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected lg layout map, got %T", gotDashboard.Insights[0].Layouts["lg"])
+		}
+		if layout["w"] != float64(6) {
+			t.Fatalf("Insight layout width = %v, want %v", layout["w"], float64(6))
+		}
 
 		updatedInsight, err := svc.UpsertDashboardInsight(ctx, projectID, dashboard.ID, createdInsight.ID, "Activated Users", "Tracks activation volume", &insightsv1.QueryRequest{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
@@ -293,6 +303,19 @@ func TestProjectsService(t *testing.T) {
 		}
 		if len(list) == 0 {
 			t.Fatal("expected at least one dashboard")
+		}
+		if len(list[0].Insights) != 1 {
+			t.Fatalf("list insights = %d, want 1", len(list[0].Insights))
+		}
+		if list[0].Insights[0].InsightQuery["insightType"] != "INSIGHT_TYPE_TRENDS" {
+			t.Fatalf("list insight query insightType = %v, want %q", list[0].Insights[0].InsightQuery["insightType"], "INSIGHT_TYPE_TRENDS")
+		}
+		listLayout, ok := list[0].Insights[0].Layouts["md"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected md layout map, got %T", list[0].Insights[0].Layouts["md"])
+		}
+		if listLayout["h"] != float64(6) {
+			t.Fatalf("list insight layout height = %v, want %v", listLayout["h"], float64(6))
 		}
 
 		if err := svc.DeleteDashboardInsight(ctx, projectID, dashboard.ID, createdInsight.ID); err != nil {

@@ -28,6 +28,10 @@ func (s *Server) Create(
 	ctx context.Context,
 	req *connect.Request[dashboardsv1.DashboardsServiceCreateRequest],
 ) (*connect.Response[dashboardsv1.DashboardsServiceCreateResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -49,6 +53,10 @@ func (s *Server) List(
 	ctx context.Context,
 	_ *connect.Request[dashboardsv1.DashboardsServiceListRequest],
 ) (*connect.Response[dashboardsv1.DashboardsServiceListResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -79,6 +87,10 @@ func (s *Server) Get(
 	ctx context.Context,
 	req *connect.Request[dashboardsv1.DashboardsServiceGetRequest],
 ) (*connect.Response[dashboardsv1.DashboardsServiceGetResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -108,6 +120,10 @@ func (s *Server) UpdateDisplayName(
 	ctx context.Context,
 	req *connect.Request[dashboardsv1.DashboardsServiceUpdateDisplayNameRequest],
 ) (*connect.Response[dashboardsv1.DashboardsServiceUpdateDisplayNameResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -132,6 +148,10 @@ func (s *Server) Delete(
 	ctx context.Context,
 	req *connect.Request[dashboardsv1.DashboardsServiceDeleteRequest],
 ) (*connect.Response[dashboardsv1.DashboardsServiceDeleteResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -153,6 +173,10 @@ func (s *Server) CreateInsight(
 	ctx context.Context,
 	req *connect.Request[dashboardsv1.DashboardsServiceCreateInsightRequest],
 ) (*connect.Response[dashboardsv1.DashboardsServiceCreateInsightResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -182,6 +206,10 @@ func (s *Server) UpdateInsight(
 	ctx context.Context,
 	req *connect.Request[dashboardsv1.DashboardsServiceUpdateInsightRequest],
 ) (*connect.Response[dashboardsv1.DashboardsServiceUpdateInsightResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -211,6 +239,10 @@ func (s *Server) DeleteInsight(
 	ctx context.Context,
 	req *connect.Request[dashboardsv1.DashboardsServiceDeleteInsightRequest],
 ) (*connect.Response[dashboardsv1.DashboardsServiceDeleteInsightResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
