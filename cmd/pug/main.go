@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -24,6 +25,14 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
+)
+
+var (
+	reset  = "\033[0m"
+	cyan   = "\033[36m"
+	green  = "\033[32m"
+	yellow = "\033[33m"
+	bold   = "\033[1m"
 )
 
 // run creates a signal-aware context, loads .env, and runs fn.
@@ -147,6 +156,50 @@ var devCmd = &cobra.Command{
 		if err := godotenv.Load(); err != nil {
 			slog.DebugContext(sigCtx, "No .env file found, relying on environment variables")
 		}
+
+		port := os.Getenv("PUG_SERVER_PORT")
+		if port == "" {
+			port = "3000"
+		}
+
+		fmt.Println()
+		fmt.Println(cyan + bold + "8b,dPPYba,  88       88  ,adPPYb,d8" + reset)
+		fmt.Println(cyan + "88P'    \"8a 88       88 a8\"    `Y88" + reset)
+		fmt.Println(cyan + "88       d8 88       88 8b       88" + reset)
+		fmt.Println(cyan + "88b,   ,a8\" \"8a,   ,a88 \"8a,   ,d88" + reset)
+		fmt.Println(cyan + "88`YbbdP\"'   `\"YbbdP'Y8  `\"YbbdP\"Y8" + reset)
+		fmt.Println(cyan + "88                       aa,    ,88" + reset)
+		fmt.Println(cyan + "88                        \"Y8bbdP\"" + reset)
+		fmt.Println()
+
+		fmt.Println(bold+"Server:"+reset, green+"http://localhost:"+port+reset)
+		fmt.Println()
+
+		fmt.Println(bold + "Infrastructure:" + reset)
+		if url := os.Getenv("DATABASE_URL"); url != "" {
+			fmt.Println("  "+green+"PostgreSQL:"+reset, url)
+		}
+		if url := os.Getenv("CLICKHOUSE_URL"); url != "" {
+			fmt.Println("  "+green+"ClickHouse:"+reset, url)
+		}
+		if url := os.Getenv("NATS_URL"); url != "" {
+			fmt.Println("  "+green+"NATS:"+reset, url)
+		}
+		if url := os.Getenv("REDIS_URL"); url != "" {
+			fmt.Println("  "+green+"Redis:"+reset, url)
+		}
+		fmt.Println()
+
+		fmt.Println(bold + "Workers:" + reset)
+		fmt.Println("  "+yellow+"Profiles:"+reset, "identify, alias, upsert")
+		fmt.Println("  "+yellow+"Events:"+reset, "events")
+		fmt.Println("  "+yellow+"Campaigns:"+reset, "campaigns")
+		fmt.Println("  "+yellow+"Devices:"+reset, "devices")
+		fmt.Println("  "+yellow+"Scheduler:"+reset, "scheduler")
+		fmt.Println()
+
+		fmt.Println(green + "  Press Ctrl+C to stop" + reset)
+		fmt.Println()
 
 		g, ctx := errgroup.WithContext(sigCtx)
 		g.Go(func() error { return devices.Run(ctx) })
