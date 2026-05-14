@@ -42,7 +42,6 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/pug-sh/pug/internal/useragent"
 	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 func Run(ctx context.Context) error {
@@ -163,7 +162,10 @@ func start(ctx context.Context, d *deps) error {
 
 	server := &http.Server{
 		Addr:    ":" + d.port,
-		Handler: h2c.NewHandler(mux, &http2.Server{}),
+		Handler: mux,
+	}
+	if err := http2.ConfigureServer(server, &http2.Server{}); err != nil {
+		return err
 	}
 
 	go func() {
