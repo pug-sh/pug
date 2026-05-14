@@ -172,7 +172,7 @@ var devCmd = &cobra.Command{
 		fmt.Println(cyan + "88                        \"Y8bbdP\"" + reset)
 		fmt.Println()
 
-		fmt.Println(bold + "Server:" + reset, green+"http://localhost:"+port+reset)
+		fmt.Println(bold+"Server:"+reset, green+"http://localhost:"+port+reset)
 		fmt.Println()
 
 		fmt.Println(bold + "Infrastructure:" + reset)
@@ -191,11 +191,11 @@ var devCmd = &cobra.Command{
 		fmt.Println()
 
 		fmt.Println(bold + "Workers:" + reset)
-		fmt.Println("  " + yellow + "Profiles:" + reset, "identify, alias, upsert")
-		fmt.Println("  " + yellow + "Events:" + reset, "events")
-		fmt.Println("  " + yellow + "Campaigns:" + reset, "campaigns")
-		fmt.Println("  " + yellow + "Devices:" + reset, "devices")
-		fmt.Println("  " + yellow + "Scheduler:" + reset, "scheduler")
+		fmt.Println("  "+yellow+"Profiles:"+reset, "identify, alias, upsert")
+		fmt.Println("  "+yellow+"Events:"+reset, "events")
+		fmt.Println("  "+yellow+"Campaigns:"+reset, "campaigns")
+		fmt.Println("  "+yellow+"Devices:"+reset, "devices")
+		fmt.Println("  "+yellow+"Scheduler:"+reset, "scheduler")
 		fmt.Println()
 
 		fmt.Println(green + "  Press Ctrl+C to stop" + reset)
