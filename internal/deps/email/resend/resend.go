@@ -1,15 +1,11 @@
 package resend
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 
 	coreemail "github.com/pug-sh/pug/internal/core/email"
+	resendsdk "github.com/resend/resend-go/v3"
 )
 
 type Config struct {
@@ -19,7 +15,7 @@ type Config struct {
 
 type Provider struct {
 	apiKey string
-	client *http.Client
+	client *resendsdk.Client
 }
 
 func New(cfg Config) (*Provider, error) {
@@ -31,52 +27,28 @@ func New(cfg Config) (*Provider, error) {
 	}
 	return &Provider{
 		apiKey: cfg.APIKey,
-		client: http.DefaultClient,
+		client: resendsdk.NewClient(cfg.APIKey),
 	}, nil
 }
 
 func (p *Provider) Send(ctx context.Context, msg coreemail.Message) error {
-	body := map[string]any{
-		"from":    msg.From,
-		"to":      []string{msg.To},
-		"subject": msg.Subject,
-		"html":    msg.HTMLBody,
-		"text":    msg.TextBody,
+	params := &resendsdk.SendEmailRequest{
+		From:    msg.From,
+		To:      []string{msg.To},
+		Subject: msg.Subject,
+		Html:    msg.HTMLBody,
+		Text:    msg.TextBody,
 	}
 	if msg.ReplyTo != "" {
-		body["reply_to"] = msg.ReplyTo
+		params.ReplyTo = msg.ReplyTo
 	}
 
-	payload, err := json.Marshal(body)
+	sent, err := p.client.Emails.SendWithContext(ctx, params)
 	if err != nil {
-		return coreemail.NewPermanentError(err)
+		return fmt.Errorf("resend send email: %w", err)
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(payload))
-	if err != nil {
-		return coreemail.NewPermanentError(err)
+	if sent == nil || sent.Id == "" {
+		return coreemail.NewPermanentError(fmt.Errorf("resend send email: empty response"))
 	}
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-
-	msgText := strings.TrimSpace(string(respBody))
-	if msgText == "" {
-		msgText = resp.Status
-	}
-	err = fmt.Errorf("resend send email: status %d: %s", resp.StatusCode, msgText)
-	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-		return err
-	}
-	return coreemail.NewPermanentError(err)
+	return nil
 }
