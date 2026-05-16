@@ -9,18 +9,21 @@ import (
 )
 
 func WithCORS(allowedOrigins []string, connectHandler http.Handler) http.Handler {
+	allowCredentials := true
 	for _, o := range allowedOrigins {
 		if o == "*" {
 			slog.Warn("CORS: using wildcard origin with credentials is insecure, set PUG_CORS_ORIGINS to specific origins in production")
+			allowCredentials = false
 			break
 		}
 	}
 
 	c := cors.New(cors.Options{
-		AllowCredentials: true,
+		AllowCredentials: allowCredentials,
 		AllowedHeaders: append(
 			connectcors.AllowedHeaders(),
 			"Authorization",
+			"x-api-key",
 			"X-Project-Id",
 		),
 		AllowedMethods: append(connectcors.AllowedMethods(), http.MethodOptions),
