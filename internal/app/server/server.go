@@ -133,10 +133,12 @@ func start(ctx context.Context, d *deps) error {
 	mux.Handle(activityPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
 	mux.Handle(sharedProfilesPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
 
-	// SDK only (API key auth, CORS enabled for browser-based SDK usage)
-	mux.Handle(devicesPath, pogrpc.WithCORS(d.corsOrigins, sdkMW.Wrap(devicesHandler)))
-	mux.Handle(sdkProfilesPath, pogrpc.WithCORS(d.corsOrigins, sdkMW.Wrap(sdkProfilesHandler)))
-	mux.Handle(eventsPath, pogrpc.WithCORS(d.corsOrigins, sdkMW.Wrap(eventsHandler)))
+	// SDK only (API key auth). CORS is wildcard with credentials disabled because
+	// customer sites embedding the SDK have arbitrary origins; auth lives entirely
+	// in the x-api-key header, so there are no ambient credentials to protect.
+	mux.Handle(devicesPath, pogrpc.WithSDKCORS(sdkMW.Wrap(devicesHandler)))
+	mux.Handle(sdkProfilesPath, pogrpc.WithSDKCORS(sdkMW.Wrap(sdkProfilesHandler)))
+	mux.Handle(eventsPath, pogrpc.WithSDKCORS(sdkMW.Wrap(eventsHandler)))
 
 	// Reflection
 	services := []string{
