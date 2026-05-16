@@ -3,6 +3,7 @@ package orgs
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,13 +15,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
+	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/rs/xid"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -36,20 +40,27 @@ var (
 )
 
 const (
-	inviteTTL = 7 * 24 * time.Hour
+	inviteTTL        = 7 * 24 * time.Hour
+	orgInvitePurpose = "org_invite"
 )
 
 type Service struct {
-	read  *dbread.Queries
-	write *dbwrite.Queries
-	pgW   *pgxpool.Pool
+	read      *dbread.Queries
+	write     *dbwrite.Queries
+	pgW       *pgxpool.Pool
+	publisher jobPublisher
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
+type jobPublisher interface {
+	Publish(ctx context.Context, subject string, data []byte) error
+}
+
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher jobPublisher) *Service {
 	return &Service{
-		read:  dbread.New(pgRO),
-		write: dbwrite.New(pgW),
-		pgW:   pgW,
+		read:      dbread.New(pgRO),
+		write:     dbwrite.New(pgW),
+		pgW:       pgW,
+		publisher: publisher,
 	}
 }
 
@@ -173,7 +184,21 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 		telemetry.RecordError(ctx, err)
 		return dbwrite.OrgInvitation{}, fmt.Errorf("generate invite token: %w", err)
 	}
-	inv, err := s.write.CreateOrgInvitation(ctx, dbwrite.CreateOrgInvitationParams{
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin invite member transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.OrgInvitation{}, err
+	}
+	defer func() {
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back invite member transaction", slogx.Error(rollbackErr))
+			telemetry.RecordError(ctx, rollbackErr)
+		}
+	}()
+
+	w := dbwrite.New(tx)
+	inv, err := w.CreateOrgInvitation(ctx, dbwrite.CreateOrgInvitationParams{
 		ID:        xid.New().String(),
 		OrgID:     orgID,
 		InviterID: postgres.NewOptionalText(inviterID),
@@ -196,6 +221,37 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 		telemetry.RecordError(ctx, err)
 		return dbwrite.OrgInvitation{}, err
 	}
+
+	if _, err := w.InvalidateActiveEmailActionTokensByEmail(ctx, dbwrite.InvalidateActiveEmailActionTokensByEmailParams{
+		Email:   email,
+		Purpose: orgInvitePurpose,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to invalidate prior org invite email tokens", slogx.Error(err), slog.String("org_id", orgID), slog.String("email", email))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.OrgInvitation{}, err
+	}
+
+	if _, err := w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
+		ID:              xid.New().String(),
+		CustomerID:      postgres.NewOptionalText(""),
+		Email:           email,
+		Purpose:         orgInvitePurpose,
+		TokenHash:       hashInviteToken(token),
+		OrgInvitationID: postgres.NewOptionalText(inv.ID),
+		ExpiresAt:       postgres.NewTimestamptz(inv.ExpiresAt.Time),
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to create org invite email token", slogx.Error(err), slog.String("org_id", orgID), slog.String("invitation_id", inv.ID))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.OrgInvitation{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit invite member transaction", slogx.Error(err), slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.OrgInvitation{}, err
+	}
+
+	s.publishInviteEmailJob(ctx, inv, token)
 	return inv, nil
 }
 
@@ -213,14 +269,31 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		}
 	}()
 
+	r := dbread.New(tx)
 	w := dbwrite.New(tx)
 
-	inv, err := w.GetOrgInvitationByTokenForUpdate(ctx, token)
+	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+		TokenHash: hashInviteToken(token),
+		Purpose:   orgInvitePurpose,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dbread.Org{}, ErrInviteNotFound
 		}
-		slog.ErrorContext(ctx, "failed to get org invitation by token", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to get org invite token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbread.Org{}, err
+	}
+	if !emailToken.OrgInvitationID.Valid {
+		return dbread.Org{}, ErrInviteNotFound
+	}
+
+	inv, err := w.GetOrgInvitationByIDForUpdate(ctx, emailToken.OrgInvitationID.String)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbread.Org{}, ErrInviteNotFound
+		}
+		slog.ErrorContext(ctx, "failed to get org invitation by id", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
@@ -258,6 +331,12 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		return dbread.Org{}, err
 	}
 
+	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.ErrorContext(ctx, "failed to consume org invite token", slogx.Error(err), slog.String("token_id", emailToken.ID))
+		telemetry.RecordError(ctx, err)
+		return dbread.Org{}, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed to commit accept invite transaction", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
@@ -289,4 +368,33 @@ func newInviteToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvitation, token string) {
+	if s.publisher == nil {
+		return
+	}
+	data, err := proto.Marshal(&emailworkerv1.EmailJob{
+		Payload: &emailworkerv1.EmailJob_OrgMemberInvite{
+			OrgMemberInvite: &emailworkerv1.OrgMemberInvitePayload{
+				Email:        proto.String(inv.Email),
+				InvitationId: proto.String(inv.ID),
+				Token:        proto.String(token),
+			},
+		},
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to marshal org invite email job", slogx.Error(err), slog.String("invitation_id", inv.ID))
+		telemetry.RecordError(ctx, err)
+		return
+	}
+	if err := s.publisher.Publish(ctx, nats.MiscEmailJobsSubject, data); err != nil {
+		slog.ErrorContext(ctx, "failed to publish org invite email job", slogx.Error(err), slog.String("invitation_id", inv.ID))
+		telemetry.RecordError(ctx, err)
+	}
+}
+
+func hashInviteToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }

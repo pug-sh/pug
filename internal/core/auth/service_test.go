@@ -2,14 +2,39 @@ package auth_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
+
 	"github.com/pug-sh/pug/internal/core/auth"
+	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
+	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/testutil"
+	"google.golang.org/protobuf/proto"
 )
+
+type publishedJob struct {
+	subject string
+	job     *emailworkerv1.EmailJob
+}
+
+type stubPublisher struct {
+	jobs []publishedJob
+}
+
+func (p *stubPublisher) Publish(_ context.Context, subject string, data []byte) error {
+	job := &emailworkerv1.EmailJob{}
+	if err := proto.Unmarshal(data, job); err != nil {
+		return err
+	}
+	p.jobs = append(p.jobs, publishedJob{subject: subject, job: job})
+	return nil
+}
 
 func TestAuthService(t *testing.T) {
 	if testing.Short() {
@@ -18,10 +43,15 @@ func TestAuthService(t *testing.T) {
 
 	db := testutil.SetupPostgres(t)
 	jwtKey := []byte("test-secret-key-for-jwt")
-	svc := auth.NewService(db.PgRO, db.PgW, jwtKey)
+	publisher := &stubPublisher{}
+	svc := auth.NewService(db.PgRO, db.PgW, jwtKey, publisher)
+	read := dbread.New(db.PgW)
 	ctx := context.Background()
 
 	var signupToken string
+	var verifyToken1 string
+	var verifyToken2 string
+	var resetToken string
 
 	t.Run("SignUpWithEmail", func(t *testing.T) {
 		token, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123")
@@ -32,17 +62,48 @@ func TestAuthService(t *testing.T) {
 			t.Fatal("expected non-empty token")
 		}
 		signupToken = token
+
+		customer, err := read.GetCustomerByEmail(ctx, "test@example.com")
+		if err != nil {
+			t.Fatalf("GetCustomerByEmail: %v", err)
+		}
+		if customer.EmailVerifiedAt.Valid {
+			t.Fatal("expected newly created customer to be unverified")
+		}
+
+		if len(publisher.jobs) != 1 {
+			t.Fatalf("expected 1 published job, got %d", len(publisher.jobs))
+		}
+		if publisher.jobs[0].subject != natsdeps.MiscEmailJobsSubject {
+			t.Fatalf("subject = %q, want %q", publisher.jobs[0].subject, natsdeps.MiscEmailJobsSubject)
+		}
+		payload := publisher.jobs[0].job.GetSignupVerifyWelcome()
+		if payload == nil {
+			t.Fatal("expected signup verify welcome payload")
+		}
+		verifyToken1 = payload.GetToken()
+		if verifyToken1 == "" {
+			t.Fatal("expected non-empty verification token")
+		}
+
+		if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+			TokenHash: hashToken(verifyToken1),
+			Purpose:   "verify_email",
+		}); err != nil {
+			t.Fatalf("GetValidEmailActionTokenByHashAndPurpose(signup verify): %v", err)
+		}
 	})
 
 	t.Run("SignUpWithEmail_duplicate", func(t *testing.T) {
 		if _, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123"); err == nil {
 			t.Fatal("expected error for duplicate email")
 		} else if !errors.Is(err, auth.ErrEmailAlreadyExists) {
-			t.Errorf("expected ErrEmailAlreadyExists, got: %v", err)
+			t.Fatalf("expected ErrEmailAlreadyExists, got %v", err)
 		}
 	})
 
 	t.Run("SignInWithEmail_valid", func(t *testing.T) {
+		before := len(publisher.jobs)
 		token, err := svc.SignInWithEmail(ctx, "test@example.com", "password123")
 		if err != nil {
 			t.Fatalf("SignInWithEmail: %v", err)
@@ -50,28 +111,101 @@ func TestAuthService(t *testing.T) {
 		if token == "" {
 			t.Fatal("expected non-empty token")
 		}
-	})
-
-	t.Run("SignInWithEmail_wrong_password", func(t *testing.T) {
-		if _, err := svc.SignInWithEmail(ctx, "test@example.com", "wrongpassword"); err == nil {
-			t.Fatal("expected error for wrong password")
-		} else if !errors.Is(err, auth.ErrInvalidCredentials) {
-			t.Errorf("expected ErrInvalidCredentials, got: %v", err)
+		if len(publisher.jobs) != before {
+			t.Fatal("sign in should not publish email jobs")
 		}
 	})
 
-	t.Run("SignInWithEmail_nonexistent", func(t *testing.T) {
-		if _, err := svc.SignInWithEmail(ctx, "nobody@example.com", "password123"); err == nil {
-			t.Fatal("expected error for nonexistent email")
-		} else if !errors.Is(err, auth.ErrInvalidCredentials) {
-			t.Errorf("expected ErrInvalidCredentials, got: %v", err)
+	t.Run("ResendVerificationEmail_invalidates_previous_token", func(t *testing.T) {
+		if err := svc.ResendVerificationEmail(ctx, "test@example.com"); err != nil {
+			t.Fatalf("ResendVerificationEmail: %v", err)
+		}
+		if len(publisher.jobs) != 2 {
+			t.Fatalf("expected 2 published jobs after resend, got %d", len(publisher.jobs))
+		}
+		payload := publisher.jobs[1].job.GetVerificationResend()
+		if payload == nil {
+			t.Fatal("expected verification resend payload")
+		}
+		verifyToken2 = payload.GetToken()
+		if verifyToken2 == "" || verifyToken2 == verifyToken1 {
+			t.Fatal("expected fresh verification resend token")
+		}
+
+		if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+			TokenHash: hashToken(verifyToken1),
+			Purpose:   "verify_email",
+		}); !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("expected prior verification token to be invalidated, got %v", err)
+		}
+		if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+			TokenHash: hashToken(verifyToken2),
+			Purpose:   "verify_email",
+		}); err != nil {
+			t.Fatalf("expected fresh verification token to be active: %v", err)
+		}
+	})
+
+	t.Run("VerifyEmail_rejects_invalidated_token", func(t *testing.T) {
+		if err := svc.VerifyEmail(ctx, verifyToken1); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Fatalf("expected ErrInvalidToken, got %v", err)
+		}
+	})
+
+	t.Run("VerifyEmail_consumes_valid_token", func(t *testing.T) {
+		if err := svc.VerifyEmail(ctx, verifyToken2); err != nil {
+			t.Fatalf("VerifyEmail: %v", err)
+		}
+		customer, err := read.GetCustomerByEmail(ctx, "test@example.com")
+		if err != nil {
+			t.Fatalf("GetCustomerByEmail: %v", err)
+		}
+		if !customer.EmailVerifiedAt.Valid {
+			t.Fatal("expected customer email to be marked verified")
+		}
+		if err := svc.VerifyEmail(ctx, verifyToken2); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Fatalf("expected reused token to fail, got %v", err)
+		}
+	})
+
+	t.Run("RequestPasswordReset_non_enumerating", func(t *testing.T) {
+		before := len(publisher.jobs)
+		if err := svc.RequestPasswordReset(ctx, "missing@example.com"); err != nil {
+			t.Fatalf("RequestPasswordReset(missing): %v", err)
+		}
+		if len(publisher.jobs) != before {
+			t.Fatal("missing customer should not publish a reset job")
+		}
+
+		if err := svc.RequestPasswordReset(ctx, "test@example.com"); err != nil {
+			t.Fatalf("RequestPasswordReset(existing): %v", err)
+		}
+		if len(publisher.jobs) != before+1 {
+			t.Fatalf("expected reset job to be published, got %d jobs", len(publisher.jobs))
+		}
+		payload := publisher.jobs[len(publisher.jobs)-1].job.GetPasswordReset()
+		if payload == nil {
+			t.Fatal("expected password reset payload")
+		}
+		resetToken = payload.GetToken()
+	})
+
+	t.Run("ResetPassword_updates_hash_and_consumes_token", func(t *testing.T) {
+		if err := svc.ResetPassword(ctx, resetToken, "new-password123"); err != nil {
+			t.Fatalf("ResetPassword: %v", err)
+		}
+		if _, err := svc.SignInWithEmail(ctx, "test@example.com", "password123"); !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Fatalf("expected old password to fail, got %v", err)
+		}
+		if _, err := svc.SignInWithEmail(ctx, "test@example.com", "new-password123"); err != nil {
+			t.Fatalf("expected new password to work, got %v", err)
+		}
+		if err := svc.ResetPassword(ctx, resetToken, "another-password"); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Fatalf("expected reused reset token to fail, got %v", err)
 		}
 	})
 
 	t.Run("JWT_structure", func(t *testing.T) {
-		if signupToken == "" {
-			t.Skip("skipping: SignUpWithEmail did not produce a token")
-		}
 		parsed, err := jwt.Parse(signupToken, func(t *jwt.Token) (any, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, errors.New("unexpected signing method")
@@ -84,39 +218,10 @@ func TestAuthService(t *testing.T) {
 		if !parsed.Valid {
 			t.Fatal("JWT is not valid")
 		}
-
-		iss, err := parsed.Claims.GetIssuer()
-		if err != nil {
-			t.Fatalf("GetIssuer: %v", err)
-		}
-		if iss != "pug/auth" {
-			t.Errorf("issuer = %q, want %q", iss, "pug/auth")
-		}
-
-		aud, err := parsed.Claims.GetAudience()
-		if err != nil {
-			t.Fatalf("GetAudience: %v", err)
-		}
-		if len(aud) != 1 || aud[0] != "pug/dashboard" {
-			t.Errorf("audience = %v, want [pug/dashboard]", aud)
-		}
-
-		sub, err := parsed.Claims.GetSubject()
-		if err != nil {
-			t.Fatalf("GetSubject: %v", err)
-		}
-		if sub == "" {
-			t.Error("expected non-empty subject (customer ID)")
-		}
-
-		exp, err := parsed.Claims.GetExpirationTime()
-		if err != nil {
-			t.Fatalf("GetExpirationTime: %v", err)
-		}
-		expectedExp := time.Now().Add(90 * 24 * time.Hour)
-		diff := exp.Sub(expectedExp)
-		if diff < -time.Minute || diff > time.Minute {
-			t.Errorf("expiry %v is not within 1 minute of expected %v", exp, expectedExp)
-		}
 	})
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }

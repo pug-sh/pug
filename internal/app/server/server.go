@@ -67,7 +67,7 @@ func start(ctx context.Context, d *deps) error {
 
 	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
 	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
-	orgsSvc := coreorgs.NewService(d.pgRo, d.pgW)
+	orgsSvc := coreorgs.NewService(d.pgRo, d.pgW, d.nats)
 
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)
@@ -81,7 +81,7 @@ func start(ctx context.Context, d *deps) error {
 
 	// Public
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(
-		auth.NewServer(d.pgRo, d.pgW, d.jwtKey), handlerOpts)
+		auth.NewServer(d.pgRo, d.pgW, d.jwtKey, d.nats), handlerOpts)
 
 	// Dashboard
 	orgsPath, orgsHandler := orgsv1connect.NewOrgsServiceHandler(

@@ -55,6 +55,26 @@ func (q *Queries) CreateOrgInvitation(ctx context.Context, arg CreateOrgInvitati
 	return i, err
 }
 
+const getOrgInvitationByIDForUpdate = `-- name: GetOrgInvitationByIDForUpdate :one
+select create_time, email, expires_at, id, inviter_id, org_id, status, token from org_invitations where id = $1 for update
+`
+
+func (q *Queries) GetOrgInvitationByIDForUpdate(ctx context.Context, id string) (OrgInvitation, error) {
+	row := q.db.QueryRow(ctx, getOrgInvitationByIDForUpdate, id)
+	var i OrgInvitation
+	err := row.Scan(
+		&i.CreateTime,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.ID,
+		&i.InviterID,
+		&i.OrgID,
+		&i.Status,
+		&i.Token,
+	)
+	return i, err
+}
+
 const getOrgInvitationByTokenForUpdate = `-- name: GetOrgInvitationByTokenForUpdate :one
 select create_time, email, expires_at, id, inviter_id, org_id, status, token from org_invitations where token = $1 for update
 `

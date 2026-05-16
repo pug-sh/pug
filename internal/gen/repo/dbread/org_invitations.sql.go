@@ -29,6 +29,40 @@ func (q *Queries) GetOrgInvitationByToken(ctx context.Context, token string) (Or
 	return i, err
 }
 
+const getOrgInvitationEmailContextByID = `-- name: GetOrgInvitationEmailContextByID :one
+select
+  oi.id,
+  oi.email,
+  oi.org_id,
+  o.display_name as org_display_name,
+  coalesce(c.display_name, '') as inviter_display_name
+from org_invitations oi
+join orgs o on o.id = oi.org_id
+left join customers c on c.id = oi.inviter_id
+where oi.id = $1
+`
+
+type GetOrgInvitationEmailContextByIDRow struct {
+	ID                 string
+	Email              string
+	OrgID              string
+	OrgDisplayName     string
+	InviterDisplayName string
+}
+
+func (q *Queries) GetOrgInvitationEmailContextByID(ctx context.Context, id string) (GetOrgInvitationEmailContextByIDRow, error) {
+	row := q.db.QueryRow(ctx, getOrgInvitationEmailContextByID, id)
+	var i GetOrgInvitationEmailContextByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.OrgID,
+		&i.OrgDisplayName,
+		&i.InviterDisplayName,
+	)
+	return i, err
+}
+
 const getOrgInvitationsByOrgID = `-- name: GetOrgInvitationsByOrgID :many
 select create_time, email, expires_at, id, inviter_id, org_id, status, token from org_invitations
 where org_id = $1

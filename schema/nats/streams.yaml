@@ -60,6 +60,17 @@ streams:
     storage: "file"
     num_replicas: 1
 
+  - name: "misc"
+    subjects: ["misc.>"]
+    description: "Low-throughput miscellaneous jobs"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: -1
+    max_age: 2592000000000000
+    storage: "file"
+    num_replicas: 1
+
   - name: "dlq-devices"
     subjects: ["dlq.devices.>"]
     description: "Dead letter queue for device events"
@@ -112,5 +123,16 @@ streams:
     max_msgs: -1
     max_bytes: 1000000000  # ~1GB
     max_age: 2592000000000000  # 30 days in nanoseconds
+    storage: "file"
+    num_replicas: 1
+
+  - name: "dlq-misc"
+    subjects: ["dlq.misc.>"]
+    description: "Dead letter queue for miscellaneous jobs"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 1000000000
+    max_age: 2592000000000000
     storage: "file"
     num_replicas: 1

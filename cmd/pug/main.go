@@ -17,6 +17,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server"
 	"github.com/pug-sh/pug/internal/app/workers/campaigns"
 	"github.com/pug-sh/pug/internal/app/workers/devices"
+	emailworker "github.com/pug-sh/pug/internal/app/workers/email"
 	eventsworker "github.com/pug-sh/pug/internal/app/workers/events"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/alias"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/identify"
@@ -140,6 +141,12 @@ var eventsCmd = &cobra.Command{
 	Run:   run(eventsworker.Run),
 }
 
+var emailCmd = &cobra.Command{
+	Use:   "email",
+	Short: "Start the transactional email worker",
+	Run:   run(emailworker.Run),
+}
+
 var schedulerCmd = &cobra.Command{
 	Use:   "scheduler",
 	Short: "Start the scheduler worker",
@@ -195,6 +202,7 @@ var devCmd = &cobra.Command{
 		fmt.Println("  "+yellow+"Events:"+reset, "events")
 		fmt.Println("  "+yellow+"Campaigns:"+reset, "campaigns")
 		fmt.Println("  "+yellow+"Devices:"+reset, "devices")
+		fmt.Println("  "+yellow+"Email:"+reset, "email")
 		fmt.Println("  "+yellow+"Scheduler:"+reset, "scheduler")
 		fmt.Println()
 
@@ -205,6 +213,7 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return devices.Run(ctx) })
 		g.Go(func() error { return campaigns.Run(ctx) })
 		g.Go(func() error { return eventsworker.Run(ctx) })
+		g.Go(func() error { return emailworker.Run(ctx) })
 		g.Go(func() error { return identify.Run(ctx) })
 		g.Go(func() error { return alias.Run(ctx) })
 		g.Go(func() error { return upsert.Run(ctx) })
@@ -315,6 +324,7 @@ func init() {
 	workerCmd.AddCommand(deviceCmd)
 	workerCmd.AddCommand(campaignCmd)
 	workerCmd.AddCommand(eventsCmd)
+	workerCmd.AddCommand(emailCmd)
 	workerCmd.AddCommand(schedulerCmd)
 
 	rootCmd.AddCommand(serverCmd)

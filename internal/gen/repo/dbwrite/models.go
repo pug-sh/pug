@@ -22,13 +22,26 @@ type Campaign struct {
 }
 
 type Customer struct {
-	CreateTime   pgtype.Timestamptz
-	DisplayName  string
-	Email        string
-	ID           string
-	PasswordHash string
-	PictureUri   string
-	UpdateTime   pgtype.Timestamptz
+	CreateTime      pgtype.Timestamptz
+	DisplayName     string
+	Email           string
+	ID              string
+	PasswordHash    string
+	PictureUri      string
+	UpdateTime      pgtype.Timestamptz
+	EmailVerifiedAt pgtype.Timestamptz
+}
+
+type EmailActionToken struct {
+	ID              string
+	CustomerID      pgtype.Text
+	Email           string
+	Purpose         string
+	TokenHash       string
+	OrgInvitationID pgtype.Text
+	ExpiresAt       pgtype.Timestamptz
+	ConsumedAt      pgtype.Timestamptz
+	CreateTime      pgtype.Timestamptz
 }
 
 type Org struct {

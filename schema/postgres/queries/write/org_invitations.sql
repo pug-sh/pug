@@ -1,6 +1,9 @@
 -- name: GetOrgInvitationByTokenForUpdate :one
 select * from org_invitations where token = @token for update;
 
+-- name: GetOrgInvitationByIDForUpdate :one
+select * from org_invitations where id = @id for update;
+
 -- name: CreateOrgInvitation :one
 with check_member as (
   select 1 from org_members om

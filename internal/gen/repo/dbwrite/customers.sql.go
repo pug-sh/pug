@@ -12,7 +12,7 @@ import (
 const createCustomer = `-- name: CreateCustomer :one
 insert into customers (id, display_name, email, password_hash, picture_uri)
 values ($1, $2, $3, $4, $5)
-returning create_time, display_name, email, id, password_hash, picture_uri, update_time
+returning create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at
 `
 
 type CreateCustomerParams struct {
@@ -40,6 +40,58 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		&i.PasswordHash,
 		&i.PictureUri,
 		&i.UpdateTime,
+		&i.EmailVerifiedAt,
+	)
+	return i, err
+}
+
+const markCustomerEmailVerified = `-- name: MarkCustomerEmailVerified :one
+update customers
+set email_verified_at = now()
+where id = $1
+returning create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at
+`
+
+func (q *Queries) MarkCustomerEmailVerified(ctx context.Context, id string) (Customer, error) {
+	row := q.db.QueryRow(ctx, markCustomerEmailVerified, id)
+	var i Customer
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.Email,
+		&i.ID,
+		&i.PasswordHash,
+		&i.PictureUri,
+		&i.UpdateTime,
+		&i.EmailVerifiedAt,
+	)
+	return i, err
+}
+
+const updateCustomerPasswordHash = `-- name: UpdateCustomerPasswordHash :one
+update customers
+set password_hash = $1
+where id = $2
+returning create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at
+`
+
+type UpdateCustomerPasswordHashParams struct {
+	PasswordHash string
+	ID           string
+}
+
+func (q *Queries) UpdateCustomerPasswordHash(ctx context.Context, arg UpdateCustomerPasswordHashParams) (Customer, error) {
+	row := q.db.QueryRow(ctx, updateCustomerPasswordHash, arg.PasswordHash, arg.ID)
+	var i Customer
+	err := row.Scan(
+		&i.CreateTime,
+		&i.DisplayName,
+		&i.Email,
+		&i.ID,
+		&i.PasswordHash,
+		&i.PictureUri,
+		&i.UpdateTime,
+		&i.EmailVerifiedAt,
 	)
 	return i, err
 }

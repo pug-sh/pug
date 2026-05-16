@@ -49,3 +49,11 @@ consumers:
     stream_name: "events"
     durable_name: "events-writer-durable"
     max_deliver: 5
+
+  - name: "misc-email-processor"
+    stream_name: "misc"
+    durable_name: "misc-email-processor"
+    filter_subject: "misc.email.jobs"
+    deliver_policy: "all"
+    ack_explicit: true
+    max_deliver: 5
