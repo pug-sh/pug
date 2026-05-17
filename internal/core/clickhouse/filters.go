@@ -82,12 +82,37 @@ func propertyNumericExpr(name, alias string) string {
 	return fmt.Sprintf("if(nullIf(%s, '') IS NOT NULL, %s, %s)", autoString, autoNumeric, customNumeric)
 }
 
-// ProfilePropertyExpr returns the ClickHouse expression to read a profile property.
-// Profile properties are stored in a String column containing JSON, so JSONExtractString is required.
+// ProfilePropertyExpr returns the ClickHouse expression to read a profile
+// property as a Nullable(String). Profile properties are stored in a JSON-typed
+// column; subcolumn access returns the natively-typed value.
 //
-// SAFETY: Same interpolation contract as PropertyExpr — name must be proto-validated.
+// Two transforms preserve existing operator semantics across all underlying
+// types:
+//   - CAST to Nullable(String) coerces typed subcolumns (Float64, Int64, Bool)
+//     to their string representation so unified =/LIKE/IN operators apply.
+//     Numeric operators downstream re-parse via toFloat64OrNull, which now
+//     actually succeeds on numeric paths (previously: JSONExtractString
+//     returned '' for non-string JSON values, silently breaking ltv > 1000).
+//   - coalesce(..., '') maps missing paths (subcolumn NULL) back to '' so
+//     IS_NOT_SET (prop = '') still matches absent keys, preserving the
+//     JSONExtractString contract that returned '' for missing keys.
+//
+// Dot-paths are split into nested subcolumn segments (e.g. "address.city" →
+// properties.`address`.`city`). Each segment is backtick-quoted because the
+// proto-validated pattern ^\$?[a-zA-Z0-9_.-]+$ permits characters ($, -) that
+// CH's bare-identifier parser rejects or misinterprets ('-' as subtraction).
+// Bracket access (properties['k']) isn't an option — CH dispatches that to
+// arrayElement, which rejects JSON-typed first arguments.
+//
+// SAFETY: segments are interpolated into the SQL inside backtick delimiters.
+// The proto regex forbids backticks in property names, so the interpolation is
+// safe. Callers must still ensure name is proto-validated before calling.
 func ProfilePropertyExpr(name string) string {
-	return fmt.Sprintf("JSONExtractString(properties, '%s')", name)
+	segments := strings.Split(name, ".")
+	for i, s := range segments {
+		segments[i] = "`" + s + "`"
+	}
+	return fmt.Sprintf("coalesce(CAST(properties.%s AS Nullable(String)), '')", strings.Join(segments, "."))
 }
 
 func autoPropertyMapExpr(mapExpr, name string) string {

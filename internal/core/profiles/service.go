@@ -387,7 +387,10 @@ func profileSelectColumns() []string {
 		"p.external_id",
 		"p.id",
 		"p.project_id",
-		"p.properties",
+		// JSON column; CAST to String re-serializes for scanProfile's
+		// json.Unmarshal path. A future change can scan typed subcolumns
+		// directly and skip the round-trip.
+		"CAST(p.properties AS String) AS properties",
 		"p.update_time",
 		"coalesce(activity_summary.first_seen, toDateTime64(0, 3)) AS first_seen",
 		"coalesce(activity_summary.last_seen, toDateTime64(0, 3)) AS last_seen",

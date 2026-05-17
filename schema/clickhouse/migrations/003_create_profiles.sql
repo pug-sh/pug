@@ -3,7 +3,10 @@ CREATE TABLE IF NOT EXISTS profiles (
     id          String,
     project_id  LowCardinality(String),
     external_id String,
-    properties  String,
+    -- max_dynamic_paths bounds per-path typed subcolumns; paths beyond the
+    -- limit spill to a shared subcolumn (correct, slower to filter on).
+    -- Typical profile key cardinality is well under 100; 1000 leaves headroom.
+    properties  JSON(max_dynamic_paths = 1000),
     is_deleted  UInt8 DEFAULT 0,
     create_time DateTime64(3) DEFAULT toDateTime64(0, 3),
     update_time DateTime64(3) DEFAULT toDateTime64(0, 3),

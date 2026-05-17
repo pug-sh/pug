@@ -1450,8 +1450,8 @@ func TestBuildProfilePropertyValuesQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(sql, "JSONExtractString") {
-		t.Error("expected JSONExtractString for profile property access")
+	if !strings.Contains(sql, "coalesce(CAST(properties.`$name` AS Nullable(String)), '')") {
+		t.Errorf("expected JSON subcolumn read for profile property access, got: %s", sql)
 	}
 	if !strings.Contains(sql, "is_deleted = ?") {
 		t.Error("expected is_deleted guard")

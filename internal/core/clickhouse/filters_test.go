@@ -17,6 +17,55 @@ func TestPropertyExpr(t *testing.T) {
 	}
 }
 
+func TestProfilePropertyExpr(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{
+			name: "simple key",
+			key:  "country",
+			want: "coalesce(CAST(properties.`country` AS Nullable(String)), '')",
+		},
+		{
+			// $-prefixed keys are the convention for auto-properties.
+			// Without backtick quoting, CH's bare-identifier parser would reject
+			// `properties.$browser`.
+			name: "auto-property dollar prefix",
+			key:  "$browser",
+			want: "coalesce(CAST(properties.`$browser` AS Nullable(String)), '')",
+		},
+		{
+			// Dashes are valid in the proto pattern but CH parses bare
+			// `properties.my-key` as subtraction (`my - key`).
+			name: "dash in key",
+			key:  "my-key",
+			want: "coalesce(CAST(properties.`my-key` AS Nullable(String)), '')",
+		},
+		{
+			// Dots split into nested subcolumn segments so JSON's natural
+			// nested-path access works: properties.`address`.`city`.
+			name: "nested path",
+			key:  "address.city",
+			want: "coalesce(CAST(properties.`address`.`city` AS Nullable(String)), '')",
+		},
+		{
+			name: "nested path with dash",
+			key:  "user-profile.first-name",
+			want: "coalesce(CAST(properties.`user-profile`.`first-name` AS Nullable(String)), '')",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := clickhouse.ProfilePropertyExpr(tt.key)
+			if got != tt.want {
+				t.Errorf("ProfilePropertyExpr(%q) =\n  got:  %q\n  want: %q", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestEscapeLike(t *testing.T) {
 	tests := []struct {
 		input string
@@ -304,8 +353,8 @@ func TestPropertyCondition_ProfileSource_Equals(t *testing.T) {
 	if !strings.Contains(sql, "SELECT pa.alias_id FROM profile_aliases pa") {
 		t.Errorf("expected profile_aliases subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "JSONExtractString(properties, 'plan')") {
-		t.Errorf("expected JSONExtractString for profile property, got: %s", sql)
+	if !strings.Contains(sql, "coalesce(CAST(properties.`plan` AS Nullable(String)), '')") {
+		t.Errorf("expected JSON subcolumn read for profile property, got: %s", sql)
 	}
 	if !strings.Contains(sql, "is_deleted = 0") {
 		t.Errorf("expected soft-delete guard, got: %s", sql)
@@ -341,7 +390,7 @@ func TestPropertyCondition_ProfileSource_IsSet(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "JSONExtractString(properties, 'email') != ''") {
+	if !strings.Contains(sql, "coalesce(CAST(properties.`email` AS Nullable(String)), '') != ''") {
 		t.Errorf("expected IS_SET condition for profile property, got: %s", sql)
 	}
 	// Zero-arg operator: args are only projectIDs (3 total)
@@ -371,7 +420,7 @@ func TestPropertyCondition_ProfileSource_IsNotSet(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "JSONExtractString(properties, 'phone') = ''") {
+	if !strings.Contains(sql, "coalesce(CAST(properties.`phone` AS Nullable(String)), '') = ''") {
 		t.Errorf("expected IS_NOT_SET condition for profile property, got: %s", sql)
 	}
 	// Zero-arg operator: args are only projectIDs (3 total)
@@ -402,7 +451,7 @@ func TestPropertyCondition_ProfileSource_In(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "JSONExtractString(properties, 'plan') IN (?, ?)") {
+	if !strings.Contains(sql, "coalesce(CAST(properties.`plan` AS Nullable(String)), '') IN (?, ?)") {
 		t.Errorf("expected IN condition for profile property, got: %s", sql)
 	}
 	// Multi-value operator: args are [projectID, val1, val2, projectID, projectID, val1, val2]
@@ -433,7 +482,7 @@ func TestPropertyCondition_ProfileSource_GTE(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "toFloat64OrNull(JSONExtractString(properties, 'score')) >= ?") {
+	if !strings.Contains(sql, "toFloat64OrNull(coalesce(CAST(properties.`score` AS Nullable(String)), '')) >= ?") {
 		t.Errorf("expected numeric condition for profile property, got: %s", sql)
 	}
 	// Numeric operator: args are [projectID, numericValue, projectID, projectID, numericValue]
@@ -805,7 +854,7 @@ func TestPropertyCondition_ProfileSource_Between(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "toFloat64OrNull(JSONExtractString(properties, 'score'))") {
+	if !strings.Contains(sql, "toFloat64OrNull(coalesce(CAST(properties.`score` AS Nullable(String)), ''))") {
 		t.Errorf("expected numeric condition for profile property, got: %s", sql)
 	}
 	args := cond.Args()

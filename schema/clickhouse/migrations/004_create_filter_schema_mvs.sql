@@ -29,13 +29,11 @@ GROUP BY project_id, kind;
 -- The Go builder aliases max(last_seen) AS last_seen_max because ClickHouse
 -- otherwise resolves a bare last_seen inside the same SELECT to the aggregate
 -- alias rather than the column.
--- value_type is captured per source: exact (variantType()) for events, JSON-shape
--- heuristic for profile.
--- For auto_properties/custom_properties (Variant), value_type tracks the actual
--- Variant inner type.
--- For profile (JSON String), the multiIf below distinguishes Int64 from Float64
--- explicitly (toInt64OrNull tested before toFloat64OrNull), so integer-valued
--- profile properties surface as Int64 rather than collapsing to Float64.
+-- value_type is authoritative per source:
+--   - auto/custom event properties (Variant) use variantType() on the active slot.
+--   - profile properties (JSON-typed column) use JSONAllPathsWithTypes(), which
+--     CH maintains per (path, type) on insert. Nested paths surface as dot-paths
+--     (e.g. "address.city"); top-level and nested keys are exposed identically.
 CREATE TABLE IF NOT EXISTS property_keys_event_buckets (
     project_id  String,
     map_type    LowCardinality(String),
@@ -117,30 +115,17 @@ SELECT
     'profile'           AS map_type,
     ''                  AS kind,
     tupleElement(kv, 1) AS key,
-    multiIf(
-        -- JSON null literal
-        tupleElement(kv, 2) = 'null', 'None',
-        -- JSON object/array
-        startsWith(tupleElement(kv, 2), '{'), 'Object',
-        startsWith(tupleElement(kv, 2), '['), 'Array',
-        -- JSON string (must come before Bool: "true"/"false" as JSON strings would
-        -- otherwise be misclassified as Bool after stripping quotes).
-        startsWith(tupleElement(kv, 2), '"'), 'String',
-        -- JSON boolean — bare true/false (no quotes by construction at this point).
-        lowerUTF8(tupleElement(kv, 2)) IN ('true', 'false'), 'Bool',
-        -- JSON integer — whole-number value (no decimal, no exponent).
-        -- Detect before Float64 so integer literals are not collapsed to FLOAT.
-        toInt64OrNull(tupleElement(kv, 2)) IS NOT NULL, 'Int64',
-        -- JSON float — anything else parseable as float.
-        toFloat64OrNull(tupleElement(kv, 2)) IS NOT NULL, 'Float64',
-        -- Fallback (should be unreachable in valid JSON).
-        'String'
-    )                   AS value_type,
+    tupleElement(kv, 2) AS value_type,
     count()             AS event_count,
     max(update_time)    AS last_seen
 FROM profiles FINAL
-ARRAY JOIN JSONExtractKeysAndValuesRaw(properties) AS kv
-WHERE is_deleted = 0 AND notEmpty(properties)
+-- JSONAllPathsWithTypes(properties) returns Map(String, String) of (dot-path, CH
+-- type name). ARRAY JOIN iterates each entry as a Tuple(String, String).
+-- Structured types (Array(...), Tuple(...), Dynamic) surface verbatim; the Go
+-- variantTypeToPropertyValueType mapping falls them through to OTHER, which
+-- is the honest answer for what the current PropertyFilter shape can express.
+ARRAY JOIN JSONAllPathsWithTypes(properties) AS kv
+WHERE is_deleted = 0
 GROUP BY project_id, map_type, kind, key, value_type;
 
 CREATE VIEW IF NOT EXISTS property_keys AS

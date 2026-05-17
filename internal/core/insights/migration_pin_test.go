@@ -83,11 +83,14 @@ func TestMigration001VariantSlotsCoveredByGoSwitch(t *testing.T) {
 // other direction (migration adds slot, Go switch missing). This test catches
 // the inverse: proto adds a PropertyValueType value, no MV path produces it.
 func TestPropertyValueTypeReverseCoverage(t *testing.T) {
-	// Inputs covering every Variant slot shipped by migration 001 plus the
-	// profile MV's value_type strings emitted by the multiIf in migration 004.
+	// Inputs covering every Variant slot shipped by migration 001 (event
+	// auto/custom properties) plus the primitive types JSONAllPathsWithTypes
+	// emits for the profile JSON column in migration 004. Structured JSON
+	// outputs (Array(...), Tuple(...), Dynamic) intentionally fall through to
+	// OTHER and are exempt below.
 	covered := map[commonv1.PropertyValueType]bool{}
 	for _, raw := range []string{
-		"String", "Int64", "Float64", "Bool", "DateTime64(3)", "Number",
+		"String", "Int64", "Float64", "Bool", "DateTime64(3)",
 	} {
 		covered[variantTypeToPropertyValueType(raw)] = true
 	}
