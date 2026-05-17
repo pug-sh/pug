@@ -1,0 +1,25 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Integration events.
+//
+// Common values for `integration_type` (not enforced, document only):
+// "slack", "github", "linear", "salesforce", "hubspot", "zapier", "webhook".
+
+message IntegrationConnectedProperties {
+  option (common.events.v1.kind) = "integration_connected";
+  string integration_id = 1;
+  string integration_type = 2 [(buf.validate.field).required = true];
+}
+
+message IntegrationDisconnectedProperties {
+  option (common.events.v1.kind) = "integration_disconnected";
+  string integration_id = 1;
+  string integration_type = 2 [(buf.validate.field).required = true];
+  string reason = 3;
+}

@@ -1,0 +1,30 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Notification events.
+//
+// `notification_type` describes the delivery channel (e.g. "push", "email",
+// "in_app", "sms").
+
+message NotificationReceivedProperties {
+  option (common.events.v1.kind) = "notification_received";
+  string campaign_id = 1 [(buf.validate.field).required = true];
+  string notification_type = 2;
+}
+
+message NotificationClickedProperties {
+  option (common.events.v1.kind) = "notification_clicked";
+  string campaign_id = 1 [(buf.validate.field).required = true];
+  string notification_type = 2;
+}
+
+message NotificationDismissedProperties {
+  option (common.events.v1.kind) = "notification_dismissed";
+  string campaign_id = 1 [(buf.validate.field).required = true];
+  string notification_type = 2;
+}

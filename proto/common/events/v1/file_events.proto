@@ -1,0 +1,38 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// File and export events.
+
+message FileUploadedProperties {
+  option (common.events.v1.kind) = "file_uploaded";
+  string file_id = 1 [(buf.validate.field).required = true];
+  string file_name = 2 [(common.events.v1.pii) = true];
+  string file_type = 3;
+  int64 size_bytes = 4 [(buf.validate.field).int64.gte = 0];
+}
+
+message FileDownloadedProperties {
+  option (common.events.v1.kind) = "file_downloaded";
+  string file_id = 1 [(buf.validate.field).required = true];
+  string file_name = 2 [(common.events.v1.pii) = true];
+  string file_type = 3;
+  int64 size_bytes = 4 [(buf.validate.field).int64.gte = 0];
+}
+
+message ExportStartedProperties {
+  option (common.events.v1.kind) = "export_started";
+  string export_id = 1 [(buf.validate.field).required = true];
+  string export_type = 2;
+}
+
+message ExportCompletedProperties {
+  option (common.events.v1.kind) = "export_completed";
+  string export_id = 1 [(buf.validate.field).required = true];
+  string export_type = 2;
+  int64 size_bytes = 3 [(buf.validate.field).int64.gte = 0];
+}

@@ -1,0 +1,264 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/duration.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Chat events.
+//
+// `conversation_id` is the durable identifier for a chat (DM, group, channel).
+// `member_id` is the conversation-membership ID, distinct from the SDK
+// distinct_id and from any global user_id.
+// Threaded messages set `thread_id`; the original message that started the
+// thread has `parent_message_id == ""`, replies set `parent_message_id` to
+// the thread's root message.
+//
+// Common values for freeform `*_type` fields (not enforced, document only):
+//   conversation_type: "dm", "group", "channel", "broadcast"
+//   message_type:      "text", "image", "video", "audio", "file", "system"
+//   call_type:         "audio", "video", "screen_share"
+//   attachment_type:   "image", "video", "audio", "file", "link", "sticker"
+//
+// chat_typing_started and chat_typing_stopped have no member_id field — the
+// typer is the SDK's distinct_id on the wrapping Event. Do not add member_id
+// "for clarity"; consumers can join on distinct_id when needed.
+
+message ChatCreatedProperties {
+  option (common.events.v1.kind) = "chat_created";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string conversation_type = 2;
+  int32 participant_count = 3 [(buf.validate.field).int32.gte = 0];
+}
+
+message ChatJoinedProperties {
+  option (common.events.v1.kind) = "chat_joined";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string conversation_type = 2;
+}
+
+message ChatLeftProperties {
+  option (common.events.v1.kind) = "chat_left";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string conversation_type = 2;
+  string reason = 3;
+}
+
+message ChatDeletedProperties {
+  option (common.events.v1.kind) = "chat_deleted";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string conversation_type = 2;
+  string reason = 3;
+}
+
+message ChatArchivedProperties {
+  option (common.events.v1.kind) = "chat_archived";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string conversation_type = 2;
+}
+
+message ChatUnarchivedProperties {
+  option (common.events.v1.kind) = "chat_unarchived";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string conversation_type = 2;
+}
+
+message ChatMemberAddedProperties {
+  option (common.events.v1.kind) = "chat_member_added";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string member_id = 2 [(buf.validate.field).required = true];
+  string role = 3;
+}
+
+message ChatMemberRemovedProperties {
+  option (common.events.v1.kind) = "chat_member_removed";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string member_id = 2 [(buf.validate.field).required = true];
+  string reason = 3;
+}
+
+message ChatMemberRoleChangedProperties {
+  option (common.events.v1.kind) = "chat_member_role_changed";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string member_id = 2 [(buf.validate.field).required = true];
+  string previous_role = 3;
+  string new_role = 4 [(buf.validate.field).required = true];
+}
+
+message ChatMessageSentProperties {
+  option (common.events.v1.kind) = "chat_message_sent";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2 [(buf.validate.field).required = true];
+  string conversation_type = 3;
+  string message_type = 4;
+  int32 character_count = 5 [(buf.validate.field).int32.gte = 0];
+  int32 attachment_count = 6 [(buf.validate.field).int32.gte = 0];
+  string thread_id = 7;
+  string parent_message_id = 8;
+}
+
+message ChatMessageReceivedProperties {
+  option (common.events.v1.kind) = "chat_message_received";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2 [(buf.validate.field).required = true];
+  string conversation_type = 3;
+  string message_type = 4;
+  int32 character_count = 5 [(buf.validate.field).int32.gte = 0];
+  int32 attachment_count = 6 [(buf.validate.field).int32.gte = 0];
+  string thread_id = 7;
+  string parent_message_id = 8;
+}
+
+message ChatMessageFailedProperties {
+  option (common.events.v1.kind) = "chat_message_failed";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2;
+  string conversation_type = 3;
+  string reason = 4 [(buf.validate.field).required = true];
+  string thread_id = 5;
+}
+
+message ChatMessageReadProperties {
+  option (common.events.v1.kind) = "chat_message_read";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2 [(buf.validate.field).required = true];
+  string conversation_type = 3;
+  string thread_id = 4;
+}
+
+message ChatMessageDeletedProperties {
+  option (common.events.v1.kind) = "chat_message_deleted";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2 [(buf.validate.field).required = true];
+  string conversation_type = 3;
+  string reason = 4;
+  string thread_id = 5;
+}
+
+message ChatMessageEditedProperties {
+  option (common.events.v1.kind) = "chat_message_edited";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2 [(buf.validate.field).required = true];
+  string conversation_type = 3;
+  string thread_id = 4;
+}
+
+message ChatMessagePinnedProperties {
+  option (common.events.v1.kind) = "chat_message_pinned";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2 [(buf.validate.field).required = true];
+  string conversation_type = 3;
+  string thread_id = 4;
+}
+
+message ChatMessageUnpinnedProperties {
+  option (common.events.v1.kind) = "chat_message_unpinned";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2 [(buf.validate.field).required = true];
+  string conversation_type = 3;
+  string thread_id = 4;
+}
+
+message ChatTypingStartedProperties {
+  option (common.events.v1.kind) = "chat_typing_started";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string conversation_type = 2;
+}
+
+message ChatTypingStoppedProperties {
+  option (common.events.v1.kind) = "chat_typing_stopped";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string conversation_type = 2;
+}
+
+message ChatAttachmentUploadedProperties {
+  option (common.events.v1.kind) = "chat_attachment_uploaded";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2;
+  string attachment_id = 3 [(buf.validate.field).required = true];
+  string attachment_type = 4;
+  int64 size_bytes = 5 [(buf.validate.field).int64.gte = 0];
+  string thread_id = 6;
+}
+
+message ChatAttachmentDownloadedProperties {
+  option (common.events.v1.kind) = "chat_attachment_downloaded";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2;
+  string attachment_id = 3 [(buf.validate.field).required = true];
+  string attachment_type = 4;
+  int64 size_bytes = 5 [(buf.validate.field).int64.gte = 0];
+  string thread_id = 6;
+}
+
+message ChatCallStartedProperties {
+  option (common.events.v1.kind) = "chat_call_started";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string call_id = 2 [(buf.validate.field).required = true];
+  string call_type = 3;
+}
+
+message ChatCallJoinedProperties {
+  option (common.events.v1.kind) = "chat_call_joined";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string call_id = 2 [(buf.validate.field).required = true];
+  string call_type = 3;
+}
+
+message ChatCallLeftProperties {
+  option (common.events.v1.kind) = "chat_call_left";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string call_id = 2 [(buf.validate.field).required = true];
+  string call_type = 3;
+  google.protobuf.Duration duration = 4 [(buf.validate.field).duration.gte = {seconds: 0}];
+}
+
+message ChatCallScreenSharedProperties {
+  option (common.events.v1.kind) = "chat_call_screen_shared";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string call_id = 2 [(buf.validate.field).required = true];
+}
+
+message ChatCallRecordingStartedProperties {
+  option (common.events.v1.kind) = "chat_call_recording_started";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string call_id = 2 [(buf.validate.field).required = true];
+}
+
+// mute_duration is optional — populate when the mute is time-bounded
+// (e.g. "mute for 1h"); leave unset for indefinite mutes.
+message ChatMemberMutedProperties {
+  option (common.events.v1.kind) = "chat_member_muted";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string member_id = 2 [(buf.validate.field).required = true];
+  google.protobuf.Duration mute_duration = 3 [(buf.validate.field).duration.gte = {seconds: 0}];
+}
+
+// User-level block (not conversation-scoped), so no conversation_id.
+message ChatUserBlockedProperties {
+  option (common.events.v1.kind) = "chat_user_blocked";
+  string user_id = 1 [(buf.validate.field).required = true];
+}
+
+// `reaction` is the literal reaction value (emoji, shortcode, sticker id),
+// not a category. Compare reaction_type if a future schema needs to
+// distinguish emoji from sticker from gif reactions.
+message ChatReactionAddedProperties {
+  option (common.events.v1.kind) = "chat_reaction_added";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2 [(buf.validate.field).required = true];
+  string reaction = 3 [(buf.validate.field).required = true];
+  string thread_id = 4;
+}
+
+// `reaction` is the literal reaction value (emoji, shortcode, sticker id),
+// not a category.
+message ChatReactionRemovedProperties {
+  option (common.events.v1.kind) = "chat_reaction_removed";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string message_id = 2 [(buf.validate.field).required = true];
+  string reaction = 3 [(buf.validate.field).required = true];
+  string thread_id = 4;
+}

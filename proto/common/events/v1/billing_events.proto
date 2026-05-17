@@ -1,0 +1,141 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Billing events.
+//
+// Subscription, invoice, payment, and trial lifecycle events.
+// `currency` is an uppercase ISO 4217 code; `amount` is the transaction total
+// in the major currency unit (dollars, euros, yen). These events are revenue
+// signals for analytics — your billing/invoice/ledger system is the source
+// of truth. See options.proto for the package-wide money precision contract.
+//
+// Common values for freeform `payment_method_type` (not enforced, document
+// only): "card", "bank_transfer", "wallet", "upi", "paypal", "crypto".
+
+message SubscriptionStartedProperties {
+  option (common.events.v1.kind) = "subscription_started";
+  string subscription_id = 1 [(buf.validate.field).required = true];
+  string plan_id = 2;
+  double amount = 3 [(buf.validate.field).double.gt = 0];
+  string currency = 4 [(buf.validate.field).string.pattern = "^[A-Z]{3}$"];
+}
+
+message SubscriptionChangedProperties {
+  option (common.events.v1.kind) = "subscription_changed";
+  string subscription_id = 1 [(buf.validate.field).required = true];
+  string previous_plan_id = 2;
+  string new_plan_id = 3;
+}
+
+message SubscriptionCanceledProperties {
+  option (common.events.v1.kind) = "subscription_canceled";
+  string subscription_id = 1 [(buf.validate.field).required = true];
+  string plan_id = 2;
+  string reason = 3;
+}
+
+message SubscriptionRenewedProperties {
+  option (common.events.v1.kind) = "subscription_renewed";
+  string subscription_id = 1 [(buf.validate.field).required = true];
+  string plan_id = 2;
+  double amount = 3 [(buf.validate.field).double.gt = 0];
+  string currency = 4 [(buf.validate.field).string.pattern = "^[A-Z]{3}$"];
+}
+
+message SubscriptionPausedProperties {
+  option (common.events.v1.kind) = "subscription_paused";
+  string subscription_id = 1 [(buf.validate.field).required = true];
+  string plan_id = 2;
+  string reason = 3;
+}
+
+message SubscriptionResumedProperties {
+  option (common.events.v1.kind) = "subscription_resumed";
+  string subscription_id = 1 [(buf.validate.field).required = true];
+  string plan_id = 2;
+  string reason = 3;
+}
+
+// Fired in advance of a trial converting (e.g. 3 days before). Useful for
+// upsell / conversion campaigns.
+message SubscriptionTrialWillEndProperties {
+  option (common.events.v1.kind) = "subscription_trial_will_end";
+  string subscription_id = 1 [(buf.validate.field).required = true];
+  string plan_id = 2;
+  string trial_id = 3;
+}
+
+message InvoicePaidProperties {
+  option (common.events.v1.kind) = "invoice_paid";
+  string invoice_id = 1 [(buf.validate.field).required = true];
+  string subscription_id = 2;
+  double amount = 3 [(buf.validate.field).double.gt = 0];
+  string currency = 4 [(buf.validate.field).string.pattern = "^[A-Z]{3}$"];
+}
+
+message InvoiceFailedProperties {
+  option (common.events.v1.kind) = "invoice_failed";
+  string invoice_id = 1 [(buf.validate.field).required = true];
+  string subscription_id = 2;
+  double amount = 3 [(buf.validate.field).double.gt = 0];
+  string currency = 4 [(buf.validate.field).string.pattern = "^[A-Z]{3}$"];
+  string reason = 5;
+}
+
+message PaymentSucceededProperties {
+  option (common.events.v1.kind) = "payment_succeeded";
+  string payment_id = 1;
+  string invoice_id = 2;
+  string subscription_id = 3;
+  double amount = 4 [(buf.validate.field).double.gt = 0];
+  string currency = 5 [(buf.validate.field).string.pattern = "^[A-Z]{3}$"];
+}
+
+message PaymentFailedProperties {
+  option (common.events.v1.kind) = "payment_failed";
+  string payment_id = 1;
+  string invoice_id = 2;
+  string subscription_id = 3;
+  double amount = 4 [(buf.validate.field).double.gt = 0];
+  string currency = 5 [(buf.validate.field).string.pattern = "^[A-Z]{3}$"];
+  string reason = 6;
+}
+
+message PaymentMethodAddedProperties {
+  option (common.events.v1.kind) = "payment_method_added";
+  string payment_method_id = 1;
+  string payment_method_type = 2;
+}
+
+message PaymentMethodRemovedProperties {
+  option (common.events.v1.kind) = "payment_method_removed";
+  string payment_method_id = 1;
+  string payment_method_type = 2;
+}
+
+message TrialStartedProperties {
+  option (common.events.v1.kind) = "trial_started";
+  string trial_id = 1;
+  string plan_id = 2;
+}
+
+message TrialConvertedProperties {
+  option (common.events.v1.kind) = "trial_converted";
+  string trial_id = 1;
+  string subscription_id = 2;
+  string plan_id = 3;
+}
+
+message RefundFailedProperties {
+  option (common.events.v1.kind) = "refund_failed";
+  string order_id = 1 [(buf.validate.field).required = true];
+  string refund_id = 2;
+  double amount = 3 [(buf.validate.field).double.gt = 0];
+  string currency = 4 [(buf.validate.field).string.pattern = "^[A-Z]{3}$"];
+  string reason = 5;
+}
