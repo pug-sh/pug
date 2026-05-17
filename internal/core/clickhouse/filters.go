@@ -2,11 +2,19 @@ package clickhouse
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 )
+
+// profilePropertyNamePattern mirrors the regex on common.v1.PropertyFilter.property
+// and common.v1.GetPropertyValuesRequest.property_key. Kept in lockstep with the
+// proto definitions so direct callers bypassing the RPC interceptor get the same
+// validation as RPC callers — the SAFETY contract on profilePropertyPath relies
+// on this exact pattern (no backticks, no whitespace, no empty segments).
+var profilePropertyNamePattern = regexp.MustCompile(`^\$?[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 
 // PropertyExpr returns the ClickHouse string expression to resolve an event property.
 // It reads auto_properties first and falls back to custom_properties only when
@@ -82,19 +90,18 @@ func propertyNumericExpr(name, alias string) string {
 	return fmt.Sprintf("if(nullIf(%s, '') IS NOT NULL, %s, %s)", autoString, autoNumeric, customNumeric)
 }
 
-// ValidateProfilePropertyName rejects names that would produce malformed SQL
-// when interpolated into profilePropertyPath. Mirrors the regex on
-// common.v1.PropertyFilter.property at the Go layer so direct callers
-// (workers, scripts) bypassing the proto interceptor get an explicit error
-// instead of a CH parse failure.
+// ValidateProfilePropertyName rejects names that would produce malformed or
+// unsafe SQL when interpolated into profilePropertyPath. Mirrors the regex on
+// common.v1.PropertyFilter.property byte-for-byte so direct callers (workers,
+// scripts) bypassing the proto interceptor get the same defense the RPC layer
+// provides — the SAFETY contract on profilePropertyPath depends on this
+// equivalence holding.
 func ValidateProfilePropertyName(name string) error {
 	if name == "" {
 		return fmt.Errorf("profile property name must not be empty")
 	}
-	for _, seg := range strings.Split(name, ".") {
-		if seg == "" {
-			return fmt.Errorf("profile property name %q must not contain empty segments", name)
-		}
+	if !profilePropertyNamePattern.MatchString(name) {
+		return fmt.Errorf("profile property name %q does not match %s", name, profilePropertyNamePattern)
 	}
 	return nil
 }
@@ -104,8 +111,8 @@ func ValidateProfilePropertyName(name string) error {
 //
 // Backticks are required because the proto pattern permits characters ($, -)
 // that CH's bare-identifier parser rejects or misinterprets ('-' as subtraction).
-// Bracket access (properties['k']) isn't an option — CH dispatches that to
-// arrayElement, which rejects JSON-typed first arguments.
+// Bracket access (properties['k']) is not used on JSON-typed columns; dot-path
+// access is the documented mechanism for reading typed/dynamic subcolumns.
 //
 // SAFETY: segments are interpolated inside backtick delimiters. The proto regex
 // forbids backticks in property names. Callers MUST validate `name` via

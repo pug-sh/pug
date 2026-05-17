@@ -52,6 +52,27 @@ func TestUnwrapJSONProperties(t *testing.T) {
 		}
 	})
 
+	t.Run("falsy_scalars_preserved_at_top_level", func(t *testing.T) {
+		// unwrapJSONProperties drops top-level keys whose value resolves to nil.
+		// A future "simplification" to `if val == nil || val == ""` or
+		// reflect-based zero-check would silently drop legitimate falsy values.
+		// Pin: false, int64(0), "" survive as distinct, non-nil entries.
+		j := chcol.NewJSON()
+		j.SetValueAtPath("verified", chcol.NewVariantWithType(false, "Bool"))
+		j.SetValueAtPath("count", chcol.NewVariantWithType(int64(0), "Int64"))
+		j.SetValueAtPath("note", chcol.NewVariantWithType("", "String"))
+
+		got := unwrapJSONProperties(ctx, j)
+		want := map[string]any{
+			"verified": false,
+			"count":    int64(0),
+			"note":     "",
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %#v, want %#v", got, want)
+		}
+	})
+
 	t.Run("int64_preserved_not_collapsed_to_float64", func(t *testing.T) {
 		// Pins int64 preservation: integer-typed JSON storage must surface as
 		// int64, never widened to float64 (which loses precision near 2^53).

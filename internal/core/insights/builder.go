@@ -953,6 +953,13 @@ func BuildProfilePropertyKeysQuery(projectID string) (string, []any, error) {
 // which projects any underlying type into a Nullable(String) coalesced to the empty string
 // for missing paths.
 //
+// Reads raw `profiles`, not the `latest_profiles` CTE that `getSingle`/`List`
+// use — matches event-side typeahead semantics (BuildPropertyValuesQuery for
+// events also reads raw `events`). Typeahead surfaces historical values: a
+// property whose value changed over time appears as multiple distinct entries
+// until ReplacingMergeTree background merges complete. Acceptable for typeahead
+// (showing the user every value they've ever stored) but worth knowing.
+//
 // The `!= ''` filter collapses two cases that the underlying JSON column can
 // distinguish but the string projection cannot: properties absent from a
 // profile and properties stored as the literal empty string both surface as

@@ -117,6 +117,10 @@ func TestPropertyValueTypeReverseCoverage(t *testing.T) {
 // `properties.k` on a spilled path no longer returns NULL for missing data
 // and breaks IS_NOT_SET semantics in subtle ways. Pin so an accidental
 // migration edit fails loudly.
+//
+// Uses a whitespace-tolerant regex so a SQL reformatter that collapses or
+// adds spaces around `=` does not flag a semantic-equivalent edit as a
+// regression.
 func TestMigration003JSONShape(t *testing.T) {
 	const path = "../../../schema/clickhouse/migrations/003_create_profiles.sql"
 	data, err := os.ReadFile(path)
@@ -125,9 +129,9 @@ func TestMigration003JSONShape(t *testing.T) {
 	}
 	got := string(data)
 
-	const wantDecl = "JSON(max_dynamic_paths = 1000)"
-	if !strings.Contains(got, wantDecl) {
-		t.Errorf("migration 003 must contain %q — ProfilePropertyExpr semantics depend on the spill threshold", wantDecl)
+	re := regexp.MustCompile(`JSON\s*\(\s*max_dynamic_paths\s*=\s*1000\s*\)`)
+	if !re.MatchString(got) {
+		t.Errorf("migration 003 must contain JSON(max_dynamic_paths = 1000) — ProfilePropertyExpr semantics depend on the spill threshold")
 	}
 }
 
