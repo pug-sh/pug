@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/core/email"
-	resenddeps "github.com/pug-sh/pug/internal/deps/email/resend"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -47,19 +46,7 @@ func Run(ctx context.Context) error {
 	}
 	defer natsClient.Close()
 
-	var emailCfg email.Config
-	if err := envconfig.Process(ctx, &emailCfg); err != nil {
-		return err
-	}
-	var resendCfg resenddeps.Config
-	if err := envconfig.Process(ctx, &resendCfg); err != nil {
-		return err
-	}
-	provider, err := resenddeps.New(resendCfg)
-	if err != nil {
-		return err
-	}
-	mailer, err := email.NewService(emailCfg, provider)
+	mailer, err := newMailer(ctx)
 	if err != nil {
 		return err
 	}

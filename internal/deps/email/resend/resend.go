@@ -9,8 +9,7 @@ import (
 )
 
 type Config struct {
-	Provider string `env:"PUG_EMAIL_PROVIDER,default=resend"`
-	APIKey   string `env:"PUG_RESEND_API_KEY"`
+	APIKey string `env:"PUG_RESEND_API_KEY"`
 }
 
 type Provider struct {
@@ -19,9 +18,6 @@ type Provider struct {
 }
 
 func New(cfg Config) (*Provider, error) {
-	if cfg.Provider != "resend" {
-		return nil, fmt.Errorf("resend: unsupported email provider %q", cfg.Provider)
-	}
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("resend: API key is required")
 	}
