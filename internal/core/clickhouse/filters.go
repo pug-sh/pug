@@ -82,19 +82,18 @@ func propertyNumericExpr(name, alias string) string {
 	return fmt.Sprintf("if(nullIf(%s, '') IS NOT NULL, %s, %s)", autoString, autoNumeric, customNumeric)
 }
 
-// profilePropertyPath returns the backtick-quoted nested subcolumn path for a
-// profile property name. Dots split into per-segment backticked identifiers so
-// nested paths map to native JSON subcolumn access (e.g. "address.city" →
-// properties.`address`.`city`).
+// profilePropertyPath splits `name` on `.` and joins with backtick-quoted
+// segments under `properties.` (e.g. "address.city" → properties.`address`.`city`).
 //
-// Backticks are required because the proto pattern ^\$?[a-zA-Z0-9_.-]+$ permits
-// characters ($, -) that CH's bare-identifier parser rejects or misinterprets
-// ('-' as subtraction). Bracket access (properties['k']) isn't an option — CH
-// dispatches that to arrayElement, which rejects JSON-typed first arguments.
+// Backticks are required because the proto pattern permits characters ($, -)
+// that CH's bare-identifier parser rejects or misinterprets ('-' as subtraction).
+// Bracket access (properties['k']) isn't an option — CH dispatches that to
+// arrayElement, which rejects JSON-typed first arguments.
 //
 // SAFETY: segments are interpolated inside backtick delimiters. The proto regex
-// forbids backticks in property names, so the interpolation is safe. Callers
-// must still ensure name is proto-validated before calling.
+// forbids backticks in property names. Callers must still ensure name is
+// proto-validated before calling. Empty-segment inputs ("a..b", ".a", "a.")
+// produce malformed SQL — the proto regex rejects them at the boundary.
 func profilePropertyPath(name string) string {
 	segments := strings.Split(name, ".")
 	for i, s := range segments {
@@ -103,15 +102,15 @@ func profilePropertyPath(name string) string {
 	return "properties." + strings.Join(segments, ".")
 }
 
-// ProfilePropertyExpr returns the string-projecting ClickHouse expression for a
-// profile property — Nullable(String) coalesced to '' for missing paths. Used
-// for string-shaped operators (=, !=, LIKE, IN, IS_SET, IS_NOT_SET). Numeric
-// operators take the typed path via ProfilePropertyNumericExpr instead;
-// profilePropertyOperatorCondition routes by operator.
+// ProfilePropertyExpr returns the string-projecting ClickHouse expression for
+// a profile property. profilePropertyOperatorCondition routes operators
+// between this and ProfilePropertyNumericExpr.
 //
 // CAST to Nullable(String) coerces typed subcolumns (Float64, Int64, Bool) to
-// their string representation. coalesce(..., '') maps missing paths (subcolumn
-// NULL) back to '' so IS_NOT_SET (prop = '') still matches absent keys.
+// their string representation; the empty-string coalesce maps missing paths
+// (subcolumn NULL) back to empty so IS_NOT_SET still matches absent keys:
+//
+//	coalesce(CAST(properties.`k` AS Nullable(String)), '')
 func ProfilePropertyExpr(name string) string {
 	return fmt.Sprintf("coalesce(CAST(%s AS Nullable(String)), '')", profilePropertyPath(name))
 }

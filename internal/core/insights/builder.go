@@ -950,10 +950,11 @@ func BuildProfilePropertyKeysQuery(projectID string) (string, []any, error) {
 
 // BuildProfilePropertyValuesQuery returns distinct values for a profile property from ClickHouse.
 // Profile properties are stored in a JSON-typed column and accessed via chq.ProfilePropertyExpr,
-// which projects any underlying type into a Nullable(String) coalesced to '' for missing paths.
+// which projects any underlying type into a Nullable(String) coalesced to the empty string
+// for missing paths.
 //
 // SAFETY: propertyKey is interpolated directly into SQL. Callers must ensure it is
-// proto-validated (pattern ^\\$?[a-zA-Z0-9_.-]+$) before calling this function.
+// proto-validated (pattern in PropertyFilter.property) before calling this function.
 func BuildProfilePropertyValuesQuery(projectID, propertyKey string) (string, []any, error) {
 	propExpr := chq.ProfilePropertyExpr(propertyKey)
 	return chq.NewQuery().

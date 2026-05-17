@@ -387,6 +387,84 @@ func seedServiceEvents(t *testing.T, ctx context.Context, ch *testutil.TestClick
 	}
 }
 
+// TestProfilePropertyKeysMV_TypeInference covers the refreshable MV
+// (migration 004's property_keys_profile_current_mv) end-to-end against the
+// JSON-typed properties column from migration 003. It inserts profiles whose
+// JSON values exercise every primitive type the Go-side
+// variantTypeToPropertyValueType switch recognises, forces a refresh, and
+// asserts the materialised value_type column matches.
+//
+// Why this test exists: TestServiceGetFilterSchema seeds property_keys_profile_current
+// directly to keep that test focused on the filter-schema response shape. That
+// bypasses the MV entirely, so a regression to the JSONAllPathsWithTypes
+// projection would surface only in production. This test takes the slower
+// "actually refresh the MV" path to pin the SQL semantic.
+func TestProfilePropertyKeysMV_TypeInference(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
+
+	now := time.Now().UTC()
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time, insert_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		xid.New().String(), projectID, "alice",
+		`{"plan": "pro", "ltv": 1234, "score": 99.5, "verified": true, "tags": ["a", "b"]}`,
+		uint8(0), now, now, now,
+	); err != nil {
+		t.Fatalf("insert profile: %v", err)
+	}
+
+	// The MV was created with an initial refresh on test startup (empty), so
+	// REFRESH+WAIT here picks up the inserted row.
+	if err := ch.Conn.Exec(ctx, `SYSTEM REFRESH VIEW property_keys_profile_current_mv`); err != nil {
+		t.Fatalf("refresh MV: %v", err)
+	}
+	if err := ch.Conn.Exec(ctx, `SYSTEM WAIT VIEW property_keys_profile_current_mv`); err != nil {
+		t.Fatalf("wait MV: %v", err)
+	}
+
+	rows, err := ch.Conn.Query(ctx,
+		`SELECT key, value_type FROM property_keys_profile_current WHERE project_id = ? ORDER BY key`,
+		projectID,
+	)
+	if err != nil {
+		t.Fatalf("query property_keys_profile_current: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	got := map[string]string{}
+	for rows.Next() {
+		var key, valueType string
+		if err := rows.Scan(&key, &valueType); err != nil {
+			t.Fatalf("scan row: %v", err)
+		}
+		got[key] = valueType
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows err: %v", err)
+	}
+
+	want := map[string]string{
+		"plan":     "String",
+		"ltv":      "Int64",
+		"score":    "Float64",
+		"verified": "Bool",
+		// Array(Nullable(String)) is structured — surfaces verbatim and the Go
+		// switch falls it through to OTHER. Pinned here so a refactor that
+		// changes the CH type name updates both sides together.
+		"tags": "Array(Nullable(String))",
+	}
+	for k, wantType := range want {
+		if got[k] != wantType {
+			t.Errorf("property %q: value_type = %q, want %q (full map: %v)", k, got[k], wantType, got)
+		}
+	}
+}
+
 func seedServiceProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, pg *testutil.TestPostgres, projectID string) {
 	t.Helper()
 

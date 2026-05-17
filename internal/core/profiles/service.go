@@ -29,10 +29,18 @@ var unrecognisedJSONTypeCounter metric.Int64Counter
 
 func init() {
 	meter := otel.Meter("github.com/pug-sh/pug/internal/core/profiles")
-	unrecognisedJSONTypeCounter, _ = meter.Int64Counter(
+	var err error
+	unrecognisedJSONTypeCounter, err = meter.Int64Counter(
 		"profiles.unrecognised_json_type_total",
 		metric.WithDescription("Profile JSON values whose underlying Go type the unwrap switch did not recognise. Tagged with go_type. Counter rate becomes a drift signal when CH adds new JSON value types."),
 	)
+	if err != nil {
+		// init() has no context; the OTel SDK returns a usable no-op counter
+		// even on validation error so .Add() will not panic, but a malformed
+		// instrument name would otherwise leave operators with no startup
+		// signal that observability degraded.
+		slog.Error("failed to register profiles.unrecognised_json_type_total counter", slogx.Error(err))
+	}
 }
 
 var ErrProfileNotFound = errors.New("profile not found")
@@ -390,11 +398,9 @@ func scanProfile(ctx context.Context, rows driver.Rows) (Profile, error) {
 }
 
 // unwrapJSONProperties converts a scanned chcol.JSON value into a
-// map[string]any with native Go types — mirroring events'
-// reader.go::unwrapPropertyMap so downstream handlers (structpb.NewStruct,
-// log/JSON marshaling) see the same shape they always have. Always returns
-// a non-nil map so handler-side `if propertiesMap == nil` guards become
-// redundant but harmless.
+// map[string]any with native Go types so downstream consumers
+// (structpb.NewStruct, log/JSON marshaling) handle them uniformly.
+// Always returns a non-nil map; nil input is treated as empty.
 func unwrapJSONProperties(ctx context.Context, j *chcol.JSON) map[string]any {
 	out := make(map[string]any)
 	if j == nil {
@@ -406,8 +412,12 @@ func unwrapJSONProperties(ctx context.Context, j *chcol.JSON) map[string]any {
 	return out
 }
 
-// unwrapJSONValue handles the two shapes NestedMap() emits at every depth:
-// chcol.Variant cells (leaf values) and map[string]any (nested objects).
+// unwrapJSONValue dispatches by container shape: nested maps recurse, Variant
+// cells (dynamic paths) route to unwrapJSONVariant, and raw values (typed
+// declared subcolumns, where the driver hands back native Go types directly)
+// are wrapped in a Variant so the same type switch normalises them — otherwise
+// time.Time / []*string / []chcol.JSON would leak into structpb.NewStruct and
+// 500 the whole profile.
 func unwrapJSONValue(ctx context.Context, v any) any {
 	switch x := v.(type) {
 	case map[string]any:
@@ -419,17 +429,17 @@ func unwrapJSONValue(ctx context.Context, v any) any {
 	case chcol.Variant:
 		return unwrapJSONVariant(ctx, x)
 	default:
-		return v
+		return unwrapJSONVariant(ctx, chcol.NewVariant(v))
 	}
 }
 
 // unwrapJSONVariant materializes a single Variant cell. Native scalars pass
-// through; time.Time normalizes to RFC3339Nano (matching event behavior so
-// structpb consumers don't need a time case); []*string (CH's
-// Array(Nullable(String)) inference) flattens to []any with nil for null
-// elements; []chcol.JSON (Array(JSON(...))) recurses element-wise. Unknown
-// types log + count and coerce to a sentinel string so consumers see
-// something obviously broken rather than a malformed-looking real value.
+// through; time.Time normalizes to RFC3339Nano (so structpb consumers don't
+// need a time case); array types flatten to []any. The handled shapes track
+// clickhouse-go v2.46's scan behavior — see TestUnwrapJSONProperties, which
+// will fail loudly on a driver upgrade that changes the delivered Go types.
+// Unknown types fall through to the sentinel + WARN + counter path so a CH
+// type addition or driver change is observable rather than a hard error.
 func unwrapJSONVariant(ctx context.Context, v chcol.Variant) any {
 	switch x := v.Any().(type) {
 	case nil:
@@ -453,6 +463,10 @@ func unwrapJSONVariant(ctx context.Context, v chcol.Variant) any {
 		}
 		return out
 	default:
+		// WARN (not ERROR) intentionally: the sentinel keeps the API working,
+		// the counter is the page-able signal, and a noisy type-drift could
+		// otherwise flood error budgets. Bump to ERROR only if the policy
+		// becomes "fail loud and drop the field" instead of "degrade visibly".
 		goType := fmt.Sprintf("%T", x)
 		err := fmt.Errorf("unrecognised JSON value type %s in profile properties", goType)
 		slog.WarnContext(ctx, "unwrapJSONVariant: coercing unrecognised value to sentinel string",

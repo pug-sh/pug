@@ -295,3 +295,48 @@ func TestPropertyFilterValidation(t *testing.T) {
 		Values:   []string{"0", "0"},
 	})
 }
+
+// TestPropertyNamePatternValidation pins the PropertyFilter.property regex.
+// The tightened pattern requires non-empty segments between dots so the SQL
+// builder cannot produce malformed CH identifiers from empty-segment input
+// (e.g. "a..b" would otherwise produce properties.`a`.“.`b`).
+//
+//	^\$?[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$
+func TestPropertyNamePatternValidation(t *testing.T) {
+	valid := []string{
+		"plan",
+		"$browser",
+		"my-key",
+		"address.city",
+		"user-profile.first-name",
+		"$session.duration",
+		"a.b.c",
+	}
+	for _, name := range valid {
+		assertValid(t, "valid_"+name, &commonv1.PropertyFilter{
+			Property: proto.String(name),
+			Operator: opp(commonv1.FilterOperator_FILTER_OPERATOR_EQUALS),
+			Value:    proto.String("v"),
+		})
+	}
+
+	invalid := []string{
+		".",       // single dot
+		"..",      // consecutive dots
+		".a",      // leading dot
+		"a.",      // trailing dot
+		"a..b",    // empty middle segment
+		"a.b.",    // trailing dot after nested
+		".a.b",    // leading dot before nested
+		"foo bar", // whitespace
+		"a/b",     // slash
+		"a`b",     // backtick (would break identifier quoting)
+	}
+	for _, name := range invalid {
+		assertInvalid(t, "invalid_"+name, &commonv1.PropertyFilter{
+			Property: proto.String(name),
+			Operator: opp(commonv1.FilterOperator_FILTER_OPERATOR_EQUALS),
+			Value:    proto.String("v"),
+		}, "string.pattern")
+	}
+}

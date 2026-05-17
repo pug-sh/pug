@@ -54,9 +54,8 @@ func TestUnwrapJSONProperties(t *testing.T) {
 	})
 
 	t.Run("int64_preserved_not_collapsed_to_float64", func(t *testing.T) {
-		// Regression guard for the type-fidelity improvement: json.Unmarshal
-		// would have collapsed 1234 to float64. Direct typed scan keeps it
-		// as int64, matching the underlying CH storage type.
+		// Pins int64 preservation: integer-typed JSON storage must surface as
+		// int64, never widened to float64 (which loses precision near 2^53).
 		j := chcol.NewJSON()
 		j.SetValueAtPath("count", chcol.NewVariantWithType(int64(1234), "Int64"))
 		got := unwrapJSONProperties(ctx, j)
@@ -182,9 +181,7 @@ func TestUnwrapJSONProperties(t *testing.T) {
 	t.Run("nil_variant_paths_are_dropped_by_nestedmap", func(t *testing.T) {
 		// chcol.JSON.NestedMap() actively skips Variants with .Nil() == true,
 		// so a path whose CH value is NULL never appears in the output map.
-		// Documents the contract: callers see "missing key" indistinguishably
-		// from "key with null value" — matching CH JSON's own semantics where
-		// missing paths just don't surface in JSONAllPathsWithTypes.
+		// Callers see "missing key" indistinguishably from "key with null value".
 		j := chcol.NewJSON()
 		j.SetValueAtPath("ghost", chcol.Variant{})
 		j.SetValueAtPath("present", chcol.NewVariantWithType("yes", "String"))
@@ -199,9 +196,11 @@ func TestUnwrapJSONProperties(t *testing.T) {
 	})
 
 	t.Run("unknown_variant_type_coerced_to_sentinel_string", func(t *testing.T) {
-		// Any unknown inner type — exercising the default arm of the type
-		// switch. The sentinel string makes drift visible in dashboard
-		// payloads; the WARN log + counter make it visible to operators.
+		// The default arm emits a sentinel string with the Go type embedded.
+		// The WARN log + counter side effects are not asserted here (would
+		// require slog/meter capture infrastructure not yet in the codebase),
+		// but the sentinel format is pinned so the operator-facing drift
+		// signal stays grep-able.
 		j := chcol.NewJSON()
 		j.SetValueAtPath("weird", chcol.NewVariantWithType([]int{1, 2, 3}, "Array(Int32)"))
 
@@ -212,6 +211,29 @@ func TestUnwrapJSONProperties(t *testing.T) {
 		}
 		if !strings.HasPrefix(s, "<unrecognized JSON value:") {
 			t.Errorf("expected sentinel prefix, got %q", s)
+		}
+		if !strings.Contains(s, "[]int") {
+			t.Errorf("expected sentinel to embed go_type ([]int), got %q", s)
+		}
+	})
+
+	t.Run("raw_value_routes_through_variant_switch", func(t *testing.T) {
+		// Regression guard for the C1 fix: when chcol delivers a raw Go
+		// value (typed declared subcolumns) instead of a Variant, the value
+		// must still flow through unwrapJSONVariant. Otherwise time.Time,
+		// []*string, and []chcol.JSON would leak into structpb.NewStruct
+		// and 500 the whole profile.
+		j := chcol.NewJSON()
+		when := time.Date(2026, 5, 18, 9, 30, 0, 123_000_000, time.UTC)
+		j.SetValueAtPath("last_seen", when) // raw time.Time, not Variant-wrapped
+
+		got := unwrapJSONProperties(ctx, j)
+		s, ok := got["last_seen"].(string)
+		if !ok {
+			t.Fatalf("expected RFC3339 string from raw time.Time, got %T (%v)", got["last_seen"], got["last_seen"])
+		}
+		if s != "2026-05-18T09:30:00.123Z" {
+			t.Errorf("got %q, want 2026-05-18T09:30:00.123Z", s)
 		}
 	})
 }

@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS profiles (
     external_id String,
     -- max_dynamic_paths bounds per-path typed subcolumns; paths beyond the
     -- limit spill to a shared subcolumn (correct, slower to filter on).
-    -- Typical profile key cardinality is well under 100; 1000 leaves headroom.
+    -- 1000 leaves headroom over CH's default of 1024 for future migrations
+    -- that add a typed declared path.
     properties  JSON(max_dynamic_paths = 1000),
     is_deleted  UInt8 DEFAULT 0,
     create_time DateTime64(3) DEFAULT toDateTime64(0, 3),

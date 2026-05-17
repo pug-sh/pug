@@ -17,6 +17,9 @@ func TestPropertyExpr(t *testing.T) {
 	}
 }
 
+// TestProfilePropertyExpr covers the characters that force backtick quoting:
+// the $ auto-property prefix, dashes (CH would parse subtraction), and dots
+// (split into nested subcolumn segments).
 func TestProfilePropertyExpr(t *testing.T) {
 	tests := []struct {
 		name string
@@ -29,23 +32,16 @@ func TestProfilePropertyExpr(t *testing.T) {
 			want: "coalesce(CAST(properties.`country` AS Nullable(String)), '')",
 		},
 		{
-			// $-prefixed keys are the convention for auto-properties.
-			// Without backtick quoting, CH's bare-identifier parser would reject
-			// `properties.$browser`.
 			name: "auto-property dollar prefix",
 			key:  "$browser",
 			want: "coalesce(CAST(properties.`$browser` AS Nullable(String)), '')",
 		},
 		{
-			// Dashes are valid in the proto pattern but CH parses bare
-			// `properties.my-key` as subtraction (`my - key`).
 			name: "dash in key",
 			key:  "my-key",
 			want: "coalesce(CAST(properties.`my-key` AS Nullable(String)), '')",
 		},
 		{
-			// Dots split into nested subcolumn segments so JSON's natural
-			// nested-path access works: properties.`address`.`city`.
 			name: "nested path",
 			key:  "address.city",
 			want: "coalesce(CAST(properties.`address`.`city` AS Nullable(String)), '')",
@@ -78,19 +74,16 @@ func TestProfilePropertyNumericExpr(t *testing.T) {
 			want: "coalesce(properties.`ltv`.:Float64, CAST(properties.`ltv`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`ltv`.:String))",
 		},
 		{
-			// $-prefixed numeric auto-property — e.g. $session_duration.
 			name: "auto-property dollar prefix",
 			key:  "$session_duration",
 			want: "coalesce(properties.`$session_duration`.:Float64, CAST(properties.`$session_duration`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`$session_duration`.:String))",
 		},
 		{
-			// Dash in key forces backtick quoting (else CH parses subtraction).
 			name: "dash in key",
 			key:  "lifetime-value",
 			want: "coalesce(properties.`lifetime-value`.:Float64, CAST(properties.`lifetime-value`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`lifetime-value`.:String))",
 		},
 		{
-			// Nested numeric path: subscription.monthly_revenue.
 			name: "nested path",
 			key:  "subscription.monthly_revenue",
 			want: "coalesce(properties.`subscription`.`monthly_revenue`.:Float64, CAST(properties.`subscription`.`monthly_revenue`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`subscription`.`monthly_revenue`.:String))",
@@ -874,6 +867,98 @@ func TestPropertyCondition_Between_Errors(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.wantErrFrag) {
 				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantErrFrag)
+			}
+		})
+	}
+}
+
+// TestPropertyCondition_ProfileSource_OperatorRouting exercises every
+// FilterOperator against PROFILE source to pin profilePropertyOperatorCondition's
+// routing table. Numeric operators (LT/GT/LTE/GTE/BETWEEN/NOT_BETWEEN) must
+// route to the typed JSON subcolumn projection; string-shaped operators
+// (NOT_EQUALS/CONTAINS/NOT_CONTAINS/NOT_IN) must route to the
+// Nullable(String)-coalesced projection.
+func TestPropertyCondition_ProfileSource_OperatorRouting(t *testing.T) {
+	const stringExpr = "coalesce(CAST(properties.`p` AS Nullable(String)), '')"
+	const numericExpr = "coalesce(properties.`p`.:Float64, CAST(properties.`p`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`p`.:String))"
+
+	tests := []struct {
+		name     string
+		operator commonv1.FilterOperator
+		value    string
+		values   []string
+		// fragment that must appear in the produced inner SQL.
+		wantFragment string
+	}{
+		{
+			name:         "NOT_EQUALS routes to string projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS,
+			value:        "free",
+			wantFragment: stringExpr + " != ?",
+		},
+		{
+			name:         "CONTAINS routes to string projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS,
+			value:        "ent",
+			wantFragment: stringExpr + " LIKE ?",
+		},
+		{
+			name:         "NOT_CONTAINS routes to string projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS,
+			value:        "ent",
+			wantFragment: stringExpr + " NOT LIKE ?",
+		},
+		{
+			name:         "NOT_IN routes to string projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN,
+			values:       []string{"a", "b"},
+			wantFragment: stringExpr + " NOT IN (?, ?)",
+		},
+		{
+			name:         "LT routes to typed numeric projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_LT,
+			value:        "10",
+			wantFragment: numericExpr + " < ?",
+		},
+		{
+			name:         "GT routes to typed numeric projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_GT,
+			value:        "10",
+			wantFragment: numericExpr + " > ?",
+		},
+		{
+			name:         "LTE routes to typed numeric projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_LTE,
+			value:        "10",
+			wantFragment: numericExpr + " <= ?",
+		},
+		{
+			name:         "NOT_BETWEEN routes to typed numeric projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+			values:       []string{"10", "50"},
+			wantFragment: "(" + numericExpr + " < ? OR " + numericExpr + " > ?)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &commonv1.PropertyFilter{
+				Property: proto.String("p"),
+				Operator: tt.operator.Enum(),
+				Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
+			}
+			if tt.value != "" {
+				f.Value = proto.String(tt.value)
+			}
+			if tt.values != nil {
+				f.Values = tt.values
+			}
+			cond, err := clickhouse.PropertyCondition(f, "proj_abc")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			sql := cond.SQL()
+			if !strings.Contains(sql, tt.wantFragment) {
+				t.Errorf("expected fragment %q in:\n%s", tt.wantFragment, sql)
 			}
 		})
 	}

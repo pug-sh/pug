@@ -119,11 +119,11 @@ SELECT
     count()             AS event_count,
     max(update_time)    AS last_seen
 FROM profiles FINAL
--- JSONAllPathsWithTypes(properties) returns Map(String, String) of (dot-path, CH
--- type name). ARRAY JOIN iterates each entry as a Tuple(String, String).
--- Structured types (Array(...), Tuple(...), Dynamic) surface verbatim; the Go
--- variantTypeToPropertyValueType mapping falls them through to OTHER, which
--- is the honest answer for what the current PropertyFilter shape can express.
+-- JSONAllPathsWithTypes(properties) returns a Map of (dot-path -> CH type name).
+-- ARRAY JOIN iterates each entry as a Tuple(String, String). Structured types
+-- (Array(...), Tuple(...), Dynamic) surface verbatim; the Go-side mapping falls
+-- them through to OTHER, which is the honest answer for what the current
+-- PropertyFilter shape can express.
 ARRAY JOIN JSONAllPathsWithTypes(properties) AS kv
 WHERE is_deleted = 0
 GROUP BY project_id, map_type, kind, key, value_type;
