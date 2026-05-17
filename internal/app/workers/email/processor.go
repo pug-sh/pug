@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"buf.build/go/protovalidate"
 	"github.com/jackc/pgx/v5"
@@ -36,11 +37,26 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	var err error
 	switch payload := job.Payload.(type) {
 	case *emailworkerv1.EmailJob_SignupVerifyWelcome:
-		err = p.mailer.SendSignupVerifyWelcome(ctx, payload.SignupVerifyWelcome.GetEmail(), payload.SignupVerifyWelcome.GetToken())
+		err = p.mailer.SendSignupVerifyWelcome(
+			ctx,
+			payload.SignupVerifyWelcome.GetEmail(),
+			payload.SignupVerifyWelcome.GetToken(),
+			idempotencyKeyForJob(job),
+		)
 	case *emailworkerv1.EmailJob_PasswordReset:
-		err = p.mailer.SendPasswordReset(ctx, payload.PasswordReset.GetEmail(), payload.PasswordReset.GetToken())
+		err = p.mailer.SendPasswordReset(
+			ctx,
+			payload.PasswordReset.GetEmail(),
+			payload.PasswordReset.GetToken(),
+			idempotencyKeyForJob(job),
+		)
 	case *emailworkerv1.EmailJob_VerificationResend:
-		err = p.mailer.SendVerificationResend(ctx, payload.VerificationResend.GetEmail(), payload.VerificationResend.GetToken())
+		err = p.mailer.SendVerificationResend(
+			ctx,
+			payload.VerificationResend.GetEmail(),
+			payload.VerificationResend.GetToken(),
+			idempotencyKeyForJob(job),
+		)
 	case *emailworkerv1.EmailJob_OrgMemberInvite:
 		details, lookupErr := p.read.GetOrgInvitationEmailContextByID(ctx, payload.OrgMemberInvite.GetInvitationId())
 		if lookupErr != nil {
@@ -57,6 +73,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			details.OrgDisplayName,
 			details.InviterDisplayName,
 			payload.OrgMemberInvite.GetToken(),
+			idempotencyKeyForJob(job),
 		)
 	default:
 		return natsworker.NewPermanentError(fmt.Errorf("unknown email job payload %T", job.Payload)).
@@ -70,4 +87,19 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		return err
 	}
 	return nil
+}
+
+func idempotencyKeyForJob(job *emailworkerv1.EmailJob) string {
+	switch payload := job.Payload.(type) {
+	case *emailworkerv1.EmailJob_SignupVerifyWelcome:
+		return "signup_verify_welcome:" + strings.TrimSpace(payload.SignupVerifyWelcome.GetToken())
+	case *emailworkerv1.EmailJob_PasswordReset:
+		return "password_reset:" + strings.TrimSpace(payload.PasswordReset.GetToken())
+	case *emailworkerv1.EmailJob_VerificationResend:
+		return "verification_resend:" + strings.TrimSpace(payload.VerificationResend.GetToken())
+	case *emailworkerv1.EmailJob_OrgMemberInvite:
+		return "org_member_invite:" + strings.TrimSpace(payload.OrgMemberInvite.GetInvitationId())
+	default:
+		return ""
+	}
 }

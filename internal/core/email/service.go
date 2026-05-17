@@ -22,12 +22,13 @@ type Config struct {
 }
 
 type Message struct {
-	From     string
-	ReplyTo  string
-	Subject  string
-	To       string
-	HTMLBody string
-	TextBody string
+	IdempotencyKey string
+	From           string
+	ReplyTo        string
+	Subject        string
+	To             string
+	HTMLBody       string
+	TextBody       string
 }
 
 type Provider interface {
@@ -79,43 +80,46 @@ func NewService(cfg Config, provider Provider) (*Service, error) {
 	}, nil
 }
 
-func (s *Service) SendSignupVerifyWelcome(ctx context.Context, emailAddr, token string) error {
+func (s *Service) SendSignupVerifyWelcome(ctx context.Context, emailAddr, token, idempotencyKey string) error {
 	link := s.link("/verify-email", token)
 	return s.provider.Send(ctx, Message{
-		From:     s.from,
-		ReplyTo:  s.replyTo,
-		To:       emailAddr,
-		Subject:  "Verify your email",
-		TextBody: fmt.Sprintf("Welcome to Pug.\n\nVerify your email: %s", link),
-		HTMLBody: fmt.Sprintf("<p>Welcome to Pug.</p><p><a href=\"%s\">Verify your email</a>.</p>", html.EscapeString(link)),
+		IdempotencyKey: idempotencyKey,
+		From:           s.from,
+		ReplyTo:        s.replyTo,
+		To:             emailAddr,
+		Subject:        "Verify your email",
+		TextBody:       fmt.Sprintf("Welcome to Pug.\n\nVerify your email: %s", link),
+		HTMLBody:       fmt.Sprintf("<p>Welcome to Pug.</p><p><a href=\"%s\">Verify your email</a>.</p>", html.EscapeString(link)),
 	})
 }
 
-func (s *Service) SendPasswordReset(ctx context.Context, emailAddr, token string) error {
+func (s *Service) SendPasswordReset(ctx context.Context, emailAddr, token, idempotencyKey string) error {
 	link := s.link("/reset-password", token)
 	return s.provider.Send(ctx, Message{
-		From:     s.from,
-		ReplyTo:  s.replyTo,
-		To:       emailAddr,
-		Subject:  "Reset your password",
-		TextBody: fmt.Sprintf("Reset your password: %s", link),
-		HTMLBody: fmt.Sprintf("<p><a href=\"%s\">Reset your password</a>.</p>", html.EscapeString(link)),
+		IdempotencyKey: idempotencyKey,
+		From:           s.from,
+		ReplyTo:        s.replyTo,
+		To:             emailAddr,
+		Subject:        "Reset your password",
+		TextBody:       fmt.Sprintf("Reset your password: %s", link),
+		HTMLBody:       fmt.Sprintf("<p><a href=\"%s\">Reset your password</a>.</p>", html.EscapeString(link)),
 	})
 }
 
-func (s *Service) SendVerificationResend(ctx context.Context, emailAddr, token string) error {
+func (s *Service) SendVerificationResend(ctx context.Context, emailAddr, token, idempotencyKey string) error {
 	link := s.link("/verify-email", token)
 	return s.provider.Send(ctx, Message{
-		From:     s.from,
-		ReplyTo:  s.replyTo,
-		To:       emailAddr,
-		Subject:  "Verify your email",
-		TextBody: fmt.Sprintf("Verify your email: %s", link),
-		HTMLBody: fmt.Sprintf("<p><a href=\"%s\">Verify your email</a>.</p>", html.EscapeString(link)),
+		IdempotencyKey: idempotencyKey,
+		From:           s.from,
+		ReplyTo:        s.replyTo,
+		To:             emailAddr,
+		Subject:        "Verify your email",
+		TextBody:       fmt.Sprintf("Verify your email: %s", link),
+		HTMLBody:       fmt.Sprintf("<p><a href=\"%s\">Verify your email</a>.</p>", html.EscapeString(link)),
 	})
 }
 
-func (s *Service) SendOrgMemberInvite(ctx context.Context, emailAddr, orgName, inviterName, token string) error {
+func (s *Service) SendOrgMemberInvite(ctx context.Context, emailAddr, orgName, inviterName, token, idempotencyKey string) error {
 	link := s.link("/accept-invite", token)
 	text := fmt.Sprintf("You were invited to join %s.\n\nAccept the invite: %s", orgName, link)
 	htmlBody := fmt.Sprintf("<p>You were invited to join %s.</p><p><a href=\"%s\">Accept the invite</a>.</p>", html.EscapeString(orgName), html.EscapeString(link))
@@ -124,12 +128,13 @@ func (s *Service) SendOrgMemberInvite(ctx context.Context, emailAddr, orgName, i
 		htmlBody = fmt.Sprintf("<p>%s invited you to join %s.</p><p><a href=\"%s\">Accept the invite</a>.</p>", html.EscapeString(inviterName), html.EscapeString(orgName), html.EscapeString(link))
 	}
 	return s.provider.Send(ctx, Message{
-		From:     s.from,
-		ReplyTo:  s.replyTo,
-		To:       emailAddr,
-		Subject:  fmt.Sprintf("Invitation to join %s", orgName),
-		TextBody: text,
-		HTMLBody: htmlBody,
+		IdempotencyKey: idempotencyKey,
+		From:           s.from,
+		ReplyTo:        s.replyTo,
+		To:             emailAddr,
+		Subject:        fmt.Sprintf("Invitation to join %s", orgName),
+		TextBody:       text,
+		HTMLBody:       htmlBody,
 	})
 }
 

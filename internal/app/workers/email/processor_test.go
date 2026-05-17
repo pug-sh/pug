@@ -54,6 +54,9 @@ func TestProcessorSignupPayloadMapsToVerifyLink(t *testing.T) {
 	if len(provider.msgs) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(provider.msgs))
 	}
+	if provider.msgs[0].IdempotencyKey != "signup_verify_welcome:verify-token" {
+		t.Fatalf("expected signup idempotency key, got %q", provider.msgs[0].IdempotencyKey)
+	}
 	if !strings.Contains(provider.msgs[0].TextBody, "https://dashboard.example/verify-email?token=verify-token") {
 		t.Fatalf("expected verify link in text body, got %q", provider.msgs[0].TextBody)
 	}
@@ -151,6 +154,9 @@ func TestProcessorOrgInviteLoadsInvitationContext(t *testing.T) {
 	}
 	if len(provider.msgs) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(provider.msgs))
+	}
+	if provider.msgs[0].IdempotencyKey != "org_member_invite:invite-1" {
+		t.Fatalf("expected org invite idempotency key, got %q", provider.msgs[0].IdempotencyKey)
 	}
 	if !strings.Contains(provider.msgs[0].TextBody, "Inviter invited you to join Worker Org") {
 		t.Fatalf("unexpected invite body: %q", provider.msgs[0].TextBody)

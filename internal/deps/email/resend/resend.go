@@ -39,7 +39,8 @@ func (p *Provider) Send(ctx context.Context, msg coreemail.Message) error {
 		params.ReplyTo = msg.ReplyTo
 	}
 
-	sent, err := p.client.Emails.SendWithContext(ctx, params)
+	options := &resendsdk.SendEmailOptions{IdempotencyKey: msg.IdempotencyKey}
+	sent, err := p.client.Emails.SendWithOptions(ctx, params, options)
 	if err != nil {
 		return fmt.Errorf("resend send email: %w", err)
 	}
