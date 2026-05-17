@@ -7,6 +7,7 @@ import (
 
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	resenddeps "github.com/pug-sh/pug/internal/deps/email/resend"
+	sesdeps "github.com/pug-sh/pug/internal/deps/email/ses"
 )
 
 func TestNewProviderResend(t *testing.T) {
@@ -23,14 +24,29 @@ func TestNewProviderResend(t *testing.T) {
 }
 
 func TestNewProviderUnsupportedProvider(t *testing.T) {
-	t.Setenv("PUG_EMAIL_PROVIDER", "ses")
+	t.Setenv("PUG_EMAIL_PROVIDER", "unknown")
 
 	_, err := newProvider(context.Background())
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), `unsupported provider "ses"`) {
+	if !strings.Contains(err.Error(), `unsupported provider "unknown"`) {
 		t.Fatalf("expected provider name in error, got %v", err)
+	}
+}
+
+func TestNewProviderSES(t *testing.T) {
+	t.Setenv("PUG_EMAIL_PROVIDER", "ses")
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("AWS_ACCESS_KEY_ID", "test-access-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
+
+	provider, err := newProvider(context.Background())
+	if err != nil {
+		t.Fatalf("newProvider: %v", err)
+	}
+	if _, ok := provider.(*sesdeps.Provider); !ok {
+		t.Fatalf("expected *ses.Provider, got %T", provider)
 	}
 }
 

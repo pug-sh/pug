@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/joho/godotenv"
@@ -81,6 +82,32 @@ func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cob
 			slog.ErrorContext(ctx, "migration error", slogx.Error(err))
 			os.Exit(1)
 		}
+	}
+}
+
+func emailDevStatus() (bool, string) {
+	if os.Getenv("PUG_DASHBOARD_BASE_URL") == "" {
+		return false, "disabled (missing PUG_DASHBOARD_BASE_URL)"
+	}
+	if os.Getenv("PUG_EMAIL_FROM") == "" {
+		return false, "disabled (missing PUG_EMAIL_FROM)"
+	}
+
+	provider := strings.TrimSpace(strings.ToLower(os.Getenv("PUG_EMAIL_PROVIDER")))
+	if provider == "" {
+		provider = "resend"
+	}
+
+	switch provider {
+	case "resend":
+		if os.Getenv("PUG_RESEND_API_KEY") == "" {
+			return false, "disabled (missing PUG_RESEND_API_KEY for resend)"
+		}
+		return true, "email"
+	case "ses":
+		return true, "email"
+	default:
+		return false, fmt.Sprintf("disabled (unsupported provider %q)", provider)
 	}
 }
 
@@ -202,7 +229,8 @@ var devCmd = &cobra.Command{
 		fmt.Println("  "+yellow+"Events:"+reset, "events")
 		fmt.Println("  "+yellow+"Campaigns:"+reset, "campaigns")
 		fmt.Println("  "+yellow+"Devices:"+reset, "devices")
-		fmt.Println("  "+yellow+"Email:"+reset, "email")
+		emailEnabled, emailStatus := emailDevStatus()
+		fmt.Println("  "+yellow+"Email:"+reset, emailStatus)
 		fmt.Println("  "+yellow+"Scheduler:"+reset, "scheduler")
 		fmt.Println()
 
@@ -213,7 +241,9 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return devices.Run(ctx) })
 		g.Go(func() error { return campaigns.Run(ctx) })
 		g.Go(func() error { return eventsworker.Run(ctx) })
-		g.Go(func() error { return emailworker.Run(ctx) })
+		if emailEnabled {
+			g.Go(func() error { return emailworker.Run(ctx) })
+		}
 		g.Go(func() error { return identify.Run(ctx) })
 		g.Go(func() error { return alias.Run(ctx) })
 		g.Go(func() error { return upsert.Run(ctx) })

@@ -6,6 +6,7 @@ import (
 
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	resenddeps "github.com/pug-sh/pug/internal/deps/email/resend"
+	sesdeps "github.com/pug-sh/pug/internal/deps/email/ses"
 	"github.com/sethvargo/go-envconfig"
 )
 
@@ -42,6 +43,12 @@ func newProvider(ctx context.Context) (coreemail.Provider, error) {
 			return nil, err
 		}
 		return resenddeps.New(resendCfg)
+	case "ses":
+		var sesCfg sesdeps.Config
+		if err := envconfig.Process(ctx, &sesCfg); err != nil {
+			return nil, err
+		}
+		return sesdeps.New(ctx, sesCfg)
 	default:
 		return nil, fmt.Errorf("email: unsupported provider %q", cfg.Name)
 	}
