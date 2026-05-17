@@ -109,6 +109,28 @@ func TestPropertyValueTypeReverseCoverage(t *testing.T) {
 	}
 }
 
+// TestMigration003JSONShape pins the `JSON(max_dynamic_paths = 1000)`
+// declaration on the profiles.properties column. Silently relaxing the cap
+// (or removing it altogether) changes how many distinct property keys can be
+// stored as their own typed subcolumn before spilling into the shared
+// fallback subcolumn, which in turn changes filter-path behaviour:
+// `properties.k` on a spilled path no longer returns NULL for missing data
+// and breaks IS_NOT_SET semantics in subtle ways. Pin so an accidental
+// migration edit fails loudly.
+func TestMigration003JSONShape(t *testing.T) {
+	const path = "../../../schema/clickhouse/migrations/003_create_profiles.sql"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	got := string(data)
+
+	const wantDecl = "JSON(max_dynamic_paths = 1000)"
+	if !strings.Contains(got, wantDecl) {
+		t.Errorf("migration 003 must contain %q — ProfilePropertyExpr semantics depend on the spill threshold", wantDecl)
+	}
+}
+
 // splitSlotList splits a comma-separated list while respecting parenthesized
 // groups (e.g. `String, Int64, DateTime64(3)` → 3 entries, not 4).
 func splitSlotList(s string) []string {

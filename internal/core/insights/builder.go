@@ -953,9 +953,20 @@ func BuildProfilePropertyKeysQuery(projectID string) (string, []any, error) {
 // which projects any underlying type into a Nullable(String) coalesced to the empty string
 // for missing paths.
 //
-// SAFETY: propertyKey is interpolated directly into SQL. Callers must ensure it is
-// proto-validated (pattern in PropertyFilter.property) before calling this function.
+// The `!= ''` filter collapses two cases that the underlying JSON column can
+// distinguish but the string projection cannot: properties absent from a
+// profile and properties stored as the literal empty string both surface as
+// "" after the coalesce. Both are excluded from the returned distinct-values
+// set; callers needing to surface stored empty strings as a value would need
+// a different projection.
+//
+// SAFETY: propertyKey is validated via chq.ValidateProfilePropertyName before
+// interpolation, in addition to the proto regex on
+// GetPropertyValuesRequest.property_key.
 func BuildProfilePropertyValuesQuery(projectID, propertyKey string) (string, []any, error) {
+	if err := chq.ValidateProfilePropertyName(propertyKey); err != nil {
+		return "", nil, err
+	}
 	propExpr := chq.ProfilePropertyExpr(propertyKey)
 	return chq.NewQuery().
 		Select("DISTINCT "+propExpr+" AS value").

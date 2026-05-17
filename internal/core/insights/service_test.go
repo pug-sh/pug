@@ -465,6 +465,50 @@ func TestProfilePropertyKeysMV_TypeInference(t *testing.T) {
 	}
 }
 
+// TestProfilePropertyKeysMV_EmptyPropertiesYieldNoRows pins the equivalence
+// of the removed `notEmpty(properties)` guard in migration 004's profile MV.
+// JSON columns have no string-emptiness concept, but a profile inserted with
+// `properties = '{}'` must still produce zero rows from
+// `ARRAY JOIN JSONAllPathsWithTypes(properties)` so the property_keys view
+// doesn't surface phantom keys.
+func TestProfilePropertyKeysMV_EmptyPropertiesYieldNoRows(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
+
+	now := time.Now().UTC()
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time, insert_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		xid.New().String(), projectID, "empty-bag",
+		`{}`,
+		uint8(0), now, now, now,
+	); err != nil {
+		t.Fatalf("insert profile: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx, `SYSTEM REFRESH VIEW property_keys_profile_current_mv`); err != nil {
+		t.Fatalf("refresh MV: %v", err)
+	}
+	if err := ch.Conn.Exec(ctx, `SYSTEM WAIT VIEW property_keys_profile_current_mv`); err != nil {
+		t.Fatalf("wait MV: %v", err)
+	}
+
+	var count uint64
+	if err := ch.Conn.QueryRow(ctx,
+		`SELECT count() FROM property_keys_profile_current WHERE project_id = ?`,
+		projectID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count property_keys_profile_current: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("got %d MV rows for empty-properties profile, want 0", count)
+	}
+}
+
 func seedServiceProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, pg *testutil.TestPostgres, projectID string) {
 	t.Helper()
 

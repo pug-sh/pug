@@ -690,6 +690,67 @@ func TestList_BoolPropertyExcludedFromNumericFilter(t *testing.T) {
 	}
 }
 
+// TestList_FilterGroupsORRouting pins the OR branch in
+// buildProfileFilterCondition. Every other filter test uses a single group
+// (default AND), so the OR routing — selected by filter_groups_operator on
+// ListRequest — would otherwise be dead test surface. Asserts the union of
+// two single-filter groups matches the OR of the underlying predicates.
+func TestList_FilterGroupsORRouting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
+
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "alice@example.com", map[string]any{"plan": "pro", "region": "us"})
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "bob@example.com", map[string]any{"plan": "free", "region": "eu"})
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "carol@example.com", map[string]any{"plan": "free", "region": "us"})
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "dave@example.com", map[string]any{"plan": "free", "region": "ap"})
+
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{})), projectID)
+	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{
+		FilterGroupsOperator: commonv1.LogicalOperator_LOGICAL_OPERATOR_OR.Enum(),
+		FilterGroups: []*profilesv1.FilterGroup{
+			{Filters: []*commonv1.PropertyFilter{{
+				Property: proto.String("plan"),
+				Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+				Value:    proto.String("pro"),
+			}}},
+			{Filters: []*commonv1.PropertyFilter{{
+				Property: proto.String("region"),
+				Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+				Value:    proto.String("eu"),
+			}}},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	hits := map[string]bool{}
+	for stream.Receive() {
+		for _, p := range stream.Msg().GetProfiles() {
+			hits[p.GetExternalId()] = true
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream err: %v", err)
+	}
+
+	// alice matches plan=pro; bob matches region=eu. carol and dave match neither.
+	want := map[string]bool{"alice@example.com": true, "bob@example.com": true}
+	if len(hits) != len(want) {
+		t.Fatalf("hits = %v, want %v", hits, want)
+	}
+	for k := range want {
+		if !hits[k] {
+			t.Errorf("expected %q in hits, got %v", k, hits)
+		}
+	}
+}
+
 func seedCHProfileWithID(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID, profileID, externalID string, properties map[string]any) {
 	t.Helper()
 

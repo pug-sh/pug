@@ -82,6 +82,23 @@ func propertyNumericExpr(name, alias string) string {
 	return fmt.Sprintf("if(nullIf(%s, '') IS NOT NULL, %s, %s)", autoString, autoNumeric, customNumeric)
 }
 
+// ValidateProfilePropertyName rejects names that would produce malformed SQL
+// when interpolated into profilePropertyPath. Mirrors the regex on
+// common.v1.PropertyFilter.property at the Go layer so direct callers
+// (workers, scripts) bypassing the proto interceptor get an explicit error
+// instead of a CH parse failure.
+func ValidateProfilePropertyName(name string) error {
+	if name == "" {
+		return fmt.Errorf("profile property name must not be empty")
+	}
+	for _, seg := range strings.Split(name, ".") {
+		if seg == "" {
+			return fmt.Errorf("profile property name %q must not contain empty segments", name)
+		}
+	}
+	return nil
+}
+
 // profilePropertyPath splits `name` on `.` and joins with backtick-quoted
 // segments under `properties.` (e.g. "address.city" → properties.`address`.`city`).
 //
@@ -91,9 +108,9 @@ func propertyNumericExpr(name, alias string) string {
 // arrayElement, which rejects JSON-typed first arguments.
 //
 // SAFETY: segments are interpolated inside backtick delimiters. The proto regex
-// forbids backticks in property names. Callers must still ensure name is
-// proto-validated before calling. Empty-segment inputs ("a..b", ".a", "a.")
-// produce malformed SQL — the proto regex rejects them at the boundary.
+// forbids backticks in property names. Callers MUST validate `name` via
+// ValidateProfilePropertyName (or the proto regex on PropertyFilter.property /
+// GetPropertyValuesRequest.property_key) before calling.
 func profilePropertyPath(name string) string {
 	segments := strings.Split(name, ".")
 	for i, s := range segments {
@@ -108,9 +125,7 @@ func profilePropertyPath(name string) string {
 //
 // CAST to Nullable(String) coerces typed subcolumns (Float64, Int64, Bool) to
 // their string representation; the empty-string coalesce maps missing paths
-// (subcolumn NULL) back to empty so IS_NOT_SET still matches absent keys:
-//
-//	coalesce(CAST(properties.`k` AS Nullable(String)), '')
+// (subcolumn NULL) back to empty so IS_NOT_SET still matches absent keys.
 func ProfilePropertyExpr(name string) string {
 	return fmt.Sprintf("coalesce(CAST(%s AS Nullable(String)), '')", profilePropertyPath(name))
 }
@@ -177,27 +192,18 @@ func ProfilePropertyCondition(f *commonv1.PropertyFilter) (Condition, error) {
 	default:
 		return Condition{}, fmt.Errorf("unsupported profile filter source: %v", f.GetSource())
 	}
+	if err := ValidateProfilePropertyName(f.GetProperty()); err != nil {
+		return Condition{}, err
+	}
 	return profilePropertyOperatorCondition(f)
 }
 
 // profilePropertyOperatorCondition routes profile property operators to typed
-// expressions. Numeric operators read the Nullable(Float64) projection
-// directly; everything else flows through the string-coalesced projection used
-// for =/LIKE/IN/IS_SET semantics. Mirrors eventPropertyCondition's structure.
+// expressions via routeOperator. Numeric operators read the Nullable(Float64)
+// projection directly; everything else flows through the string-coalesced
+// projection used for =/LIKE/IN/IS_SET semantics.
 func profilePropertyOperatorCondition(f *commonv1.PropertyFilter) (Condition, error) {
-	switch f.GetOperator() {
-	case commonv1.FilterOperator_FILTER_OPERATOR_LTE,
-		commonv1.FilterOperator_FILTER_OPERATOR_GTE,
-		commonv1.FilterOperator_FILTER_OPERATOR_LT,
-		commonv1.FilterOperator_FILTER_OPERATOR_GT:
-		return numericCond(ProfilePropertyNumericExpr(f.GetProperty()), numericSQLComparator(f.GetOperator()), f, false)
-	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
-		return betweenCond(ProfilePropertyNumericExpr(f.GetProperty()), f, false)
-	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
-		return betweenCond(ProfilePropertyNumericExpr(f.GetProperty()), f, true)
-	default:
-		return operatorCondition(ProfilePropertyExpr(f.GetProperty()), f)
-	}
+	return routeOperator(f, ProfilePropertyExpr(f.GetProperty()), ProfilePropertyNumericExpr(f.GetProperty()))
 }
 
 // AutoPropertyConditionForMap builds a Condition for auto-properties already
@@ -208,53 +214,23 @@ func AutoPropertyConditionForMap(f *commonv1.PropertyFilter, mapExpr string) (Co
 	default:
 		return Condition{}, fmt.Errorf("unsupported auto filter source: %v", f.GetSource())
 	}
-
-	switch f.GetOperator() {
-	case commonv1.FilterOperator_FILTER_OPERATOR_LTE,
-		commonv1.FilterOperator_FILTER_OPERATOR_GTE,
-		commonv1.FilterOperator_FILTER_OPERATOR_LT,
-		commonv1.FilterOperator_FILTER_OPERATOR_GT:
-		return numericCond(autoPropertyMapNumericExpr(mapExpr, f.GetProperty()), numericSQLComparator(f.GetOperator()), f, false)
-	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
-		return betweenCond(autoPropertyMapNumericExpr(mapExpr, f.GetProperty()), f, false)
-	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
-		return betweenCond(autoPropertyMapNumericExpr(mapExpr, f.GetProperty()), f, true)
-	default:
-		return operatorCondition(autoPropertyMapExpr(mapExpr, f.GetProperty()), f)
-	}
+	return routeOperator(f, autoPropertyMapExpr(mapExpr, f.GetProperty()), autoPropertyMapNumericExpr(mapExpr, f.GetProperty()))
 }
 
 // AutoPropertyConditionForColumns builds a Condition for auto-properties that
 // have already been materialized into dedicated string / numeric expressions.
+// numericExpr may be empty for fields that have no numeric projection
+// (e.g. $browser); numeric operators against such fields return an error.
 func AutoPropertyConditionForColumns(f *commonv1.PropertyFilter, stringExpr, numericExpr string) (Condition, error) {
 	switch f.GetSource() {
 	case commonv1.PropertySource_PROPERTY_SOURCE_UNSPECIFIED, commonv1.PropertySource_PROPERTY_SOURCE_AUTO:
 	default:
 		return Condition{}, fmt.Errorf("unsupported auto filter source: %v", f.GetSource())
 	}
-
-	switch f.GetOperator() {
-	case commonv1.FilterOperator_FILTER_OPERATOR_LTE,
-		commonv1.FilterOperator_FILTER_OPERATOR_GTE,
-		commonv1.FilterOperator_FILTER_OPERATOR_LT,
-		commonv1.FilterOperator_FILTER_OPERATOR_GT:
-		if numericExpr == "" {
-			return Condition{}, fmt.Errorf("numeric auto filter is not supported for property %q", f.GetProperty())
-		}
-		return numericCond(numericExpr, numericSQLComparator(f.GetOperator()), f, false)
-	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
-		if numericExpr == "" {
-			return Condition{}, fmt.Errorf("numeric auto filter is not supported for property %q", f.GetProperty())
-		}
-		return betweenCond(numericExpr, f, false)
-	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
-		if numericExpr == "" {
-			return Condition{}, fmt.Errorf("numeric auto filter is not supported for property %q", f.GetProperty())
-		}
-		return betweenCond(numericExpr, f, true)
-	default:
-		return operatorCondition(stringExpr, f)
+	if isNumericOperator(f.GetOperator()) && numericExpr == "" {
+		return Condition{}, fmt.Errorf("numeric auto filter is not supported for property %q", f.GetProperty())
 	}
+	return routeOperator(f, stringExpr, numericExpr)
 }
 
 func propertyCondition(f *commonv1.PropertyFilter, projectID, alias string) (Condition, error) {
@@ -266,18 +242,43 @@ func propertyCondition(f *commonv1.PropertyFilter, projectID, alias string) (Con
 
 // eventPropertyCondition builds a Condition for auto/custom event property filters.
 func eventPropertyCondition(f *commonv1.PropertyFilter, alias string) (Condition, error) {
+	return routeOperator(f, propertyExpr(f.GetProperty(), alias), propertyNumericExpr(f.GetProperty(), alias))
+}
+
+// isNumericOperator reports whether op routes to a typed numeric projection
+// (LTE/GTE/LT/GT, BETWEEN, NOT_BETWEEN). All other operators (=, !=, LIKE,
+// IN, IS_SET, ...) use the string-coalesced projection.
+func isNumericOperator(op commonv1.FilterOperator) bool {
+	switch op {
+	case commonv1.FilterOperator_FILTER_OPERATOR_LTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_GTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_LT,
+		commonv1.FilterOperator_FILTER_OPERATOR_GT,
+		commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN,
+		commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
+		return true
+	}
+	return false
+}
+
+// routeOperator dispatches a PropertyFilter to either the numeric (typed) or
+// string (coalesced) condition builders based on the operator class. Callers
+// pre-compute both projections; adding a new FilterOperator only requires
+// updating isNumericOperator and this switch (or operatorCondition for string
+// operators) — not every per-source caller.
+func routeOperator(f *commonv1.PropertyFilter, stringExpr, numericExpr string) (Condition, error) {
 	switch f.GetOperator() {
 	case commonv1.FilterOperator_FILTER_OPERATOR_LTE,
 		commonv1.FilterOperator_FILTER_OPERATOR_GTE,
 		commonv1.FilterOperator_FILTER_OPERATOR_LT,
 		commonv1.FilterOperator_FILTER_OPERATOR_GT:
-		return numericCond(propertyNumericExpr(f.GetProperty(), alias), numericSQLComparator(f.GetOperator()), f, false)
+		return numericCond(numericExpr, numericSQLComparator(f.GetOperator()), f, false)
 	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
-		return betweenCond(propertyNumericExpr(f.GetProperty(), alias), f, false)
+		return betweenCond(numericExpr, f, false)
 	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
-		return betweenCond(propertyNumericExpr(f.GetProperty(), alias), f, true)
+		return betweenCond(numericExpr, f, true)
 	default:
-		return operatorCondition(propertyExpr(f.GetProperty(), alias), f)
+		return operatorCondition(stringExpr, f)
 	}
 }
 

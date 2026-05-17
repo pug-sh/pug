@@ -3,7 +3,6 @@ package profiles
 import (
 	"context"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -195,34 +194,51 @@ func TestUnwrapJSONProperties(t *testing.T) {
 		}
 	})
 
-	t.Run("unknown_variant_type_coerced_to_sentinel_string", func(t *testing.T) {
-		// The default arm emits a sentinel string with the Go type embedded.
-		// The WARN log + counter side effects are not asserted here (would
-		// require slog/meter capture infrastructure not yet in the codebase),
-		// but the sentinel format is pinned so the operator-facing drift
-		// signal stays grep-able.
+	t.Run("unknown_variant_type_dropped_from_output", func(t *testing.T) {
+		// The default arm returns nil and unwrapJSONProperties skips nil
+		// keys at the top level, so unknown Go types are dropped from
+		// Profile.Properties rather than surfacing as debug strings to API
+		// consumers. The WARN log + counter side effects are not asserted
+		// here (would require slog/meter capture infrastructure not yet in
+		// the codebase) — the counter rate is the operator drift signal.
 		j := chcol.NewJSON()
 		j.SetValueAtPath("weird", chcol.NewVariantWithType([]int{1, 2, 3}, "Array(Int32)"))
+		j.SetValueAtPath("kept", chcol.NewVariantWithType("hello", "String"))
 
 		got := unwrapJSONProperties(ctx, j)
-		s, ok := got["weird"].(string)
-		if !ok {
-			t.Fatalf("expected sentinel string, got %T", got["weird"])
+		if _, present := got["weird"]; present {
+			t.Errorf("expected weird key to be dropped, got %#v", got["weird"])
 		}
-		if !strings.HasPrefix(s, "<unrecognized JSON value:") {
-			t.Errorf("expected sentinel prefix, got %q", s)
+		if got["kept"] != "hello" {
+			t.Errorf("expected kept=hello (other keys unaffected), got %#v", got["kept"])
 		}
-		if !strings.Contains(s, "[]int") {
-			t.Errorf("expected sentinel to embed go_type ([]int), got %q", s)
+	})
+
+	t.Run("non_string_primitive_arrays_dropped_via_default_arm", func(t *testing.T) {
+		// Pins behavior for typed primitive arrays the unwrap switch does
+		// not explicitly handle ([]int64, []float64, []bool). Today these
+		// fall through to the default arm + counter + drop. If a future
+		// commit adds explicit arms, this test should be replaced with
+		// per-type unwrap assertions.
+		j := chcol.NewJSON()
+		j.SetValueAtPath("scores", chcol.NewVariantWithType([]int64{1, 2, 3}, "Array(Int64)"))
+		j.SetValueAtPath("ratios", chcol.NewVariantWithType([]float64{0.5, 0.75}, "Array(Float64)"))
+		j.SetValueAtPath("flags", chcol.NewVariantWithType([]bool{true, false}, "Array(Bool)"))
+
+		got := unwrapJSONProperties(ctx, j)
+		for _, k := range []string{"scores", "ratios", "flags"} {
+			if _, present := got[k]; present {
+				t.Errorf("expected %q to be dropped (default arm), got %#v", k, got[k])
+			}
 		}
 	})
 
 	t.Run("raw_value_routes_through_variant_switch", func(t *testing.T) {
-		// Regression guard for the C1 fix: when chcol delivers a raw Go
-		// value (typed declared subcolumns) instead of a Variant, the value
-		// must still flow through unwrapJSONVariant. Otherwise time.Time,
-		// []*string, and []chcol.JSON would leak into structpb.NewStruct
-		// and 500 the whole profile.
+		// When chcol delivers a raw Go value (typed declared subcolumns)
+		// instead of a Variant, the value must still flow through
+		// unwrapJSONVariant. Otherwise time.Time, []*string, and
+		// []chcol.JSON would leak into structpb.NewStruct and fail the
+		// entire profile read.
 		j := chcol.NewJSON()
 		when := time.Date(2026, 5, 18, 9, 30, 0, 123_000_000, time.UTC)
 		j.SetValueAtPath("last_seen", when) // raw time.Time, not Variant-wrapped
@@ -236,4 +252,14 @@ func TestUnwrapJSONProperties(t *testing.T) {
 			t.Errorf("got %q, want 2026-05-18T09:30:00.123Z", s)
 		}
 	})
+}
+
+// TestUnrecognisedJSONTypeCounterRegistered asserts the package-level counter
+// is non-nil after init(). The unwrap default arm calls .Add() unconditionally,
+// so a nil counter from a future OTel SDK contract change would nil-panic on
+// the first unknown JSON type. Guards against that regression at startup.
+func TestUnrecognisedJSONTypeCounterRegistered(t *testing.T) {
+	if unrecognisedJSONTypeCounter == nil {
+		t.Fatal("unrecognisedJSONTypeCounter must be registered during init()")
+	}
 }

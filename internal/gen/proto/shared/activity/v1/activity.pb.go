@@ -973,9 +973,9 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"(event_explorer.events_non_empty_in_multi\x12Eeach event filter must specify a kind or at least one property filter\x1aRthis.events.size() <= 1|| this.events.all(e, e.kind != '' || e.filters.size() > 0)\"}\n" +
 	"\x18GetEventExplorerResponse\x129\n" +
 	"\x06events\x18\x01 \x03(\v2!.shared.activity.v1.ActivityEventR\x06events\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xd6\x01\n" +
-	"\x18GetPropertyValuesRequest\x12A\n" +
-	"\fproperty_key\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\vpropertyKey\x12>\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xe8\x01\n" +
+	"\x18GetPropertyValuesRequest\x12S\n" +
+	"\fproperty_key\x18\x01 \x01(\tB0\xbaH-\xc8\x01\x01r(2&^\\$?[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)*$R\vpropertyKey\x12>\n" +
 	"\x06source\x18\x02 \x01(\x0e2\x19.common.v1.PropertySourceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06source\x127\n" +
 	"\n" +
 	"event_kind\x18\x03 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"3\n" +
