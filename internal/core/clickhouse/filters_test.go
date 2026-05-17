@@ -66,6 +66,46 @@ func TestProfilePropertyExpr(t *testing.T) {
 	}
 }
 
+func TestProfilePropertyNumericExpr(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{
+			name: "simple key",
+			key:  "ltv",
+			want: "coalesce(properties.`ltv`.:Float64, CAST(properties.`ltv`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`ltv`.:String))",
+		},
+		{
+			// $-prefixed numeric auto-property — e.g. $session_duration.
+			name: "auto-property dollar prefix",
+			key:  "$session_duration",
+			want: "coalesce(properties.`$session_duration`.:Float64, CAST(properties.`$session_duration`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`$session_duration`.:String))",
+		},
+		{
+			// Dash in key forces backtick quoting (else CH parses subtraction).
+			name: "dash in key",
+			key:  "lifetime-value",
+			want: "coalesce(properties.`lifetime-value`.:Float64, CAST(properties.`lifetime-value`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`lifetime-value`.:String))",
+		},
+		{
+			// Nested numeric path: subscription.monthly_revenue.
+			name: "nested path",
+			key:  "subscription.monthly_revenue",
+			want: "coalesce(properties.`subscription`.`monthly_revenue`.:Float64, CAST(properties.`subscription`.`monthly_revenue`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`subscription`.`monthly_revenue`.:String))",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := clickhouse.ProfilePropertyNumericExpr(tt.key)
+			if got != tt.want {
+				t.Errorf("ProfilePropertyNumericExpr(%q) =\n  got:  %q\n  want: %q", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestEscapeLike(t *testing.T) {
 	tests := []struct {
 		input string
@@ -482,8 +522,8 @@ func TestPropertyCondition_ProfileSource_GTE(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "toFloat64OrNull(coalesce(CAST(properties.`score` AS Nullable(String)), '')) >= ?") {
-		t.Errorf("expected numeric condition for profile property, got: %s", sql)
+	if !strings.Contains(sql, "coalesce(properties.`score`.:Float64, CAST(properties.`score`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`score`.:String)) >= ?") {
+		t.Errorf("expected typed numeric condition for profile property, got: %s", sql)
 	}
 	// Numeric operator: args are [projectID, numericValue, projectID, projectID, numericValue]
 	args := cond.Args()
@@ -854,8 +894,8 @@ func TestPropertyCondition_ProfileSource_Between(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "toFloat64OrNull(coalesce(CAST(properties.`score` AS Nullable(String)), ''))") {
-		t.Errorf("expected numeric condition for profile property, got: %s", sql)
+	if !strings.Contains(sql, "coalesce(properties.`score`.:Float64, CAST(properties.`score`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`score`.:String))") {
+		t.Errorf("expected typed numeric condition for profile property, got: %s", sql)
 	}
 	args := cond.Args()
 	wantArgs := []any{"proj_abc", float64(10), float64(50), "proj_abc", "proj_abc", float64(10), float64(50)}

@@ -82,37 +82,58 @@ func propertyNumericExpr(name, alias string) string {
 	return fmt.Sprintf("if(nullIf(%s, '') IS NOT NULL, %s, %s)", autoString, autoNumeric, customNumeric)
 }
 
-// ProfilePropertyExpr returns the ClickHouse expression to read a profile
-// property as a Nullable(String). Profile properties are stored in a JSON-typed
-// column; subcolumn access returns the natively-typed value.
+// profilePropertyPath returns the backtick-quoted nested subcolumn path for a
+// profile property name. Dots split into per-segment backticked identifiers so
+// nested paths map to native JSON subcolumn access (e.g. "address.city" →
+// properties.`address`.`city`).
 //
-// Two transforms preserve existing operator semantics across all underlying
-// types:
-//   - CAST to Nullable(String) coerces typed subcolumns (Float64, Int64, Bool)
-//     to their string representation so unified =/LIKE/IN operators apply.
-//     Numeric operators downstream re-parse via toFloat64OrNull, which now
-//     actually succeeds on numeric paths (previously: JSONExtractString
-//     returned '' for non-string JSON values, silently breaking ltv > 1000).
-//   - coalesce(..., '') maps missing paths (subcolumn NULL) back to '' so
-//     IS_NOT_SET (prop = '') still matches absent keys, preserving the
-//     JSONExtractString contract that returned '' for missing keys.
+// Backticks are required because the proto pattern ^\$?[a-zA-Z0-9_.-]+$ permits
+// characters ($, -) that CH's bare-identifier parser rejects or misinterprets
+// ('-' as subtraction). Bracket access (properties['k']) isn't an option — CH
+// dispatches that to arrayElement, which rejects JSON-typed first arguments.
 //
-// Dot-paths are split into nested subcolumn segments (e.g. "address.city" →
-// properties.`address`.`city`). Each segment is backtick-quoted because the
-// proto-validated pattern ^\$?[a-zA-Z0-9_.-]+$ permits characters ($, -) that
-// CH's bare-identifier parser rejects or misinterprets ('-' as subtraction).
-// Bracket access (properties['k']) isn't an option — CH dispatches that to
-// arrayElement, which rejects JSON-typed first arguments.
-//
-// SAFETY: segments are interpolated into the SQL inside backtick delimiters.
-// The proto regex forbids backticks in property names, so the interpolation is
-// safe. Callers must still ensure name is proto-validated before calling.
-func ProfilePropertyExpr(name string) string {
+// SAFETY: segments are interpolated inside backtick delimiters. The proto regex
+// forbids backticks in property names, so the interpolation is safe. Callers
+// must still ensure name is proto-validated before calling.
+func profilePropertyPath(name string) string {
 	segments := strings.Split(name, ".")
 	for i, s := range segments {
 		segments[i] = "`" + s + "`"
 	}
-	return fmt.Sprintf("coalesce(CAST(properties.%s AS Nullable(String)), '')", strings.Join(segments, "."))
+	return "properties." + strings.Join(segments, ".")
+}
+
+// ProfilePropertyExpr returns the string-projecting ClickHouse expression for a
+// profile property — Nullable(String) coalesced to '' for missing paths. Used
+// for string-shaped operators (=, !=, LIKE, IN, IS_SET, IS_NOT_SET). Numeric
+// operators take the typed path via ProfilePropertyNumericExpr instead;
+// profilePropertyOperatorCondition routes by operator.
+//
+// CAST to Nullable(String) coerces typed subcolumns (Float64, Int64, Bool) to
+// their string representation. coalesce(..., '') maps missing paths (subcolumn
+// NULL) back to '' so IS_NOT_SET (prop = '') still matches absent keys.
+func ProfilePropertyExpr(name string) string {
+	return fmt.Sprintf("coalesce(CAST(%s AS Nullable(String)), '')", profilePropertyPath(name))
+}
+
+// ProfilePropertyNumericExpr returns the Nullable(Float64) projection of a
+// profile property for numeric operators. JSON typed subcolumns (.:Float64,
+// .:Int64, .:String) are strict — they return the value only if the path is
+// stored as exactly that type, NULL otherwise.
+//
+// The coalesce ladder mirrors propertyNumericExpr's leniency for events:
+// Float64 storage wins, then Int64 cast up to Float64, then a final re-parse of
+// String-stored numerics (for clients that stringify numbers like
+// {"ltv": "1234"}). The strict typed projections intentionally exclude Bool —
+// a property stored as true/false is not meaningfully comparable to a numeric
+// threshold, and CH's direct CAST(JSON AS Float64) would coerce Bool to 1/0
+// with surprising filter results.
+func ProfilePropertyNumericExpr(name string) string {
+	path := profilePropertyPath(name)
+	return fmt.Sprintf(
+		"coalesce(%s.:Float64, CAST(%s.:Int64 AS Nullable(Float64)), toFloat64OrNull(%s.:String))",
+		path, path, path,
+	)
 }
 
 func autoPropertyMapExpr(mapExpr, name string) string {
@@ -157,7 +178,27 @@ func ProfilePropertyCondition(f *commonv1.PropertyFilter) (Condition, error) {
 	default:
 		return Condition{}, fmt.Errorf("unsupported profile filter source: %v", f.GetSource())
 	}
-	return operatorCondition(ProfilePropertyExpr(f.GetProperty()), f)
+	return profilePropertyOperatorCondition(f)
+}
+
+// profilePropertyOperatorCondition routes profile property operators to typed
+// expressions. Numeric operators read the Nullable(Float64) projection
+// directly; everything else flows through the string-coalesced projection used
+// for =/LIKE/IN/IS_SET semantics. Mirrors eventPropertyCondition's structure.
+func profilePropertyOperatorCondition(f *commonv1.PropertyFilter) (Condition, error) {
+	switch f.GetOperator() {
+	case commonv1.FilterOperator_FILTER_OPERATOR_LTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_GTE,
+		commonv1.FilterOperator_FILTER_OPERATOR_LT,
+		commonv1.FilterOperator_FILTER_OPERATOR_GT:
+		return numericCond(ProfilePropertyNumericExpr(f.GetProperty()), numericSQLComparator(f.GetOperator()), f, false)
+	case commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN:
+		return betweenCond(ProfilePropertyNumericExpr(f.GetProperty()), f, false)
+	case commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN:
+		return betweenCond(ProfilePropertyNumericExpr(f.GetProperty()), f, true)
+	default:
+		return operatorCondition(ProfilePropertyExpr(f.GetProperty()), f)
+	}
 }
 
 // AutoPropertyConditionForMap builds a Condition for auto-properties already
@@ -261,9 +302,8 @@ func profileFilterCondition(projectID string, f *commonv1.PropertyFilter, alias 
 	if projectID == "" {
 		return Condition{}, fmt.Errorf("profile property filter requires a non-empty project ID")
 	}
-	prop := ProfilePropertyExpr(f.GetProperty())
 
-	innerCond, err := operatorCondition(prop, f)
+	innerCond, err := profilePropertyOperatorCondition(f)
 	if err != nil {
 		return Condition{}, err
 	}
