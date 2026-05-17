@@ -1,0 +1,22 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Form events.
+
+message FormStartProperties {
+  option (common.events.v1.kind) = "form_start";
+  string form_id = 1 [(buf.validate.field).required = true];
+  string form_name = 2;
+}
+
+message FormSubmitProperties {
+  option (common.events.v1.kind) = "form_submit";
+  string form_id = 1 [(buf.validate.field).required = true];
+  string form_name = 2;
+  string action = 3;
+}

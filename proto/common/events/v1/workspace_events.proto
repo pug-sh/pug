@@ -1,0 +1,44 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Workspace events.
+//
+// "Workspace" refers to the product's tenant/team concept. `member_id` is
+// the workspace-specific membership ID, not the SDK distinct_id.
+
+message WorkspaceCreatedProperties {
+  option (common.events.v1.kind) = "workspace_created";
+  string workspace_id = 1 [(buf.validate.field).required = true];
+  string workspace_name = 2;
+}
+
+message WorkspaceJoinedProperties {
+  option (common.events.v1.kind) = "workspace_joined";
+  string workspace_id = 1 [(buf.validate.field).required = true];
+  string role = 2;
+}
+
+message WorkspaceDeletedProperties {
+  option (common.events.v1.kind) = "workspace_deleted";
+  string workspace_id = 1 [(buf.validate.field).required = true];
+  string reason = 2;
+}
+
+message WorkspaceRoleChangedProperties {
+  option (common.events.v1.kind) = "workspace_role_changed";
+  string workspace_id = 1 [(buf.validate.field).required = true];
+  string member_id = 2 [(buf.validate.field).required = true];
+  string previous_role = 3;
+  string new_role = 4 [(buf.validate.field).required = true];
+}
+
+message WorkspaceSettingsUpdatedProperties {
+  option (common.events.v1.kind) = "workspace_settings_updated";
+  string workspace_id = 1 [(buf.validate.field).required = true];
+  string setting = 2 [(buf.validate.field).required = true];
+}

@@ -1,0 +1,21 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Error events.
+
+// Common severity values: "info", "warning", "error", "fatal".
+// unhandled indicates whether the error was caught by application code (false)
+// or escaped to a global handler / crashed the surface (true).
+message ErrorOccurredProperties {
+  option (common.events.v1.kind) = "error_occurred";
+  string error_code = 1 [(buf.validate.field).required = true];
+  string message = 2 [(common.events.v1.pii) = true];
+  string severity = 3;
+  bool unhandled = 4;
+  string stack = 5 [(common.events.v1.pii) = true];
+}

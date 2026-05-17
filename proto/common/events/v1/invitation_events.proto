@@ -1,0 +1,36 @@
+edition = "2023";
+package common.events.v1;
+
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Invitation events.
+//
+// Invites are scoped to a workspace today. If non-workspace targets (e.g.
+// project, team, channel) are ever added, prefer adding a sibling field
+// (project_id, team_id) over generalizing workspace_id, so each scope is
+// queryable independently and existing data stays unambiguous.
+//
+// Populate at least one of invitee_id or invitee_email — the other is fine
+// to leave empty when not known.
+
+message InviteSentProperties {
+  option (common.events.v1.kind) = "invite_sent";
+  string invite_id = 1;
+  string workspace_id = 2;
+  string inviter_id = 3;
+  string invitee_id = 4;
+  string invitee_email = 5 [(common.events.v1.pii) = true];
+  string role = 6;
+}
+
+message InviteAcceptedProperties {
+  option (common.events.v1.kind) = "invite_accepted";
+  string invite_id = 1;
+  string workspace_id = 2;
+  string inviter_id = 3;
+  string invitee_id = 4;
+  string invitee_email = 5 [(common.events.v1.pii) = true];
+  string role = 6;
+}

@@ -1,0 +1,22 @@
+edition = "2023";
+package common.events.v1;
+
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// API events.
+
+message ApiKeyCreatedProperties {
+  option (common.events.v1.kind) = "api_key_created";
+  string api_key_id = 1;
+  string name = 2;
+  string scope = 3;
+}
+
+message ApiKeyRevokedProperties {
+  option (common.events.v1.kind) = "api_key_revoked";
+  string api_key_id = 1;
+  string name = 2;
+  string reason = 3;
+}
