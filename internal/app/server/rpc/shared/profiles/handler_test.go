@@ -536,6 +536,244 @@ func TestConvertActivitySummary(t *testing.T) {
 	}
 }
 
+// TestGet_ReturnsProfile pins the GetByID happy path through the
+// scan + unwrap chain against a real CH JSON column. The List integration
+// path covers a different SQL shape (create_time ordering); this test
+// independently exercises the getSingle path (update_time DESC LIMIT 1).
+func TestGet_ReturnsProfile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
+	profileID := xid.New().String()
+
+	seedCHProfileWithID(t, ctx, ch, projectID, profileID, "alice@example.com", map[string]any{
+		"plan": "pro",
+		"age":  42,
+	})
+
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{})), projectID)
+	resp, err := client.Get(ctx, connect.NewRequest(&profilesv1.GetRequest{Id: proto.String(profileID)}))
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	got := resp.Msg.GetProfile()
+	if got.GetId() != profileID {
+		t.Errorf("id = %q, want %q", got.GetId(), profileID)
+	}
+	if got.GetExternalId() != "alice@example.com" {
+		t.Errorf("external_id = %q, want alice@example.com", got.GetExternalId())
+	}
+	props := got.GetProperties().AsMap()
+	if props["plan"] != "pro" {
+		t.Errorf("properties.plan = %v, want pro", props["plan"])
+	}
+	if props["age"] != float64(42) { // structpb converts numerics to float64
+		t.Errorf("properties.age = %v, want 42", props["age"])
+	}
+}
+
+// TestGetByExternalId_ReturnsProfile pins the GetByExternalId happy path.
+// Same scan + unwrap chain as Get, different WHERE clause.
+func TestGetByExternalId_ReturnsProfile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
+
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "bob@example.com", map[string]any{
+		"verified": true,
+		"score":    99.5,
+	})
+
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{})), projectID)
+	resp, err := client.GetByExternalId(ctx, connect.NewRequest(&profilesv1.GetByExternalIdRequest{
+		ExternalId: proto.String("bob@example.com"),
+	}))
+	if err != nil {
+		t.Fatalf("GetByExternalId: %v", err)
+	}
+
+	got := resp.Msg.GetProfile()
+	if got.GetExternalId() != "bob@example.com" {
+		t.Errorf("external_id = %q, want bob@example.com", got.GetExternalId())
+	}
+	props := got.GetProperties().AsMap()
+	if props["verified"] != true {
+		t.Errorf("properties.verified = %v, want true", props["verified"])
+	}
+	if props["score"] != float64(99.5) {
+		t.Errorf("properties.score = %v, want 99.5", props["score"])
+	}
+}
+
+// TestList_BoolPropertyExcludedFromNumericFilter pins the load-bearing
+// invariant on ProfilePropertyNumericExpr: a Bool-stored property must NOT
+// match a numeric comparison. CH would otherwise coerce true → 1 with a
+// direct CAST(JSON AS Float64), producing surprising filter results — the
+// coalesce ladder explicitly omits .:Bool so this returns NULL (no match).
+func TestList_BoolPropertyExcludedFromNumericFilter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
+
+	// verified = true (Bool), score = 42 (Int64). Numeric filter on the Bool
+	// property must not match; the same filter on the Int64 property must.
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "alice@example.com", map[string]any{
+		"verified": true,
+		"score":    42,
+	})
+
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{})), projectID)
+
+	// Numeric filter on Bool-stored property: zero matches.
+	verifiedStream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{
+		FilterGroups: []*profilesv1.FilterGroup{{
+			Filters: []*commonv1.PropertyFilter{{
+				Property: proto.String("verified"),
+				Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(),
+				Value:    proto.String("0.5"),
+			}},
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var verifiedHits []string
+	for verifiedStream.Receive() {
+		for _, p := range verifiedStream.Msg().GetProfiles() {
+			verifiedHits = append(verifiedHits, p.GetExternalId())
+		}
+	}
+	if err := verifiedStream.Err(); err != nil {
+		t.Fatalf("verified stream err: %v", err)
+	}
+	if len(verifiedHits) != 0 {
+		t.Errorf("verified >= 0.5 matched %d profiles, want 0 (Bool excluded from numeric projection)", len(verifiedHits))
+	}
+
+	// Sanity check: same operator on the Int64 property matches.
+	scoreStream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{
+		FilterGroups: []*profilesv1.FilterGroup{{
+			Filters: []*commonv1.PropertyFilter{{
+				Property: proto.String("score"),
+				Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(),
+				Value:    proto.String("10"),
+			}},
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var scoreHits []string
+	for scoreStream.Receive() {
+		for _, p := range scoreStream.Msg().GetProfiles() {
+			scoreHits = append(scoreHits, p.GetExternalId())
+		}
+	}
+	if err := scoreStream.Err(); err != nil {
+		t.Fatalf("score stream err: %v", err)
+	}
+	if len(scoreHits) != 1 || scoreHits[0] != "alice@example.com" {
+		t.Errorf("score >= 10 hits = %v, want [alice@example.com] (sanity check that numeric filters do work on Int64)", scoreHits)
+	}
+}
+
+// TestList_FilterGroupsORRouting pins the OR branch in
+// buildProfileFilterCondition. Every other filter test uses a single group
+// (default AND), so the OR routing — selected by filter_groups_operator on
+// ListRequest — would otherwise be dead test surface. Asserts the union of
+// two single-filter groups matches the OR of the underlying predicates.
+func TestList_FilterGroupsORRouting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	projectID := xid.New().String()
+
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "alice@example.com", map[string]any{"plan": "pro", "region": "us"})
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "bob@example.com", map[string]any{"plan": "free", "region": "eu"})
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "carol@example.com", map[string]any{"plan": "free", "region": "us"})
+	seedCHProfileWithProperties(t, ctx, ch, projectID, "dave@example.com", map[string]any{"plan": "free", "region": "ap"})
+
+	client := newProfilesTestClient(t, NewServer(coreprofiles.NewService(nil, ch.Conn, &natsdeps.NATSClient{})), projectID)
+	stream, err := client.List(ctx, connect.NewRequest(&profilesv1.ListRequest{
+		FilterGroupsOperator: commonv1.LogicalOperator_LOGICAL_OPERATOR_OR.Enum(),
+		FilterGroups: []*profilesv1.FilterGroup{
+			{Filters: []*commonv1.PropertyFilter{{
+				Property: proto.String("plan"),
+				Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+				Value:    proto.String("pro"),
+			}}},
+			{Filters: []*commonv1.PropertyFilter{{
+				Property: proto.String("region"),
+				Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+				Value:    proto.String("eu"),
+			}}},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	hits := map[string]bool{}
+	for stream.Receive() {
+		for _, p := range stream.Msg().GetProfiles() {
+			hits[p.GetExternalId()] = true
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream err: %v", err)
+	}
+
+	// alice matches plan=pro; bob matches region=eu. carol and dave match neither.
+	want := map[string]bool{"alice@example.com": true, "bob@example.com": true}
+	if len(hits) != len(want) {
+		t.Fatalf("hits = %v, want %v", hits, want)
+	}
+	for k := range want {
+		if !hits[k] {
+			t.Errorf("expected %q in hits, got %v", k, hits)
+		}
+	}
+}
+
+func seedCHProfileWithID(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID, profileID, externalID string, properties map[string]any) {
+	t.Helper()
+
+	rawProperties, err := json.Marshal(properties)
+	if err != nil {
+		t.Fatalf("marshal properties for %q: %v", externalID, err)
+	}
+
+	now := time.Now().UTC()
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		profileID,
+		projectID,
+		externalID,
+		string(rawProperties),
+		uint8(0),
+		now,
+		now,
+	); err != nil {
+		t.Fatalf("insert clickhouse profile %q: %v", externalID, err)
+	}
+}
+
 func seedCHProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string, count int) {
 	t.Helper()
 	for i := range count {

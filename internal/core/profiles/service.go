@@ -2,11 +2,12 @@ package profiles
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,9 +18,33 @@ import (
 	workerprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/workers/profiles/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+var unrecognisedJSONTypeCounter metric.Int64Counter
+
+func init() {
+	meter := otel.Meter("github.com/pug-sh/pug/internal/core/profiles")
+	var err error
+	// Monitoring guidance: a non-zero rate on this counter means CH/driver
+	// emitted a Go type the unwrap switch doesn't handle — those values are
+	// dropped from Profile.Properties. Investigate the go_type label and add
+	// an explicit case in unwrapJSONVariant if the new shape is legitimate.
+	unrecognisedJSONTypeCounter, err = meter.Int64Counter(
+		"profiles.unrecognised_json_type_total",
+		metric.WithDescription("Profile JSON values whose underlying Go type the unwrap switch did not recognise. Tagged with go_type."),
+	)
+	if err != nil {
+		// Logged at init time so operators see the registration failure on
+		// startup; the global OTel meter still returns a non-nil counter so
+		// subsequent .Add() calls are safe.
+		slog.ErrorContext(context.Background(), "failed to register profiles.unrecognised_json_type_total counter", slogx.Error(err))
+	}
+}
 
 var ErrProfileNotFound = errors.New("profile not found")
 var ErrProfileDeleteUnavailable = errors.New("profiles: delete dependencies are unavailable")
@@ -203,7 +228,7 @@ func (s *Service) getSingle(ctx context.Context, projectID string, extra chq.Con
 		return Profile{}, ErrProfileNotFound
 	}
 
-	profile, err := scanProfile(rows)
+	profile, err := scanProfile(ctx, rows)
 	if err != nil {
 		return Profile{}, err
 	}
@@ -255,7 +280,7 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Profile, error
 
 	items := make([]Profile, 0)
 	for rows.Next() {
-		profile, err := scanProfile(rows)
+		profile, err := scanProfile(ctx, rows)
 		if err != nil {
 			return nil, err
 		}
@@ -335,9 +360,9 @@ WHERE p.is_deleted = 0
 		GroupBy("identity.project_id", "identity.profile_id")
 }
 
-func scanProfile(rows driver.Rows) (Profile, error) {
+func scanProfile(ctx context.Context, rows driver.Rows) (Profile, error) {
 	var profile Profile
-	var rawProperties string
+	var rawProperties chcol.JSON
 	var activity ProfileActivitySummary
 	var totalEvents uint64
 	var pageviews uint64
@@ -365,13 +390,7 @@ func scanProfile(rows driver.Rows) (Profile, error) {
 	); err != nil {
 		return Profile{}, err
 	}
-	propertiesMap := map[string]any{}
-	if rawProperties != "" {
-		if err := json.Unmarshal([]byte(rawProperties), &propertiesMap); err != nil {
-			return Profile{}, err
-		}
-	}
-	profile.Properties = propertiesMap
+	profile.Properties = unwrapJSONProperties(ctx, &rawProperties)
 	if totalEvents > 0 {
 		activity.TotalEvents = int64(totalEvents)
 		activity.Pageviews = int64(pageviews)
@@ -379,6 +398,115 @@ func scanProfile(rows driver.Rows) (Profile, error) {
 		profile.Activity = &activity
 	}
 	return profile, nil
+}
+
+// unwrapJSONProperties converts a scanned chcol.JSON value into a
+// map[string]any with native Go types so downstream consumers
+// (structpb.NewStruct, log/JSON marshaling) handle them uniformly.
+// Always returns a non-nil map; nil input is treated as empty.
+//
+// Top-level keys whose value unwraps to nil are dropped from the output. This
+// catches unknown-type fallbacks from unwrapJSONVariant — those return nil so
+// the unrecognised value never reaches API consumers as a debug string. Note
+// that nested-level nils inside `map[string]any` recursion are NOT dropped;
+// chcol.NestedMap() has already removed null Variants from the input at every
+// depth, so the only way a nested nil can appear is via the same unknown-type
+// fallback (rare; already observable via the WARN log + counter).
+func unwrapJSONProperties(ctx context.Context, j *chcol.JSON) map[string]any {
+	out := make(map[string]any)
+	if j == nil {
+		return out
+	}
+	for k, v := range j.NestedMap() {
+		if val := unwrapJSONValue(ctx, v); val != nil {
+			out[k] = val
+		}
+	}
+	return out
+}
+
+// unwrapJSONValue dispatches by container shape: nested maps recurse, Variant
+// cells (dynamic paths) route to unwrapJSONVariant, and raw values (typed
+// declared subcolumns, where the driver hands back native Go types directly)
+// are wrapped in a Variant so the same type switch normalises them — otherwise
+// time.Time / []*string / []chcol.JSON would leak into structpb.NewStruct and
+// fail the entire profile read.
+func unwrapJSONValue(ctx context.Context, v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, val := range x {
+			out[k] = unwrapJSONValue(ctx, val)
+		}
+		return out
+	case chcol.Variant:
+		return unwrapJSONVariant(ctx, x)
+	default:
+		return unwrapJSONVariant(ctx, chcol.NewVariant(v))
+	}
+}
+
+// unwrapJSONVariant materializes a single Variant cell. Native scalars pass
+// through; time.Time normalizes to RFC3339Nano (so structpb consumers don't
+// need a time case); array types flatten to []any. TestUnwrapJSONProperties
+// pins each shape's mapping given a fixed Variant input; the catch for actual
+// driver-shape drift is the testcontainer-backed integration tests
+// (TestProfilePropertyKeysMV_TypeInference, TestGet_ReturnsProfile,
+// TestList_BoolPropertyExcludedFromNumericFilter), which scan via the real
+// driver and would fail loudly if delivered Go types changed.
+//
+// Unknown types drop the value (returns nil) + WARN log + counter increment
+// so a CH type addition or driver change is observable rather than leaking
+// debug strings to API consumers.
+func unwrapJSONVariant(ctx context.Context, v chcol.Variant) any {
+	switch x := v.Any().(type) {
+	case nil:
+		return nil
+	case string, int64, float64, bool:
+		return x
+	case time.Time:
+		return x.UTC().Format(time.RFC3339Nano)
+	case []*string:
+		out := make([]any, len(x))
+		for i, p := range x {
+			if p != nil {
+				out[i] = *p
+			}
+		}
+		return out
+	case []chcol.JSON:
+		out := make([]any, len(x))
+		for i := range x {
+			out[i] = unwrapJSONProperties(ctx, &x[i])
+		}
+		return out
+	default:
+		// WARN (not ERROR): drop-and-continue keeps the API working for the
+		// rest of the profile; the counter is the page-able drift signal.
+		// Bump to ERROR only if the policy becomes "fail loud" instead of
+		// "degrade silently".
+		goType := truncateForLabel(fmt.Sprintf("%T", x))
+		err := fmt.Errorf("unrecognised JSON value type %s in profile properties", goType)
+		slog.WarnContext(ctx, "unwrapJSONVariant: dropping unrecognised value",
+			slogx.Error(err), slog.String("go_type", goType))
+		telemetry.RecordError(ctx, err)
+		unrecognisedJSONTypeCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("go_type", goType),
+		))
+		return nil
+	}
+}
+
+// truncateForLabel bounds the cardinality of OTel attribute values derived
+// from runtime type names. Parameterized or anonymous types can produce
+// arbitrarily long names; capping prevents counter-series blow-out on the
+// very signal designed to detect type drift.
+func truncateForLabel(s string) string {
+	const maxLabelLen = 64
+	if len(s) <= maxLabelLen {
+		return s
+	}
+	return s[:maxLabelLen]
 }
 
 func profileSelectColumns() []string {
