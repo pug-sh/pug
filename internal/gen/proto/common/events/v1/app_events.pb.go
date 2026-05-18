@@ -382,24 +382,24 @@ var File_common_events_v1_app_events_proto protoreflect.FileDescriptor
 
 const file_common_events_v1_app_events_proto_rawDesc = "" +
 	"\n" +
-	"!common/events/v1/app_events.proto\x12\x10common.events.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1ecommon/events/v1/options.proto\"!\n" +
-	"\x11AppOpenProperties:\f\x82\xb5\x18\bapp_open\"#\n" +
-	"\x12AppCloseProperties:\r\x82\xb5\x18\tapp_close\"o\n" +
+	"!common/events/v1/app_events.proto\x12\x10common.events.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1ecommon/events/v1/options.proto\"'\n" +
+	"\x11AppOpenProperties:\x12\x82\xb5\x18\bapp_open\x92\xb5\x18\x02\x02\x03\")\n" +
+	"\x12AppCloseProperties:\x13\x82\xb5\x18\tapp_close\x92\xb5\x18\x02\x02\x03\"u\n" +
 	"\x14AppInstallProperties\x12\x1f\n" +
 	"\vapp_version\x18\x01 \x01(\tR\n" +
 	"appVersion\x12%\n" +
-	"\x0einstall_source\x18\x02 \x01(\tR\rinstallSource:\x0f\x82\xb5\x18\vapp_install\"y\n" +
+	"\x0einstall_source\x18\x02 \x01(\tR\rinstallSource:\x15\x82\xb5\x18\vapp_install\x92\xb5\x18\x02\x02\x03\"\x7f\n" +
 	"\x13AppUpdateProperties\x12'\n" +
 	"\vapp_version\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"appVersion\x12)\n" +
-	"\x10previous_version\x18\x02 \x01(\tR\x0fpreviousVersion:\x0e\x82\xb5\x18\n" +
-	"app_update\"1\n" +
-	"\x19AppBackgroundedProperties:\x14\x82\xb5\x18\x10app_backgrounded\"1\n" +
-	"\x19AppForegroundedProperties:\x14\x82\xb5\x18\x10app_foregrounded\"k\n" +
+	"\x10previous_version\x18\x02 \x01(\tR\x0fpreviousVersion:\x14\x82\xb5\x18\n" +
+	"app_update\x92\xb5\x18\x02\x02\x03\"7\n" +
+	"\x19AppBackgroundedProperties:\x1a\x82\xb5\x18\x10app_backgrounded\x92\xb5\x18\x02\x02\x03\"7\n" +
+	"\x19AppForegroundedProperties:\x1a\x82\xb5\x18\x10app_foregrounded\x92\xb5\x18\x02\x02\x03\"r\n" +
 	"\x14AppCrashedProperties\x12#\n" +
 	"\rerror_message\x18\x01 \x01(\tR\ferrorMessage\x12\x1d\n" +
 	"\n" +
-	"error_type\x18\x02 \x01(\tR\terrorType:\x0f\x82\xb5\x18\vapp_crashed\"s\n" +
+	"error_type\x18\x02 \x01(\tR\terrorType:\x16\x82\xb5\x18\vapp_crashed\x92\xb5\x18\x03\x02\x03\x04\"s\n" +
 	"\x15FeatureUsedProperties\x12%\n" +
 	"\n" +
 	"feature_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\tfeatureId\x12!\n" +

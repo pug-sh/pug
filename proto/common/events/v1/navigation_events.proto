@@ -21,6 +21,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;c
 // supply them so they stay consistent across all event kinds.
 message PageViewProperties {
   option (common.events.v1.kind) = "page_view";
+  option (common.events.v1.platforms) = PLATFORM_WEB;
 }
 
 // Native mobile screen navigation. Use page_view for web pages.
@@ -29,6 +30,8 @@ message PageViewProperties {
 // auto-properties on every event. Only screen-specific fields belong here.
 message ScreenViewProperties {
   option (common.events.v1.kind) = "screen_view";
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
   string screen_name = 1 [(buf.validate.field).required = true];
   string screen_class = 2;
 }
@@ -39,6 +42,7 @@ message ScreenViewProperties {
 // session-replay tooling.
 message ClickProperties {
   option (common.events.v1.kind) = "click";
+  option (common.events.v1.platforms) = PLATFORM_WEB;
   string class = 1;
   string id = 2;
   string tag = 3;
@@ -52,6 +56,7 @@ message ClickProperties {
 // produced by that tooling, not a DOM-tree decomposition.
 message RageClickProperties {
   option (common.events.v1.kind) = "rage_click";
+  option (common.events.v1.platforms) = PLATFORM_WEB;
   int32 click_count = 1 [(buf.validate.field).int32.gte = 2];
   string element = 2;
   int32 x = 3;
@@ -62,6 +67,7 @@ message RageClickProperties {
 // element is an opaque selector from session-replay tooling.
 message DeadClickProperties {
   option (common.events.v1.kind) = "dead_click";
+  option (common.events.v1.platforms) = PLATFORM_WEB;
   string element = 1;
   string text = 2;
   int32 x = 3;
@@ -70,6 +76,9 @@ message DeadClickProperties {
 
 message ScrollProperties {
   option (common.events.v1.kind) = "scroll";
+  option (common.events.v1.platforms) = PLATFORM_WEB;
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
   int32 percent = 1 [(buf.validate.field).int32 = {
     gte: 0
     lte: 100
