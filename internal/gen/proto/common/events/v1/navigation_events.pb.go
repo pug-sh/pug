@@ -406,36 +406,35 @@ var File_common_events_v1_navigation_events_proto protoreflect.FileDescriptor
 
 const file_common_events_v1_navigation_events_proto_rawDesc = "" +
 	"\n" +
-	"(common/events/v1/navigation_events.proto\x12\x10common.events.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1ecommon/events/v1/options.proto\"#\n" +
-	"\x12PageViewProperties:\r\x82\xb5\x18\tpage_view\"s\n" +
+	"(common/events/v1/navigation_events.proto\x12\x10common.events.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1ecommon/events/v1/options.proto\"(\n" +
+	"\x12PageViewProperties:\x12\x82\xb5\x18\tpage_view\x92\xb5\x18\x01\x01\"y\n" +
 	"\x14ScreenViewProperties\x12'\n" +
 	"\vscreen_name\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"screenName\x12!\n" +
-	"\fscreen_class\x18\x02 \x01(\tR\vscreenClass:\x0f\x82\xb5\x18\vscreen_view\"\x84\x01\n" +
+	"\fscreen_class\x18\x02 \x01(\tR\vscreenClass:\x15\x82\xb5\x18\vscreen_view\x92\xb5\x18\x02\x02\x03\"\x89\x01\n" +
 	"\x0fClickProperties\x12\x14\n" +
 	"\x05class\x18\x01 \x01(\tR\x05class\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x10\n" +
 	"\x03tag\x18\x03 \x01(\tR\x03tag\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\x12\f\n" +
 	"\x01x\x18\x05 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x06 \x01(\x05R\x01y:\t\x82\xb5\x18\x05click\"\x85\x01\n" +
+	"\x01y\x18\x06 \x01(\x05R\x01y:\x0e\x82\xb5\x18\x05click\x92\xb5\x18\x01\x01\"\x8a\x01\n" +
 	"\x13RageClickProperties\x12(\n" +
 	"\vclick_count\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02(\x02R\n" +
 	"clickCount\x12\x18\n" +
 	"\aelement\x18\x02 \x01(\tR\aelement\x12\f\n" +
 	"\x01x\x18\x03 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x04 \x01(\x05R\x01y:\x0e\x82\xb5\x18\n" +
-	"rage_click\"o\n" +
+	"\x01y\x18\x04 \x01(\x05R\x01y:\x13\x82\xb5\x18\n" +
+	"rage_click\x92\xb5\x18\x01\x01\"t\n" +
 	"\x13DeadClickProperties\x12\x18\n" +
 	"\aelement\x18\x01 \x01(\tR\aelement\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12\f\n" +
 	"\x01x\x18\x03 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x04 \x01(\x05R\x01y:\x0e\x82\xb5\x18\n" +
-	"dead_click\"g\n" +
+	"\x01y\x18\x04 \x01(\x05R\x01y:\x13\x82\xb5\x18\n" +
+	"dead_click\x92\xb5\x18\x01\x01\"n\n" +
 	"\x10ScrollProperties\x12#\n" +
 	"\apercent\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\apercent\x12\"\n" +
-	"\bscroll_y\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\ascrollY:\n" +
-	"\x82\xb5\x18\x06scrollBJZHgithub.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1b\beditionsp\xe8\a"
+	"\bscroll_y\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\ascrollY:\x11\x82\xb5\x18\x06scroll\x92\xb5\x18\x03\x01\x02\x03BJZHgithub.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1b\beditionsp\xe8\a"
 
 var (
 	file_common_events_v1_navigation_events_proto_rawDescOnce sync.Once

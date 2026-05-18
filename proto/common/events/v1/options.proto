@@ -107,3 +107,49 @@ extend google.protobuf.MessageOptions {
 extend google.protobuf.FieldOptions {
   bool pii = 50001;
 }
+
+// Platform identifies the client/runtime an event is intended for.
+// Used by SDK codegen tooling to decide which language targets should
+// surface a given well-known event. Like `kind`, this is an SDK hint —
+// the server does not enforce it.
+//
+// Naming note: a separate `Platform` enum exists in
+// `shared/delivery/v1/delivery.proto` for push-notification transport
+// targets (ANDROID/IOS only). The two enums describe different concepts
+// (event source vs push transport) and intentionally coexist; in Go
+// they are `commoneventsv1.Platform` vs `deliveryv1.Platform`. Their
+// ordinal integers are independent — do not assume a value name shared
+// between them encodes to the same wire integer in both packages.
+enum Platform {
+  PLATFORM_UNSPECIFIED = 0;
+  PLATFORM_WEB = 1;        // Browser-based JavaScript SDKs.
+  PLATFORM_IOS = 2;        // Native iOS apps (Swift/Objective-C).
+  PLATFORM_ANDROID = 3;    // Native Android apps (Kotlin/Java).
+  PLATFORM_DESKTOP = 4;    // Native desktop apps (Electron, macOS, Windows).
+  PLATFORM_SERVER = 5;     // Server-side tracking from backend services.
+}
+
+// platforms restricts a well-known event to a set of client platforms.
+// Codegen tooling uses this to decide which language SDKs expose typed
+// helpers for the event. An empty/absent list means "all platforms"
+// (cross-platform event — the default for events without this option).
+//
+// Consumer contract:
+//   * Empty/nil slice → treat as "all platforms."
+//   * Non-empty slice → restrict to listed platforms.
+//   * PLATFORM_UNSPECIFIED MUST NOT appear. Treat as a hard error if it does.
+//   * The set is unordered; consumers MUST NOT depend on declaration order.
+//   * Cross-platform SDKs (Flutter, React Native, KMP) include any event
+//     whose platforms list intersects their target runtimes — e.g. a
+//     Flutter SDK includes events tagged with any of
+//     {WEB, IOS, ANDROID, DESKTOP}.
+//
+// Example:
+//   message ScreenViewProperties {
+//     option (common.events.v1.kind) = "screen_view";
+//     option (common.events.v1.platforms) = PLATFORM_IOS;
+//     option (common.events.v1.platforms) = PLATFORM_ANDROID;
+//   }
+extend google.protobuf.MessageOptions {
+  repeated Platform platforms = 50002;
+}
