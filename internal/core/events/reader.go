@@ -131,12 +131,22 @@ func NewReader(ch driver.Conn) *Reader {
 	return &Reader{ch: ch}
 }
 
-// getAliasIDs returns all alias IDs for a profile.
+// getAliasIDs returns the current alias IDs for a profile using latest-row
+// semantics over the append-only profile_aliases table.
 func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) ([]string, error) {
 	sql, args, err := chq.NewQuery().
+		With("latest_profile_aliases", chq.NewQuery().
+			Select(
+				"alias_id",
+				"argMax(profile_id, insert_time) AS profile_id",
+			).
+			From("profile_aliases").
+			Where(chq.Eq("project_id", projectID)).
+			GroupBy("alias_id"),
+		).
 		Select("alias_id").
-		From("profile_aliases").
-		Where(chq.Eq("project_id", projectID), chq.Eq("profile_id", profileID)).
+		From("latest_profile_aliases").
+		Where(chq.Eq("profile_id", profileID)).
 		Build()
 	if err != nil {
 		slog.ErrorContext(ctx, "getAliasIDs: build query failed", slogx.Error(err),
@@ -180,7 +190,171 @@ func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) (
 	return ids, nil
 }
 
-// resolveProfileIDs returns the primary distinct ID plus any alias IDs for a profile.
+// getSingleString runs a query that may return zero or one string result.
+func (r *Reader) getSingleString(
+	ctx context.Context,
+	logPrefix string,
+	sql string,
+	args []any,
+	projectID string,
+	identifier string,
+) (string, bool, error) {
+	rows, err := r.ch.Query(ctx, sql, args...)
+	if err != nil {
+		slog.ErrorContext(ctx, logPrefix+": clickhouse query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("distinct_id", identifier))
+		telemetry.RecordError(ctx, err)
+		return "", false, fmt.Errorf("%s: query failed for project %s distinct %s: %w", logPrefix, projectID, identifier, err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "failed to close ClickHouse rows", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+		}
+	}()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			slog.ErrorContext(ctx, logPrefix+": row iteration failed", slogx.Error(err),
+				slog.String("project_id", projectID), slog.String("distinct_id", identifier))
+			telemetry.RecordError(ctx, err)
+			return "", false, fmt.Errorf("%s: row iteration failed for project %s distinct %s: %w", logPrefix, projectID, identifier, err)
+		}
+		return "", false, nil
+	}
+
+	var value string
+	if err := rows.Scan(&value); err != nil {
+		slog.ErrorContext(ctx, logPrefix+": scan failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("distinct_id", identifier))
+		telemetry.RecordError(ctx, err)
+		return "", false, fmt.Errorf("%s: scan failed for project %s distinct %s: %w", logPrefix, projectID, identifier, err)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, logPrefix+": row iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("distinct_id", identifier))
+		telemetry.RecordError(ctx, err)
+		return "", false, fmt.Errorf("%s: row iteration failed for project %s distinct %s: %w", logPrefix, projectID, identifier, err)
+	}
+
+	return value, true, nil
+}
+
+func latestProfilesQuery(projectID string) *chq.Query {
+	return chq.NewQuery().
+		Select(
+			"id",
+			"argMax(external_id, insert_time) AS external_id",
+		).
+		From("profiles").
+		Where(chq.Eq("project_id", projectID)).
+		GroupBy("id")
+}
+
+// getProfileIDForIdentifier resolves a user-facing identifier to the canonical
+// profile ID. The input may already be a profile ID, an alias ID, or a current
+// external ID. If it cannot be resolved, it returns the input unchanged so
+// direct distinct-id event queries continue to work for unmerged users.
+func (r *Reader) getProfileIDForIdentifier(ctx context.Context, projectID, distinctID string) (string, error) {
+	latestProfiles := latestProfilesQuery(projectID)
+
+	sql, args, err := chq.NewQuery().
+		With("latest_profiles", latestProfiles).
+		Select("id AS profile_id").
+		From("latest_profiles").
+		Where(chq.Eq("id", distinctID)).
+		Limit(1).
+		Build()
+	if err != nil {
+		slog.ErrorContext(ctx, "getProfileIDForIdentifier: build direct profile query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("distinct_id", distinctID))
+		telemetry.RecordError(ctx, err)
+		return "", fmt.Errorf("getProfileIDForIdentifier: build direct profile query for project %s distinct %s: %w", projectID, distinctID, err)
+	}
+	if profileID, ok, err := r.getSingleString(ctx, "getProfileIDForIdentifier", sql, args, projectID, distinctID); err != nil {
+		return "", err
+	} else if ok {
+		return profileID, nil
+	}
+
+	sql, args, err = chq.NewQuery().
+		With("latest_profile_aliases", chq.NewQuery().
+			Select(
+				"alias_id",
+				"argMax(profile_id, insert_time) AS profile_id",
+			).
+			From("profile_aliases").
+			Where(chq.Eq("project_id", projectID)).
+			GroupBy("alias_id"),
+		).
+		Select("profile_id").
+		From("latest_profile_aliases").
+		Where(chq.Eq("alias_id", distinctID)).
+		Limit(1).
+		Build()
+	if err != nil {
+		slog.ErrorContext(ctx, "getProfileIDForIdentifier: build alias query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("distinct_id", distinctID))
+		telemetry.RecordError(ctx, err)
+		return "", fmt.Errorf("getProfileIDForIdentifier: build alias query for project %s distinct %s: %w", projectID, distinctID, err)
+	}
+	if profileID, ok, err := r.getSingleString(ctx, "getProfileIDForIdentifier", sql, args, projectID, distinctID); err != nil {
+		return "", err
+	} else if ok {
+		return profileID, nil
+	}
+
+	sql, args, err = chq.NewQuery().
+		With("latest_profiles", latestProfiles).
+		Select("id AS profile_id").
+		From("latest_profiles").
+		Where(chq.Eq("external_id", distinctID)).
+		Limit(1).
+		Build()
+	if err != nil {
+		slog.ErrorContext(ctx, "getProfileIDForIdentifier: build external-id query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("distinct_id", distinctID))
+		telemetry.RecordError(ctx, err)
+		return "", fmt.Errorf("getProfileIDForIdentifier: build external-id query for project %s distinct %s: %w", projectID, distinctID, err)
+	}
+	if profileID, ok, err := r.getSingleString(ctx, "getProfileIDForIdentifier", sql, args, projectID, distinctID); err != nil {
+		return "", err
+	} else if ok {
+		return profileID, nil
+	}
+	return distinctID, nil
+}
+
+// getExternalIDForProfile returns the current external ID for a profile. Empty
+// string means the profile has no current external ID.
+func (r *Reader) getExternalIDForProfile(ctx context.Context, projectID, profileID string) (string, error) {
+	sql, args, err := chq.NewQuery().
+		With("latest_profiles", latestProfilesQuery(projectID)).
+		Select("external_id").
+		From("latest_profiles").
+		Where(chq.Eq("id", profileID)).
+		Limit(1).
+		Build()
+	if err != nil {
+		slog.ErrorContext(ctx, "getExternalIDForProfile: build query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("profile_id", profileID))
+		telemetry.RecordError(ctx, err)
+		return "", fmt.Errorf("getExternalIDForProfile: build query for project %s profile %s: %w", projectID, profileID, err)
+	}
+
+	externalID, ok, err := r.getSingleString(ctx, "getExternalIDForProfile", sql, args, projectID, profileID)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", nil
+	}
+	return externalID, nil
+}
+
+// resolveProfileIDs returns the canonical profile ID, current external ID, and
+// any current alias IDs for a profile.
 // Both projectID and distinctID must be non-empty. At the RPC boundary these are
 // guaranteed by MustGetPrincipalWithProject and proto validation (required = true).
 func (r *Reader) resolveProfileIDs(ctx context.Context, projectID, distinctID string) ([]string, error) {
@@ -197,11 +371,38 @@ func (r *Reader) resolveProfileIDs(ctx context.Context, projectID, distinctID st
 		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
-	aliasIDs, err := r.getAliasIDs(ctx, projectID, distinctID)
+	profileID, err := r.getProfileIDForIdentifier(ctx, projectID, distinctID)
 	if err != nil {
 		return nil, err
 	}
-	return append([]string{distinctID}, aliasIDs...), nil
+	externalID, err := r.getExternalIDForProfile(ctx, projectID, profileID)
+	if err != nil {
+		return nil, err
+	}
+	aliasIDs, err := r.getAliasIDs(ctx, projectID, profileID)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]string, 0, 2+len(aliasIDs))
+	seen := make(map[string]struct{}, 2+len(aliasIDs))
+	addID := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	addID(profileID)
+	addID(externalID)
+	for _, aliasID := range aliasIDs {
+		addID(aliasID)
+	}
+	return ids, nil
 }
 
 const DefaultPageSize int32 = 100
