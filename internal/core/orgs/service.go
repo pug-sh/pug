@@ -222,15 +222,6 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 		return dbwrite.OrgInvitation{}, err
 	}
 
-	if _, err := w.InvalidateActiveEmailActionTokensByEmail(ctx, dbwrite.InvalidateActiveEmailActionTokensByEmailParams{
-		Email:   email,
-		Purpose: orgInvitePurpose,
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to invalidate prior org invite email tokens", slogx.Error(err), slog.String("org_id", orgID), slog.String("email", email))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.OrgInvitation{}, err
-	}
-
 	if _, err := w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
 		ID:              xid.New().String(),
 		CustomerID:      postgres.NewOptionalText(""),

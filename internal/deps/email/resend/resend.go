@@ -2,7 +2,9 @@ package resend
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	resendsdk "github.com/resend/resend-go/v3"
@@ -23,7 +25,7 @@ func New(cfg Config) (*Provider, error) {
 	}
 	return &Provider{
 		apiKey: cfg.APIKey,
-		client: resendsdk.NewClient(cfg.APIKey),
+		client: newClient(newObservedHTTPClient(nil), cfg.APIKey),
 	}, nil
 }
 
@@ -40,12 +42,62 @@ func (p *Provider) Send(ctx context.Context, msg coreemail.Message) error {
 	}
 
 	options := &resendsdk.SendEmailOptions{IdempotencyKey: msg.IdempotencyKey}
+	status := &responseStatus{}
+	ctx = context.WithValue(ctx, responseStatusContextKey{}, status)
 	sent, err := p.client.Emails.SendWithOptions(ctx, params, options)
 	if err != nil {
-		return fmt.Errorf("resend send email: %w", err)
+		wrappedErr := fmt.Errorf("resend send email: %w", err)
+		if shouldTreatAsPermanent(status.code, err) {
+			return coreemail.NewPermanentError(wrappedErr)
+		}
+		return wrappedErr
 	}
 	if sent == nil || sent.Id == "" {
 		return coreemail.NewPermanentError(fmt.Errorf("resend send email: empty response"))
 	}
 	return nil
+}
+
+type responseStatusContextKey struct{}
+
+type responseStatus struct {
+	code int
+}
+
+type observingTransport struct {
+	base http.RoundTripper
+}
+
+func newObservedHTTPClient(base *http.Client) *http.Client {
+	if base == nil {
+		base = http.DefaultClient
+	}
+	clone := *base
+	transport := clone.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	clone.Transport = observingTransport{base: transport}
+	return &clone
+}
+
+func newClient(httpClient *http.Client, apiKey string) *resendsdk.Client {
+	return resendsdk.NewCustomClient(httpClient, apiKey)
+}
+
+func (t observingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if capture, ok := req.Context().Value(responseStatusContextKey{}).(*responseStatus); ok && resp != nil {
+		capture.code = resp.StatusCode
+	}
+	return resp, err
+}
+
+func shouldTreatAsPermanent(statusCode int, err error) bool {
+	if statusCode >= 400 && statusCode < 500 && statusCode != http.StatusTooManyRequests {
+		return true
+	}
+
+	var missingFieldsErr *resendsdk.MissingRequiredFieldsError
+	return errors.As(err, &missingFieldsErr)
 }

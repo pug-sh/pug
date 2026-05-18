@@ -93,6 +93,78 @@ func TestInviteMemberPublishesEmailJob(t *testing.T) {
 	}
 }
 
+func TestInviteMemberPreservesOtherOrgInviteTokens(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	pub := &stubPublisher{}
+	svc := orgs.NewService(db.PgRO, db.PgW, pub)
+	ctx := context.Background()
+
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           "cust-inviter-2",
+		Email:        "inviter2@example.com",
+		DisplayName:  "Inviter",
+		PasswordHash: "hash",
+		PictureUri:   "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	orgA, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID:          "org-a",
+		DisplayName: "Org A",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrg orgA: %v", err)
+	}
+	orgB, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID:          "org-b",
+		DisplayName: "Org B",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrg orgB: %v", err)
+	}
+	for _, orgID := range []string{orgA.ID, orgB.ID} {
+		if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+			OrgID:      orgID,
+			CustomerID: customer.ID,
+			Role:       "ORG_ROLE_ADMIN",
+		}); err != nil {
+			t.Fatalf("CreateOrgMember %s: %v", orgID, err)
+		}
+	}
+
+	firstInv, err := svc.InviteMember(ctx, orgA.ID, customer.ID, "invitee@example.com")
+	if err != nil {
+		t.Fatalf("first InviteMember: %v", err)
+	}
+	secondInv, err := svc.InviteMember(ctx, orgB.ID, customer.ID, "invitee@example.com")
+	if err != nil {
+		t.Fatalf("second InviteMember: %v", err)
+	}
+
+	for name, token := range map[string]string{
+		"first":  firstInv.Token,
+		"second": secondInv.Token,
+	} {
+		emailToken, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+			TokenHash: hashToken(token),
+			Purpose:   "org_invite",
+		})
+		if err != nil {
+			t.Fatalf("%s GetValidEmailActionTokenByHashAndPurpose: %v", name, err)
+		}
+		if !emailToken.OrgInvitationID.Valid {
+			t.Fatalf("%s token missing org invitation id", name)
+		}
+	}
+}
+
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
