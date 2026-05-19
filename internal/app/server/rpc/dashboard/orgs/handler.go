@@ -80,18 +80,21 @@ func (s *server) List(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	orgs, err := s.service.GetOrgsByCustomerID(ctx, principal.Customer.ID)
+	rows, err := s.service.GetOrgsWithRole(ctx, principal.Customer.ID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list orgs", slogx.Error(err), slog.String("customer_id", principal.Customer.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	result := make([]*orgsv1.Org, 0, len(orgs))
-	for _, o := range orgs {
-		result = append(result, toRPCOrg(o))
+	result := make([]*orgsv1.Org, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, &orgsv1.Org{
+			DisplayName: proto.String(r.DisplayName),
+			Id:          proto.String(r.ID),
+			Role:        toRPCRole(ctx, r.Role).Enum(),
+		})
 	}
-
 	return connect.NewResponse(&orgsv1.ListResponse{Orgs: result}), nil
 }
 
@@ -103,11 +106,12 @@ func (s *server) Get(
 		return nil, err
 	}
 
-	if _, err := s.requireOrgMember(ctx, req.Msg.GetOrgId()); err != nil {
-		return nil, err
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	org, err := s.service.GetOrgByID(ctx, req.Msg.GetOrgId())
+	row, err := s.service.GetOrgWithRole(ctx, req.Msg.GetOrgId(), principal.Customer.ID)
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrOrgNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("org not found"))
@@ -117,7 +121,7 @@ func (s *server) Get(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&orgsv1.GetResponse{Org: toRPCOrg(org)}), nil
+	return connect.NewResponse(&orgsv1.GetResponse{Org: toRPCOrgWithRole(ctx, row)}), nil
 }
 
 func (s *server) UpdateDisplayName(
@@ -142,7 +146,7 @@ func (s *server) UpdateDisplayName(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&orgsv1.UpdateDisplayNameResponse{Org: toRPCOrgFromWrite(org)}), nil
+	return connect.NewResponse(&orgsv1.UpdateDisplayNameResponse{Org: toRPCOrgFromWrite(ctx, org, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())}), nil
 }
 
 func (s *server) ListMembers(
@@ -270,7 +274,7 @@ func (s *server) AcceptInvite(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&orgsv1.AcceptInviteResponse{Org: toRPCOrg(org)}), nil
+	return connect.NewResponse(&orgsv1.AcceptInviteResponse{Org: toRPCOrg(ctx, org, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())}), nil
 }
 
 func (s *server) ListInvitations(

@@ -11,19 +11,30 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
-// toRPCOrg and toRPCOrgFromWrite must be kept in sync — they convert
-// the read and write models to the same proto message.
-func toRPCOrg(o dbread.Org) *orgsv1.Org {
+// toRPCOrg converts a dbread.Org plus the caller's role to the proto Org.
+func toRPCOrg(ctx context.Context, o dbread.Org, role string) *orgsv1.Org {
 	return &orgsv1.Org{
 		DisplayName: proto.String(o.DisplayName),
 		Id:          proto.String(o.ID),
+		Role:        toRPCRole(ctx, role).Enum(),
 	}
 }
 
-func toRPCOrgFromWrite(o dbwrite.Org) *orgsv1.Org {
+func toRPCOrgFromWrite(ctx context.Context, o dbwrite.Org, role string) *orgsv1.Org {
 	return &orgsv1.Org{
 		DisplayName: proto.String(o.DisplayName),
 		Id:          proto.String(o.ID),
+		Role:        toRPCRole(ctx, role).Enum(),
+	}
+}
+
+// toRPCOrgWithRole converts the joined read-row (which already carries the
+// caller's role) into the proto Org.
+func toRPCOrgWithRole(ctx context.Context, row dbread.GetOrgWithRoleByIDAndCustomerIDRow) *orgsv1.Org {
+	return &orgsv1.Org{
+		DisplayName: proto.String(row.DisplayName),
+		Id:          proto.String(row.ID),
+		Role:        toRPCRole(ctx, row.Role).Enum(),
 	}
 }
 

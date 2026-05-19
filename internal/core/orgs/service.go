@@ -593,6 +593,28 @@ func (s *Service) UpdateMemberRole(
 	return updated, nil
 }
 
+// GetOrgsWithRole returns the customer's orgs with the caller's role per org.
+func (s *Service) GetOrgsWithRole(ctx context.Context, customerID string) ([]dbread.GetOrgsWithRoleByCustomerIDRow, error) {
+	return s.read.GetOrgsWithRoleByCustomerID(ctx, customerID)
+}
+
+// GetOrgWithRole returns a single org plus the caller's role. Returns
+// ErrOrgNotFound when there is no org-and-membership for the (org_id, customer_id)
+// pair — does not distinguish "no such org" from "not a member".
+func (s *Service) GetOrgWithRole(ctx context.Context, orgID, customerID string) (dbread.GetOrgWithRoleByIDAndCustomerIDRow, error) {
+	row, err := s.read.GetOrgWithRoleByIDAndCustomerID(ctx, dbread.GetOrgWithRoleByIDAndCustomerIDParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbread.GetOrgWithRoleByIDAndCustomerIDRow{}, ErrOrgNotFound
+		}
+		return dbread.GetOrgWithRoleByIDAndCustomerIDRow{}, err
+	}
+	return row, nil
+}
+
 func hashInviteToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
