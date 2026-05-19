@@ -80,6 +80,41 @@ func (q *Queries) DeleteOrgMemberIfNotLastAdmin(ctx context.Context, arg DeleteO
 	return result.RowsAffected(), nil
 }
 
+const deleteOrgMemberIfNotLastAdminAndNotLastMember = `-- name: DeleteOrgMemberIfNotLastAdminAndNotLastMember :execrows
+with target as (
+  select role from org_members
+  where org_id = $1 and customer_id = $2
+),
+admin_count as (
+  select count(*) as cnt from org_members
+  where org_id = $1 and role = 'ORG_ROLE_ADMIN'
+),
+member_count as (
+  select count(*) as cnt from org_members
+  where org_id = $1
+)
+delete from org_members om
+where om.org_id = $1 and om.customer_id = $2
+  and (select cnt from member_count) > 1
+  and (
+    (select role from target) != 'ORG_ROLE_ADMIN'
+    or (select cnt from admin_count) > 1
+  )
+`
+
+type DeleteOrgMemberIfNotLastAdminAndNotLastMemberParams struct {
+	OrgID      string
+	CustomerID string
+}
+
+func (q *Queries) DeleteOrgMemberIfNotLastAdminAndNotLastMember(ctx context.Context, arg DeleteOrgMemberIfNotLastAdminAndNotLastMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOrgMemberIfNotLastAdminAndNotLastMember, arg.OrgID, arg.CustomerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getOrgMemberRole = `-- name: GetOrgMemberRole :one
 select role from org_members where org_id = $1 and customer_id = $2
 `
@@ -94,4 +129,29 @@ func (q *Queries) GetOrgMemberRole(ctx context.Context, arg GetOrgMemberRolePara
 	var role string
 	err := row.Scan(&role)
 	return role, err
+}
+
+const updateOrgMemberRole = `-- name: UpdateOrgMemberRole :one
+update org_members
+set role = $1
+where org_id = $2 and customer_id = $3
+returning create_time, customer_id, org_id, role
+`
+
+type UpdateOrgMemberRoleParams struct {
+	Role       string
+	OrgID      string
+	CustomerID string
+}
+
+func (q *Queries) UpdateOrgMemberRole(ctx context.Context, arg UpdateOrgMemberRoleParams) (OrgMember, error) {
+	row := q.db.QueryRow(ctx, updateOrgMemberRole, arg.Role, arg.OrgID, arg.CustomerID)
+	var i OrgMember
+	err := row.Scan(
+		&i.CreateTime,
+		&i.CustomerID,
+		&i.OrgID,
+		&i.Role,
+	)
+	return i, err
 }
