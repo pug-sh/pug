@@ -32,22 +32,24 @@ type Customer struct {
 }
 
 type Dashboard struct {
-	CreateTime  pgtype.Timestamptz
-	Description string
-	DisplayName string
 	ID          string
 	ProjectID   string
+	DisplayName string
+	Description string
+	CreateTime  pgtype.Timestamptz
 	UpdateTime  pgtype.Timestamptz
 }
 
-type DashboardInsight struct {
-	CreateTime   pgtype.Timestamptz
-	DashboardID  string
-	Description  string
-	DisplayName  string
+type DashboardTile struct {
 	ID           string
+	DashboardID  string
+	Kind         int16
+	DisplayName  string
+	Description  string
 	InsightQuery map[string]any
+	MarkdownBody pgtype.Text
 	Layouts      map[string]any
+	CreateTime   pgtype.Timestamptz
 	UpdateTime   pgtype.Timestamptz
 }
 

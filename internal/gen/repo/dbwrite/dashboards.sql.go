@@ -7,12 +7,14 @@ package dbwrite
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createDashboard = `-- name: CreateDashboard :one
 insert into dashboards (description, display_name, id, project_id)
 values ($1, $2, $3, $4)
-returning create_time, description, display_name, id, project_id, update_time
+returning id, project_id, display_name, description, create_time, update_time
 `
 
 type CreateDashboardParams struct {
@@ -31,53 +33,59 @@ func (q *Queries) CreateDashboard(ctx context.Context, arg CreateDashboardParams
 	)
 	var i Dashboard
 	err := row.Scan(
-		&i.CreateTime,
-		&i.Description,
-		&i.DisplayName,
 		&i.ID,
 		&i.ProjectID,
+		&i.DisplayName,
+		&i.Description,
+		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
-const createDashboardInsight = `-- name: CreateDashboardInsight :one
-insert into dashboard_insights (dashboard_id, description, display_name, id, insight_query, layouts)
-select d.id, $1, $2, $3, $4, $5
+const createDashboardTile = `-- name: CreateDashboardTile :one
+insert into dashboard_tiles (id, dashboard_id, kind, display_name, description, insight_query, markdown_body, layouts)
+select $1, d.id, $2, $3, $4, $5, $6, $7
 from dashboards d
-where d.id = $6 and d.project_id = $7
-returning create_time, dashboard_id, description, display_name, id, insight_query, layouts, update_time
+where d.id = $8 and d.project_id = $9
+returning id, dashboard_id, kind, display_name, description, insight_query, markdown_body, layouts, create_time, update_time
 `
 
-type CreateDashboardInsightParams struct {
-	Description  string
-	DisplayName  string
+type CreateDashboardTileParams struct {
 	ID           string
+	Kind         int16
+	DisplayName  string
+	Description  string
 	InsightQuery map[string]any
+	MarkdownBody pgtype.Text
 	Layouts      map[string]any
 	DashboardID  string
 	ProjectID    string
 }
 
-func (q *Queries) CreateDashboardInsight(ctx context.Context, arg CreateDashboardInsightParams) (DashboardInsight, error) {
-	row := q.db.QueryRow(ctx, createDashboardInsight,
-		arg.Description,
-		arg.DisplayName,
+func (q *Queries) CreateDashboardTile(ctx context.Context, arg CreateDashboardTileParams) (DashboardTile, error) {
+	row := q.db.QueryRow(ctx, createDashboardTile,
 		arg.ID,
+		arg.Kind,
+		arg.DisplayName,
+		arg.Description,
 		arg.InsightQuery,
+		arg.MarkdownBody,
 		arg.Layouts,
 		arg.DashboardID,
 		arg.ProjectID,
 	)
-	var i DashboardInsight
+	var i DashboardTile
 	err := row.Scan(
-		&i.CreateTime,
-		&i.DashboardID,
-		&i.Description,
-		&i.DisplayName,
 		&i.ID,
+		&i.DashboardID,
+		&i.Kind,
+		&i.DisplayName,
+		&i.Description,
 		&i.InsightQuery,
+		&i.MarkdownBody,
 		&i.Layouts,
+		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err
@@ -86,7 +94,7 @@ func (q *Queries) CreateDashboardInsight(ctx context.Context, arg CreateDashboar
 const deleteDashboard = `-- name: DeleteDashboard :one
 delete from dashboards
 where id = $1 and project_id = $2
-returning create_time, description, display_name, id, project_id, update_time
+returning id, project_id, display_name, description, create_time, update_time
 `
 
 type DeleteDashboardParams struct {
@@ -98,43 +106,45 @@ func (q *Queries) DeleteDashboard(ctx context.Context, arg DeleteDashboardParams
 	row := q.db.QueryRow(ctx, deleteDashboard, arg.ID, arg.ProjectID)
 	var i Dashboard
 	err := row.Scan(
-		&i.CreateTime,
-		&i.Description,
-		&i.DisplayName,
 		&i.ID,
 		&i.ProjectID,
+		&i.DisplayName,
+		&i.Description,
+		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
-const deleteDashboardInsight = `-- name: DeleteDashboardInsight :one
-delete from dashboard_insights di
+const deleteDashboardTile = `-- name: DeleteDashboardTile :one
+delete from dashboard_tiles dt
 using dashboards d
-where di.id = $1
-  and di.dashboard_id = $2
-  and d.id = di.dashboard_id
+where dt.id = $1
+  and dt.dashboard_id = $2
+  and d.id = dt.dashboard_id
   and d.project_id = $3
-returning di.create_time, di.dashboard_id, di.description, di.display_name, di.id, di.insight_query, di.layouts, di.update_time
+returning dt.id, dt.dashboard_id, dt.kind, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
 `
 
-type DeleteDashboardInsightParams struct {
+type DeleteDashboardTileParams struct {
 	ID          string
 	DashboardID string
 	ProjectID   string
 }
 
-func (q *Queries) DeleteDashboardInsight(ctx context.Context, arg DeleteDashboardInsightParams) (DashboardInsight, error) {
-	row := q.db.QueryRow(ctx, deleteDashboardInsight, arg.ID, arg.DashboardID, arg.ProjectID)
-	var i DashboardInsight
+func (q *Queries) DeleteDashboardTile(ctx context.Context, arg DeleteDashboardTileParams) (DashboardTile, error) {
+	row := q.db.QueryRow(ctx, deleteDashboardTile, arg.ID, arg.DashboardID, arg.ProjectID)
+	var i DashboardTile
 	err := row.Scan(
-		&i.CreateTime,
-		&i.DashboardID,
-		&i.Description,
-		&i.DisplayName,
 		&i.ID,
+		&i.DashboardID,
+		&i.Kind,
+		&i.DisplayName,
+		&i.Description,
 		&i.InsightQuery,
+		&i.MarkdownBody,
 		&i.Layouts,
+		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err
@@ -143,14 +153,14 @@ func (q *Queries) DeleteDashboardInsight(ctx context.Context, arg DeleteDashboar
 const updateDashboardDisplayName = `-- name: UpdateDashboardDisplayName :one
 update dashboards
 set display_name = $1,
-    description = $2
+    description  = coalesce(nullif($2, ''), description)
 where id = $3 and project_id = $4
-returning create_time, description, display_name, id, project_id, update_time
+returning id, project_id, display_name, description, create_time, update_time
 `
 
 type UpdateDashboardDisplayNameParams struct {
 	DisplayName string
-	Description string
+	Description interface{}
 	ID          string
 	ProjectID   string
 }
@@ -164,60 +174,68 @@ func (q *Queries) UpdateDashboardDisplayName(ctx context.Context, arg UpdateDash
 	)
 	var i Dashboard
 	err := row.Scan(
-		&i.CreateTime,
-		&i.Description,
-		&i.DisplayName,
 		&i.ID,
 		&i.ProjectID,
+		&i.DisplayName,
+		&i.Description,
+		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
-const updateDashboardInsight = `-- name: UpdateDashboardInsight :one
-update dashboard_insights di
+const updateDashboardTile = `-- name: UpdateDashboardTile :one
+update dashboard_tiles dt
 set
-  description = $1,
-  display_name = $2,
-  insight_query = $3,
-  layouts = $4
+  display_name  = coalesce(nullif($1, ''), dt.display_name),
+  description   = coalesce(nullif($2, ''), dt.description),
+  kind          = $3,
+  insight_query = $4,
+  markdown_body = $5,
+  layouts       = $6
 from dashboards d
-where di.id = $5
-  and di.dashboard_id = $6
-  and d.id = di.dashboard_id
-  and d.project_id = $7
-returning di.create_time, di.dashboard_id, di.description, di.display_name, di.id, di.insight_query, di.layouts, di.update_time
+where dt.id = $7
+  and dt.dashboard_id = $8
+  and d.id = dt.dashboard_id
+  and d.project_id = $9
+returning dt.id, dt.dashboard_id, dt.kind, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
 `
 
-type UpdateDashboardInsightParams struct {
-	Description  string
-	DisplayName  string
+type UpdateDashboardTileParams struct {
+	DisplayName  interface{}
+	Description  interface{}
+	Kind         int16
 	InsightQuery map[string]any
+	MarkdownBody pgtype.Text
 	Layouts      map[string]any
 	ID           string
 	DashboardID  string
 	ProjectID    string
 }
 
-func (q *Queries) UpdateDashboardInsight(ctx context.Context, arg UpdateDashboardInsightParams) (DashboardInsight, error) {
-	row := q.db.QueryRow(ctx, updateDashboardInsight,
-		arg.Description,
+func (q *Queries) UpdateDashboardTile(ctx context.Context, arg UpdateDashboardTileParams) (DashboardTile, error) {
+	row := q.db.QueryRow(ctx, updateDashboardTile,
 		arg.DisplayName,
+		arg.Description,
+		arg.Kind,
 		arg.InsightQuery,
+		arg.MarkdownBody,
 		arg.Layouts,
 		arg.ID,
 		arg.DashboardID,
 		arg.ProjectID,
 	)
-	var i DashboardInsight
+	var i DashboardTile
 	err := row.Scan(
-		&i.CreateTime,
-		&i.DashboardID,
-		&i.Description,
-		&i.DisplayName,
 		&i.ID,
+		&i.DashboardID,
+		&i.Kind,
+		&i.DisplayName,
+		&i.Description,
 		&i.InsightQuery,
+		&i.MarkdownBody,
 		&i.Layouts,
+		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err

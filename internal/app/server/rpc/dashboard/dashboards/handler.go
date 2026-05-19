@@ -24,6 +24,18 @@ func NewServer(service *coreprojects.Service) *Server {
 	return &Server{service: service}
 }
 
+// serviceErrToConnect maps a non-sentinel service error to a connect error.
+// Context cancellation / deadline arriving mid-request surface as wrapped
+// pgx errors here, so the catch-all branch checks errors.Is before falling
+// back to CodeInternal. Service layer has already logged + recorded the
+// non-context error path; we don't duplicate.
+func serviceErrToConnect(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return rpc.ConnectCtxErr(err)
+	}
+	return connect.NewError(connect.CodeInternal, errors.New("internal error"))
+}
+
 func (s *Server) Create(
 	ctx context.Context,
 	req *connect.Request[dashboardsv1.DashboardsServiceCreateRequest],
@@ -31,7 +43,6 @@ func (s *Server) Create(
 	if err := ctx.Err(); err != nil {
 		return nil, rpc.ConnectCtxErr(err)
 	}
-
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -39,13 +50,11 @@ func (s *Server) Create(
 
 	dashboard, err := s.service.CreateDashboard(ctx, principal.Project.ID, req.Msg.GetDisplayName(), req.Msg.GetDescription())
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to create dashboard", slogx.Error(err), slog.String("project_id", principal.Project.ID))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return nil, serviceErrToConnect(err)
 	}
 
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceCreateResponse{
-		Dashboard: wDashboardToRPC(dashboard, nil),
+		Dashboard: wDashboardToRPC(dashboard),
 	}), nil
 }
 
@@ -56,7 +65,6 @@ func (s *Server) List(
 	if err := ctx.Err(); err != nil {
 		return nil, rpc.ConnectCtxErr(err)
 	}
-
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -64,9 +72,7 @@ func (s *Server) List(
 
 	dashboards, err := s.service.ListDashboards(ctx, principal.Project.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to list dashboards", slogx.Error(err), slog.String("project_id", principal.Project.ID))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return nil, serviceErrToConnect(err)
 	}
 
 	result := make([]*dashboardsv1.Dashboard, 0, len(dashboards))
@@ -90,7 +96,6 @@ func (s *Server) Get(
 	if err := ctx.Err(); err != nil {
 		return nil, rpc.ConnectCtxErr(err)
 	}
-
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -101,9 +106,7 @@ func (s *Server) Get(
 		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard not found"))
 		}
-		slog.ErrorContext(ctx, "failed to get dashboard", slogx.Error(err), slog.String("project_id", principal.Project.ID), slog.String("dashboard_id", req.Msg.GetId()))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return nil, serviceErrToConnect(err)
 	}
 
 	msg, err := roDashboardToRPC(dashboard)
@@ -123,7 +126,6 @@ func (s *Server) UpdateDisplayName(
 	if err := ctx.Err(); err != nil {
 		return nil, rpc.ConnectCtxErr(err)
 	}
-
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -134,14 +136,17 @@ func (s *Server) UpdateDisplayName(
 		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard not found"))
 		}
-		slog.ErrorContext(ctx, "failed to update dashboard display name", slogx.Error(err), slog.String("project_id", principal.Project.ID), slog.String("dashboard_id", req.Msg.GetId()))
+		return nil, serviceErrToConnect(err)
+	}
+
+	msg, err := roDashboardToRPC(dashboard)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to encode dashboard", slogx.Error(err), slog.String("dashboard_id", dashboard.Dashboard.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&dashboardsv1.DashboardsServiceUpdateDisplayNameResponse{
-		Dashboard: wDashboardToRPC(dashboard, nil),
-	}), nil
+	return connect.NewResponse(&dashboardsv1.DashboardsServiceUpdateDisplayNameResponse{Dashboard: msg}), nil
 }
 
 func (s *Server) Delete(
@@ -151,7 +156,6 @@ func (s *Server) Delete(
 	if err := ctx.Err(); err != nil {
 		return nil, rpc.ConnectCtxErr(err)
 	}
-
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
@@ -161,101 +165,135 @@ func (s *Server) Delete(
 		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard not found"))
 		}
-		slog.ErrorContext(ctx, "failed to delete dashboard", slogx.Error(err), slog.String("project_id", principal.Project.ID), slog.String("dashboard_id", req.Msg.GetId()))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return nil, serviceErrToConnect(err)
 	}
 
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceDeleteResponse{}), nil
 }
 
-func (s *Server) CreateInsight(
+func (s *Server) CreateTile(
 	ctx context.Context,
-	req *connect.Request[dashboardsv1.DashboardsServiceCreateInsightRequest],
-) (*connect.Response[dashboardsv1.DashboardsServiceCreateInsightResponse], error) {
+	req *connect.Request[dashboardsv1.DashboardsServiceCreateTileRequest],
+) (*connect.Response[dashboardsv1.DashboardsServiceCreateTileResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, rpc.ConnectCtxErr(err)
 	}
-
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	insight, err := s.service.CreateDashboardInsight(ctx, principal.Project.ID, req.Msg.GetDashboardId(), req.Msg.GetDisplayName(), req.Msg.GetDescription(), req.Msg.GetQuery(), req.Msg.GetLayouts())
+	content, err := tileContentFromCreateRPC(req.Msg.GetContent())
 	if err != nil {
-		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
+		slog.WarnContext(ctx, "invalid tile content", slogx.Error(err), slog.String("dashboard_id", req.Msg.GetDashboardId()))
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("tile content required"))
+	}
+
+	tile, err := s.service.CreateDashboardTile(
+		ctx,
+		principal.Project.ID,
+		req.Msg.GetDashboardId(),
+		req.Msg.GetDisplayName(),
+		req.Msg.GetDescription(),
+		content,
+		req.Msg.GetLayouts(),
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, coreprojects.ErrDashboardNotFound):
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard not found"))
+		case errors.Is(err, coreprojects.ErrDashboardTileDisplayNameConflict):
+			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("tile display name already in use"))
 		}
-		slog.ErrorContext(ctx, "failed to create dashboard insight", slogx.Error(err), slog.String("project_id", principal.Project.ID), slog.String("dashboard_id", req.Msg.GetDashboardId()))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		// Service already logged + recorded; do not duplicate.
+		return nil, serviceErrToConnect(err)
 	}
 
-	msg, err := wInsightToRPC(insight)
+	msg, err := wTileToRPC(tile)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to encode dashboard insight", slogx.Error(err), slog.String("dashboard_id", req.Msg.GetDashboardId()))
+		slog.ErrorContext(ctx, "failed to encode dashboard tile",
+			slogx.Error(err),
+			slog.String("dashboard_id", req.Msg.GetDashboardId()),
+			slog.String("tile_id", tile.ID),
+		)
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&dashboardsv1.DashboardsServiceCreateInsightResponse{Insight: msg}), nil
+	return connect.NewResponse(&dashboardsv1.DashboardsServiceCreateTileResponse{Tile: msg}), nil
 }
 
-func (s *Server) UpdateInsight(
+func (s *Server) UpdateTile(
 	ctx context.Context,
-	req *connect.Request[dashboardsv1.DashboardsServiceUpdateInsightRequest],
-) (*connect.Response[dashboardsv1.DashboardsServiceUpdateInsightResponse], error) {
+	req *connect.Request[dashboardsv1.DashboardsServiceUpdateTileRequest],
+) (*connect.Response[dashboardsv1.DashboardsServiceUpdateTileResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, rpc.ConnectCtxErr(err)
 	}
-
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	insight, err := s.service.UpsertDashboardInsight(ctx, principal.Project.ID, req.Msg.GetDashboardId(), req.Msg.GetId(), req.Msg.GetDisplayName(), req.Msg.GetDescription(), req.Msg.GetQuery(), req.Msg.GetLayouts())
+	content, err := tileContentFromUpdateRPC(req.Msg.GetContent())
 	if err != nil {
-		if errors.Is(err, coreprojects.ErrDashboardInsightNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard insight not found"))
+		slog.WarnContext(ctx, "invalid tile content", slogx.Error(err), slog.String("tile_id", req.Msg.GetId()))
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("tile content required"))
+	}
+
+	tile, err := s.service.UpdateDashboardTile(
+		ctx,
+		principal.Project.ID,
+		req.Msg.GetDashboardId(),
+		req.Msg.GetId(),
+		req.Msg.GetDisplayName(),
+		req.Msg.GetDescription(),
+		content,
+		req.Msg.GetLayouts(),
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, coreprojects.ErrDashboardTileNotFound):
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard tile not found"))
+		case errors.Is(err, coreprojects.ErrDashboardTileDisplayNameConflict):
+			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("tile display name already in use"))
 		}
-		slog.ErrorContext(ctx, "failed to update dashboard insight", slogx.Error(err), slog.String("project_id", principal.Project.ID), slog.String("dashboard_id", req.Msg.GetDashboardId()), slog.String("insight_id", req.Msg.GetId()))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		// Service already logged + recorded; do not duplicate.
+		return nil, serviceErrToConnect(err)
 	}
 
-	msg, err := wInsightToRPC(insight)
+	msg, err := wTileToRPC(tile)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to encode dashboard insight", slogx.Error(err), slog.String("insight_id", req.Msg.GetId()))
+		slog.ErrorContext(ctx, "failed to encode dashboard tile",
+			slogx.Error(err),
+			slog.String("dashboard_id", req.Msg.GetDashboardId()),
+			slog.String("tile_id", req.Msg.GetId()),
+		)
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&dashboardsv1.DashboardsServiceUpdateInsightResponse{Insight: msg}), nil
+	return connect.NewResponse(&dashboardsv1.DashboardsServiceUpdateTileResponse{Tile: msg}), nil
 }
 
-func (s *Server) DeleteInsight(
+func (s *Server) DeleteTile(
 	ctx context.Context,
-	req *connect.Request[dashboardsv1.DashboardsServiceDeleteInsightRequest],
-) (*connect.Response[dashboardsv1.DashboardsServiceDeleteInsightResponse], error) {
+	req *connect.Request[dashboardsv1.DashboardsServiceDeleteTileRequest],
+) (*connect.Response[dashboardsv1.DashboardsServiceDeleteTileResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, rpc.ConnectCtxErr(err)
 	}
-
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	if err := s.service.DeleteDashboardInsight(ctx, principal.Project.ID, req.Msg.GetDashboardId(), req.Msg.GetId()); err != nil {
-		if errors.Is(err, coreprojects.ErrDashboardInsightNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard insight not found"))
+	if err := s.service.DeleteDashboardTile(ctx, principal.Project.ID, req.Msg.GetDashboardId(), req.Msg.GetId()); err != nil {
+		if errors.Is(err, coreprojects.ErrDashboardTileNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard tile not found"))
 		}
-		slog.ErrorContext(ctx, "failed to delete dashboard insight", slogx.Error(err), slog.String("project_id", principal.Project.ID), slog.String("dashboard_id", req.Msg.GetDashboardId()), slog.String("insight_id", req.Msg.GetId()))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return nil, serviceErrToConnect(err)
 	}
 
-	return connect.NewResponse(&dashboardsv1.DashboardsServiceDeleteInsightResponse{}), nil
+	return connect.NewResponse(&dashboardsv1.DashboardsServiceDeleteTileResponse{}), nil
 }

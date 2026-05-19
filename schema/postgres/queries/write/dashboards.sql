@@ -6,7 +6,7 @@ returning *;
 -- name: UpdateDashboardDisplayName :one
 update dashboards
 set display_name = @display_name,
-    description = @description
+    description  = coalesce(nullif(@description, ''), description)
 where id = @id and project_id = @project_id
 returning *;
 
@@ -15,32 +15,34 @@ delete from dashboards
 where id = @id and project_id = @project_id
 returning *;
 
--- name: CreateDashboardInsight :one
-insert into dashboard_insights (dashboard_id, description, display_name, id, insight_query, layouts)
-select d.id, @description, @display_name, @id, @insight_query, @layouts
+-- name: CreateDashboardTile :one
+insert into dashboard_tiles (id, dashboard_id, kind, display_name, description, insight_query, markdown_body, layouts)
+select @id, d.id, @kind, @display_name, @description, @insight_query, @markdown_body, @layouts
 from dashboards d
 where d.id = @dashboard_id and d.project_id = @project_id
 returning *;
 
--- name: UpdateDashboardInsight :one
-update dashboard_insights di
+-- name: UpdateDashboardTile :one
+update dashboard_tiles dt
 set
-  description = @description,
-  display_name = @display_name,
+  display_name  = coalesce(nullif(@display_name, ''), dt.display_name),
+  description   = coalesce(nullif(@description, ''), dt.description),
+  kind          = @kind,
   insight_query = @insight_query,
-  layouts = @layouts
+  markdown_body = @markdown_body,
+  layouts       = @layouts
 from dashboards d
-where di.id = @id
-  and di.dashboard_id = @dashboard_id
-  and d.id = di.dashboard_id
+where dt.id = @id
+  and dt.dashboard_id = @dashboard_id
+  and d.id = dt.dashboard_id
   and d.project_id = @project_id
-returning di.*;
+returning dt.*;
 
--- name: DeleteDashboardInsight :one
-delete from dashboard_insights di
+-- name: DeleteDashboardTile :one
+delete from dashboard_tiles dt
 using dashboards d
-where di.id = @id
-  and di.dashboard_id = @dashboard_id
-  and d.id = di.dashboard_id
+where dt.id = @id
+  and dt.dashboard_id = @dashboard_id
+  and d.id = dt.dashboard_id
   and d.project_id = @project_id
-returning di.*;
+returning dt.*;

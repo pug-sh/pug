@@ -12,10 +12,10 @@ service DashboardsService {
   rpc Delete(DashboardsServiceDeleteRequest) returns (DashboardsServiceDeleteResponse) {}
   rpc Get(DashboardsServiceGetRequest) returns (DashboardsServiceGetResponse) {}
   rpc List(DashboardsServiceListRequest) returns (DashboardsServiceListResponse) {}
-  rpc CreateInsight(DashboardsServiceCreateInsightRequest) returns (DashboardsServiceCreateInsightResponse) {}
-  rpc UpdateInsight(DashboardsServiceUpdateInsightRequest) returns (DashboardsServiceUpdateInsightResponse) {}
-  rpc DeleteInsight(DashboardsServiceDeleteInsightRequest) returns (DashboardsServiceDeleteInsightResponse) {}
   rpc UpdateDisplayName(DashboardsServiceUpdateDisplayNameRequest) returns (DashboardsServiceUpdateDisplayNameResponse) {}
+  rpc CreateTile(DashboardsServiceCreateTileRequest) returns (DashboardsServiceCreateTileResponse) {}
+  rpc UpdateTile(DashboardsServiceUpdateTileRequest) returns (DashboardsServiceUpdateTileResponse) {}
+  rpc DeleteTile(DashboardsServiceDeleteTileRequest) returns (DashboardsServiceDeleteTileResponse) {}
 }
 
 message Dashboard {
@@ -25,12 +25,12 @@ message Dashboard {
   string description = 4;
   google.protobuf.Timestamp create_time = 5;
   google.protobuf.Timestamp update_time = 6;
-  repeated DashboardInsight insights = 7;
+  repeated DashboardTile tiles = 7;
 }
 
-message DashboardInsight {
+message DashboardTile {
   option (buf.validate.message).cel = {
-    id: "dashboard_insight.unique_breakpoints"
+    id: "dashboard_tile.unique_breakpoints"
     message: "layout breakpoints must be unique"
     expression:
       "this.layouts.size() <= 1"
@@ -42,10 +42,22 @@ message DashboardInsight {
   string dashboard_id = 2;
   string display_name = 3 [(buf.validate.field).string.max_len = 150];
   string description = 4 [(buf.validate.field).string.max_len = 2000];
-  shared.insights.v1.QueryRequest query = 5 [(buf.validate.field).required = true];
-  repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
-  google.protobuf.Timestamp create_time = 7;
-  google.protobuf.Timestamp update_time = 8;
+  oneof content {
+    option (buf.validate.oneof).required = true;
+    InsightTileContent insight = 5;
+    MarkdownTileContent markdown = 6;
+  }
+  repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
+  google.protobuf.Timestamp create_time = 8;
+  google.protobuf.Timestamp update_time = 9;
+}
+
+message InsightTileContent {
+  shared.insights.v1.QueryRequest query = 1 [(buf.validate.field).required = true];
+}
+
+message MarkdownTileContent {
+  string body = 1 [(buf.validate.field).string = {min_len: 1, max_len: 100000}];
 }
 
 message ResponsiveGridLayout {
@@ -96,9 +108,9 @@ message DashboardsServiceListResponse {
   repeated Dashboard dashboards = 1;
 }
 
-message DashboardsServiceCreateInsightRequest {
+message DashboardsServiceCreateTileRequest {
   option (buf.validate.message).cel = {
-    id: "create_dashboard_insight_request.unique_breakpoints"
+    id: "create_dashboard_tile_request.unique_breakpoints"
     message: "layout breakpoints must be unique"
     expression:
       "this.layouts.size() <= 1"
@@ -107,22 +119,23 @@ message DashboardsServiceCreateInsightRequest {
   };
 
   string dashboard_id = 1 [(buf.validate.field).required = true];
-  string display_name = 2 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.max_len = 150
-  ];
+  string display_name = 2 [(buf.validate.field).string.max_len = 150];
   string description = 3 [(buf.validate.field).string.max_len = 2000];
-  shared.insights.v1.QueryRequest query = 4 [(buf.validate.field).required = true];
-  repeated ResponsiveGridLayout layouts = 5 [(buf.validate.field).repeated.max_items = 8];
+  oneof content {
+    option (buf.validate.oneof).required = true;
+    InsightTileContent insight = 4;
+    MarkdownTileContent markdown = 5;
+  }
+  repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
 }
 
-message DashboardsServiceCreateInsightResponse {
-  DashboardInsight insight = 1;
+message DashboardsServiceCreateTileResponse {
+  DashboardTile tile = 1;
 }
 
-message DashboardsServiceUpdateInsightRequest {
+message DashboardsServiceUpdateTileRequest {
   option (buf.validate.message).cel = {
-    id: "update_dashboard_insight_request.unique_breakpoints"
+    id: "update_dashboard_tile_request.unique_breakpoints"
     message: "layout breakpoints must be unique"
     expression:
       "this.layouts.size() <= 1"
@@ -132,25 +145,26 @@ message DashboardsServiceUpdateInsightRequest {
 
   string id = 1 [(buf.validate.field).required = true];
   string dashboard_id = 2 [(buf.validate.field).required = true];
-  string display_name = 3 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.max_len = 150
-  ];
+  string display_name = 3 [(buf.validate.field).string.max_len = 150];
   string description = 4 [(buf.validate.field).string.max_len = 2000];
-  shared.insights.v1.QueryRequest query = 5 [(buf.validate.field).required = true];
-  repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
+  oneof content {
+    option (buf.validate.oneof).required = true;
+    InsightTileContent insight = 5;
+    MarkdownTileContent markdown = 6;
+  }
+  repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
 }
 
-message DashboardsServiceUpdateInsightResponse {
-  DashboardInsight insight = 1;
+message DashboardsServiceUpdateTileResponse {
+  DashboardTile tile = 1;
 }
 
-message DashboardsServiceDeleteInsightRequest {
+message DashboardsServiceDeleteTileRequest {
   string id = 1 [(buf.validate.field).required = true];
   string dashboard_id = 2 [(buf.validate.field).required = true];
 }
 
-message DashboardsServiceDeleteInsightResponse {}
+message DashboardsServiceDeleteTileResponse {}
 
 message DashboardsServiceUpdateDisplayNameRequest {
   string id = 1 [(buf.validate.field).required = true];

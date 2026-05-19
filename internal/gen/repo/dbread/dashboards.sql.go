@@ -10,7 +10,7 @@ import (
 )
 
 const getDashboardByIDAndProjectID = `-- name: GetDashboardByIDAndProjectID :one
-select create_time, description, display_name, id, project_id, update_time
+select id, project_id, display_name, description, create_time, update_time
 from dashboards
 where id = $1 and project_id = $2
 `
@@ -24,46 +24,48 @@ func (q *Queries) GetDashboardByIDAndProjectID(ctx context.Context, arg GetDashb
 	row := q.db.QueryRow(ctx, getDashboardByIDAndProjectID, arg.ID, arg.ProjectID)
 	var i Dashboard
 	err := row.Scan(
-		&i.CreateTime,
-		&i.Description,
-		&i.DisplayName,
 		&i.ID,
 		&i.ProjectID,
+		&i.DisplayName,
+		&i.Description,
+		&i.CreateTime,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
-const listDashboardInsightsByDashboardIDAndProjectID = `-- name: ListDashboardInsightsByDashboardIDAndProjectID :many
-select di.create_time, di.dashboard_id, di.description, di.display_name, di.id, di.insight_query, di.layouts, di.update_time
-from dashboard_insights di
-join dashboards d on d.id = di.dashboard_id
-where di.dashboard_id = $1 and d.project_id = $2
-order by di.create_time asc
+const listDashboardTilesByDashboardIDAndProjectID = `-- name: ListDashboardTilesByDashboardIDAndProjectID :many
+select dt.id, dt.dashboard_id, dt.kind, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
+from dashboard_tiles dt
+join dashboards d on d.id = dt.dashboard_id
+where dt.dashboard_id = $1 and d.project_id = $2
+order by dt.create_time asc
 `
 
-type ListDashboardInsightsByDashboardIDAndProjectIDParams struct {
+type ListDashboardTilesByDashboardIDAndProjectIDParams struct {
 	DashboardID string
 	ProjectID   string
 }
 
-func (q *Queries) ListDashboardInsightsByDashboardIDAndProjectID(ctx context.Context, arg ListDashboardInsightsByDashboardIDAndProjectIDParams) ([]DashboardInsight, error) {
-	rows, err := q.db.Query(ctx, listDashboardInsightsByDashboardIDAndProjectID, arg.DashboardID, arg.ProjectID)
+func (q *Queries) ListDashboardTilesByDashboardIDAndProjectID(ctx context.Context, arg ListDashboardTilesByDashboardIDAndProjectIDParams) ([]DashboardTile, error) {
+	rows, err := q.db.Query(ctx, listDashboardTilesByDashboardIDAndProjectID, arg.DashboardID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []DashboardInsight
+	var items []DashboardTile
 	for rows.Next() {
-		var i DashboardInsight
+		var i DashboardTile
 		if err := rows.Scan(
-			&i.CreateTime,
-			&i.DashboardID,
-			&i.Description,
-			&i.DisplayName,
 			&i.ID,
+			&i.DashboardID,
+			&i.Kind,
+			&i.DisplayName,
+			&i.Description,
 			&i.InsightQuery,
+			&i.MarkdownBody,
 			&i.Layouts,
+			&i.CreateTime,
 			&i.UpdateTime,
 		); err != nil {
 			return nil, err
@@ -76,31 +78,33 @@ func (q *Queries) ListDashboardInsightsByDashboardIDAndProjectID(ctx context.Con
 	return items, nil
 }
 
-const listDashboardInsightsByProjectID = `-- name: ListDashboardInsightsByProjectID :many
-select di.create_time, di.dashboard_id, di.description, di.display_name, di.id, di.insight_query, di.layouts, di.update_time
-from dashboard_insights di
-join dashboards d on d.id = di.dashboard_id
+const listDashboardTilesByProjectID = `-- name: ListDashboardTilesByProjectID :many
+select dt.id, dt.dashboard_id, dt.kind, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
+from dashboard_tiles dt
+join dashboards d on d.id = dt.dashboard_id
 where d.project_id = $1
-order by di.create_time asc
+order by dt.create_time asc
 `
 
-func (q *Queries) ListDashboardInsightsByProjectID(ctx context.Context, projectID string) ([]DashboardInsight, error) {
-	rows, err := q.db.Query(ctx, listDashboardInsightsByProjectID, projectID)
+func (q *Queries) ListDashboardTilesByProjectID(ctx context.Context, projectID string) ([]DashboardTile, error) {
+	rows, err := q.db.Query(ctx, listDashboardTilesByProjectID, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []DashboardInsight
+	var items []DashboardTile
 	for rows.Next() {
-		var i DashboardInsight
+		var i DashboardTile
 		if err := rows.Scan(
-			&i.CreateTime,
-			&i.DashboardID,
-			&i.Description,
-			&i.DisplayName,
 			&i.ID,
+			&i.DashboardID,
+			&i.Kind,
+			&i.DisplayName,
+			&i.Description,
 			&i.InsightQuery,
+			&i.MarkdownBody,
 			&i.Layouts,
+			&i.CreateTime,
 			&i.UpdateTime,
 		); err != nil {
 			return nil, err
@@ -114,7 +118,7 @@ func (q *Queries) ListDashboardInsightsByProjectID(ctx context.Context, projectI
 }
 
 const listDashboardsByProjectID = `-- name: ListDashboardsByProjectID :many
-select create_time, description, display_name, id, project_id, update_time
+select id, project_id, display_name, description, create_time, update_time
 from dashboards
 where project_id = $1
 order by create_time asc
@@ -130,11 +134,11 @@ func (q *Queries) ListDashboardsByProjectID(ctx context.Context, projectID strin
 	for rows.Next() {
 		var i Dashboard
 		if err := rows.Scan(
-			&i.CreateTime,
-			&i.Description,
-			&i.DisplayName,
 			&i.ID,
 			&i.ProjectID,
+			&i.DisplayName,
+			&i.Description,
+			&i.CreateTime,
 			&i.UpdateTime,
 		); err != nil {
 			return nil, err

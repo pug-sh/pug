@@ -32,7 +32,7 @@ type Dashboard struct {
 	Description   *string                `protobuf:"bytes,4,opt,name=description" json:"description,omitempty"`
 	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
 	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
-	Insights      []*DashboardInsight    `protobuf:"bytes,7,rep,name=insights" json:"insights,omitempty"`
+	Tiles         []*DashboardTile       `protobuf:"bytes,7,rep,name=tiles" json:"tiles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -109,41 +109,45 @@ func (x *Dashboard) GetUpdateTime() *timestamppb.Timestamp {
 	return nil
 }
 
-func (x *Dashboard) GetInsights() []*DashboardInsight {
+func (x *Dashboard) GetTiles() []*DashboardTile {
 	if x != nil {
-		return x.Insights
+		return x.Tiles
 	}
 	return nil
 }
 
-type DashboardInsight struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	Id            *string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	DashboardId   *string                 `protobuf:"bytes,2,opt,name=dashboard_id,json=dashboardId" json:"dashboard_id,omitempty"`
-	DisplayName   *string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	Description   *string                 `protobuf:"bytes,4,opt,name=description" json:"description,omitempty"`
-	Query         *v1.QueryRequest        `protobuf:"bytes,5,opt,name=query" json:"query,omitempty"`
-	Layouts       []*ResponsiveGridLayout `protobuf:"bytes,6,rep,name=layouts" json:"layouts,omitempty"`
-	CreateTime    *timestamppb.Timestamp  `protobuf:"bytes,7,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
-	UpdateTime    *timestamppb.Timestamp  `protobuf:"bytes,8,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
+type DashboardTile struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	DashboardId *string                `protobuf:"bytes,2,opt,name=dashboard_id,json=dashboardId" json:"dashboard_id,omitempty"`
+	DisplayName *string                `protobuf:"bytes,3,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	Description *string                `protobuf:"bytes,4,opt,name=description" json:"description,omitempty"`
+	// Types that are valid to be assigned to Content:
+	//
+	//	*DashboardTile_Insight
+	//	*DashboardTile_Markdown
+	Content       isDashboardTile_Content `protobuf_oneof:"content"`
+	Layouts       []*ResponsiveGridLayout `protobuf:"bytes,7,rep,name=layouts" json:"layouts,omitempty"`
+	CreateTime    *timestamppb.Timestamp  `protobuf:"bytes,8,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
+	UpdateTime    *timestamppb.Timestamp  `protobuf:"bytes,9,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DashboardInsight) Reset() {
-	*x = DashboardInsight{}
+func (x *DashboardTile) Reset() {
+	*x = DashboardTile{}
 	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DashboardInsight) String() string {
+func (x *DashboardTile) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DashboardInsight) ProtoMessage() {}
+func (*DashboardTile) ProtoMessage() {}
 
-func (x *DashboardInsight) ProtoReflect() protoreflect.Message {
+func (x *DashboardTile) ProtoReflect() protoreflect.Message {
 	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -155,65 +159,187 @@ func (x *DashboardInsight) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DashboardInsight.ProtoReflect.Descriptor instead.
-func (*DashboardInsight) Descriptor() ([]byte, []int) {
+// Deprecated: Use DashboardTile.ProtoReflect.Descriptor instead.
+func (*DashboardTile) Descriptor() ([]byte, []int) {
 	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *DashboardInsight) GetId() string {
+func (x *DashboardTile) GetId() string {
 	if x != nil && x.Id != nil {
 		return *x.Id
 	}
 	return ""
 }
 
-func (x *DashboardInsight) GetDashboardId() string {
+func (x *DashboardTile) GetDashboardId() string {
 	if x != nil && x.DashboardId != nil {
 		return *x.DashboardId
 	}
 	return ""
 }
 
-func (x *DashboardInsight) GetDisplayName() string {
+func (x *DashboardTile) GetDisplayName() string {
 	if x != nil && x.DisplayName != nil {
 		return *x.DisplayName
 	}
 	return ""
 }
 
-func (x *DashboardInsight) GetDescription() string {
+func (x *DashboardTile) GetDescription() string {
 	if x != nil && x.Description != nil {
 		return *x.Description
 	}
 	return ""
 }
 
-func (x *DashboardInsight) GetQuery() *v1.QueryRequest {
+func (x *DashboardTile) GetContent() isDashboardTile_Content {
 	if x != nil {
-		return x.Query
+		return x.Content
 	}
 	return nil
 }
 
-func (x *DashboardInsight) GetLayouts() []*ResponsiveGridLayout {
+func (x *DashboardTile) GetInsight() *InsightTileContent {
+	if x != nil {
+		if x, ok := x.Content.(*DashboardTile_Insight); ok {
+			return x.Insight
+		}
+	}
+	return nil
+}
+
+func (x *DashboardTile) GetMarkdown() *MarkdownTileContent {
+	if x != nil {
+		if x, ok := x.Content.(*DashboardTile_Markdown); ok {
+			return x.Markdown
+		}
+	}
+	return nil
+}
+
+func (x *DashboardTile) GetLayouts() []*ResponsiveGridLayout {
 	if x != nil {
 		return x.Layouts
 	}
 	return nil
 }
 
-func (x *DashboardInsight) GetCreateTime() *timestamppb.Timestamp {
+func (x *DashboardTile) GetCreateTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreateTime
 	}
 	return nil
 }
 
-func (x *DashboardInsight) GetUpdateTime() *timestamppb.Timestamp {
+func (x *DashboardTile) GetUpdateTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdateTime
 	}
 	return nil
+}
+
+type isDashboardTile_Content interface {
+	isDashboardTile_Content()
+}
+
+type DashboardTile_Insight struct {
+	Insight *InsightTileContent `protobuf:"bytes,5,opt,name=insight,oneof"`
+}
+
+type DashboardTile_Markdown struct {
+	Markdown *MarkdownTileContent `protobuf:"bytes,6,opt,name=markdown,oneof"`
+}
+
+func (*DashboardTile_Insight) isDashboardTile_Content() {}
+
+func (*DashboardTile_Markdown) isDashboardTile_Content() {}
+
+type InsightTileContent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Query         *v1.QueryRequest       `protobuf:"bytes,1,opt,name=query" json:"query,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InsightTileContent) Reset() {
+	*x = InsightTileContent{}
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InsightTileContent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InsightTileContent) ProtoMessage() {}
+
+func (x *InsightTileContent) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InsightTileContent.ProtoReflect.Descriptor instead.
+func (*InsightTileContent) Descriptor() ([]byte, []int) {
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *InsightTileContent) GetQuery() *v1.QueryRequest {
+	if x != nil {
+		return x.Query
+	}
+	return nil
+}
+
+type MarkdownTileContent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Body          *string                `protobuf:"bytes,1,opt,name=body" json:"body,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MarkdownTileContent) Reset() {
+	*x = MarkdownTileContent{}
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MarkdownTileContent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MarkdownTileContent) ProtoMessage() {}
+
+func (x *MarkdownTileContent) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MarkdownTileContent.ProtoReflect.Descriptor instead.
+func (*MarkdownTileContent) Descriptor() ([]byte, []int) {
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *MarkdownTileContent) GetBody() string {
+	if x != nil && x.Body != nil {
+		return *x.Body
+	}
+	return ""
 }
 
 type ResponsiveGridLayout struct {
@@ -234,7 +360,7 @@ type ResponsiveGridLayout struct {
 
 func (x *ResponsiveGridLayout) Reset() {
 	*x = ResponsiveGridLayout{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[2]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -246,7 +372,7 @@ func (x *ResponsiveGridLayout) String() string {
 func (*ResponsiveGridLayout) ProtoMessage() {}
 
 func (x *ResponsiveGridLayout) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[2]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -259,7 +385,7 @@ func (x *ResponsiveGridLayout) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponsiveGridLayout.ProtoReflect.Descriptor instead.
 func (*ResponsiveGridLayout) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{2}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ResponsiveGridLayout) GetBreakpoint() string {
@@ -342,7 +468,7 @@ type DashboardsServiceCreateRequest struct {
 
 func (x *DashboardsServiceCreateRequest) Reset() {
 	*x = DashboardsServiceCreateRequest{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[3]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -354,7 +480,7 @@ func (x *DashboardsServiceCreateRequest) String() string {
 func (*DashboardsServiceCreateRequest) ProtoMessage() {}
 
 func (x *DashboardsServiceCreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[3]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -367,7 +493,7 @@ func (x *DashboardsServiceCreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DashboardsServiceCreateRequest.ProtoReflect.Descriptor instead.
 func (*DashboardsServiceCreateRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{3}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *DashboardsServiceCreateRequest) GetDisplayName() string {
@@ -393,7 +519,7 @@ type DashboardsServiceCreateResponse struct {
 
 func (x *DashboardsServiceCreateResponse) Reset() {
 	*x = DashboardsServiceCreateResponse{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[4]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -405,7 +531,7 @@ func (x *DashboardsServiceCreateResponse) String() string {
 func (*DashboardsServiceCreateResponse) ProtoMessage() {}
 
 func (x *DashboardsServiceCreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[4]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -418,7 +544,7 @@ func (x *DashboardsServiceCreateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DashboardsServiceCreateResponse.ProtoReflect.Descriptor instead.
 func (*DashboardsServiceCreateResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{4}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DashboardsServiceCreateResponse) GetDashboard() *Dashboard {
@@ -437,7 +563,7 @@ type DashboardsServiceDeleteRequest struct {
 
 func (x *DashboardsServiceDeleteRequest) Reset() {
 	*x = DashboardsServiceDeleteRequest{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[5]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -449,7 +575,7 @@ func (x *DashboardsServiceDeleteRequest) String() string {
 func (*DashboardsServiceDeleteRequest) ProtoMessage() {}
 
 func (x *DashboardsServiceDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[5]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -462,7 +588,7 @@ func (x *DashboardsServiceDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DashboardsServiceDeleteRequest.ProtoReflect.Descriptor instead.
 func (*DashboardsServiceDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{5}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DashboardsServiceDeleteRequest) GetId() string {
@@ -480,7 +606,7 @@ type DashboardsServiceDeleteResponse struct {
 
 func (x *DashboardsServiceDeleteResponse) Reset() {
 	*x = DashboardsServiceDeleteResponse{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[6]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -492,7 +618,7 @@ func (x *DashboardsServiceDeleteResponse) String() string {
 func (*DashboardsServiceDeleteResponse) ProtoMessage() {}
 
 func (x *DashboardsServiceDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[6]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -505,7 +631,7 @@ func (x *DashboardsServiceDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DashboardsServiceDeleteResponse.ProtoReflect.Descriptor instead.
 func (*DashboardsServiceDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{6}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{8}
 }
 
 type DashboardsServiceGetRequest struct {
@@ -517,7 +643,7 @@ type DashboardsServiceGetRequest struct {
 
 func (x *DashboardsServiceGetRequest) Reset() {
 	*x = DashboardsServiceGetRequest{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[7]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -529,7 +655,7 @@ func (x *DashboardsServiceGetRequest) String() string {
 func (*DashboardsServiceGetRequest) ProtoMessage() {}
 
 func (x *DashboardsServiceGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[7]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -542,7 +668,7 @@ func (x *DashboardsServiceGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DashboardsServiceGetRequest.ProtoReflect.Descriptor instead.
 func (*DashboardsServiceGetRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{7}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DashboardsServiceGetRequest) GetId() string {
@@ -561,7 +687,7 @@ type DashboardsServiceGetResponse struct {
 
 func (x *DashboardsServiceGetResponse) Reset() {
 	*x = DashboardsServiceGetResponse{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[8]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -573,7 +699,7 @@ func (x *DashboardsServiceGetResponse) String() string {
 func (*DashboardsServiceGetResponse) ProtoMessage() {}
 
 func (x *DashboardsServiceGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[8]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -586,7 +712,7 @@ func (x *DashboardsServiceGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DashboardsServiceGetResponse.ProtoReflect.Descriptor instead.
 func (*DashboardsServiceGetResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{8}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DashboardsServiceGetResponse) GetDashboard() *Dashboard {
@@ -604,7 +730,7 @@ type DashboardsServiceListRequest struct {
 
 func (x *DashboardsServiceListRequest) Reset() {
 	*x = DashboardsServiceListRequest{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[9]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -616,7 +742,7 @@ func (x *DashboardsServiceListRequest) String() string {
 func (*DashboardsServiceListRequest) ProtoMessage() {}
 
 func (x *DashboardsServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[9]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -629,7 +755,7 @@ func (x *DashboardsServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DashboardsServiceListRequest.ProtoReflect.Descriptor instead.
 func (*DashboardsServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{9}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{11}
 }
 
 type DashboardsServiceListResponse struct {
@@ -641,7 +767,7 @@ type DashboardsServiceListResponse struct {
 
 func (x *DashboardsServiceListResponse) Reset() {
 	*x = DashboardsServiceListResponse{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[10]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -653,7 +779,7 @@ func (x *DashboardsServiceListResponse) String() string {
 func (*DashboardsServiceListResponse) ProtoMessage() {}
 
 func (x *DashboardsServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[10]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -666,7 +792,7 @@ func (x *DashboardsServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DashboardsServiceListResponse.ProtoReflect.Descriptor instead.
 func (*DashboardsServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{10}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DashboardsServiceListResponse) GetDashboards() []*Dashboard {
@@ -676,32 +802,36 @@ func (x *DashboardsServiceListResponse) GetDashboards() []*Dashboard {
 	return nil
 }
 
-type DashboardsServiceCreateInsightRequest struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	DashboardId   *string                 `protobuf:"bytes,1,opt,name=dashboard_id,json=dashboardId" json:"dashboard_id,omitempty"`
-	DisplayName   *string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	Description   *string                 `protobuf:"bytes,3,opt,name=description" json:"description,omitempty"`
-	Query         *v1.QueryRequest        `protobuf:"bytes,4,opt,name=query" json:"query,omitempty"`
-	Layouts       []*ResponsiveGridLayout `protobuf:"bytes,5,rep,name=layouts" json:"layouts,omitempty"`
+type DashboardsServiceCreateTileRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	DashboardId *string                `protobuf:"bytes,1,opt,name=dashboard_id,json=dashboardId" json:"dashboard_id,omitempty"`
+	DisplayName *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	Description *string                `protobuf:"bytes,3,opt,name=description" json:"description,omitempty"`
+	// Types that are valid to be assigned to Content:
+	//
+	//	*DashboardsServiceCreateTileRequest_Insight
+	//	*DashboardsServiceCreateTileRequest_Markdown
+	Content       isDashboardsServiceCreateTileRequest_Content `protobuf_oneof:"content"`
+	Layouts       []*ResponsiveGridLayout                      `protobuf:"bytes,6,rep,name=layouts" json:"layouts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DashboardsServiceCreateInsightRequest) Reset() {
-	*x = DashboardsServiceCreateInsightRequest{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[11]
+func (x *DashboardsServiceCreateTileRequest) Reset() {
+	*x = DashboardsServiceCreateTileRequest{}
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DashboardsServiceCreateInsightRequest) String() string {
+func (x *DashboardsServiceCreateTileRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DashboardsServiceCreateInsightRequest) ProtoMessage() {}
+func (*DashboardsServiceCreateTileRequest) ProtoMessage() {}
 
-func (x *DashboardsServiceCreateInsightRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[11]
+func (x *DashboardsServiceCreateTileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -712,68 +842,102 @@ func (x *DashboardsServiceCreateInsightRequest) ProtoReflect() protoreflect.Mess
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DashboardsServiceCreateInsightRequest.ProtoReflect.Descriptor instead.
-func (*DashboardsServiceCreateInsightRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{11}
+// Deprecated: Use DashboardsServiceCreateTileRequest.ProtoReflect.Descriptor instead.
+func (*DashboardsServiceCreateTileRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *DashboardsServiceCreateInsightRequest) GetDashboardId() string {
+func (x *DashboardsServiceCreateTileRequest) GetDashboardId() string {
 	if x != nil && x.DashboardId != nil {
 		return *x.DashboardId
 	}
 	return ""
 }
 
-func (x *DashboardsServiceCreateInsightRequest) GetDisplayName() string {
+func (x *DashboardsServiceCreateTileRequest) GetDisplayName() string {
 	if x != nil && x.DisplayName != nil {
 		return *x.DisplayName
 	}
 	return ""
 }
 
-func (x *DashboardsServiceCreateInsightRequest) GetDescription() string {
+func (x *DashboardsServiceCreateTileRequest) GetDescription() string {
 	if x != nil && x.Description != nil {
 		return *x.Description
 	}
 	return ""
 }
 
-func (x *DashboardsServiceCreateInsightRequest) GetQuery() *v1.QueryRequest {
+func (x *DashboardsServiceCreateTileRequest) GetContent() isDashboardsServiceCreateTileRequest_Content {
 	if x != nil {
-		return x.Query
+		return x.Content
 	}
 	return nil
 }
 
-func (x *DashboardsServiceCreateInsightRequest) GetLayouts() []*ResponsiveGridLayout {
+func (x *DashboardsServiceCreateTileRequest) GetInsight() *InsightTileContent {
+	if x != nil {
+		if x, ok := x.Content.(*DashboardsServiceCreateTileRequest_Insight); ok {
+			return x.Insight
+		}
+	}
+	return nil
+}
+
+func (x *DashboardsServiceCreateTileRequest) GetMarkdown() *MarkdownTileContent {
+	if x != nil {
+		if x, ok := x.Content.(*DashboardsServiceCreateTileRequest_Markdown); ok {
+			return x.Markdown
+		}
+	}
+	return nil
+}
+
+func (x *DashboardsServiceCreateTileRequest) GetLayouts() []*ResponsiveGridLayout {
 	if x != nil {
 		return x.Layouts
 	}
 	return nil
 }
 
-type DashboardsServiceCreateInsightResponse struct {
+type isDashboardsServiceCreateTileRequest_Content interface {
+	isDashboardsServiceCreateTileRequest_Content()
+}
+
+type DashboardsServiceCreateTileRequest_Insight struct {
+	Insight *InsightTileContent `protobuf:"bytes,4,opt,name=insight,oneof"`
+}
+
+type DashboardsServiceCreateTileRequest_Markdown struct {
+	Markdown *MarkdownTileContent `protobuf:"bytes,5,opt,name=markdown,oneof"`
+}
+
+func (*DashboardsServiceCreateTileRequest_Insight) isDashboardsServiceCreateTileRequest_Content() {}
+
+func (*DashboardsServiceCreateTileRequest_Markdown) isDashboardsServiceCreateTileRequest_Content() {}
+
+type DashboardsServiceCreateTileResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Insight       *DashboardInsight      `protobuf:"bytes,1,opt,name=insight" json:"insight,omitempty"`
+	Tile          *DashboardTile         `protobuf:"bytes,1,opt,name=tile" json:"tile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DashboardsServiceCreateInsightResponse) Reset() {
-	*x = DashboardsServiceCreateInsightResponse{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[12]
+func (x *DashboardsServiceCreateTileResponse) Reset() {
+	*x = DashboardsServiceCreateTileResponse{}
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DashboardsServiceCreateInsightResponse) String() string {
+func (x *DashboardsServiceCreateTileResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DashboardsServiceCreateInsightResponse) ProtoMessage() {}
+func (*DashboardsServiceCreateTileResponse) ProtoMessage() {}
 
-func (x *DashboardsServiceCreateInsightResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[12]
+func (x *DashboardsServiceCreateTileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -784,45 +948,49 @@ func (x *DashboardsServiceCreateInsightResponse) ProtoReflect() protoreflect.Mes
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DashboardsServiceCreateInsightResponse.ProtoReflect.Descriptor instead.
-func (*DashboardsServiceCreateInsightResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{12}
+// Deprecated: Use DashboardsServiceCreateTileResponse.ProtoReflect.Descriptor instead.
+func (*DashboardsServiceCreateTileResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *DashboardsServiceCreateInsightResponse) GetInsight() *DashboardInsight {
+func (x *DashboardsServiceCreateTileResponse) GetTile() *DashboardTile {
 	if x != nil {
-		return x.Insight
+		return x.Tile
 	}
 	return nil
 }
 
-type DashboardsServiceUpdateInsightRequest struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	Id            *string                 `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	DashboardId   *string                 `protobuf:"bytes,2,opt,name=dashboard_id,json=dashboardId" json:"dashboard_id,omitempty"`
-	DisplayName   *string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	Description   *string                 `protobuf:"bytes,4,opt,name=description" json:"description,omitempty"`
-	Query         *v1.QueryRequest        `protobuf:"bytes,5,opt,name=query" json:"query,omitempty"`
-	Layouts       []*ResponsiveGridLayout `protobuf:"bytes,6,rep,name=layouts" json:"layouts,omitempty"`
+type DashboardsServiceUpdateTileRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	DashboardId *string                `protobuf:"bytes,2,opt,name=dashboard_id,json=dashboardId" json:"dashboard_id,omitempty"`
+	DisplayName *string                `protobuf:"bytes,3,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	Description *string                `protobuf:"bytes,4,opt,name=description" json:"description,omitempty"`
+	// Types that are valid to be assigned to Content:
+	//
+	//	*DashboardsServiceUpdateTileRequest_Insight
+	//	*DashboardsServiceUpdateTileRequest_Markdown
+	Content       isDashboardsServiceUpdateTileRequest_Content `protobuf_oneof:"content"`
+	Layouts       []*ResponsiveGridLayout                      `protobuf:"bytes,7,rep,name=layouts" json:"layouts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DashboardsServiceUpdateInsightRequest) Reset() {
-	*x = DashboardsServiceUpdateInsightRequest{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[13]
+func (x *DashboardsServiceUpdateTileRequest) Reset() {
+	*x = DashboardsServiceUpdateTileRequest{}
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DashboardsServiceUpdateInsightRequest) String() string {
+func (x *DashboardsServiceUpdateTileRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DashboardsServiceUpdateInsightRequest) ProtoMessage() {}
+func (*DashboardsServiceUpdateTileRequest) ProtoMessage() {}
 
-func (x *DashboardsServiceUpdateInsightRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[13]
+func (x *DashboardsServiceUpdateTileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -833,75 +1001,109 @@ func (x *DashboardsServiceUpdateInsightRequest) ProtoReflect() protoreflect.Mess
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DashboardsServiceUpdateInsightRequest.ProtoReflect.Descriptor instead.
-func (*DashboardsServiceUpdateInsightRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{13}
+// Deprecated: Use DashboardsServiceUpdateTileRequest.ProtoReflect.Descriptor instead.
+func (*DashboardsServiceUpdateTileRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *DashboardsServiceUpdateInsightRequest) GetId() string {
+func (x *DashboardsServiceUpdateTileRequest) GetId() string {
 	if x != nil && x.Id != nil {
 		return *x.Id
 	}
 	return ""
 }
 
-func (x *DashboardsServiceUpdateInsightRequest) GetDashboardId() string {
+func (x *DashboardsServiceUpdateTileRequest) GetDashboardId() string {
 	if x != nil && x.DashboardId != nil {
 		return *x.DashboardId
 	}
 	return ""
 }
 
-func (x *DashboardsServiceUpdateInsightRequest) GetDisplayName() string {
+func (x *DashboardsServiceUpdateTileRequest) GetDisplayName() string {
 	if x != nil && x.DisplayName != nil {
 		return *x.DisplayName
 	}
 	return ""
 }
 
-func (x *DashboardsServiceUpdateInsightRequest) GetDescription() string {
+func (x *DashboardsServiceUpdateTileRequest) GetDescription() string {
 	if x != nil && x.Description != nil {
 		return *x.Description
 	}
 	return ""
 }
 
-func (x *DashboardsServiceUpdateInsightRequest) GetQuery() *v1.QueryRequest {
+func (x *DashboardsServiceUpdateTileRequest) GetContent() isDashboardsServiceUpdateTileRequest_Content {
 	if x != nil {
-		return x.Query
+		return x.Content
 	}
 	return nil
 }
 
-func (x *DashboardsServiceUpdateInsightRequest) GetLayouts() []*ResponsiveGridLayout {
+func (x *DashboardsServiceUpdateTileRequest) GetInsight() *InsightTileContent {
+	if x != nil {
+		if x, ok := x.Content.(*DashboardsServiceUpdateTileRequest_Insight); ok {
+			return x.Insight
+		}
+	}
+	return nil
+}
+
+func (x *DashboardsServiceUpdateTileRequest) GetMarkdown() *MarkdownTileContent {
+	if x != nil {
+		if x, ok := x.Content.(*DashboardsServiceUpdateTileRequest_Markdown); ok {
+			return x.Markdown
+		}
+	}
+	return nil
+}
+
+func (x *DashboardsServiceUpdateTileRequest) GetLayouts() []*ResponsiveGridLayout {
 	if x != nil {
 		return x.Layouts
 	}
 	return nil
 }
 
-type DashboardsServiceUpdateInsightResponse struct {
+type isDashboardsServiceUpdateTileRequest_Content interface {
+	isDashboardsServiceUpdateTileRequest_Content()
+}
+
+type DashboardsServiceUpdateTileRequest_Insight struct {
+	Insight *InsightTileContent `protobuf:"bytes,5,opt,name=insight,oneof"`
+}
+
+type DashboardsServiceUpdateTileRequest_Markdown struct {
+	Markdown *MarkdownTileContent `protobuf:"bytes,6,opt,name=markdown,oneof"`
+}
+
+func (*DashboardsServiceUpdateTileRequest_Insight) isDashboardsServiceUpdateTileRequest_Content() {}
+
+func (*DashboardsServiceUpdateTileRequest_Markdown) isDashboardsServiceUpdateTileRequest_Content() {}
+
+type DashboardsServiceUpdateTileResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Insight       *DashboardInsight      `protobuf:"bytes,1,opt,name=insight" json:"insight,omitempty"`
+	Tile          *DashboardTile         `protobuf:"bytes,1,opt,name=tile" json:"tile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DashboardsServiceUpdateInsightResponse) Reset() {
-	*x = DashboardsServiceUpdateInsightResponse{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[14]
+func (x *DashboardsServiceUpdateTileResponse) Reset() {
+	*x = DashboardsServiceUpdateTileResponse{}
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DashboardsServiceUpdateInsightResponse) String() string {
+func (x *DashboardsServiceUpdateTileResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DashboardsServiceUpdateInsightResponse) ProtoMessage() {}
+func (*DashboardsServiceUpdateTileResponse) ProtoMessage() {}
 
-func (x *DashboardsServiceUpdateInsightResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[14]
+func (x *DashboardsServiceUpdateTileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -912,19 +1114,19 @@ func (x *DashboardsServiceUpdateInsightResponse) ProtoReflect() protoreflect.Mes
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DashboardsServiceUpdateInsightResponse.ProtoReflect.Descriptor instead.
-func (*DashboardsServiceUpdateInsightResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{14}
+// Deprecated: Use DashboardsServiceUpdateTileResponse.ProtoReflect.Descriptor instead.
+func (*DashboardsServiceUpdateTileResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{16}
 }
 
-func (x *DashboardsServiceUpdateInsightResponse) GetInsight() *DashboardInsight {
+func (x *DashboardsServiceUpdateTileResponse) GetTile() *DashboardTile {
 	if x != nil {
-		return x.Insight
+		return x.Tile
 	}
 	return nil
 }
 
-type DashboardsServiceDeleteInsightRequest struct {
+type DashboardsServiceDeleteTileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
 	DashboardId   *string                `protobuf:"bytes,2,opt,name=dashboard_id,json=dashboardId" json:"dashboard_id,omitempty"`
@@ -932,21 +1134,21 @@ type DashboardsServiceDeleteInsightRequest struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DashboardsServiceDeleteInsightRequest) Reset() {
-	*x = DashboardsServiceDeleteInsightRequest{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[15]
+func (x *DashboardsServiceDeleteTileRequest) Reset() {
+	*x = DashboardsServiceDeleteTileRequest{}
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DashboardsServiceDeleteInsightRequest) String() string {
+func (x *DashboardsServiceDeleteTileRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DashboardsServiceDeleteInsightRequest) ProtoMessage() {}
+func (*DashboardsServiceDeleteTileRequest) ProtoMessage() {}
 
-func (x *DashboardsServiceDeleteInsightRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[15]
+func (x *DashboardsServiceDeleteTileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -957,46 +1159,46 @@ func (x *DashboardsServiceDeleteInsightRequest) ProtoReflect() protoreflect.Mess
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DashboardsServiceDeleteInsightRequest.ProtoReflect.Descriptor instead.
-func (*DashboardsServiceDeleteInsightRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{15}
+// Deprecated: Use DashboardsServiceDeleteTileRequest.ProtoReflect.Descriptor instead.
+func (*DashboardsServiceDeleteTileRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *DashboardsServiceDeleteInsightRequest) GetId() string {
+func (x *DashboardsServiceDeleteTileRequest) GetId() string {
 	if x != nil && x.Id != nil {
 		return *x.Id
 	}
 	return ""
 }
 
-func (x *DashboardsServiceDeleteInsightRequest) GetDashboardId() string {
+func (x *DashboardsServiceDeleteTileRequest) GetDashboardId() string {
 	if x != nil && x.DashboardId != nil {
 		return *x.DashboardId
 	}
 	return ""
 }
 
-type DashboardsServiceDeleteInsightResponse struct {
+type DashboardsServiceDeleteTileResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DashboardsServiceDeleteInsightResponse) Reset() {
-	*x = DashboardsServiceDeleteInsightResponse{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[16]
+func (x *DashboardsServiceDeleteTileResponse) Reset() {
+	*x = DashboardsServiceDeleteTileResponse{}
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DashboardsServiceDeleteInsightResponse) String() string {
+func (x *DashboardsServiceDeleteTileResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DashboardsServiceDeleteInsightResponse) ProtoMessage() {}
+func (*DashboardsServiceDeleteTileResponse) ProtoMessage() {}
 
-func (x *DashboardsServiceDeleteInsightResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[16]
+func (x *DashboardsServiceDeleteTileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1007,9 +1209,9 @@ func (x *DashboardsServiceDeleteInsightResponse) ProtoReflect() protoreflect.Mes
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DashboardsServiceDeleteInsightResponse.ProtoReflect.Descriptor instead.
-func (*DashboardsServiceDeleteInsightResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{16}
+// Deprecated: Use DashboardsServiceDeleteTileResponse.ProtoReflect.Descriptor instead.
+func (*DashboardsServiceDeleteTileResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{18}
 }
 
 type DashboardsServiceUpdateDisplayNameRequest struct {
@@ -1023,7 +1225,7 @@ type DashboardsServiceUpdateDisplayNameRequest struct {
 
 func (x *DashboardsServiceUpdateDisplayNameRequest) Reset() {
 	*x = DashboardsServiceUpdateDisplayNameRequest{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[17]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1035,7 +1237,7 @@ func (x *DashboardsServiceUpdateDisplayNameRequest) String() string {
 func (*DashboardsServiceUpdateDisplayNameRequest) ProtoMessage() {}
 
 func (x *DashboardsServiceUpdateDisplayNameRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[17]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1048,7 +1250,7 @@ func (x *DashboardsServiceUpdateDisplayNameRequest) ProtoReflect() protoreflect.
 
 // Deprecated: Use DashboardsServiceUpdateDisplayNameRequest.ProtoReflect.Descriptor instead.
 func (*DashboardsServiceUpdateDisplayNameRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{17}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *DashboardsServiceUpdateDisplayNameRequest) GetId() string {
@@ -1081,7 +1283,7 @@ type DashboardsServiceUpdateDisplayNameResponse struct {
 
 func (x *DashboardsServiceUpdateDisplayNameResponse) Reset() {
 	*x = DashboardsServiceUpdateDisplayNameResponse{}
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[18]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1093,7 +1295,7 @@ func (x *DashboardsServiceUpdateDisplayNameResponse) String() string {
 func (*DashboardsServiceUpdateDisplayNameResponse) ProtoMessage() {}
 
 func (x *DashboardsServiceUpdateDisplayNameResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[18]
+	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1106,7 +1308,7 @@ func (x *DashboardsServiceUpdateDisplayNameResponse) ProtoReflect() protoreflect
 
 // Deprecated: Use DashboardsServiceUpdateDisplayNameResponse.ProtoReflect.Descriptor instead.
 func (*DashboardsServiceUpdateDisplayNameResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{18}
+	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DashboardsServiceUpdateDisplayNameResponse) GetDashboard() *Dashboard {
@@ -1120,7 +1322,7 @@ var File_dashboard_dashboards_v1_dashboards_proto protoreflect.FileDescriptor
 
 const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\n" +
-	"(dashboard/dashboards/v1/dashboards.proto\x12\x17dashboard.dashboards.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a!shared/insights/v1/insights.proto\"\xc0\x02\n" +
+	"(dashboard/dashboards/v1/dashboards.proto\x12\x17dashboard.dashboards.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a!shared/insights/v1/insights.proto\"\xb7\x02\n" +
 	"\tDashboard\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1130,20 +1332,26 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\vcreate_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12;\n" +
 	"\vupdate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\x12E\n" +
-	"\binsights\x18\a \x03(\v2).dashboard.dashboards.v1.DashboardInsightR\binsights\"\xf7\x04\n" +
-	"\x10DashboardInsight\x12\x0e\n" +
+	"updateTime\x12<\n" +
+	"\x05tiles\x18\a \x03(\v2&.dashboard.dashboards.v1.DashboardTileR\x05tiles\"\xd8\x05\n" +
+	"\rDashboardTile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdashboard_id\x18\x02 \x01(\tR\vdashboardId\x12+\n" +
 	"\fdisplay_name\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
-	"\vdescription\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12>\n" +
-	"\x05query\x18\x05 \x01(\v2 .shared.insights.v1.QueryRequestB\x06\xbaH\x03\xc8\x01\x01R\x05query\x12Q\n" +
-	"\alayouts\x18\x06 \x03(\v2-.dashboard.dashboards.v1.ResponsiveGridLayoutB\b\xbaH\x05\x92\x01\x02\x10\bR\alayouts\x12;\n" +
-	"\vcreate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"\vdescription\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12G\n" +
+	"\ainsight\x18\x05 \x01(\v2+.dashboard.dashboards.v1.InsightTileContentH\x00R\ainsight\x12J\n" +
+	"\bmarkdown\x18\x06 \x01(\v2,.dashboard.dashboards.v1.MarkdownTileContentH\x00R\bmarkdown\x12Q\n" +
+	"\alayouts\x18\a \x03(\v2-.dashboard.dashboards.v1.ResponsiveGridLayoutB\b\xbaH\x05\x92\x01\x02\x10\bR\alayouts\x12;\n" +
+	"\vcreate_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12;\n" +
-	"\vupdate_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime:\xc9\x01\xbaH\xc5\x01\x1a\xc2\x01\n" +
-	"$dashboard_insight.unique_breakpoints\x12!layout breakpoints must be unique\x1awthis.layouts.size() <= 1|| !this.layouts.exists(l,     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)\"\xc4\x02\n" +
+	"\vupdate_time\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"updateTime:\xc6\x01\xbaH\xc2\x01\x1a\xbf\x01\n" +
+	"!dashboard_tile.unique_breakpoints\x12!layout breakpoints must be unique\x1awthis.layouts.size() <= 1|| !this.layouts.exists(l,     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)B\x10\n" +
+	"\acontent\x12\x05\xbaH\x02\b\x01\"T\n" +
+	"\x12InsightTileContent\x12>\n" +
+	"\x05query\x18\x01 \x01(\v2 .shared.insights.v1.QueryRequestB\x06\xbaH\x03\xc8\x01\x01R\x05query\"6\n" +
+	"\x13MarkdownTileContent\x12\x1f\n" +
+	"\x04body\x18\x01 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xa0\x8d\x06R\x04body\"\xc4\x02\n" +
 	"\x14ResponsiveGridLayout\x12<\n" +
 	"\n" +
 	"breakpoint\x18\x01 \x01(\tB\x1c\xbaH\x19\xc8\x01\x01r\x14\x18 2\x10^[a-zA-Z0-9_-]+$R\n" +
@@ -1174,45 +1382,52 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\x1dDashboardsServiceListResponse\x12B\n" +
 	"\n" +
 	"dashboards\x18\x01 \x03(\v2\".dashboard.dashboards.v1.DashboardR\n" +
-	"dashboards\"\x9c\x04\n" +
-	"%DashboardsServiceCreateInsightRequest\x12)\n" +
-	"\fdashboard_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdashboardId\x12.\n" +
-	"\fdisplay_name\x18\x02 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
-	"\vdescription\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12>\n" +
-	"\x05query\x18\x04 \x01(\v2 .shared.insights.v1.QueryRequestB\x06\xbaH\x03\xc8\x01\x01R\x05query\x12Q\n" +
-	"\alayouts\x18\x05 \x03(\v2-.dashboard.dashboards.v1.ResponsiveGridLayoutB\b\xbaH\x05\x92\x01\x02\x10\bR\alayouts:\xd8\x01\xbaH\xd4\x01\x1a\xd1\x01\n" +
-	"3create_dashboard_insight_request.unique_breakpoints\x12!layout breakpoints must be unique\x1awthis.layouts.size() <= 1|| !this.layouts.exists(l,     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)\"m\n" +
-	"&DashboardsServiceCreateInsightResponse\x12C\n" +
-	"\ainsight\x18\x01 \x01(\v2).dashboard.dashboards.v1.DashboardInsightR\ainsight\"\xb4\x04\n" +
-	"%DashboardsServiceUpdateInsightRequest\x12\x16\n" +
+	"dashboards\"\xfa\x04\n" +
+	"\"DashboardsServiceCreateTileRequest\x12)\n" +
+	"\fdashboard_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdashboardId\x12+\n" +
+	"\fdisplay_name\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
+	"\vdescription\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12G\n" +
+	"\ainsight\x18\x04 \x01(\v2+.dashboard.dashboards.v1.InsightTileContentH\x00R\ainsight\x12J\n" +
+	"\bmarkdown\x18\x05 \x01(\v2,.dashboard.dashboards.v1.MarkdownTileContentH\x00R\bmarkdown\x12Q\n" +
+	"\alayouts\x18\x06 \x03(\v2-.dashboard.dashboards.v1.ResponsiveGridLayoutB\b\xbaH\x05\x92\x01\x02\x10\bR\alayouts:\xd5\x01\xbaH\xd1\x01\x1a\xce\x01\n" +
+	"0create_dashboard_tile_request.unique_breakpoints\x12!layout breakpoints must be unique\x1awthis.layouts.size() <= 1|| !this.layouts.exists(l,     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)B\x10\n" +
+	"\acontent\x12\x05\xbaH\x02\b\x01\"a\n" +
+	"#DashboardsServiceCreateTileResponse\x12:\n" +
+	"\x04tile\x18\x01 \x01(\v2&.dashboard.dashboards.v1.DashboardTileR\x04tile\"\x92\x05\n" +
+	"\"DashboardsServiceUpdateTileRequest\x12\x16\n" +
 	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\x12)\n" +
-	"\fdashboard_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdashboardId\x12.\n" +
-	"\fdisplay_name\x18\x03 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
-	"\vdescription\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12>\n" +
-	"\x05query\x18\x05 \x01(\v2 .shared.insights.v1.QueryRequestB\x06\xbaH\x03\xc8\x01\x01R\x05query\x12Q\n" +
-	"\alayouts\x18\x06 \x03(\v2-.dashboard.dashboards.v1.ResponsiveGridLayoutB\b\xbaH\x05\x92\x01\x02\x10\bR\alayouts:\xd8\x01\xbaH\xd4\x01\x1a\xd1\x01\n" +
-	"3update_dashboard_insight_request.unique_breakpoints\x12!layout breakpoints must be unique\x1awthis.layouts.size() <= 1|| !this.layouts.exists(l,     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)\"m\n" +
-	"&DashboardsServiceUpdateInsightResponse\x12C\n" +
-	"\ainsight\x18\x01 \x01(\v2).dashboard.dashboards.v1.DashboardInsightR\ainsight\"j\n" +
-	"%DashboardsServiceDeleteInsightRequest\x12\x16\n" +
+	"\fdashboard_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdashboardId\x12+\n" +
+	"\fdisplay_name\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
+	"\vdescription\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12G\n" +
+	"\ainsight\x18\x05 \x01(\v2+.dashboard.dashboards.v1.InsightTileContentH\x00R\ainsight\x12J\n" +
+	"\bmarkdown\x18\x06 \x01(\v2,.dashboard.dashboards.v1.MarkdownTileContentH\x00R\bmarkdown\x12Q\n" +
+	"\alayouts\x18\a \x03(\v2-.dashboard.dashboards.v1.ResponsiveGridLayoutB\b\xbaH\x05\x92\x01\x02\x10\bR\alayouts:\xd5\x01\xbaH\xd1\x01\x1a\xce\x01\n" +
+	"0update_dashboard_tile_request.unique_breakpoints\x12!layout breakpoints must be unique\x1awthis.layouts.size() <= 1|| !this.layouts.exists(l,     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)B\x10\n" +
+	"\acontent\x12\x05\xbaH\x02\b\x01\"a\n" +
+	"#DashboardsServiceUpdateTileResponse\x12:\n" +
+	"\x04tile\x18\x01 \x01(\v2&.dashboard.dashboards.v1.DashboardTileR\x04tile\"g\n" +
+	"\"DashboardsServiceDeleteTileRequest\x12\x16\n" +
 	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\x12)\n" +
-	"\fdashboard_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdashboardId\"(\n" +
-	"&DashboardsServiceDeleteInsightResponse\"\x9f\x01\n" +
+	"\fdashboard_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdashboardId\"%\n" +
+	"#DashboardsServiceDeleteTileResponse\"\x9f\x01\n" +
 	")DashboardsServiceUpdateDisplayNameRequest\x12\x16\n" +
 	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\x12.\n" +
 	"\fdisplay_name\x18\x02 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
 	"\vdescription\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\"n\n" +
 	"*DashboardsServiceUpdateDisplayNameResponse\x12@\n" +
-	"\tdashboard\x18\x01 \x01(\v2\".dashboard.dashboards.v1.DashboardR\tdashboard2\xe0\b\n" +
+	"\tdashboard\x18\x01 \x01(\v2\".dashboard.dashboards.v1.DashboardR\tdashboard2\xc5\b\n" +
 	"\x11DashboardsService\x12}\n" +
 	"\x06Create\x127.dashboard.dashboards.v1.DashboardsServiceCreateRequest\x1a8.dashboard.dashboards.v1.DashboardsServiceCreateResponse\"\x00\x12}\n" +
 	"\x06Delete\x127.dashboard.dashboards.v1.DashboardsServiceDeleteRequest\x1a8.dashboard.dashboards.v1.DashboardsServiceDeleteResponse\"\x00\x12t\n" +
 	"\x03Get\x124.dashboard.dashboards.v1.DashboardsServiceGetRequest\x1a5.dashboard.dashboards.v1.DashboardsServiceGetResponse\"\x00\x12w\n" +
-	"\x04List\x125.dashboard.dashboards.v1.DashboardsServiceListRequest\x1a6.dashboard.dashboards.v1.DashboardsServiceListResponse\"\x00\x12\x92\x01\n" +
-	"\rCreateInsight\x12>.dashboard.dashboards.v1.DashboardsServiceCreateInsightRequest\x1a?.dashboard.dashboards.v1.DashboardsServiceCreateInsightResponse\"\x00\x12\x92\x01\n" +
-	"\rUpdateInsight\x12>.dashboard.dashboards.v1.DashboardsServiceUpdateInsightRequest\x1a?.dashboard.dashboards.v1.DashboardsServiceUpdateInsightResponse\"\x00\x12\x92\x01\n" +
-	"\rDeleteInsight\x12>.dashboard.dashboards.v1.DashboardsServiceDeleteInsightRequest\x1a?.dashboard.dashboards.v1.DashboardsServiceDeleteInsightResponse\"\x00\x12\x9e\x01\n" +
-	"\x11UpdateDisplayName\x12B.dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameRequest\x1aC.dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameResponse\"\x00BOZMgithub.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1;dashboardsv1b\beditionsp\xe8\a"
+	"\x04List\x125.dashboard.dashboards.v1.DashboardsServiceListRequest\x1a6.dashboard.dashboards.v1.DashboardsServiceListResponse\"\x00\x12\x9e\x01\n" +
+	"\x11UpdateDisplayName\x12B.dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameRequest\x1aC.dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameResponse\"\x00\x12\x89\x01\n" +
+	"\n" +
+	"CreateTile\x12;.dashboard.dashboards.v1.DashboardsServiceCreateTileRequest\x1a<.dashboard.dashboards.v1.DashboardsServiceCreateTileResponse\"\x00\x12\x89\x01\n" +
+	"\n" +
+	"UpdateTile\x12;.dashboard.dashboards.v1.DashboardsServiceUpdateTileRequest\x1a<.dashboard.dashboards.v1.DashboardsServiceUpdateTileResponse\"\x00\x12\x89\x01\n" +
+	"\n" +
+	"DeleteTile\x12;.dashboard.dashboards.v1.DashboardsServiceDeleteTileRequest\x1a<.dashboard.dashboards.v1.DashboardsServiceDeleteTileResponse\"\x00BOZMgithub.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1;dashboardsv1b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_dashboards_v1_dashboards_proto_rawDescOnce sync.Once
@@ -1226,69 +1441,75 @@ func file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP() []byte {
 	return file_dashboard_dashboards_v1_dashboards_proto_rawDescData
 }
 
-var file_dashboard_dashboards_v1_dashboards_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_dashboard_dashboards_v1_dashboards_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_dashboard_dashboards_v1_dashboards_proto_goTypes = []any{
 	(*Dashboard)(nil),                                  // 0: dashboard.dashboards.v1.Dashboard
-	(*DashboardInsight)(nil),                           // 1: dashboard.dashboards.v1.DashboardInsight
-	(*ResponsiveGridLayout)(nil),                       // 2: dashboard.dashboards.v1.ResponsiveGridLayout
-	(*DashboardsServiceCreateRequest)(nil),             // 3: dashboard.dashboards.v1.DashboardsServiceCreateRequest
-	(*DashboardsServiceCreateResponse)(nil),            // 4: dashboard.dashboards.v1.DashboardsServiceCreateResponse
-	(*DashboardsServiceDeleteRequest)(nil),             // 5: dashboard.dashboards.v1.DashboardsServiceDeleteRequest
-	(*DashboardsServiceDeleteResponse)(nil),            // 6: dashboard.dashboards.v1.DashboardsServiceDeleteResponse
-	(*DashboardsServiceGetRequest)(nil),                // 7: dashboard.dashboards.v1.DashboardsServiceGetRequest
-	(*DashboardsServiceGetResponse)(nil),               // 8: dashboard.dashboards.v1.DashboardsServiceGetResponse
-	(*DashboardsServiceListRequest)(nil),               // 9: dashboard.dashboards.v1.DashboardsServiceListRequest
-	(*DashboardsServiceListResponse)(nil),              // 10: dashboard.dashboards.v1.DashboardsServiceListResponse
-	(*DashboardsServiceCreateInsightRequest)(nil),      // 11: dashboard.dashboards.v1.DashboardsServiceCreateInsightRequest
-	(*DashboardsServiceCreateInsightResponse)(nil),     // 12: dashboard.dashboards.v1.DashboardsServiceCreateInsightResponse
-	(*DashboardsServiceUpdateInsightRequest)(nil),      // 13: dashboard.dashboards.v1.DashboardsServiceUpdateInsightRequest
-	(*DashboardsServiceUpdateInsightResponse)(nil),     // 14: dashboard.dashboards.v1.DashboardsServiceUpdateInsightResponse
-	(*DashboardsServiceDeleteInsightRequest)(nil),      // 15: dashboard.dashboards.v1.DashboardsServiceDeleteInsightRequest
-	(*DashboardsServiceDeleteInsightResponse)(nil),     // 16: dashboard.dashboards.v1.DashboardsServiceDeleteInsightResponse
-	(*DashboardsServiceUpdateDisplayNameRequest)(nil),  // 17: dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameRequest
-	(*DashboardsServiceUpdateDisplayNameResponse)(nil), // 18: dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameResponse
-	(*timestamppb.Timestamp)(nil),                      // 19: google.protobuf.Timestamp
-	(*v1.QueryRequest)(nil),                            // 20: shared.insights.v1.QueryRequest
+	(*DashboardTile)(nil),                              // 1: dashboard.dashboards.v1.DashboardTile
+	(*InsightTileContent)(nil),                         // 2: dashboard.dashboards.v1.InsightTileContent
+	(*MarkdownTileContent)(nil),                        // 3: dashboard.dashboards.v1.MarkdownTileContent
+	(*ResponsiveGridLayout)(nil),                       // 4: dashboard.dashboards.v1.ResponsiveGridLayout
+	(*DashboardsServiceCreateRequest)(nil),             // 5: dashboard.dashboards.v1.DashboardsServiceCreateRequest
+	(*DashboardsServiceCreateResponse)(nil),            // 6: dashboard.dashboards.v1.DashboardsServiceCreateResponse
+	(*DashboardsServiceDeleteRequest)(nil),             // 7: dashboard.dashboards.v1.DashboardsServiceDeleteRequest
+	(*DashboardsServiceDeleteResponse)(nil),            // 8: dashboard.dashboards.v1.DashboardsServiceDeleteResponse
+	(*DashboardsServiceGetRequest)(nil),                // 9: dashboard.dashboards.v1.DashboardsServiceGetRequest
+	(*DashboardsServiceGetResponse)(nil),               // 10: dashboard.dashboards.v1.DashboardsServiceGetResponse
+	(*DashboardsServiceListRequest)(nil),               // 11: dashboard.dashboards.v1.DashboardsServiceListRequest
+	(*DashboardsServiceListResponse)(nil),              // 12: dashboard.dashboards.v1.DashboardsServiceListResponse
+	(*DashboardsServiceCreateTileRequest)(nil),         // 13: dashboard.dashboards.v1.DashboardsServiceCreateTileRequest
+	(*DashboardsServiceCreateTileResponse)(nil),        // 14: dashboard.dashboards.v1.DashboardsServiceCreateTileResponse
+	(*DashboardsServiceUpdateTileRequest)(nil),         // 15: dashboard.dashboards.v1.DashboardsServiceUpdateTileRequest
+	(*DashboardsServiceUpdateTileResponse)(nil),        // 16: dashboard.dashboards.v1.DashboardsServiceUpdateTileResponse
+	(*DashboardsServiceDeleteTileRequest)(nil),         // 17: dashboard.dashboards.v1.DashboardsServiceDeleteTileRequest
+	(*DashboardsServiceDeleteTileResponse)(nil),        // 18: dashboard.dashboards.v1.DashboardsServiceDeleteTileResponse
+	(*DashboardsServiceUpdateDisplayNameRequest)(nil),  // 19: dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameRequest
+	(*DashboardsServiceUpdateDisplayNameResponse)(nil), // 20: dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameResponse
+	(*timestamppb.Timestamp)(nil),                      // 21: google.protobuf.Timestamp
+	(*v1.QueryRequest)(nil),                            // 22: shared.insights.v1.QueryRequest
 }
 var file_dashboard_dashboards_v1_dashboards_proto_depIdxs = []int32{
-	19, // 0: dashboard.dashboards.v1.Dashboard.create_time:type_name -> google.protobuf.Timestamp
-	19, // 1: dashboard.dashboards.v1.Dashboard.update_time:type_name -> google.protobuf.Timestamp
-	1,  // 2: dashboard.dashboards.v1.Dashboard.insights:type_name -> dashboard.dashboards.v1.DashboardInsight
-	20, // 3: dashboard.dashboards.v1.DashboardInsight.query:type_name -> shared.insights.v1.QueryRequest
-	2,  // 4: dashboard.dashboards.v1.DashboardInsight.layouts:type_name -> dashboard.dashboards.v1.ResponsiveGridLayout
-	19, // 5: dashboard.dashboards.v1.DashboardInsight.create_time:type_name -> google.protobuf.Timestamp
-	19, // 6: dashboard.dashboards.v1.DashboardInsight.update_time:type_name -> google.protobuf.Timestamp
-	0,  // 7: dashboard.dashboards.v1.DashboardsServiceCreateResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
-	0,  // 8: dashboard.dashboards.v1.DashboardsServiceGetResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
-	0,  // 9: dashboard.dashboards.v1.DashboardsServiceListResponse.dashboards:type_name -> dashboard.dashboards.v1.Dashboard
-	20, // 10: dashboard.dashboards.v1.DashboardsServiceCreateInsightRequest.query:type_name -> shared.insights.v1.QueryRequest
-	2,  // 11: dashboard.dashboards.v1.DashboardsServiceCreateInsightRequest.layouts:type_name -> dashboard.dashboards.v1.ResponsiveGridLayout
-	1,  // 12: dashboard.dashboards.v1.DashboardsServiceCreateInsightResponse.insight:type_name -> dashboard.dashboards.v1.DashboardInsight
-	20, // 13: dashboard.dashboards.v1.DashboardsServiceUpdateInsightRequest.query:type_name -> shared.insights.v1.QueryRequest
-	2,  // 14: dashboard.dashboards.v1.DashboardsServiceUpdateInsightRequest.layouts:type_name -> dashboard.dashboards.v1.ResponsiveGridLayout
-	1,  // 15: dashboard.dashboards.v1.DashboardsServiceUpdateInsightResponse.insight:type_name -> dashboard.dashboards.v1.DashboardInsight
-	0,  // 16: dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
-	3,  // 17: dashboard.dashboards.v1.DashboardsService.Create:input_type -> dashboard.dashboards.v1.DashboardsServiceCreateRequest
-	5,  // 18: dashboard.dashboards.v1.DashboardsService.Delete:input_type -> dashboard.dashboards.v1.DashboardsServiceDeleteRequest
-	7,  // 19: dashboard.dashboards.v1.DashboardsService.Get:input_type -> dashboard.dashboards.v1.DashboardsServiceGetRequest
-	9,  // 20: dashboard.dashboards.v1.DashboardsService.List:input_type -> dashboard.dashboards.v1.DashboardsServiceListRequest
-	11, // 21: dashboard.dashboards.v1.DashboardsService.CreateInsight:input_type -> dashboard.dashboards.v1.DashboardsServiceCreateInsightRequest
-	13, // 22: dashboard.dashboards.v1.DashboardsService.UpdateInsight:input_type -> dashboard.dashboards.v1.DashboardsServiceUpdateInsightRequest
-	15, // 23: dashboard.dashboards.v1.DashboardsService.DeleteInsight:input_type -> dashboard.dashboards.v1.DashboardsServiceDeleteInsightRequest
-	17, // 24: dashboard.dashboards.v1.DashboardsService.UpdateDisplayName:input_type -> dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameRequest
-	4,  // 25: dashboard.dashboards.v1.DashboardsService.Create:output_type -> dashboard.dashboards.v1.DashboardsServiceCreateResponse
-	6,  // 26: dashboard.dashboards.v1.DashboardsService.Delete:output_type -> dashboard.dashboards.v1.DashboardsServiceDeleteResponse
-	8,  // 27: dashboard.dashboards.v1.DashboardsService.Get:output_type -> dashboard.dashboards.v1.DashboardsServiceGetResponse
-	10, // 28: dashboard.dashboards.v1.DashboardsService.List:output_type -> dashboard.dashboards.v1.DashboardsServiceListResponse
-	12, // 29: dashboard.dashboards.v1.DashboardsService.CreateInsight:output_type -> dashboard.dashboards.v1.DashboardsServiceCreateInsightResponse
-	14, // 30: dashboard.dashboards.v1.DashboardsService.UpdateInsight:output_type -> dashboard.dashboards.v1.DashboardsServiceUpdateInsightResponse
-	16, // 31: dashboard.dashboards.v1.DashboardsService.DeleteInsight:output_type -> dashboard.dashboards.v1.DashboardsServiceDeleteInsightResponse
-	18, // 32: dashboard.dashboards.v1.DashboardsService.UpdateDisplayName:output_type -> dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameResponse
-	25, // [25:33] is the sub-list for method output_type
-	17, // [17:25] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	21, // 0: dashboard.dashboards.v1.Dashboard.create_time:type_name -> google.protobuf.Timestamp
+	21, // 1: dashboard.dashboards.v1.Dashboard.update_time:type_name -> google.protobuf.Timestamp
+	1,  // 2: dashboard.dashboards.v1.Dashboard.tiles:type_name -> dashboard.dashboards.v1.DashboardTile
+	2,  // 3: dashboard.dashboards.v1.DashboardTile.insight:type_name -> dashboard.dashboards.v1.InsightTileContent
+	3,  // 4: dashboard.dashboards.v1.DashboardTile.markdown:type_name -> dashboard.dashboards.v1.MarkdownTileContent
+	4,  // 5: dashboard.dashboards.v1.DashboardTile.layouts:type_name -> dashboard.dashboards.v1.ResponsiveGridLayout
+	21, // 6: dashboard.dashboards.v1.DashboardTile.create_time:type_name -> google.protobuf.Timestamp
+	21, // 7: dashboard.dashboards.v1.DashboardTile.update_time:type_name -> google.protobuf.Timestamp
+	22, // 8: dashboard.dashboards.v1.InsightTileContent.query:type_name -> shared.insights.v1.QueryRequest
+	0,  // 9: dashboard.dashboards.v1.DashboardsServiceCreateResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
+	0,  // 10: dashboard.dashboards.v1.DashboardsServiceGetResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
+	0,  // 11: dashboard.dashboards.v1.DashboardsServiceListResponse.dashboards:type_name -> dashboard.dashboards.v1.Dashboard
+	2,  // 12: dashboard.dashboards.v1.DashboardsServiceCreateTileRequest.insight:type_name -> dashboard.dashboards.v1.InsightTileContent
+	3,  // 13: dashboard.dashboards.v1.DashboardsServiceCreateTileRequest.markdown:type_name -> dashboard.dashboards.v1.MarkdownTileContent
+	4,  // 14: dashboard.dashboards.v1.DashboardsServiceCreateTileRequest.layouts:type_name -> dashboard.dashboards.v1.ResponsiveGridLayout
+	1,  // 15: dashboard.dashboards.v1.DashboardsServiceCreateTileResponse.tile:type_name -> dashboard.dashboards.v1.DashboardTile
+	2,  // 16: dashboard.dashboards.v1.DashboardsServiceUpdateTileRequest.insight:type_name -> dashboard.dashboards.v1.InsightTileContent
+	3,  // 17: dashboard.dashboards.v1.DashboardsServiceUpdateTileRequest.markdown:type_name -> dashboard.dashboards.v1.MarkdownTileContent
+	4,  // 18: dashboard.dashboards.v1.DashboardsServiceUpdateTileRequest.layouts:type_name -> dashboard.dashboards.v1.ResponsiveGridLayout
+	1,  // 19: dashboard.dashboards.v1.DashboardsServiceUpdateTileResponse.tile:type_name -> dashboard.dashboards.v1.DashboardTile
+	0,  // 20: dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameResponse.dashboard:type_name -> dashboard.dashboards.v1.Dashboard
+	5,  // 21: dashboard.dashboards.v1.DashboardsService.Create:input_type -> dashboard.dashboards.v1.DashboardsServiceCreateRequest
+	7,  // 22: dashboard.dashboards.v1.DashboardsService.Delete:input_type -> dashboard.dashboards.v1.DashboardsServiceDeleteRequest
+	9,  // 23: dashboard.dashboards.v1.DashboardsService.Get:input_type -> dashboard.dashboards.v1.DashboardsServiceGetRequest
+	11, // 24: dashboard.dashboards.v1.DashboardsService.List:input_type -> dashboard.dashboards.v1.DashboardsServiceListRequest
+	19, // 25: dashboard.dashboards.v1.DashboardsService.UpdateDisplayName:input_type -> dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameRequest
+	13, // 26: dashboard.dashboards.v1.DashboardsService.CreateTile:input_type -> dashboard.dashboards.v1.DashboardsServiceCreateTileRequest
+	15, // 27: dashboard.dashboards.v1.DashboardsService.UpdateTile:input_type -> dashboard.dashboards.v1.DashboardsServiceUpdateTileRequest
+	17, // 28: dashboard.dashboards.v1.DashboardsService.DeleteTile:input_type -> dashboard.dashboards.v1.DashboardsServiceDeleteTileRequest
+	6,  // 29: dashboard.dashboards.v1.DashboardsService.Create:output_type -> dashboard.dashboards.v1.DashboardsServiceCreateResponse
+	8,  // 30: dashboard.dashboards.v1.DashboardsService.Delete:output_type -> dashboard.dashboards.v1.DashboardsServiceDeleteResponse
+	10, // 31: dashboard.dashboards.v1.DashboardsService.Get:output_type -> dashboard.dashboards.v1.DashboardsServiceGetResponse
+	12, // 32: dashboard.dashboards.v1.DashboardsService.List:output_type -> dashboard.dashboards.v1.DashboardsServiceListResponse
+	20, // 33: dashboard.dashboards.v1.DashboardsService.UpdateDisplayName:output_type -> dashboard.dashboards.v1.DashboardsServiceUpdateDisplayNameResponse
+	14, // 34: dashboard.dashboards.v1.DashboardsService.CreateTile:output_type -> dashboard.dashboards.v1.DashboardsServiceCreateTileResponse
+	16, // 35: dashboard.dashboards.v1.DashboardsService.UpdateTile:output_type -> dashboard.dashboards.v1.DashboardsServiceUpdateTileResponse
+	18, // 36: dashboard.dashboards.v1.DashboardsService.DeleteTile:output_type -> dashboard.dashboards.v1.DashboardsServiceDeleteTileResponse
+	29, // [29:37] is the sub-list for method output_type
+	21, // [21:29] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_dashboards_v1_dashboards_proto_init() }
@@ -1296,13 +1517,25 @@ func file_dashboard_dashboards_v1_dashboards_proto_init() {
 	if File_dashboard_dashboards_v1_dashboards_proto != nil {
 		return
 	}
+	file_dashboard_dashboards_v1_dashboards_proto_msgTypes[1].OneofWrappers = []any{
+		(*DashboardTile_Insight)(nil),
+		(*DashboardTile_Markdown)(nil),
+	}
+	file_dashboard_dashboards_v1_dashboards_proto_msgTypes[13].OneofWrappers = []any{
+		(*DashboardsServiceCreateTileRequest_Insight)(nil),
+		(*DashboardsServiceCreateTileRequest_Markdown)(nil),
+	}
+	file_dashboard_dashboards_v1_dashboards_proto_msgTypes[15].OneofWrappers = []any{
+		(*DashboardsServiceUpdateTileRequest_Insight)(nil),
+		(*DashboardsServiceUpdateTileRequest_Markdown)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_dashboards_v1_dashboards_proto_rawDesc), len(file_dashboard_dashboards_v1_dashboards_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
