@@ -158,6 +158,79 @@ func TestGetActivityFeed(t *testing.T) {
 		}
 	})
 
+	t.Run("resolves merged anonymous profile ids to the current profile", func(t *testing.T) {
+		err := ch.Conn.Exec(ctx,
+			`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			"user-merged", "proj-1", "ext-merged", map[string]any{}, uint8(0), now, now,
+		)
+		if err != nil {
+			t.Fatalf("seed target profile: %v", err)
+		}
+
+		err = ch.Conn.Exec(ctx,
+			`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			"anon-merged", "proj-1", "", map[string]any{}, uint8(1), now.Add(-1*time.Minute), now.Add(-1*time.Minute),
+		)
+		if err != nil {
+			t.Fatalf("seed merged anonymous profile tombstone: %v", err)
+		}
+
+		err = ch.Conn.Exec(ctx,
+			`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+			"anon-merged", "user-merged", "ext-merged", "proj-1",
+		)
+		if err != nil {
+			t.Fatalf("seed merged alias: %v", err)
+		}
+
+		for _, seed := range []struct {
+			distinctID string
+			kind       string
+			offset     time.Duration
+		}{
+			{distinctID: "user-merged", kind: "merged_profile_direct", offset: -7 * time.Minute},
+			{distinctID: "ext-merged", kind: "merged_profile_external", offset: -8 * time.Minute},
+			{distinctID: "anon-merged", kind: "merged_profile_alias", offset: -9 * time.Minute},
+		} {
+			err = ch.Conn.Exec(ctx,
+				`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				uuid.NewString(), "proj-1", seed.distinctID, seed.kind,
+				map[string]string{},
+				map[string]string{},
+				now.Add(seed.offset),
+				uuid.NewString(),
+			)
+			if err != nil {
+				t.Fatalf("seed merged profile event %s: %v", seed.kind, err)
+			}
+		}
+
+		evts, cursor, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+			ProjectID:  "proj-1",
+			DistinctID: "anon-merged",
+			PageSize:   100,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityFeed: %v", err)
+		}
+		if len(evts) != 3 {
+			t.Fatalf("expected 3 events for merged anonymous query, got %d", len(evts))
+		}
+		if cursor != nil {
+			t.Errorf("expected nil cursor, got %+v", cursor)
+		}
+
+		kinds := make(map[string]bool, len(evts))
+		for _, evt := range evts {
+			kinds[evt.Kind] = true
+		}
+		for _, kind := range []string{"merged_profile_direct", "merged_profile_external", "merged_profile_alias"} {
+			if !kinds[kind] {
+				t.Fatalf("expected merged anonymous query to include %s", kind)
+			}
+		}
+	})
+
 	t.Run("uses latest alias mapping when alias was reassigned", func(t *testing.T) {
 		insertTimeOld := now.Add(-10 * time.Minute)
 		insertTimeNew := now.Add(-9 * time.Minute)
@@ -327,8 +400,8 @@ func TestGetActivityFeed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("page 3: %v", err)
 		}
-		if len(evts3) != 0 {
-			t.Fatalf("page 3: expected 0, got %d", len(evts3))
+		if len(evts3) != 1 {
+			t.Fatalf("page 3: expected 1, got %d", len(evts3))
 		}
 
 		seen := make(map[string]bool)
@@ -347,13 +420,13 @@ func TestGetActivityFeed(t *testing.T) {
 			ProjectID:  "proj-1",
 			DistinctID: "user-1",
 		})
-		if err != nil {
-			t.Fatalf("GetActivityFeed: %v", err)
-		}
-		if len(evts) != 6 {
-			t.Fatalf("expected 6 events with default page size, got %d", len(evts))
-		}
-	})
+			if err != nil {
+				t.Fatalf("GetActivityFeed: %v", err)
+			}
+			if len(evts) != 7 {
+				t.Fatalf("expected 7 events with default page size, got %d", len(evts))
+			}
+		})
 
 	t.Run("negative page size defaults to 100", func(t *testing.T) {
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
@@ -361,14 +434,14 @@ func TestGetActivityFeed(t *testing.T) {
 			DistinctID: "user-1",
 			PageSize:   -5,
 		})
-		if err != nil {
-			t.Fatalf("GetActivityFeed: %v", err)
-		}
-		// Default 100 is applied, we only have 6 events
-		if len(evts) != 6 {
-			t.Fatalf("expected 6 events with negative page size, got %d", len(evts))
-		}
-	})
+			if err != nil {
+				t.Fatalf("GetActivityFeed: %v", err)
+			}
+			// Default 100 is applied, we only have 7 events
+			if len(evts) != 7 {
+				t.Fatalf("expected 7 events with negative page size, got %d", len(evts))
+			}
+		})
 
 	t.Run("page size capped at max", func(t *testing.T) {
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
@@ -376,14 +449,14 @@ func TestGetActivityFeed(t *testing.T) {
 			DistinctID: "user-1",
 			PageSize:   5000,
 		})
-		if err != nil {
-			t.Fatalf("GetActivityFeed: %v", err)
-		}
-		// Capped to 1000, we only have 6 events so all returned
-		if len(evts) != 6 {
-			t.Fatalf("expected 6 events with capped page size, got %d", len(evts))
-		}
-	})
+			if err != nil {
+				t.Fatalf("GetActivityFeed: %v", err)
+			}
+			// Capped to 1000, we only have 7 events so all returned
+			if len(evts) != 7 {
+				t.Fatalf("expected 7 events with capped page size, got %d", len(evts))
+			}
+		})
 
 	t.Run("empty for nonexistent profile", func(t *testing.T) {
 		evts, cursor, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{

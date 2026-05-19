@@ -246,6 +246,7 @@ func latestProfilesQuery(projectID string) *chq.Query {
 		Select(
 			"id",
 			"argMax(external_id, insert_time) AS external_id",
+			"argMax(is_deleted, insert_time) AS is_deleted",
 		).
 		From("profiles").
 		Where(chq.Eq("project_id", projectID)).
@@ -263,7 +264,7 @@ func (r *Reader) getProfileIDForIdentifier(ctx context.Context, projectID, disti
 		With("latest_profiles", latestProfiles).
 		Select("id AS profile_id").
 		From("latest_profiles").
-		Where(chq.Eq("id", distinctID)).
+		Where(chq.Eq("id", distinctID), chq.Eq("is_deleted", uint8(0))).
 		Limit(1).
 		Build()
 	if err != nil {
@@ -309,7 +310,7 @@ func (r *Reader) getProfileIDForIdentifier(ctx context.Context, projectID, disti
 		With("latest_profiles", latestProfiles).
 		Select("id AS profile_id").
 		From("latest_profiles").
-		Where(chq.Eq("external_id", distinctID)).
+		Where(chq.Eq("external_id", distinctID), chq.Eq("is_deleted", uint8(0))).
 		Limit(1).
 		Build()
 	if err != nil {
