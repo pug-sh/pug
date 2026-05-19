@@ -1,0 +1,78 @@
+edition = "2023";
+package dashboard.orgemailproviders.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1;orgemailprovidersv1";
+
+service OrgEmailProvidersService {
+  rpc Get      (GetRequest)        returns (GetResponse);
+  rpc Set      (SetRequest)        returns (SetResponse);
+  rpc Remove   (RemoveRequest)     returns (RemoveResponse);
+  rpc SendTest (SendTestRequest)   returns (SendTestResponse);
+}
+
+enum OrgEmailProviderKind {
+  ORG_EMAIL_PROVIDER_KIND_UNSPECIFIED = 0;
+  ORG_EMAIL_PROVIDER_KIND_SMTP        = 1;
+  ORG_EMAIL_PROVIDER_KIND_RESEND      = 2;
+}
+
+message SMTPConfig {
+  string host     = 1 [(buf.validate.field).string.min_len = 1];
+  uint32 port     = 2 [(buf.validate.field).uint32 = {gt: 0, lte: 65535}];
+  string username = 3 [(buf.validate.field).string.min_len = 1];
+  string password = 4 [(buf.validate.field).string.min_len = 1];
+  bool   use_tls  = 5;
+}
+
+message ResendConfig {
+  string api_key = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetResponse {
+  OrgEmailProviderKind      kind            = 1;
+  string                    from_address    = 2;
+  string                    reply_to        = 3;
+  string                    redacted_secret = 4;
+  google.protobuf.Timestamp update_time     = 5;
+}
+
+message SetRequest {
+  string org_id       = 1 [(buf.validate.field).string.min_len = 1];
+  string from_address = 2 [(buf.validate.field).string.email = true];
+  // reply_to is optional. In edition 2023, string fields track presence by
+  // default, so leaving it unset skips the email rule. Setting it to any
+  // non-empty value enforces the email format.
+  string reply_to     = 3 [(buf.validate.field).string.email = true];
+  oneof config {
+    option (buf.validate.oneof).required = true;
+    SMTPConfig   smtp   = 10;
+    ResendConfig resend = 11;
+  }
+}
+
+message SetResponse {
+  google.protobuf.Timestamp update_time = 1;
+}
+
+message RemoveRequest {
+  string org_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemoveResponse {}
+
+message SendTestRequest {
+  string org_id    = 1 [(buf.validate.field).string.min_len = 1];
+  string recipient = 2 [(buf.validate.field).string.email = true];
+}
+
+message SendTestResponse {
+  bool   success       = 1;
+  string error_message = 2;
+}
