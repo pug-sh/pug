@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	coreemail "github.com/pug-sh/pug/internal/core/email"
+	emailspec "github.com/pug-sh/pug/internal/core/email/spec"
 )
 
 func TestProviderSendSetsIdempotencyKeyHeader(t *testing.T) {
@@ -18,7 +18,7 @@ func TestProviderSendSetsIdempotencyKeyHeader(t *testing.T) {
 		return jsonResponse(http.StatusOK, `{"id":"email_123"}`), nil
 	}))
 
-	err := provider.Send(context.Background(), coreemail.Message{
+	err := provider.Send(context.Background(), emailspec.Message{
 		IdempotencyKey: "password_reset:reset-token",
 		From:           "noreply@example.com",
 		To:             "test@example.com",

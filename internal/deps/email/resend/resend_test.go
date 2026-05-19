@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	coreemail "github.com/pug-sh/pug/internal/core/email"
+	emailspec "github.com/pug-sh/pug/internal/core/email/spec"
 	resendsdk "github.com/resend/resend-go/v3"
 )
 
@@ -28,7 +28,7 @@ func TestProviderSendWrapsClientErrorsAsPermanent(t *testing.T) {
 		return jsonResponse(http.StatusUnauthorized, `{"message":"invalid api key"}`), nil
 	}))
 
-	err := provider.Send(context.Background(), coreemail.Message{
+	err := provider.Send(context.Background(), emailspec.Message{
 		From:     "noreply@example.com",
 		To:       "test@example.com",
 		Subject:  "Subject",
@@ -37,7 +37,7 @@ func TestProviderSendWrapsClientErrorsAsPermanent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !coreemail.IsPermanentError(err) {
+	if !emailspec.IsPermanentError(err) {
 		t.Fatalf("expected permanent error, got %T: %v", err, err)
 	}
 }
@@ -47,7 +47,7 @@ func TestProviderSendKeepsRateLimitsRetryable(t *testing.T) {
 		return jsonResponse(http.StatusTooManyRequests, `{"message":"rate limited"}`), nil
 	}))
 
-	err := provider.Send(context.Background(), coreemail.Message{
+	err := provider.Send(context.Background(), emailspec.Message{
 		From:     "noreply@example.com",
 		To:       "test@example.com",
 		Subject:  "Subject",
@@ -56,7 +56,7 @@ func TestProviderSendKeepsRateLimitsRetryable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if coreemail.IsPermanentError(err) {
+	if emailspec.IsPermanentError(err) {
 		t.Fatalf("expected retryable error, got %T: %v", err, err)
 	}
 	if !errors.Is(err, resendsdk.ErrRateLimit) {

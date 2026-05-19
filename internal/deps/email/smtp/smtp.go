@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	coreemail "github.com/pug-sh/pug/internal/core/email"
+	emailspec "github.com/pug-sh/pug/internal/core/email/spec"
 )
 
 type Config struct {
@@ -35,7 +35,7 @@ func New(cfg Config) (*Provider, error) {
 	return &Provider{cfg: cfg}, nil
 }
 
-func (p *Provider) Send(_ context.Context, msg coreemail.Message) error {
+func (p *Provider) Send(_ context.Context, msg emailspec.Message) error {
 	addr := net.JoinHostPort(p.cfg.Host, strconv.Itoa(p.cfg.Port))
 
 	c, err := netsmtp.Dial(addr)
@@ -51,7 +51,7 @@ func (p *Provider) Send(_ context.Context, msg coreemail.Message) error {
 	if p.cfg.UseTLS {
 		ok, _ := c.Extension("STARTTLS")
 		if !ok {
-			return coreemail.NewPermanentError(errors.New("smtp: server does not advertise STARTTLS but UseTLS was requested"))
+			return emailspec.NewPermanentError(errors.New("smtp: server does not advertise STARTTLS but UseTLS was requested"))
 		}
 		if err := c.StartTLS(&tls.Config{ServerName: p.cfg.Host}); err != nil {
 			return fmt.Errorf("smtp starttls: %w", err)
@@ -100,7 +100,7 @@ func randomBoundary() string {
 }
 
 // buildMIME returns a multipart/alternative message with text and html parts.
-func buildMIME(msg coreemail.Message) string {
+func buildMIME(msg emailspec.Message) string {
 	var sb strings.Builder
 	sb.WriteString("From: " + msg.From + "\r\n")
 	sb.WriteString("To: " + msg.To + "\r\n")
@@ -135,7 +135,7 @@ func classify(err error) error {
 	}
 	var smtpErr *textproto.Error
 	if errors.As(err, &smtpErr) && smtpErr.Code >= 500 && smtpErr.Code < 600 {
-		return coreemail.NewPermanentError(err)
+		return emailspec.NewPermanentError(err)
 	}
 	return err
 }

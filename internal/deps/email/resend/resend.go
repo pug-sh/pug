@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	coreemail "github.com/pug-sh/pug/internal/core/email"
+	emailspec "github.com/pug-sh/pug/internal/core/email/spec"
 	resendsdk "github.com/resend/resend-go/v3"
 )
 
@@ -29,7 +29,7 @@ func New(cfg Config) (*Provider, error) {
 	}, nil
 }
 
-func (p *Provider) Send(ctx context.Context, msg coreemail.Message) error {
+func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 	params := &resendsdk.SendEmailRequest{
 		From:    msg.From,
 		To:      []string{msg.To},
@@ -48,12 +48,12 @@ func (p *Provider) Send(ctx context.Context, msg coreemail.Message) error {
 	if err != nil {
 		wrappedErr := fmt.Errorf("resend send email: %w", err)
 		if shouldTreatAsPermanent(status.code, err) {
-			return coreemail.NewPermanentError(wrappedErr)
+			return emailspec.NewPermanentError(wrappedErr)
 		}
 		return wrappedErr
 	}
 	if sent == nil || sent.Id == "" {
-		return coreemail.NewPermanentError(fmt.Errorf("resend send email: empty response"))
+		return emailspec.NewPermanentError(fmt.Errorf("resend send email: empty response"))
 	}
 	return nil
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 	"github.com/aws/smithy-go"
-	coreemail "github.com/pug-sh/pug/internal/core/email"
+	emailspec "github.com/pug-sh/pug/internal/core/email/spec"
 )
 
 type Config struct {
@@ -38,7 +38,7 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 	return &Provider{client: sesv2.NewFromConfig(awsCfg)}, nil
 }
 
-func (p *Provider) Send(ctx context.Context, msg coreemail.Message) error {
+func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 	input := &sesv2.SendEmailInput{
 		FromEmailAddress: &msg.From,
 		Destination: &types.Destination{
@@ -68,12 +68,12 @@ func (p *Provider) Send(ctx context.Context, msg coreemail.Message) error {
 	if err != nil {
 		wrappedErr := fmt.Errorf("ses send email: %w", err)
 		if isPermanentSendError(err) {
-			return coreemail.NewPermanentError(wrappedErr)
+			return emailspec.NewPermanentError(wrappedErr)
 		}
 		return wrappedErr
 	}
 	if sent == nil || sent.MessageId == nil || *sent.MessageId == "" {
-		return coreemail.NewPermanentError(fmt.Errorf("ses send email: empty response"))
+		return emailspec.NewPermanentError(fmt.Errorf("ses send email: empty response"))
 	}
 	return nil
 }

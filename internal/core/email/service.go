@@ -7,6 +7,8 @@ import (
 	"html"
 	"net/url"
 	"strings"
+
+	"github.com/pug-sh/pug/internal/core/email/spec"
 )
 
 const (
@@ -21,36 +23,21 @@ type Config struct {
 	ReplyTo          string `env:"PUG_EMAIL_REPLY_TO"`
 }
 
-type Message struct {
-	IdempotencyKey string
-	From           string
-	ReplyTo        string
-	Subject        string
-	To             string
-	HTMLBody       string
-	TextBody       string
-}
+// Message, Provider, PermanentError and the permanent-error helpers are
+// re-exported from internal/core/email/spec so internal/deps/email/* can
+// implement the Provider contract without importing core/email (cycle when
+// core/email constructs per-tenant providers from spec types).
+type Message = spec.Message
 
-type Provider interface {
-	Send(ctx context.Context, msg Message) error
-}
+type Provider = spec.Provider
 
-type PermanentError struct{ err error }
+type PermanentError = spec.PermanentError
 
-func NewPermanentError(err error) *PermanentError {
-	if err == nil {
-		panic("email: nil permanent error")
-	}
-	return &PermanentError{err: err}
-}
+// NewPermanentError marks an error as non-retryable. See spec.NewPermanentError.
+func NewPermanentError(err error) *PermanentError { return spec.NewPermanentError(err) }
 
-func (e *PermanentError) Error() string { return e.err.Error() }
-func (e *PermanentError) Unwrap() error { return e.err }
-
-func IsPermanentError(err error) bool {
-	var permanent *PermanentError
-	return errors.As(err, &permanent)
-}
+// IsPermanentError reports whether err (or anything it wraps) is a PermanentError.
+func IsPermanentError(err error) bool { return spec.IsPermanentError(err) }
 
 type Service struct {
 	baseURL         string

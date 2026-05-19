@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	sesv2types "github.com/aws/aws-sdk-go-v2/service/sesv2/types"
-	coreemail "github.com/pug-sh/pug/internal/core/email"
+	emailspec "github.com/pug-sh/pug/internal/core/email/spec"
 )
 
 func TestProviderSendBuildsSESRequest(t *testing.T) {
@@ -18,7 +18,7 @@ func TestProviderSendBuildsSESRequest(t *testing.T) {
 	}
 	provider := &Provider{client: fake}
 
-	err := provider.Send(context.Background(), coreemail.Message{
+	err := provider.Send(context.Background(), emailspec.Message{
 		From:     "noreply@example.com",
 		ReplyTo:  "support@example.com",
 		To:       "user@example.com",
@@ -59,7 +59,7 @@ func TestProviderSendWrapsPermanentErrors(t *testing.T) {
 		},
 	}
 
-	err := provider.Send(context.Background(), coreemail.Message{
+	err := provider.Send(context.Background(), emailspec.Message{
 		From:     "noreply@example.com",
 		To:       "user@example.com",
 		Subject:  "Verify your email",
@@ -69,7 +69,7 @@ func TestProviderSendWrapsPermanentErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !coreemail.IsPermanentError(err) {
+	if !emailspec.IsPermanentError(err) {
 		t.Fatalf("expected permanent error, got %T: %v", err, err)
 	}
 }
@@ -81,7 +81,7 @@ func TestProviderSendKeepsTransientErrorsRetryable(t *testing.T) {
 		},
 	}
 
-	err := provider.Send(context.Background(), coreemail.Message{
+	err := provider.Send(context.Background(), emailspec.Message{
 		From:     "noreply@example.com",
 		To:       "user@example.com",
 		Subject:  "Verify your email",
@@ -91,7 +91,7 @@ func TestProviderSendKeepsTransientErrorsRetryable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if coreemail.IsPermanentError(err) {
+	if emailspec.IsPermanentError(err) {
 		t.Fatalf("expected retryable error, got %T: %v", err, err)
 	}
 }
