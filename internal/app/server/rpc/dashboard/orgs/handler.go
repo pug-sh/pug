@@ -299,3 +299,27 @@ func (s *server) ListInvitations(
 
 	return connect.NewResponse(&orgsv1.ListInvitationsResponse{Invitations: result}), nil
 }
+
+// Stub: replaced by Task 9 with the real implementation.
+func (s *server) Create(
+	ctx context.Context,
+	_ *connect.Request[orgsv1.CreateRequest],
+) (*connect.Response[orgsv1.CreateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}
+
+// Stub: replaced by Task 10 with the real implementation.
+func (s *server) Leave(
+	ctx context.Context,
+	_ *connect.Request[orgsv1.LeaveRequest],
+) (*connect.Response[orgsv1.LeaveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}
+
+// Stub: replaced by Task 11 with the real implementation.
+func (s *server) UpdateMemberRole(
+	ctx context.Context,
+	_ *connect.Request[orgsv1.UpdateMemberRoleRequest],
+) (*connect.Response[orgsv1.UpdateMemberRoleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}
