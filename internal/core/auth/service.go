@@ -39,10 +39,17 @@ var emailPublishFailureCounter metric.Int64Counter
 
 func init() {
 	meter := otel.Meter("github.com/pug-sh/pug/internal/core/auth")
-	emailPublishFailureCounter, _ = meter.Int64Counter(
+	// Panic on init failure: without this counter, every subsequent
+	// Add() is a no-op and the only alarm for silent email drops is gone.
+	// Fail loud at startup rather than silently lose the alerting signal.
+	c, err := meter.Int64Counter(
 		"emails.publish_failure_total",
 		metric.WithDescription("Email jobs whose tx committed but NATS publish failed; indicates user-visible silent drops."),
 	)
+	if err != nil {
+		panic("auth: failed to register emails.publish_failure_total counter: " + err.Error())
+	}
+	emailPublishFailureCounter = c
 }
 
 var (

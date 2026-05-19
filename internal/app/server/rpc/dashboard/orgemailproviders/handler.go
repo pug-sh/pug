@@ -17,7 +17,6 @@ import (
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	orgemailprovidersv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1"
-	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -55,7 +54,7 @@ func (s *server) requireAdmin(ctx context.Context, orgID string) (*rpc.Principal
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	if role != orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
+	if coreorgs.Role(role) != coreorgs.RoleAdmin {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
 	}
 	return principal, nil

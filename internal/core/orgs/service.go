@@ -37,10 +37,17 @@ var emailPublishFailureCounter metric.Int64Counter
 
 func init() {
 	meter := otel.Meter("github.com/pug-sh/pug/internal/core/orgs")
-	emailPublishFailureCounter, _ = meter.Int64Counter(
+	// Panic on init failure: without this counter, every subsequent
+	// Add() is a no-op and the only alarm for silent email drops is gone.
+	// Fail loud at startup rather than silently lose the alerting signal.
+	c, err := meter.Int64Counter(
 		"emails.publish_failure_total",
 		metric.WithDescription("Email jobs whose tx committed but NATS publish failed; indicates user-visible silent drops."),
 	)
+	if err != nil {
+		panic("orgs: failed to register emails.publish_failure_total counter: " + err.Error())
+	}
+	emailPublishFailureCounter = c
 }
 
 var (
@@ -66,14 +73,14 @@ type Service struct {
 	read      *dbread.Queries
 	write     *dbwrite.Queries
 	pgW       *pgxpool.Pool
-	publisher jobPublisher
+	publisher JobPublisher
 }
 
-type jobPublisher interface {
+type JobPublisher interface {
 	Publish(ctx context.Context, subject string, data []byte) error
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher jobPublisher) *Service {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher JobPublisher) *Service {
 	return &Service{
 		read:      dbread.New(pgRO),
 		write:     dbwrite.New(pgW),
@@ -117,7 +124,7 @@ func CreateOrgWithDefaultsInTx(
 	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      org.ID,
 		CustomerID: customerID,
-		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+		Role:       RoleAdmin.String(),
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to add customer as admin", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
@@ -177,11 +184,11 @@ func (s *Service) CreateOrg(ctx context.Context, displayName string) (dbwrite.Or
 	})
 }
 
-func (s *Service) AddMember(ctx context.Context, orgID, customerID, role string) (dbwrite.OrgMember, error) {
+func (s *Service) AddMember(ctx context.Context, orgID, customerID string, role Role) (dbwrite.OrgMember, error) {
 	member, err := s.write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
-		Role:       role,
+		Role:       role.String(),
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -191,21 +198,6 @@ func (s *Service) AddMember(ctx context.Context, orgID, customerID, role string)
 		return dbwrite.OrgMember{}, err
 	}
 	return member, nil
-}
-
-func (s *Service) GetOrgByID(ctx context.Context, id string) (dbread.Org, error) {
-	org, err := s.read.GetOrgByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return dbread.Org{}, ErrOrgNotFound
-		}
-		return dbread.Org{}, err
-	}
-	return org, nil
-}
-
-func (s *Service) GetOrgsByCustomerID(ctx context.Context, customerID string) ([]dbread.Org, error) {
-	return s.read.GetOrgsByCustomerID(ctx, customerID)
 }
 
 func (s *Service) UpdateDisplayName(ctx context.Context, id, displayName string) (dbwrite.Org, error) {
@@ -231,6 +223,27 @@ func (s *Service) IsOrgMember(ctx context.Context, orgID, customerID string) (bo
 
 func (s *Service) ListMembers(ctx context.Context, orgID string) ([]dbread.GetOrgMembersByOrgIDRow, error) {
 	return s.read.GetOrgMembersByOrgID(ctx, orgID)
+}
+
+// GetMember returns one member with the joined customer fields (display_name,
+// email). Reads from the write pool so callers may chain this after a write
+// without risking replica lag — used by UpdateMemberRole to populate the
+// response with the same shape as ListMembers.
+func (s *Service) GetMember(ctx context.Context, orgID, customerID string) (dbread.GetOrgMemberByOrgIDAndCustomerIDRow, error) {
+	row, err := dbread.New(s.pgW).GetOrgMemberByOrgIDAndCustomerID(ctx, dbread.GetOrgMemberByOrgIDAndCustomerIDParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbread.GetOrgMemberByOrgIDAndCustomerIDRow{}, ErrMemberNotFound
+		}
+		slog.ErrorContext(ctx, "failed to get org member", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return dbread.GetOrgMemberByOrgIDAndCustomerIDRow{}, err
+	}
+	return row, nil
 }
 
 func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (string, error) {
@@ -328,7 +341,7 @@ func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 	// by the admin-count guard in the CTE (or by both guards simultaneously
 	// when they are also the sole member). In both cases the actionable message
 	// is "promote someone else before leaving."
-	if role == orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
+	if Role(role) == RoleAdmin {
 		return ErrLastAdmin
 	}
 
@@ -462,7 +475,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      inv.OrgID,
 		CustomerID: customerID,
-		Role:       orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
+		Role:       RoleMember.String(),
 	}); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
@@ -552,9 +565,17 @@ func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvi
 // ErrUnsupportedRoleTransition (mapped to CodeInvalidArgument at the handler).
 //
 // Returns ErrMemberNotFound if the target is not a member of the org.
+//
+// This read-modify-write is intentionally non-transactional: it is safe only
+// because the lone allowed transition (MEMBER → ADMIN) is monotonic — a
+// concurrent re-promotion is a no-op, a concurrent removal yields ErrNoRows
+// → ErrMemberNotFound, and demotion is not permitted. If any non-monotonic
+// transition is added (e.g. demote, transfer-ownership), wrap in a tx with
+// SELECT ... FOR UPDATE on the org_members row.
 func (s *Service) UpdateMemberRole(
 	ctx context.Context,
-	orgID, customerID, newRole string,
+	orgID, customerID string,
+	newRole Role,
 ) (dbwrite.OrgMember, error) {
 	current, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
 		OrgID:      orgID,
@@ -570,15 +591,14 @@ func (s *Service) UpdateMemberRole(
 		return dbwrite.OrgMember{}, err
 	}
 
-	if current != orgsv1.OrgRole_ORG_ROLE_MEMBER.String() ||
-		newRole != orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
+	if Role(current) != RoleMember || newRole != RoleAdmin {
 		return dbwrite.OrgMember{}, ErrUnsupportedRoleTransition
 	}
 
 	updated, err := s.write.UpdateOrgMemberRole(ctx, dbwrite.UpdateOrgMemberRoleParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
-		Role:       newRole,
+		Role:       newRole.String(),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -586,14 +606,13 @@ func (s *Service) UpdateMemberRole(
 		}
 		slog.ErrorContext(ctx, "failed to update member role", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("customer_id", customerID),
-			slog.String("new_role", newRole))
+			slog.String("new_role", newRole.String()))
 		telemetry.RecordError(ctx, err)
 		return dbwrite.OrgMember{}, err
 	}
 	return updated, nil
 }
 
-// GetOrgsWithRole returns the customer's orgs with the caller's role per org.
 func (s *Service) GetOrgsWithRole(ctx context.Context, customerID string) ([]dbread.GetOrgsWithRoleByCustomerIDRow, error) {
 	return s.read.GetOrgsWithRoleByCustomerID(ctx, customerID)
 }

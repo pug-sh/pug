@@ -23,7 +23,6 @@ func NewServer(service *coreorgs.Service) *server {
 	return &server{service: service}
 }
 
-// requireOrgMember extracts the principal and verifies org membership.
 func (s *server) requireOrgMember(ctx context.Context, orgID string) (*rpc.Principal, error) {
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
@@ -60,7 +59,7 @@ func (s *server) requireOrgAdmin(ctx context.Context, orgID string) (*rpc.Princi
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	if role != orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
+	if coreorgs.Role(role) != coreorgs.RoleAdmin {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
 	}
 
@@ -146,7 +145,7 @@ func (s *server) UpdateDisplayName(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&orgsv1.UpdateDisplayNameResponse{Org: toRPCOrgFromWrite(ctx, org, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())}), nil
+	return connect.NewResponse(&orgsv1.UpdateDisplayNameResponse{Org: toRPCOrgFromWrite(ctx, org, coreorgs.RoleAdmin.String())}), nil
 }
 
 func (s *server) ListMembers(
@@ -274,7 +273,7 @@ func (s *server) AcceptInvite(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&orgsv1.AcceptInviteResponse{Org: toRPCOrg(ctx, org, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())}), nil
+	return connect.NewResponse(&orgsv1.AcceptInviteResponse{Org: toRPCOrg(ctx, org, coreorgs.RoleMember.String())}), nil
 }
 
 func (s *server) ListInvitations(
@@ -326,7 +325,7 @@ func (s *server) Create(
 	}
 
 	return connect.NewResponse(&orgsv1.CreateResponse{
-		Org: toRPCOrgFromWrite(ctx, org, orgsv1.OrgRole_ORG_ROLE_ADMIN.String()),
+		Org: toRPCOrgFromWrite(ctx, org, coreorgs.RoleAdmin.String()),
 	}), nil
 }
 
@@ -371,13 +370,12 @@ func (s *server) UpdateMemberRole(
 		return nil, err
 	}
 
-	updated, err := s.service.UpdateMemberRole(
+	if _, err := s.service.UpdateMemberRole(
 		ctx,
 		req.Msg.GetOrgId(),
 		req.Msg.GetCustomerId(),
-		req.Msg.GetRole().String(),
-	)
-	if err != nil {
+		roleFromProto(req.Msg.GetRole()),
+	); err != nil {
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("member not found"))
 		}
@@ -387,11 +385,26 @@ func (s *server) UpdateMemberRole(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
+	// Re-fetch with the customer join so the response matches the shape of
+	// ListMembersResponse.members[] (display_name + email populated).
+	row, err := s.service.GetMember(ctx, req.Msg.GetOrgId(), req.Msg.GetCustomerId())
+	if err != nil {
+		// ErrMemberNotFound here would mean a concurrent removal between the
+		// update and the re-fetch — translate accordingly; everything else is
+		// already logged at the service layer.
+		if errors.Is(err, coreorgs.ErrMemberNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("member not found"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
 	return connect.NewResponse(&orgsv1.UpdateMemberRoleResponse{
 		Member: &orgsv1.OrgMember{
-			CustomerId: proto.String(updated.CustomerID),
-			OrgId:      proto.String(updated.OrgID),
-			Role:       toRPCRole(ctx, updated.Role).Enum(),
+			CustomerId:  proto.String(row.CustomerID),
+			DisplayName: proto.String(row.DisplayName),
+			Email:       proto.String(row.Email),
+			OrgId:       proto.String(row.OrgID),
+			Role:        toRPCRole(ctx, row.Role).Enum(),
 		},
 	}), nil
 }

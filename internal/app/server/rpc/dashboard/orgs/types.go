@@ -6,10 +6,26 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
+
+// roleFromProto translates a proto OrgRole enum into the service-layer Role.
+// Returns the empty Role for UNSPECIFIED or unknown enum values; callers
+// should treat that as a validation failure (typically already enforced by
+// protovalidate at the interceptor).
+func roleFromProto(p orgsv1.OrgRole) coreorgs.Role {
+	switch p {
+	case orgsv1.OrgRole_ORG_ROLE_ADMIN:
+		return coreorgs.RoleAdmin
+	case orgsv1.OrgRole_ORG_ROLE_MEMBER:
+		return coreorgs.RoleMember
+	default:
+		return ""
+	}
+}
 
 // toRPCOrg converts a dbread.Org plus the caller's role to the proto Org.
 func toRPCOrg(ctx context.Context, o dbread.Org, role string) *orgsv1.Org {
