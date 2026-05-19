@@ -320,6 +320,16 @@ func latestProfileAliasesCTE(projectID string) *chq.Query {
 		GroupBy("project_id", "alias_id")
 }
 
+// profileActivitySummaryCTE aggregates per-profile activity by unioning every
+// distinct_id that maps to the profile — profile.id, profile.external_id, and
+// all alias_ids — then joining to the distinct_id_activity_states rollup and
+// re-aggregating to one row per profile. The external_id != p.id guard avoids
+// double-merging the same state when an SDK uses the same UUID for both
+// columns. If a profile's external_id happens to coincide with one of its
+// alias_ids, the aggregate state is merged twice: the additive aggregates
+// (total_events, pageviews) double-count, while sessions (HyperLogLog) and
+// the min/max/argMax columns are idempotent under repeated merging and
+// remain correct.
 func profileActivitySummaryCTE(projectID string) *chq.Query {
 	return chq.NewQuery().
 		Select(
@@ -346,6 +356,15 @@ SELECT
     p.id AS distinct_id
 FROM latest_profiles p
 WHERE p.is_deleted = 0
+UNION ALL
+SELECT
+    p.project_id AS project_id,
+    p.id AS profile_id,
+    p.external_id AS distinct_id
+FROM latest_profiles p
+WHERE p.is_deleted = 0
+  AND p.external_id != ''
+  AND p.external_id != p.id
 UNION ALL
 SELECT
     pa.project_id AS project_id,
