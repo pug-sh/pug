@@ -46,10 +46,13 @@ message GetResponse {
 message SetRequest {
   string org_id       = 1 [(buf.validate.field).string.min_len = 1];
   string from_address = 2 [(buf.validate.field).string.email = true];
-  // reply_to is optional. In edition 2023, string fields track presence by
-  // default, so leaving it unset skips the email rule. Setting it to any
-  // non-empty value enforces the email format.
-  string reply_to     = 3 [(buf.validate.field).string.email = true];
+  // reply_to is optional. Empty string or unset → no reply-to header is
+  // added. Otherwise must be a valid email.
+  string reply_to     = 3 [(buf.validate.field).cel = {
+    id: "reply_to.empty_or_email",
+    message: "reply_to must be empty or a valid email address",
+    expression: "this == '' || this.isEmail()"
+  }];
   oneof config {
     option (buf.validate.oneof).required = true;
     SMTPConfig   smtp   = 10;

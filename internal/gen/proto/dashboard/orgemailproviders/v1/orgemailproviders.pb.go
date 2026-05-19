@@ -316,9 +316,8 @@ type SetRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	OrgId       *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	FromAddress *string                `protobuf:"bytes,2,opt,name=from_address,json=fromAddress" json:"from_address,omitempty"`
-	// reply_to is optional. In edition 2023, string fields track presence by
-	// default, so leaving it unset skips the email rule. Setting it to any
-	// non-empty value enforces the email format.
+	// reply_to is optional. Empty string or unset → no reply-to header is
+	// added. Otherwise must be a valid email.
 	ReplyTo *string `protobuf:"bytes,3,opt,name=reply_to,json=replyTo" json:"reply_to,omitempty"`
 	// Types that are valid to be assigned to Config:
 	//
@@ -672,12 +671,13 @@ const file_dashboard_orgemailproviders_v1_orgemailproviders_proto_rawDesc = "" +
 	"\breply_to\x18\x03 \x01(\tR\areplyTo\x12'\n" +
 	"\x0fredacted_secret\x18\x04 \x01(\tR\x0eredactedSecret\x12;\n" +
 	"\vupdate_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\"\x97\x02\n" +
+	"updateTime\"\xff\x02\n" +
 	"\n" +
 	"SetRequest\x12\x1e\n" +
 	"\x06org_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05orgId\x12*\n" +
-	"\ffrom_address\x18\x02 \x01(\tB\a\xbaH\x04r\x02`\x01R\vfromAddress\x12\"\n" +
-	"\breply_to\x18\x03 \x01(\tB\a\xbaH\x04r\x02`\x01R\areplyTo\x12@\n" +
+	"\ffrom_address\x18\x02 \x01(\tB\a\xbaH\x04r\x02`\x01R\vfromAddress\x12\x89\x01\n" +
+	"\breply_to\x18\x03 \x01(\tBn\xbaHk\xba\x01h\n" +
+	"\x17reply_to.empty_or_email\x12/reply_to must be empty or a valid email address\x1a\x1cthis == '' || this.isEmail()R\areplyTo\x12@\n" +
 	"\x04smtp\x18\n" +
 	" \x01(\v2*.dashboard.orgemailproviders.v1.SMTPConfigH\x00R\x04smtp\x12F\n" +
 	"\x06resend\x18\v \x01(\v2,.dashboard.orgemailproviders.v1.ResendConfigH\x00R\x06resendB\x0f\n" +
