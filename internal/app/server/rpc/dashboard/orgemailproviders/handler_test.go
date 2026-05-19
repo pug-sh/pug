@@ -470,3 +470,84 @@ type alwaysFailingResolver struct{ err error }
 func (r *alwaysFailingResolver) Resolve(context.Context, *string) (coreemail.Provider, coreemail.ResolvedFrom, error) {
 	return nil, coreemail.ResolvedFrom{}, r.err
 }
+
+// capturingProvider records every Send call so the happy-path SendTest test
+// can assert the message reached the underlying provider with the expected
+// recipient and subject.
+type capturingProvider struct {
+	got   coreemail.Message
+	calls int
+}
+
+func (p *capturingProvider) Send(_ context.Context, msg coreemail.Message) error {
+	p.got = msg
+	p.calls++
+	return nil
+}
+
+// TestSendTestHappyPath asserts that on a successful provider Send the handler
+// returns Success=true and the recorded provider received the rendered test
+// message (correct recipient and subject containing "test").
+func TestSendTestHappyPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	rds := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-happy-1", Email: "happy-admin@acme.com", DisplayName: "Admin", PasswordHash: "h", PictureUri: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-happy-1", DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_ADMIN",
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	cipher := setupCipher(t)
+	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
+
+	fake := &capturingProvider{}
+	resolver := &coreemail.OperatorOnlyResolver{Provider: fake, From: "noreply@example.com"}
+	mailer, err := coreemail.NewServiceWithResolver(coreemail.Config{
+		DashboardBaseURL: "https://dashboard.example",
+		From:             "noreply@example.com",
+	}, resolver)
+	if err != nil {
+		t.Fatalf("NewServiceWithResolver: %v", err)
+	}
+
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{AuthType: rpc.AuthTypeJWT, Customer: &dbread.Customer{ID: customer.ID}})
+
+	resp, err := srv.SendTest(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SendTestRequest{
+		OrgId: strPtr(org.ID), Recipient: strPtr("qa@acme.com"),
+	}))
+	if err != nil {
+		t.Fatalf("SendTest: %v", err)
+	}
+	if !resp.Msg.GetSuccess() {
+		t.Fatalf("expected Success=true, got error %q", resp.Msg.GetErrorMessage())
+	}
+	if fake.calls != 1 {
+		t.Fatalf("expected 1 Send call, got %d", fake.calls)
+	}
+	if fake.got.To != "qa@acme.com" {
+		t.Fatalf("To: got %q", fake.got.To)
+	}
+	if !strings.Contains(fake.got.Subject, "test") {
+		t.Fatalf("expected 'test' in subject, got %q", fake.got.Subject)
+	}
+}

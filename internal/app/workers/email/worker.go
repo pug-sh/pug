@@ -15,6 +15,7 @@ import (
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/sethvargo/go-envconfig"
 )
 
@@ -41,23 +42,38 @@ func Run(ctx context.Context) error {
 	}
 	defer pgRO.Close()
 
-	var rdCfg pugredis.Config
-	if err := envconfig.Process(ctx, &rdCfg); err != nil {
-		return err
-	}
-	rdClient, err := pugredis.NewFromConfig(ctx, &rdCfg)
-	if err != nil {
-		return err
-	}
-	defer rdClient.Close(ctx)
-
 	natsClient, err := natsworker.New(ctx)
 	if err != nil {
 		return err
 	}
 	defer natsClient.Close()
 
-	mailer, err := newMailerWithResolver(ctx, dbread.New(pgRO), rdClient.Unwrap())
+	// Redis is only required when per-tenant providers are enabled
+	// (PUG_EMAIL_PROVIDER_SECRET_KEY set). In operator-only mode the worker
+	// has no Redis dependency, so we skip the connection entirely to avoid
+	// failing boot on operators who haven't adopted BYOP.
+	var keyCfg secretKeyConfig
+	if err := envconfig.Process(ctx, &keyCfg); err != nil {
+		return err
+	}
+	var rdClient *pugredis.Client
+	if keyCfg.KeyB64 != "" {
+		var rdCfg pugredis.Config
+		if err := envconfig.Process(ctx, &rdCfg); err != nil {
+			return err
+		}
+		rdClient, err = pugredis.NewFromConfig(ctx, &rdCfg)
+		if err != nil {
+			return err
+		}
+		defer rdClient.Close(ctx)
+	}
+
+	var cache *goredis.Client
+	if rdClient != nil {
+		cache = rdClient.Unwrap()
+	}
+	mailer, err := newMailerWithResolver(ctx, dbread.New(pgRO), cache)
 	if err != nil {
 		return err
 	}

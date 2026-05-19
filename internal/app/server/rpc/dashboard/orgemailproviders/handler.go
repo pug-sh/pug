@@ -183,7 +183,13 @@ func (s *server) Remove(ctx context.Context, req *connect.Request[orgemailprovid
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	s.repo.Invalidate(ctx, req.Msg.GetOrgId())
+	// Repo is nil when PUG_EMAIL_PROVIDER_SECRET_KEY is unset (operator-only
+	// mode). Remove still performs the Postgres DELETE so admins can clean up
+	// stale rows from a pre-disabled state, but skips cache invalidation
+	// because there is no cache.
+	if s.repo != nil {
+		s.repo.Invalidate(ctx, req.Msg.GetOrgId())
+	}
 	return connect.NewResponse(&orgemailprovidersv1.RemoveResponse{}), nil
 }
 
