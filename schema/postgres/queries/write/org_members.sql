@@ -46,6 +46,9 @@ where om.org_id = @org_id and om.customer_id = @customer_id
     or (select cnt from admin_count) > 1
   );
 
+-- name: CountOrgMembersByOrgID :one
+select count(*) from org_members where org_id = @org_id;
+
 -- name: UpdateOrgMemberRole :one
 update org_members
 set role = @role

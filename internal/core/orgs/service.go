@@ -51,6 +51,7 @@ var (
 	ErrInviteNotPending     = errors.New("invitation is not pending")
 	ErrInviteWrongEmail     = errors.New("invitation was issued to a different email address")
 	ErrLastAdmin            = errors.New("cannot remove the last admin")
+	ErrLastMember           = errors.New("cannot leave org: only member")
 	ErrMemberNotFound       = errors.New("member not found")
 	ErrOrgNotFound          = errors.New("org not found")
 )
@@ -278,6 +279,67 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 		return ErrLastAdmin
 	}
 	return nil
+}
+
+// Leave removes the calling customer from the org. Refuses if the caller is
+// the only admin (ErrLastAdmin) or the only member (ErrLastMember). Returns
+// ErrMemberNotFound if the caller is not a member.
+//
+// The guard and delete are a single CTE-based statement for atomicity against
+// concurrent Leave / RemoveMember / InviteMember.
+func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
+	n, err := s.write.DeleteOrgMemberIfNotLastAdminAndNotLastMember(
+		ctx,
+		dbwrite.DeleteOrgMemberIfNotLastAdminAndNotLastMemberParams{
+			OrgID:      orgID,
+			CustomerID: customerID,
+		},
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed Leave query", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if n == 1 {
+		return nil
+	}
+
+	// 0 rows: either not a member, last admin, or only member. Disambiguate.
+	// Read from write pool to avoid replica lag.
+	role, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrMemberNotFound
+		}
+		slog.ErrorContext(ctx, "failed to disambiguate Leave block", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+
+	// Member exists but delete was blocked. Check member count to distinguish
+	// last-admin vs. only-member.
+	memberCount, err := s.write.CountOrgMembersByOrgID(ctx, orgID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to count members for Leave disambiguation", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if memberCount == 1 {
+		return ErrLastMember
+	}
+	if role == orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
+		return ErrLastAdmin
+	}
+	slog.ErrorContext(ctx, "Leave blocked but disambiguation inconclusive",
+		slog.String("org_id", orgID), slog.String("customer_id", customerID),
+		slog.String("role", role), slog.Int64("member_count", memberCount))
+	return errors.New("leave blocked")
 }
 
 func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email string) (dbwrite.OrgInvitation, error) {

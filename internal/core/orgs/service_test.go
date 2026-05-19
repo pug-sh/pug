@@ -446,3 +446,123 @@ func backdateInvitation(ctx context.Context, t *testing.T, f *inviteFixture, ts 
 		pgtype.Timestamptz{Time: ts, Valid: true}, f.invite.ID)
 	return err
 }
+
+func seedCustomer(t *testing.T, ctx context.Context, w *dbwrite.Queries, prefix string) string {
+	t.Helper()
+	id := xid.New().String()
+	if _, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           id,
+		Email:        prefix + "-" + id + "@example.com",
+		DisplayName:  "",
+		PictureUri:   "",
+		PasswordHash: "x",
+	}); err != nil {
+		t.Fatalf("seedCustomer: %v", err)
+	}
+	return id
+}
+
+func mustAddMember(t *testing.T, ctx context.Context, w *dbwrite.Queries, orgID, customerID, role string) {
+	t.Helper()
+	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+		Role:       role,
+	}); err != nil {
+		t.Fatalf("mustAddMember: %v", err)
+	}
+}
+
+func TestLeaveHappyPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	owner := seedCustomer(t, ctx, write, "owner")
+	mate := seedCustomer(t, ctx, write, "mate")
+	leaver := seedCustomer(t, ctx, write, "leaver")
+	org, err := svc.CreateOrgWithDefaults(ctx, owner, "leave-org")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	mustAddMember(t, ctx, write, org.ID, mate, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
+	mustAddMember(t, ctx, write, org.ID, leaver, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())
+
+	if err := svc.Leave(ctx, org.ID, leaver); err != nil {
+		t.Fatalf("Leave: %v", err)
+	}
+
+	if _, err := write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+		OrgID:      org.ID,
+		CustomerID: leaver,
+	}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("want pgx.ErrNoRows after Leave, got %v", err)
+	}
+}
+
+func TestLeaveLastAdmin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	soleAdmin := seedCustomer(t, ctx, write, "soleadmin")
+	member := seedCustomer(t, ctx, write, "member")
+	org, err := svc.CreateOrgWithDefaults(ctx, soleAdmin, "last-admin")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	mustAddMember(t, ctx, write, org.ID, member, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())
+
+	if err := svc.Leave(ctx, org.ID, soleAdmin); !errors.Is(err, orgs.ErrLastAdmin) {
+		t.Fatalf("want ErrLastAdmin, got %v", err)
+	}
+}
+
+func TestLeaveOnlyMember(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	solo := seedCustomer(t, ctx, write, "solo")
+	org, err := svc.CreateOrgWithDefaults(ctx, solo, "only-member")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := svc.Leave(ctx, org.ID, solo); !errors.Is(err, orgs.ErrLastMember) {
+		t.Fatalf("want ErrLastMember, got %v", err)
+	}
+}
+
+func TestLeaveNotMember(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	owner := seedCustomer(t, ctx, write, "owner")
+	stranger := seedCustomer(t, ctx, write, "stranger")
+	org, err := svc.CreateOrgWithDefaults(ctx, owner, "not-member")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := svc.Leave(ctx, org.ID, stranger); !errors.Is(err, orgs.ErrMemberNotFound) {
+		t.Fatalf("want ErrMemberNotFound, got %v", err)
+	}
+}

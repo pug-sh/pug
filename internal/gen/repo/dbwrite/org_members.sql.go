@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const countOrgMembersByOrgID = `-- name: CountOrgMembersByOrgID :one
+select count(*) from org_members where org_id = $1
+`
+
+func (q *Queries) CountOrgMembersByOrgID(ctx context.Context, orgID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrgMembersByOrgID, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOrgMember = `-- name: CreateOrgMember :one
 insert into org_members (customer_id, org_id, role)
 values ($1, $2, $3)
