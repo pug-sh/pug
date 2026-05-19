@@ -829,39 +829,45 @@ func TestLeaveTwoAdminsRaceExactlyOneSucceeds(t *testing.T) {
 	svc := orgs.NewService(db.PgRO, db.PgW, nil)
 	ctx := context.Background()
 
-	a := seedCustomer(t, ctx, write, "racer-a")
-	b := seedCustomer(t, ctx, write, "racer-b")
-	org, err := svc.CreateOrgWithDefaults(ctx, a, "race-org")
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	mustAddMember(t, ctx, write, org.ID, b, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
-
-	var wg sync.WaitGroup
-	errs := make([]error, 2)
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		errs[0] = svc.Leave(ctx, org.ID, a)
-	}()
-	go func() {
-		defer wg.Done()
-		errs[1] = svc.Leave(ctx, org.ID, b)
-	}()
-	wg.Wait()
-
-	var successes, lastAdmins int
-	for _, err := range errs {
-		switch {
-		case err == nil:
-			successes++
-		case errors.Is(err, orgs.ErrLastAdmin):
-			lastAdmins++
-		default:
-			t.Fatalf("unexpected error from concurrent Leave: %v", err)
+	// Loop with a fresh org per iteration: a regression where the lock CTE
+	// silently allowed both goroutines through could pass a single trial by
+	// coincidence of scheduling. Five iterations make that hard.
+	const iterations = 5
+	for i := 0; i < iterations; i++ {
+		a := seedCustomer(t, ctx, write, "racer-a")
+		b := seedCustomer(t, ctx, write, "racer-b")
+		org, err := svc.CreateOrgWithDefaults(ctx, a, "race-org")
+		if err != nil {
+			t.Fatalf("seed: %v", err)
 		}
-	}
-	if successes != 1 || lastAdmins != 1 {
-		t.Fatalf("want exactly 1 success and 1 ErrLastAdmin, got successes=%d lastAdmins=%d", successes, lastAdmins)
+		mustAddMember(t, ctx, write, org.ID, b, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
+
+		var wg sync.WaitGroup
+		errs := make([]error, 2)
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			errs[0] = svc.Leave(ctx, org.ID, a)
+		}()
+		go func() {
+			defer wg.Done()
+			errs[1] = svc.Leave(ctx, org.ID, b)
+		}()
+		wg.Wait()
+
+		var successes, lastAdmins int
+		for _, err := range errs {
+			switch {
+			case err == nil:
+				successes++
+			case errors.Is(err, orgs.ErrLastAdmin):
+				lastAdmins++
+			default:
+				t.Fatalf("iter %d: unexpected error from concurrent Leave: %v", i, err)
+			}
+		}
+		if successes != 1 || lastAdmins != 1 {
+			t.Fatalf("iter %d: want exactly 1 success and 1 ErrLastAdmin, got successes=%d lastAdmins=%d", i, successes, lastAdmins)
+		}
 	}
 }

@@ -26,16 +26,33 @@ func ctxWithCustomer(ctx context.Context, c dbread.Customer) context.Context {
 	})
 }
 
+// orgsBackend bundles the service + query handles that every handler test
+// builds; setupOrgsBackend spins up a fresh Postgres and wires them.
+type orgsBackend struct {
+	svc   *coreorgs.Service
+	write *dbwrite.Queries
+	read  *dbread.Queries
+	ctx   context.Context
+}
+
+func setupOrgsBackend(t *testing.T, publisher coreorgs.JobPublisher) orgsBackend {
+	t.Helper()
+	db := testutil.SetupPostgres(t)
+	return orgsBackend{
+		svc:   coreorgs.NewService(db.PgRO, db.PgW, publisher),
+		write: dbwrite.New(db.PgW),
+		read:  dbread.New(db.PgW),
+		ctx:   context.Background(),
+	}
+}
+
 func TestCreateOrgHandlerHappyPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	id := xid.New().String()
 	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
@@ -70,12 +87,9 @@ func TestLeaveHandlerHappyPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	ownerID := seedRawCustomer(t, ctx, write, "owner")
 	memberID := seedRawCustomer(t, ctx, write, "member")
@@ -106,12 +120,9 @@ func TestLeaveHandlerLastAdminReturnsFailedPrecondition(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	adminID := seedRawCustomer(t, ctx, write, "sole-admin")
 	memberID := seedRawCustomer(t, ctx, write, "tag-along")
@@ -158,15 +169,26 @@ func TestUpdateMemberRoleHandlerPromote(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
-	memberID := seedRawCustomer(t, ctx, write, "member")
+	// Inline the member's customer row so we can assert display_name and email
+	// flow into the joined UpdateMemberRole response — the seedRawCustomer
+	// helper hardcodes display_name to "" which would mask the joined-field bug.
+	memberID := xid.New().String()
+	memberEmail := "promoted-" + memberID + "@example.com"
+	const memberDisplay = "Member Display"
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           memberID,
+		Email:        memberEmail,
+		DisplayName:  memberDisplay,
+		PictureUri:   "",
+		PasswordHash: "x",
+	}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
 	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "promote-handler")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -192,8 +214,23 @@ func TestUpdateMemberRoleHandlerPromote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateMemberRole: %v", err)
 	}
-	if resp.Msg.GetMember().GetRole() != orgsv1.OrgRole_ORG_ROLE_ADMIN {
-		t.Fatalf("want ADMIN, got %v", resp.Msg.GetMember().GetRole())
+	// Pin the full joined response shape so a regression that swapped GetMember
+	// for a non-joined query (silently dropping display_name + email) would fail.
+	got := resp.Msg.GetMember()
+	if got.GetRole() != orgsv1.OrgRole_ORG_ROLE_ADMIN {
+		t.Errorf("want ADMIN, got %v", got.GetRole())
+	}
+	if got.GetCustomerId() != memberID {
+		t.Errorf("want customer_id=%q, got %q", memberID, got.GetCustomerId())
+	}
+	if got.GetOrgId() != org.ID {
+		t.Errorf("want org_id=%q, got %q", org.ID, got.GetOrgId())
+	}
+	if got.GetEmail() != memberEmail {
+		t.Errorf("want email=%q, got %q", memberEmail, got.GetEmail())
+	}
+	if got.GetDisplayName() != memberDisplay {
+		t.Errorf("want display_name=%q, got %q", memberDisplay, got.GetDisplayName())
 	}
 }
 
@@ -201,12 +238,9 @@ func TestUpdateMemberRoleHandlerNonAdminRejected(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	adminID := seedRawCustomer(t, ctx, write, "real-admin")
 	imposterID := seedRawCustomer(t, ctx, write, "imposter")
@@ -245,12 +279,9 @@ func TestUpdateMemberRoleHandlerDemoteRejected(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	coadminID := seedRawCustomer(t, ctx, write, "coadmin")
@@ -286,12 +317,9 @@ func TestLeaveHandlerNonMemberReturnsNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	ownerID := seedRawCustomer(t, ctx, write, "owner")
 	strangerID := seedRawCustomer(t, ctx, write, "stranger")
@@ -321,12 +349,9 @@ func TestAcceptInviteHandlerReturnsMemberRole(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, &acceptStubPublisher{})
+	h := setupOrgsBackend(t, &acceptStubPublisher{})
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	inviterID := seedRawCustomer(t, ctx, write, "inviter")
 	const inviteeEmail = "invitee@example.com"
@@ -383,12 +408,9 @@ func TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	memberID := seedRawCustomer(t, ctx, write, "member")
 	strangerID := seedRawCustomer(t, ctx, write, "stranger")
@@ -426,6 +448,47 @@ func TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound(t *testing.T) {
 	}
 }
 
+// TestGetHandlerReturnsMemberRoleForActualMember pins that Get returns the
+// CALLER's role, not the org owner's role. Without this, a regression that
+// joined to the wrong row (e.g. always returning the admin's role) would pass
+// TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound — which only exercises
+// the admin path — but silently mis-report role for member callers.
+func TestGetHandlerReturnsMemberRoleForActualMember(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	ownerID := seedRawCustomer(t, ctx, write, "owner")
+	memberID := seedRawCustomer(t, ctx, write, "member")
+	org, err := svc.CreateOrgWithDefaults(ctx, ownerID, "two-role")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: memberID, Role: orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
+	}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	member, err := read.GetCustomerByID(ctx, memberID)
+	if err != nil {
+		t.Fatalf("read member: %v", err)
+	}
+	resp, err := srv.Get(
+		ctxWithCustomer(ctx, member),
+		connect.NewRequest(&orgsv1.GetRequest{OrgId: proto.String(org.ID)}),
+	)
+	if err != nil {
+		t.Fatalf("Get(member): %v", err)
+	}
+	if got := resp.Msg.GetOrg().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_MEMBER {
+		t.Errorf("member view: want role=MEMBER, got %v", got)
+	}
+}
+
 // TestUpdateDisplayNameHandlerReturnsAdminRole pins that the updated-org
 // response carries the caller's role (ADMIN, since requireOrgAdmin gates this
 // path). A regression that hardcoded UNSPECIFIED would silently drop the
@@ -434,12 +497,9 @@ func TestUpdateDisplayNameHandlerReturnsAdminRole(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "old-name")
@@ -479,12 +539,9 @@ func TestLeaveHandlerLastMemberReturnsFailedPrecondition(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	lonerID := seedRawCustomer(t, ctx, write, "loner")
@@ -521,12 +578,9 @@ func TestListHandlerRoleFieldPerOrg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
 
 	// The caller is ADMIN of orgA (created via CreateOrgWithDefaults) and MEMBER
 	// of orgB (added via CreateOrgMember after a different customer creates it).
