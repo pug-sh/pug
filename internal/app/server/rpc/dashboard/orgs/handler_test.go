@@ -66,7 +66,6 @@ func TestCreateOrgHandlerHappyPath(t *testing.T) {
 	}
 }
 
-
 func TestLeaveHandlerHappyPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -312,6 +311,209 @@ func TestLeaveHandlerNonMemberReturnsNotFound(t *testing.T) {
 	var connectErr *connect.Error
 	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeNotFound {
 		t.Fatalf("want CodeNotFound, got %v", err)
+	}
+}
+
+// TestAcceptInviteHandlerReturnsMemberRole pins that the accept-invite
+// response carries the caller's role (MEMBER, since the service hard-codes
+// the new member's role as MEMBER on invite acceptance).
+func TestAcceptInviteHandlerReturnsMemberRole(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, &acceptStubPublisher{})
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	inviterID := seedRawCustomer(t, ctx, write, "inviter")
+	const inviteeEmail = "invitee@example.com"
+	inviteeID := xid.New().String()
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           inviteeID,
+		Email:        inviteeEmail,
+		DisplayName:  "",
+		PictureUri:   "",
+		PasswordHash: "x",
+	}); err != nil {
+		t.Fatalf("seed invitee: %v", err)
+	}
+	org, err := svc.CreateOrgWithDefaults(ctx, inviterID, "invite-handler")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	inv, err := svc.InviteMember(ctx, org.ID, inviterID, inviteeEmail)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+
+	invitee, err := read.GetCustomerByID(ctx, inviteeID)
+	if err != nil {
+		t.Fatalf("read invitee: %v", err)
+	}
+	resp, err := srv.AcceptInvite(
+		ctxWithCustomer(ctx, invitee),
+		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.Token)}),
+	)
+	if err != nil {
+		t.Fatalf("AcceptInvite: %v", err)
+	}
+	if got := resp.Msg.GetOrg().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_MEMBER {
+		t.Errorf("want role=MEMBER for accepted invite, got %v", got)
+	}
+	if got := resp.Msg.GetOrg().GetId(); got != org.ID {
+		t.Errorf("want org id=%q, got %q", org.ID, got)
+	}
+}
+
+// acceptStubPublisher discards published email jobs — AcceptInvite indirectly
+// goes through InviteMember which publishes; the test does not care about the
+// email side-effect, only the response shape.
+type acceptStubPublisher struct{}
+
+func (acceptStubPublisher) Publish(_ context.Context, _ string, _ []byte) error { return nil }
+
+// TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound pins both the role
+// population on Get and the deliberate enumeration-resistance behavior:
+// non-members of an existing org get CodeNotFound (NOT PermissionDenied), so
+// an attacker cannot probe org existence by hitting Get with arbitrary IDs.
+func TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	memberID := seedRawCustomer(t, ctx, write, "member")
+	strangerID := seedRawCustomer(t, ctx, write, "stranger")
+	org, err := svc.CreateOrgWithDefaults(ctx, memberID, "get-handler")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	memberCustomer, err := read.GetCustomerByID(ctx, memberID)
+	if err != nil {
+		t.Fatalf("read member: %v", err)
+	}
+	resp, err := srv.Get(
+		ctxWithCustomer(ctx, memberCustomer),
+		connect.NewRequest(&orgsv1.GetRequest{OrgId: proto.String(org.ID)}),
+	)
+	if err != nil {
+		t.Fatalf("Get(member): %v", err)
+	}
+	if got := resp.Msg.GetOrg().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_ADMIN {
+		t.Errorf("member view: want role=ADMIN, got %v", got)
+	}
+
+	stranger, err := read.GetCustomerByID(ctx, strangerID)
+	if err != nil {
+		t.Fatalf("read stranger: %v", err)
+	}
+	_, err = srv.Get(
+		ctxWithCustomer(ctx, stranger),
+		connect.NewRequest(&orgsv1.GetRequest{OrgId: proto.String(org.ID)}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeNotFound {
+		t.Fatalf("non-member: want CodeNotFound (enumeration-resistant), got %v", err)
+	}
+}
+
+// TestUpdateDisplayNameHandlerReturnsAdminRole pins that the updated-org
+// response carries the caller's role (ADMIN, since requireOrgAdmin gates this
+// path). A regression that hardcoded UNSPECIFIED would silently drop the
+// field for the dashboard.
+func TestUpdateDisplayNameHandlerReturnsAdminRole(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	adminID := seedRawCustomer(t, ctx, write, "admin")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "old-name")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	resp, err := srv.UpdateDisplayName(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.UpdateDisplayNameRequest{
+			OrgId:       proto.String(org.ID),
+			DisplayName: proto.String("new-name"),
+		}),
+	)
+	if err != nil {
+		t.Fatalf("UpdateDisplayName: %v", err)
+	}
+	if got := resp.Msg.GetOrg().GetDisplayName(); got != "new-name" {
+		t.Errorf("want display_name=new-name, got %q", got)
+	}
+	if got := resp.Msg.GetOrg().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_ADMIN {
+		t.Errorf("want role=ADMIN (caller is gated by requireOrgAdmin), got %v", got)
+	}
+}
+
+// TestLeaveHandlerLastMemberReturnsFailedPrecondition mirrors the service
+// test TestLeaveNonAdminSoleMember at the handler layer to pin the
+// ErrLastMember → CodeFailedPrecondition mapping. The state (non-admin sole
+// member) is unreachable through the public API, so we construct it by
+// seeding admin+member then directly deleting the admin via the unchecked
+// query (same approach as the service-level test).
+func TestLeaveHandlerLastMemberReturnsFailedPrecondition(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	adminID := seedRawCustomer(t, ctx, write, "admin")
+	lonerID := seedRawCustomer(t, ctx, write, "loner")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "last-member")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: lonerID, Role: orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
+	}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	if _, err := write.DeleteOrgMember(ctx, dbwrite.DeleteOrgMemberParams{
+		OrgID: org.ID, CustomerID: adminID,
+	}); err != nil {
+		t.Fatalf("force-remove admin: %v", err)
+	}
+
+	loner, err := read.GetCustomerByID(ctx, lonerID)
+	if err != nil {
+		t.Fatalf("read loner: %v", err)
+	}
+	_, err = srv.Leave(
+		ctxWithCustomer(ctx, loner),
+		connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String(org.ID)}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeFailedPrecondition {
+		t.Fatalf("want CodeFailedPrecondition for ErrLastMember, got %v", err)
 	}
 }
 

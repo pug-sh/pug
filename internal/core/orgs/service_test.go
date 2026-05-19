@@ -13,6 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
+	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/core/orgs"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
@@ -21,7 +25,6 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestCreateOrgWithDefaultsHappyPath(t *testing.T) {
@@ -74,13 +77,12 @@ func TestCreateOrgWithDefaultsHappyPath(t *testing.T) {
 	}
 }
 
-func TestCreateOrgWithDefaultsRollbackOnDuplicateCustomer(t *testing.T) {
+func TestCreateOrgWithDefaultsRollsBackWhenMemberFKFails(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
 	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
 	svc := orgs.NewService(db.PgRO, db.PgW, nil)
 	ctx := context.Background()
 
@@ -101,7 +103,6 @@ func TestCreateOrgWithDefaultsRollbackOnDuplicateCustomer(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("want 0 orgs after rollback, got %d", n)
 	}
-	_ = write // keep linter happy if unused
 }
 
 type stubPublisher struct {
@@ -590,11 +591,11 @@ func TestUpdateMemberRolePromote(t *testing.T) {
 	}
 	mustAddMember(t, ctx, write, org.ID, member, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())
 
-	got, err := svc.UpdateMemberRole(ctx, org.ID, member, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
+	got, err := svc.UpdateMemberRole(ctx, org.ID, member, orgs.RoleAdmin)
 	if err != nil {
 		t.Fatalf("UpdateMemberRole: %v", err)
 	}
-	if got.Role != orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
+	if got.Role != orgs.RoleAdmin.String() {
 		t.Fatalf("want role=ADMIN, got %q", got.Role)
 	}
 }
@@ -616,8 +617,58 @@ func TestUpdateMemberRoleRejectsDemote(t *testing.T) {
 	}
 	mustAddMember(t, ctx, write, org.ID, co, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
 
-	if _, err := svc.UpdateMemberRole(ctx, org.ID, co, orgsv1.OrgRole_ORG_ROLE_MEMBER.String()); !errors.Is(err, orgs.ErrUnsupportedRoleTransition) {
+	if _, err := svc.UpdateMemberRole(ctx, org.ID, co, orgs.RoleMember); !errors.Is(err, orgs.ErrUnsupportedRoleTransition) {
 		t.Fatalf("want ErrUnsupportedRoleTransition for demote, got %v", err)
+	}
+}
+
+// TestUpdateMemberRoleRejectsNoOpMemberToMember and
+// TestUpdateMemberRoleRejectsNoOpAdminToAdmin pin the *unallowed* same-role
+// "no-op" transitions. Together with the promote/demote tests they cover the
+// full 2x2 transition matrix and guard the De Morgan'd guard at
+// service.go::UpdateMemberRole against a regression that drops one operand
+// or flips || to &&.
+func TestUpdateMemberRoleRejectsNoOpMemberToMember(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	admin := seedCustomer(t, ctx, write, "admin")
+	member := seedCustomer(t, ctx, write, "member")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "noop-mm")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	mustAddMember(t, ctx, write, org.ID, member, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())
+
+	if _, err := svc.UpdateMemberRole(ctx, org.ID, member, orgs.RoleMember); !errors.Is(err, orgs.ErrUnsupportedRoleTransition) {
+		t.Fatalf("want ErrUnsupportedRoleTransition for MEMBER->MEMBER, got %v", err)
+	}
+}
+
+func TestUpdateMemberRoleRejectsNoOpAdminToAdmin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	admin := seedCustomer(t, ctx, write, "admin")
+	coadmin := seedCustomer(t, ctx, write, "coadmin")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "noop-aa")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	mustAddMember(t, ctx, write, org.ID, coadmin, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
+
+	if _, err := svc.UpdateMemberRole(ctx, org.ID, coadmin, orgs.RoleAdmin); !errors.Is(err, orgs.ErrUnsupportedRoleTransition) {
+		t.Fatalf("want ErrUnsupportedRoleTransition for ADMIN->ADMIN, got %v", err)
 	}
 }
 
@@ -637,7 +688,7 @@ func TestUpdateMemberRoleNotFound(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	if _, err := svc.UpdateMemberRole(ctx, org.ID, stranger, orgsv1.OrgRole_ORG_ROLE_ADMIN.String()); !errors.Is(err, orgs.ErrMemberNotFound) {
+	if _, err := svc.UpdateMemberRole(ctx, org.ID, stranger, orgs.RoleAdmin); !errors.Is(err, orgs.ErrMemberNotFound) {
 		t.Fatalf("want ErrMemberNotFound, got %v", err)
 	}
 }
@@ -672,6 +723,100 @@ func TestLeaveNonAdminSoleMember(t *testing.T) {
 
 	if err := svc.Leave(ctx, org.ID, loner); !errors.Is(err, orgs.ErrLastMember) {
 		t.Fatalf("want ErrLastMember for non-admin sole member, got %v", err)
+	}
+}
+
+// failingPublisher returns an error from every Publish so we can exercise
+// the fire-and-forget silent-drop path in InviteMember without involving NATS.
+type failingPublisher struct{}
+
+func (failingPublisher) Publish(_ context.Context, _ string, _ []byte) error {
+	return errors.New("simulated publish failure")
+}
+
+// TestInviteMemberCountsPublishFailure pins the alarm contract for
+// emails.publish_failure_total. If publishing the invite-email job fails:
+//
+//   - InviteMember must NOT return an error to the caller (fire-and-forget).
+//   - The invitation row must remain in PG (tx committed before publish).
+//   - The counter must tick with kind="org_member_invite".
+//
+// Regressions in any of these would silently drop user-visible invite emails
+// without any operator-facing signal. The counter is the ONLY mechanism
+// surfacing the drop, so we assert it explicitly.
+func TestInviteMemberCountsPublishFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	reader := sdkmetric.NewManualReader()
+	prevProvider := otel.GetMeterProvider()
+	otel.SetMeterProvider(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	t.Cleanup(func() { otel.SetMeterProvider(prevProvider) })
+
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, failingPublisher{})
+	ctx := context.Background()
+
+	inviter := seedCustomer(t, ctx, write, "inviter")
+	org, err := svc.CreateOrgWithDefaults(ctx, inviter, "publish-failure")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+
+	inv, err := svc.InviteMember(ctx, org.ID, inviter, "invitee@example.com")
+	if err != nil {
+		t.Fatalf("InviteMember should swallow publish failure, got: %v", err)
+	}
+	if inv.ID == "" {
+		t.Fatal("expected invitation to be created")
+	}
+
+	// Confirm the invitation row really is persisted (tx committed pre-publish).
+	var n int
+	if err := db.PgW.QueryRow(ctx, "select count(*) from org_invitations where id = $1", inv.ID).Scan(&n); err != nil {
+		t.Fatalf("scan invitation: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("want invitation persisted, got count=%d", n)
+	}
+
+	assertEmailFailureCounter(t, reader, "github.com/pug-sh/pug/internal/core/orgs", "org_member_invite")
+}
+
+// assertEmailFailureCounter is a small helper used by both orgs and auth
+// failure-publish tests. It collects from the manual reader and asserts at
+// least one tick exists on emails.publish_failure_total with the expected
+// {kind} attribute on the named instrumentation scope.
+func assertEmailFailureCounter(t *testing.T, reader sdkmetric.Reader, scope, kind string) {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("reader.Collect: %v", err)
+	}
+	var total int64
+	for _, sm := range rm.ScopeMetrics {
+		if sm.Scope.Name != scope {
+			continue
+		}
+		for _, m := range sm.Metrics {
+			if m.Name != "emails.publish_failure_total" {
+				continue
+			}
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				t.Fatalf("emails.publish_failure_total: want Sum[int64], got %T", m.Data)
+			}
+			for _, dp := range sum.DataPoints {
+				if got, ok := dp.Attributes.Value("kind"); ok && got.AsString() == kind {
+					total += dp.Value
+				}
+			}
+		}
+	}
+	if total == 0 {
+		t.Fatalf("expected emails.publish_failure_total{kind=%q,scope=%q} to be > 0", kind, scope)
 	}
 }
 

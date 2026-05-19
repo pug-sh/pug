@@ -12,14 +12,18 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
+	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/core/auth"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
+	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
-	"google.golang.org/protobuf/proto"
 )
 
 type publishedJob struct {
@@ -95,6 +99,31 @@ func TestAuthService(t *testing.T) {
 			Purpose:   "verify_email",
 		}); err != nil {
 			t.Fatalf("GetValidEmailActionTokenByHashAndPurpose(signup verify): %v", err)
+		}
+
+		// Verify the CreateOrgWithDefaultsInTx wiring extracted in 666cdb2: the
+		// new customer is the admin of exactly one org with exactly one default
+		// project. A regression that broke the wiring (wrong customer ID,
+		// helper called outside the tx) would not be caught by the existing
+		// customer/token assertions above.
+		var adminMemberships, projectCount int
+		if err := db.PgW.QueryRow(ctx,
+			`select count(*) from org_members where customer_id = $1 and role = $2`,
+			customer.ID, orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+		).Scan(&adminMemberships); err != nil {
+			t.Fatalf("scan admin memberships: %v", err)
+		}
+		if adminMemberships != 1 {
+			t.Fatalf("want 1 admin membership for new signup, got %d", adminMemberships)
+		}
+		if err := db.PgW.QueryRow(ctx,
+			`select count(*) from projects p join org_members m on m.org_id = p.org_id where m.customer_id = $1`,
+			customer.ID,
+		).Scan(&projectCount); err != nil {
+			t.Fatalf("scan default projects: %v", err)
+		}
+		if projectCount != 1 {
+			t.Fatalf("want 1 default project for new signup, got %d", projectCount)
 		}
 	})
 
@@ -228,6 +257,113 @@ func TestAuthService(t *testing.T) {
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+// failingPublisher returns an error from every Publish so we can exercise the
+// fire-and-forget silent-drop path in SignUpWithEmail without involving NATS.
+type failingPublisher struct{}
+
+func (failingPublisher) Publish(_ context.Context, _ string, _ []byte) error {
+	return errors.New("simulated publish failure")
+}
+
+// TestSignUpWithEmailCountsPublishFailure pins the alarm contract for
+// emails.publish_failure_total in the auth package. If publishing the welcome
+// verify-email job fails after tx commit:
+//
+//   - SignUpWithEmail must NOT return an error (fire-and-forget; the user has
+//     a valid account and JWT).
+//   - The customer + org + admin-member + default project rows must all
+//     remain in PG (tx already committed before publish).
+//   - The counter must tick with kind="signup_verify_welcome".
+//
+// Without the counter, a regression here would silently drop signup
+// confirmation emails for every new user.
+func TestSignUpWithEmailCountsPublishFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	reader := sdkmetric.NewManualReader()
+	prevProvider := otel.GetMeterProvider()
+	otel.SetMeterProvider(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	t.Cleanup(func() { otel.SetMeterProvider(prevProvider) })
+
+	db := testutil.SetupPostgres(t)
+	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), failingPublisher{})
+	read := dbread.New(db.PgW)
+	ctx := context.Background()
+
+	const email = "publish-failure@example.com"
+	token, err := svc.SignUpWithEmail(ctx, email, "password123")
+	if err != nil {
+		t.Fatalf("SignUpWithEmail should swallow publish failure, got: %v", err)
+	}
+	if token == "" {
+		t.Fatal("expected JWT despite publish failure")
+	}
+
+	customer, err := read.GetCustomerByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("GetCustomerByEmail: %v", err)
+	}
+	// The CreateOrgWithDefaultsInTx wiring inside SignUpWithEmail must have
+	// committed: one org, one admin membership, one default project.
+	var orgCount, projCount int
+	if err := db.PgW.QueryRow(ctx,
+		`select count(*) from org_members where customer_id = $1 and role = $2`,
+		customer.ID, orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+	).Scan(&orgCount); err != nil {
+		t.Fatalf("scan admin memberships: %v", err)
+	}
+	if orgCount != 1 {
+		t.Fatalf("want 1 admin membership for new signup, got %d", orgCount)
+	}
+	if err := db.PgW.QueryRow(ctx,
+		`select count(*) from projects p join org_members m on m.org_id = p.org_id where m.customer_id = $1`,
+		customer.ID,
+	).Scan(&projCount); err != nil {
+		t.Fatalf("scan projects: %v", err)
+	}
+	if projCount != 1 {
+		t.Fatalf("want 1 default project for new signup, got %d", projCount)
+	}
+
+	assertAuthEmailFailureCounter(t, reader, "signup_verify_welcome")
+}
+
+// assertAuthEmailFailureCounter mirrors the orgs-test helper. Lives here
+// (not as a shared helper) to keep the test packages independent.
+func assertAuthEmailFailureCounter(t *testing.T, reader sdkmetric.Reader, kind string) {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("reader.Collect: %v", err)
+	}
+	const scope = "github.com/pug-sh/pug/internal/core/auth"
+	var total int64
+	for _, sm := range rm.ScopeMetrics {
+		if sm.Scope.Name != scope {
+			continue
+		}
+		for _, m := range sm.Metrics {
+			if m.Name != "emails.publish_failure_total" {
+				continue
+			}
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				t.Fatalf("emails.publish_failure_total: want Sum[int64], got %T", m.Data)
+			}
+			for _, dp := range sum.DataPoints {
+				if got, ok := dp.Attributes.Value("kind"); ok && got.AsString() == kind {
+					total += dp.Value
+				}
+			}
+		}
+	}
+	if total == 0 {
+		t.Fatalf("expected emails.publish_failure_total{kind=%q} > 0", kind)
+	}
 }
 
 // TestVerifyEmailRejectsResetPasswordToken pins purpose-isolation: a token
