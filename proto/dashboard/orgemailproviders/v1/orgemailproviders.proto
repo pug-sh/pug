@@ -46,8 +46,8 @@ message GetResponse {
 message SetRequest {
   string org_id       = 1 [(buf.validate.field).string.min_len = 1];
   string from_address = 2 [(buf.validate.field).string.email = true];
-  // reply_to is optional. Empty string or unset → no reply-to header is
-  // added. Otherwise must be a valid email.
+  // reply_to is optional. An empty string (the proto default) → no reply-to
+  // header is added; any non-empty value must be a valid email.
   string reply_to     = 3 [(buf.validate.field).cel = {
     id: "reply_to.empty_or_email",
     message: "reply_to must be empty or a valid email address",

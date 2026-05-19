@@ -130,7 +130,10 @@ func start(ctx context.Context, d *deps) error {
 		if err != nil {
 			return err
 		}
-		resolver := coreemail.NewTenantAwareResolver(orgEmailRepo, emailCipher, fallbackProvider, emailCfg.From, emailCfg.ReplyTo)
+		resolver, err := coreemail.NewTenantAwareResolver(orgEmailRepo, emailCipher, fallbackProvider, emailCfg.From, emailCfg.ReplyTo)
+		if err != nil {
+			return err
+		}
 		emailMailer, err = coreemail.NewServiceWithResolver(emailCfg, resolver)
 		if err != nil {
 			return err

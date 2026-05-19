@@ -31,7 +31,7 @@ func (r *stubRepo) Get(_ context.Context, _ string) (coreemail.CachedProviderEnt
 func TestTenantAwareResolverFallbackForNilTenant(t *testing.T) {
 	fallback := &recordingProvider{}
 	c, _ := secret.NewCipher(testKey32(t))
-	r := coreemail.NewTenantAwareResolver(&stubRepo{}, c, fallback, "ops@operator.com", "reply@operator.com")
+	r, _ := coreemail.NewTenantAwareResolver(&stubRepo{}, c, fallback, "ops@operator.com", "reply@operator.com")
 
 	provider, from, err := r.Resolve(context.Background(), nil)
 	if err != nil {
@@ -48,7 +48,7 @@ func TestTenantAwareResolverFallbackForNilTenant(t *testing.T) {
 func TestTenantAwareResolverFallbackOnAbsent(t *testing.T) {
 	fallback := &recordingProvider{}
 	c, _ := secret.NewCipher(testKey32(t))
-	r := coreemail.NewTenantAwareResolver(&stubRepo{entry: coreemail.CachedProviderEntry{Present: false}}, c, fallback, "ops@operator.com", "")
+	r, _ := coreemail.NewTenantAwareResolver(&stubRepo{entry: coreemail.CachedProviderEntry{Present: false}}, c, fallback, "ops@operator.com", "")
 
 	tenant := "org-x"
 	provider, from, err := r.Resolve(context.Background(), &tenant)
@@ -76,7 +76,7 @@ func TestTenantAwareResolverDecryptsAndBuildsResend(t *testing.T) {
 		SecretCiphertext: blob,
 	}
 	fallback := &recordingProvider{}
-	r := coreemail.NewTenantAwareResolver(&stubRepo{entry: entry}, c, fallback, "ops@operator.com", "")
+	r, _ := coreemail.NewTenantAwareResolver(&stubRepo{entry: entry}, c, fallback, "ops@operator.com", "")
 
 	tenant := "org-x"
 	provider, from, err := r.Resolve(context.Background(), &tenant)
@@ -103,7 +103,7 @@ func TestTenantAwareResolverPropagatesRepoError(t *testing.T) {
 	fallback := &recordingProvider{}
 	c, _ := secret.NewCipher(testKey32(t))
 	wantErr := errors.New("db blew up")
-	r := coreemail.NewTenantAwareResolver(&stubRepo{err: wantErr}, c, fallback, "ops@operator.com", "")
+	r, _ := coreemail.NewTenantAwareResolver(&stubRepo{err: wantErr}, c, fallback, "ops@operator.com", "")
 
 	tenant := "org-y"
 	_, _, err := r.Resolve(context.Background(), &tenant)
@@ -146,7 +146,7 @@ func TestTenantAwareResolverIsolatesPerTenant(t *testing.T) {
 		},
 	}
 	fallback := &recordingProvider{}
-	r := coreemail.NewTenantAwareResolver(repo, c, fallback, "ops@operator.com", "")
+	r, _ := coreemail.NewTenantAwareResolver(repo, c, fallback, "ops@operator.com", "")
 
 	tenantA := "org-a"
 	_, fromA, err := r.Resolve(context.Background(), &tenantA)
@@ -190,7 +190,7 @@ func TestTenantAwareResolverDecryptFailureIsPermanent(t *testing.T) {
 		FromAddress:      "ops@acme.com",
 		SecretCiphertext: blob,
 	}
-	r := coreemail.NewTenantAwareResolver(&stubRepo{entry: entry}, dec, &recordingProvider{}, "ops@operator.com", "")
+	r, _ := coreemail.NewTenantAwareResolver(&stubRepo{entry: entry}, dec, &recordingProvider{}, "ops@operator.com", "")
 
 	tenant := "org-x"
 	_, _, err := r.Resolve(context.Background(), &tenant)
@@ -215,7 +215,7 @@ func TestTenantAwareResolverUnknownKindIsPermanent(t *testing.T) {
 		FromAddress:      "ops@acme.com",
 		SecretCiphertext: blob,
 	}
-	r := coreemail.NewTenantAwareResolver(&stubRepo{entry: entry}, c, &recordingProvider{}, "ops@operator.com", "")
+	r, _ := coreemail.NewTenantAwareResolver(&stubRepo{entry: entry}, c, &recordingProvider{}, "ops@operator.com", "")
 
 	tenant := "org-x"
 	_, _, err := r.Resolve(context.Background(), &tenant)

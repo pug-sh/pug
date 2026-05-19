@@ -316,8 +316,8 @@ type SetRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	OrgId       *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	FromAddress *string                `protobuf:"bytes,2,opt,name=from_address,json=fromAddress" json:"from_address,omitempty"`
-	// reply_to is optional. Empty string or unset → no reply-to header is
-	// added. Otherwise must be a valid email.
+	// reply_to is optional. An empty string (the proto default) → no reply-to
+	// header is added; any non-empty value must be a valid email.
 	ReplyTo *string `protobuf:"bytes,3,opt,name=reply_to,json=replyTo" json:"reply_to,omitempty"`
 	// Types that are valid to be assigned to Config:
 	//

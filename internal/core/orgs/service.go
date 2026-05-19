@@ -24,8 +24,23 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/rs/xid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/protobuf/proto"
 )
+
+// Mirror of auth.emailPublishFailureCounter — see that declaration for the
+// alerting rationale. Lives in its own package to avoid an orgs→auth import.
+var emailPublishFailureCounter metric.Int64Counter
+
+func init() {
+	meter := otel.Meter("github.com/pug-sh/pug/internal/core/orgs")
+	emailPublishFailureCounter, _ = meter.Int64Counter(
+		"emails.publish_failure_total",
+		metric.WithDescription("Email jobs whose tx committed but NATS publish failed; indicates user-visible silent drops."),
+	)
+}
 
 var (
 	ErrAlreadyMember        = errors.New("already a member of this org")
@@ -377,11 +392,13 @@ func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvi
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal org invite email job", slogx.Error(err), slog.String("invitation_id", inv.ID))
 		telemetry.RecordError(ctx, err)
+		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", "org_member_invite")))
 		return
 	}
 	if err := s.publisher.Publish(ctx, nats.MiscEmailJobsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish org invite email job", slogx.Error(err), slog.String("invitation_id", inv.ID))
 		telemetry.RecordError(ctx, err)
+		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", "org_member_invite")))
 	}
 }
 

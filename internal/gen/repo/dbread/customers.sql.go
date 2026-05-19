@@ -12,7 +12,7 @@ import (
 const getCustomerByEmail = `-- name: GetCustomerByEmail :one
 select create_time, display_name, email, id, password_hash, picture_uri, update_time, email_verified_at
 from customers
-where email = $1
+where lower(email) = lower($1)
 `
 
 func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (Customer, error) {

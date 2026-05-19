@@ -11,12 +11,6 @@ import (
 	"github.com/pug-sh/pug/internal/core/email/spec"
 )
 
-const (
-	TemplateSignupVerifyWelcome = "signup_verify_welcome"
-	TemplatePasswordReset       = "password_reset"
-	TemplateOrgMemberInvite     = "org_member_invite"
-)
-
 type Config struct {
 	DashboardBaseURL string `env:"PUG_DASHBOARD_BASE_URL,required"`
 	From             string `env:"PUG_EMAIL_FROM,required"`
@@ -100,6 +94,13 @@ func (s *Service) baseMessage(idempotencyKey, to string) Message {
 	}
 }
 
+// Signup/verify/reset emails are platform messages that always route through
+// the operator-default provider (nil tenantID). At signup time no org exists
+// yet, and for verify/reset of a multi-org customer there is no single
+// "their" org — sending from the operator's reputation domain is also
+// preferable for deliverability. Per-tenant routing is reserved for org-
+// scoped messages like invites (SendOrgMemberInvite below).
+
 func (s *Service) SendSignupVerifyWelcome(ctx context.Context, emailAddr, token, idempotencyKey string) error {
 	link := s.link("/verify-email", token)
 	msg := s.baseMessage(idempotencyKey, emailAddr)
@@ -163,8 +164,7 @@ func sanitizeDisplay(s string) string {
 	return stripped
 }
 
-// SendTest delivers a fixed verification message via the resolver. An empty
-// orgID routes through the operator-default provider.
+// SendTest routes through the operator-default provider when orgID is empty.
 func (s *Service) SendTest(ctx context.Context, orgID, recipient, idempotencyKey string) error {
 	msg := s.baseMessage(idempotencyKey, recipient)
 	msg.Subject = "Pug email provider test"

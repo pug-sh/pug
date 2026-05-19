@@ -7,6 +7,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1;e
 
 message EmailJob {
   oneof payload {
+    option (buf.validate.oneof).required = true;
     SignUpVerifyWelcomePayload signup_verify_welcome = 1;
     PasswordResetPayload password_reset = 2;
     OrgMemberInvitePayload org_member_invite = 3;

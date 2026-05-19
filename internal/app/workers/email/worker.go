@@ -56,7 +56,7 @@ func Run(ctx context.Context) error {
 		return err
 	}
 	var rdClient *pugredis.Client
-	if keyCfg.KeyB64 != "" {
+	if needsTenantCache(keyCfg.KeyB64) {
 		var rdCfg pugredis.Config
 		if err := envconfig.Process(ctx, &rdCfg); err != nil {
 			return err
@@ -65,7 +65,11 @@ func Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		defer rdClient.Close(ctx)
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			rdClient.Close(shutdownCtx)
+		}()
 	}
 
 	var cache *goredis.Client
@@ -107,4 +111,12 @@ func StartWorker(ctx context.Context, pgRO *pgxpool.Pool, natsClient *natsworker
 	}
 
 	return worker.Start(ctx)
+}
+
+// needsTenantCache reports whether the worker should connect to Redis. When
+// PUG_EMAIL_PROVIDER_SECRET_KEY is unset the worker runs in operator-only
+// mode and the cache is not used, so the Redis connection is skipped to
+// keep boot from depending on a service we don't read.
+func needsTenantCache(secretKeyB64 string) bool {
+	return secretKeyB64 != ""
 }

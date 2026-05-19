@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	netsmtp "net/smtp"
 	"net/textproto"
@@ -14,6 +15,7 @@ import (
 	"strings"
 
 	emailspec "github.com/pug-sh/pug/internal/core/email/spec"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 type Config struct {
@@ -32,6 +34,12 @@ func New(cfg Config) (*Provider, error) {
 	if cfg.Host == "" || cfg.Port <= 0 || cfg.Port > 65535 {
 		return nil, errors.New("smtp: host required and port must be in 1..65535")
 	}
+	// Probe crypto/rand once at construction so a broken entropy source
+	// surfaces here rather than panicking inside the first Send (which would
+	// take down a worker goroutine).
+	if _, err := rand.Read(make([]byte, 1)); err != nil {
+		return nil, fmt.Errorf("smtp: crypto/rand unavailable: %w", err)
+	}
 	return &Provider{cfg: cfg}, nil
 }
 
@@ -44,15 +52,10 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 		return fmt.Errorf("smtp dial: %w", err)
 	}
 
-	c, err := netsmtp.NewClient(conn, p.cfg.Host)
-	if err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("smtp new client: %w", err)
-	}
-	defer func() { _ = c.Close() }()
-
-	// Tear down the underlying conn when ctx is canceled so a misbehaving
-	// server can't pin a goroutine past the worker's ProcessingTimeout.
+	// Start the ctx-cancel watchdog BEFORE NewClient so a server that
+	// accepts the TCP connection but never sends the 220 greeting can't
+	// pin a worker goroutine. netsmtp.NewClient blocks reading the
+	// greeting; closing the underlying conn here unblocks that read.
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
@@ -60,6 +63,19 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 		case <-ctx.Done():
 			_ = conn.Close()
 		case <-done:
+		}
+	}()
+
+	c, err := netsmtp.NewClient(conn, p.cfg.Host)
+	if err != nil {
+		if cerr := conn.Close(); cerr != nil {
+			slog.WarnContext(ctx, "smtp: conn close after NewClient failure errored", slogx.Error(cerr))
+		}
+		return fmt.Errorf("smtp new client: %w", err)
+	}
+	defer func() {
+		if cerr := c.Close(); cerr != nil {
+			slog.WarnContext(ctx, "smtp: client close errored", slogx.Error(cerr))
 		}
 	}()
 
@@ -105,15 +121,19 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 	// After w.Close() succeeded the server has queued the message (250 OK).
 	// A Quit() error here is a connection teardown issue — the email IS sent.
 	// Returning it would cause NATS to retry and the recipient to get a duplicate.
-	_ = c.Quit()
+	// Log at Warn so a teardown spike is at least visible to ops.
+	if qerr := c.Quit(); qerr != nil {
+		slog.WarnContext(ctx, "smtp: Quit after successful DATA errored (message was queued)", slogx.Error(qerr))
+	}
 	return nil
 }
 
 // randomBoundary returns a random multipart MIME boundary. Using a random
 // boundary per message prevents collisions with literal boundary strings that
-// might appear in user-supplied body content. crypto/rand failure is treated
-// as fatal — a zero boundary would let an attacker collide their own content
-// with the boundary string and inject parts.
+// might appear in user-supplied body content. crypto/rand failure means the
+// system entropy source is broken; panicking surfaces the problem rather
+// than emailing with a predictable boundary. New() probes crypto/rand at
+// construction so this panic is normally unreachable in production.
 func randomBoundary() string {
 	var buf [16]byte
 	if _, err := rand.Read(buf[:]); err != nil {

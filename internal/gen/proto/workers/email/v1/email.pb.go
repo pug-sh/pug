@@ -356,13 +356,13 @@ var File_workers_email_v1_email_proto protoreflect.FileDescriptor
 
 const file_workers_email_v1_email_proto_rawDesc = "" +
 	"\n" +
-	"\x1cworkers/email/v1/email.proto\x12\x10workers.email.v1\x1a\x1bbuf/validate/validate.proto\"\x82\x03\n" +
+	"\x1cworkers/email/v1/email.proto\x12\x10workers.email.v1\x1a\x1bbuf/validate/validate.proto\"\x89\x03\n" +
 	"\bEmailJob\x12b\n" +
 	"\x15signup_verify_welcome\x18\x01 \x01(\v2,.workers.email.v1.SignUpVerifyWelcomePayloadH\x00R\x13signupVerifyWelcome\x12O\n" +
 	"\x0epassword_reset\x18\x02 \x01(\v2&.workers.email.v1.PasswordResetPayloadH\x00R\rpasswordReset\x12V\n" +
 	"\x11org_member_invite\x18\x03 \x01(\v2(.workers.email.v1.OrgMemberInvitePayloadH\x00R\x0forgMemberInvite\x12^\n" +
-	"\x13verification_resend\x18\x04 \x01(\v2+.workers.email.v1.VerificationResendPayloadH\x00R\x12verificationResendB\t\n" +
-	"\apayload\"\\\n" +
+	"\x13verification_resend\x18\x04 \x01(\v2+.workers.email.v1.VerificationResendPayloadH\x00R\x12verificationResendB\x10\n" +
+	"\apayload\x12\x05\xbaH\x02\b\x01\"\\\n" +
 	"\x1aSignUpVerifyWelcomePayload\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12\x1c\n" +

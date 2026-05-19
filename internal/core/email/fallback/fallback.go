@@ -13,8 +13,25 @@ import (
 	"github.com/sethvargo/go-envconfig"
 )
 
+// ProviderName is the closed set of operator-default providers selectable
+// via PUG_EMAIL_PROVIDER. Mirrors coreemail.ProviderKind.Valid() pattern.
+type ProviderName string
+
+const (
+	ProviderResend ProviderName = "resend"
+	ProviderSES    ProviderName = "ses"
+)
+
+func (n ProviderName) Valid() bool {
+	switch n {
+	case ProviderResend, ProviderSES:
+		return true
+	}
+	return false
+}
+
 type Config struct {
-	Name string `env:"PUG_EMAIL_PROVIDER,default=resend"`
+	Name ProviderName `env:"PUG_EMAIL_PROVIDER,default=resend"`
 }
 
 // NewProvider builds the operator-configured Provider chosen by
@@ -25,20 +42,23 @@ func NewProvider(ctx context.Context) (coreemail.Provider, error) {
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return nil, err
 	}
+	if !cfg.Name.Valid() {
+		return nil, fmt.Errorf("email: unsupported fallback provider %q (set PUG_EMAIL_PROVIDER to one of: resend, ses)", cfg.Name)
+	}
 	switch cfg.Name {
-	case "resend":
+	case ProviderResend:
 		var resendCfg resenddeps.Config
 		if err := envconfig.Process(ctx, &resendCfg); err != nil {
 			return nil, err
 		}
 		return resenddeps.New(resendCfg)
-	case "ses":
+	case ProviderSES:
 		var sesCfg sesdeps.Config
 		if err := envconfig.Process(ctx, &sesCfg); err != nil {
 			return nil, err
 		}
 		return sesdeps.New(ctx, sesCfg)
-	default:
-		return nil, fmt.Errorf("email: unsupported fallback provider %q", cfg.Name)
 	}
+	// Unreachable because of Valid() above, but the compiler doesn't know that.
+	return nil, fmt.Errorf("email: unsupported fallback provider %q", cfg.Name)
 }

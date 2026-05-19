@@ -20,6 +20,8 @@ import (
 // responding 221 (used to exercise the swallowed-Quit-error branch in smtp.go).
 // hangAfterGreeting sends the 220 greeting then stops responding (used to
 // exercise the post-NewClient context-cancellation goroutine in smtp.go).
+// silentOnAccept accepts the TCP connection but never sends the 220 greeting
+// (used to exercise the pre-NewClient context-cancellation watchdog).
 type fakeSMTPServer struct {
 	listener          net.Listener
 	mu                sync.Mutex
@@ -27,6 +29,7 @@ type fakeSMTPServer struct {
 	wg                sync.WaitGroup
 	dropOnQuit        bool
 	hangAfterGreeting bool
+	silentOnAccept    bool
 }
 
 func newFakeSMTPServer(t *testing.T) *fakeSMTPServer {
@@ -54,6 +57,12 @@ func (s *fakeSMTPServer) serve() {
 	defer func() { _ = conn.Close() }()
 	buf := make([]byte, 4096)
 	send := func(line string) { _, _ = conn.Write([]byte(line + "\r\n")) }
+	if s.silentOnAccept {
+		// Block forever reading. The pre-greeting ctx-cancel watchdog in
+		// smtp.go must close conn to unblock the client.
+		_, _ = conn.Read(buf)
+		return
+	}
 	send("220 fake.localhost ESMTP")
 	if s.hangAfterGreeting {
 		// Greeting is sent (so netsmtp.NewClient returns), but no further
@@ -234,16 +243,11 @@ func TestSMTPProviderSwallowsQuitError(t *testing.T) {
 	}
 }
 
-// TestSMTPProviderRespectsContextCancellation pins the goroutine in smtp.go:58-64
-// that tears down the underlying conn when ctx is cancelled. The fake sends
-// the 220 greeting (so netsmtp.NewClient returns) and then hangs on the EHLO
-// reply — the ctx-cancel goroutine must close the conn so Send returns
+// TestSMTPProviderRespectsContextCancellation pins the watchdog goroutine in
+// smtp.Send that tears down the underlying conn when ctx is cancelled. The
+// fake sends the 220 greeting (so netsmtp.NewClient returns) and then hangs
+// on the EHLO reply — the watchdog must close the conn so Send returns
 // promptly rather than pinning a worker past the NATS ProcessingTimeout.
-//
-// NOTE: this test does NOT exercise the pre-greeting case. NewClient blocks
-// reading the 220 greeting before the ctx-cancel goroutine starts, so a
-// server that never sends the greeting will block Send indefinitely. That
-// gap is a separate finding (see review notes).
 func TestSMTPProviderRespectsContextCancellation(t *testing.T) {
 	srv := newFakeSMTPServer(t)
 	srv.hangAfterGreeting = true
@@ -267,6 +271,38 @@ func TestSMTPProviderRespectsContextCancellation(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("Send was pinned past ctx cancel — elapsed %v", elapsed)
+	}
+}
+
+// TestSMTPProviderRespectsContextCancellationBeforeGreeting pins the
+// pre-NewClient watchdog. The fake accepts the TCP connection but never
+// sends the 220 greeting; netsmtp.NewClient blocks reading it. The
+// watchdog goroutine (started BEFORE NewClient) must close the underlying
+// conn on ctx.Done so Send returns instead of pinning a worker until the
+// OS TCP timeout.
+func TestSMTPProviderRespectsContextCancellationBeforeGreeting(t *testing.T) {
+	srv := newFakeSMTPServer(t)
+	srv.silentOnAccept = true
+	host, port := splitHostPort(t, srv.addr())
+
+	prov, err := emailsmtp.New(emailsmtp.Config{
+		Host: host, Port: port, Username: "u", Password: "p", UseTLS: false,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err = prov.Send(ctx, coreemail.Message{
+		From: "f@example.com", To: "t@example.com",
+		Subject: "x", TextBody: "y", HTMLBody: "<p>y</p>",
+	})
+	if err == nil {
+		t.Fatal("expected error when server never sends greeting")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("Send pinned past ctx cancel before greeting — elapsed %v", elapsed)
 	}
 }
 

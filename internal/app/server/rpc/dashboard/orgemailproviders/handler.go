@@ -96,7 +96,12 @@ func (s *server) Get(ctx context.Context, req *connect.Request[orgemailproviders
 		slog.ErrorContext(ctx, "failed to decrypt org email provider", slogx.Error(err),
 			slog.String("org_id", req.Msg.GetOrgId()))
 		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		// Decrypt failure usually means PUG_EMAIL_PROVIDER_SECRET_KEY was
+		// rotated without re-encrypting rows. The admin can self-recover
+		// by re-saving the provider config (which re-encrypts under the
+		// current key) — surface a typed code rather than a generic 500.
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("email provider secret cannot be decrypted with the current key; please re-save the provider config"))
 	}
 	kind := coreemail.ProviderKind(row.Kind)
 	redacted, err := redactPlaintext(kind, plaintext)
@@ -155,6 +160,18 @@ func (s *server) Set(ctx context.Context, req *connect.Request[orgemailproviders
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
+	// Cache invalidation brackets the upsert: the "before" invalidate guarantees
+	// a concurrent reader cannot keep serving the old ciphertext indefinitely,
+	// and the "after" invalidate handles a concurrent reader that re-cached the
+	// pre-upsert value during the upsert window. Without bracketing, a Redis
+	// hiccup after a successful upsert leaves the rotated-out credential
+	// serving real email sends for up to orgEmailProviderCacheTTL.
+	if s.repo != nil {
+		if err := s.repo.Invalidate(ctx, req.Msg.GetOrgId()); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
+	}
+
 	row, err := s.write.UpsertOrgEmailProvider(ctx, dbwrite.UpsertOrgEmailProviderParams{
 		OrgID:            req.Msg.GetOrgId(),
 		Kind:             string(kind),
@@ -169,12 +186,10 @@ func (s *server) Set(ctx context.Context, req *connect.Request[orgemailproviders
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	// Invalidate is load-bearing: a stale negative-cache entry would keep
-	// worker dispatch routing through the operator-default provider for the
-	// rest of the cache TTL. Surface as Internal so the admin retries (the
-	// upsert above is idempotent).
-	if err := s.repo.Invalidate(ctx, req.Msg.GetOrgId()); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	if s.repo != nil {
+		if err := s.repo.Invalidate(ctx, req.Msg.GetOrgId()); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
 	}
 
 	return connect.NewResponse(&orgemailprovidersv1.SetResponse{
@@ -192,9 +207,8 @@ func (s *server) Remove(ctx context.Context, req *connect.Request[orgemailprovid
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	// repo is nil in operator-only mode (no PUG_EMAIL_PROVIDER_SECRET_KEY).
-	// Remove still performs the DELETE so admins can clean up stale rows;
-	// cache invalidation is skipped because there is no cache.
+	// Cleanup of stale rows must work in operator-only mode (repo is nil),
+	// even without cache invalidation.
 	if s.repo != nil {
 		if err := s.repo.Invalidate(ctx, req.Msg.GetOrgId()); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -203,12 +217,10 @@ func (s *server) Remove(ctx context.Context, req *connect.Request[orgemailprovid
 	return connect.NewResponse(&orgemailprovidersv1.RemoveResponse{}), nil
 }
 
-// SendTest dispatches a fixed test message through the org's resolver so the
-// admin can verify config end-to-end. Provider failures land in the response
-// body (not as RPC errors) so the admin sees the underlying provider message
-// — the resolver/provider layer logs+records at source. The recipient is
-// restricted to the calling admin's own email to keep the operator-default
-// reputation domain from becoming a free open-relay for arbitrary recipients.
+// Provider failures land in the response body (not as RPC errors) so the
+// admin sees the underlying provider message. The recipient is restricted to
+// the calling admin's own email to keep the operator-default reputation
+// domain from becoming a free open-relay.
 func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprovidersv1.SendTestRequest]) (*connect.Response[orgemailprovidersv1.SendTestResponse], error) {
 	principal, err := s.requireAdmin(ctx, req.Msg.GetOrgId())
 	if err != nil {
@@ -225,13 +237,47 @@ func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprov
 
 	idempotencyKey := "send_test:" + req.Msg.GetOrgId() + ":" + req.Msg.GetRecipient()
 	if err := s.mailer.SendTest(ctx, req.Msg.GetOrgId(), req.Msg.GetRecipient(), idempotencyKey); err != nil {
-		errMsg := err.Error()
+		errMsg := classifySendTestError(err)
 		return connect.NewResponse(&orgemailprovidersv1.SendTestResponse{
 			Success:      boolPtr(false),
 			ErrorMessage: &errMsg,
 		}), nil
 	}
 	return connect.NewResponse(&orgemailprovidersv1.SendTestResponse{Success: boolPtr(true)}), nil
+}
+
+// classifySendTestError converts a raw resolver/provider error into a
+// client-safe message for the SendTest response body. The original error is
+// still logged at source by the resolver/provider layer — this only sanitises
+// what the admin sees in the dashboard. Internal package paths like "secret:"
+// or "email:" are stripped so a decrypt failure doesn't leak the cipher
+// package name to the UI.
+func classifySendTestError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if coreemail.IsPermanentError(err) {
+		msg := err.Error()
+		if strings.Contains(msg, "decrypt") || strings.Contains(msg, "cipher:") {
+			return "Stored secret cannot be decrypted with the server's current encryption key; please re-save the provider config."
+		}
+		if strings.Contains(msg, "unknown provider kind") {
+			return "Provider kind is not supported by this server; please contact your operator."
+		}
+		return stripInternalPrefixes(msg)
+	}
+	return stripInternalPrefixes(err.Error())
+}
+
+// stripInternalPrefixes removes package-name error wraps like "secret: ",
+// "email: ", "smtp: ", "resend send email: ", "ses send email: " from the
+// start of a message so the admin doesn't see Go package names. Leaves the
+// underlying provider message (e.g. AWS error text) intact.
+func stripInternalPrefixes(msg string) string {
+	for _, prefix := range []string{"secret: ", "email: ", "smtp: ", "ses send email: ", "resend send email: "} {
+		msg = strings.TrimPrefix(msg, prefix)
+	}
+	return msg
 }
 
 func boolPtr(b bool) *bool { return &b }

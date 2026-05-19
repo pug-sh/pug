@@ -19,7 +19,12 @@ message SignInWithEmailRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.email = true
   ];
-  string password = 2 [(buf.validate.field).required = true];
+  // bcrypt accepts at most 72 bytes; rejecting longer inputs at the
+  // interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
+  string password = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_bytes = 72
+  ];
 }
 
 message SignInWithEmailResponse {
@@ -31,7 +36,12 @@ message SignUpWithEmailRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.email = true
   ];
-  string password = 2 [(buf.validate.field).required = true];
+  // bcrypt accepts at most 72 bytes; rejecting longer inputs at the
+  // interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
+  string password = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_bytes = 72
+  ];
 }
 
 message SignUpWithEmailResponse {
@@ -55,7 +65,12 @@ message RequestPasswordResetResponse {}
 
 message ResetPasswordRequest {
   string token = 1 [(buf.validate.field).required = true];
-  string password = 2 [(buf.validate.field).required = true];
+  // bcrypt accepts at most 72 bytes; rejecting longer inputs at the
+  // interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
+  string password = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_bytes = 72
+  ];
 }
 
 message ResetPasswordResponse {}

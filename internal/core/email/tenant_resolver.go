@@ -26,14 +26,23 @@ type TenantAwareResolver struct {
 	operatorReplyTo string
 }
 
-func NewTenantAwareResolver(repo providerRepo, cipher *secret.Cipher, fallback Provider, operatorFrom, operatorReplyTo string) *TenantAwareResolver {
+func NewTenantAwareResolver(repo providerRepo, cipher *secret.Cipher, fallback Provider, operatorFrom, operatorReplyTo string) (*TenantAwareResolver, error) {
+	if repo == nil {
+		return nil, fmt.Errorf("email: tenant-aware resolver requires a provider repo")
+	}
+	if cipher == nil {
+		return nil, fmt.Errorf("email: tenant-aware resolver requires a cipher (set PUG_EMAIL_PROVIDER_SECRET_KEY)")
+	}
+	if fallback == nil {
+		return nil, fmt.Errorf("email: tenant-aware resolver requires a fallback provider")
+	}
 	return &TenantAwareResolver{
 		repo:            repo,
 		cipher:          cipher,
 		fallback:        fallback,
 		operatorFrom:    operatorFrom,
 		operatorReplyTo: operatorReplyTo,
-	}
+	}, nil
 }
 
 func (r *TenantAwareResolver) Resolve(ctx context.Context, tenantID *string) (Provider, ResolvedFrom, error) {

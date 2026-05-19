@@ -853,16 +853,14 @@ func TestSendTestHappyPath(t *testing.T) {
 	}
 }
 
-// TestSetReturnsInternalOnInvalidateFailure pins the handler.go:172-178 comment
-// claim that Invalidate is "load-bearing" and its failure must surface as
-// CodeInternal. A regression that swallowed the Invalidate error would leave
-// a stale negative-cache entry shadowing the admin's just-saved provider for
-// the rest of the cache TTL — silently routing traffic through the operator-
-// default provider.
+// TestSetReturnsInternalOnInvalidateFailure pins the load-bearing-Invalidate
+// contract. With the bracketed Invalidate→Upsert→Invalidate ordering, a
+// Redis failure on the FIRST invalidate aborts before the Upsert runs —
+// the DB stays unchanged and the admin gets CodeInternal so they retry.
+// Without bracketing, a Redis hiccup after a successful Upsert would leave
+// stale ciphertext serving real email sends for the cache TTL window.
 //
 // We point the repo's Redis client at a closed port so DEL fails reliably.
-// The Postgres upsert still succeeds (real DB), so we're testing exactly the
-// post-upsert Invalidate branch.
 func TestSetReturnsInternalOnInvalidateFailure(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test")
@@ -920,11 +918,12 @@ func TestSetReturnsInternalOnInvalidateFailure(t *testing.T) {
 		t.Fatalf("expected CodeInternal, got %v (err=%v)", got, err)
 	}
 
-	// Sanity: the row was written before the Invalidate failed. The handler
-	// docstring claims the upsert is idempotent, and this assertion pins that
-	// claim — if a future refactor moves Invalidate BEFORE Upsert, the row
-	// would be absent and this assertion would fire.
-	if _, err := read.GetOrgEmailProvider(ctx, org.ID); err != nil {
-		t.Fatalf("expected upsert to have committed before invalidate failure, got %v", err)
+	// Sanity: with bracketed invalidate ordering, the first Invalidate fails
+	// before the Upsert runs, so no row should exist. This pins the
+	// atomic-ish "no DB write without a successful invalidate" contract —
+	// a regression that moved Upsert before Invalidate would leave a row
+	// behind here.
+	if _, err := read.GetOrgEmailProvider(ctx, org.ID); err == nil {
+		t.Fatal("expected no row after Invalidate-failure aborted before Upsert; got a row")
 	}
 }

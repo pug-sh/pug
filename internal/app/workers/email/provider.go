@@ -17,8 +17,7 @@ type secretKeyConfig struct {
 	KeyB64 string `env:"PUG_EMAIL_PROVIDER_SECRET_KEY"`
 }
 
-// fallbackProviderFactory is the constructor for the operator-default provider.
-// Tests swap this; production wiring uses fallback.NewProvider.
+// Override in tests.
 var fallbackProviderFactory = fallback.NewProvider
 
 func newMailerWithResolver(ctx context.Context, read *dbread.Queries, cache *goredis.Client) (*coreemail.Service, error) {
@@ -47,7 +46,10 @@ func newMailerWithResolver(ctx context.Context, read *dbread.Queries, cache *gor
 		return nil, fmt.Errorf("init email cipher: %w", err)
 	}
 	repo := coreemail.NewOrgProviderRepo(read, cache)
-	resolver := coreemail.NewTenantAwareResolver(repo, cipher, fallback, emailCfg.From, emailCfg.ReplyTo)
+	resolver, err := coreemail.NewTenantAwareResolver(repo, cipher, fallback, emailCfg.From, emailCfg.ReplyTo)
+	if err != nil {
+		return nil, err
+	}
 
 	return coreemail.NewServiceWithResolver(emailCfg, resolver)
 }

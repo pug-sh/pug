@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 
 	emailspec "github.com/pug-sh/pug/internal/core/email/spec"
 	resendsdk "github.com/resend/resend-go/v3"
@@ -45,7 +46,7 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 	sent, err := p.client.Emails.SendWithOptions(ctx, params, options)
 	if err != nil {
 		wrappedErr := fmt.Errorf("resend send email: %w", err)
-		if shouldTreatAsPermanent(status.code, err) {
+		if shouldTreatAsPermanent(status.get(), err) {
 			return emailspec.NewPermanentError(wrappedErr)
 		}
 		return wrappedErr
@@ -58,8 +59,26 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 
 type responseStatusContextKey struct{}
 
+// responseStatus carries the HTTP status code from the RoundTrip goroutine
+// back to the caller. The Resend SDK does the request on a callee goroutine
+// and the read happens after the SDK returns, so happens-before is
+// established in practice — but a future SDK refactor could break that
+// assumption, so we guard the field with a mutex.
 type responseStatus struct {
+	mu   sync.Mutex
 	code int
+}
+
+func (s *responseStatus) set(code int) {
+	s.mu.Lock()
+	s.code = code
+	s.mu.Unlock()
+}
+
+func (s *responseStatus) get() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.code
 }
 
 type observingTransport struct {
@@ -86,7 +105,7 @@ func newClient(httpClient *http.Client, apiKey string) *resendsdk.Client {
 func (t observingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
 	if capture, ok := req.Context().Value(responseStatusContextKey{}).(*responseStatus); ok && resp != nil {
-		capture.code = resp.StatusCode
+		capture.set(resp.StatusCode)
 	}
 	return resp, err
 }

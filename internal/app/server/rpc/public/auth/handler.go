@@ -32,6 +32,9 @@ func (s *server) SignUpWithEmail(
 		if errors.Is(err, coreauth.ErrEmailAlreadyExists) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("user with this email already exists"))
 		}
+		if errors.Is(err, coreauth.ErrPasswordTooLong) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("password must be 72 bytes or fewer"))
+		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	return connect.NewResponse(&authv1.SignUpWithEmailResponse{Token: &token}), nil
@@ -81,6 +84,9 @@ func (s *server) ResetPassword(
 	if err := s.service.ResetPassword(ctx, req.Msg.GetToken(), req.Msg.GetPassword()); err != nil {
 		if errors.Is(err, coreauth.ErrInvalidToken) {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid or expired token"))
+		}
+		if errors.Is(err, coreauth.ErrPasswordTooLong) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("password must be 72 bytes or fewer"))
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

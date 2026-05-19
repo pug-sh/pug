@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
@@ -25,12 +26,11 @@ type Provider struct {
 }
 
 func New(ctx context.Context, cfg Config) (*Provider, error) {
-	loadOptions := make([]func(*awsconfig.LoadOptions) error, 0, 1)
-	if cfg.Region != "" {
-		loadOptions = append(loadOptions, awsconfig.WithRegion(cfg.Region))
+	if cfg.Region == "" {
+		return nil, errors.New("ses: region is required (set PUG_SES_REGION)")
 	}
 
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, loadOptions...)
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.Region))
 	if err != nil {
 		return nil, fmt.Errorf("ses: load AWS config: %w", err)
 	}
@@ -38,16 +38,28 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 	return &Provider{client: sesv2.NewFromConfig(awsCfg)}, nil
 }
 
+// sanitizeHeader strips CR and LF from header values. The SES SDK likely
+// rejects malformed headers internally, but stripping here keeps parity with
+// the SMTP provider's defense-in-depth (smtp.go::sanitizeHeader) — any
+// user-controlled string that reaches Subject or Reply-To has already been
+// scrubbed once at the application layer, this is the second pass.
+func sanitizeHeader(v string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(v)
+}
+
 func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
+	from := sanitizeHeader(msg.From)
+	subject := sanitizeHeader(msg.Subject)
+	replyTo := sanitizeHeader(msg.ReplyTo)
 	input := &sesv2.SendEmailInput{
-		FromEmailAddress: &msg.From,
+		FromEmailAddress: &from,
 		Destination: &types.Destination{
-			ToAddresses: []string{msg.To},
+			ToAddresses: []string{sanitizeHeader(msg.To)},
 		},
 		Content: &types.EmailContent{
 			Simple: &types.Message{
 				Subject: &types.Content{
-					Data: &msg.Subject,
+					Data: &subject,
 				},
 				Body: &types.Body{
 					Html: &types.Content{
@@ -60,8 +72,8 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 			},
 		},
 	}
-	if msg.ReplyTo != "" {
-		input.ReplyToAddresses = []string{msg.ReplyTo}
+	if replyTo != "" {
+		input.ReplyToAddresses = []string{replyTo}
 	}
 
 	sent, err := p.client.SendEmail(ctx, input)

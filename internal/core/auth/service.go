@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -23,14 +24,37 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/rs/xid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/protobuf/proto"
 )
+
+// emailPublishFailureCounter is incremented whenever an email job is created
+// (token committed, customer/invitation row committed) but the subsequent
+// NATS publish errors. Operators should alert on a non-zero rate: it means
+// users are seeing "check your email" responses for emails that were never
+// queued. The {kind} attribute lets ops bucket failures by payload type.
+var emailPublishFailureCounter metric.Int64Counter
+
+func init() {
+	meter := otel.Meter("github.com/pug-sh/pug/internal/core/auth")
+	emailPublishFailureCounter, _ = meter.Int64Counter(
+		"emails.publish_failure_total",
+		metric.WithDescription("Email jobs whose tx committed but NATS publish failed; indicates user-visible silent drops."),
+	)
+}
 
 var (
 	ErrEmailAlreadyExists = errors.New("user with this email already exists")
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrInvalidToken       = errors.New("invalid or expired token")
+	// ErrPasswordTooLong is returned when a password exceeds bcrypt's 72-byte
+	// input limit. Proto validation enforces the same limit at the
+	// interceptor, so reaching this sentinel from the service is rare in
+	// production (direct calls from tests / future non-RPC callers).
+	ErrPasswordTooLong = errors.New("password is too long")
 )
 
 const (
@@ -69,6 +93,9 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher 
 func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (string, error) {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
+			return "", ErrPasswordTooLong
+		}
 		slog.ErrorContext(ctx, "failed to hash password", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return "", err
@@ -89,7 +116,12 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 
 	customerID := xid.New().String()
 	orgID := xid.New().String()
-	verifyToken := newActionToken()
+	verifyToken, err := newActionToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate verify token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
 	verifyTokenHash := hashToken(verifyToken)
 
 	tx, err := s.pgW.Begin(ctx)
@@ -292,7 +324,12 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 		return err
 	}
 
-	resetToken := newActionToken()
+	resetToken, err := newActionToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate reset token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
 	if err := s.issueActionTokenAndPublish(ctx, issueActionTokenInput{
 		CustomerID: customer.ID,
 		Email:      customer.Email,
@@ -317,6 +354,9 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 func (s *Service) ResetPassword(ctx context.Context, token, password string) error {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
+			return ErrPasswordTooLong
+		}
 		slog.ErrorContext(ctx, "failed to hash reset password", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return err
@@ -395,7 +435,12 @@ func (s *Service) ResendVerificationEmail(ctx context.Context, email string) err
 		return nil
 	}
 
-	verifyToken := newActionToken()
+	verifyToken, err := newActionToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate verify resend token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
 	if err := s.issueActionTokenAndPublish(ctx, issueActionTokenInput{
 		CustomerID: customer.ID,
 		Email:      customer.Email,
@@ -491,11 +536,28 @@ func (s *Service) publishEmailJob(ctx context.Context, job *emailworkerv1.EmailJ
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal email job", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
+		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", payloadKindFromJob(job))))
 		return
 	}
 	if err := s.publisher.Publish(ctx, nats.MiscEmailJobsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish email job", slogx.Error(err), slog.String("subject", nats.MiscEmailJobsSubject))
 		telemetry.RecordError(ctx, err)
+		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", payloadKindFromJob(job))))
+	}
+}
+
+func payloadKindFromJob(job *emailworkerv1.EmailJob) string {
+	switch job.GetPayload().(type) {
+	case *emailworkerv1.EmailJob_SignupVerifyWelcome:
+		return "signup_verify_welcome"
+	case *emailworkerv1.EmailJob_PasswordReset:
+		return "password_reset"
+	case *emailworkerv1.EmailJob_VerificationResend:
+		return "verification_resend"
+	case *emailworkerv1.EmailJob_OrgMemberInvite:
+		return "org_member_invite"
+	default:
+		return "unknown"
 	}
 }
 
@@ -530,8 +592,16 @@ func (s *Service) generateJWT(id string) (string, error) {
 	return tokenString, nil
 }
 
-func newActionToken() string {
-	return xid.New().String() + xid.New().String()
+// newActionToken returns a 32-byte cryptographically-random token, hex-encoded
+// (64 chars). This is the sole secret an attacker would need to redeem a
+// password-reset or email-verification, so it must come from crypto/rand —
+// not a monotonic ID generator like xid.
+func newActionToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func hashToken(token string) string {

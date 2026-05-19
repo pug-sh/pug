@@ -58,7 +58,6 @@ func (r *OrgProviderRepo) Get(ctx context.Context, orgID string) (CachedProvider
 					slogx.Error(derr), slog.String("cache_key", cacheKey))
 			}
 		case errors.Is(err, goredis.Nil):
-			// cache miss — fall through to DB
 		default:
 			slog.WarnContext(ctx, "failed to read org email provider cache",
 				slogx.Error(err), slog.String("cache_key", cacheKey))
@@ -77,7 +76,6 @@ func (r *OrgProviderRepo) Get(ctx context.Context, orgID string) (CachedProvider
 			SecretCiphertext: row.SecretCiphertext,
 		}
 	case errors.Is(err, pgx.ErrNoRows):
-		// fall through to negative cache + return absent
 	default:
 		slog.ErrorContext(ctx, "failed to fetch org email provider", slogx.Error(err),
 			slog.String("org_id", orgID))

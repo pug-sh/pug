@@ -23,9 +23,11 @@ const (
 )
 
 type SignInWithEmailRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
-	Password      *string                `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Email *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	// bcrypt accepts at most 72 bytes; rejecting longer inputs at the
+	// interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
+	Password      *string `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -119,9 +121,11 @@ func (x *SignInWithEmailResponse) GetToken() string {
 }
 
 type SignUpWithEmailRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
-	Password      *string                `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Email *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	// bcrypt accepts at most 72 bytes; rejecting longer inputs at the
+	// interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
+	Password      *string `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -375,9 +379,11 @@ func (*RequestPasswordResetResponse) Descriptor() ([]byte, []int) {
 }
 
 type ResetPasswordRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
-	Password      *string                `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Token *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
+	// bcrypt accepts at most 72 bytes; rejecting longer inputs at the
+	// interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
+	Password      *string `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -546,17 +552,19 @@ var File_public_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x19public/auth/v1/auth.proto\x12\x0epublic.auth.v1\x1a\x1bbuf/validate/validate.proto\"^\n" +
+	"\x19public/auth/v1/auth.proto\x12\x0epublic.auth.v1\x1a\x1bbuf/validate/validate.proto\"b\n" +
 	"\x16SignInWithEmailRequest\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12\"\n" +
-	"\bpassword\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bpassword\"/\n" +
+	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12&\n" +
+	"\bpassword\x18\x02 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\"/\n" +
 	"\x17SignInWithEmailResponse\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"^\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"b\n" +
 	"\x16SignUpWithEmailRequest\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12\"\n" +
-	"\bpassword\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bpassword\"/\n" +
+	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12&\n" +
+	"\bpassword\x18\x02 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\"/\n" +
 	"\x17SignUpWithEmailResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"2\n" +
 	"\x12VerifyEmailRequest\x12\x1c\n" +
@@ -565,10 +573,11 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\x1bRequestPasswordResetRequest\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\"\x1e\n" +
-	"\x1cRequestPasswordResetResponse\"X\n" +
+	"\x1cRequestPasswordResetResponse\"\\\n" +
 	"\x14ResetPasswordRequest\x12\x1c\n" +
-	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\x12\"\n" +
-	"\bpassword\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\bpassword\"\x17\n" +
+	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\x12&\n" +
+	"\bpassword\x18\x02 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\"\x17\n" +
 	"\x15ResetPasswordResponse\"B\n" +
 	"\x1eResendVerificationEmailRequest\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +

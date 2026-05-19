@@ -131,7 +131,7 @@ func TestNewLoadsAWSConfig(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "test-access-key")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
 
-	provider, err := New(context.Background(), Config{})
+	provider, err := New(context.Background(), Config{Region: "us-east-1"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

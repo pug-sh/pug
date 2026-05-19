@@ -37,6 +37,10 @@ func NewCipher(keyB64 string) (*Cipher, error) {
 	return &Cipher{aead: aead}, nil
 }
 
+// Encrypt produces a blob laid out as `nonce || ciphertext || auth-tag`.
+// Decrypt recovers the nonce by slicing c.aead.NonceSize() bytes off the
+// front, so callers must persist and transmit the blob whole — never strip,
+// pad, or split it.
 func (c *Cipher) Encrypt(plaintext []byte) ([]byte, error) {
 	nonce := make([]byte, c.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {

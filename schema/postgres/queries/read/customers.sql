@@ -6,7 +6,7 @@ where id = @id;
 -- name: GetCustomerByEmail :one
 select *
 from customers
-where email = @email;
+where lower(email) = lower(@email);
 
 -- name: GetCustomerByEmailOptional :one
 select *

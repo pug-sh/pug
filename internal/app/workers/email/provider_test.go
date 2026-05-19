@@ -38,6 +38,7 @@ func TestNewFallbackProviderUnsupported(t *testing.T) {
 
 func TestNewFallbackProviderSES(t *testing.T) {
 	t.Setenv("PUG_EMAIL_PROVIDER", "ses")
+	t.Setenv("PUG_SES_REGION", "us-east-1")
 	t.Setenv("AWS_REGION", "us-east-1")
 	t.Setenv("AWS_ACCESS_KEY_ID", "test-access-key")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
