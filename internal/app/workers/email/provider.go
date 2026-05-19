@@ -44,11 +44,7 @@ func newMailerWithResolver(ctx context.Context, read *dbread.Queries, cache *gor
 
 	if keyCfg.KeyB64 == "" {
 		slog.WarnContext(ctx, "PUG_EMAIL_PROVIDER_SECRET_KEY unset; per-tenant email providers disabled, using operator default for all sends")
-		return coreemail.NewServiceWithResolver(emailCfg, &coreemail.OperatorOnlyResolver{
-			Provider: fallback,
-			From:     emailCfg.From,
-			ReplyTo:  emailCfg.ReplyTo,
-		})
+		return coreemail.NewService(emailCfg, fallback)
 	}
 
 	cipher, err := secret.NewCipher(keyCfg.KeyB64)
