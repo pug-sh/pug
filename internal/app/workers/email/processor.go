@@ -69,6 +69,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		}
 		err = p.mailer.SendOrgMemberInvite(
 			ctx,
+			details.OrgID,
 			payload.OrgMemberInvite.GetEmail(),
 			details.OrgDisplayName,
 			details.InviterDisplayName,
