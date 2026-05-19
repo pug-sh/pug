@@ -1355,9 +1355,10 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"GetRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"7\n" +
 	"\vGetResponse\x12(\n" +
-	"\x03org\x18\x01 \x01(\v2\x16.dashboard.orgs.v1.OrgR\x03org\"i\n" +
-	"\x18UpdateDisplayNameRequest\x12.\n" +
-	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12\x1d\n" +
+	"\x03org\x18\x01 \x01(\v2\x16.dashboard.orgs.v1.OrgR\x03org\"k\n" +
+	"\x18UpdateDisplayNameRequest\x120\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\r\xbaH\n" +
+	"\xc8\x01\x01r\x05\x10\x01\x18\x96\x01R\vdisplayName\x12\x1d\n" +
 	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"E\n" +
 	"\x19UpdateDisplayNameResponse\x12(\n" +
 	"\x03org\x18\x01 \x01(\v2\x16.dashboard.orgs.v1.OrgR\x03org\"3\n" +
@@ -1385,9 +1386,10 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x16ListInvitationsRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"]\n" +
 	"\x17ListInvitationsResponse\x12B\n" +
-	"\vinvitations\x18\x01 \x03(\v2 .dashboard.orgs.v1.OrgInvitationR\vinvitations\"?\n" +
-	"\rCreateRequest\x12.\n" +
-	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\":\n" +
+	"\vinvitations\x18\x01 \x03(\v2 .dashboard.orgs.v1.OrgInvitationR\vinvitations\"A\n" +
+	"\rCreateRequest\x120\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\r\xbaH\n" +
+	"\xc8\x01\x01r\x05\x10\x01\x18\x96\x01R\vdisplayName\":\n" +
 	"\x0eCreateResponse\x12(\n" +
 	"\x03org\x18\x01 \x01(\v2\x16.dashboard.orgs.v1.OrgR\x03org\"-\n" +
 	"\fLeaveRequest\x12\x1d\n" +

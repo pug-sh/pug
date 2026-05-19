@@ -71,6 +71,7 @@ message GetResponse {
 message UpdateDisplayNameRequest {
   string display_name = 1 [
     (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 150
   ];
   string org_id = 2 [(buf.validate.field).required = true];
@@ -126,6 +127,7 @@ message ListInvitationsResponse {
 message CreateRequest {
   string display_name = 1 [
     (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 150
   ];
 }
