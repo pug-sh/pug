@@ -1,0 +1,68 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// App lifecycle and usage events.
+
+message AppOpenProperties {
+  option (common.events.v1.kind) = "app_open";
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
+}
+
+message AppCloseProperties {
+  option (common.events.v1.kind) = "app_close";
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
+}
+
+// First-launch / fresh-install signal. Typically fires once per install.
+message AppInstallProperties {
+  option (common.events.v1.kind) = "app_install";
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
+  string app_version = 1;
+  string install_source = 2;
+}
+
+// Fires the first time the app launches after an update.
+message AppUpdateProperties {
+  option (common.events.v1.kind) = "app_update";
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
+  string app_version = 1 [(buf.validate.field).required = true];
+  string previous_version = 2;
+}
+
+// App moved to the background (lifecycle distinct from app_close).
+message AppBackgroundedProperties {
+  option (common.events.v1.kind) = "app_backgrounded";
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
+}
+
+// App returned to the foreground from the background.
+message AppForegroundedProperties {
+  option (common.events.v1.kind) = "app_foregrounded";
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
+}
+
+message AppCrashedProperties {
+  option (common.events.v1.kind) = "app_crashed";
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
+  option (common.events.v1.platforms) = PLATFORM_DESKTOP;
+  string error_message = 1;
+  string error_type = 2;
+}
+
+message FeatureUsedProperties {
+  option (common.events.v1.kind) = "feature_used";
+  string feature_id = 1 [(buf.validate.field).required = true];
+  string feature_name = 2;
+}

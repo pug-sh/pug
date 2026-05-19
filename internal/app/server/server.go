@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/validate"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
+	dashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/dashboards"
 	orgsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/projects"
 	"github.com/pug-sh/pug/internal/app/server/rpc/public/auth"
@@ -32,6 +33,7 @@ import (
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/public/auth/v1/authv1connect"
@@ -96,6 +98,8 @@ func start(ctx context.Context, d *deps) error {
 		orgsrpc.NewServer(orgsSvc), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
 		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
+	dashboardsPath, dashboardsHandler := dashboardsv1connect.NewDashboardsServiceHandler(
+		dashboardsrpc.NewServer(projectsSvc), handlerOpts)
 
 	// Email providers — JWT + admin gate. Cipher and OrgProviderRepo are only
 	// present when PUG_EMAIL_PROVIDER_SECRET_KEY is configured; otherwise the
@@ -181,6 +185,8 @@ func start(ctx context.Context, d *deps) error {
 	mux.Handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
 	mux.Handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
 	mux.Handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
+	mux.Handle(dashboardsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
+	mux.Handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
 	mux.Handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
@@ -203,6 +209,8 @@ func start(ctx context.Context, d *deps) error {
 		// Dashboard
 		orgsv1connect.OrgsServiceName,
 		projectsv1connect.ProjectsServiceName,
+		orgemailprovidersv1connect.OrgEmailProvidersServiceName,
+		dashboardsv1connect.DashboardsServiceName,
 		orgemailprovidersv1connect.OrgEmailProvidersServiceName,
 		// Shared
 		insightsv1connect.InsightsServiceName,

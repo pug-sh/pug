@@ -1,0 +1,117 @@
+package dashboards
+
+import (
+	"strings"
+	"testing"
+
+	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
+)
+
+func TestSetTileContent_InsightHappyPath(t *testing.T) {
+	msg := &dashboardsv1.DashboardTile{}
+	q := map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"}
+	if err := setTileContent(msg, "tile_abc", coreprojects.TileKindInsight, q, "", false); err != nil {
+		t.Fatalf("setTileContent insight: %v", err)
+	}
+	insight, ok := msg.Content.(*dashboardsv1.DashboardTile_Insight)
+	if !ok {
+		t.Fatalf("Content type = %T, want *DashboardTile_Insight", msg.Content)
+	}
+	if insight.Insight.GetQuery() == nil {
+		t.Fatal("Insight.Query = nil, want non-nil")
+	}
+}
+
+func TestSetTileContent_MarkdownHappyPath(t *testing.T) {
+	msg := &dashboardsv1.DashboardTile{}
+	if err := setTileContent(msg, "tile_abc", coreprojects.TileKindMarkdown, nil, "# heading", true); err != nil {
+		t.Fatalf("setTileContent markdown: %v", err)
+	}
+	markdown, ok := msg.Content.(*dashboardsv1.DashboardTile_Markdown)
+	if !ok {
+		t.Fatalf("Content type = %T, want *DashboardTile_Markdown", msg.Content)
+	}
+	if markdown.Markdown.GetBody() != "# heading" {
+		t.Errorf("Markdown.Body = %q, want %q", markdown.Markdown.GetBody(), "# heading")
+	}
+}
+
+// Corruption-guard branches below pin the defensive checks in setTileContent.
+// The CHECK constraint on dashboard_tiles guarantees the payload column is
+// non-null for each kind, so these branches only fire on data corruption or
+// manual DB tinkering. If a future refactor drops a guard, these tests fail
+// before the empty/missing payload reaches the client.
+
+func TestSetTileContent_InsightNilQuery(t *testing.T) {
+	msg := &dashboardsv1.DashboardTile{}
+	err := setTileContent(msg, "tile_abc", coreprojects.TileKindInsight, nil, "", false)
+	if err == nil {
+		t.Fatal("setTileContent: expected error for nil insight query, got nil")
+	}
+	if !strings.Contains(err.Error(), "tile_abc") {
+		t.Errorf("error %q missing tile ID", err)
+	}
+	if !strings.Contains(err.Error(), "missing query") {
+		t.Errorf("error %q does not mention missing query", err)
+	}
+}
+
+func TestSetTileContent_InsightEmptyQuery(t *testing.T) {
+	msg := &dashboardsv1.DashboardTile{}
+	err := setTileContent(msg, "tile_abc", coreprojects.TileKindInsight, map[string]any{}, "", false)
+	if err == nil {
+		t.Fatal("setTileContent: expected error for empty insight query map, got nil")
+	}
+	if !strings.Contains(err.Error(), "missing query") {
+		t.Errorf("error %q does not mention missing query", err)
+	}
+}
+
+func TestSetTileContent_MarkdownInvalidBody(t *testing.T) {
+	msg := &dashboardsv1.DashboardTile{}
+	// markdownValid=false means the DB column was SQL NULL — invalid for kind=markdown.
+	err := setTileContent(msg, "tile_abc", coreprojects.TileKindMarkdown, nil, "", false)
+	if err == nil {
+		t.Fatal("setTileContent: expected error for invalid markdown body, got nil")
+	}
+	if !strings.Contains(err.Error(), "tile_abc") {
+		t.Errorf("error %q missing tile ID", err)
+	}
+	if !strings.Contains(err.Error(), "missing body") {
+		t.Errorf("error %q does not mention missing body", err)
+	}
+}
+
+func TestSetTileContent_UnknownKind(t *testing.T) {
+	msg := &dashboardsv1.DashboardTile{}
+	err := setTileContent(msg, "tile_abc", coreprojects.TileKind(99), nil, "", false)
+	if err == nil {
+		t.Fatal("setTileContent: expected error for unknown kind, got nil")
+	}
+	if !strings.Contains(err.Error(), "tile_abc") {
+		t.Errorf("error %q missing tile ID", err)
+	}
+	if !strings.Contains(err.Error(), "unknown tile kind") {
+		t.Errorf("error %q does not mention unknown kind", err)
+	}
+}
+
+// MarkdownEmptyBodyValid: markdown_valid=true with body="" is a legitimate
+// (if proto-rejected) state — the empty string is a non-NULL value that the
+// CHECK constraint accepts. setTileContent must NOT treat valid+empty as
+// corruption. (Proto-layer min_len: 1 catches the empty case before any RPC
+// reaches the encoder.)
+func TestSetTileContent_MarkdownEmptyBodyValid(t *testing.T) {
+	msg := &dashboardsv1.DashboardTile{}
+	if err := setTileContent(msg, "tile_abc", coreprojects.TileKindMarkdown, nil, "", true); err != nil {
+		t.Fatalf("setTileContent markdown empty-but-valid: %v", err)
+	}
+	markdown, ok := msg.Content.(*dashboardsv1.DashboardTile_Markdown)
+	if !ok {
+		t.Fatalf("Content type = %T, want *DashboardTile_Markdown", msg.Content)
+	}
+	if got := markdown.Markdown.GetBody(); got != "" {
+		t.Errorf("Markdown.Body = %q, want empty string", got)
+	}
+}

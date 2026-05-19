@@ -1,0 +1,12 @@
+edition = "2023";
+package common.events.v1;
+
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Social events.
+
+message ShareProperties {
+  option (common.events.v1.kind) = "share";
+}

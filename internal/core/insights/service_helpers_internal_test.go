@@ -12,13 +12,16 @@ func TestVariantTypeToPropertyValueType(t *testing.T) {
 		"String":        commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING,
 		"Int64":         commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
 		"Float64":       commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT,
-		"Number":        commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT,
 		"Bool":          commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN,
 		"DateTime64(3)": commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_DATETIME,
-		"Object":        commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,
-		"Array":         commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,
-		"None":          commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,
-		"WhoKnows":      commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,
+		// Structured JSON outputs surface as their CH type names (e.g.
+		// "Array(Nullable(String))" for arrays). They intentionally fall
+		// through to OTHER — PropertyFilter's current shape can't express
+		// filters on structured values.
+		"Array(Nullable(String))": commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,
+		"Tuple(String, Int64)":    commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,
+		"Dynamic":                 commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,
+		"WhoKnows":                commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_OTHER,
 	}
 	for input, want := range cases {
 		got := variantTypeToPropertyValueType(input)

@@ -83,11 +83,14 @@ func TestMigration001VariantSlotsCoveredByGoSwitch(t *testing.T) {
 // other direction (migration adds slot, Go switch missing). This test catches
 // the inverse: proto adds a PropertyValueType value, no MV path produces it.
 func TestPropertyValueTypeReverseCoverage(t *testing.T) {
-	// Inputs covering every Variant slot shipped by migration 001 plus the
-	// profile MV's value_type strings emitted by the multiIf in migration 004.
+	// Inputs covering every Variant slot shipped by migration 001 (event
+	// auto/custom properties) plus the primitive types JSONAllPathsWithTypes
+	// emits for the profile JSON column in migration 004. Structured JSON
+	// outputs (Array(...), Tuple(...), Dynamic) intentionally fall through to
+	// OTHER and are exempt below.
 	covered := map[commonv1.PropertyValueType]bool{}
 	for _, raw := range []string{
-		"String", "Int64", "Float64", "Bool", "DateTime64(3)", "Number",
+		"String", "Int64", "Float64", "Bool", "DateTime64(3)",
 	} {
 		covered[variantTypeToPropertyValueType(raw)] = true
 	}
@@ -103,6 +106,32 @@ func TestPropertyValueTypeReverseCoverage(t *testing.T) {
 			continue
 		}
 		t.Errorf("PropertyValueType %s is not produced by any input to variantTypeToPropertyValueType — add a case in service.go or extend the inputs list above", name)
+	}
+}
+
+// TestMigration003JSONShape pins the `JSON(max_dynamic_paths = 1000)`
+// declaration on the profiles.properties column. Silently relaxing the cap
+// (or removing it altogether) changes how many distinct property keys can be
+// stored as their own typed subcolumn before spilling into the shared
+// fallback subcolumn, which in turn changes filter-path behaviour:
+// `properties.k` on a spilled path no longer returns NULL for missing data
+// and breaks IS_NOT_SET semantics in subtle ways. Pin so an accidental
+// migration edit fails loudly.
+//
+// Uses a whitespace-tolerant regex so a SQL reformatter that collapses or
+// adds spaces around `=` does not flag a semantic-equivalent edit as a
+// regression.
+func TestMigration003JSONShape(t *testing.T) {
+	const path = "../../../schema/clickhouse/migrations/003_create_profiles.sql"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	got := string(data)
+
+	re := regexp.MustCompile(`JSON\s*\(\s*max_dynamic_paths\s*=\s*1000\s*\)`)
+	if !re.MatchString(got) {
+		t.Errorf("migration 003 must contain JSON(max_dynamic_paths = 1000) — ProfilePropertyExpr semantics depend on the spill threshold")
 	}
 }
 

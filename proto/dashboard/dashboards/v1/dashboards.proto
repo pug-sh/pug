@@ -1,0 +1,180 @@
+edition = "2023";
+package dashboard.dashboards.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+import "shared/insights/v1/insights.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1;dashboardsv1";
+
+service DashboardsService {
+  rpc Create(DashboardsServiceCreateRequest) returns (DashboardsServiceCreateResponse) {}
+  rpc Delete(DashboardsServiceDeleteRequest) returns (DashboardsServiceDeleteResponse) {}
+  rpc Get(DashboardsServiceGetRequest) returns (DashboardsServiceGetResponse) {}
+  rpc List(DashboardsServiceListRequest) returns (DashboardsServiceListResponse) {}
+  rpc UpdateDisplayName(DashboardsServiceUpdateDisplayNameRequest) returns (DashboardsServiceUpdateDisplayNameResponse) {}
+  rpc CreateTile(DashboardsServiceCreateTileRequest) returns (DashboardsServiceCreateTileResponse) {}
+  rpc UpdateTile(DashboardsServiceUpdateTileRequest) returns (DashboardsServiceUpdateTileResponse) {}
+  rpc DeleteTile(DashboardsServiceDeleteTileRequest) returns (DashboardsServiceDeleteTileResponse) {}
+}
+
+message Dashboard {
+  string id = 1;
+  string project_id = 2;
+  string display_name = 3;
+  string description = 4;
+  google.protobuf.Timestamp create_time = 5;
+  google.protobuf.Timestamp update_time = 6;
+  repeated DashboardTile tiles = 7;
+}
+
+message DashboardTile {
+  option (buf.validate.message).cel = {
+    id: "dashboard_tile.unique_breakpoints"
+    message: "layout breakpoints must be unique"
+    expression:
+      "this.layouts.size() <= 1"
+      "|| !this.layouts.exists(l,"
+      "     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)"
+  };
+
+  string id = 1;
+  string dashboard_id = 2;
+  string display_name = 3 [(buf.validate.field).string.max_len = 150];
+  string description = 4 [(buf.validate.field).string.max_len = 2000];
+  oneof content {
+    option (buf.validate.oneof).required = true;
+    InsightTileContent insight = 5;
+    MarkdownTileContent markdown = 6;
+  }
+  repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
+  google.protobuf.Timestamp create_time = 8;
+  google.protobuf.Timestamp update_time = 9;
+}
+
+message InsightTileContent {
+  shared.insights.v1.QueryRequest query = 1 [(buf.validate.field).required = true];
+}
+
+message MarkdownTileContent {
+  string body = 1 [(buf.validate.field).string = {min_len: 1, max_len: 100000}];
+}
+
+message ResponsiveGridLayout {
+  string breakpoint = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string = {pattern: "^[a-zA-Z0-9_-]+$", max_len: 32}
+  ];
+  int32 x = 2 [(buf.validate.field).int32.gte = 0];
+  int32 y = 3 [(buf.validate.field).int32.gte = 0];
+  int32 w = 4 [(buf.validate.field).int32 = {gte: 1, lte: 24}];
+  int32 h = 5 [(buf.validate.field).int32 = {gte: 1, lte: 100}];
+  int32 min_w = 6 [(buf.validate.field).int32.gte = 0];
+  int32 max_w = 7 [(buf.validate.field).int32.gte = 0];
+  int32 min_h = 8 [(buf.validate.field).int32.gte = 0];
+  int32 max_h = 9 [(buf.validate.field).int32.gte = 0];
+  bool static = 10;
+}
+
+message DashboardsServiceCreateRequest {
+  string display_name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 150
+  ];
+  string description = 2 [(buf.validate.field).string.max_len = 2000];
+}
+
+message DashboardsServiceCreateResponse {
+  Dashboard dashboard = 1;
+}
+
+message DashboardsServiceDeleteRequest {
+  string id = 1 [(buf.validate.field).required = true];
+}
+
+message DashboardsServiceDeleteResponse {}
+
+message DashboardsServiceGetRequest {
+  string id = 1 [(buf.validate.field).required = true];
+}
+
+message DashboardsServiceGetResponse {
+  Dashboard dashboard = 1;
+}
+
+message DashboardsServiceListRequest {}
+
+message DashboardsServiceListResponse {
+  repeated Dashboard dashboards = 1;
+}
+
+message DashboardsServiceCreateTileRequest {
+  option (buf.validate.message).cel = {
+    id: "create_dashboard_tile_request.unique_breakpoints"
+    message: "layout breakpoints must be unique"
+    expression:
+      "this.layouts.size() <= 1"
+      "|| !this.layouts.exists(l,"
+      "     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)"
+  };
+
+  string dashboard_id = 1 [(buf.validate.field).required = true];
+  string display_name = 2 [(buf.validate.field).string.max_len = 150];
+  string description = 3 [(buf.validate.field).string.max_len = 2000];
+  oneof content {
+    option (buf.validate.oneof).required = true;
+    InsightTileContent insight = 4;
+    MarkdownTileContent markdown = 5;
+  }
+  repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
+}
+
+message DashboardsServiceCreateTileResponse {
+  DashboardTile tile = 1;
+}
+
+message DashboardsServiceUpdateTileRequest {
+  option (buf.validate.message).cel = {
+    id: "update_dashboard_tile_request.unique_breakpoints"
+    message: "layout breakpoints must be unique"
+    expression:
+      "this.layouts.size() <= 1"
+      "|| !this.layouts.exists(l,"
+      "     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)"
+  };
+
+  string id = 1 [(buf.validate.field).required = true];
+  string dashboard_id = 2 [(buf.validate.field).required = true];
+  string display_name = 3 [(buf.validate.field).string.max_len = 150];
+  string description = 4 [(buf.validate.field).string.max_len = 2000];
+  oneof content {
+    option (buf.validate.oneof).required = true;
+    InsightTileContent insight = 5;
+    MarkdownTileContent markdown = 6;
+  }
+  repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
+}
+
+message DashboardsServiceUpdateTileResponse {
+  DashboardTile tile = 1;
+}
+
+message DashboardsServiceDeleteTileRequest {
+  string id = 1 [(buf.validate.field).required = true];
+  string dashboard_id = 2 [(buf.validate.field).required = true];
+}
+
+message DashboardsServiceDeleteTileResponse {}
+
+message DashboardsServiceUpdateDisplayNameRequest {
+  string id = 1 [(buf.validate.field).required = true];
+  string display_name = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 150
+  ];
+  string description = 3 [(buf.validate.field).string.max_len = 2000];
+}
+
+message DashboardsServiceUpdateDisplayNameResponse {
+  Dashboard dashboard = 1;
+}

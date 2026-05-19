@@ -292,9 +292,9 @@ var File_common_v1_filters_proto protoreflect.FileDescriptor
 
 const file_common_v1_filters_proto_rawDesc = "" +
 	"\n" +
-	"\x17common/v1/filters.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\"\xad\x1b\n" +
-	"\x0ePropertyFilter\x12:\n" +
-	"\bproperty\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\bproperty\x12D\n" +
+	"\x17common/v1/filters.proto\x12\tcommon.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\"\xbf\x1b\n" +
+	"\x0ePropertyFilter\x12L\n" +
+	"\bproperty\x18\x01 \x01(\tB0\xbaH-\xc8\x01\x01r(2&^\\$?[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)*$R\bproperty\x12D\n" +
 	"\boperator\x18\x02 \x01(\x0e2\x19.common.v1.FilterOperatorB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\boperator\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\tR\x05value\x12\x16\n" +

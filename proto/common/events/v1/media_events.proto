@@ -1,0 +1,72 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/duration.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Media playback events.
+//
+// `position` is the playback offset within the media, expressed as a Duration
+// from the start. `started` fires on first play of a session; `play` fires on
+// resume from pause. `completed` fires when playback reaches the end.
+
+message VideoStartedProperties {
+  option (common.events.v1.kind) = "video_started";
+  string video_id = 1 [(buf.validate.field).required = true];
+}
+
+message VideoPlayProperties {
+  option (common.events.v1.kind) = "video_play";
+  string video_id = 1 [(buf.validate.field).required = true];
+  google.protobuf.Duration position = 2 [(buf.validate.field).duration.gte = {seconds: 0}];
+}
+
+message VideoPauseProperties {
+  option (common.events.v1.kind) = "video_pause";
+  string video_id = 1 [(buf.validate.field).required = true];
+  google.protobuf.Duration position = 2 [(buf.validate.field).duration.gte = {seconds: 0}];
+}
+
+message VideoSeekedProperties {
+  option (common.events.v1.kind) = "video_seeked";
+  string video_id = 1 [(buf.validate.field).required = true];
+  google.protobuf.Duration from_position = 2 [(buf.validate.field).duration.gte = {seconds: 0}];
+  google.protobuf.Duration to_position = 3 [(buf.validate.field).duration.gte = {seconds: 0}];
+}
+
+message VideoCompletedProperties {
+  option (common.events.v1.kind) = "video_completed";
+  string video_id = 1 [(buf.validate.field).required = true];
+}
+
+message AudioStartedProperties {
+  option (common.events.v1.kind) = "audio_started";
+  string audio_id = 1 [(buf.validate.field).required = true];
+}
+
+message AudioPlayProperties {
+  option (common.events.v1.kind) = "audio_play";
+  string audio_id = 1 [(buf.validate.field).required = true];
+  google.protobuf.Duration position = 2 [(buf.validate.field).duration.gte = {seconds: 0}];
+}
+
+message AudioPauseProperties {
+  option (common.events.v1.kind) = "audio_pause";
+  string audio_id = 1 [(buf.validate.field).required = true];
+  google.protobuf.Duration position = 2 [(buf.validate.field).duration.gte = {seconds: 0}];
+}
+
+message AudioSeekedProperties {
+  option (common.events.v1.kind) = "audio_seeked";
+  string audio_id = 1 [(buf.validate.field).required = true];
+  google.protobuf.Duration from_position = 2 [(buf.validate.field).duration.gte = {seconds: 0}];
+  google.protobuf.Duration to_position = 3 [(buf.validate.field).duration.gte = {seconds: 0}];
+}
+
+message AudioCompletedProperties {
+  option (common.events.v1.kind) = "audio_completed";
+  string audio_id = 1 [(buf.validate.field).required = true];
+}

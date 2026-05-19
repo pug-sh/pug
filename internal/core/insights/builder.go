@@ -949,11 +949,31 @@ func BuildProfilePropertyKeysQuery(projectID string) (string, []any, error) {
 }
 
 // BuildProfilePropertyValuesQuery returns distinct values for a profile property from ClickHouse.
-// Profile properties are stored in a String column containing JSON and accessed via JSONExtractString.
+// Profile properties are stored in a JSON-typed column and accessed via chq.ProfilePropertyExpr,
+// which projects any underlying type into a Nullable(String) coalesced to the empty string
+// for missing paths.
 //
-// SAFETY: propertyKey is interpolated directly into SQL. Callers must ensure it is
-// proto-validated (pattern ^\\$?[a-zA-Z0-9_.-]+$) before calling this function.
+// Reads raw `profiles`, not the `latest_profiles` CTE that `getSingle`/`List`
+// use — matches event-side typeahead semantics (BuildPropertyValuesQuery for
+// events also reads raw `events`). Typeahead surfaces historical values: a
+// property whose value changed over time appears as multiple distinct entries
+// until ReplacingMergeTree background merges complete. Acceptable for typeahead
+// (showing the user every value they've ever stored) but worth knowing.
+//
+// The `!= ''` filter collapses two cases that the underlying JSON column can
+// distinguish but the string projection cannot: properties absent from a
+// profile and properties stored as the literal empty string both surface as
+// "" after the coalesce. Both are excluded from the returned distinct-values
+// set; callers needing to surface stored empty strings as a value would need
+// a different projection.
+//
+// SAFETY: propertyKey is validated via chq.ValidateProfilePropertyName before
+// interpolation, in addition to the proto regex on
+// GetPropertyValuesRequest.property_key.
 func BuildProfilePropertyValuesQuery(projectID, propertyKey string) (string, []any, error) {
+	if err := chq.ValidateProfilePropertyName(propertyKey); err != nil {
+		return "", nil, err
+	}
 	propExpr := chq.ProfilePropertyExpr(propertyKey)
 	return chq.NewQuery().
 		Select("DISTINCT "+propExpr+" AS value").

@@ -8,6 +8,7 @@ import (
 	"buf.build/go/protovalidate"
 	"google.golang.org/protobuf/proto"
 
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 )
 
@@ -294,4 +295,81 @@ func TestPropertyFilterValidation(t *testing.T) {
 		Operator: opp(commonv1.FilterOperator_FILTER_OPERATOR_BETWEEN),
 		Values:   []string{"0", "0"},
 	})
+}
+
+// TestPropertyNamePatternValidation pins the PropertyFilter.property regex.
+// The tightened pattern requires non-empty segments between dots so the SQL
+// builder cannot produce malformed CH identifiers from empty-segment input
+// (e.g. "a..b" would otherwise produce properties.`a`.“.`b`).
+//
+//	^\$?[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$
+func TestPropertyNamePatternValidation(t *testing.T) {
+	valid := []string{
+		"plan",
+		"$browser",
+		"my-key",
+		"address.city",
+		"user-profile.first-name",
+		"$session.duration",
+		"a.b.c",
+	}
+	for _, name := range valid {
+		assertValid(t, "valid_"+name, &commonv1.PropertyFilter{
+			Property: proto.String(name),
+			Operator: opp(commonv1.FilterOperator_FILTER_OPERATOR_EQUALS),
+			Value:    proto.String("v"),
+		})
+	}
+
+	invalid := []string{
+		".",       // single dot
+		"..",      // consecutive dots
+		".a",      // leading dot
+		"a.",      // trailing dot
+		"a..b",    // empty middle segment
+		"a.b.",    // trailing dot after nested
+		".a.b",    // leading dot before nested
+		"foo bar", // whitespace
+		"a/b",     // slash
+		"a`b",     // backtick (would break identifier quoting)
+	}
+	for _, name := range invalid {
+		assertInvalid(t, "invalid_"+name, &commonv1.PropertyFilter{
+			Property: proto.String(name),
+			Operator: opp(commonv1.FilterOperator_FILTER_OPERATOR_EQUALS),
+			Value:    proto.String("v"),
+		}, "string.pattern")
+	}
+}
+
+// TestValidateProfilePropertyName_MirrorsProtoRegex pins the Go-side validator
+// to the same accept/reject set as the proto regex. Direct callers (workers,
+// scripts) bypassing the RPC interceptor get identical validation; a future
+// drift between the two would break the SAFETY contract on profilePropertyPath.
+func TestValidateProfilePropertyName_MirrorsProtoRegex(t *testing.T) {
+	valid := []string{
+		"plan", "$browser", "my-key", "address.city",
+		"user-profile.first-name", "$session.duration", "a.b.c",
+	}
+	for _, name := range valid {
+		name := name
+		t.Run("valid_"+name, func(t *testing.T) {
+			if err := chq.ValidateProfilePropertyName(name); err != nil {
+				t.Errorf("expected valid, got %v", err)
+			}
+		})
+	}
+
+	invalid := []string{
+		"", ".", "..", ".a", "a.", "a..b", "a.b.", ".a.b",
+		"foo bar", "a/b", "a`b", "a;b", "a'b", "a\"b",
+	}
+	for _, name := range invalid {
+		name := name
+		t.Run("invalid_"+name, func(t *testing.T) {
+			if err := chq.ValidateProfilePropertyName(name); err == nil {
+				t.Errorf("expected error for %q, got nil", name)
+			}
+		})
+	}
 }

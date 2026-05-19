@@ -17,6 +17,88 @@ func TestPropertyExpr(t *testing.T) {
 	}
 }
 
+// TestProfilePropertyExpr covers the characters that force backtick quoting:
+// the $ auto-property prefix, dashes (CH would parse subtraction), and dots
+// (split into nested subcolumn segments).
+func TestProfilePropertyExpr(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{
+			name: "simple key",
+			key:  "country",
+			want: "coalesce(CAST(properties.`country` AS Nullable(String)), '')",
+		},
+		{
+			name: "auto-property dollar prefix",
+			key:  "$browser",
+			want: "coalesce(CAST(properties.`$browser` AS Nullable(String)), '')",
+		},
+		{
+			name: "dash in key",
+			key:  "my-key",
+			want: "coalesce(CAST(properties.`my-key` AS Nullable(String)), '')",
+		},
+		{
+			name: "nested path",
+			key:  "address.city",
+			want: "coalesce(CAST(properties.`address`.`city` AS Nullable(String)), '')",
+		},
+		{
+			name: "nested path with dash",
+			key:  "user-profile.first-name",
+			want: "coalesce(CAST(properties.`user-profile`.`first-name` AS Nullable(String)), '')",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := clickhouse.ProfilePropertyExpr(tt.key)
+			if got != tt.want {
+				t.Errorf("ProfilePropertyExpr(%q) =\n  got:  %q\n  want: %q", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProfilePropertyNumericExpr(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{
+			name: "simple key",
+			key:  "ltv",
+			want: "coalesce(properties.`ltv`.:Float64, CAST(properties.`ltv`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`ltv`.:String))",
+		},
+		{
+			name: "auto-property dollar prefix",
+			key:  "$session_duration",
+			want: "coalesce(properties.`$session_duration`.:Float64, CAST(properties.`$session_duration`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`$session_duration`.:String))",
+		},
+		{
+			name: "dash in key",
+			key:  "lifetime-value",
+			want: "coalesce(properties.`lifetime-value`.:Float64, CAST(properties.`lifetime-value`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`lifetime-value`.:String))",
+		},
+		{
+			name: "nested path",
+			key:  "subscription.monthly_revenue",
+			want: "coalesce(properties.`subscription`.`monthly_revenue`.:Float64, CAST(properties.`subscription`.`monthly_revenue`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`subscription`.`monthly_revenue`.:String))",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := clickhouse.ProfilePropertyNumericExpr(tt.key)
+			if got != tt.want {
+				t.Errorf("ProfilePropertyNumericExpr(%q) =\n  got:  %q\n  want: %q", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestEscapeLike(t *testing.T) {
 	tests := []struct {
 		input string
@@ -304,8 +386,8 @@ func TestPropertyCondition_ProfileSource_Equals(t *testing.T) {
 	if !strings.Contains(sql, "SELECT pa.alias_id FROM profile_aliases pa") {
 		t.Errorf("expected profile_aliases subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "JSONExtractString(properties, 'plan')") {
-		t.Errorf("expected JSONExtractString for profile property, got: %s", sql)
+	if !strings.Contains(sql, "coalesce(CAST(properties.`plan` AS Nullable(String)), '')") {
+		t.Errorf("expected JSON subcolumn read for profile property, got: %s", sql)
 	}
 	if !strings.Contains(sql, "is_deleted = 0") {
 		t.Errorf("expected soft-delete guard, got: %s", sql)
@@ -341,7 +423,7 @@ func TestPropertyCondition_ProfileSource_IsSet(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "JSONExtractString(properties, 'email') != ''") {
+	if !strings.Contains(sql, "coalesce(CAST(properties.`email` AS Nullable(String)), '') != ''") {
 		t.Errorf("expected IS_SET condition for profile property, got: %s", sql)
 	}
 	// Zero-arg operator: args are only projectIDs (3 total)
@@ -371,7 +453,7 @@ func TestPropertyCondition_ProfileSource_IsNotSet(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "JSONExtractString(properties, 'phone') = ''") {
+	if !strings.Contains(sql, "coalesce(CAST(properties.`phone` AS Nullable(String)), '') = ''") {
 		t.Errorf("expected IS_NOT_SET condition for profile property, got: %s", sql)
 	}
 	// Zero-arg operator: args are only projectIDs (3 total)
@@ -402,7 +484,7 @@ func TestPropertyCondition_ProfileSource_In(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "JSONExtractString(properties, 'plan') IN (?, ?)") {
+	if !strings.Contains(sql, "coalesce(CAST(properties.`plan` AS Nullable(String)), '') IN (?, ?)") {
 		t.Errorf("expected IN condition for profile property, got: %s", sql)
 	}
 	// Multi-value operator: args are [projectID, val1, val2, projectID, projectID, val1, val2]
@@ -433,8 +515,8 @@ func TestPropertyCondition_ProfileSource_GTE(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "toFloat64OrNull(JSONExtractString(properties, 'score')) >= ?") {
-		t.Errorf("expected numeric condition for profile property, got: %s", sql)
+	if !strings.Contains(sql, "coalesce(properties.`score`.:Float64, CAST(properties.`score`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`score`.:String)) >= ?") {
+		t.Errorf("expected typed numeric condition for profile property, got: %s", sql)
 	}
 	// Numeric operator: args are [projectID, numericValue, projectID, projectID, numericValue]
 	args := cond.Args()
@@ -790,6 +872,98 @@ func TestPropertyCondition_Between_Errors(t *testing.T) {
 	}
 }
 
+// TestPropertyCondition_ProfileSource_OperatorRouting exercises every
+// FilterOperator against PROFILE source to pin profilePropertyOperatorCondition's
+// routing table. Numeric operators (LT/GT/LTE/GTE/BETWEEN/NOT_BETWEEN) must
+// route to the typed JSON subcolumn projection; string-shaped operators
+// (NOT_EQUALS/CONTAINS/NOT_CONTAINS/NOT_IN) must route to the
+// Nullable(String)-coalesced projection.
+func TestPropertyCondition_ProfileSource_OperatorRouting(t *testing.T) {
+	const stringExpr = "coalesce(CAST(properties.`p` AS Nullable(String)), '')"
+	const numericExpr = "coalesce(properties.`p`.:Float64, CAST(properties.`p`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`p`.:String))"
+
+	tests := []struct {
+		name     string
+		operator commonv1.FilterOperator
+		value    string
+		values   []string
+		// fragment that must appear in the produced inner SQL.
+		wantFragment string
+	}{
+		{
+			name:         "NOT_EQUALS routes to string projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_NOT_EQUALS,
+			value:        "free",
+			wantFragment: stringExpr + " != ?",
+		},
+		{
+			name:         "CONTAINS routes to string projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS,
+			value:        "ent",
+			wantFragment: stringExpr + " LIKE ?",
+		},
+		{
+			name:         "NOT_CONTAINS routes to string projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_NOT_CONTAINS,
+			value:        "ent",
+			wantFragment: stringExpr + " NOT LIKE ?",
+		},
+		{
+			name:         "NOT_IN routes to string projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_NOT_IN,
+			values:       []string{"a", "b"},
+			wantFragment: stringExpr + " NOT IN (?, ?)",
+		},
+		{
+			name:         "LT routes to typed numeric projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_LT,
+			value:        "10",
+			wantFragment: numericExpr + " < ?",
+		},
+		{
+			name:         "GT routes to typed numeric projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_GT,
+			value:        "10",
+			wantFragment: numericExpr + " > ?",
+		},
+		{
+			name:         "LTE routes to typed numeric projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_LTE,
+			value:        "10",
+			wantFragment: numericExpr + " <= ?",
+		},
+		{
+			name:         "NOT_BETWEEN routes to typed numeric projection",
+			operator:     commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN,
+			values:       []string{"10", "50"},
+			wantFragment: "(" + numericExpr + " < ? OR " + numericExpr + " > ?)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &commonv1.PropertyFilter{
+				Property: proto.String("p"),
+				Operator: tt.operator.Enum(),
+				Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
+			}
+			if tt.value != "" {
+				f.Value = proto.String(tt.value)
+			}
+			if tt.values != nil {
+				f.Values = tt.values
+			}
+			cond, err := clickhouse.PropertyCondition(f, "proj_abc")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			sql := cond.SQL()
+			if !strings.Contains(sql, tt.wantFragment) {
+				t.Errorf("expected fragment %q in:\n%s", tt.wantFragment, sql)
+			}
+		})
+	}
+}
+
 func TestPropertyCondition_ProfileSource_Between(t *testing.T) {
 	f := &commonv1.PropertyFilter{
 		Property: proto.String("score"),
@@ -805,8 +979,8 @@ func TestPropertyCondition_ProfileSource_Between(t *testing.T) {
 	if !strings.Contains(sql, "distinct_id IN (") {
 		t.Errorf("expected profile subquery, got: %s", sql)
 	}
-	if !strings.Contains(sql, "toFloat64OrNull(JSONExtractString(properties, 'score'))") {
-		t.Errorf("expected numeric condition for profile property, got: %s", sql)
+	if !strings.Contains(sql, "coalesce(properties.`score`.:Float64, CAST(properties.`score`.:Int64 AS Nullable(Float64)), toFloat64OrNull(properties.`score`.:String))") {
+		t.Errorf("expected typed numeric condition for profile property, got: %s", sql)
 	}
 	args := cond.Args()
 	wantArgs := []any{"proj_abc", float64(10), float64(50), "proj_abc", "proj_abc", float64(10), float64(50)}

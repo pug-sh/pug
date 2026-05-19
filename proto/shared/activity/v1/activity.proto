@@ -121,7 +121,8 @@ message GetEventExplorerResponse {
 message GetPropertyValuesRequest {
   string property_key = 1 [(buf.validate.field) = {
     required: true
-    string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}
+    // See common.v1.PropertyFilter.property for the empty-segment rationale.
+    string: {pattern: "^\\$?[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)*$"}
   }];
   common.v1.PropertySource source = 2 [(buf.validate.field) = {
     required: true

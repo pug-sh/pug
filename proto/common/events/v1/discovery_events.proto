@@ -1,0 +1,52 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Discovery events.
+//
+// Search, recommendation, filter, and sort interactions. These are the user
+// actions taken to find content within an app or site.
+
+message SearchProperties {
+  option (common.events.v1.kind) = "search";
+  string query = 1 [(buf.validate.field).required = true];
+}
+
+message SearchResultClickedProperties {
+  option (common.events.v1.kind) = "search_result_clicked";
+  string query = 1 [(buf.validate.field).required = true];
+  string result_id = 2 [(buf.validate.field).required = true];
+  int32 index = 3 [(buf.validate.field).int32.gte = 0];
+}
+
+message RecommendationViewedProperties {
+  option (common.events.v1.kind) = "recommendation_viewed";
+  string recommendation_id = 1 [(buf.validate.field).required = true];
+  string item_id = 2;
+  string source = 3;
+  int32 index = 4 [(buf.validate.field).int32.gte = 0];
+}
+
+message RecommendationClickedProperties {
+  option (common.events.v1.kind) = "recommendation_clicked";
+  string recommendation_id = 1 [(buf.validate.field).required = true];
+  string item_id = 2 [(buf.validate.field).required = true];
+  string source = 3;
+  int32 index = 4 [(buf.validate.field).int32.gte = 0];
+}
+
+message FilterAppliedProperties {
+  option (common.events.v1.kind) = "filter_applied";
+  string key = 1 [(buf.validate.field).required = true];
+  string value = 2;
+}
+
+message SortChangedProperties {
+  option (common.events.v1.kind) = "sort_changed";
+  string key = 1 [(buf.validate.field).required = true];
+  string direction = 2;
+}
