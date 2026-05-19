@@ -2,7 +2,9 @@ package smtp
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -47,10 +49,12 @@ func (p *Provider) Send(_ context.Context, msg coreemail.Message) error {
 	}
 
 	if p.cfg.UseTLS {
-		if ok, _ := c.Extension("STARTTLS"); ok {
-			if err := c.StartTLS(&tls.Config{ServerName: p.cfg.Host}); err != nil {
-				return fmt.Errorf("smtp starttls: %w", err)
-			}
+		ok, _ := c.Extension("STARTTLS")
+		if !ok {
+			return coreemail.NewPermanentError(errors.New("smtp: server does not advertise STARTTLS but UseTLS was requested"))
+		}
+		if err := c.StartTLS(&tls.Config{ServerName: p.cfg.Host}); err != nil {
+			return fmt.Errorf("smtp starttls: %w", err)
 		}
 	}
 
@@ -79,10 +83,20 @@ func (p *Provider) Send(_ context.Context, msg coreemail.Message) error {
 		return classify(fmt.Errorf("smtp close data: %w", err))
 	}
 
-	if err := c.Quit(); err != nil {
-		return fmt.Errorf("smtp quit: %w", err)
-	}
+	// After w.Close() succeeded the server has queued the message (250 OK).
+	// A Quit() error here is a connection teardown issue — the email IS sent.
+	// Returning it would cause NATS to retry and the recipient to get a duplicate.
+	_ = c.Quit()
 	return nil
+}
+
+// randomBoundary returns a random multipart MIME boundary. Using a random
+// boundary per message prevents collisions with literal boundary strings that
+// might appear in user-supplied body content.
+func randomBoundary() string {
+	var buf [16]byte
+	_, _ = rand.Read(buf[:])
+	return "pug-" + hex.EncodeToString(buf[:])
 }
 
 // buildMIME returns a multipart/alternative message with text and html parts.
@@ -98,7 +112,7 @@ func buildMIME(msg coreemail.Message) string {
 		sb.WriteString("X-Idempotency-Key: " + msg.IdempotencyKey + "\r\n")
 	}
 	sb.WriteString("MIME-Version: 1.0\r\n")
-	boundary := "pug-mime-boundary"
+	boundary := randomBoundary()
 	sb.WriteString("Content-Type: multipart/alternative; boundary=\"" + boundary + "\"\r\n\r\n")
 
 	sb.WriteString("--" + boundary + "\r\n")

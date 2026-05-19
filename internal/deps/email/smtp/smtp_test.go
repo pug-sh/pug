@@ -146,6 +146,29 @@ func TestSMTPProviderConnectError(t *testing.T) {
 	}
 }
 
+func TestSMTPProviderUseTLSWithoutSTARTTLSFailsPermanent(t *testing.T) {
+	srv := newFakeSMTPServer(t)
+	host, port := splitHostPort(t, srv.addr())
+
+	prov, err := emailsmtp.New(emailsmtp.Config{
+		Host: host, Port: port, Username: "u", Password: "p",
+		UseTLS: true, // server fake does NOT advertise STARTTLS
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = prov.Send(context.Background(), coreemail.Message{
+		From: "f@example.com", To: "t@example.com",
+		Subject: "x", TextBody: "y", HTMLBody: "<p>y</p>",
+	})
+	if err == nil {
+		t.Fatal("expected error when UseTLS=true and server doesn't advertise STARTTLS")
+	}
+	if !coreemail.IsPermanentError(err) {
+		t.Fatalf("expected permanent error, got %v", err)
+	}
+}
+
 func splitHostPort(t *testing.T, addr string) (string, int) {
 	t.Helper()
 	host, portStr, err := net.SplitHostPort(addr)
