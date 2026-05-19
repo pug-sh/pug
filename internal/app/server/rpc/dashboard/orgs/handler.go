@@ -328,12 +328,33 @@ func (s *server) Create(
 	}), nil
 }
 
-// Stub: replaced by Task 10 with the real implementation.
 func (s *server) Leave(
 	ctx context.Context,
-	_ *connect.Request[orgsv1.LeaveRequest],
+	req *connect.Request[orgsv1.LeaveRequest],
 ) (*connect.Response[orgsv1.LeaveResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	if err := s.service.Leave(ctx, req.Msg.GetOrgId(), principal.Customer.ID); err != nil {
+		if errors.Is(err, coreorgs.ErrMemberNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("not a member of this org"))
+		}
+		if errors.Is(err, coreorgs.ErrLastAdmin) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cannot leave as the last admin"))
+		}
+		if errors.Is(err, coreorgs.ErrLastMember) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cannot leave as the only member"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&orgsv1.LeaveResponse{}), nil
 }
 
 // Stub: replaced by Task 11 with the real implementation.

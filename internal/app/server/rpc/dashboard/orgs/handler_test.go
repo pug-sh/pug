@@ -101,3 +101,91 @@ func TestCreateOrgHandlerRejectsEmptyDisplayName(t *testing.T) {
 	// An empty display_name either succeeds (handler passes through) or returns a
 	// connect error (if handler validates). Both outcomes are acceptable here.
 }
+
+func TestLeaveHandlerHappyPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	ownerID := seedRawCustomer(t, ctx, write, "owner")
+	memberID := seedRawCustomer(t, ctx, write, "member")
+	org, err := svc.CreateOrgWithDefaults(ctx, ownerID, "leave-handler")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: memberID, Role: orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
+	}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	memberCustomer, err := read.GetCustomerByID(ctx, memberID)
+	if err != nil {
+		t.Fatalf("read member: %v", err)
+	}
+
+	if _, err := srv.Leave(
+		ctxWithCustomer(ctx, memberCustomer),
+		connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String(org.ID)}),
+	); err != nil {
+		t.Fatalf("Leave: %v", err)
+	}
+}
+
+func TestLeaveHandlerLastAdminReturnsFailedPrecondition(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	adminID := seedRawCustomer(t, ctx, write, "sole-admin")
+	memberID := seedRawCustomer(t, ctx, write, "tag-along")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "last-admin-handler")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: memberID, Role: orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
+	}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+	_, err = srv.Leave(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String(org.ID)}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeFailedPrecondition {
+		t.Fatalf("want CodeFailedPrecondition, got %v", err)
+	}
+}
+
+func seedRawCustomer(t *testing.T, ctx context.Context, w *dbwrite.Queries, prefix string) string {
+	t.Helper()
+	id := xid.New().String()
+	if _, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           id,
+		Email:        prefix + "-" + id + "@example.com",
+		DisplayName:  "",
+		PictureUri:   "",
+		PasswordHash: "x",
+	}); err != nil {
+		t.Fatalf("seedRawCustomer: %v", err)
+	}
+	return id
+}
