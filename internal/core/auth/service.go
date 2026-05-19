@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -501,17 +502,17 @@ func (s *Service) publishEmailJob(ctx context.Context, job *emailworkerv1.EmailJ
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal email job", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", payloadKindFromJob(job))))
+		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", payloadKindFromJob(ctx, job))))
 		return
 	}
 	if err := s.publisher.Publish(ctx, nats.MiscEmailJobsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish email job", slogx.Error(err), slog.String("subject", nats.MiscEmailJobsSubject))
 		telemetry.RecordError(ctx, err)
-		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", payloadKindFromJob(job))))
+		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", payloadKindFromJob(ctx, job))))
 	}
 }
 
-func payloadKindFromJob(job *emailworkerv1.EmailJob) string {
+func payloadKindFromJob(ctx context.Context, job *emailworkerv1.EmailJob) string {
 	switch job.GetPayload().(type) {
 	case *emailworkerv1.EmailJob_SignupVerifyWelcome:
 		return "signup_verify_welcome"
@@ -522,6 +523,12 @@ func payloadKindFromJob(job *emailworkerv1.EmailJob) string {
 	case *emailworkerv1.EmailJob_OrgMemberInvite:
 		return "org_member_invite"
 	default:
+		// Unknown payload type means the EmailJob proto grew a new oneof case
+		// that this switch hasn't been updated to handle. The counter still
+		// records the failure under kind="unknown", but the warn log is the
+		// signal to add the missing case here.
+		slog.WarnContext(ctx, "unknown email job payload kind; counter falling back to 'unknown'",
+			slog.String("payload_type", fmt.Sprintf("%T", job.GetPayload())))
 		return "unknown"
 	}
 }
