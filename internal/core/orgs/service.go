@@ -44,16 +44,17 @@ func init() {
 }
 
 var (
-	ErrAlreadyMember        = errors.New("already a member of this org")
-	ErrInviteAlreadyPending = errors.New("a pending invitation already exists for this email")
-	ErrInviteExpired        = errors.New("invitation has expired")
-	ErrInviteNotFound       = errors.New("invitation not found")
-	ErrInviteNotPending     = errors.New("invitation is not pending")
-	ErrInviteWrongEmail     = errors.New("invitation was issued to a different email address")
-	ErrLastAdmin            = errors.New("cannot remove the last admin")
-	ErrLastMember           = errors.New("cannot leave org: only member")
-	ErrMemberNotFound       = errors.New("member not found")
-	ErrOrgNotFound          = errors.New("org not found")
+	ErrAlreadyMember             = errors.New("already a member of this org")
+	ErrInviteAlreadyPending      = errors.New("a pending invitation already exists for this email")
+	ErrInviteExpired             = errors.New("invitation has expired")
+	ErrInviteNotFound            = errors.New("invitation not found")
+	ErrInviteNotPending          = errors.New("invitation is not pending")
+	ErrInviteWrongEmail          = errors.New("invitation was issued to a different email address")
+	ErrLastAdmin                 = errors.New("cannot remove the last admin")
+	ErrLastMember                = errors.New("cannot leave org: only member")
+	ErrMemberNotFound            = errors.New("member not found")
+	ErrOrgNotFound               = errors.New("org not found")
+	ErrUnsupportedRoleTransition = errors.New("role transition not supported")
 )
 
 const (
@@ -551,6 +552,52 @@ func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvi
 		telemetry.RecordError(ctx, err)
 		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", "org_member_invite")))
 	}
+}
+
+// UpdateMemberRole changes a member's role. In this scope, only the
+// MEMBER -> ADMIN transition is permitted. Other transitions return
+// ErrUnsupportedRoleTransition (mapped to CodeInvalidArgument at the handler).
+//
+// Returns ErrMemberNotFound if the target is not a member of the org.
+func (s *Service) UpdateMemberRole(
+	ctx context.Context,
+	orgID, customerID, newRole string,
+) (dbwrite.OrgMember, error) {
+	current, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbwrite.OrgMember{}, ErrMemberNotFound
+		}
+		slog.ErrorContext(ctx, "failed to look up current role", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.OrgMember{}, err
+	}
+
+	if !(current == orgsv1.OrgRole_ORG_ROLE_MEMBER.String() &&
+		newRole == orgsv1.OrgRole_ORG_ROLE_ADMIN.String()) {
+		return dbwrite.OrgMember{}, ErrUnsupportedRoleTransition
+	}
+
+	updated, err := s.write.UpdateOrgMemberRole(ctx, dbwrite.UpdateOrgMemberRoleParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+		Role:       newRole,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbwrite.OrgMember{}, ErrMemberNotFound
+		}
+		slog.ErrorContext(ctx, "failed to update member role", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID),
+			slog.String("new_role", newRole))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.OrgMember{}, err
+	}
+	return updated, nil
 }
 
 func hashInviteToken(token string) string {

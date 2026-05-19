@@ -566,3 +566,72 @@ func TestLeaveNotMember(t *testing.T) {
 		t.Fatalf("want ErrMemberNotFound, got %v", err)
 	}
 }
+
+func TestUpdateMemberRolePromote(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	admin := seedCustomer(t, ctx, write, "admin")
+	member := seedCustomer(t, ctx, write, "member")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "promote-test")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	mustAddMember(t, ctx, write, org.ID, member, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())
+
+	got, err := svc.UpdateMemberRole(ctx, org.ID, member, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
+	if err != nil {
+		t.Fatalf("UpdateMemberRole: %v", err)
+	}
+	if got.Role != orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
+		t.Fatalf("want role=ADMIN, got %q", got.Role)
+	}
+}
+
+func TestUpdateMemberRoleRejectsDemote(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	admin := seedCustomer(t, ctx, write, "admin")
+	co := seedCustomer(t, ctx, write, "coadmin")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "demote-test")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	mustAddMember(t, ctx, write, org.ID, co, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
+
+	if _, err := svc.UpdateMemberRole(ctx, org.ID, co, orgsv1.OrgRole_ORG_ROLE_MEMBER.String()); !errors.Is(err, orgs.ErrUnsupportedRoleTransition) {
+		t.Fatalf("want ErrUnsupportedRoleTransition for demote, got %v", err)
+	}
+}
+
+func TestUpdateMemberRoleNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	admin := seedCustomer(t, ctx, write, "admin")
+	stranger := seedCustomer(t, ctx, write, "stranger")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "notfound-test")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if _, err := svc.UpdateMemberRole(ctx, org.ID, stranger, orgsv1.OrgRole_ORG_ROLE_ADMIN.String()); !errors.Is(err, orgs.ErrMemberNotFound) {
+		t.Fatalf("want ErrMemberNotFound, got %v", err)
+	}
+}
