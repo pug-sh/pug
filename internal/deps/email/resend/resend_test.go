@@ -42,6 +42,38 @@ func TestProviderSendWrapsClientErrorsAsPermanent(t *testing.T) {
 	}
 }
 
+// TestProviderSendEmptyResponseIsPermanent pins resend.go:53. A 200 with an
+// empty id is anomalous — likely an API surface drift or a proxy stripping
+// the body. Retrying won't help, so the worker must DLQ.
+func TestProviderSendEmptyResponseIsPermanent(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"empty_id", `{"id":""}`},
+		{"absent_id", `{}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+				return jsonResponse(http.StatusOK, tc.body), nil
+			}))
+			err := provider.Send(context.Background(), emailspec.Message{
+				From:     "noreply@example.com",
+				To:       "test@example.com",
+				Subject:  "Subject",
+				TextBody: "body",
+			})
+			if err == nil {
+				t.Fatal("expected error on empty response id")
+			}
+			if !emailspec.IsPermanentError(err) {
+				t.Fatalf("expected permanent error so worker DLQs, got %v", err)
+			}
+		})
+	}
+}
+
 func TestProviderSendKeepsRateLimitsRetryable(t *testing.T) {
 	provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 		return jsonResponse(http.StatusTooManyRequests, `{"message":"rate limited"}`), nil

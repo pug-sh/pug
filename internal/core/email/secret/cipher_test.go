@@ -71,6 +71,29 @@ func TestCipherDecryptTamperedFails(t *testing.T) {
 	}
 }
 
+// TestCipherDecryptWithDifferentKeyFails pins the most likely real-world
+// failure mode: PUG_EMAIL_PROVIDER_SECRET_KEY is rotated and the deployment
+// rolls forward without re-encrypting existing rows. tenant_resolver.go relies
+// on this returning an error so it can wrap it as a permanent failure (DLQ
+// rather than infinite retry).
+func TestCipherDecryptWithDifferentKeyFails(t *testing.T) {
+	enc, err := secret.NewCipher(newTestKey(t))
+	if err != nil {
+		t.Fatalf("NewCipher enc: %v", err)
+	}
+	dec, err := secret.NewCipher(newTestKey(t))
+	if err != nil {
+		t.Fatalf("NewCipher dec: %v", err)
+	}
+	blob, err := enc.Encrypt([]byte(`{"api_key":"sk_live_abc"}`))
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	if _, err := dec.Decrypt(blob); err == nil {
+		t.Fatal("expected decrypt with different key to fail")
+	}
+}
+
 // TestCipherDecryptShortBlob pins the explicit length guard at the top of
 // Decrypt. Without it, a blob shorter than the nonce would panic on slice
 // out-of-bounds. Realistic trigger: schema drift or manual SQL inserting a

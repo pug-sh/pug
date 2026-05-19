@@ -52,6 +52,36 @@ func TestProviderSendBuildsSESRequest(t *testing.T) {
 	}
 }
 
+// TestProviderSendEmptyMessageIDIsPermanent pins the response-validation
+// branch at ses.go:75. SES returning a 200 with an absent or empty MessageId
+// is anomalous; treating it as transient would cause the worker to retry
+// indefinitely on a class of broken responses that the next attempt won't fix.
+func TestProviderSendEmptyMessageIDIsPermanent(t *testing.T) {
+	cases := []struct {
+		name   string
+		output *sesv2.SendEmailOutput
+	}{
+		{"nil_message_id", &sesv2.SendEmailOutput{MessageId: nil}},
+		{"empty_string_message_id", &sesv2.SendEmailOutput{MessageId: stringPtr("")}},
+		{"nil_output", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := &Provider{client: &fakeSender{output: tc.output}}
+			err := provider.Send(context.Background(), emailspec.Message{
+				From: "noreply@example.com", To: "user@example.com",
+				Subject: "x", HTMLBody: "<p>x</p>", TextBody: "x",
+			})
+			if err == nil {
+				t.Fatal("expected error on empty response")
+			}
+			if !emailspec.IsPermanentError(err) {
+				t.Fatalf("expected permanent error so worker DLQs, got %v", err)
+			}
+		})
+	}
+}
+
 func TestProviderSendWrapsPermanentErrors(t *testing.T) {
 	provider := &Provider{
 		client: &fakeSender{

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	emailsmtp "github.com/pug-sh/pug/internal/deps/email/smtp"
@@ -15,11 +16,17 @@ import (
 
 // fakeSMTPServer answers a minimal SMTP conversation and captures the bytes
 // after DATA. Does NOT implement STARTTLS — Provider tests pass UseTLS:false.
+// dropOnQuit drops the connection when the client sends QUIT instead of
+// responding 221 (used to exercise the swallowed-Quit-error branch in smtp.go).
+// hangAfterGreeting sends the 220 greeting then stops responding (used to
+// exercise the post-NewClient context-cancellation goroutine in smtp.go).
 type fakeSMTPServer struct {
-	listener net.Listener
-	mu       sync.Mutex
-	body     bytes.Buffer
-	wg       sync.WaitGroup
+	listener          net.Listener
+	mu                sync.Mutex
+	body              bytes.Buffer
+	wg                sync.WaitGroup
+	dropOnQuit        bool
+	hangAfterGreeting bool
 }
 
 func newFakeSMTPServer(t *testing.T) *fakeSMTPServer {
@@ -48,6 +55,13 @@ func (s *fakeSMTPServer) serve() {
 	buf := make([]byte, 4096)
 	send := func(line string) { _, _ = conn.Write([]byte(line + "\r\n")) }
 	send("220 fake.localhost ESMTP")
+	if s.hangAfterGreeting {
+		// Greeting is sent (so netsmtp.NewClient returns), but no further
+		// responses. The client should block on EHLO; the ctx-cancel
+		// goroutine in smtp.go must tear the conn down.
+		_, _ = conn.Read(buf)
+		return
+	}
 	dataMode := false
 	for {
 		n, err := conn.Read(buf)
@@ -78,6 +92,12 @@ func (s *fakeSMTPServer) serve() {
 			send("354 send body")
 			dataMode = true
 		case strings.HasPrefix(chunk, "QUIT"):
+			if s.dropOnQuit {
+				// Drop the connection without sending 221, simulating a
+				// flaky server. The client's Quit() will error; smtp.go
+				// must swallow that since the message is already queued.
+				return
+			}
 			send("221 bye")
 			return
 		default:
@@ -160,9 +180,9 @@ func TestSMTPProviderSanitizesHeaders(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	err = prov.Send(context.Background(), coreemail.Message{
-		From:    "from@example.com",
-		To:      "to@example.com",
-		Subject: "Hello\r\nBcc: leak@evil.example",
+		From:     "from@example.com",
+		To:       "to@example.com",
+		Subject:  "Hello\r\nBcc: leak@evil.example",
 		TextBody: "x", HTMLBody: "<p>x</p>",
 	})
 	if err != nil {
@@ -179,6 +199,74 @@ func TestSMTPProviderSanitizesHeaders(t *testing.T) {
 	}
 	if !strings.Contains(body, "Subject: HelloBcc: leak@evil.example") {
 		t.Fatalf("expected sanitized subject on one line, got: %s", body)
+	}
+}
+
+// TestSMTPProviderSwallowsQuitError pins smtp.go:108. After w.Close() returns
+// nil the server has already 250-OK'd the DATA — the email is sent. A
+// flaky/slow server that fails to ack the subsequent QUIT must NOT cause Send
+// to return an error, because NATS would redeliver and the recipient would
+// see a duplicate. Without this test, a future refactor that did
+// `return c.Quit()` would compile and pass every other test.
+func TestSMTPProviderSwallowsQuitError(t *testing.T) {
+	srv := newFakeSMTPServer(t)
+	srv.dropOnQuit = true
+	host, port := splitHostPort(t, srv.addr())
+
+	prov, err := emailsmtp.New(emailsmtp.Config{
+		Host: host, Port: port, Username: "user", Password: "pass", UseTLS: false,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = prov.Send(context.Background(), coreemail.Message{
+		From:     "from@example.com",
+		To:       "to@example.com",
+		Subject:  "hello",
+		TextBody: "x", HTMLBody: "<p>x</p>",
+	})
+	if err != nil {
+		t.Fatalf("Send should swallow Quit errors after DATA OK, got: %v", err)
+	}
+	// Sanity: the server received and captured the message body.
+	if !strings.Contains(srv.bodyString(), "Subject: hello") {
+		t.Fatalf("expected body captured before drop, got %s", srv.bodyString())
+	}
+}
+
+// TestSMTPProviderRespectsContextCancellation pins the goroutine in smtp.go:58-64
+// that tears down the underlying conn when ctx is cancelled. The fake sends
+// the 220 greeting (so netsmtp.NewClient returns) and then hangs on the EHLO
+// reply — the ctx-cancel goroutine must close the conn so Send returns
+// promptly rather than pinning a worker past the NATS ProcessingTimeout.
+//
+// NOTE: this test does NOT exercise the pre-greeting case. NewClient blocks
+// reading the 220 greeting before the ctx-cancel goroutine starts, so a
+// server that never sends the greeting will block Send indefinitely. That
+// gap is a separate finding (see review notes).
+func TestSMTPProviderRespectsContextCancellation(t *testing.T) {
+	srv := newFakeSMTPServer(t)
+	srv.hangAfterGreeting = true
+	host, port := splitHostPort(t, srv.addr())
+
+	prov, err := emailsmtp.New(emailsmtp.Config{
+		Host: host, Port: port, Username: "u", Password: "p", UseTLS: false,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err = prov.Send(ctx, coreemail.Message{
+		From: "f@example.com", To: "t@example.com",
+		Subject: "x", TextBody: "y", HTMLBody: "<p>y</p>",
+	})
+	if err == nil {
+		t.Fatal("expected error when server never greets")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("Send was pinned past ctx cancel — elapsed %v", elapsed)
 	}
 }
 

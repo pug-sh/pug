@@ -62,6 +62,49 @@ func TestProcessorSignupPayloadMapsToVerifyLink(t *testing.T) {
 	}
 }
 
+// TestProcessorIdempotencyKeyIsStableOnRetry pins the contract that NATS
+// redelivery (or any duplicate ProcessMessage call) produces the SAME
+// idempotency key. Resend and other providers dedupe on this header
+// server-side, so a regression that derived the key from time.Now() or a
+// random nonce would silently break dedup and surface as duplicate emails.
+func TestProcessorIdempotencyKeyIsStableOnRetry(t *testing.T) {
+	provider := &fakeProvider{}
+	mailer, err := coreemail.NewService(coreemail.Config{
+		DashboardBaseURL: "https://dashboard.example",
+		From:             "noreply@example.com",
+	}, provider)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	processor := NewProcessor(nil, mailer)
+	data, err := proto.Marshal(&emailworkerv1.EmailJob{
+		Payload: &emailworkerv1.EmailJob_SignupVerifyWelcome{
+			SignupVerifyWelcome: &emailworkerv1.SignUpVerifyWelcomePayload{
+				Email: proto.String("retry@example.com"),
+				Token: proto.String("stable-token"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("proto.Marshal: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := processor.ProcessMessage(context.Background(), data); err != nil {
+			t.Fatalf("ProcessMessage attempt %d: %v", i, err)
+		}
+	}
+	if len(provider.msgs) != 2 {
+		t.Fatalf("expected 2 sends, got %d", len(provider.msgs))
+	}
+	if provider.msgs[0].IdempotencyKey == "" {
+		t.Fatal("idempotency key must be non-empty")
+	}
+	if provider.msgs[0].IdempotencyKey != provider.msgs[1].IdempotencyKey {
+		t.Fatalf("idempotency key differs across retries: %q vs %q",
+			provider.msgs[0].IdempotencyKey, provider.msgs[1].IdempotencyKey)
+	}
+}
+
 func TestProcessorPermanentProviderErrorMapsToDLQ(t *testing.T) {
 	provider := &fakeProvider{err: coreemail.NewPermanentError(errors.New("bad request"))}
 	mailer, err := coreemail.NewService(coreemail.Config{

@@ -6,14 +6,18 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/rs/xid"
 
 	"github.com/pug-sh/pug/internal/core/auth"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 	"google.golang.org/protobuf/proto"
 )
@@ -224,4 +228,108 @@ func TestAuthService(t *testing.T) {
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+// TestVerifyEmailRejectsResetPasswordToken pins purpose-isolation: a token
+// issued for password reset must NOT be redeemable as a verify-email token.
+// If the purpose constants were ever collapsed (or the gate accidentally
+// dropped from the query), an attacker who phished a reset link could redeem
+// it as a verify-email token (or vice versa). Both directions are tested.
+func TestEmailActionTokenPurposeIsolation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	publisher := &stubPublisher{}
+	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), publisher)
+	ctx := context.Background()
+
+	t.Run("verify_email_rejects_reset_password_token", func(t *testing.T) {
+		const email = "purpose-1@example.com"
+		if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
+			t.Fatalf("SignUpWithEmail: %v", err)
+		}
+		// Drain the welcome verify token.
+		verifyTok := publisher.jobs[len(publisher.jobs)-1].job.GetSignupVerifyWelcome().GetToken()
+		if err := svc.VerifyEmail(ctx, verifyTok); err != nil {
+			t.Fatalf("VerifyEmail seed: %v", err)
+		}
+		// Issue a reset_password token.
+		if err := svc.RequestPasswordReset(ctx, email); err != nil {
+			t.Fatalf("RequestPasswordReset: %v", err)
+		}
+		resetTok := publisher.jobs[len(publisher.jobs)-1].job.GetPasswordReset().GetToken()
+		// Attempt to redeem the reset token as a verify token.
+		if err := svc.VerifyEmail(ctx, resetTok); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Fatalf("expected ErrInvalidToken when verifying with a reset token, got %v", err)
+		}
+	})
+
+	t.Run("reset_password_rejects_verify_email_token", func(t *testing.T) {
+		const email = "purpose-2@example.com"
+		if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
+			t.Fatalf("SignUpWithEmail: %v", err)
+		}
+		verifyTok := publisher.jobs[len(publisher.jobs)-1].job.GetSignupVerifyWelcome().GetToken()
+		// Attempt to redeem the verify token as a reset token.
+		if err := svc.ResetPassword(ctx, verifyTok, "new-password123"); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Fatalf("expected ErrInvalidToken when resetting with a verify token, got %v", err)
+		}
+	})
+}
+
+// TestEmailActionTokenExpiredRejection pins the `expires_at > now()` predicate
+// at the service-call layer (rather than only transitively via "already
+// consumed"). If the SQL predicate were ever removed during a query rewrite,
+// an attacker who learned a stale token would gain indefinite reuse.
+func TestEmailActionTokenExpiredRejection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	publisher := &stubPublisher{}
+	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), publisher)
+	write := dbwrite.New(db.PgW)
+	ctx := context.Background()
+
+	const email = "expired@example.com"
+	if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
+		t.Fatalf("SignUpWithEmail: %v", err)
+	}
+	customer, err := dbread.New(db.PgW).GetCustomerByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("GetCustomerByEmail: %v", err)
+	}
+
+	insertExpired := func(t *testing.T, purpose string) string {
+		t.Helper()
+		raw := xid.New().String() + xid.New().String()
+		if _, err := write.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
+			ID:         xid.New().String(),
+			CustomerID: pgtype.Text{String: customer.ID, Valid: true},
+			Email:      email,
+			Purpose:    purpose,
+			TokenHash:  hashToken(raw),
+			ExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(-1 * time.Hour), Valid: true},
+		}); err != nil {
+			t.Fatalf("CreateEmailActionToken: %v", err)
+		}
+		return raw
+	}
+
+	t.Run("verify_email_rejects_expired_token", func(t *testing.T) {
+		tok := insertExpired(t, "verify_email")
+		if err := svc.VerifyEmail(ctx, tok); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Fatalf("expected ErrInvalidToken for expired verify token, got %v", err)
+		}
+	})
+
+	t.Run("reset_password_rejects_expired_token", func(t *testing.T) {
+		tok := insertExpired(t, "reset_password")
+		if err := svc.ResetPassword(ctx, tok, "new-pass123"); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Fatalf("expected ErrInvalidToken for expired reset token, got %v", err)
+		}
+	})
 }

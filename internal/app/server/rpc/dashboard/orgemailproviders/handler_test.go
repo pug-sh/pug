@@ -6,9 +6,11 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
@@ -34,9 +36,9 @@ func setupCipher(t *testing.T) *secret.Cipher {
 	return c
 }
 
-func strPtr(s string) *string         { return &s }
-func uint32Ptr(v uint32) *uint32      { return &v }
-func boolPtr(b bool) *bool            { return &b }
+func strPtr(s string) *string    { return &s }
+func uint32Ptr(v uint32) *uint32 { return &v }
+func boolPtr(b bool) *bool       { return &b }
 
 func TestSetGetRoundTripRedactsSecret(t *testing.T) {
 	if testing.Short() {
@@ -848,5 +850,81 @@ func TestSendTestHappyPath(t *testing.T) {
 	}
 	if !strings.Contains(fake.got.Subject, "test") {
 		t.Fatalf("expected 'test' in subject, got %q", fake.got.Subject)
+	}
+}
+
+// TestSetReturnsInternalOnInvalidateFailure pins the handler.go:172-178 comment
+// claim that Invalidate is "load-bearing" and its failure must surface as
+// CodeInternal. A regression that swallowed the Invalidate error would leave
+// a stale negative-cache entry shadowing the admin's just-saved provider for
+// the rest of the cache TTL — silently routing traffic through the operator-
+// default provider.
+//
+// We point the repo's Redis client at a closed port so DEL fails reliably.
+// The Postgres upsert still succeeds (real DB), so we're testing exactly the
+// post-upsert Invalidate branch.
+func TestSetReturnsInternalOnInvalidateFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-inv-fail", Email: "admin-inv@acme.com", DisplayName: "Admin", PasswordHash: "h", PictureUri: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-inv-fail", DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_ADMIN",
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	broken := goredis.NewClient(&goredis.Options{
+		Addr:         "127.0.0.1:1",
+		DialTimeout:  200 * time.Millisecond,
+		ReadTimeout:  200 * time.Millisecond,
+		WriteTimeout: 200 * time.Millisecond,
+		MaxRetries:   -1,
+	})
+	t.Cleanup(func() { _ = broken.Close() })
+
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	cipher := setupCipher(t)
+	repo := coreemail.NewOrgProviderRepo(read, broken)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
+	})
+	_, err = srv.Set(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SetRequest{
+		OrgId:       strPtr(org.ID),
+		FromAddress: strPtr("ops@acme.com"),
+		Config: &orgemailprovidersv1.SetRequest_Resend{
+			Resend: &orgemailprovidersv1.ResendConfig{ApiKey: strPtr("sk_test_abcdef1234567890")},
+		},
+	}))
+	if err == nil {
+		t.Fatal("expected Set to fail when Invalidate cannot reach cache")
+	}
+	if got := connect.CodeOf(err); got != connect.CodeInternal {
+		t.Fatalf("expected CodeInternal, got %v (err=%v)", got, err)
+	}
+
+	// Sanity: the row was written before the Invalidate failed. The handler
+	// docstring claims the upsert is idempotent, and this assertion pins that
+	// claim — if a future refactor moves Invalidate BEFORE Upsert, the row
+	// would be absent and this assertion would fire.
+	if _, err := read.GetOrgEmailProvider(ctx, org.ID); err != nil {
+		t.Fatalf("expected upsert to have committed before invalidate failure, got %v", err)
 	}
 }
