@@ -304,12 +304,28 @@ func (s *server) ListInvitations(
 	return connect.NewResponse(&orgsv1.ListInvitationsResponse{Invitations: result}), nil
 }
 
-// Stub: replaced by Task 9 with the real implementation.
 func (s *server) Create(
 	ctx context.Context,
-	_ *connect.Request[orgsv1.CreateRequest],
+	req *connect.Request[orgsv1.CreateRequest],
 ) (*connect.Response[orgsv1.CreateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+	}
+
+	org, err := s.service.CreateOrgWithDefaults(ctx, principal.Customer.ID, req.Msg.GetDisplayName())
+	if err != nil {
+		// Service logs+records at source per the log-at-source convention.
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&orgsv1.CreateResponse{
+		Org: toRPCOrgFromWrite(ctx, org, orgsv1.OrgRole_ORG_ROLE_ADMIN.String()),
+	}), nil
 }
 
 // Stub: replaced by Task 10 with the real implementation.
