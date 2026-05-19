@@ -54,7 +54,7 @@ func (s *server) requireAdmin(ctx context.Context, orgID string) (*rpc.Principal
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	if coreorgs.Role(role) != coreorgs.RoleAdmin {
+	if role != coreorgs.RoleAdmin {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
 	}
 	return principal, nil

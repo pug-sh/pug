@@ -13,17 +13,19 @@ import (
 )
 
 // roleFromProto translates a proto OrgRole enum into the service-layer Role.
-// Returns the empty Role for UNSPECIFIED or unknown enum values; callers
-// should treat that as a validation failure (typically already enforced by
-// protovalidate at the interceptor).
-func roleFromProto(p orgsv1.OrgRole) coreorgs.Role {
+// Returns ok=false for UNSPECIFIED or any enum value not in the recognized
+// set; callers MUST reject the request explicitly rather than passing the
+// zero-value Role onward. Protovalidate's not_in:[0] / defined_only catches
+// most of this at the interceptor, but the second check here keeps the
+// type-level invariant load-bearing even if validation is bypassed.
+func roleFromProto(p orgsv1.OrgRole) (coreorgs.Role, bool) {
 	switch p {
 	case orgsv1.OrgRole_ORG_ROLE_ADMIN:
-		return coreorgs.RoleAdmin
+		return coreorgs.RoleAdmin, true
 	case orgsv1.OrgRole_ORG_ROLE_MEMBER:
-		return coreorgs.RoleMember
+		return coreorgs.RoleMember, true
 	default:
-		return ""
+		return "", false
 	}
 }
 

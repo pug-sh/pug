@@ -59,7 +59,7 @@ func (s *server) requireOrgAdmin(ctx context.Context, orgID string) (*rpc.Princi
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	if coreorgs.Role(role) != coreorgs.RoleAdmin {
+	if role != coreorgs.RoleAdmin {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
 	}
 
@@ -370,11 +370,16 @@ func (s *server) UpdateMemberRole(
 		return nil, err
 	}
 
+	newRole, ok := roleFromProto(req.Msg.GetRole())
+	if !ok {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("role enum value not supported by this server"))
+	}
+
 	if _, err := s.service.UpdateMemberRole(
 		ctx,
 		req.Msg.GetOrgId(),
 		req.Msg.GetCustomerId(),
-		roleFromProto(req.Msg.GetRole()),
+		newRole,
 	); err != nil {
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("member not found"))

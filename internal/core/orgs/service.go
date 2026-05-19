@@ -51,14 +51,19 @@ func init() {
 }
 
 var (
-	ErrAlreadyMember             = errors.New("already a member of this org")
-	ErrInviteAlreadyPending      = errors.New("a pending invitation already exists for this email")
-	ErrInviteExpired             = errors.New("invitation has expired")
-	ErrInviteNotFound            = errors.New("invitation not found")
-	ErrInviteNotPending          = errors.New("invitation is not pending")
-	ErrInviteWrongEmail          = errors.New("invitation was issued to a different email address")
-	ErrLastAdmin                 = errors.New("cannot remove the last admin")
-	ErrLastMember                = errors.New("cannot leave org: only member")
+	ErrAlreadyMember        = errors.New("already a member of this org")
+	ErrInviteAlreadyPending = errors.New("a pending invitation already exists for this email")
+	ErrInviteExpired        = errors.New("invitation has expired")
+	ErrInviteNotFound       = errors.New("invitation not found")
+	ErrInviteNotPending     = errors.New("invitation is not pending")
+	ErrInviteWrongEmail     = errors.New("invitation was issued to a different email address")
+	// ErrLastAdmin is returned by both RemoveMemberSafe and Leave when the
+	// target is the only remaining admin. Handlers build their own client-
+	// facing message (different wording for remove vs leave) — never pass
+	// this sentinel directly into connect.NewError, as the neutral phrasing
+	// here is not a substitute for the verb-specific message.
+	ErrLastAdmin                 = errors.New("blocked: last admin of org")
+	ErrLastMember                = errors.New("blocked: only member of org")
 	ErrMemberNotFound            = errors.New("member not found")
 	ErrOrgNotFound               = errors.New("org not found")
 	ErrUnsupportedRoleTransition = errors.New("role transition not supported")
@@ -67,6 +72,12 @@ var (
 const (
 	inviteTTL        = 7 * 24 * time.Hour
 	orgInvitePurpose = "org_invite"
+
+	// Postgres constraint / index names used to disambiguate UniqueViolation
+	// errors. Kept narrow on purpose: catching a generic "unique violation"
+	// would mis-translate any future constraint added to these tables.
+	orgMembersPKey              = "org_members_pkey"
+	orgInvitationsPendingUnique = "org_invitations_org_email_pending"
 )
 
 type Service struct {
@@ -191,13 +202,23 @@ func (s *Service) AddMember(ctx context.Context, orgID, customerID string, role 
 		Role:       role.String(),
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if isUniqueViolationOn(err, orgMembersPKey) {
 			return dbwrite.OrgMember{}, ErrAlreadyMember
 		}
 		return dbwrite.OrgMember{}, err
 	}
 	return member, nil
+}
+
+// isUniqueViolationOn reports whether err is a Postgres unique-violation
+// against the given constraint name. Used to translate specific constraint
+// collisions into typed sentinels without mis-mapping unrelated violations.
+func isUniqueViolationOn(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == constraint
 }
 
 func (s *Service) UpdateDisplayName(ctx context.Context, id, displayName string) (dbwrite.Org, error) {
@@ -246,8 +267,12 @@ func (s *Service) GetMember(ctx context.Context, orgID, customerID string) (dbre
 	return row, nil
 }
 
-func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (string, error) {
-	role, err := s.read.GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
+// GetMemberRole returns the calling customer's role for the given org. The
+// raw DB string is parsed through ParseRole so callers receive a validated
+// Role — values that drift outside the recognized set surface as errors at
+// this boundary rather than silently flowing through equality checks.
+func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (Role, error) {
+	raw, err := s.read.GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
 	})
@@ -255,6 +280,13 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrMemberNotFound
 		}
+		return "", err
+	}
+	role, err := ParseRole(raw)
+	if err != nil {
+		slog.ErrorContext(ctx, "unrecognized role in org_members", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 	return role, nil
@@ -303,6 +335,14 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 // concurrent Leave / RemoveMember calls. ErrLastAdmin takes precedence over
 // ErrLastMember: an admin who is also the sole member must first transfer
 // ownership before they can leave.
+//
+// Disambiguation is best-effort: when the CTE returns 0 rows, a separate
+// non-transactional read on org_members determines the cause. If a concurrent
+// RemoveMember (or another Leave) lands between the CTE rejection and the
+// disambig read, the caller may see ErrMemberNotFound instead of the true
+// ErrLastAdmin / ErrLastMember. The caller's atomicity invariant ("either
+// removed or definitely still a member") is preserved either way — only the
+// error code on the rejection path is racy.
 func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 	n, err := s.write.DeleteOrgMemberIfNotLastAdminAndNotLastMember(
 		ctx,
@@ -385,8 +425,7 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dbwrite.OrgInvitation{}, ErrAlreadyMember
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if isUniqueViolationOn(err, orgInvitationsPendingUnique) {
 			return dbwrite.OrgInvitation{}, ErrInviteAlreadyPending
 		}
 		slog.ErrorContext(ctx, "failed to create org invitation", slogx.Error(err),
@@ -477,8 +516,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		CustomerID: customerID,
 		Role:       RoleMember.String(),
 	}); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if isUniqueViolationOn(err, orgMembersPKey) {
 			return dbread.Org{}, ErrAlreadyMember
 		}
 		slog.ErrorContext(ctx, "failed to create org member on invite accept", slogx.Error(err))
