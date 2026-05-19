@@ -14,11 +14,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pug-sh/pug/internal/core/projects"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
-	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -101,21 +100,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return "", err
 	}
 
-	privKey, err := projects.NewPrivateKey()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	pubKey, err := projects.NewPublicKey()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
 	customerID := xid.New().String()
-	orgID := xid.New().String()
 	verifyToken, err := newActionToken()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate verify token", slogx.Error(err))
@@ -169,34 +154,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return "", err
 	}
 
-	if _, err = w.CreateOrg(ctx, dbwrite.CreateOrgParams{
-		ID:          orgID,
-		DisplayName: "default",
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to create default org", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID:      orgID,
-		CustomerID: customerID,
-		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to add customer to default org", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	if _, err = w.CreateProject(ctx, dbwrite.CreateProjectParams{
-		ID:            xid.New().String(),
-		OrgID:         orgID,
-		DisplayName:   "default",
-		PrivateApiKey: privKey,
-		PublicApiKey:  pubKey,
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to create default project", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
+	if _, err = coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
 		return "", err
 	}
 

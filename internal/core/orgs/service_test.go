@@ -23,6 +23,86 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestCreateOrgWithDefaultsHappyPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	customerID := xid.New().String()
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           customerID,
+		Email:        customerID + "@example.com",
+		DisplayName:  "",
+		PictureUri:   "",
+		PasswordHash: "x",
+	}); err != nil {
+		t.Fatalf("seed customer: %v", err)
+	}
+
+	org, err := svc.CreateOrgWithDefaults(ctx, customerID, "acme")
+	if err != nil {
+		t.Fatalf("CreateOrgWithDefaults: %v", err)
+	}
+	if org.DisplayName != "acme" {
+		t.Fatalf("want display_name=acme, got %q", org.DisplayName)
+	}
+
+	role, err := read.GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
+		OrgID:      org.ID,
+		CustomerID: customerID,
+	})
+	if err != nil {
+		t.Fatalf("GetOrgMemberRole: %v", err)
+	}
+	if role != orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
+		t.Fatalf("want role=ADMIN, got %q", role)
+	}
+
+	projects, err := read.GetProjectsByOrgID(ctx, org.ID)
+	if err != nil {
+		t.Fatalf("GetProjectsByOrgID: %v", err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("want 1 default project, got %d", len(projects))
+	}
+}
+
+func TestCreateOrgWithDefaultsRollbackOnDuplicateCustomer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	// Use a customer that does NOT exist — the CreateOrgMember FK should fail
+	// and the whole tx (org + member + project) must roll back.
+	missingCustomerID := xid.New().String()
+
+	if _, err := svc.CreateOrgWithDefaults(ctx, missingCustomerID, "rollback-test"); err == nil {
+		t.Fatal("want error from CreateOrgMember FK violation, got nil")
+	}
+
+	// Assert no org with this display_name exists.
+	row := db.PgW.QueryRow(ctx, "select count(*) from orgs where display_name = $1", "rollback-test")
+	var n int
+	if err := row.Scan(&n); err != nil {
+		t.Fatalf("scan count: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("want 0 orgs after rollback, got %d", n)
+	}
+	_ = write // keep linter happy if unused
+}
+
 type stubPublisher struct {
 	subject string
 	job     *emailworkerv1.EmailJob

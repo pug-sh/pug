@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -77,6 +78,94 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher jobPublisher) *
 		pgW:       pgW,
 		publisher: publisher,
 	}
+}
+
+// CreateOrgWithDefaultsInTx performs the org + admin member + default project
+// inserts inside an existing transaction. Caller owns the tx lifecycle.
+// Used by auth.SignUpWithEmail (which keeps customer + verify-token + org in
+// one tx) and by CreateOrgWithDefaults (which owns its own tx).
+func CreateOrgWithDefaultsInTx(
+	ctx context.Context,
+	w *dbwrite.Queries,
+	customerID, displayName string,
+) (dbwrite.Org, error) {
+	privKey, err := projects.NewPrivateKey()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+	pubKey, err := projects.NewPublicKey()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+
+	org, err := w.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID:          xid.New().String(),
+		DisplayName: displayName,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to create org", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+
+	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      org.ID,
+		CustomerID: customerID,
+		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to add customer as admin", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+
+	if _, err := w.CreateProject(ctx, dbwrite.CreateProjectParams{
+		ID:            xid.New().String(),
+		OrgID:         org.ID,
+		DisplayName:   "default",
+		PrivateApiKey: privKey,
+		PublicApiKey:  pubKey,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to create default project", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+	return org, nil
+}
+
+// CreateOrgWithDefaults opens its own transaction around CreateOrgWithDefaultsInTx.
+// Use this from RPC handlers and other callers without an active tx.
+func (s *Service) CreateOrgWithDefaults(
+	ctx context.Context,
+	customerID, displayName string,
+) (dbwrite.Org, error) {
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin CreateOrgWithDefaults tx", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+	defer func() {
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back CreateOrgWithDefaults tx", slogx.Error(rollbackErr))
+			telemetry.RecordError(ctx, rollbackErr)
+		}
+	}()
+
+	org, err := CreateOrgWithDefaultsInTx(ctx, dbwrite.New(tx), customerID, displayName)
+	if err != nil {
+		return dbwrite.Org{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit CreateOrgWithDefaults tx", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+	return org, nil
 }
 
 func (s *Service) CreateOrg(ctx context.Context, displayName string) (dbwrite.Org, error) {
