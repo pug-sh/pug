@@ -97,7 +97,7 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher 
 	}
 }
 
-func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (string, error) {
+func (s *Service) SignUpWithEmail(ctx context.Context, email, password, inviteToken string) (string, error) {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
@@ -130,6 +130,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		}
 	}()
 
+	r := dbread.New(tx)
 	w := dbwrite.New(tx)
 
 	if _, err = w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
@@ -148,22 +149,46 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return "", err
 	}
 
-	if _, err = w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
-		ID:              xid.New().String(),
-		CustomerID:      postgres.NewOptionalText(customerID),
-		Email:           email,
-		Purpose:         verifyEmailPurpose,
-		TokenHash:       verifyTokenHash,
-		OrgInvitationID: postgres.NewOptionalText(""),
-		ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(verifyEmailTTL)),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to create email verification token", slogx.Error(err), slog.String("customer_id", customerID))
-		telemetry.RecordError(ctx, err)
-		return "", err
+	// Invite-driven signup: attempt to accept the invite inside the signup tx.
+	// On any client-input failure (bad/expired/wrong-email token), fall through
+	// to the default-org path — the customer row is kept; only the invite-bound
+	// side effects are skipped. Other errors propagate.
+	inviteAccepted := false
+	if inviteToken != "" {
+		if _, err := coreorgs.AcceptInviteInTx(ctx, r, w, inviteToken, customerID, email); err != nil {
+			if !isInviteClientError(err) {
+				return "", err
+			}
+			slog.WarnContext(ctx, "invite-driven signup: token rejected, falling back to default org",
+				slogx.Error(err), slog.String("customer_id", customerID))
+		} else {
+			if _, err := w.MarkCustomerEmailVerified(ctx, customerID); err != nil {
+				slog.ErrorContext(ctx, "failed to mark customer email verified on invite signup", slogx.Error(err), slog.String("customer_id", customerID))
+				telemetry.RecordError(ctx, err)
+				return "", err
+			}
+			inviteAccepted = true
+		}
 	}
 
-	if _, err = coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
-		return "", err
+	if !inviteAccepted {
+		if _, err = w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
+			ID:              xid.New().String(),
+			CustomerID:      postgres.NewOptionalText(customerID),
+			Email:           email,
+			Purpose:         verifyEmailPurpose,
+			TokenHash:       verifyTokenHash,
+			OrgInvitationID: postgres.NewOptionalText(""),
+			ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(verifyEmailTTL)),
+		}); err != nil {
+			slog.ErrorContext(ctx, "failed to create email verification token", slogx.Error(err), slog.String("customer_id", customerID))
+			telemetry.RecordError(ctx, err)
+			return "", err
+		}
+
+		if _, err = coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
+			return "", err
+		}
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -172,14 +197,16 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return "", err
 	}
 
-	s.publishEmailJob(ctx, &emailworkerv1.EmailJob{
-		Payload: &emailworkerv1.EmailJob_SignupVerifyWelcome{
-			SignupVerifyWelcome: &emailworkerv1.SignUpVerifyWelcomePayload{
-				Email: proto.String(email),
-				Token: proto.String(verifyToken),
+	if !inviteAccepted {
+		s.publishEmailJob(ctx, &emailworkerv1.EmailJob{
+			Payload: &emailworkerv1.EmailJob_SignupVerifyWelcome{
+				SignupVerifyWelcome: &emailworkerv1.SignUpVerifyWelcomePayload{
+					Email: proto.String(email),
+					Token: proto.String(verifyToken),
+				},
 			},
-		},
-	})
+		})
+	}
 
 	token, err := s.generateJWT(customerID)
 	if err != nil {
@@ -189,6 +216,17 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	}
 
 	return token, nil
+}
+
+// isInviteClientError reports whether an AcceptInviteInTx error came from
+// bad/missing/expired/wrong-email invite token input, in which case the
+// signup falls back to default-org creation. Other errors (DB failures,
+// already-a-member) propagate.
+func isInviteClientError(err error) bool {
+	return errors.Is(err, coreorgs.ErrInviteNotFound) ||
+		errors.Is(err, coreorgs.ErrInviteNotPending) ||
+		errors.Is(err, coreorgs.ErrInviteExpired) ||
+		errors.Is(err, coreorgs.ErrInviteWrongEmail)
 }
 
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (string, error) {

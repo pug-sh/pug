@@ -117,6 +117,14 @@ func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, d
 }
 
 func (s *Service) CreateProject(ctx context.Context, orgID, displayName string) (dbwrite.Project, error) {
+	return CreateProjectInTx(ctx, s.write, orgID, displayName)
+}
+
+// CreateProjectInTx is the shared body of Service.CreateProject, exposed so
+// callers with an open transaction (e.g. signup creating a default project
+// alongside the customer+org rows) can run the same insert under their own
+// tx. The handle may be tx-bound or pool-bound; behavior is identical.
+func CreateProjectInTx(ctx context.Context, w *dbwrite.Queries, orgID, displayName string) (dbwrite.Project, error) {
 	privKey, err := NewPrivateKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
@@ -129,7 +137,7 @@ func (s *Service) CreateProject(ctx context.Context, orgID, displayName string) 
 		telemetry.RecordError(ctx, err)
 		return dbwrite.Project{}, err
 	}
-	project, err := s.write.CreateProject(ctx, dbwrite.CreateProjectParams{
+	project, err := w.CreateProject(ctx, dbwrite.CreateProjectParams{
 		ID:            xid.New().String(),
 		PrivateApiKey: privKey,
 		PublicApiKey:  pubKey,

@@ -109,19 +109,6 @@ func CreateOrgWithDefaultsInTx(
 	w *dbwrite.Queries,
 	customerID, displayName string,
 ) (dbwrite.Org, error) {
-	privKey, err := projects.NewPrivateKey()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.Org{}, err
-	}
-	pubKey, err := projects.NewPublicKey()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.Org{}, err
-	}
-
 	org, err := w.CreateOrg(ctx, dbwrite.CreateOrgParams{
 		ID:          xid.New().String(),
 		DisplayName: displayName,
@@ -142,15 +129,8 @@ func CreateOrgWithDefaultsInTx(
 		return dbwrite.Org{}, err
 	}
 
-	if _, err := w.CreateProject(ctx, dbwrite.CreateProjectParams{
-		ID:            xid.New().String(),
-		OrgID:         org.ID,
-		DisplayName:   "default",
-		PrivateApiKey: privKey,
-		PublicApiKey:  pubKey,
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to create default project", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
+	if _, err := projects.CreateProjectInTx(ctx, w, org.ID, "default"); err != nil {
+		// projects.CreateProjectInTx logs + records at source.
 		return dbwrite.Org{}, err
 	}
 	return org, nil
@@ -472,70 +452,8 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		}
 	}()
 
-	r := dbread.New(tx)
-	w := dbwrite.New(tx)
-
-	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
-		TokenHash: hashInviteToken(token),
-		Purpose:   orgInvitePurpose,
-	})
+	orgID, err := AcceptInviteInTx(ctx, dbread.New(tx), dbwrite.New(tx), token, customerID, customerEmail)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return dbread.Org{}, ErrInviteNotFound
-		}
-		slog.ErrorContext(ctx, "failed to get org invite token", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-	if !emailToken.OrgInvitationID.Valid {
-		return dbread.Org{}, ErrInviteNotFound
-	}
-
-	inv, err := w.GetOrgInvitationByIDForUpdate(ctx, emailToken.OrgInvitationID.String)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return dbread.Org{}, ErrInviteNotFound
-		}
-		slog.ErrorContext(ctx, "failed to get org invitation by id", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-
-	if !strings.EqualFold(inv.Email, customerEmail) {
-		return dbread.Org{}, ErrInviteWrongEmail
-	}
-	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
-		return dbread.Org{}, ErrInviteNotPending
-	}
-	if time.Now().After(inv.ExpiresAt.Time) {
-		return dbread.Org{}, ErrInviteExpired
-	}
-
-	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID:      inv.OrgID,
-		CustomerID: customerID,
-		Role:       RoleMember.String(),
-	}); err != nil {
-		if isUniqueViolationOn(err, orgMembersPKey) {
-			return dbread.Org{}, ErrAlreadyMember
-		}
-		slog.ErrorContext(ctx, "failed to create org member on invite accept", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-
-	if _, err := w.UpdateOrgInvitationStatus(ctx, dbwrite.UpdateOrgInvitationStatusParams{
-		ID:     inv.ID,
-		Status: orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String(),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to update invitation status", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-
-	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		slog.ErrorContext(ctx, "failed to consume org invite token", slogx.Error(err), slog.String("token_id", emailToken.ID))
-		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
 
@@ -546,9 +464,9 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 	}
 
 	// Read from write pool to avoid read-replica lag after the commit.
-	wOrg, err := s.write.GetOrgByID(ctx, inv.OrgID)
+	wOrg, err := s.write.GetOrgByID(ctx, orgID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("org_id", inv.OrgID))
+		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
@@ -558,6 +476,88 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		CreateTime:  wOrg.CreateTime,
 		UpdateTime:  wOrg.UpdateTime,
 	}, nil
+}
+
+// AcceptInviteInTx performs the invite-acceptance side effects (member insert,
+// invitation status flip, email-action-token consumption) using the given
+// queries handles. Caller owns the tx lifecycle.
+//
+// Returns the org_id the customer was added to so callers can chain follow-up
+// work (e.g. fetching the org row outside the tx after commit) without an
+// extra lookup. Returns one of ErrInviteNotFound, ErrInviteNotPending,
+// ErrInviteExpired, ErrInviteWrongEmail, ErrAlreadyMember for client-input
+// failures; all other errors are logged + recorded at source.
+func AcceptInviteInTx(
+	ctx context.Context,
+	r *dbread.Queries,
+	w *dbwrite.Queries,
+	token, customerID, customerEmail string,
+) (string, error) {
+	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+		TokenHash: hashInviteToken(token),
+		Purpose:   orgInvitePurpose,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrInviteNotFound
+		}
+		slog.ErrorContext(ctx, "failed to get org invite token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	if !emailToken.OrgInvitationID.Valid {
+		return "", ErrInviteNotFound
+	}
+
+	inv, err := w.GetOrgInvitationByIDForUpdate(ctx, emailToken.OrgInvitationID.String)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrInviteNotFound
+		}
+		slog.ErrorContext(ctx, "failed to get org invitation by id", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	if !strings.EqualFold(inv.Email, customerEmail) {
+		return "", ErrInviteWrongEmail
+	}
+	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
+		return "", ErrInviteNotPending
+	}
+	if time.Now().After(inv.ExpiresAt.Time) {
+		return "", ErrInviteExpired
+	}
+
+	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      inv.OrgID,
+		CustomerID: customerID,
+		Role:       RoleMember.String(),
+	}); err != nil {
+		if isUniqueViolationOn(err, orgMembersPKey) {
+			return "", ErrAlreadyMember
+		}
+		slog.ErrorContext(ctx, "failed to create org member on invite accept", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	if _, err := w.UpdateOrgInvitationStatus(ctx, dbwrite.UpdateOrgInvitationStatusParams{
+		ID:     inv.ID,
+		Status: orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String(),
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to update invitation status", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.ErrorContext(ctx, "failed to consume org invite token", slogx.Error(err), slog.String("token_id", emailToken.ID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	return inv.OrgID, nil
 }
 
 func (s *Service) ListInvitations(ctx context.Context, orgID string) ([]dbread.OrgInvitation, error) {

@@ -27,7 +27,7 @@ func (s *server) SignUpWithEmail(
 	ctx context.Context,
 	req *connect.Request[authv1.SignUpWithEmailRequest],
 ) (*connect.Response[authv1.SignUpWithEmailResponse], error) {
-	token, err := s.service.SignUpWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword())
+	token, err := s.service.SignUpWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword(), req.Msg.GetInviteToken())
 	if err != nil {
 		if errors.Is(err, coreauth.ErrEmailAlreadyExists) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("user with this email already exists"))

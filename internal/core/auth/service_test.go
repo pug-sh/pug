@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/core/auth"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
@@ -62,7 +63,7 @@ func TestAuthService(t *testing.T) {
 	var resetToken string
 
 	t.Run("SignUpWithEmail", func(t *testing.T) {
-		token, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123")
+		token, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123", "")
 		if err != nil {
 			t.Fatalf("SignUpWithEmail: %v", err)
 		}
@@ -128,7 +129,7 @@ func TestAuthService(t *testing.T) {
 	})
 
 	t.Run("SignUpWithEmail_duplicate", func(t *testing.T) {
-		if _, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123"); err == nil {
+		if _, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123", ""); err == nil {
 			t.Fatal("expected error for duplicate email")
 		} else if !errors.Is(err, auth.ErrEmailAlreadyExists) {
 			t.Fatalf("expected ErrEmailAlreadyExists, got %v", err)
@@ -295,7 +296,7 @@ func TestSignUpWithEmailCountsPublishFailure(t *testing.T) {
 	ctx := context.Background()
 
 	const email = "publish-failure@example.com"
-	token, err := svc.SignUpWithEmail(ctx, email, "password123")
+	token, err := svc.SignUpWithEmail(ctx, email, "password123", "")
 	if err != nil {
 		t.Fatalf("SignUpWithEmail should swallow publish failure, got: %v", err)
 	}
@@ -383,7 +384,7 @@ func TestEmailActionTokenPurposeIsolation(t *testing.T) {
 
 	t.Run("verify_email_rejects_reset_password_token", func(t *testing.T) {
 		const email = "purpose-1@example.com"
-		if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
+		if _, err := svc.SignUpWithEmail(ctx, email, "password123", ""); err != nil {
 			t.Fatalf("SignUpWithEmail: %v", err)
 		}
 		// Drain the welcome verify token.
@@ -404,7 +405,7 @@ func TestEmailActionTokenPurposeIsolation(t *testing.T) {
 
 	t.Run("reset_password_rejects_verify_email_token", func(t *testing.T) {
 		const email = "purpose-2@example.com"
-		if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
+		if _, err := svc.SignUpWithEmail(ctx, email, "password123", ""); err != nil {
 			t.Fatalf("SignUpWithEmail: %v", err)
 		}
 		verifyTok := publisher.jobs[len(publisher.jobs)-1].job.GetSignupVerifyWelcome().GetToken()
@@ -431,7 +432,7 @@ func TestEmailActionTokenExpiredRejection(t *testing.T) {
 	ctx := context.Background()
 
 	const email = "expired@example.com"
-	if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
+	if _, err := svc.SignUpWithEmail(ctx, email, "password123", ""); err != nil {
 		t.Fatalf("SignUpWithEmail: %v", err)
 	}
 	customer, err := dbread.New(db.PgW).GetCustomerByEmail(ctx, email)
@@ -468,4 +469,159 @@ func TestEmailActionTokenExpiredRejection(t *testing.T) {
 			t.Fatalf("expected ErrInvalidToken for expired reset token, got %v", err)
 		}
 	})
+}
+
+// TestSignUpWithEmail_InviteHappyPath pins the invite-driven signup contract:
+// a valid invite_token at signup adds the new customer to the invited org as
+// MEMBER, auto-verifies their email (inbox access proved by invite delivery),
+// and skips both the default-org creation and the verification email job.
+// A regression that re-introduced the default org would show up as either
+// extra org_members rows or a SignupVerifyWelcome publish.
+func TestSignUpWithEmail_InviteHappyPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	ctx := context.Background()
+
+	// Separate publisher for the orgs service so the invite-email publish
+	// doesn't pollute the auth publisher's job list.
+	orgsPub := &stubPublisher{}
+	orgSvc := coreorgs.NewService(db.PgRO, db.PgW, orgsPub)
+
+	inviterEmail := "inviter-" + xid.New().String() + "@example.com"
+	inviterID := xid.New().String()
+	write := dbwrite.New(db.PgW)
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: inviterID, Email: inviterEmail, DisplayName: "Inviter", PasswordHash: "hash",
+	}); err != nil {
+		t.Fatalf("CreateCustomer inviter: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID: xid.New().String(), DisplayName: "Acme",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: inviterID, Role: orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	inviteeEmail := "invitee-" + xid.New().String() + "@example.com"
+	inv, err := orgSvc.InviteMember(ctx, org.ID, inviterID, inviteeEmail)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+
+	authPub := &stubPublisher{}
+	authSvc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), authPub)
+
+	if _, err := authSvc.SignUpWithEmail(ctx, inviteeEmail, "password123", inv.Token); err != nil {
+		t.Fatalf("SignUpWithEmail with invite token: %v", err)
+	}
+
+	read := dbread.New(db.PgW)
+	customer, err := read.GetCustomerByEmail(ctx, inviteeEmail)
+	if err != nil {
+		t.Fatalf("GetCustomerByEmail: %v", err)
+	}
+	if !customer.EmailVerifiedAt.Valid {
+		t.Fatal("expected invite-driven signup to auto-verify email")
+	}
+
+	// Exactly one membership row, in the invited org, role MEMBER.
+	var memberRole string
+	var memberOrgID string
+	if err := db.PgW.QueryRow(ctx,
+		`select org_id, role from org_members where customer_id = $1`,
+		customer.ID,
+	).Scan(&memberOrgID, &memberRole); err != nil {
+		t.Fatalf("scan membership: %v", err)
+	}
+	if memberOrgID != org.ID {
+		t.Fatalf("membership org_id = %q, want %q", memberOrgID, org.ID)
+	}
+	if memberRole != orgsv1.OrgRole_ORG_ROLE_MEMBER.String() {
+		t.Fatalf("membership role = %q, want MEMBER", memberRole)
+	}
+
+	// No second org created for the invitee — the invited org has one project
+	// from before-signup setup (zero in our case), but the invitee should have
+	// zero "default" projects of their own.
+	var defaultProjects int
+	if err := db.PgW.QueryRow(ctx,
+		`select count(*) from projects p
+		 join org_members m on m.org_id = p.org_id
+		 where m.customer_id = $1 and p.display_name = 'default'`,
+		customer.ID,
+	).Scan(&defaultProjects); err != nil {
+		t.Fatalf("scan default projects: %v", err)
+	}
+	if defaultProjects != 0 {
+		t.Fatalf("expected 0 default projects for invite-driven signup, got %d", defaultProjects)
+	}
+
+	// No verification email job published — invite delivery already proved
+	// inbox access.
+	for _, j := range authPub.jobs {
+		if j.job.GetSignupVerifyWelcome() != nil {
+			t.Fatal("invite-driven signup must not publish SignupVerifyWelcome")
+		}
+	}
+}
+
+// TestSignUpWithEmail_InviteFallback pins the bad-token fallback path: an
+// invalid invite_token (token never existed) is treated as if no token was
+// passed — customer is created, default org+project seeded, verification
+// email queued. The customer is NOT auto-verified because invite-delivery
+// proof did not actually happen.
+func TestSignUpWithEmail_InviteFallback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	ctx := context.Background()
+	pub := &stubPublisher{}
+	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+
+	email := "fallback-" + xid.New().String() + "@example.com"
+	if _, err := svc.SignUpWithEmail(ctx, email, "password123", "this-token-does-not-exist"); err != nil {
+		t.Fatalf("SignUpWithEmail with bad invite token: %v", err)
+	}
+
+	read := dbread.New(db.PgW)
+	customer, err := read.GetCustomerByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("GetCustomerByEmail: %v", err)
+	}
+	if customer.EmailVerifiedAt.Valid {
+		t.Fatal("fallback signup must not auto-verify email — invite was bogus")
+	}
+
+	var defaultProjects int
+	if err := db.PgW.QueryRow(ctx,
+		`select count(*) from projects p
+		 join org_members m on m.org_id = p.org_id
+		 where m.customer_id = $1 and p.display_name = 'default'`,
+		customer.ID,
+	).Scan(&defaultProjects); err != nil {
+		t.Fatalf("scan default projects: %v", err)
+	}
+	if defaultProjects != 1 {
+		t.Fatalf("expected 1 default project on fallback, got %d", defaultProjects)
+	}
+
+	var verifyJobs int
+	for _, j := range pub.jobs {
+		if j.job.GetSignupVerifyWelcome() != nil {
+			verifyJobs++
+		}
+	}
+	if verifyJobs != 1 {
+		t.Fatalf("expected 1 SignupVerifyWelcome publish on fallback, got %d", verifyJobs)
+	}
 }
