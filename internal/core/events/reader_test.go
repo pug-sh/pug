@@ -420,13 +420,13 @@ func TestGetActivityFeed(t *testing.T) {
 			ProjectID:  "proj-1",
 			DistinctID: "user-1",
 		})
-			if err != nil {
-				t.Fatalf("GetActivityFeed: %v", err)
-			}
-			if len(evts) != 7 {
-				t.Fatalf("expected 7 events with default page size, got %d", len(evts))
-			}
-		})
+		if err != nil {
+			t.Fatalf("GetActivityFeed: %v", err)
+		}
+		if len(evts) != 7 {
+			t.Fatalf("expected 7 events with default page size, got %d", len(evts))
+		}
+	})
 
 	t.Run("negative page size defaults to 100", func(t *testing.T) {
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
@@ -434,14 +434,14 @@ func TestGetActivityFeed(t *testing.T) {
 			DistinctID: "user-1",
 			PageSize:   -5,
 		})
-			if err != nil {
-				t.Fatalf("GetActivityFeed: %v", err)
-			}
-			// Default 100 is applied, we only have 7 events
-			if len(evts) != 7 {
-				t.Fatalf("expected 7 events with negative page size, got %d", len(evts))
-			}
-		})
+		if err != nil {
+			t.Fatalf("GetActivityFeed: %v", err)
+		}
+		// Default 100 is applied, we only have 7 events
+		if len(evts) != 7 {
+			t.Fatalf("expected 7 events with negative page size, got %d", len(evts))
+		}
+	})
 
 	t.Run("page size capped at max", func(t *testing.T) {
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
@@ -449,14 +449,14 @@ func TestGetActivityFeed(t *testing.T) {
 			DistinctID: "user-1",
 			PageSize:   5000,
 		})
-			if err != nil {
-				t.Fatalf("GetActivityFeed: %v", err)
-			}
-			// Capped to 1000, we only have 7 events so all returned
-			if len(evts) != 7 {
-				t.Fatalf("expected 7 events with capped page size, got %d", len(evts))
-			}
-		})
+		if err != nil {
+			t.Fatalf("GetActivityFeed: %v", err)
+		}
+		// Capped to 1000, we only have 7 events so all returned
+		if len(evts) != 7 {
+			t.Fatalf("expected 7 events with capped page size, got %d", len(evts))
+		}
+	})
 
 	t.Run("empty for nonexistent profile", func(t *testing.T) {
 		evts, cursor, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
