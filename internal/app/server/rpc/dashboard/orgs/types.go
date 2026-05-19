@@ -43,9 +43,9 @@ func toRPCInvitationStatus(ctx context.Context, status string) orgsv1.Invitation
 	return orgsv1.InvitationStatus_INVITATION_STATUS_UNSPECIFIED
 }
 
-// toRPCInvitation includes the Token field — use only for InviteMember responses
-// where the admin needs the token to share the invite link. For list responses,
-// use toRPCInvitationRO which omits the token to prevent leakage.
+// toRPCInvitation intentionally omits the raw token. Invite acceptance is
+// driven by the emailed link only; dashboard APIs must never expose a
+// redeemable invite token.
 func toRPCInvitation(ctx context.Context, inv dbwrite.OrgInvitation) *orgsv1.OrgInvitation {
 	var expiresAt string
 	if inv.ExpiresAt.Valid {
@@ -57,7 +57,6 @@ func toRPCInvitation(ctx context.Context, inv dbwrite.OrgInvitation) *orgsv1.Org
 		Id:        proto.String(inv.ID),
 		OrgId:     proto.String(inv.OrgID),
 		Status:    toRPCInvitationStatus(ctx, inv.Status).Enum(),
-		Token:     proto.String(inv.Token),
 	}
 }
 

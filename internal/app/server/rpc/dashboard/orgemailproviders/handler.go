@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5"
+	"github.com/rs/xid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
@@ -235,7 +236,7 @@ func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprov
 			errors.New("test recipient must match the calling admin's email"))
 	}
 
-	idempotencyKey := "send_test:" + req.Msg.GetOrgId() + ":" + req.Msg.GetRecipient()
+	idempotencyKey := "send_test:" + req.Msg.GetOrgId() + ":" + req.Msg.GetRecipient() + ":" + xid.New().String()
 	if err := s.mailer.SendTest(ctx, req.Msg.GetOrgId(), req.Msg.GetRecipient(), idempotencyKey); err != nil {
 		errMsg := classifySendTestError(err)
 		return connect.NewResponse(&orgemailprovidersv1.SendTestResponse{

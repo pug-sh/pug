@@ -45,6 +45,7 @@ func init() {
 var (
 	ErrAlreadyMember        = errors.New("already a member of this org")
 	ErrInviteAlreadyPending = errors.New("a pending invitation already exists for this email")
+	ErrInviteDeliveryFailed = errors.New("failed to queue invite email")
 	ErrInviteExpired        = errors.New("invitation has expired")
 	ErrInviteNotFound       = errors.New("invitation not found")
 	ErrInviteNotPending     = errors.New("invitation is not pending")
@@ -68,6 +69,11 @@ type Service struct {
 
 type jobPublisher interface {
 	Publish(ctx context.Context, subject string, data []byte) error
+}
+
+type InviteDispatch struct {
+	Invitation dbwrite.OrgInvitation
+	RawToken   string
 }
 
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher jobPublisher) *Service {
@@ -191,19 +197,12 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 	return nil
 }
 
-func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email string) (dbwrite.OrgInvitation, error) {
-	token, err := newInviteToken()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate invite token", slogx.Error(err),
-			slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.OrgInvitation{}, fmt.Errorf("generate invite token: %w", err)
-	}
+func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email string) (InviteDispatch, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin invite member transaction", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return dbwrite.OrgInvitation{}, err
+		return InviteDispatch{}, err
 	}
 	defer func() {
 		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
@@ -213,52 +212,124 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 	}()
 
 	w := dbwrite.New(tx)
+	storageToken, err := newInviteStorageToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate invite storage token", slogx.Error(err),
+			slog.String("org_id", orgID))
+		telemetry.RecordError(ctx, err)
+		return InviteDispatch{}, fmt.Errorf("generate invite storage token: %w", err)
+	}
 	inv, err := w.CreateOrgInvitation(ctx, dbwrite.CreateOrgInvitationParams{
 		ID:        xid.New().String(),
 		OrgID:     orgID,
 		InviterID: postgres.NewOptionalText(inviterID),
 		Email:     email,
-		Token:     token,
+		Token:     storageToken,
 		ExpiresAt: postgres.NewTimestamptz(time.Now().Add(inviteTTL)),
 	})
 	if err != nil {
 		// The CTE checks org_members joined with customers by email. ErrNoRows means
 		// the INSERT was skipped because the email already belongs to an org member.
 		if errors.Is(err, pgx.ErrNoRows) {
-			return dbwrite.OrgInvitation{}, ErrAlreadyMember
+			return InviteDispatch{}, ErrAlreadyMember
 		}
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			return dbwrite.OrgInvitation{}, ErrInviteAlreadyPending
+			return InviteDispatch{}, ErrInviteAlreadyPending
 		}
 		slog.ErrorContext(ctx, "failed to create org invitation", slogx.Error(err),
 			slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
-		return dbwrite.OrgInvitation{}, err
+		return InviteDispatch{}, err
 	}
 
-	if _, err := w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
-		ID:              xid.New().String(),
-		CustomerID:      postgres.NewOptionalText(""),
-		Email:           email,
-		Purpose:         orgInvitePurpose,
-		TokenHash:       hashInviteToken(token),
-		OrgInvitationID: postgres.NewOptionalText(inv.ID),
-		ExpiresAt:       postgres.NewTimestamptz(inv.ExpiresAt.Time),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to create org invite email token", slogx.Error(err), slog.String("org_id", orgID), slog.String("invitation_id", inv.ID))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.OrgInvitation{}, err
+	rawToken, err := s.issueInviteEmailToken(ctx, w, inv)
+	if err != nil {
+		return InviteDispatch{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed to commit invite member transaction", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
-		return dbwrite.OrgInvitation{}, err
+		return InviteDispatch{}, err
 	}
 
-	s.publishInviteEmailJob(ctx, inv, token)
-	return inv, nil
+	s.publishInviteEmailJob(ctx, inv, rawToken)
+	return InviteDispatch{Invitation: inv, RawToken: rawToken}, nil
+}
+
+func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) (InviteDispatch, error) {
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin resend invite transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return InviteDispatch{}, err
+	}
+	defer func() {
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back resend invite transaction", slogx.Error(rollbackErr))
+			telemetry.RecordError(ctx, rollbackErr)
+		}
+	}()
+
+	w := dbwrite.New(tx)
+	inv, err := w.GetOrgInvitationByIDForUpdate(ctx, invitationID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return InviteDispatch{}, ErrInviteNotFound
+		}
+		slog.ErrorContext(ctx, "failed to get org invitation for resend", slogx.Error(err), slog.String("invitation_id", invitationID))
+		telemetry.RecordError(ctx, err)
+		return InviteDispatch{}, err
+	}
+	if inv.OrgID != orgID {
+		return InviteDispatch{}, ErrInviteNotFound
+	}
+	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
+		return InviteDispatch{}, ErrInviteNotPending
+	}
+
+	storageToken, err := newInviteStorageToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate invite storage token", slogx.Error(err),
+			slog.String("invitation_id", invitationID))
+		telemetry.RecordError(ctx, err)
+		return InviteDispatch{}, fmt.Errorf("generate invite storage token: %w", err)
+	}
+
+	inv, err = w.RefreshOrgInvitationDelivery(ctx, dbwrite.RefreshOrgInvitationDeliveryParams{
+		ID:        inv.ID,
+		ExpiresAt: postgres.NewTimestamptz(time.Now().Add(inviteTTL)),
+		Token:     storageToken,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to refresh org invitation delivery", slogx.Error(err), slog.String("invitation_id", invitationID))
+		telemetry.RecordError(ctx, err)
+		return InviteDispatch{}, err
+	}
+
+	if _, err := w.InvalidateActiveEmailActionTokensByInvitation(ctx, dbwrite.InvalidateActiveEmailActionTokensByInvitationParams{
+		OrgInvitationID: postgres.NewOptionalText(inv.ID),
+		Purpose:         orgInvitePurpose,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to invalidate org invite tokens", slogx.Error(err), slog.String("invitation_id", inv.ID))
+		telemetry.RecordError(ctx, err)
+		return InviteDispatch{}, err
+	}
+
+	rawToken, err := s.issueInviteEmailToken(ctx, w, inv)
+	if err != nil {
+		return InviteDispatch{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit resend invite transaction", slogx.Error(err), slog.String("invitation_id", invitationID))
+		telemetry.RecordError(ctx, err)
+		return InviteDispatch{}, err
+	}
+
+	s.publishInviteEmailJob(ctx, inv, rawToken)
+	return InviteDispatch{Invitation: inv, RawToken: rawToken}, nil
 }
 
 func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerEmail string) (dbread.Org, error) {
@@ -374,6 +445,34 @@ func newInviteToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func newInviteStorageToken() (string, error) {
+	return newInviteToken()
+}
+
+func (s *Service) issueInviteEmailToken(ctx context.Context, w *dbwrite.Queries, inv dbwrite.OrgInvitation) (string, error) {
+	rawToken, err := newInviteToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate invite token", slogx.Error(err),
+			slog.String("org_id", inv.OrgID), slog.String("invitation_id", inv.ID))
+		telemetry.RecordError(ctx, err)
+		return "", fmt.Errorf("generate invite token: %w", err)
+	}
+	if _, err := w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
+		ID:              xid.New().String(),
+		CustomerID:      postgres.NewOptionalText(""),
+		Email:           inv.Email,
+		Purpose:         orgInvitePurpose,
+		TokenHash:       hashInviteToken(rawToken),
+		OrgInvitationID: postgres.NewOptionalText(inv.ID),
+		ExpiresAt:       postgres.NewTimestamptz(inv.ExpiresAt.Time),
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to create org invite email token", slogx.Error(err), slog.String("org_id", inv.OrgID), slog.String("invitation_id", inv.ID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	return rawToken, nil
 }
 
 func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvitation, token string) {

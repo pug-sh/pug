@@ -868,6 +868,102 @@ func (x *InviteMemberResponse) GetInvitation() *OrgInvitation {
 	return nil
 }
 
+type ResendInviteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InvitationId  *string                `protobuf:"bytes,1,opt,name=invitation_id,json=invitationId" json:"invitation_id,omitempty"`
+	OrgId         *string                `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResendInviteRequest) Reset() {
+	*x = ResendInviteRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResendInviteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResendInviteRequest) ProtoMessage() {}
+
+func (x *ResendInviteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResendInviteRequest.ProtoReflect.Descriptor instead.
+func (*ResendInviteRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ResendInviteRequest) GetInvitationId() string {
+	if x != nil && x.InvitationId != nil {
+		return *x.InvitationId
+	}
+	return ""
+}
+
+func (x *ResendInviteRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+type ResendInviteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Invitation    *OrgInvitation         `protobuf:"bytes,1,opt,name=invitation" json:"invitation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResendInviteResponse) Reset() {
+	*x = ResendInviteResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResendInviteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResendInviteResponse) ProtoMessage() {}
+
+func (x *ResendInviteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResendInviteResponse.ProtoReflect.Descriptor instead.
+func (*ResendInviteResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ResendInviteResponse) GetInvitation() *OrgInvitation {
+	if x != nil {
+		return x.Invitation
+	}
+	return nil
+}
+
 type AcceptInviteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
@@ -877,7 +973,7 @@ type AcceptInviteRequest struct {
 
 func (x *AcceptInviteRequest) Reset() {
 	*x = AcceptInviteRequest{}
-	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[15]
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -889,7 +985,7 @@ func (x *AcceptInviteRequest) String() string {
 func (*AcceptInviteRequest) ProtoMessage() {}
 
 func (x *AcceptInviteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[15]
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -902,7 +998,7 @@ func (x *AcceptInviteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInviteRequest.ProtoReflect.Descriptor instead.
 func (*AcceptInviteRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{15}
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *AcceptInviteRequest) GetToken() string {
@@ -921,7 +1017,7 @@ type AcceptInviteResponse struct {
 
 func (x *AcceptInviteResponse) Reset() {
 	*x = AcceptInviteResponse{}
-	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[16]
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -933,7 +1029,7 @@ func (x *AcceptInviteResponse) String() string {
 func (*AcceptInviteResponse) ProtoMessage() {}
 
 func (x *AcceptInviteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[16]
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -946,7 +1042,7 @@ func (x *AcceptInviteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInviteResponse.ProtoReflect.Descriptor instead.
 func (*AcceptInviteResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{16}
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AcceptInviteResponse) GetOrg() *Org {
@@ -965,7 +1061,7 @@ type ListInvitationsRequest struct {
 
 func (x *ListInvitationsRequest) Reset() {
 	*x = ListInvitationsRequest{}
-	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[17]
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -977,7 +1073,7 @@ func (x *ListInvitationsRequest) String() string {
 func (*ListInvitationsRequest) ProtoMessage() {}
 
 func (x *ListInvitationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[17]
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -990,7 +1086,7 @@ func (x *ListInvitationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvitationsRequest.ProtoReflect.Descriptor instead.
 func (*ListInvitationsRequest) Descriptor() ([]byte, []int) {
-	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{17}
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListInvitationsRequest) GetOrgId() string {
@@ -1009,7 +1105,7 @@ type ListInvitationsResponse struct {
 
 func (x *ListInvitationsResponse) Reset() {
 	*x = ListInvitationsResponse{}
-	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[18]
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1021,7 +1117,7 @@ func (x *ListInvitationsResponse) String() string {
 func (*ListInvitationsResponse) ProtoMessage() {}
 
 func (x *ListInvitationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[18]
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1034,7 +1130,7 @@ func (x *ListInvitationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvitationsResponse.ProtoReflect.Descriptor instead.
 func (*ListInvitationsResponse) Descriptor() ([]byte, []int) {
-	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{18}
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ListInvitationsResponse) GetInvitations() []*OrgInvitation {
@@ -1096,6 +1192,13 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x14InviteMemberResponse\x12@\n" +
 	"\n" +
 	"invitation\x18\x01 \x01(\v2 .dashboard.orgs.v1.OrgInvitationR\n" +
+	"invitation\"a\n" +
+	"\x13ResendInviteRequest\x12+\n" +
+	"\rinvitation_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\finvitationId\x12\x1d\n" +
+	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"X\n" +
+	"\x14ResendInviteResponse\x12@\n" +
+	"\n" +
+	"invitation\x18\x01 \x01(\v2 .dashboard.orgs.v1.OrgInvitationR\n" +
 	"invitation\"3\n" +
 	"\x13AcceptInviteRequest\x12\x1c\n" +
 	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\"@\n" +
@@ -1112,7 +1215,7 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x10InvitationStatus\x12!\n" +
 	"\x1dINVITATION_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19INVITATION_STATUS_PENDING\x10\x01\x12\x1e\n" +
-	"\x1aINVITATION_STATUS_ACCEPTED\x10\x022\x87\x06\n" +
+	"\x1aINVITATION_STATUS_ACCEPTED\x10\x022\xea\x06\n" +
 	"\vOrgsService\x12I\n" +
 	"\x04List\x12\x1e.dashboard.orgs.v1.ListRequest\x1a\x1f.dashboard.orgs.v1.ListResponse\"\x00\x12F\n" +
 	"\x03Get\x12\x1d.dashboard.orgs.v1.GetRequest\x1a\x1e.dashboard.orgs.v1.GetResponse\"\x00\x12p\n" +
@@ -1120,6 +1223,7 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\vListMembers\x12%.dashboard.orgs.v1.ListMembersRequest\x1a&.dashboard.orgs.v1.ListMembersResponse\"\x00\x12a\n" +
 	"\fRemoveMember\x12&.dashboard.orgs.v1.RemoveMemberRequest\x1a'.dashboard.orgs.v1.RemoveMemberResponse\"\x00\x12a\n" +
 	"\fInviteMember\x12&.dashboard.orgs.v1.InviteMemberRequest\x1a'.dashboard.orgs.v1.InviteMemberResponse\"\x00\x12a\n" +
+	"\fResendInvite\x12&.dashboard.orgs.v1.ResendInviteRequest\x1a'.dashboard.orgs.v1.ResendInviteResponse\"\x00\x12a\n" +
 	"\fAcceptInvite\x12&.dashboard.orgs.v1.AcceptInviteRequest\x1a'.dashboard.orgs.v1.AcceptInviteResponse\"\x00\x12j\n" +
 	"\x0fListInvitations\x12).dashboard.orgs.v1.ListInvitationsRequest\x1a*.dashboard.orgs.v1.ListInvitationsResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
 
@@ -1136,7 +1240,7 @@ func file_dashboard_orgs_v1_orgs_proto_rawDescGZIP() []byte {
 }
 
 var file_dashboard_orgs_v1_orgs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_dashboard_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_dashboard_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_dashboard_orgs_v1_orgs_proto_goTypes = []any{
 	(OrgRole)(0),                      // 0: dashboard.orgs.v1.OrgRole
 	(InvitationStatus)(0),             // 1: dashboard.orgs.v1.InvitationStatus
@@ -1155,10 +1259,12 @@ var file_dashboard_orgs_v1_orgs_proto_goTypes = []any{
 	(*RemoveMemberResponse)(nil),      // 14: dashboard.orgs.v1.RemoveMemberResponse
 	(*InviteMemberRequest)(nil),       // 15: dashboard.orgs.v1.InviteMemberRequest
 	(*InviteMemberResponse)(nil),      // 16: dashboard.orgs.v1.InviteMemberResponse
-	(*AcceptInviteRequest)(nil),       // 17: dashboard.orgs.v1.AcceptInviteRequest
-	(*AcceptInviteResponse)(nil),      // 18: dashboard.orgs.v1.AcceptInviteResponse
-	(*ListInvitationsRequest)(nil),    // 19: dashboard.orgs.v1.ListInvitationsRequest
-	(*ListInvitationsResponse)(nil),   // 20: dashboard.orgs.v1.ListInvitationsResponse
+	(*ResendInviteRequest)(nil),       // 17: dashboard.orgs.v1.ResendInviteRequest
+	(*ResendInviteResponse)(nil),      // 18: dashboard.orgs.v1.ResendInviteResponse
+	(*AcceptInviteRequest)(nil),       // 19: dashboard.orgs.v1.AcceptInviteRequest
+	(*AcceptInviteResponse)(nil),      // 20: dashboard.orgs.v1.AcceptInviteResponse
+	(*ListInvitationsRequest)(nil),    // 21: dashboard.orgs.v1.ListInvitationsRequest
+	(*ListInvitationsResponse)(nil),   // 22: dashboard.orgs.v1.ListInvitationsResponse
 }
 var file_dashboard_orgs_v1_orgs_proto_depIdxs = []int32{
 	0,  // 0: dashboard.orgs.v1.OrgMember.role:type_name -> dashboard.orgs.v1.OrgRole
@@ -1168,29 +1274,32 @@ var file_dashboard_orgs_v1_orgs_proto_depIdxs = []int32{
 	2,  // 4: dashboard.orgs.v1.UpdateDisplayNameResponse.org:type_name -> dashboard.orgs.v1.Org
 	3,  // 5: dashboard.orgs.v1.ListMembersResponse.members:type_name -> dashboard.orgs.v1.OrgMember
 	4,  // 6: dashboard.orgs.v1.InviteMemberResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
-	2,  // 7: dashboard.orgs.v1.AcceptInviteResponse.org:type_name -> dashboard.orgs.v1.Org
-	4,  // 8: dashboard.orgs.v1.ListInvitationsResponse.invitations:type_name -> dashboard.orgs.v1.OrgInvitation
-	5,  // 9: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
-	7,  // 10: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
-	9,  // 11: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
-	11, // 12: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
-	13, // 13: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
-	15, // 14: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
-	17, // 15: dashboard.orgs.v1.OrgsService.AcceptInvite:input_type -> dashboard.orgs.v1.AcceptInviteRequest
-	19, // 16: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
-	6,  // 17: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
-	8,  // 18: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
-	10, // 19: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
-	12, // 20: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
-	14, // 21: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
-	16, // 22: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
-	18, // 23: dashboard.orgs.v1.OrgsService.AcceptInvite:output_type -> dashboard.orgs.v1.AcceptInviteResponse
-	20, // 24: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
-	17, // [17:25] is the sub-list for method output_type
-	9,  // [9:17] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	4,  // 7: dashboard.orgs.v1.ResendInviteResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
+	2,  // 8: dashboard.orgs.v1.AcceptInviteResponse.org:type_name -> dashboard.orgs.v1.Org
+	4,  // 9: dashboard.orgs.v1.ListInvitationsResponse.invitations:type_name -> dashboard.orgs.v1.OrgInvitation
+	5,  // 10: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
+	7,  // 11: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
+	9,  // 12: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
+	11, // 13: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
+	13, // 14: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
+	15, // 15: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
+	17, // 16: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
+	19, // 17: dashboard.orgs.v1.OrgsService.AcceptInvite:input_type -> dashboard.orgs.v1.AcceptInviteRequest
+	21, // 18: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
+	6,  // 19: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
+	8,  // 20: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
+	10, // 21: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
+	12, // 22: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
+	14, // 23: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
+	16, // 24: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
+	18, // 25: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
+	20, // 26: dashboard.orgs.v1.OrgsService.AcceptInvite:output_type -> dashboard.orgs.v1.AcceptInviteResponse
+	22, // 27: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
+	19, // [19:28] is the sub-list for method output_type
+	10, // [10:19] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_orgs_v1_orgs_proto_init() }
@@ -1204,7 +1313,7 @@ func file_dashboard_orgs_v1_orgs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_orgs_v1_orgs_proto_rawDesc), len(file_dashboard_orgs_v1_orgs_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

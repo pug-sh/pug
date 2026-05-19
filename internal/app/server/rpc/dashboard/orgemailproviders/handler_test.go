@@ -774,11 +774,13 @@ func (r *alwaysFailingResolver) Resolve(context.Context, *string) (coreemail.Pro
 
 type capturingProvider struct {
 	got   coreemail.Message
+	all   []coreemail.Message
 	calls int
 }
 
 func (p *capturingProvider) Send(_ context.Context, msg coreemail.Message) error {
 	p.got = msg
+	p.all = append(p.all, msg)
 	p.calls++
 	return nil
 }
@@ -850,6 +852,70 @@ func TestSendTestHappyPath(t *testing.T) {
 	}
 	if !strings.Contains(fake.got.Subject, "test") {
 		t.Fatalf("expected 'test' in subject, got %q", fake.got.Subject)
+	}
+}
+
+func TestSendTestUsesFreshIdempotencyKeyPerAttempt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	rds := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-happy-2", Email: "again-admin@acme.com", DisplayName: "Admin", PasswordHash: "h", PictureUri: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-happy-2", DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_ADMIN",
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	cipher := setupCipher(t)
+	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
+
+	fake := &capturingProvider{}
+	resolver := &coreemail.OperatorOnlyResolver{Provider: fake, From: "noreply@example.com"}
+	mailer, err := coreemail.NewServiceWithResolver(coreemail.Config{
+		DashboardBaseURL: "https://dashboard.example",
+		From:             "noreply@example.com",
+	}, resolver)
+	if err != nil {
+		t.Fatalf("NewServiceWithResolver: %v", err)
+	}
+
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
+	})
+	req := connect.NewRequest(&orgemailprovidersv1.SendTestRequest{
+		OrgId: strPtr(org.ID), Recipient: strPtr(customer.Email),
+	})
+
+	if _, err := srv.SendTest(ctxWithPrincipal, req); err != nil {
+		t.Fatalf("first SendTest: %v", err)
+	}
+	if _, err := srv.SendTest(ctxWithPrincipal, req); err != nil {
+		t.Fatalf("second SendTest: %v", err)
+	}
+	if fake.calls != 2 {
+		t.Fatalf("expected 2 Send calls, got %d", fake.calls)
+	}
+	if fake.all[0].IdempotencyKey == fake.all[1].IdempotencyKey {
+		t.Fatalf("expected distinct idempotency keys, got %q", fake.all[0].IdempotencyKey)
 	}
 }
 

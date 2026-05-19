@@ -71,10 +71,11 @@ func TestInviteMemberPublishesEmailJob(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	inv, err := svc.InviteMember(ctx, org.ID, customer.ID, "invitee@example.com")
+	dispatch, err := svc.InviteMember(ctx, org.ID, customer.ID, "invitee@example.com")
 	if err != nil {
 		t.Fatalf("InviteMember: %v", err)
 	}
+	inv := dispatch.Invitation
 	if pub.subject != natsdeps.MiscEmailJobsSubject {
 		t.Fatalf("subject = %q, want %q", pub.subject, natsdeps.MiscEmailJobsSubject)
 	}
@@ -85,12 +86,12 @@ func TestInviteMemberPublishesEmailJob(t *testing.T) {
 	if payload.GetInvitationId() != inv.ID {
 		t.Fatalf("invitation id = %q, want %q", payload.GetInvitationId(), inv.ID)
 	}
-	if payload.GetToken() != inv.Token {
-		t.Fatalf("token = %q, want %q", payload.GetToken(), inv.Token)
+	if payload.GetToken() != dispatch.RawToken {
+		t.Fatalf("token = %q, want %q", payload.GetToken(), dispatch.RawToken)
 	}
 
 	emailToken, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
-		TokenHash: hashToken(inv.Token),
+		TokenHash: hashToken(dispatch.RawToken),
 		Purpose:   "org_invite",
 	})
 	if err != nil {
@@ -98,6 +99,9 @@ func TestInviteMemberPublishesEmailJob(t *testing.T) {
 	}
 	if !emailToken.OrgInvitationID.Valid || emailToken.OrgInvitationID.String != inv.ID {
 		t.Fatalf("org invitation id = %v, want %q", emailToken.OrgInvitationID, inv.ID)
+	}
+	if inv.Token == dispatch.RawToken {
+		t.Fatal("invitation row stored a redeemable token")
 	}
 }
 
@@ -147,18 +151,18 @@ func TestInviteMemberPreservesOtherOrgInviteTokens(t *testing.T) {
 		}
 	}
 
-	firstInv, err := svc.InviteMember(ctx, orgA.ID, customer.ID, "invitee@example.com")
+	firstDispatch, err := svc.InviteMember(ctx, orgA.ID, customer.ID, "invitee@example.com")
 	if err != nil {
 		t.Fatalf("first InviteMember: %v", err)
 	}
-	secondInv, err := svc.InviteMember(ctx, orgB.ID, customer.ID, "invitee@example.com")
+	secondDispatch, err := svc.InviteMember(ctx, orgB.ID, customer.ID, "invitee@example.com")
 	if err != nil {
 		t.Fatalf("second InviteMember: %v", err)
 	}
 
 	for name, token := range map[string]string{
-		"first":  firstInv.Token,
-		"second": secondInv.Token,
+		"first":  firstDispatch.RawToken,
+		"second": secondDispatch.RawToken,
 	} {
 		emailToken, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
 			TokenHash: hashToken(token),
@@ -170,6 +174,90 @@ func TestInviteMemberPreservesOtherOrgInviteTokens(t *testing.T) {
 		if !emailToken.OrgInvitationID.Valid {
 			t.Fatalf("%s token missing org invitation id", name)
 		}
+	}
+}
+
+func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	pub := &stubPublisher{}
+	svc := orgs.NewService(db.PgRO, db.PgW, pub)
+	ctx := context.Background()
+
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           "cust-resend-1",
+		Email:        "inviter-resend@example.com",
+		DisplayName:  "Inviter",
+		PasswordHash: "hash",
+		PictureUri:   "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	orgA, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-resend-a", DisplayName: "Org A"})
+	if err != nil {
+		t.Fatalf("CreateOrg orgA: %v", err)
+	}
+	orgB, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-resend-b", DisplayName: "Org B"})
+	if err != nil {
+		t.Fatalf("CreateOrg orgB: %v", err)
+	}
+	for _, orgID := range []string{orgA.ID, orgB.ID} {
+		if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+			OrgID: orgID, CustomerID: customer.ID, Role: "ORG_ROLE_ADMIN",
+		}); err != nil {
+			t.Fatalf("CreateOrgMember %s: %v", orgID, err)
+		}
+	}
+
+	firstDispatch, err := svc.InviteMember(ctx, orgA.ID, customer.ID, "invitee@example.com")
+	if err != nil {
+		t.Fatalf("first InviteMember: %v", err)
+	}
+	secondDispatch, err := svc.InviteMember(ctx, orgB.ID, customer.ID, "invitee@example.com")
+	if err != nil {
+		t.Fatalf("second InviteMember: %v", err)
+	}
+
+	resendDispatch, err := svc.ResendInvite(ctx, orgA.ID, firstDispatch.Invitation.ID)
+	if err != nil {
+		t.Fatalf("ResendInvite: %v", err)
+	}
+	if resendDispatch.Invitation.ID != firstDispatch.Invitation.ID {
+		t.Fatalf("resend invitation id = %q, want %q", resendDispatch.Invitation.ID, firstDispatch.Invitation.ID)
+	}
+	if resendDispatch.RawToken == firstDispatch.RawToken {
+		t.Fatal("resend should rotate the raw invite token")
+	}
+	if pub.job == nil || pub.job.GetOrgMemberInvite() == nil {
+		t.Fatal("expected org invite job on resend")
+	}
+	if got := pub.job.GetOrgMemberInvite().GetToken(); got != resendDispatch.RawToken {
+		t.Fatalf("published token = %q, want %q", got, resendDispatch.RawToken)
+	}
+
+	if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+		TokenHash: hashToken(firstDispatch.RawToken),
+		Purpose:   "org_invite",
+	}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expected old token consumed after resend, got %v", err)
+	}
+	if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+		TokenHash: hashToken(resendDispatch.RawToken),
+		Purpose:   "org_invite",
+	}); err != nil {
+		t.Fatalf("resend token lookup: %v", err)
+	}
+	if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+		TokenHash: hashToken(secondDispatch.RawToken),
+		Purpose:   "org_invite",
+	}); err != nil {
+		t.Fatalf("other org token lookup: %v", err)
 	}
 }
 
@@ -228,13 +316,13 @@ func newInviteFixture(t *testing.T, inviteeEmail string) *inviteFixture {
 		t.Fatalf("CreateOrgMember inviter: %v", err)
 	}
 
-	inv, err := svc.InviteMember(context.Background(), org.ID, inviter.ID, inviteeEmail)
+	dispatch, err := svc.InviteMember(context.Background(), org.ID, inviter.ID, inviteeEmail)
 	if err != nil {
 		t.Fatalf("InviteMember: %v", err)
 	}
 	return &inviteFixture{
 		t: t, svc: svc, pool: db.PgW, write: write, read: read,
-		org: org, invitee: invitee, inviter: inviter, invite: inv, rawToken: inv.Token,
+		org: org, invitee: invitee, inviter: inviter, invite: dispatch.Invitation, rawToken: dispatch.RawToken,
 	}
 }
 
