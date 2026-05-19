@@ -357,10 +357,39 @@ func (s *server) Leave(
 	return connect.NewResponse(&orgsv1.LeaveResponse{}), nil
 }
 
-// Stub: replaced by Task 11 with the real implementation.
 func (s *server) UpdateMemberRole(
 	ctx context.Context,
-	_ *connect.Request[orgsv1.UpdateMemberRoleRequest],
+	req *connect.Request[orgsv1.UpdateMemberRoleRequest],
 ) (*connect.Response[orgsv1.UpdateMemberRoleResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if _, err := s.requireOrgAdmin(ctx, req.Msg.GetOrgId()); err != nil {
+		return nil, err
+	}
+
+	updated, err := s.service.UpdateMemberRole(
+		ctx,
+		req.Msg.GetOrgId(),
+		req.Msg.GetCustomerId(),
+		req.Msg.GetRole().String(),
+	)
+	if err != nil {
+		if errors.Is(err, coreorgs.ErrMemberNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("member not found"))
+		}
+		if errors.Is(err, coreorgs.ErrUnsupportedRoleTransition) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("role transition not supported"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&orgsv1.UpdateMemberRoleResponse{
+		Member: &orgsv1.OrgMember{
+			CustomerId: proto.String(updated.CustomerID),
+			OrgId:      proto.String(updated.OrgID),
+			Role:       toRPCRole(ctx, updated.Role).Enum(),
+		},
+	}), nil
 }

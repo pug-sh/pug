@@ -189,3 +189,131 @@ func seedRawCustomer(t *testing.T, ctx context.Context, w *dbwrite.Queries, pref
 	}
 	return id
 }
+
+func TestUpdateMemberRoleHandlerPromote(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	adminID := seedRawCustomer(t, ctx, write, "admin")
+	memberID := seedRawCustomer(t, ctx, write, "member")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "promote-handler")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: memberID, Role: orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
+	}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+	resp, err := srv.UpdateMemberRole(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.UpdateMemberRoleRequest{
+			OrgId:      proto.String(org.ID),
+			CustomerId: proto.String(memberID),
+			Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.Enum(),
+		}),
+	)
+	if err != nil {
+		t.Fatalf("UpdateMemberRole: %v", err)
+	}
+	if resp.Msg.GetMember().GetRole() != orgsv1.OrgRole_ORG_ROLE_ADMIN {
+		t.Fatalf("want ADMIN, got %v", resp.Msg.GetMember().GetRole())
+	}
+}
+
+func TestUpdateMemberRoleHandlerNonAdminRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	adminID := seedRawCustomer(t, ctx, write, "real-admin")
+	imposterID := seedRawCustomer(t, ctx, write, "imposter")
+	targetID := seedRawCustomer(t, ctx, write, "target")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "nonadmin-handler")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	for _, id := range []string{imposterID, targetID} {
+		if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+			OrgID: org.ID, CustomerID: id, Role: orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
+		}); err != nil {
+			t.Fatalf("seed member: %v", err)
+		}
+	}
+
+	imposter, err := read.GetCustomerByID(ctx, imposterID)
+	if err != nil {
+		t.Fatalf("read imposter: %v", err)
+	}
+	_, err = srv.UpdateMemberRole(
+		ctxWithCustomer(ctx, imposter),
+		connect.NewRequest(&orgsv1.UpdateMemberRoleRequest{
+			OrgId:      proto.String(org.ID),
+			CustomerId: proto.String(targetID),
+			Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.Enum(),
+		}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodePermissionDenied {
+		t.Fatalf("want CodePermissionDenied, got %v", err)
+	}
+}
+
+func TestUpdateMemberRoleHandlerDemoteRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	adminID := seedRawCustomer(t, ctx, write, "admin")
+	coadminID := seedRawCustomer(t, ctx, write, "coadmin")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "demote-handler")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: coadminID, Role: orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+	_, err = srv.UpdateMemberRole(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.UpdateMemberRoleRequest{
+			OrgId:      proto.String(org.ID),
+			CustomerId: proto.String(coadminID),
+			Role:       orgsv1.OrgRole_ORG_ROLE_MEMBER.Enum(),
+		}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeInvalidArgument {
+		t.Fatalf("want CodeInvalidArgument, got %v", err)
+	}
+}
