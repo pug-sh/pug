@@ -325,8 +325,11 @@ func latestProfileAliasesCTE(projectID string) *chq.Query {
 // all alias_ids — then joining to the distinct_id_activity_states rollup and
 // re-aggregating to one row per profile. The external_id != p.id guard avoids
 // double-merging the same state when an SDK uses the same UUID for both
-// columns; if a profile's external_id happens to coincide with one of its
-// alias_ids, that aggregate state is still merged twice and will inflate.
+// columns. If a profile's external_id happens to coincide with one of its
+// alias_ids, the aggregate state is merged twice: the additive aggregates
+// (total_events, pageviews) double-count, while sessions (HyperLogLog) and
+// the min/max/argMax columns are idempotent under repeated merging and
+// remain correct.
 func profileActivitySummaryCTE(projectID string) *chq.Query {
 	return chq.NewQuery().
 		Select(

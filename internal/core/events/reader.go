@@ -132,9 +132,11 @@ func NewReader(ch driver.Conn) *Reader {
 }
 
 // getAliasIDs returns the alias IDs that currently map to a profile. The
-// profile_aliases table is append-only, so latest-row semantics (argMax on
-// insert_time per alias_id) are applied: alias_ids that have been reassigned
-// to a different profile are excluded.
+// profile_aliases table records each alias write as a row keyed by
+// (project_id, profile_id, alias_id). Reassigning an alias to a new profile
+// produces a row under a different sort-key tuple, so the old and new
+// mappings coexist after merge. Latest-row semantics (argMax(profile_id,
+// insert_time) per alias_id) surface only the current mapping.
 func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) ([]string, error) {
 	sql, args, err := chq.NewQuery().
 		With("latest_profile_aliases", latestProfileAliasesQuery(projectID)).
