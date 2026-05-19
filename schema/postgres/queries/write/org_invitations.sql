@@ -18,3 +18,10 @@ returning *;
 -- name: UpdateOrgInvitationStatus :one
 update org_invitations set status = @status where id = @id
 returning *;
+
+-- name: RefreshOrgInvitationDelivery :one
+update org_invitations
+set expires_at = @expires_at,
+    token = @token
+where id = @id
+returning *;

@@ -32,18 +32,6 @@ type Customer struct {
 	EmailVerifiedAt pgtype.Timestamptz
 }
 
-type EmailActionToken struct {
-	ID              string
-	CustomerID      pgtype.Text
-	Email           string
-	Purpose         string
-	TokenHash       string
-	OrgInvitationID pgtype.Text
-	ExpiresAt       pgtype.Timestamptz
-	ConsumedAt      pgtype.Timestamptz
-	CreateTime      pgtype.Timestamptz
-}
-
 type Dashboard struct {
 	ID          string
 	ProjectID   string
@@ -64,6 +52,18 @@ type DashboardTile struct {
 	Layouts      map[string]any
 	CreateTime   pgtype.Timestamptz
 	UpdateTime   pgtype.Timestamptz
+}
+
+type EmailActionToken struct {
+	ID              string
+	CustomerID      pgtype.Text
+	Email           string
+	Purpose         string
+	TokenHash       string
+	OrgInvitationID pgtype.Text
+	ExpiresAt       pgtype.Timestamptz
+	ConsumedAt      pgtype.Timestamptz
+	CreateTime      pgtype.Timestamptz
 }
 
 type Org struct {
