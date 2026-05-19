@@ -8,9 +8,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/pug-sh/pug/internal/core/email"
+	coreemail "github.com/pug-sh/pug/internal/core/email"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
+	pugredis "github.com/pug-sh/pug/internal/deps/redis"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -40,13 +41,23 @@ func Run(ctx context.Context) error {
 	}
 	defer pgRO.Close()
 
+	var rdCfg pugredis.Config
+	if err := envconfig.Process(ctx, &rdCfg); err != nil {
+		return err
+	}
+	rdClient, err := pugredis.NewFromConfig(ctx, &rdCfg)
+	if err != nil {
+		return err
+	}
+	defer rdClient.Close(ctx)
+
 	natsClient, err := natsworker.New(ctx)
 	if err != nil {
 		return err
 	}
 	defer natsClient.Close()
 
-	mailer, err := newMailer(ctx)
+	mailer, err := newMailerWithResolver(ctx, dbread.New(pgRO), rdClient.Unwrap())
 	if err != nil {
 		return err
 	}
@@ -54,7 +65,7 @@ func Run(ctx context.Context) error {
 	return StartWorker(ctx, pgRO, natsClient, mailer)
 }
 
-func StartWorker(ctx context.Context, pgRO *pgxpool.Pool, natsClient *natsworker.NATSClient, mailer *email.Service) error {
+func StartWorker(ctx context.Context, pgRO *pgxpool.Pool, natsClient *natsworker.NATSClient, mailer *coreemail.Service) error {
 	consumerConfig, err := natsClient.GetConsumerConfigByName("misc-email-processor")
 	if err != nil {
 		return fmt.Errorf("failed to get misc email consumer config: %w", err)
