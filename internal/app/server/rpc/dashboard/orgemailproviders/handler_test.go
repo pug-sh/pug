@@ -3,6 +3,7 @@ package orgemailproviders_test
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 
@@ -400,4 +401,72 @@ func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
 	if entry.Present {
 		t.Fatal("expected provider absent after Remove")
 	}
+}
+
+// TestSendTestSurfacesProviderError asserts that when the mailer's resolver
+// (or downstream provider) returns an error, SendTest returns Success=false
+// with the underlying message in ErrorMessage instead of an RPC error. The
+// admin who triggered the test send needs to see the provider error string
+// (smtp connect failure, bad credentials, etc.) to fix their config.
+func TestSendTestSurfacesProviderError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	rds := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-test-1", Email: "test-admin@acme.com", DisplayName: "Admin", PasswordHash: "h", PictureUri: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-test-1", DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_ADMIN",
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	cipher := setupCipher(t)
+	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
+
+	failingResolver := &alwaysFailingResolver{err: errors.New("smtp connect: connection refused")}
+	mailer, err := coreemail.NewServiceWithResolver(coreemail.Config{
+		DashboardBaseURL: "https://dashboard.example",
+		From:             "noreply@example.com",
+	}, failingResolver)
+	if err != nil {
+		t.Fatalf("NewServiceWithResolver: %v", err)
+	}
+
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{AuthType: rpc.AuthTypeJWT, Customer: &dbread.Customer{ID: customer.ID}})
+
+	resp, err := srv.SendTest(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SendTestRequest{
+		OrgId: strPtr(org.ID), Recipient: strPtr("qa@acme.com"),
+	}))
+	if err != nil {
+		t.Fatalf("SendTest: %v", err)
+	}
+	if resp.Msg.GetSuccess() {
+		t.Fatal("expected Success=false")
+	}
+	if !strings.Contains(resp.Msg.GetErrorMessage(), "connection refused") {
+		t.Fatalf("expected error message in response, got %q", resp.Msg.GetErrorMessage())
+	}
+}
+
+type alwaysFailingResolver struct{ err error }
+
+func (r *alwaysFailingResolver) Resolve(context.Context, *string) (coreemail.Provider, coreemail.ResolvedFrom, error) {
+	return nil, coreemail.ResolvedFrom{}, r.err
 }

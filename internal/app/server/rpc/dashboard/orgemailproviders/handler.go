@@ -187,9 +187,33 @@ func (s *server) Remove(ctx context.Context, req *connect.Request[orgemailprovid
 	return connect.NewResponse(&orgemailprovidersv1.RemoveResponse{}), nil
 }
 
-// SendTest is implemented by Task 12. This stub keeps the
-// OrgEmailProvidersServiceHandler interface satisfied so the server type can
-// be wired into the dashboard mux as soon as Get/Set/Remove are ready.
+// SendTest dispatches a fixed test message via the org's configured provider
+// (or the operator default when the org has no override) so admins can verify
+// their configuration end-to-end. Provider failures are surfaced in the
+// response body, not as RPC errors: the admin invoked SendTest specifically to
+// see the underlying provider error (auth, host, port, etc.) and act on it.
+// The resolver/provider layer is responsible for logging + recording the error
+// at source; we deliberately don't re-log or re-record it here.
 func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprovidersv1.SendTestRequest]) (*connect.Response[orgemailprovidersv1.SendTestResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("send test is not implemented"))
+	if err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
+		return nil, err
+	}
+	if s.mailer == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("test send is not available on this server"))
+	}
+
+	idempotencyKey := "send_test:" + req.Msg.GetOrgId() + ":" + req.Msg.GetRecipient()
+	if err := s.mailer.SendTest(ctx, req.Msg.GetOrgId(), req.Msg.GetRecipient(), idempotencyKey); err != nil {
+		errMsg := err.Error()
+		return connect.NewResponse(&orgemailprovidersv1.SendTestResponse{
+			Success:      boolPtr(false),
+			ErrorMessage: &errMsg,
+		}), nil
+	}
+	return connect.NewResponse(&orgemailprovidersv1.SendTestResponse{Success: boolPtr(true)}), nil
 }
+
+// boolPtr returns a pointer to b. The generated SendTestResponse fields are
+// proto-optional (pointer types), so callers need an addressable bool.
+func boolPtr(b bool) *bool { return &b }
