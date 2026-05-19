@@ -570,8 +570,8 @@ func (s *Service) UpdateMemberRole(
 		return dbwrite.OrgMember{}, err
 	}
 
-	if !(current == orgsv1.OrgRole_ORG_ROLE_MEMBER.String() &&
-		newRole == orgsv1.OrgRole_ORG_ROLE_ADMIN.String()) {
+	if current != orgsv1.OrgRole_ORG_ROLE_MEMBER.String() ||
+		newRole != orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
 		return dbwrite.OrgMember{}, ErrUnsupportedRoleTransition
 	}
 
