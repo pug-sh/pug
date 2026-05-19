@@ -9,17 +9,14 @@ type ResolvedFrom struct {
 	ReplyTo string
 }
 
-// ProviderResolver picks the right Provider for an email send. tenantID is
-// nil for platform-scoped emails (signup, password reset, verification);
-// non-nil for org-scoped emails (today only org_member_invite).
+// ProviderResolver picks the Provider for an email send. tenantID is nil for
+// platform-scoped emails and non-nil for org-scoped emails.
 type ProviderResolver interface {
 	Resolve(ctx context.Context, tenantID *string) (Provider, ResolvedFrom, error)
 }
 
-// OperatorOnlyResolver returns the operator-configured provider for every
-// resolve call. Used when PUG_EMAIL_PROVIDER_SECRET_KEY is unset, preserving
-// the pre-BYOP behaviour. Used internally by NewService to wrap a single
-// Provider so existing call sites keep working.
+// OperatorOnlyResolver always returns the operator-configured provider. Used
+// when PUG_EMAIL_PROVIDER_SECRET_KEY is unset.
 type OperatorOnlyResolver struct {
 	Provider Provider
 	From     string

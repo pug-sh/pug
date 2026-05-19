@@ -82,7 +82,6 @@ func newTestProvider(t *testing.T, transport http.RoundTripper) *Provider {
 	client.BaseURL = baseURL
 
 	return &Provider{
-		apiKey: "test-api-key",
 		client: client,
 	}
 }

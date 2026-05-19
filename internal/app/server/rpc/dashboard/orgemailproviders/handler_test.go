@@ -34,14 +34,9 @@ func setupCipher(t *testing.T) *secret.Cipher {
 	return c
 }
 
-// strPtr returns a pointer to s for proto optional-string assignments.
-func strPtr(s string) *string { return &s }
-
-// uint32Ptr returns a pointer to v for proto optional-uint32 assignments.
-func uint32Ptr(v uint32) *uint32 { return &v }
-
-// boolPtr returns a pointer to b for proto optional-bool assignments.
-func boolPtr(b bool) *bool { return &b }
+func strPtr(s string) *string         { return &s }
+func uint32Ptr(v uint32) *uint32      { return &v }
+func boolPtr(b bool) *bool            { return &b }
 
 func TestSetGetRoundTripRedactsSecret(t *testing.T) {
 	if testing.Short() {
@@ -77,7 +72,7 @@ func TestSetGetRoundTripRedactsSecret(t *testing.T) {
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: customer.ID},
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
 	})
 
 	_, err = srv.Set(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SetRequest{
@@ -147,7 +142,7 @@ func TestSetRequiresAdmin(t *testing.T) {
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: customer.ID},
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
 	})
 	_, err = srv.Set(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SetRequest{
 		OrgId:       strPtr(org.ID),
@@ -161,6 +156,144 @@ func TestSetRequiresAdmin(t *testing.T) {
 	}
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", err)
+	}
+}
+
+// TestGetRequiresAdmin verifies a non-admin member cannot read the org's
+// configured provider (which would include the redacted secret).
+func TestGetRequiresAdmin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	rds := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-get-member", Email: "getmember@acme.com", DisplayName: "Member", PasswordHash: "h", PictureUri: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-get-member", DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_MEMBER",
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	cipher := setupCipher(t)
+	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
+	})
+	_, err = srv.Get(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.GetRequest{OrgId: strPtr(org.ID)}))
+	if err == nil {
+		t.Fatal("expected admin error on Get")
+	}
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied, got %v", err)
+	}
+}
+
+// TestGetWithoutCipherReturnsFailedPrecondition verifies the NewServer
+// contract that Get refuses to operate when the operator has not configured
+// PUG_EMAIL_PROVIDER_SECRET_KEY (server constructed with cipher=nil).
+func TestGetWithoutCipherReturnsFailedPrecondition(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	rds := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-get-nocipher", Email: "nocipher@acme.com", DisplayName: "Admin", PasswordHash: "h", PictureUri: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-get-nocipher", DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_ADMIN",
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
+	srv := orgemailproviders.NewServer(orgs, read, write, nil, repo, nil)
+
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
+	})
+	_, err = srv.Get(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.GetRequest{OrgId: strPtr(org.ID)}))
+	if err == nil {
+		t.Fatal("expected FailedPrecondition when cipher unset")
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %v", err)
+	}
+}
+
+// TestGetReturnsNotFoundWhenNoProvider verifies an admin Get on an org with
+// no configured provider returns CodeNotFound (not a zero-value response).
+func TestGetReturnsNotFoundWhenNoProvider(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	rds := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-get-empty", Email: "empty@acme.com", DisplayName: "Admin", PasswordHash: "h", PictureUri: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-get-empty", DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_ADMIN",
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	cipher := setupCipher(t)
+	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
+	})
+	_, err = srv.Get(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.GetRequest{OrgId: strPtr(org.ID)}))
+	if err == nil {
+		t.Fatal("expected NotFound when no provider configured")
+	}
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("expected NotFound, got %v", err)
 	}
 }
 
@@ -202,7 +335,7 @@ func TestSetInvalidatesCache(t *testing.T) {
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: customer.ID},
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
 	})
 
 	// First Set + populate cache via repo.Get.
@@ -284,7 +417,7 @@ func TestSetGetRoundTripSMTP(t *testing.T) {
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: customer.ID},
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
 	})
 	if _, err := srv.Set(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SetRequest{
 		OrgId:       strPtr(org.ID),
@@ -366,11 +499,11 @@ func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
 
 	adminCtx := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: adminCust.ID},
+		Customer: &dbread.Customer{ID: adminCust.ID, Email: adminCust.Email},
 	})
 	memberCtx := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: memberCust.ID},
+		Customer: &dbread.Customer{ID: memberCust.ID, Email: memberCust.Email},
 	})
 
 	if _, err := srv.Set(adminCtx, connect.NewRequest(&orgemailprovidersv1.SetRequest{
@@ -383,14 +516,12 @@ func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
 		t.Fatalf("Set: %v", err)
 	}
 
-	// Member cannot remove.
 	if _, err := srv.Remove(memberCtx, connect.NewRequest(&orgemailprovidersv1.RemoveRequest{OrgId: strPtr(org.ID)})); err == nil {
 		t.Fatal("expected admin error on Remove for member")
 	} else if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", err)
 	}
 
-	// Admin can remove; cache lookup should then return absent.
 	if _, err := srv.Remove(adminCtx, connect.NewRequest(&orgemailprovidersv1.RemoveRequest{OrgId: strPtr(org.ID)})); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
@@ -400,6 +531,171 @@ func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
 	}
 	if entry.Present {
 		t.Fatal("expected provider absent after Remove")
+	}
+}
+
+// TestSendTestRequiresAdmin verifies a non-admin member cannot trigger a
+// test send (which would use the operator's reputation domain).
+func TestSendTestRequiresAdmin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	rds := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-st-mem", Email: "stmember@acme.com", DisplayName: "Member", PasswordHash: "h", PictureUri: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-st-mem", DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_MEMBER",
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	cipher := setupCipher(t)
+	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
+	resolver := &coreemail.OperatorOnlyResolver{Provider: &capturingProvider{}, From: "noreply@example.com"}
+	mailer, err := coreemail.NewServiceWithResolver(coreemail.Config{
+		DashboardBaseURL: "https://dashboard.example",
+		From:             "noreply@example.com",
+	}, resolver)
+	if err != nil {
+		t.Fatalf("NewServiceWithResolver: %v", err)
+	}
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
+
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
+	})
+	_, err = srv.SendTest(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SendTestRequest{
+		OrgId:     strPtr(org.ID),
+		Recipient: strPtr(customer.Email),
+	}))
+	if err == nil {
+		t.Fatal("expected admin error")
+	}
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied, got %v", err)
+	}
+}
+
+// TestSendTestWithoutMailerReturnsFailedPrecondition verifies the NewServer
+// contract that a nil mailer (operator hasn't wired SendTest in this
+// deployment) yields FailedPrecondition rather than a panic.
+func TestSendTestWithoutMailerReturnsFailedPrecondition(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	rds := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-st-nomail", Email: "stnomail@acme.com", DisplayName: "Admin", PasswordHash: "h", PictureUri: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-st-nomail", DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_ADMIN",
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	cipher := setupCipher(t)
+	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
+	})
+	_, err = srv.SendTest(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SendTestRequest{
+		OrgId:     strPtr(org.ID),
+		Recipient: strPtr(customer.Email),
+	}))
+	if err == nil {
+		t.Fatal("expected FailedPrecondition when mailer unset")
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %v", err)
+	}
+}
+
+// TestSendTestRejectsForeignRecipient pins the recipient-restriction rule:
+// admins may only test-send to their own email, preventing the operator's
+// reputation domain from becoming a free phishing seed channel.
+func TestSendTestRejectsForeignRecipient(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	rds := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-st-foreign", Email: "stforeign@acme.com", DisplayName: "Admin", PasswordHash: "h", PictureUri: "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-st-foreign", DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_ADMIN",
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+
+	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	cipher := setupCipher(t)
+	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
+	resolver := &coreemail.OperatorOnlyResolver{Provider: &capturingProvider{}, From: "noreply@example.com"}
+	mailer, err := coreemail.NewServiceWithResolver(coreemail.Config{
+		DashboardBaseURL: "https://dashboard.example",
+		From:             "noreply@example.com",
+	}, resolver)
+	if err != nil {
+		t.Fatalf("NewServiceWithResolver: %v", err)
+	}
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
+
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
+	})
+	_, err = srv.SendTest(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SendTestRequest{
+		OrgId:     strPtr(org.ID),
+		Recipient: strPtr("someone-else@evil.example"),
+	}))
+	if err == nil {
+		t.Fatal("expected PermissionDenied for non-admin recipient")
+	}
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied, got %v", err)
 	}
 }
 
@@ -449,10 +745,13 @@ func TestSendTestSurfacesProviderError(t *testing.T) {
 	}
 
 	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
-	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{AuthType: rpc.AuthTypeJWT, Customer: &dbread.Customer{ID: customer.ID}})
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
+	})
 
 	resp, err := srv.SendTest(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SendTestRequest{
-		OrgId: strPtr(org.ID), Recipient: strPtr("qa@acme.com"),
+		OrgId: strPtr(org.ID), Recipient: strPtr(customer.Email),
 	}))
 	if err != nil {
 		t.Fatalf("SendTest: %v", err)
@@ -471,9 +770,6 @@ func (r *alwaysFailingResolver) Resolve(context.Context, *string) (coreemail.Pro
 	return nil, coreemail.ResolvedFrom{}, r.err
 }
 
-// capturingProvider records every Send call so the happy-path SendTest test
-// can assert the message reached the underlying provider with the expected
-// recipient and subject.
 type capturingProvider struct {
 	got   coreemail.Message
 	calls int
@@ -530,10 +826,13 @@ func TestSendTestHappyPath(t *testing.T) {
 	}
 
 	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
-	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{AuthType: rpc.AuthTypeJWT, Customer: &dbread.Customer{ID: customer.ID}})
+	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
+	})
 
 	resp, err := srv.SendTest(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SendTestRequest{
-		OrgId: strPtr(org.ID), Recipient: strPtr("qa@acme.com"),
+		OrgId: strPtr(org.ID), Recipient: strPtr(customer.Email),
 	}))
 	if err != nil {
 		t.Fatalf("SendTest: %v", err)
@@ -544,8 +843,8 @@ func TestSendTestHappyPath(t *testing.T) {
 	if fake.calls != 1 {
 		t.Fatalf("expected 1 Send call, got %d", fake.calls)
 	}
-	if fake.got.To != "qa@acme.com" {
-		t.Fatalf("To: got %q", fake.got.To)
+	if fake.got.To != customer.Email {
+		t.Fatalf("To: got %q want %q", fake.got.To, customer.Email)
 	}
 	if !strings.Contains(fake.got.Subject, "test") {
 		t.Fatalf("expected 'test' in subject, got %q", fake.got.Subject)

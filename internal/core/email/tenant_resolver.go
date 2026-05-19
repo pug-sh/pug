@@ -3,10 +3,13 @@ package email
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/pug-sh/pug/internal/core/email/secret"
 	resenddeps "github.com/pug-sh/pug/internal/deps/email/resend"
 	smtpdeps "github.com/pug-sh/pug/internal/deps/email/smtp"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 // providerRepo is what TenantAwareResolver needs from OrgProviderRepo. Kept
@@ -47,12 +50,24 @@ func (r *TenantAwareResolver) Resolve(ctx context.Context, tenantID *string) (Pr
 
 	plaintext, err := r.cipher.Decrypt(entry.SecretCiphertext)
 	if err != nil {
-		return nil, ResolvedFrom{}, fmt.Errorf("decrypt org %s email provider: %w", *tenantID, err)
+		// Decrypt failure is non-retryable: either the operator rotated
+		// PUG_EMAIL_PROVIDER_SECRET_KEY without re-encrypting the row, or
+		// the ciphertext is corrupted. Retrying with the same key/row will
+		// fail identically, so wrap as permanent so the worker DLQs.
+		slog.ErrorContext(ctx, "failed to decrypt org email provider; treating as permanent",
+			slogx.Error(err), slog.String("org_id", *tenantID))
+		telemetry.RecordError(ctx, err)
+		return nil, ResolvedFrom{}, NewPermanentError(fmt.Errorf("decrypt org %s email provider: %w", *tenantID, err))
 	}
 
 	provider, err := buildProvider(ProviderKind(entry.Kind), plaintext)
 	if err != nil {
-		return nil, ResolvedFrom{}, err
+		// An unknown kind in the DB or a malformed config is a permanent
+		// misconfiguration; the same row will keep failing.
+		slog.ErrorContext(ctx, "failed to build org email provider; treating as permanent",
+			slogx.Error(err), slog.String("org_id", *tenantID), slog.String("kind", entry.Kind))
+		telemetry.RecordError(ctx, err)
+		return nil, ResolvedFrom{}, NewPermanentError(err)
 	}
 	return provider, ResolvedFrom{From: entry.FromAddress, ReplyTo: entry.ReplyTo}, nil
 }

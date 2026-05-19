@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5"
@@ -28,44 +29,41 @@ type server struct {
 	write  *dbwrite.Queries
 	cipher *secret.Cipher
 	repo   *coreemail.OrgProviderRepo
-	mailer *coreemail.Service // used by SendTest (Task 12)
+	mailer *coreemail.Service
 }
 
-// NewServer constructs the Get/Set/Remove handler. The cipher may be nil — in
-// that case Get and Set return CodeFailedPrecondition until the operator
-// configures an encryption key. The mailer is reserved for SendTest (Task 12)
-// and is permitted to be nil here.
+// NewServer accepts nil cipher/repo/mailer for operator-only mode (no
+// PUG_EMAIL_PROVIDER_SECRET_KEY). In that mode Get/Set return
+// FailedPrecondition via requireCipher and SendTest returns the same on nil
+// mailer.
 func NewServer(orgs *coreorgs.Service, read *dbread.Queries, write *dbwrite.Queries, cipher *secret.Cipher, repo *coreemail.OrgProviderRepo, mailer *coreemail.Service) *server {
 	return &server{orgs: orgs, read: read, write: write, cipher: cipher, repo: repo, mailer: mailer}
 }
 
-// requireAdmin extracts the principal and verifies admin membership in the
-// supplied org. Mirrors the gate in dashboard/orgs.handler.
-func (s *server) requireAdmin(ctx context.Context, orgID string) error {
+func (s *server) requireAdmin(ctx context.Context, orgID string) (*rpc.Principal, error) {
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 	role, err := s.orgs.GetMemberRole(ctx, orgID, principal.Customer.ID)
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
+			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
 		}
 		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
 		telemetry.RecordError(ctx, err)
-		return connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if role != orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
-		return connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
 	}
-	return nil
+	return principal, nil
 }
 
-// requireCipher rejects mutating/reading provider secrets when no encryption
-// key is configured. Without a cipher the server cannot safely encrypt new
-// secrets nor decrypt existing ones, so the only honest answer is
-// FailedPrecondition with an operator-facing message.
+// requireCipher returns FailedPrecondition when no encryption key is
+// configured; without it the server can neither encrypt new secrets nor
+// decrypt existing ones.
 func (s *server) requireCipher() error {
 	if s.cipher == nil {
 		return connect.NewError(connect.CodeFailedPrecondition,
@@ -75,7 +73,7 @@ func (s *server) requireCipher() error {
 }
 
 func (s *server) Get(ctx context.Context, req *connect.Request[orgemailprovidersv1.GetRequest]) (*connect.Response[orgemailprovidersv1.GetResponse], error) {
-	if err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
+	if _, err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
 		return nil, err
 	}
 	if err := s.requireCipher(); err != nil {
@@ -108,9 +106,16 @@ func (s *server) Get(ctx context.Context, req *connect.Request[orgemailproviders
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
+	protoKind, err := coreKindToProto(kind)
+	if err != nil {
+		slog.ErrorContext(ctx, "unknown provider kind in db row", slogx.Error(err),
+			slog.String("org_id", req.Msg.GetOrgId()), slog.String("kind", string(kind)))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
 
 	resp := &orgemailprovidersv1.GetResponse{
-		Kind:           coreKindToProto(kind).Enum(),
+		Kind:           protoKind.Enum(),
 		FromAddress:    &row.FromAddress,
 		RedactedSecret: &redacted,
 		UpdateTime:     timestamppb.New(row.UpdateTime.Time),
@@ -123,7 +128,7 @@ func (s *server) Get(ctx context.Context, req *connect.Request[orgemailproviders
 }
 
 func (s *server) Set(ctx context.Context, req *connect.Request[orgemailprovidersv1.SetRequest]) (*connect.Response[orgemailprovidersv1.SetResponse], error) {
-	if err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
+	if _, err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
 		return nil, err
 	}
 	if err := s.requireCipher(); err != nil {
@@ -164,9 +169,13 @@ func (s *server) Set(ctx context.Context, req *connect.Request[orgemailproviders
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	// Best-effort cache invalidation; failures are logged at source inside the
-	// repo (Invalidate returns nothing).
-	s.repo.Invalidate(ctx, req.Msg.GetOrgId())
+	// Invalidate is load-bearing: a stale negative-cache entry would keep
+	// worker dispatch routing through the operator-default provider for the
+	// rest of the cache TTL. Surface as Internal so the admin retries (the
+	// upsert above is idempotent).
+	if err := s.repo.Invalidate(ctx, req.Msg.GetOrgId()); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
 
 	return connect.NewResponse(&orgemailprovidersv1.SetResponse{
 		UpdateTime: timestamppb.New(row.UpdateTime.Time),
@@ -174,7 +183,7 @@ func (s *server) Set(ctx context.Context, req *connect.Request[orgemailproviders
 }
 
 func (s *server) Remove(ctx context.Context, req *connect.Request[orgemailprovidersv1.RemoveRequest]) (*connect.Response[orgemailprovidersv1.RemoveResponse], error) {
-	if err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
+	if _, err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
 		return nil, err
 	}
 	if _, err := s.write.DeleteOrgEmailProvider(ctx, req.Msg.GetOrgId()); err != nil {
@@ -183,30 +192,35 @@ func (s *server) Remove(ctx context.Context, req *connect.Request[orgemailprovid
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	// Repo is nil when PUG_EMAIL_PROVIDER_SECRET_KEY is unset (operator-only
-	// mode). Remove still performs the Postgres DELETE so admins can clean up
-	// stale rows from a pre-disabled state, but skips cache invalidation
-	// because there is no cache.
+	// repo is nil in operator-only mode (no PUG_EMAIL_PROVIDER_SECRET_KEY).
+	// Remove still performs the DELETE so admins can clean up stale rows;
+	// cache invalidation is skipped because there is no cache.
 	if s.repo != nil {
-		s.repo.Invalidate(ctx, req.Msg.GetOrgId())
+		if err := s.repo.Invalidate(ctx, req.Msg.GetOrgId()); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
 	}
 	return connect.NewResponse(&orgemailprovidersv1.RemoveResponse{}), nil
 }
 
-// SendTest dispatches a fixed test message via the org's configured provider
-// (or the operator default when the org has no override) so admins can verify
-// their configuration end-to-end. Provider failures are surfaced in the
-// response body, not as RPC errors: the admin invoked SendTest specifically to
-// see the underlying provider error (auth, host, port, etc.) and act on it.
-// The resolver/provider layer is responsible for logging + recording the error
-// at source; we deliberately don't re-log or re-record it here.
+// SendTest dispatches a fixed test message through the org's resolver so the
+// admin can verify config end-to-end. Provider failures land in the response
+// body (not as RPC errors) so the admin sees the underlying provider message
+// — the resolver/provider layer logs+records at source. The recipient is
+// restricted to the calling admin's own email to keep the operator-default
+// reputation domain from becoming a free open-relay for arbitrary recipients.
 func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprovidersv1.SendTestRequest]) (*connect.Response[orgemailprovidersv1.SendTestResponse], error) {
-	if err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
+	principal, err := s.requireAdmin(ctx, req.Msg.GetOrgId())
+	if err != nil {
 		return nil, err
 	}
 	if s.mailer == nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			errors.New("test send is not available on this server"))
+	}
+	if !strings.EqualFold(req.Msg.GetRecipient(), principal.Customer.Email) {
+		return nil, connect.NewError(connect.CodePermissionDenied,
+			errors.New("test recipient must match the calling admin's email"))
 	}
 
 	idempotencyKey := "send_test:" + req.Msg.GetOrgId() + ":" + req.Msg.GetRecipient()
@@ -220,6 +234,4 @@ func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprov
 	return connect.NewResponse(&orgemailprovidersv1.SendTestResponse{Success: boolPtr(true)}), nil
 }
 
-// boolPtr returns a pointer to b. The generated SendTestResponse fields are
-// proto-optional (pointer types), so callers need an addressable bool.
 func boolPtr(b bool) *bool { return &b }

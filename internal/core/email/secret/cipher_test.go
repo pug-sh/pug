@@ -71,6 +71,22 @@ func TestCipherDecryptTamperedFails(t *testing.T) {
 	}
 }
 
+// TestCipherDecryptShortBlob pins the explicit length guard at the top of
+// Decrypt. Without it, a blob shorter than the nonce would panic on slice
+// out-of-bounds. Realistic trigger: schema drift or manual SQL inserting a
+// malformed row.
+func TestCipherDecryptShortBlob(t *testing.T) {
+	c, err := secret.NewCipher(newTestKey(t))
+	if err != nil {
+		t.Fatalf("NewCipher: %v", err)
+	}
+	if _, err := c.Decrypt([]byte("abc")); err == nil {
+		t.Fatal("expected error for short ciphertext, got nil")
+	} else if !strings.Contains(err.Error(), "too short") {
+		t.Fatalf("expected 'too short' in error, got %v", err)
+	}
+}
+
 func TestNewCipherRejectsMalformedKey(t *testing.T) {
 	cases := []struct {
 		name string

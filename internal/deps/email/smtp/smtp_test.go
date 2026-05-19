@@ -44,7 +44,7 @@ func (s *fakeSMTPServer) serve() {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	buf := make([]byte, 4096)
 	send := func(line string) { _, _ = conn.Write([]byte(line + "\r\n")) }
 	send("220 fake.localhost ESMTP")
@@ -143,6 +143,42 @@ func TestSMTPProviderConnectError(t *testing.T) {
 	}
 	if coreemail.IsPermanentError(err) {
 		t.Fatalf("connect error should be transient, got permanent: %v", err)
+	}
+}
+
+// TestSMTPProviderSanitizesHeaders pins the header-injection defense: a
+// message Subject containing CRLF must not produce two header lines. This is
+// the regression test for the org_display_name → Subject injection vector.
+func TestSMTPProviderSanitizesHeaders(t *testing.T) {
+	srv := newFakeSMTPServer(t)
+	host, port := splitHostPort(t, srv.addr())
+
+	prov, err := emailsmtp.New(emailsmtp.Config{
+		Host: host, Port: port, Username: "user", Password: "pass", UseTLS: false,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = prov.Send(context.Background(), coreemail.Message{
+		From:    "from@example.com",
+		To:      "to@example.com",
+		Subject: "Hello\r\nBcc: leak@evil.example",
+		TextBody: "x", HTMLBody: "<p>x</p>",
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	body := srv.bodyString()
+	// The dangerous outcome is a standalone Bcc: header line. The CRLF must
+	// have been stripped so the malicious payload is collapsed into the
+	// Subject value (where it's harmless content, not a header).
+	for _, line := range strings.Split(body, "\r\n") {
+		if strings.HasPrefix(line, "Bcc:") {
+			t.Fatalf("Bcc header injected on its own line: %q", line)
+		}
+	}
+	if !strings.Contains(body, "Subject: HelloBcc: leak@evil.example") {
+		t.Fatalf("expected sanitized subject on one line, got: %s", body)
 	}
 }
 

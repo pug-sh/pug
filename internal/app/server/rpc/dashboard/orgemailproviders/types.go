@@ -8,35 +8,18 @@ import (
 	orgemailprovidersv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1"
 )
 
-// protoKindToCore maps the proto enum to the core/email ProviderKind string.
-// Returns an error for UNSPECIFIED or any unknown kind.
-func protoKindToCore(k orgemailprovidersv1.OrgEmailProviderKind) (email.ProviderKind, error) {
-	switch k {
-	case orgemailprovidersv1.OrgEmailProviderKind_ORG_EMAIL_PROVIDER_KIND_SMTP:
-		return email.ProviderKindSMTP, nil
-	case orgemailprovidersv1.OrgEmailProviderKind_ORG_EMAIL_PROVIDER_KIND_RESEND:
-		return email.ProviderKindResend, nil
-	default:
-		return "", fmt.Errorf("unknown provider kind %s", k)
-	}
-}
-
-// coreKindToProto maps a core/email ProviderKind back to the proto enum.
-// Unknown kinds map to UNSPECIFIED.
-func coreKindToProto(k email.ProviderKind) orgemailprovidersv1.OrgEmailProviderKind {
+func coreKindToProto(k email.ProviderKind) (orgemailprovidersv1.OrgEmailProviderKind, error) {
 	switch k {
 	case email.ProviderKindSMTP:
-		return orgemailprovidersv1.OrgEmailProviderKind_ORG_EMAIL_PROVIDER_KIND_SMTP
+		return orgemailprovidersv1.OrgEmailProviderKind_ORG_EMAIL_PROVIDER_KIND_SMTP, nil
 	case email.ProviderKindResend:
-		return orgemailprovidersv1.OrgEmailProviderKind_ORG_EMAIL_PROVIDER_KIND_RESEND
+		return orgemailprovidersv1.OrgEmailProviderKind_ORG_EMAIL_PROVIDER_KIND_RESEND, nil
 	default:
-		return orgemailprovidersv1.OrgEmailProviderKind_ORG_EMAIL_PROVIDER_KIND_UNSPECIFIED
+		return orgemailprovidersv1.OrgEmailProviderKind_ORG_EMAIL_PROVIDER_KIND_UNSPECIFIED,
+			fmt.Errorf("unknown provider kind %q", k)
 	}
 }
 
-// configFromSetRequest extracts the oneof config from a SetRequest into a
-// (kind, cfg) pair suitable for email.EncodeProviderConfig. Returns an error
-// if the oneof is unset.
 func configFromSetRequest(req *orgemailprovidersv1.SetRequest) (email.ProviderKind, any, error) {
 	switch c := req.Config.(type) {
 	case *orgemailprovidersv1.SetRequest_Smtp:
@@ -77,8 +60,8 @@ func redactPlaintext(kind email.ProviderKind, plaintext []byte) (string, error) 
 	}
 }
 
-// redactAPIKey reveals the first 8 and last 4 characters of an API key, with
-// "***" in between. Short keys (<= 12 chars) collapse to "***" entirely so we
+// redactAPIKey reveals the first 8 and last 4 characters of an API key with
+// "***" between. Short keys (<= 12 chars) collapse to "***" entirely so we
 // never reveal a meaningful prefix or suffix of a key that is too short to
 // safely redact.
 func redactAPIKey(apiKey string) string {

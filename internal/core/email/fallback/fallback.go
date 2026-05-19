@@ -1,7 +1,6 @@
 // Package fallback constructs the operator-default email provider from
-// environment configuration. Shared between the email worker (where it
-// supplies the bottom of the per-tenant resolution chain) and the dashboard
-// server (where SendTestEmail calls go through the same resolver path).
+// environment configuration. It is the bottom of every tenant-aware resolver
+// chain.
 package fallback
 
 import (

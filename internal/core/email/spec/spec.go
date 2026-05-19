@@ -11,7 +11,6 @@ import (
 	"errors"
 )
 
-// Message is the rendered, ready-to-send email handed to a Provider.
 type Message struct {
 	IdempotencyKey string
 	From           string
@@ -22,15 +21,11 @@ type Message struct {
 	TextBody       string
 }
 
-// Provider sends a single Message. Implementations live under
-// internal/deps/email/.
 type Provider interface {
 	Send(ctx context.Context, msg Message) error
 }
 
 // PermanentError wraps an error to signal the failure must not be retried.
-// The email worker uses IsPermanentError to terminate the message instead of
-// requeuing.
 type PermanentError struct{ err error }
 
 func NewPermanentError(err error) *PermanentError {

@@ -23,20 +23,18 @@ type Config struct {
 	ReplyTo          string `env:"PUG_EMAIL_REPLY_TO"`
 }
 
-// Message, Provider, PermanentError and the permanent-error helpers are
-// re-exported from internal/core/email/spec so internal/deps/email/* can
-// implement the Provider contract without importing core/email (cycle when
-// core/email constructs per-tenant providers from spec types).
+// Message, Provider, PermanentError, and the permanent-error helpers are
+// re-exported from spec so internal/deps/email/* can implement the Provider
+// contract without importing core/email — core/email constructs per-tenant
+// providers from these types, which would otherwise create an import cycle.
 type Message = spec.Message
 
 type Provider = spec.Provider
 
 type PermanentError = spec.PermanentError
 
-// NewPermanentError marks an error as non-retryable. See spec.NewPermanentError.
 func NewPermanentError(err error) *PermanentError { return spec.NewPermanentError(err) }
 
-// IsPermanentError reports whether err (or anything it wraps) is a PermanentError.
 func IsPermanentError(err error) bool { return spec.IsPermanentError(err) }
 
 type Service struct {
@@ -46,9 +44,9 @@ type Service struct {
 	resolver        ProviderResolver
 }
 
-// NewService preserves the pre-resolver call shape by wrapping the single
-// provider in an OperatorOnlyResolver. Used by tests and call sites that
-// don't need per-tenant routing.
+// NewService wraps a single Provider in an OperatorOnlyResolver. Use this
+// when callers don't need per-tenant routing; callers that do need it should
+// use NewServiceWithResolver directly.
 func NewService(cfg Config, provider Provider) (*Service, error) {
 	if provider == nil {
 		return nil, errors.New("email: provider is required")
@@ -131,23 +129,42 @@ func (s *Service) SendVerificationResend(ctx context.Context, emailAddr, token, 
 
 func (s *Service) SendOrgMemberInvite(ctx context.Context, orgID, emailAddr, orgName, inviterName, token, idempotencyKey string) error {
 	link := s.link("/accept-invite", token)
-	text := fmt.Sprintf("You were invited to join %s.\n\nAccept the invite: %s", orgName, link)
-	htmlBody := fmt.Sprintf("<p>You were invited to join %s.</p><p><a href=\"%s\">Accept the invite</a>.</p>", html.EscapeString(orgName), html.EscapeString(link))
-	if inviterName != "" {
-		text = fmt.Sprintf("%s invited you to join %s.\n\nAccept the invite: %s", inviterName, orgName, link)
-		htmlBody = fmt.Sprintf("<p>%s invited you to join %s.</p><p><a href=\"%s\">Accept the invite</a>.</p>", html.EscapeString(inviterName), html.EscapeString(orgName), html.EscapeString(link))
+	safeOrg := sanitizeDisplay(orgName)
+	safeInviter := sanitizeDisplay(inviterName)
+	text := fmt.Sprintf("You were invited to join %s.\n\nAccept the invite: %s", safeOrg, link)
+	htmlBody := fmt.Sprintf("<p>You were invited to join %s.</p><p><a href=\"%s\">Accept the invite</a>.</p>", html.EscapeString(safeOrg), html.EscapeString(link))
+	if safeInviter != "" {
+		text = fmt.Sprintf("%s invited you to join %s.\n\nAccept the invite: %s", safeInviter, safeOrg, link)
+		htmlBody = fmt.Sprintf("<p>%s invited you to join %s.</p><p><a href=\"%s\">Accept the invite</a>.</p>", html.EscapeString(safeInviter), html.EscapeString(safeOrg), html.EscapeString(link))
 	}
 	msg := s.baseMessage(idempotencyKey, emailAddr)
-	msg.Subject = fmt.Sprintf("Invitation to join %s", orgName)
+	msg.Subject = fmt.Sprintf("Invitation to join %s", safeOrg)
 	msg.TextBody = text
 	msg.HTMLBody = htmlBody
 	tenantID := orgID
 	return s.send(ctx, &tenantID, msg)
 }
 
-// SendTest sends a fixed test message via the resolver for the supplied tenant.
-// Used by the dashboard SendTestEmail RPC; callers pass orgID for tenant-scoped
-// testing. Empty orgID resolves against the operator default.
+// sanitizeDisplay strips control characters and caps length so an attacker-set
+// display name can't smuggle line breaks into text bodies or weird characters
+// into subjects. The SMTP layer also strips CRLF from headers as a final
+// defense; this is the application-layer sanitization for content sites.
+func sanitizeDisplay(s string) string {
+	const maxLen = 120
+	stripped := strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == 0x7f || (r < 0x20 && r != '\t') {
+			return -1
+		}
+		return r
+	}, s)
+	if len(stripped) > maxLen {
+		stripped = stripped[:maxLen]
+	}
+	return stripped
+}
+
+// SendTest delivers a fixed verification message via the resolver. An empty
+// orgID routes through the operator-default provider.
 func (s *Service) SendTest(ctx context.Context, orgID, recipient, idempotencyKey string) error {
 	msg := s.baseMessage(idempotencyKey, recipient)
 	msg.Subject = "Pug email provider test"

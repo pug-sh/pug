@@ -96,13 +96,19 @@ func (r *OrgProviderRepo) Get(ctx context.Context, orgID string) (CachedProvider
 	return entry, nil
 }
 
-func (r *OrgProviderRepo) Invalidate(ctx context.Context, orgID string) {
+// Invalidate deletes the cached entry for orgID. Callers must surface the
+// error: a silent failure would let an admin's freshly-updated provider be
+// shadowed by a stale negative-cache entry for the rest of its TTL.
+func (r *OrgProviderRepo) Invalidate(ctx context.Context, orgID string) error {
 	if r.cache == nil {
-		return
+		return nil
 	}
 	cacheKey := orgEmailProviderCachePrefix + orgID
 	if err := r.cache.Del(ctx, cacheKey).Err(); err != nil {
-		slog.WarnContext(ctx, "failed to invalidate email provider cache",
+		slog.ErrorContext(ctx, "failed to invalidate email provider cache",
 			slogx.Error(err), slog.String("cache_key", cacheKey))
+		telemetry.RecordError(ctx, err)
+		return err
 	}
+	return nil
 }

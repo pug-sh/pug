@@ -12,6 +12,17 @@ const (
 	ProviderKindResend ProviderKind = "ORG_EMAIL_PROVIDER_KIND_RESEND"
 )
 
+// Valid reports whether k is a known provider kind. Use this to gate any
+// path that takes a ProviderKind from outside the closed set above (database
+// rows, proto enum mapping, etc.).
+func (k ProviderKind) Valid() bool {
+	switch k {
+	case ProviderKindSMTP, ProviderKindResend:
+		return true
+	}
+	return false
+}
+
 type SMTPConfig struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`

@@ -48,10 +48,9 @@ func Run(ctx context.Context) error {
 	}
 	defer natsClient.Close()
 
-	// Redis is only required when per-tenant providers are enabled
-	// (PUG_EMAIL_PROVIDER_SECRET_KEY set). In operator-only mode the worker
-	// has no Redis dependency, so we skip the connection entirely to avoid
-	// failing boot on operators who haven't adopted BYOP.
+	// Redis is only required when PUG_EMAIL_PROVIDER_SECRET_KEY is set
+	// (per-tenant cache). In operator-only mode we skip the connection so
+	// boot doesn't depend on Redis.
 	var keyCfg secretKeyConfig
 	if err := envconfig.Process(ctx, &keyCfg); err != nil {
 		return err

@@ -29,20 +29,39 @@ type Provider struct {
 }
 
 func New(cfg Config) (*Provider, error) {
-	if cfg.Host == "" || cfg.Port == 0 {
-		return nil, errors.New("smtp: host and port are required")
+	if cfg.Host == "" || cfg.Port <= 0 || cfg.Port > 65535 {
+		return nil, errors.New("smtp: host required and port must be in 1..65535")
 	}
 	return &Provider{cfg: cfg}, nil
 }
 
-func (p *Provider) Send(_ context.Context, msg emailspec.Message) error {
+func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 	addr := net.JoinHostPort(p.cfg.Host, strconv.Itoa(p.cfg.Port))
 
-	c, err := netsmtp.Dial(addr)
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
 	}
-	defer c.Close()
+
+	c, err := netsmtp.NewClient(conn, p.cfg.Host)
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("smtp new client: %w", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	// Tear down the underlying conn when ctx is canceled so a misbehaving
+	// server can't pin a goroutine past the worker's ProcessingTimeout.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
 
 	if err := c.Hello("localhost"); err != nil {
 		return fmt.Errorf("smtp hello: %w", err)
@@ -92,24 +111,35 @@ func (p *Provider) Send(_ context.Context, msg emailspec.Message) error {
 
 // randomBoundary returns a random multipart MIME boundary. Using a random
 // boundary per message prevents collisions with literal boundary strings that
-// might appear in user-supplied body content.
+// might appear in user-supplied body content. crypto/rand failure is treated
+// as fatal — a zero boundary would let an attacker collide their own content
+// with the boundary string and inject parts.
 func randomBoundary() string {
 	var buf [16]byte
-	_, _ = rand.Read(buf[:])
+	if _, err := rand.Read(buf[:]); err != nil {
+		panic(fmt.Sprintf("smtp: crypto/rand failed: %v", err))
+	}
 	return "pug-" + hex.EncodeToString(buf[:])
 }
 
-// buildMIME returns a multipart/alternative message with text and html parts.
+// sanitizeHeader strips CR and LF from a header value. SMTP headers terminate
+// on \r\n, so any CR/LF in user-supplied content (e.g. an org display_name
+// reaching Subject through an invite email) would split the field and let an
+// attacker inject arbitrary headers like Bcc.
+func sanitizeHeader(v string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(v)
+}
+
 func buildMIME(msg emailspec.Message) string {
 	var sb strings.Builder
-	sb.WriteString("From: " + msg.From + "\r\n")
-	sb.WriteString("To: " + msg.To + "\r\n")
+	sb.WriteString("From: " + sanitizeHeader(msg.From) + "\r\n")
+	sb.WriteString("To: " + sanitizeHeader(msg.To) + "\r\n")
 	if msg.ReplyTo != "" {
-		sb.WriteString("Reply-To: " + msg.ReplyTo + "\r\n")
+		sb.WriteString("Reply-To: " + sanitizeHeader(msg.ReplyTo) + "\r\n")
 	}
-	sb.WriteString("Subject: " + msg.Subject + "\r\n")
+	sb.WriteString("Subject: " + sanitizeHeader(msg.Subject) + "\r\n")
 	if msg.IdempotencyKey != "" {
-		sb.WriteString("X-Idempotency-Key: " + msg.IdempotencyKey + "\r\n")
+		sb.WriteString("X-Idempotency-Key: " + sanitizeHeader(msg.IdempotencyKey) + "\r\n")
 	}
 	sb.WriteString("MIME-Version: 1.0\r\n")
 	boundary := randomBoundary()

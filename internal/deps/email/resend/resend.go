@@ -15,7 +15,6 @@ type Config struct {
 }
 
 type Provider struct {
-	apiKey string
 	client *resendsdk.Client
 }
 
@@ -24,7 +23,6 @@ func New(cfg Config) (*Provider, error) {
 		return nil, fmt.Errorf("resend: API key is required")
 	}
 	return &Provider{
-		apiKey: cfg.APIKey,
 		client: newClient(newObservedHTTPClient(nil), cfg.APIKey),
 	}, nil
 }
