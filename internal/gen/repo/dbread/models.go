@@ -51,6 +51,16 @@ type Org struct {
 	UpdateTime  pgtype.Timestamptz
 }
 
+type OrgEmailProvider struct {
+	OrgID            string
+	Kind             string
+	FromAddress      string
+	ReplyTo          pgtype.Text
+	SecretCiphertext []byte
+	CreateTime       pgtype.Timestamptz
+	UpdateTime       pgtype.Timestamptz
+}
+
 type OrgInvitation struct {
 	CreateTime pgtype.Timestamptz
 	Email      string
