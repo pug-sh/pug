@@ -283,11 +283,13 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 }
 
 // Leave removes the calling customer from the org. Refuses if the caller is
-// the only admin (ErrLastAdmin) or the only member (ErrLastMember). Returns
-// ErrMemberNotFound if the caller is not a member.
+// the only admin (ErrLastAdmin) or the only non-admin member (ErrLastMember).
+// Returns ErrMemberNotFound if the caller is not a member.
 //
 // The guard and delete are a single CTE-based statement for atomicity against
-// concurrent Leave / RemoveMember / InviteMember.
+// concurrent Leave / RemoveMember calls. ErrLastAdmin takes precedence over
+// ErrLastMember: an admin who is also the sole member must first transfer
+// ownership before they can leave.
 func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 	n, err := s.write.DeleteOrgMemberIfNotLastAdminAndNotLastMember(
 		ctx,
@@ -322,25 +324,16 @@ func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 		return err
 	}
 
-	// Member exists but delete was blocked. Check member count to distinguish
-	// last-admin vs. only-member.
-	memberCount, err := s.write.CountOrgMembersByOrgID(ctx, orgID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to count members for Leave disambiguation", slogx.Error(err),
-			slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	if memberCount == 1 {
-		return ErrLastMember
-	}
+	// ErrLastAdmin takes priority: if the caller is an admin they were blocked
+	// by the admin-count guard in the CTE (or by both guards simultaneously
+	// when they are also the sole member). In both cases the actionable message
+	// is "promote someone else before leaving."
 	if role == orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
 		return ErrLastAdmin
 	}
-	slog.ErrorContext(ctx, "Leave blocked but disambiguation inconclusive",
-		slog.String("org_id", orgID), slog.String("customer_id", customerID),
-		slog.String("role", role), slog.Int64("member_count", memberCount))
-	return errors.New("leave blocked")
+
+	// Non-admin blocked → only the member-count guard could have fired.
+	return ErrLastMember
 }
 
 func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email string) (dbwrite.OrgInvitation, error) {

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -541,8 +542,8 @@ func TestLeaveOnlyMember(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	if err := svc.Leave(ctx, org.ID, solo); !errors.Is(err, orgs.ErrLastMember) {
-		t.Fatalf("want ErrLastMember, got %v", err)
+	if err := svc.Leave(ctx, org.ID, solo); !errors.Is(err, orgs.ErrLastAdmin) {
+		t.Fatalf("want ErrLastAdmin, got %v", err)
 	}
 }
 
@@ -633,5 +634,84 @@ func TestUpdateMemberRoleNotFound(t *testing.T) {
 
 	if _, err := svc.UpdateMemberRole(ctx, org.ID, stranger, orgsv1.OrgRole_ORG_ROLE_ADMIN.String()); !errors.Is(err, orgs.ErrMemberNotFound) {
 		t.Fatalf("want ErrMemberNotFound, got %v", err)
+	}
+}
+
+func TestLeaveNonAdminSoleMember(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	// Construct an unusual but defensively-supported state: a non-admin sole member.
+	// The public API cannot produce this — CreateOrgWithDefaults seats the caller as
+	// ADMIN, and Leave/RemoveMember/UpdateMemberRole all preserve the invariant of
+	// at least one admin per org. We construct it by seeding an admin + a member,
+	// then directly deleting the admin via the unchecked DeleteOrgMember query.
+	admin := seedCustomer(t, ctx, write, "admin")
+	loner := seedCustomer(t, ctx, write, "loner")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "non-admin-sole")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	mustAddMember(t, ctx, write, org.ID, loner, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())
+	if _, err := write.DeleteOrgMember(ctx, dbwrite.DeleteOrgMemberParams{
+		OrgID:      org.ID,
+		CustomerID: admin,
+	}); err != nil {
+		t.Fatalf("force-remove admin: %v", err)
+	}
+
+	if err := svc.Leave(ctx, org.ID, loner); !errors.Is(err, orgs.ErrLastMember) {
+		t.Fatalf("want ErrLastMember for non-admin sole member, got %v", err)
+	}
+}
+
+func TestLeaveTwoAdminsRaceExactlyOneSucceeds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	a := seedCustomer(t, ctx, write, "racer-a")
+	b := seedCustomer(t, ctx, write, "racer-b")
+	org, err := svc.CreateOrgWithDefaults(ctx, a, "race-org")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	mustAddMember(t, ctx, write, org.ID, b, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		errs[0] = svc.Leave(ctx, org.ID, a)
+	}()
+	go func() {
+		defer wg.Done()
+		errs[1] = svc.Leave(ctx, org.ID, b)
+	}()
+	wg.Wait()
+
+	var successes, lastAdmins int
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, orgs.ErrLastAdmin):
+			lastAdmins++
+		default:
+			t.Fatalf("unexpected error from concurrent Leave: %v", err)
+		}
+	}
+	if successes != 1 || lastAdmins != 1 {
+		t.Fatalf("want exactly 1 success and 1 ErrLastAdmin, got successes=%d lastAdmins=%d", successes, lastAdmins)
 	}
 }
