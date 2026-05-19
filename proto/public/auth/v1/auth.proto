@@ -8,6 +8,10 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;aut
 service AuthService {
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
   rpc SignUpWithEmail(SignUpWithEmailRequest) returns (SignUpWithEmailResponse) {}
+  rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse) {}
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse) {}
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse) {}
+  rpc ResendVerificationEmail(ResendVerificationEmailRequest) returns (ResendVerificationEmailResponse) {}
 }
 
 message SignInWithEmailRequest {
@@ -15,7 +19,12 @@ message SignInWithEmailRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.email = true
   ];
-  string password = 2 [(buf.validate.field).required = true];
+  // bcrypt accepts at most 72 bytes; rejecting longer inputs at the
+  // interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
+  string password = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_bytes = 72
+  ];
 }
 
 message SignInWithEmailResponse {
@@ -27,9 +36,50 @@ message SignUpWithEmailRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.email = true
   ];
-  string password = 2 [(buf.validate.field).required = true];
+  // bcrypt accepts at most 72 bytes; rejecting longer inputs at the
+  // interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
+  string password = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_bytes = 72
+  ];
 }
 
 message SignUpWithEmailResponse {
   string token = 1;
 }
+
+message VerifyEmailRequest {
+  string token = 1 [(buf.validate.field).required = true];
+}
+
+message VerifyEmailResponse {}
+
+message RequestPasswordResetRequest {
+  string email = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.email = true
+  ];
+}
+
+message RequestPasswordResetResponse {}
+
+message ResetPasswordRequest {
+  string token = 1 [(buf.validate.field).required = true];
+  // bcrypt accepts at most 72 bytes; rejecting longer inputs at the
+  // interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
+  string password = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_bytes = 72
+  ];
+}
+
+message ResetPasswordResponse {}
+
+message ResendVerificationEmailRequest {
+  string email = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.email = true
+  ];
+}
+
+message ResendVerificationEmailResponse {}

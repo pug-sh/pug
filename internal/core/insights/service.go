@@ -54,10 +54,6 @@ func variantTypeToPropertyValueType(raw string) commonv1.PropertyValueType {
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER
 	case "Float64":
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT
-	case "Number":
-		// Legacy alias for profile JSON values that landed in the MV before the
-		// Int64/Float64 split. Newer refreshes emit Int64 or Float64 directly.
-		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_FLOAT
 	case "Bool":
 		return commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_BOOLEAN
 	}

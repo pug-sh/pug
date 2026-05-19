@@ -1,0 +1,62 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Support and feedback events.
+
+message FeedbackSubmittedProperties {
+  option (common.events.v1.kind) = "feedback_submitted";
+  string feedback_id = 1;
+  string category = 2;
+  string comment = 3 [(common.events.v1.pii) = true];
+}
+
+message NpsSubmittedProperties {
+  option (common.events.v1.kind) = "nps_submitted";
+  int32 score = 1 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 10
+  }];
+  string comment = 2 [(common.events.v1.pii) = true];
+}
+
+message SurveyStartedProperties {
+  option (common.events.v1.kind) = "survey_started";
+  string survey_id = 1 [(buf.validate.field).required = true];
+}
+
+message SurveyCompletedProperties {
+  option (common.events.v1.kind) = "survey_completed";
+  string survey_id = 1 [(buf.validate.field).required = true];
+  int32 question_count = 2 [(buf.validate.field).int32.gte = 0];
+}
+
+message SupportTicketCreatedProperties {
+  option (common.events.v1.kind) = "support_ticket_created";
+  string ticket_id = 1 [(buf.validate.field).required = true];
+  string category = 2;
+  string priority = 3;
+}
+
+message SupportTicketResolvedProperties {
+  option (common.events.v1.kind) = "support_ticket_resolved";
+  string ticket_id = 1 [(buf.validate.field).required = true];
+  string resolution = 2 [(common.events.v1.pii) = true];
+}
+
+message SupportChatStartedProperties {
+  option (common.events.v1.kind) = "support_chat_started";
+  string conversation_id = 1 [(buf.validate.field).required = true];
+  string topic = 2 [(common.events.v1.pii) = true];
+}
+
+message HelpArticleViewedProperties {
+  option (common.events.v1.kind) = "help_article_viewed";
+  string article_id = 1 [(buf.validate.field).required = true];
+  string article_title = 2;
+  string category = 3;
+}

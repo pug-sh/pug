@@ -1,0 +1,44 @@
+edition = "2023";
+package common.events.v1;
+
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Auth events.
+
+message SignupProperties {
+  option (common.events.v1.kind) = "signup";
+}
+
+message SigninProperties {
+  option (common.events.v1.kind) = "signin";
+}
+
+message SignoutProperties {
+  option (common.events.v1.kind) = "signout";
+}
+
+message EmailVerifiedProperties {
+  option (common.events.v1.kind) = "email_verified";
+}
+
+message PasswordResetRequestedProperties {
+  option (common.events.v1.kind) = "password_reset_requested";
+}
+
+message PasswordResetCompletedProperties {
+  option (common.events.v1.kind) = "password_reset_completed";
+}
+
+// Common method values: "totp", "sms", "email", "webauthn", "backup_codes".
+message MfaEnabledProperties {
+  option (common.events.v1.kind) = "mfa_enabled";
+  string method = 1;
+}
+
+// Common method values: "totp", "sms", "email", "webauthn", "backup_codes".
+message MfaDisabledProperties {
+  option (common.events.v1.kind) = "mfa_disabled";
+  string method = 1;
+}

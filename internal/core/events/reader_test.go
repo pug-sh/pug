@@ -52,6 +52,14 @@ func TestGetActivityFeed(t *testing.T) {
 	}
 
 	err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"user-1", "proj-1", "ext-1", map[string]any{}, uint8(0), now, now,
+	)
+	if err != nil {
+		t.Fatalf("seed profile user-1: %v", err)
+	}
+
+	err = ch.Conn.Exec(ctx,
 		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
 		"anon-1", "user-1", "ext-1", "proj-1",
 	)
@@ -70,6 +78,18 @@ func TestGetActivityFeed(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("seed anon event: %v", err)
+	}
+
+	err = ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "ext-1", "identified_action",
+		map[string]string{},
+		map[string]string{},
+		now.Add(-6*time.Minute),
+		sessionB,
+	)
+	if err != nil {
+		t.Fatalf("seed external-id event: %v", err)
 	}
 
 	// Seed event for different project (should not appear in proj-1 queries).
@@ -96,11 +116,111 @@ func TestGetActivityFeed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetActivityFeed: %v", err)
 		}
-		if len(evts) != 6 {
-			t.Fatalf("expected 6 events, got %d", len(evts))
+		if len(evts) != 7 {
+			t.Fatalf("expected 7 events, got %d", len(evts))
 		}
 		if cursor != nil {
 			t.Errorf("expected nil cursor, got %+v", cursor)
+		}
+	})
+
+	t.Run("returns same events when queried by alias distinct id", func(t *testing.T) {
+		evts, cursor, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+			ProjectID:  "proj-1",
+			DistinctID: "anon-1",
+			PageSize:   100,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityFeed: %v", err)
+		}
+		if len(evts) != 7 {
+			t.Fatalf("expected 7 events, got %d", len(evts))
+		}
+		if cursor != nil {
+			t.Errorf("expected nil cursor, got %+v", cursor)
+		}
+	})
+
+	t.Run("returns same events when queried by external id", func(t *testing.T) {
+		evts, cursor, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+			ProjectID:  "proj-1",
+			DistinctID: "ext-1",
+			PageSize:   100,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityFeed: %v", err)
+		}
+		if len(evts) != 7 {
+			t.Fatalf("expected 7 events, got %d", len(evts))
+		}
+		if cursor != nil {
+			t.Errorf("expected nil cursor, got %+v", cursor)
+		}
+	})
+
+	t.Run("returns events for an alive profile with empty external id", func(t *testing.T) {
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			"anon-only", "proj-1", "", map[string]any{}, uint8(0), now, now,
+		); err != nil {
+			t.Fatalf("seed anon-only profile: %v", err)
+		}
+
+		anonOnlyEID := uuid.NewString()
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			anonOnlyEID, "proj-1", "anon-only", "anon_only_event",
+			map[string]string{}, map[string]string{},
+			now.Add(-10*time.Minute),
+			uuid.NewString(),
+		); err != nil {
+			t.Fatalf("seed anon-only event: %v", err)
+		}
+
+		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+			ProjectID:  "proj-1",
+			DistinctID: "anon-only",
+			PageSize:   100,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityFeed: %v", err)
+		}
+		if len(evts) != 1 {
+			t.Fatalf("expected 1 event for alive anonymous profile, got %d", len(evts))
+		}
+		if evts[0].EventID != anonOnlyEID {
+			t.Errorf("expected event %s, got %s", anonOnlyEID, evts[0].EventID)
+		}
+	})
+
+	t.Run("dedups when profile id equals external id", func(t *testing.T) {
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			"u-shared", "proj-1", "u-shared", map[string]any{}, uint8(0), now, now,
+		); err != nil {
+			t.Fatalf("seed u-shared profile: %v", err)
+		}
+
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			uuid.NewString(), "proj-1", "u-shared", "shared_event",
+			map[string]string{}, map[string]string{},
+			now.Add(-11*time.Minute),
+			uuid.NewString(),
+		); err != nil {
+			t.Fatalf("seed u-shared event: %v", err)
+		}
+
+		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+			ProjectID:  "proj-1",
+			DistinctID: "u-shared",
+			PageSize:   100,
+		})
+		if err != nil {
+			t.Fatalf("GetActivityFeed: %v", err)
+		}
+		if len(evts) != 1 {
+			t.Fatalf("expected 1 event for shared id/external-id profile, got %d", len(evts))
 		}
 	})
 
@@ -188,8 +308,8 @@ func TestGetActivityFeed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("page 3: %v", err)
 		}
-		if len(evts3) != 0 {
-			t.Fatalf("page 3: expected 0, got %d", len(evts3))
+		if len(evts3) != 1 {
+			t.Fatalf("page 3: expected 1, got %d", len(evts3))
 		}
 
 		seen := make(map[string]bool)
@@ -211,8 +331,8 @@ func TestGetActivityFeed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetActivityFeed: %v", err)
 		}
-		if len(evts) != 6 {
-			t.Fatalf("expected 6 events with default page size, got %d", len(evts))
+		if len(evts) != 7 {
+			t.Fatalf("expected 7 events with default page size, got %d", len(evts))
 		}
 	})
 
@@ -225,9 +345,9 @@ func TestGetActivityFeed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetActivityFeed: %v", err)
 		}
-		// Default 100 is applied, we only have 6 events
-		if len(evts) != 6 {
-			t.Fatalf("expected 6 events with negative page size, got %d", len(evts))
+		// Default 100 is applied, we only have 7 events
+		if len(evts) != 7 {
+			t.Fatalf("expected 7 events with negative page size, got %d", len(evts))
 		}
 	})
 
@@ -240,9 +360,9 @@ func TestGetActivityFeed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetActivityFeed: %v", err)
 		}
-		// Capped to 1000, we only have 6 events so all returned
-		if len(evts) != 6 {
-			t.Fatalf("expected 6 events with capped page size, got %d", len(evts))
+		// Capped to 1000, we only have 7 events so all returned
+		if len(evts) != 7 {
+			t.Fatalf("expected 7 events with capped page size, got %d", len(evts))
 		}
 	})
 
@@ -509,6 +629,540 @@ func TestGetActivityFeed(t *testing.T) {
 			t.Fatalf("expected 3 events, got %d", len(evts))
 		}
 	})
+}
+
+// TestActivityFeed_MergedAnonymousProfile lives in its own test function so
+// the merged-profile seed data (a tombstoned anonymous profile aliased to a
+// live profile) cannot leak into other subtests' identity spaces. It pins the
+// is_deleted=0 guard on the direct-profile lookup: without it, the lookup
+// would return the tombstone and skip the alias-resolution path.
+func TestActivityFeed_MergedAnonymousProfile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"user-merged", "proj-1", "ext-merged", map[string]any{}, uint8(0), now, now,
+	); err != nil {
+		t.Fatalf("seed target profile: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"anon-merged", "proj-1", "", map[string]any{}, uint8(1), now.Add(-1*time.Minute), now.Add(-1*time.Minute),
+	); err != nil {
+		t.Fatalf("seed merged anonymous profile tombstone: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+		"anon-merged", "user-merged", "ext-merged", "proj-1",
+	); err != nil {
+		t.Fatalf("seed merged alias: %v", err)
+	}
+
+	for _, seed := range []struct {
+		distinctID string
+		kind       string
+		offset     time.Duration
+	}{
+		{distinctID: "user-merged", kind: "merged_profile_direct", offset: -7 * time.Minute},
+		{distinctID: "ext-merged", kind: "merged_profile_external", offset: -8 * time.Minute},
+		{distinctID: "anon-merged", kind: "merged_profile_alias", offset: -9 * time.Minute},
+	} {
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			uuid.NewString(), "proj-1", seed.distinctID, seed.kind,
+			map[string]string{},
+			map[string]string{},
+			now.Add(seed.offset),
+			uuid.NewString(),
+		); err != nil {
+			t.Fatalf("seed merged profile event %s: %v", seed.kind, err)
+		}
+	}
+
+	reader := events.NewReader(ch.Conn)
+	evts, cursor, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+		ProjectID:  "proj-1",
+		DistinctID: "anon-merged",
+		PageSize:   100,
+	})
+	if err != nil {
+		t.Fatalf("GetActivityFeed: %v", err)
+	}
+	if len(evts) != 3 {
+		t.Fatalf("expected 3 events for merged anonymous query, got %d", len(evts))
+	}
+	if cursor != nil {
+		t.Errorf("expected nil cursor, got %+v", cursor)
+	}
+
+	kinds := make(map[string]bool, len(evts))
+	for _, evt := range evts {
+		kinds[evt.Kind] = true
+	}
+	for _, kind := range []string{"merged_profile_direct", "merged_profile_external", "merged_profile_alias"} {
+		if !kinds[kind] {
+			t.Fatalf("expected merged anonymous query to include %s", kind)
+		}
+	}
+}
+
+// TestActivityFeed_AliasReassignment verifies that reassigning an alias from
+// one profile to another correctly redirects events in both directions:
+// querying the alias resolves to the new target, and querying the old target
+// no longer surfaces the alias's events.
+func TestActivityFeed_AliasReassignment(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+	insertTimeOld := now.Add(-10 * time.Minute)
+	insertTimeNew := now.Add(-9 * time.Minute)
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"user-1", "proj-1", "ext-1", map[string]any{}, uint8(0), now, now,
+	); err != nil {
+		t.Fatalf("seed profile user-1: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"user-2", "proj-1", "ext-2", map[string]any{}, uint8(0), now, now,
+	); err != nil {
+		t.Fatalf("seed profile user-2: %v", err)
+	}
+
+	// Alias mapping is reassigned: moved-alias → user-1 (old), then → user-2 (new).
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id, insert_time) VALUES (?, ?, ?, ?, ?)`,
+		"moved-alias", "user-1", "ext-1", "proj-1", insertTimeOld,
+	); err != nil {
+		t.Fatalf("seed stale alias mapping: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id, insert_time) VALUES (?, ?, ?, ?, ?)`,
+		"moved-alias", "user-2", "ext-2", "proj-1", insertTimeNew,
+	); err != nil {
+		t.Fatalf("seed latest alias mapping: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "user-1", "user_1_direct",
+		map[string]string{}, map[string]string{},
+		now.Add(-5*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed user-1 direct event: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "user-2", "user_2_direct",
+		map[string]string{}, map[string]string{},
+		now.Add(-6*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed user-2 direct event: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "moved-alias", "moved_alias_event",
+		map[string]string{}, map[string]string{},
+		now.Add(-7*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed moved alias event: %v", err)
+	}
+
+	reader := events.NewReader(ch.Conn)
+
+	// Forward direction: querying the moved alias resolves to user-2 and
+	// returns user-2's direct event plus the alias's own event.
+	evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+		ProjectID:  "proj-1",
+		DistinctID: "moved-alias",
+		PageSize:   100,
+	})
+	if err != nil {
+		t.Fatalf("GetActivityFeed moved-alias: %v", err)
+	}
+	if len(evts) != 2 {
+		t.Fatalf("expected 2 events for reassigned alias, got %d", len(evts))
+	}
+
+	foundDirect := false
+	foundAlias := false
+	for _, e := range evts {
+		switch e.Kind {
+		case "user_2_direct":
+			if e.DistinctID != "user-2" {
+				t.Fatalf("expected user-2 direct event, got distinct_id %q", e.DistinctID)
+			}
+			foundDirect = true
+		case "moved_alias_event":
+			if e.DistinctID != "moved-alias" {
+				t.Fatalf("expected moved-alias event, got distinct_id %q", e.DistinctID)
+			}
+			foundAlias = true
+		default:
+			t.Fatalf("unexpected event kind for reassigned alias query: %s", e.Kind)
+		}
+	}
+	if !foundDirect || !foundAlias {
+		t.Fatalf("expected both direct and alias events for current profile, got direct=%v alias=%v", foundDirect, foundAlias)
+	}
+
+	// Reverse direction: querying user-1 must not surface moved_alias_event —
+	// getAliasIDs must exclude moved-alias since its argMax row now points to
+	// user-2. A regression to a non-argMax query would leak the alias event
+	// here, which the forward direction alone cannot detect.
+	evtsUser1, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+		ProjectID:  "proj-1",
+		DistinctID: "user-1",
+		PageSize:   100,
+	})
+	if err != nil {
+		t.Fatalf("GetActivityFeed user-1: %v", err)
+	}
+	foundUser1 := false
+	for _, e := range evtsUser1 {
+		if e.Kind == "moved_alias_event" {
+			t.Fatal("stale alias should not bleed events into user-1's feed after reassignment")
+		}
+		if e.Kind == "user_1_direct" {
+			foundUser1 = true
+		}
+	}
+	if !foundUser1 {
+		t.Fatal("expected user-1's direct event in feed")
+	}
+	if len(evtsUser1) != 1 {
+		t.Fatalf("expected exactly 1 event for user-1 after reassignment, got %d", len(evtsUser1))
+	}
+}
+
+// TestActivityFeed_LookupPrecedence pins the direct-profile-id → alias-id →
+// external-id resolution order in getProfileIDForIdentifier. The test seeds a
+// value that is simultaneously profile-A's id AND alias-id for profile-B AND
+// external-id for profile-C, then asserts the query for that value resolves
+// to profile-A's events. A regression that swaps the lookup stages (e.g.
+// alias-first) would resolve to profile-B and surface its events instead.
+func TestActivityFeed_LookupPrecedence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+
+	// "shared" plays all three identifier roles.
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"shared", "proj-1", "ext-A", map[string]any{}, uint8(0), now, now,
+	); err != nil {
+		t.Fatalf("seed profile A: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"user-B", "proj-1", "ext-B", map[string]any{}, uint8(0), now, now,
+	); err != nil {
+		t.Fatalf("seed profile B: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"user-C", "proj-1", "shared", map[string]any{}, uint8(0), now, now,
+	); err != nil {
+		t.Fatalf("seed profile C: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+		"shared", "user-B", "ext-B", "proj-1",
+	); err != nil {
+		t.Fatalf("seed alias: %v", err)
+	}
+
+	aEID := uuid.NewString()
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		aEID, "proj-1", "shared", "profile_A_event",
+		map[string]string{}, map[string]string{},
+		now.Add(-1*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed profile A event: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "user-B", "profile_B_event",
+		map[string]string{}, map[string]string{},
+		now.Add(-2*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed profile B event: %v", err)
+	}
+
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "user-C", "profile_C_event",
+		map[string]string{}, map[string]string{},
+		now.Add(-3*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed profile C event: %v", err)
+	}
+
+	reader := events.NewReader(ch.Conn)
+	evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+		ProjectID:  "proj-1",
+		DistinctID: "shared",
+		PageSize:   100,
+	})
+	if err != nil {
+		t.Fatalf("GetActivityFeed: %v", err)
+	}
+
+	// Direct-profile lookup wins: only profile A's events surface.
+	// ext-A is profile A's external_id, but no events are keyed by "ext-A",
+	// so the resolved IN (...) filter expands to ("shared", "ext-A") and
+	// matches only the "shared"-keyed event.
+	for _, e := range evts {
+		if e.Kind == "profile_B_event" {
+			t.Fatalf("alias-first regression: profile B event leaked into query for shared")
+		}
+		if e.Kind == "profile_C_event" {
+			t.Fatalf("external-id-first regression: profile C event leaked into query for shared")
+		}
+	}
+	if len(evts) != 1 {
+		t.Fatalf("expected exactly 1 event (profile A direct), got %d", len(evts))
+	}
+	if evts[0].EventID != aEID {
+		t.Fatalf("expected profile A event %s, got %s (kind %s)", aEID, evts[0].EventID, evts[0].Kind)
+	}
+}
+
+// TestActivityFeed_AliasToTombstoneExternalIDGuard pins the is_deleted=0
+// guard in getExternalIDForProfile. Setup: an alias points at a soft-deleted
+// profile P (e.g., a race where P was tombstoned after the alias was
+// recorded). Events keyed by P's stale external_id exist. The guard at
+// reader.go's getExternalIDForProfile must exclude those events from the
+// resolved IN (...) filter — without it, the stale external_id leaks through.
+func TestActivityFeed_AliasToTombstoneExternalIDGuard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+
+	// Tombstoned profile with a non-empty external_id.
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"P", "proj-1", "ext-stale", map[string]any{}, uint8(1), now.Add(-1*time.Hour), now.Add(-1*time.Hour),
+	); err != nil {
+		t.Fatalf("seed tombstoned profile: %v", err)
+	}
+
+	// Alias still points at the tombstoned profile.
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+		"alias-X", "P", "ext-stale", "proj-1",
+	); err != nil {
+		t.Fatalf("seed alias to tombstone: %v", err)
+	}
+
+	// Event keyed by the stale external_id. With the guard, this should NOT
+	// surface because the soft-deleted profile's external_id is excluded.
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "ext-stale", "stale_external_event",
+		map[string]string{}, map[string]string{},
+		now.Add(-30*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed stale external event: %v", err)
+	}
+
+	// Event keyed by the alias itself. This SHOULD surface — alias resolution
+	// doesn't filter by profile-alive status (only the external-id lookup does).
+	aliasEID := uuid.NewString()
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		aliasEID, "proj-1", "alias-X", "alias_event",
+		map[string]string{}, map[string]string{},
+		now.Add(-20*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed alias event: %v", err)
+	}
+
+	reader := events.NewReader(ch.Conn)
+	evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+		ProjectID:  "proj-1",
+		DistinctID: "alias-X",
+		PageSize:   100,
+	})
+	if err != nil {
+		t.Fatalf("GetActivityFeed: %v", err)
+	}
+
+	for _, e := range evts {
+		if e.Kind == "stale_external_event" {
+			t.Fatal("getExternalIDForProfile leaked the soft-deleted profile's external_id into the IN filter")
+		}
+	}
+	// Only the alias event should be present — the events for P (its id) and
+	// ext-stale (its external_id) are filtered by the is_deleted=0 guard, and
+	// there are no other aliases of P.
+	if len(evts) != 1 {
+		t.Fatalf("expected exactly 1 event (the alias-keyed event), got %d", len(evts))
+	}
+	if evts[0].EventID != aliasEID {
+		t.Fatalf("expected alias event %s, got %s", aliasEID, evts[0].EventID)
+	}
+}
+
+// TestActivityFeed_CrossProjectIdentifierCollision pins the project_id filter
+// inside latestProfilesQuery. Setup: proj-1 has profile "proj1-user" with
+// alias "shared-id" and external_id "proj1-ext". proj-2 has a different
+// profile whose id is also "shared-id" with external_id "proj2-ext". Without
+// the project_id filter on the latestProfilesQuery CTE, a proj-1 query for
+// "shared-id" would resolve via direct-id lookup to proj-2's identity space
+// (returning "proj2-ext" as the external_id), causing a proj-1 event keyed
+// by "proj2-ext" to leak into the result and the legitimate proj1-user-keyed
+// event to be missed.
+func TestActivityFeed_CrossProjectIdentifierCollision(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+
+	// proj-1: profile + alias mapping shared-id → proj1-user.
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"proj1-user", "proj-1", "proj1-ext", map[string]any{}, uint8(0), now, now,
+	); err != nil {
+		t.Fatalf("seed proj-1 profile: %v", err)
+	}
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+		"shared-id", "proj1-user", "proj1-ext", "proj-1",
+	); err != nil {
+		t.Fatalf("seed proj-1 alias: %v", err)
+	}
+
+	// proj-2: a profile whose id collides with proj-1's alias text. With the
+	// project filter removed, the direct lookup for "shared-id" would short-
+	// circuit on this proj-2 row and never reach proj-1's alias.
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"shared-id", "proj-2", "proj2-ext", map[string]any{}, uint8(0), now, now,
+	); err != nil {
+		t.Fatalf("seed proj-2 colliding profile: %v", err)
+	}
+
+	// Three proj-1 events that distinguish correct vs regression resolution.
+	// Correct path: ids resolved to ("proj1-user", "proj1-ext", "shared-id") —
+	// matches all three direct/external/alias events.
+	// Regression path: ids resolved to ("shared-id", "proj2-ext") — misses the
+	// proj1-user and proj1-ext events, and surfaces the unrelated proj2-ext
+	// event that doesn't belong to proj1-user.
+	directEID := uuid.NewString()
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		directEID, "proj-1", "proj1-user", "proj1_direct_event",
+		map[string]string{}, map[string]string{},
+		now.Add(-1*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed proj-1 direct event: %v", err)
+	}
+
+	externalEID := uuid.NewString()
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		externalEID, "proj-1", "proj1-ext", "proj1_external_event",
+		map[string]string{}, map[string]string{},
+		now.Add(-2*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed proj-1 external event: %v", err)
+	}
+
+	aliasEID := uuid.NewString()
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		aliasEID, "proj-1", "shared-id", "proj1_alias_event",
+		map[string]string{}, map[string]string{},
+		now.Add(-3*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed proj-1 alias event: %v", err)
+	}
+
+	// Unrelated proj-1 event keyed by proj-2's external_id. Belongs to some
+	// other proj-1 user; must not surface in proj1-user's feed.
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		uuid.NewString(), "proj-1", "proj2-ext", "unrelated_proj1_event",
+		map[string]string{}, map[string]string{},
+		now.Add(-4*time.Minute),
+		uuid.NewString(),
+	); err != nil {
+		t.Fatalf("seed unrelated proj-1 event: %v", err)
+	}
+
+	reader := events.NewReader(ch.Conn)
+	evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
+		ProjectID:  "proj-1",
+		DistinctID: "shared-id",
+		PageSize:   100,
+	})
+	if err != nil {
+		t.Fatalf("GetActivityFeed: %v", err)
+	}
+
+	for _, e := range evts {
+		if e.Kind == "unrelated_proj1_event" {
+			t.Fatal("cross-project leak: regression resolved through proj-2's profile, surfacing an unrelated event keyed by proj-2's external_id")
+		}
+	}
+
+	gotKinds := make(map[string]string, len(evts))
+	for _, e := range evts {
+		gotKinds[e.Kind] = e.EventID
+	}
+	for _, want := range []string{"proj1_direct_event", "proj1_external_event", "proj1_alias_event"} {
+		if _, ok := gotKinds[want]; !ok {
+			t.Fatalf("missing %s: alias resolution likely short-circuited through proj-2's profile", want)
+		}
+	}
+	if len(evts) != 3 {
+		t.Fatalf("expected exactly 3 events (direct + external + alias), got %d", len(evts))
+	}
 }
 
 func TestGetEventExplorer(t *testing.T) {

@@ -1,0 +1,48 @@
+-- name: CreateDashboard :one
+insert into dashboards (description, display_name, id, project_id)
+values (@description, @display_name, @id, @project_id)
+returning *;
+
+-- name: UpdateDashboardDisplayName :one
+update dashboards
+set display_name = @display_name,
+    description  = coalesce(nullif(@description, ''), description)
+where id = @id and project_id = @project_id
+returning *;
+
+-- name: DeleteDashboard :one
+delete from dashboards
+where id = @id and project_id = @project_id
+returning *;
+
+-- name: CreateDashboardTile :one
+insert into dashboard_tiles (id, dashboard_id, kind, display_name, description, insight_query, markdown_body, layouts)
+select @id, d.id, @kind, @display_name, @description, @insight_query, @markdown_body, @layouts
+from dashboards d
+where d.id = @dashboard_id and d.project_id = @project_id
+returning *;
+
+-- name: UpdateDashboardTile :one
+update dashboard_tiles dt
+set
+  display_name  = coalesce(nullif(@display_name, ''), dt.display_name),
+  description   = coalesce(nullif(@description, ''), dt.description),
+  kind          = @kind,
+  insight_query = @insight_query,
+  markdown_body = @markdown_body,
+  layouts       = @layouts
+from dashboards d
+where dt.id = @id
+  and dt.dashboard_id = @dashboard_id
+  and d.id = dt.dashboard_id
+  and d.project_id = @project_id
+returning dt.*;
+
+-- name: DeleteDashboardTile :one
+delete from dashboard_tiles dt
+using dashboards d
+where dt.id = @id
+  and dt.dashboard_id = @dashboard_id
+  and d.id = dt.dashboard_id
+  and d.project_id = @project_id
+returning dt.*;

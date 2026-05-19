@@ -1644,9 +1644,9 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x06points\x18\x03 \x03(\v2\x1d.shared.insights.v1.DataPointR\x06points\"Q\n" +
 	"\tDataPoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\"\xd6\x01\n" +
-	"\x18GetPropertyValuesRequest\x12A\n" +
-	"\fproperty_key\x18\x01 \x01(\tB\x1e\xbaH\x1b\xc8\x01\x01r\x162\x14^\\$?[a-zA-Z0-9_.-]+$R\vpropertyKey\x12>\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"\xe8\x01\n" +
+	"\x18GetPropertyValuesRequest\x12S\n" +
+	"\fproperty_key\x18\x01 \x01(\tB0\xbaH-\xc8\x01\x01r(2&^\\$?[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)*$R\vpropertyKey\x12>\n" +
 	"\x06source\x18\x02 \x01(\x0e2\x19.common.v1.PropertySourceB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\x06source\x127\n" +
 	"\n" +
 	"event_kind\x18\x03 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"3\n" +

@@ -55,12 +55,62 @@ func (q *Queries) CreateOrgInvitation(ctx context.Context, arg CreateOrgInvitati
 	return i, err
 }
 
+const getOrgInvitationByIDForUpdate = `-- name: GetOrgInvitationByIDForUpdate :one
+select create_time, email, expires_at, id, inviter_id, org_id, status, token from org_invitations where id = $1 for update
+`
+
+func (q *Queries) GetOrgInvitationByIDForUpdate(ctx context.Context, id string) (OrgInvitation, error) {
+	row := q.db.QueryRow(ctx, getOrgInvitationByIDForUpdate, id)
+	var i OrgInvitation
+	err := row.Scan(
+		&i.CreateTime,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.ID,
+		&i.InviterID,
+		&i.OrgID,
+		&i.Status,
+		&i.Token,
+	)
+	return i, err
+}
+
 const getOrgInvitationByTokenForUpdate = `-- name: GetOrgInvitationByTokenForUpdate :one
 select create_time, email, expires_at, id, inviter_id, org_id, status, token from org_invitations where token = $1 for update
 `
 
 func (q *Queries) GetOrgInvitationByTokenForUpdate(ctx context.Context, token string) (OrgInvitation, error) {
 	row := q.db.QueryRow(ctx, getOrgInvitationByTokenForUpdate, token)
+	var i OrgInvitation
+	err := row.Scan(
+		&i.CreateTime,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.ID,
+		&i.InviterID,
+		&i.OrgID,
+		&i.Status,
+		&i.Token,
+	)
+	return i, err
+}
+
+const refreshOrgInvitationDelivery = `-- name: RefreshOrgInvitationDelivery :one
+update org_invitations
+set expires_at = $1,
+    token = $2
+where id = $3
+returning create_time, email, expires_at, id, inviter_id, org_id, status, token
+`
+
+type RefreshOrgInvitationDeliveryParams struct {
+	ExpiresAt pgtype.Timestamptz
+	Token     string
+	ID        string
+}
+
+func (q *Queries) RefreshOrgInvitationDelivery(ctx context.Context, arg RefreshOrgInvitationDeliveryParams) (OrgInvitation, error) {
+	row := q.db.QueryRow(ctx, refreshOrgInvitationDelivery, arg.ExpiresAt, arg.Token, arg.ID)
 	var i OrgInvitation
 	err := row.Scan(
 		&i.CreateTime,

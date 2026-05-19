@@ -1,0 +1,155 @@
+edition = "2023";
+package common.events.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Well-known event property schemas — package overview.
+//
+// These messages define typed properties for common Event.kind values. They
+// are SDK hints: language-level structs that give autocomplete, shape
+// consistency, and a registry that maps Event.kind strings to property
+// shapes. The server does not enforce them — events with extra keys in
+// Event.custom_properties are accepted.
+//
+// ──────────────────────────────────────────────────────────────────────────
+// Wire format contract.
+//
+// Well-known event messages do NOT change the Event wire format. SDKs
+// serialize each typed field into a string entry in
+// Event.custom_properties (map<string, string>). The canonical string
+// encoding per type is:
+//
+//   string                  -> the string itself
+//   bool                    -> "true" or "false"
+//   int32 / int64           -> decimal integer, no thousands separator ("1234")
+//   double                  -> shortest round-trip decimal ("1.5", "99.99",
+//                              never "1.500000" or scientific notation
+//                              unless the value cannot be represented otherwise)
+//   google.protobuf.Duration-> seconds with optional fractional part and a
+//                              trailing "s" ("0s", "1.5s", "3600s")
+//   google.protobuf.Timestamp-> RFC 3339 in UTC ("2026-05-17T04:30:00Z")
+//
+// All SDKs MUST follow these conventions so that aggregations on
+// custom_properties match across languages. The server does not normalize
+// these strings on ingest.
+//
+// ──────────────────────────────────────────────────────────────────────────
+// SDK callers can always attach extra custom properties.
+//
+// A well-known message describes the curated set of typed fields for a
+// kind; it does not restrict the wire format. SDKs SHOULD expose an API
+// that lets the caller attach extra map<string, string> entries alongside
+// the typed ones — e.g. track("page_view", PageViewProperties{...}, {extra}).
+// The server never rejects an event for carrying additional keys.
+//
+// ──────────────────────────────────────────────────────────────────────────
+// Naming conventions for new well-known events.
+//
+// Event.kind strings (and the matching MessageName) follow these rules.
+// Existing exceptions are noted in the relevant per-file headers.
+//
+//   - snake_case for kind strings, PascalCase + "Properties" suffix for
+//     the message name. Example: kind "page_view" -> PageViewProperties.
+//   - Past-tense "_ed" for instantaneous actions:
+//       page_viewed (we keep page_view for industry convention), clicked,
+//       purchased, refunded, signin, signout, email_verified, file_uploaded.
+//   - "_started" / "_completed" for processes with a meaningful duration:
+//       survey_started/completed, export_started/completed,
+//       video_started/completed, checkout_started.
+//   - "_added" / "_removed" for collection mutations:
+//       cart, wishlist, coupon, member, reaction, payment_method.
+//   - "_open" / "_close" for app lifecycle only (not user-initiated actions).
+//   - Prefix related events with the subject domain when ambiguous:
+//       chat_message_sent, chat_call_started, workspace_role_changed.
+//
+// ──────────────────────────────────────────────────────────────────────────
+// Money precision.
+//
+// `amount` and `price` fields use `double` in the major currency unit
+// (dollars, euros, yen). These events are revenue *signals* for analytics;
+// they are not authoritative for accounting or reconciliation — your
+// order/invoice/ledger systems are the source of truth. Aggregations over
+// many events drift in the ~14th significant digit, well below the unit of
+// measurement.
+//
+// ──────────────────────────────────────────────────────────────────────────
+// Custom option definitions follow.
+
+// kind is the canonical Event.kind string for a well-known properties message.
+// Every well-known event message MUST set this option. Downstream tooling
+// (SDK codegen, server-side schema registries) reads it to map between
+// Event.kind strings and the typed property shape.
+//
+// Example:
+//   message PageViewProperties {
+//     option (common.events.v1.kind) = "page_view";
+//     // ...
+//   }
+extend google.protobuf.MessageOptions {
+  string kind = 50000;
+}
+
+// pii marks a field as containing personally identifiable information.
+// Downstream consumers (data warehouses, GDPR scrubbing tools, access
+// controls) use this annotation to identify fields that need special
+// handling — redaction, encryption at rest, restricted query access, etc.
+//
+// Be conservative: mark fields that commonly contain directly identifying
+// data (emails, phone numbers, names) or sensitive free-text user input
+// (feedback, support topics, error messages). Pseudonymous IDs (member_id,
+// invitee_id) are not marked by default; policy on those is left to the
+// downstream consumer.
+//
+// Example:
+//   string email = 1 [(common.events.v1.pii) = true];
+extend google.protobuf.FieldOptions {
+  bool pii = 50001;
+}
+
+// Platform identifies the client/runtime an event is intended for.
+// Used by SDK codegen tooling to decide which language targets should
+// surface a given well-known event. Like `kind`, this is an SDK hint —
+// the server does not enforce it.
+//
+// Naming note: a separate `Platform` enum exists in
+// `shared/delivery/v1/delivery.proto` for push-notification transport
+// targets (ANDROID/IOS only). The two enums describe different concepts
+// (event source vs push transport) and intentionally coexist; in Go
+// they are `commoneventsv1.Platform` vs `deliveryv1.Platform`. Their
+// ordinal integers are independent — do not assume a value name shared
+// between them encodes to the same wire integer in both packages.
+enum Platform {
+  PLATFORM_UNSPECIFIED = 0;
+  PLATFORM_WEB = 1;        // Browser-based JavaScript SDKs.
+  PLATFORM_IOS = 2;        // Native iOS apps (Swift/Objective-C).
+  PLATFORM_ANDROID = 3;    // Native Android apps (Kotlin/Java).
+  PLATFORM_DESKTOP = 4;    // Native desktop apps (Electron, macOS, Windows).
+  PLATFORM_SERVER = 5;     // Server-side tracking from backend services.
+}
+
+// platforms restricts a well-known event to a set of client platforms.
+// Codegen tooling uses this to decide which language SDKs expose typed
+// helpers for the event. An empty/absent list means "all platforms"
+// (cross-platform event — the default for events without this option).
+//
+// Consumer contract:
+//   * Empty/nil slice → treat as "all platforms."
+//   * Non-empty slice → restrict to listed platforms.
+//   * PLATFORM_UNSPECIFIED MUST NOT appear. Treat as a hard error if it does.
+//   * The set is unordered; consumers MUST NOT depend on declaration order.
+//   * Cross-platform SDKs (Flutter, React Native, KMP) include any event
+//     whose platforms list intersects their target runtimes — e.g. a
+//     Flutter SDK includes events tagged with any of
+//     {WEB, IOS, ANDROID, DESKTOP}.
+//
+// Example:
+//   message ScreenViewProperties {
+//     option (common.events.v1.kind) = "screen_view";
+//     option (common.events.v1.platforms) = PLATFORM_IOS;
+//     option (common.events.v1.platforms) = PLATFORM_ANDROID;
+//   }
+extend google.protobuf.MessageOptions {
+  repeated Platform platforms = 50002;
+}

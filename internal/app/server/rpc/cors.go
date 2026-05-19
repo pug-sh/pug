@@ -30,3 +30,23 @@ func WithCORS(allowedOrigins []string, connectHandler http.Handler) http.Handler
 	})
 	return c.Handler(connectHandler)
 }
+
+// WithSDKCORS configures CORS for SDK endpoints: wildcard origin, no credentials.
+// SDK auth is the x-api-key header (no cookies), and customer sites that embed
+// the SDK have arbitrary origins the operator can't pre-list.
+// TODO: replace the wildcard with a per-project allowed-origins list stored on
+// the project record, so each customer can restrict origins for their key.
+func WithSDKCORS(connectHandler http.Handler) http.Handler {
+	c := cors.New(cors.Options{
+		AllowCredentials: false,
+		AllowedHeaders: append(
+			connectcors.AllowedHeaders(),
+			HeaderAPIKey,
+		),
+		AllowedMethods: connectcors.AllowedMethods(),
+		AllowedOrigins: []string{"*"},
+		ExposedHeaders: connectcors.ExposedHeaders(),
+		MaxAge:         7200,
+	})
+	return c.Handler(connectHandler)
+}

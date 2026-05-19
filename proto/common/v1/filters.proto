@@ -106,7 +106,11 @@ message PropertyFilter {
   };
   string property = 1 [(buf.validate.field) = {
     required: true
-    string: {pattern: "^\\$?[a-zA-Z0-9_.-]+$"}
+    // Dots split into nested JSON subcolumn segments at the SQL layer
+    // (properties.`a`.`b`). Empty segments would produce malformed CH
+    // identifiers (`properties.`.``), so require non-empty segments between
+    // dots, no leading or trailing dot.
+    string: {pattern: "^\\$?[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)*$"}
   }];
   FilterOperator operator = 2 [(buf.validate.field) = {
     required: true

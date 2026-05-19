@@ -131,12 +131,18 @@ func NewReader(ch driver.Conn) *Reader {
 	return &Reader{ch: ch}
 }
 
-// getAliasIDs returns all alias IDs for a profile.
+// getAliasIDs returns the alias IDs that currently map to a profile. The
+// profile_aliases table records each alias write as a row keyed by
+// (project_id, profile_id, alias_id). Reassigning an alias to a new profile
+// produces a row under a different sort-key tuple, so the old and new
+// mappings coexist after merge. Latest-row semantics (argMax(profile_id,
+// insert_time) per alias_id) surface only the current mapping.
 func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) ([]string, error) {
 	sql, args, err := chq.NewQuery().
+		With("latest_profile_aliases", latestProfileAliasesQuery(projectID)).
 		Select("alias_id").
-		From("profile_aliases").
-		Where(chq.Eq("project_id", projectID), chq.Eq("profile_id", profileID)).
+		From("latest_profile_aliases").
+		Where(chq.Eq("profile_id", profileID)).
 		Build()
 	if err != nil {
 		slog.ErrorContext(ctx, "getAliasIDs: build query failed", slogx.Error(err),
@@ -180,7 +186,190 @@ func (r *Reader) getAliasIDs(ctx context.Context, projectID, profileID string) (
 	return ids, nil
 }
 
-// resolveProfileIDs returns the primary distinct ID plus any alias IDs for a profile.
+// getSingleString runs a query that may return zero or one string result.
+// logFieldKey is the slog/error label for the identifier (e.g. "distinct_id"
+// or "profile_id") so logs and error wraps describe the correct column when
+// the same helper is reused across resolution stages. Returns (value, true,
+// nil) on a single row, ("", false, nil) on zero rows, and an error on driver
+// failure.
+func (r *Reader) getSingleString(
+	ctx context.Context,
+	logPrefix string,
+	logFieldKey string,
+	sql string,
+	args []any,
+	projectID string,
+	identifier string,
+) (string, bool, error) {
+	rows, err := r.ch.Query(ctx, sql, args...)
+	if err != nil {
+		slog.ErrorContext(ctx, logPrefix+": clickhouse query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String(logFieldKey, identifier))
+		telemetry.RecordError(ctx, err)
+		return "", false, fmt.Errorf("%s: query failed for project %s %s=%s: %w", logPrefix, projectID, logFieldKey, identifier, err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "failed to close ClickHouse rows", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+		}
+	}()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			slog.ErrorContext(ctx, logPrefix+": row iteration failed", slogx.Error(err),
+				slog.String("project_id", projectID), slog.String(logFieldKey, identifier))
+			telemetry.RecordError(ctx, err)
+			return "", false, fmt.Errorf("%s: row iteration failed for project %s %s=%s: %w", logPrefix, projectID, logFieldKey, identifier, err)
+		}
+		return "", false, nil
+	}
+
+	var value string
+	if err := rows.Scan(&value); err != nil {
+		slog.ErrorContext(ctx, logPrefix+": scan failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String(logFieldKey, identifier))
+		telemetry.RecordError(ctx, err)
+		return "", false, fmt.Errorf("%s: scan failed for project %s %s=%s: %w", logPrefix, projectID, logFieldKey, identifier, err)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, logPrefix+": row iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String(logFieldKey, identifier))
+		telemetry.RecordError(ctx, err)
+		return "", false, fmt.Errorf("%s: row iteration failed for project %s %s=%s: %w", logPrefix, projectID, logFieldKey, identifier, err)
+	}
+
+	return value, true, nil
+}
+
+func latestProfilesQuery(projectID string) *chq.Query {
+	return chq.NewQuery().
+		Select(
+			"id",
+			"argMax(external_id, insert_time) AS external_id",
+			"argMax(is_deleted, insert_time) AS is_deleted",
+		).
+		From("profiles").
+		Where(chq.Eq("project_id", projectID)).
+		GroupBy("id")
+}
+
+func latestProfileAliasesQuery(projectID string) *chq.Query {
+	return chq.NewQuery().
+		Select(
+			"alias_id",
+			"argMax(profile_id, insert_time) AS profile_id",
+		).
+		From("profile_aliases").
+		Where(chq.Eq("project_id", projectID)).
+		GroupBy("alias_id")
+}
+
+// getProfileIDForIdentifier resolves a user-facing identifier to the profile's
+// profiles.id (the value stored as distinct_id for non-aliased events). The
+// input may already be a profile ID, an alias ID, or a current external ID.
+// If no mapping is found, returns the input unchanged so direct distinct_id
+// event queries (for unmerged users or unknown identifiers) still proceed.
+func (r *Reader) getProfileIDForIdentifier(ctx context.Context, projectID, distinctID string) (string, error) {
+	latestProfiles := latestProfilesQuery(projectID)
+
+	sql, args, err := chq.NewQuery().
+		With("latest_profiles", latestProfiles).
+		Select("id AS profile_id").
+		From("latest_profiles").
+		Where(chq.Eq("id", distinctID), chq.Eq("is_deleted", uint8(0))).
+		Limit(1).
+		Build()
+	if err != nil {
+		slog.ErrorContext(ctx, "getProfileIDForIdentifier: build direct profile query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("distinct_id", distinctID))
+		telemetry.RecordError(ctx, err)
+		return "", fmt.Errorf("getProfileIDForIdentifier: build direct profile query for project %s distinct %s: %w", projectID, distinctID, err)
+	}
+	if profileID, ok, err := r.getSingleString(ctx, "getProfileIDForIdentifier", "distinct_id", sql, args, projectID, distinctID); err != nil {
+		return "", err
+	} else if ok {
+		return profileID, nil
+	}
+
+	sql, args, err = chq.NewQuery().
+		With("latest_profile_aliases", latestProfileAliasesQuery(projectID)).
+		Select("profile_id").
+		From("latest_profile_aliases").
+		Where(chq.Eq("alias_id", distinctID)).
+		Limit(1).
+		Build()
+	if err != nil {
+		slog.ErrorContext(ctx, "getProfileIDForIdentifier: build alias query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("distinct_id", distinctID))
+		telemetry.RecordError(ctx, err)
+		return "", fmt.Errorf("getProfileIDForIdentifier: build alias query for project %s distinct %s: %w", projectID, distinctID, err)
+	}
+	if profileID, ok, err := r.getSingleString(ctx, "getProfileIDForIdentifier", "distinct_id", sql, args, projectID, distinctID); err != nil {
+		return "", err
+	} else if ok {
+		return profileID, nil
+	}
+
+	sql, args, err = chq.NewQuery().
+		With("latest_profiles", latestProfiles).
+		Select("id AS profile_id").
+		From("latest_profiles").
+		Where(chq.Eq("external_id", distinctID), chq.Eq("is_deleted", uint8(0))).
+		Limit(1).
+		Build()
+	if err != nil {
+		slog.ErrorContext(ctx, "getProfileIDForIdentifier: build external-id query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("distinct_id", distinctID))
+		telemetry.RecordError(ctx, err)
+		return "", fmt.Errorf("getProfileIDForIdentifier: build external-id query for project %s distinct %s: %w", projectID, distinctID, err)
+	}
+	if profileID, ok, err := r.getSingleString(ctx, "getProfileIDForIdentifier", "distinct_id", sql, args, projectID, distinctID); err != nil {
+		return "", err
+	} else if ok {
+		return profileID, nil
+	}
+
+	slog.DebugContext(ctx, "getProfileIDForIdentifier: no profile/alias/external mapping found, returning input unchanged",
+		slog.String("project_id", projectID), slog.String("distinct_id", distinctID))
+	return distinctID, nil
+}
+
+// getExternalIDForProfile returns the current external ID for a non-deleted
+// profile. Empty string means the profile is not found, is soft-deleted, or
+// has no external ID set. Soft-deleted profiles are excluded so their stale
+// external IDs do not feed back into the events IN (...) filter — matching
+// the is_deleted=0 guard in getProfileIDForIdentifier.
+func (r *Reader) getExternalIDForProfile(ctx context.Context, projectID, profileID string) (string, error) {
+	sql, args, err := chq.NewQuery().
+		With("latest_profiles", latestProfilesQuery(projectID)).
+		Select("external_id").
+		From("latest_profiles").
+		Where(chq.Eq("id", profileID), chq.Eq("is_deleted", uint8(0))).
+		Limit(1).
+		Build()
+	if err != nil {
+		slog.ErrorContext(ctx, "getExternalIDForProfile: build query failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("profile_id", profileID))
+		telemetry.RecordError(ctx, err)
+		return "", fmt.Errorf("getExternalIDForProfile: build query for project %s profile %s: %w", projectID, profileID, err)
+	}
+
+	externalID, ok, err := r.getSingleString(ctx, "getExternalIDForProfile", "profile_id", sql, args, projectID, profileID)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", nil
+	}
+	return externalID, nil
+}
+
+// resolveProfileIDs returns a deduplicated list of all distinct IDs to search
+// in the events table for this profile: the canonical profile ID, the current
+// external ID (if any), and all current alias IDs. Empty components are
+// omitted, so the slice has no positional structure and may be as short as 1.
 // Both projectID and distinctID must be non-empty. At the RPC boundary these are
 // guaranteed by MustGetPrincipalWithProject and proto validation (required = true).
 func (r *Reader) resolveProfileIDs(ctx context.Context, projectID, distinctID string) ([]string, error) {
@@ -197,11 +386,38 @@ func (r *Reader) resolveProfileIDs(ctx context.Context, projectID, distinctID st
 		telemetry.RecordError(ctx, err)
 		return nil, err
 	}
-	aliasIDs, err := r.getAliasIDs(ctx, projectID, distinctID)
+	profileID, err := r.getProfileIDForIdentifier(ctx, projectID, distinctID)
 	if err != nil {
 		return nil, err
 	}
-	return append([]string{distinctID}, aliasIDs...), nil
+	externalID, err := r.getExternalIDForProfile(ctx, projectID, profileID)
+	if err != nil {
+		return nil, err
+	}
+	aliasIDs, err := r.getAliasIDs(ctx, projectID, profileID)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]string, 0, 2+len(aliasIDs))
+	seen := make(map[string]struct{}, 2+len(aliasIDs))
+	addID := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	addID(profileID)
+	addID(externalID)
+	for _, aliasID := range aliasIDs {
+		addID(aliasID)
+	}
+	return ids, nil
 }
 
 const DefaultPageSize int32 = 100

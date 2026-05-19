@@ -1,0 +1,87 @@
+edition = "2023";
+package common.events.v1;
+
+import "buf/validate/validate.proto";
+import "common/events/v1/options.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/common/events/v1;commoneventsv1";
+
+// Navigation events.
+//
+// These messages define typed properties for common navigation event kinds.
+// They do not change the Event wire format — SDKs serialize fields into
+// Event.custom_properties (map<string, string>) before sending.
+
+// Web page navigation. Use screen_view for native mobile screens.
+//
+// Page URL, title, referrer, and UTM parameters are provided by SDK-injected
+// auto-properties ($url, $title, $referrer, $utm_source, $utm_medium,
+// $utm_campaign, $utm_term, $utm_content) on every event. SDK authors:
+// do not add these as typed fields here — let the auto-property pipeline
+// supply them so they stay consistent across all event kinds.
+message PageViewProperties {
+  option (common.events.v1.kind) = "page_view";
+  option (common.events.v1.platforms) = PLATFORM_WEB;
+}
+
+// Native mobile screen navigation. Use page_view for web pages.
+//
+// Device, OS, app version, and locale are provided by SDK-injected
+// auto-properties on every event. Only screen-specific fields belong here.
+message ScreenViewProperties {
+  option (common.events.v1.kind) = "screen_view";
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
+  string screen_name = 1 [(buf.validate.field).required = true];
+  string screen_class = 2;
+}
+
+// A normal user click. Decomposed element fields (class/id/tag/text) match
+// what a DOM-based instrumentation layer can extract directly. Compare
+// rage_click and dead_click which carry an opaque element selector from
+// session-replay tooling.
+message ClickProperties {
+  option (common.events.v1.kind) = "click";
+  option (common.events.v1.platforms) = PLATFORM_WEB;
+  string class = 1;
+  string id = 2;
+  string tag = 3;
+  string text = 4;
+  int32 x = 5;
+  int32 y = 6;
+}
+
+// Multiple rapid clicks on the same target, typically detected by
+// session-replay or heuristic tooling. element is an opaque selector
+// produced by that tooling, not a DOM-tree decomposition.
+message RageClickProperties {
+  option (common.events.v1.kind) = "rage_click";
+  option (common.events.v1.platforms) = PLATFORM_WEB;
+  int32 click_count = 1 [(buf.validate.field).int32.gte = 2];
+  string element = 2;
+  int32 x = 3;
+  int32 y = 4;
+}
+
+// A click on an element that produced no observable response.
+// element is an opaque selector from session-replay tooling.
+message DeadClickProperties {
+  option (common.events.v1.kind) = "dead_click";
+  option (common.events.v1.platforms) = PLATFORM_WEB;
+  string element = 1;
+  string text = 2;
+  int32 x = 3;
+  int32 y = 4;
+}
+
+message ScrollProperties {
+  option (common.events.v1.kind) = "scroll";
+  option (common.events.v1.platforms) = PLATFORM_WEB;
+  option (common.events.v1.platforms) = PLATFORM_IOS;
+  option (common.events.v1.platforms) = PLATFORM_ANDROID;
+  int32 percent = 1 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+  int32 scroll_y = 2 [(buf.validate.field).int32.gte = 0];
+}
