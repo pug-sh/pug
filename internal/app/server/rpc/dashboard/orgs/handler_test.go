@@ -66,41 +66,6 @@ func TestCreateOrgHandlerHappyPath(t *testing.T) {
 	}
 }
 
-func TestCreateOrgHandlerRejectsEmptyDisplayName(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgW)
-	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := orgshandler.NewServer(svc)
-	ctx := context.Background()
-
-	id := xid.New().String()
-	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: id, Email: id + "@e.com", PasswordHash: "x",
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	customer, _ := read.GetCustomerByID(ctx, id)
-
-	// Note: protovalidate interceptor catches empty display_name in production.
-	// This unit-style test bypasses the interceptor, so it documents the seam.
-	// Empty display_name passes through to the service which creates the org
-	// with an empty name — enforcement happens at the proto interceptor layer.
-	_, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&orgsv1.CreateRequest{
-		DisplayName: proto.String(""),
-	}))
-	var connectErr *connect.Error
-	if errors.As(err, &connectErr) {
-		// If the handler returns a connect error for empty name, document that too.
-		t.Logf("handler returned connect error for empty display_name: %v", connectErr)
-	}
-	// The test documents the seam: enforcement is at the interceptor, not the handler.
-	// An empty display_name either succeeds (handler passes through) or returns a
-	// connect error (if handler validates). Both outcomes are acceptable here.
-}
 
 func TestLeaveHandlerHappyPath(t *testing.T) {
 	if testing.Short() {
@@ -315,5 +280,92 @@ func TestUpdateMemberRoleHandlerDemoteRejected(t *testing.T) {
 	var connectErr *connect.Error
 	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeInvalidArgument {
 		t.Fatalf("want CodeInvalidArgument, got %v", err)
+	}
+}
+
+func TestLeaveHandlerNonMemberReturnsNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	ownerID := seedRawCustomer(t, ctx, write, "owner")
+	strangerID := seedRawCustomer(t, ctx, write, "stranger")
+	org, err := svc.CreateOrgWithDefaults(ctx, ownerID, "leave-not-member")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	stranger, err := read.GetCustomerByID(ctx, strangerID)
+	if err != nil {
+		t.Fatalf("read stranger: %v", err)
+	}
+	_, err = srv.Leave(
+		ctxWithCustomer(ctx, stranger),
+		connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String(org.ID)}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeNotFound {
+		t.Fatalf("want CodeNotFound, got %v", err)
+	}
+}
+
+func TestListHandlerRoleFieldPerOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgW)
+	svc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := orgshandler.NewServer(svc)
+	ctx := context.Background()
+
+	// The caller is ADMIN of orgA (created via CreateOrgWithDefaults) and MEMBER
+	// of orgB (added via CreateOrgMember after a different customer creates it).
+	callerID := seedRawCustomer(t, ctx, write, "caller")
+	otherID := seedRawCustomer(t, ctx, write, "other")
+
+	orgA, err := svc.CreateOrgWithDefaults(ctx, callerID, "alpha")
+	if err != nil {
+		t.Fatalf("seed orgA: %v", err)
+	}
+	orgB, err := svc.CreateOrgWithDefaults(ctx, otherID, "beta")
+	if err != nil {
+		t.Fatalf("seed orgB: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: orgB.ID, CustomerID: callerID, Role: orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
+	}); err != nil {
+		t.Fatalf("seed callerID as member of orgB: %v", err)
+	}
+
+	caller, err := read.GetCustomerByID(ctx, callerID)
+	if err != nil {
+		t.Fatalf("read caller: %v", err)
+	}
+
+	resp, err := srv.List(
+		ctxWithCustomer(ctx, caller),
+		connect.NewRequest(&orgsv1.ListRequest{}),
+	)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	gotByID := make(map[string]orgsv1.OrgRole, len(resp.Msg.GetOrgs()))
+	for _, o := range resp.Msg.GetOrgs() {
+		gotByID[o.GetId()] = o.GetRole()
+	}
+	if got, want := gotByID[orgA.ID], orgsv1.OrgRole_ORG_ROLE_ADMIN; got != want {
+		t.Errorf("orgA: want role=%v, got %v", want, got)
+	}
+	if got, want := gotByID[orgB.ID], orgsv1.OrgRole_ORG_ROLE_MEMBER; got != want {
+		t.Errorf("orgB: want role=%v, got %v", want, got)
 	}
 }

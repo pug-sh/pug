@@ -317,6 +317,8 @@ func (s *server) Create(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
+	// display_name validation (required, max_len=150) is enforced by the
+	// protovalidate interceptor on CreateRequest before this handler runs.
 	org, err := s.service.CreateOrgWithDefaults(ctx, principal.Customer.ID, req.Msg.GetDisplayName())
 	if err != nil {
 		// Service logs+records at source per the log-at-source convention.

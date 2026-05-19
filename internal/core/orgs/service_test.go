@@ -527,10 +527,15 @@ func TestLeaveLastAdmin(t *testing.T) {
 	}
 }
 
-func TestLeaveOnlyMember(t *testing.T) {
+func TestLeaveSoloAdminReturnsLastAdmin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	// CreateOrgWithDefaults seats the caller as ADMIN. When that admin is also
+	// the sole member, the admin-count guard fires first, so the caller sees
+	// ErrLastAdmin (the more actionable error: "promote someone first").
+	// ErrLastMember is only reachable for non-admin sole members; see
+	// TestLeaveNonAdminSoleMember for that path.
 	db := testutil.SetupPostgres(t)
 	write := dbwrite.New(db.PgW)
 	svc := orgs.NewService(db.PgRO, db.PgW, nil)
