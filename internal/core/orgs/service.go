@@ -45,7 +45,6 @@ func init() {
 var (
 	ErrAlreadyMember        = errors.New("already a member of this org")
 	ErrInviteAlreadyPending = errors.New("a pending invitation already exists for this email")
-	ErrInviteDeliveryFailed = errors.New("failed to queue invite email")
 	ErrInviteExpired        = errors.New("invitation has expired")
 	ErrInviteNotFound       = errors.New("invitation not found")
 	ErrInviteNotPending     = errors.New("invitation is not pending")
@@ -212,7 +211,7 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 	}()
 
 	w := dbwrite.New(tx)
-	storageToken, err := newInviteStorageToken()
+	storageToken, err := newInviteToken()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate invite storage token", slogx.Error(err),
 			slog.String("org_id", orgID))
@@ -289,7 +288,7 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 		return InviteDispatch{}, ErrInviteNotPending
 	}
 
-	storageToken, err := newInviteStorageToken()
+	storageToken, err := newInviteToken()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate invite storage token", slogx.Error(err),
 			slog.String("invitation_id", invitationID))
@@ -308,13 +307,28 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 		return InviteDispatch{}, err
 	}
 
-	if _, err := w.InvalidateActiveEmailActionTokensByInvitation(ctx, dbwrite.InvalidateActiveEmailActionTokensByInvitationParams{
+	n, err := w.InvalidateActiveEmailActionTokensByInvitation(ctx, dbwrite.InvalidateActiveEmailActionTokensByInvitationParams{
 		OrgInvitationID: postgres.NewOptionalText(inv.ID),
 		Purpose:         orgInvitePurpose,
-	}); err != nil {
+	})
+	if err != nil {
 		slog.ErrorContext(ctx, "failed to invalidate org invite tokens", slogx.Error(err), slog.String("invitation_id", inv.ID))
 		telemetry.RecordError(ctx, err)
 		return InviteDispatch{}, err
+	}
+	if n == 0 {
+		// Zero rows is benign in two cases: the invitation aged past inviteTTL while
+		// staying PENDING (the prior token's expires_at is now in the past, so the
+		// `expires_at > now()` filter on InvalidateActive skips it — see the
+		// resurrect-expired-invite flow in TestResendInviteExtendsExpiresAt), or a
+		// concurrent AcceptInvite raced ahead and consumed the prior token (the row
+		// lock on org_invitations serializes them but a marked-consumed row is still
+		// filtered out here). A genuine invariant violation — PENDING invitation with
+		// no token ever issued — would also land here. Surface for investigation
+		// without failing the resend; the freshly-issued token below restores the
+		// invariant in every case.
+		slog.WarnContext(ctx, "resend invalidated no prior invite tokens",
+			slog.String("invitation_id", inv.ID))
 	}
 
 	rawToken, err := s.issueInviteEmailToken(ctx, w, inv)
@@ -408,6 +422,13 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		return dbread.Org{}, err
 	}
 
+	// ErrNoRows here is safe to ignore: the row lock taken by
+	// GetOrgInvitationByIDForUpdate above serializes us against any concurrent
+	// ResendInvite, so the token can only become consumed/expired strictly
+	// before or strictly after this tx — never mid-flight. A missing row at
+	// this point means the token expired between GetValid and now (a sub-
+	// second window) and the invitation's expiry guard above should have
+	// already rejected the request.
 	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "failed to consume org invite token", slogx.Error(err), slog.String("token_id", emailToken.ID))
 		telemetry.RecordError(ctx, err)
@@ -447,10 +468,6 @@ func newInviteToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func newInviteStorageToken() (string, error) {
-	return newInviteToken()
-}
-
 func (s *Service) issueInviteEmailToken(ctx context.Context, w *dbwrite.Queries, inv dbwrite.OrgInvitation) (string, error) {
 	rawToken, err := newInviteToken()
 	if err != nil {
@@ -475,6 +492,10 @@ func (s *Service) issueInviteEmailToken(ctx context.Context, w *dbwrite.Queries,
 	return rawToken, nil
 }
 
+// publishInviteEmailJob is best-effort: a NATS failure is recorded via
+// emails.publish_failure_total{kind=org_member_invite} but does NOT fail the
+// calling RPC. The invitation row and its email_action_token are durable, so
+// an admin can click Resend to re-trigger delivery if the metric fires.
 func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvitation, token string) {
 	if s.publisher == nil {
 		return

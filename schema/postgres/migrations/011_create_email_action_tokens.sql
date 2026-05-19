@@ -26,8 +26,9 @@ create index email_action_tokens_org_invitation_idx
   on email_action_tokens (org_invitation_id)
   where org_invitation_id is not null;
 
--- Supports a future cleanup job that DELETEs rows past expiry without
--- scanning the whole table.
+-- Supports a future cleanup job that prunes unconsumed expired tokens without
+-- scanning the whole table. Consumed expired rows are out of scope here and
+-- would need a separate retention path / index.
 create index email_action_tokens_expires_at_idx
   on email_action_tokens (expires_at)
   where consumed_at is null;

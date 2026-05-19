@@ -255,7 +255,6 @@ type OrgInvitation struct {
 	Id            *string                `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
 	OrgId         *string                `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	Status        *InvitationStatus      `protobuf:"varint,5,opt,name=status,enum=dashboard.orgs.v1.InvitationStatus" json:"status,omitempty"`
-	Token         *string                `protobuf:"bytes,6,opt,name=token" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -323,13 +322,6 @@ func (x *OrgInvitation) GetStatus() InvitationStatus {
 		return *x.Status
 	}
 	return InvitationStatus_INVITATION_STATUS_UNSPECIFIED
-}
-
-func (x *OrgInvitation) GetToken() string {
-	if x != nil && x.Token != nil {
-		return *x.Token
-	}
-	return ""
 }
 
 type ListRequest struct {
@@ -1154,15 +1146,14 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x14\n" +
 	"\x05email\x18\x03 \x01(\tR\x05email\x12\x15\n" +
 	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12.\n" +
-	"\x04role\x18\x05 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\"\xbe\x01\n" +
+	"\x04role\x18\x05 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\"\xa8\x01\n" +
 	"\rOrgInvitation\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1d\n" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\tR\texpiresAt\x12\x0e\n" +
 	"\x02id\x18\x03 \x01(\tR\x02id\x12\x15\n" +
 	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12;\n" +
-	"\x06status\x18\x05 \x01(\x0e2#.dashboard.orgs.v1.InvitationStatusR\x06status\x12\x14\n" +
-	"\x05token\x18\x06 \x01(\tR\x05token\"\r\n" +
+	"\x06status\x18\x05 \x01(\x0e2#.dashboard.orgs.v1.InvitationStatusR\x06status\"\r\n" +
 	"\vListRequest\":\n" +
 	"\fListResponse\x12*\n" +
 	"\x04orgs\x18\x01 \x03(\v2\x16.dashboard.orgs.v1.OrgR\x04orgs\"+\n" +

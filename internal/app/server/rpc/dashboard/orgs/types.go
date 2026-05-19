@@ -43,9 +43,10 @@ func toRPCInvitationStatus(ctx context.Context, status string) orgsv1.Invitation
 	return orgsv1.InvitationStatus_INVITATION_STATUS_UNSPECIFIED
 }
 
-// toRPCInvitation intentionally omits the raw token. Invite acceptance is
-// driven by the emailed link only; dashboard APIs must never expose a
-// redeemable invite token.
+// toRPCInvitation and toRPCInvitationRO must be kept in sync — they convert
+// the write and read invitation models to the same proto message. The proto
+// OrgInvitation has no token field; invite acceptance is driven by the emailed
+// link, never by a value returned from these endpoints.
 func toRPCInvitation(ctx context.Context, inv dbwrite.OrgInvitation) *orgsv1.OrgInvitation {
 	var expiresAt string
 	if inv.ExpiresAt.Valid {

@@ -911,11 +911,17 @@ func TestSendTestUsesFreshIdempotencyKeyPerAttempt(t *testing.T) {
 	if _, err := srv.SendTest(ctxWithPrincipal, req); err != nil {
 		t.Fatalf("second SendTest: %v", err)
 	}
-	if fake.calls != 2 {
-		t.Fatalf("expected 2 Send calls, got %d", fake.calls)
+	if len(fake.all) != 2 {
+		t.Fatalf("expected 2 captured messages, got %d (calls=%d)", len(fake.all), fake.calls)
 	}
 	if fake.all[0].IdempotencyKey == fake.all[1].IdempotencyKey {
 		t.Fatalf("expected distinct idempotency keys, got %q", fake.all[0].IdempotencyKey)
+	}
+	prefix := "send_test:" + org.ID + ":" + customer.Email + ":"
+	for i, msg := range fake.all {
+		if !strings.HasPrefix(msg.IdempotencyKey, prefix) {
+			t.Fatalf("idempotency key[%d] missing tenant prefix: got %q, want prefix %q", i, msg.IdempotencyKey, prefix)
+		}
 	}
 }
 

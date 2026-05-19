@@ -48,7 +48,6 @@ message OrgInvitation {
   string id = 3;
   string org_id = 4;
   InvitationStatus status = 5;
-  string token = 6;
 }
 
 message ListRequest {}

@@ -26,12 +26,17 @@ import (
 type stubPublisher struct {
 	subject string
 	job     *emailworkerv1.EmailJob
+	// unmarshalErr surfaces proto round-trip failures separately from
+	// publish errors so tests can disambiguate "no publish happened" from
+	// "publish happened but the payload was malformed."
+	unmarshalErr error
 }
 
 func (p *stubPublisher) Publish(_ context.Context, subject string, data []byte) error {
 	p.subject = subject
 	p.job = &emailworkerv1.EmailJob{}
-	return proto.Unmarshal(data, p.job)
+	p.unmarshalErr = proto.Unmarshal(data, p.job)
+	return p.unmarshalErr
 }
 
 func TestInviteMemberPublishesEmailJob(t *testing.T) {
@@ -234,6 +239,10 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 	if resendDispatch.RawToken == firstDispatch.RawToken {
 		t.Fatal("resend should rotate the raw invite token")
 	}
+	// Status must remain PENDING — only AcceptInvite advances state.
+	if resendDispatch.Invitation.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
+		t.Fatalf("status = %q, want PENDING", resendDispatch.Invitation.Status)
+	}
 	if pub.job == nil || pub.job.GetOrgMemberInvite() == nil {
 		t.Fatal("expected org invite job on resend")
 	}
@@ -247,6 +256,20 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 	}); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("expected old token consumed after resend, got %v", err)
 	}
+	// GetValid… returns ErrNoRows for both deleted and consumed rows, so verify
+	// the prior token row was UPDATEd (consumed_at set) rather than DELETEd —
+	// preserving the audit trail. There's no sqlc query for this by design
+	// (production code never reads consumed tokens), so we go through the pool.
+	var consumedAt pgtype.Timestamptz
+	if err := db.PgW.QueryRow(ctx,
+		`select consumed_at from email_action_tokens where token_hash = $1`,
+		hashToken(firstDispatch.RawToken),
+	).Scan(&consumedAt); err != nil {
+		t.Fatalf("prior token row missing after resend (expected UPDATE, not DELETE): %v", err)
+	}
+	if !consumedAt.Valid {
+		t.Fatal("prior token row exists but consumed_at is null after resend")
+	}
 	if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
 		TokenHash: hashToken(resendDispatch.RawToken),
 		Purpose:   "org_invite",
@@ -258,6 +281,106 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 		Purpose:   "org_invite",
 	}); err != nil {
 		t.Fatalf("other org token lookup: %v", err)
+	}
+}
+
+func TestResendInviteRejectsUnknownInvitation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newInviteFixture(t, "unknown@example.com")
+	if _, err := f.svc.ResendInvite(context.Background(), f.org.ID, xid.New().String()); !errors.Is(err, orgs.ErrInviteNotFound) {
+		t.Fatalf("expected ErrInviteNotFound, got %v", err)
+	}
+}
+
+// TestResendInviteRejectsCrossOrg guards the privilege-escalation case where
+// an admin of orgA passes orgB's invitation_id. The service must return
+// ErrInviteNotFound (anti-enumeration) rather than processing the resend.
+func TestResendInviteRejectsCrossOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+	ctx := context.Background()
+
+	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: "cust-cross-1", Email: "admin-cross@example.com", DisplayName: "Admin", PasswordHash: "h",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	orgA, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-cross-a", DisplayName: "Org A"})
+	if err != nil {
+		t.Fatalf("CreateOrg orgA: %v", err)
+	}
+	orgB, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-cross-b", DisplayName: "Org B"})
+	if err != nil {
+		t.Fatalf("CreateOrg orgB: %v", err)
+	}
+	for _, orgID := range []string{orgA.ID, orgB.ID} {
+		if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+			OrgID: orgID, CustomerID: customer.ID, Role: "ORG_ROLE_ADMIN",
+		}); err != nil {
+			t.Fatalf("CreateOrgMember %s: %v", orgID, err)
+		}
+	}
+
+	invB, err := svc.InviteMember(ctx, orgB.ID, customer.ID, "cross-target@example.com")
+	if err != nil {
+		t.Fatalf("InviteMember orgB: %v", err)
+	}
+
+	if _, err := svc.ResendInvite(ctx, orgA.ID, invB.Invitation.ID); !errors.Is(err, orgs.ErrInviteNotFound) {
+		t.Fatalf("expected ErrInviteNotFound for cross-org resend, got %v", err)
+	}
+}
+
+// TestResendInviteRejectsAcceptedInvitation pins that an already-ACCEPTED
+// invitation cannot be resurrected via ResendInvite — only PENDING is
+// rotatable.
+func TestResendInviteRejectsAcceptedInvitation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newInviteFixture(t, "accepted-resend@example.com")
+	ctx := context.Background()
+
+	if _, err := f.svc.AcceptInvite(ctx, f.rawToken, f.invitee.ID, "accepted-resend@example.com"); err != nil {
+		t.Fatalf("AcceptInvite: %v", err)
+	}
+
+	if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); !errors.Is(err, orgs.ErrInviteNotPending) {
+		t.Fatalf("expected ErrInviteNotPending, got %v", err)
+	}
+}
+
+// TestResendInviteExtendsExpiresAt pins the "resurrect expired invite" flow:
+// resending a still-PENDING invitation whose expires_at is in the past must
+// push expires_at forward by inviteTTL. ResendInvite intentionally does NOT
+// gate on expiry — only on status — so an expired pending row can be revived.
+func TestResendInviteExtendsExpiresAt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newInviteFixture(t, "expired-resend@example.com")
+	ctx := context.Background()
+
+	if err := backdateInvitation(ctx, t, f, time.Now().Add(-1*time.Hour)); err != nil {
+		t.Fatalf("backdateInvitation: %v", err)
+	}
+
+	resend, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID)
+	if err != nil {
+		t.Fatalf("ResendInvite: %v", err)
+	}
+	// expires_at must be at least 6d23h in the future (inviteTTL=7d, allow a
+	// generous skew for slow CI to avoid flake).
+	minFuture := time.Now().Add(6*24*time.Hour + 23*time.Hour)
+	if !resend.Invitation.ExpiresAt.Valid || resend.Invitation.ExpiresAt.Time.Before(minFuture) {
+		t.Fatalf("expires_at not extended: got %v, want after %v", resend.Invitation.ExpiresAt.Time, minFuture)
 	}
 }
 
@@ -442,6 +565,30 @@ func TestAcceptInviteRejectsExpiredInvitation(t *testing.T) {
 
 	if _, err := f.svc.AcceptInvite(ctx, f.rawToken, f.invitee.ID, email); !errors.Is(err, orgs.ErrInviteExpired) {
 		t.Fatalf("expected ErrInviteExpired, got %v", err)
+	}
+}
+
+// TestAcceptInviteRejectsStaleRawTokenAfterResend pins defense-in-depth on the
+// invite-token rotation invariant: a raw token captured from an earlier invite
+// link must not redeem after a legitimate ResendInvite. The mechanism is
+// already covered indirectly by the GetValid → ErrNoRows assertion in
+// TestResendInviteRotatesOnlyInvitationToken, but this exercises the full
+// AcceptInvite path so a refactor that bypassed GetValid would still fail.
+func TestAcceptInviteRejectsStaleRawTokenAfterResend(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	const email = "stale-after-resend@example.com"
+	f := newInviteFixture(t, email)
+	ctx := context.Background()
+	staleToken := f.rawToken
+
+	if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); err != nil {
+		t.Fatalf("ResendInvite: %v", err)
+	}
+
+	if _, err := f.svc.AcceptInvite(ctx, staleToken, f.invitee.ID, email); !errors.Is(err, orgs.ErrInviteNotFound) {
+		t.Fatalf("expected ErrInviteNotFound for stale token after resend, got %v", err)
 	}
 }
 
