@@ -31,6 +31,28 @@ type Customer struct {
 	UpdateTime   pgtype.Timestamptz
 }
 
+type Dashboard struct {
+	ID          string
+	ProjectID   string
+	DisplayName string
+	Description string
+	CreateTime  pgtype.Timestamptz
+	UpdateTime  pgtype.Timestamptz
+}
+
+type DashboardTile struct {
+	ID           string
+	DashboardID  string
+	Kind         int16
+	DisplayName  string
+	Description  string
+	InsightQuery map[string]any
+	MarkdownBody pgtype.Text
+	Layouts      map[string]any
+	CreateTime   pgtype.Timestamptz
+	UpdateTime   pgtype.Timestamptz
+}
+
 type Org struct {
 	CreateTime  pgtype.Timestamptz
 	DisplayName string
