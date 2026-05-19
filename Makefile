@@ -70,6 +70,7 @@ build:
 	go build -o bin/pug-server ./cmd/server
 	go build -o bin/pug-worker-campaign ./cmd/workers/campaign
 	go build -o bin/pug-worker-device ./cmd/workers/device
+	go build -o bin/pug-worker-email ./cmd/workers/email
 	go build -o bin/pug-worker-events ./cmd/workers/events
 	go build -o bin/pug-worker-profile-identify ./cmd/workers/profile/identify
 	go build -o bin/pug-worker-profile-alias ./cmd/workers/profile/alias

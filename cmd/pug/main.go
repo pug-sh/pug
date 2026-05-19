@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/joho/godotenv"
@@ -17,6 +18,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server"
 	"github.com/pug-sh/pug/internal/app/workers/campaigns"
 	"github.com/pug-sh/pug/internal/app/workers/devices"
+	emailworker "github.com/pug-sh/pug/internal/app/workers/email"
 	eventsworker "github.com/pug-sh/pug/internal/app/workers/events"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/alias"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/identify"
@@ -83,6 +85,32 @@ func runMigrate(up, down func(ctx context.Context, num int) error) func(cmd *cob
 	}
 }
 
+func emailDevStatus() (bool, string) {
+	if os.Getenv("PUG_DASHBOARD_BASE_URL") == "" {
+		return false, "disabled (missing PUG_DASHBOARD_BASE_URL)"
+	}
+	if os.Getenv("PUG_EMAIL_FROM") == "" {
+		return false, "disabled (missing PUG_EMAIL_FROM)"
+	}
+
+	provider := strings.TrimSpace(strings.ToLower(os.Getenv("PUG_EMAIL_PROVIDER")))
+	if provider == "" {
+		provider = "resend"
+	}
+
+	switch provider {
+	case "resend":
+		if os.Getenv("PUG_RESEND_API_KEY") == "" {
+			return false, "disabled (missing PUG_RESEND_API_KEY for resend)"
+		}
+		return true, "email"
+	case "ses":
+		return true, "email"
+	default:
+		return false, fmt.Sprintf("disabled (unsupported provider %q)", provider)
+	}
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "pug",
 	Short: "Pug is a unified command line tool for managing the Pug application",
@@ -140,6 +168,12 @@ var eventsCmd = &cobra.Command{
 	Run:   run(eventsworker.Run),
 }
 
+var emailCmd = &cobra.Command{
+	Use:   "email",
+	Short: "Start the transactional email worker",
+	Run:   run(emailworker.Run),
+}
+
 var schedulerCmd = &cobra.Command{
 	Use:   "scheduler",
 	Short: "Start the scheduler worker",
@@ -195,6 +229,8 @@ var devCmd = &cobra.Command{
 		fmt.Println("  "+yellow+"Events:"+reset, "events")
 		fmt.Println("  "+yellow+"Campaigns:"+reset, "campaigns")
 		fmt.Println("  "+yellow+"Devices:"+reset, "devices")
+		emailEnabled, emailStatus := emailDevStatus()
+		fmt.Println("  "+yellow+"Email:"+reset, emailStatus)
 		fmt.Println("  "+yellow+"Scheduler:"+reset, "scheduler")
 		fmt.Println()
 
@@ -205,6 +241,9 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return devices.Run(ctx) })
 		g.Go(func() error { return campaigns.Run(ctx) })
 		g.Go(func() error { return eventsworker.Run(ctx) })
+		if emailEnabled {
+			g.Go(func() error { return emailworker.Run(ctx) })
+		}
 		g.Go(func() error { return identify.Run(ctx) })
 		g.Go(func() error { return alias.Run(ctx) })
 		g.Go(func() error { return upsert.Run(ctx) })
@@ -315,6 +354,7 @@ func init() {
 	workerCmd.AddCommand(deviceCmd)
 	workerCmd.AddCommand(campaignCmd)
 	workerCmd.AddCommand(eventsCmd)
+	workerCmd.AddCommand(emailCmd)
 	workerCmd.AddCommand(schedulerCmd)
 
 	rootCmd.AddCommand(serverCmd)
