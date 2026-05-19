@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	coreemail "github.com/pug-sh/pug/internal/core/email"
+	"github.com/pug-sh/pug/internal/core/email/fallback"
 	resenddeps "github.com/pug-sh/pug/internal/deps/email/resend"
 	sesdeps "github.com/pug-sh/pug/internal/deps/email/ses"
 )
@@ -14,9 +15,9 @@ func TestNewFallbackProviderResend(t *testing.T) {
 	t.Setenv("PUG_EMAIL_PROVIDER", "resend")
 	t.Setenv("PUG_RESEND_API_KEY", "test-api-key")
 
-	provider, err := newFallbackProvider(context.Background())
+	provider, err := fallback.NewProvider(context.Background())
 	if err != nil {
-		t.Fatalf("newFallbackProvider: %v", err)
+		t.Fatalf("fallback.NewProvider: %v", err)
 	}
 	if _, ok := provider.(*resenddeps.Provider); !ok {
 		t.Fatalf("expected *resend.Provider, got %T", provider)
@@ -26,7 +27,7 @@ func TestNewFallbackProviderResend(t *testing.T) {
 func TestNewFallbackProviderUnsupported(t *testing.T) {
 	t.Setenv("PUG_EMAIL_PROVIDER", "unknown")
 
-	_, err := newFallbackProvider(context.Background())
+	_, err := fallback.NewProvider(context.Background())
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -41,9 +42,9 @@ func TestNewFallbackProviderSES(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "test-access-key")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
 
-	provider, err := newFallbackProvider(context.Background())
+	provider, err := fallback.NewProvider(context.Background())
 	if err != nil {
-		t.Fatalf("newFallbackProvider: %v", err)
+		t.Fatalf("fallback.NewProvider: %v", err)
 	}
 	if _, ok := provider.(*sesdeps.Provider); !ok {
 		t.Fatalf("expected *ses.Provider, got %T", provider)

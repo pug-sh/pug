@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"connectrpc.com/grpcreflect"
 	"connectrpc.com/validate"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
 	orgsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/projects"
 	"github.com/pug-sh/pug/internal/app/server/rpc/public/auth"
@@ -22,10 +24,14 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/delivery"
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
+	coreemail "github.com/pug-sh/pug/internal/core/email"
+	"github.com/pug-sh/pug/internal/core/email/fallback"
+	"github.com/pug-sh/pug/internal/core/email/secret"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/public/auth/v1/authv1connect"
@@ -38,9 +44,11 @@ import (
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/geo"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/pug-sh/pug/internal/useragent"
+	"github.com/sethvargo/go-envconfig"
 	"golang.org/x/net/http2"
 )
 
@@ -89,6 +97,50 @@ func start(ctx context.Context, d *deps) error {
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
 		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
 
+	// Email providers — JWT + admin gate. Cipher and OrgProviderRepo are only
+	// present when PUG_EMAIL_PROVIDER_SECRET_KEY is configured; otherwise the
+	// handler's requireCipher gate returns CodeFailedPrecondition with a clear
+	// "not configured" message and SendTest returns the same on nil mailer.
+	var emailKeyCfg struct {
+		KeyB64 string `env:"PUG_EMAIL_PROVIDER_SECRET_KEY"`
+	}
+	if err := envconfig.Process(ctx, &emailKeyCfg); err != nil {
+		return err
+	}
+
+	var (
+		emailCipher  *secret.Cipher
+		orgEmailRepo *coreemail.OrgProviderRepo
+		emailMailer  *coreemail.Service
+	)
+	if emailKeyCfg.KeyB64 != "" {
+		c, err := secret.NewCipher(emailKeyCfg.KeyB64)
+		if err != nil {
+			return fmt.Errorf("server: init email cipher: %w", err)
+		}
+		emailCipher = c
+
+		orgEmailRepo = coreemail.NewOrgProviderRepo(queriesRo, d.redis.Unwrap())
+
+		var emailCfg coreemail.Config
+		if err := envconfig.Process(ctx, &emailCfg); err != nil {
+			return err
+		}
+		fallbackProvider, err := fallback.NewProvider(ctx)
+		if err != nil {
+			return err
+		}
+		resolver := coreemail.NewTenantAwareResolver(orgEmailRepo, emailCipher, fallbackProvider, emailCfg.From, emailCfg.ReplyTo)
+		emailMailer, err = coreemail.NewServiceWithResolver(emailCfg, resolver)
+		if err != nil {
+			return err
+		}
+	}
+
+	orgEmailProvidersPath, orgEmailProvidersHandler := orgemailprovidersv1connect.NewOrgEmailProvidersServiceHandler(
+		orgemailproviders.NewServer(orgsSvc, queriesRo, dbwrite.New(d.pgW), emailCipher, orgEmailRepo, emailMailer),
+		handlerOpts)
+
 	// Shared
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
 	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
@@ -125,6 +177,7 @@ func start(ctx context.Context, d *deps) error {
 	// Dashboard only (CORS + JWT auth)
 	mux.Handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
 	mux.Handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
+	mux.Handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
 	mux.Handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
@@ -147,6 +200,7 @@ func start(ctx context.Context, d *deps) error {
 		// Dashboard
 		orgsv1connect.OrgsServiceName,
 		projectsv1connect.ProjectsServiceName,
+		orgemailprovidersv1connect.OrgEmailProvidersServiceName,
 		// Shared
 		insightsv1connect.InsightsServiceName,
 		campaignsv1connect.CampaignServiceName,
