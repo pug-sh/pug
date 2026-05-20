@@ -53,8 +53,9 @@ func TestDelete_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 
@@ -65,8 +66,9 @@ func TestGet_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 

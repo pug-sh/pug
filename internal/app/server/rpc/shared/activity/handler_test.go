@@ -2,9 +2,11 @@ package activity
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/pug-sh/pug/internal/apperr"
 	activityv1 "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -72,8 +74,9 @@ func TestGetActivityHeatmap_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 
@@ -83,7 +86,8 @@ func TestGetProfileStats_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }

@@ -65,7 +65,7 @@ func (s *Server) BatchCreate(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	events := req.Msg.GetEvents()

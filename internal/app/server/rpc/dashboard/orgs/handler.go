@@ -27,7 +27,7 @@ func NewServer(service *coreorgs.Service) *server {
 func (s *server) requireOrgMember(ctx context.Context, orgID string) (*rpc.Principal, error) {
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	isMember, err := s.service.IsOrgMember(ctx, orgID, principal.Customer.ID)
@@ -48,7 +48,7 @@ func (s *server) requireOrgMember(ctx context.Context, orgID string) (*rpc.Princ
 func (s *server) requireOrgAdmin(ctx context.Context, orgID string) (*rpc.Principal, error) {
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	role, err := s.service.GetMemberRole(ctx, orgID, principal.Customer.ID)
@@ -76,7 +76,7 @@ func (s *server) List(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	rows, err := s.service.GetOrgsWithRole(ctx, principal.Customer.ID)
@@ -107,7 +107,7 @@ func (s *server) Get(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	row, err := s.service.GetOrgWithRole(ctx, req.Msg.GetOrgId(), principal.Customer.ID)
@@ -275,7 +275,7 @@ func (s *server) AcceptInvite(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	org, err := s.service.AcceptInvite(ctx, req.Msg.GetToken(), principal.Customer.ID, principal.Customer.Email)
@@ -338,7 +338,7 @@ func (s *server) Create(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	// display_name validation (required, min_len=1, max_len=150) is enforced
@@ -371,7 +371,7 @@ func (s *server) Leave(
 
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	if err := s.service.Leave(ctx, req.Msg.GetOrgId(), principal.Customer.ID); err != nil {

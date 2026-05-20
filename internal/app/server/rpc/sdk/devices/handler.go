@@ -32,7 +32,7 @@ func (s *Server) Subscribe(
 ) (*connect.Response[devicesv1.SubscribeResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	msg := &devicesv1.DeviceOperationMessage{
@@ -71,7 +71,7 @@ func (s *Server) UpdateStatus(
 ) (*connect.Response[devicesv1.UpdateStatusResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	msg := &devicesv1.DeviceOperationMessage{
@@ -106,7 +106,7 @@ func (s *Server) UpdateToken(
 ) (*connect.Response[devicesv1.UpdateTokenResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	msg := &devicesv1.DeviceOperationMessage{

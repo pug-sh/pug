@@ -40,7 +40,7 @@ func (s *Server) Delete(
 ) (*connect.Response[profilesv1.DeleteResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	profileID := req.Msg.GetId()
@@ -66,7 +66,7 @@ func (s *Server) Get(
 ) (*connect.Response[profilesv1.GetResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	pbProfile, err := s.getProfile(ctx, principal.Project.ID, req.Msg.GetId())
@@ -85,7 +85,7 @@ func (s *Server) GetByExternalId(
 ) (*connect.Response[profilesv1.GetByExternalIdResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	pbProfile, err := s.getProfileByExternalID(ctx, principal.Project.ID, req.Msg.GetExternalId())
@@ -109,7 +109,7 @@ func (s *Server) List(
 ) error {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return err
 	}
 
 	var cursorTime pgtype.Timestamptz

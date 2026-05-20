@@ -43,7 +43,7 @@ func NewServer(orgs *coreorgs.Service, read *dbread.Queries, write *dbwrite.Quer
 func (s *server) requireAdmin(ctx context.Context, orgID string) (*rpc.Principal, error) {
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 	role, err := s.orgs.GetMemberRole(ctx, orgID, principal.Customer.ID)
 	if err != nil {

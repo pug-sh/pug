@@ -2,6 +2,7 @@ package dashboards
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"connectrpc.com/authn"
@@ -10,6 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -224,6 +226,13 @@ func assertCode(t *testing.T, err error, want connect.Code) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if errors.As(err, &ae) {
+		if ae.Code != want {
+			t.Errorf("got code %v, want %v (err: %v)", ae.Code, want, err)
+		}
+		return
 	}
 	if got := connect.CodeOf(err); got != want {
 		t.Errorf("got code %v, want %v (err: %v)", got, want, err)
