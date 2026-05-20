@@ -97,6 +97,28 @@ func TestErrorInterceptor(t *testing.T) {
 		}
 	})
 
+	t.Run("apperr details ride along", func(t *testing.T) {
+		handlerErr := apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found",
+			apperr.Resource("profile", "p_123"))
+		err := testInterceptor(t, context.Background(), handlerErr)
+
+		var connectErr *connect.Error
+		if !errors.As(err, &connectErr) {
+			t.Fatalf("want *connect.Error, got %T", err)
+		}
+		var sawResource bool
+		for _, d := range connectErr.Details() {
+			if msg, verr := d.Value(); verr == nil {
+				if ri, ok := msg.(*errdetails.ResourceInfo); ok && ri.GetResourceName() == "p_123" {
+					sawResource = true
+				}
+			}
+		}
+		if !sawResource {
+			t.Error("ResourceInfo detail not attached")
+		}
+	})
+
 	t.Run("cancelled context returns canceled code", func(t *testing.T) {
 		// Use HTTP middleware to cancel the request context before Connect
 		// processes it. This ensures the interceptor's ctx.Err() check fires.

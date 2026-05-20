@@ -48,6 +48,9 @@ func sanitizeError(ctx context.Context, procedure string, err error) error {
 	if appErr, ok := errors.AsType[*apperr.Error](err); ok {
 		cerr := connect.NewError(appErr.Code, errors.New(appErr.Message))
 		attachDetails(ctx, cerr, appErr.Reason)
+		for _, d := range appErr.Details() {
+			addDetail(ctx, cerr, d)
+		}
 		return cerr
 	}
 
