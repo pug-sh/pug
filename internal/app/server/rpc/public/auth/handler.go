@@ -35,6 +35,9 @@ func (s *server) SignUpWithEmail(
 		if errors.Is(err, coreauth.ErrPasswordTooLong) {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("password must be 72 bytes or fewer"))
 		}
+		if errors.Is(err, coreauth.ErrInviteInvalid) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("invitation is no longer valid"))
+		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	return connect.NewResponse(&authv1.SignUpWithEmailResponse{Token: &token}), nil
