@@ -28,7 +28,8 @@ func TestRoleStringsMatchProtoEnum(t *testing.T) {
 }
 
 // TestParseRoleAcceptsKnownValues confirms the constructor accepts every
-// canonical role and rejects anything else, including the empty string.
+// canonical role and round-trips the string form. Rejection of unknown
+// values (including the empty string) is covered by TestParseRoleRejectsUnknown.
 func TestParseRoleAcceptsKnownValues(t *testing.T) {
 	for _, s := range []string{"ORG_ROLE_ADMIN", "ORG_ROLE_MEMBER"} {
 		r, err := orgs.ParseRole(s)
@@ -45,6 +46,25 @@ func TestParseRoleRejectsUnknown(t *testing.T) {
 	for _, s := range []string{"", "ADMIN", "ORG_ROLE_OWNER", "garbage"} {
 		if _, err := orgs.ParseRole(s); err == nil {
 			t.Errorf("ParseRole(%q): want error, got nil", s)
+		}
+	}
+}
+
+// TestParseRoleAcceptsAllProtoEnumValues walks orgsv1.OrgRole.Descriptor()
+// and asserts every non-UNSPECIFIED enum value round-trips through ParseRole.
+// Catches the failure mode TestRoleStringsMatchProtoEnum misses: a new proto
+// enum value added without updating Role's constants / IsValid / ParseRole
+// would compile and pass the table-driven test above but fail here.
+func TestParseRoleAcceptsAllProtoEnumValues(t *testing.T) {
+	values := orgsv1.OrgRole(0).Descriptor().Values()
+	for i := 0; i < values.Len(); i++ {
+		v := values.Get(i)
+		name := string(v.Name())
+		if name == orgsv1.OrgRole_ORG_ROLE_UNSPECIFIED.String() {
+			continue
+		}
+		if _, err := orgs.ParseRole(name); err != nil {
+			t.Errorf("ParseRole(%q): proto enum value not recognized by Role package — add to IsValid/ParseRole or to the constants block", name)
 		}
 	}
 }

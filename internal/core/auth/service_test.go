@@ -102,11 +102,11 @@ func TestAuthService(t *testing.T) {
 			t.Fatalf("GetValidEmailActionTokenByHashAndPurpose(signup verify): %v", err)
 		}
 
-		// Verify the CreateOrgWithDefaultsInTx wiring extracted in 666cdb2: the
-		// new customer is the admin of exactly one org with exactly one default
-		// project. A regression that broke the wiring (wrong customer ID,
-		// helper called outside the tx) would not be caught by the existing
-		// customer/token assertions above.
+		// Verify the CreateOrgWithDefaultsInTx wiring: the new customer is the
+		// admin of exactly one org with exactly one default project. A
+		// regression that broke the wiring (wrong customer ID, helper called
+		// outside the tx) would not be caught by the customer/token
+		// assertions above.
 		var adminMemberships, projectCount int
 		if err := db.PgW.QueryRow(ctx,
 			`select count(*) from org_members where customer_id = $1 and role = $2`,
@@ -280,59 +280,6 @@ func (failingPublisher) Publish(_ context.Context, _ string, _ []byte) error {
 //
 // Without the counter, a regression here would silently drop signup
 // confirmation emails for every new user.
-func TestSignUpWithEmailCountsPublishFailure(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	reader := sdkmetric.NewManualReader()
-	prevProvider := otel.GetMeterProvider()
-	otel.SetMeterProvider(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
-	t.Cleanup(func() { otel.SetMeterProvider(prevProvider) })
-
-	db := testutil.SetupPostgres(t)
-	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), failingPublisher{})
-	read := dbread.New(db.PgW)
-	ctx := context.Background()
-
-	const email = "publish-failure@example.com"
-	token, err := svc.SignUpWithEmail(ctx, email, "password123", "")
-	if err != nil {
-		t.Fatalf("SignUpWithEmail should swallow publish failure, got: %v", err)
-	}
-	if token == "" {
-		t.Fatal("expected JWT despite publish failure")
-	}
-
-	customer, err := read.GetCustomerByEmail(ctx, email)
-	if err != nil {
-		t.Fatalf("GetCustomerByEmail: %v", err)
-	}
-	// The CreateOrgWithDefaultsInTx wiring inside SignUpWithEmail must have
-	// committed: one org, one admin membership, one default project.
-	var orgCount, projCount int
-	if err := db.PgW.QueryRow(ctx,
-		`select count(*) from org_members where customer_id = $1 and role = $2`,
-		customer.ID, orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
-	).Scan(&orgCount); err != nil {
-		t.Fatalf("scan admin memberships: %v", err)
-	}
-	if orgCount != 1 {
-		t.Fatalf("want 1 admin membership for new signup, got %d", orgCount)
-	}
-	if err := db.PgW.QueryRow(ctx,
-		`select count(*) from projects p join org_members m on m.org_id = p.org_id where m.customer_id = $1`,
-		customer.ID,
-	).Scan(&projCount); err != nil {
-		t.Fatalf("scan projects: %v", err)
-	}
-	if projCount != 1 {
-		t.Fatalf("want 1 default project for new signup, got %d", projCount)
-	}
-
-	assertAuthEmailFailureCounter(t, reader, "signup_verify_welcome")
-}
-
 // assertAuthEmailFailureCounter mirrors the orgs-test helper. Lives here
 // (not as a shared helper) to keep the test packages independent.
 func assertAuthEmailFailureCounter(t *testing.T, reader sdkmetric.Reader, kind string) {
@@ -624,4 +571,245 @@ func TestSignUpWithEmail_InviteFallback(t *testing.T) {
 	if verifyJobs != 1 {
 		t.Fatalf("expected 1 SignupVerifyWelcome publish on fallback, got %d", verifyJobs)
 	}
+}
+
+// seedInviteForFallbackTest sets up an inviter + org + pending invitation
+// issued to inviteeEmail, returning the raw token and the invitation row so
+// callers can scenario-specifically corrupt it (backdate, status flip).
+func seedInviteForFallbackTest(t *testing.T, ctx context.Context, db *testutil.TestPostgres, inviteeEmail string) (rawToken string, inv dbwrite.OrgInvitation) {
+	t.Helper()
+	write := dbwrite.New(db.PgW)
+	orgSvc := coreorgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+
+	inviterID := xid.New().String()
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: inviterID, Email: "inviter-" + inviterID + "@example.com",
+		DisplayName: "Inviter", PasswordHash: "hash",
+	}); err != nil {
+		t.Fatalf("seed inviter: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID: xid.New().String(), DisplayName: "Fallback Org",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: inviterID, Role: orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+	}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+	invitation, err := orgSvc.InviteMember(ctx, org.ID, inviterID, inviteeEmail)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+	return invitation.Token, invitation
+}
+
+// assertFallbackDefaults checks the three invariants of a fallback signup:
+// the customer was created, NOT auto-verified, and has exactly one default
+// project. Used by all IM2-4 fallback variants.
+func assertFallbackDefaults(t *testing.T, ctx context.Context, db *testutil.TestPostgres, email string) {
+	t.Helper()
+	read := dbread.New(db.PgW)
+	customer, err := read.GetCustomerByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("GetCustomerByEmail: %v", err)
+	}
+	if customer.EmailVerifiedAt.Valid {
+		t.Fatal("fallback signup must not auto-verify email — invite was rejected")
+	}
+	var defaultProjects int
+	if err := db.PgW.QueryRow(ctx,
+		`select count(*) from projects p
+		 join org_members m on m.org_id = p.org_id
+		 where m.customer_id = $1 and p.display_name = 'default'`,
+		customer.ID,
+	).Scan(&defaultProjects); err != nil {
+		t.Fatalf("scan default projects: %v", err)
+	}
+	if defaultProjects != 1 {
+		t.Fatalf("expected 1 default project on fallback, got %d", defaultProjects)
+	}
+}
+
+// TestSignUpWithEmail_InviteFallback_WrongEmail pins that an invite issued
+// to a different email is treated as client-input error and falls back to
+// default-org creation. Security-relevant: an attacker who steals a token
+// cannot redeem it under their own email, but their signup must still
+// succeed (otherwise stolen tokens would block legitimate signups).
+func TestSignUpWithEmail_InviteFallback_WrongEmail(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	ctx := context.Background()
+
+	const issuedToEmail = "issued-to@example.com"
+	rawToken, _ := seedInviteForFallbackTest(t, ctx, db, issuedToEmail)
+
+	pub := &stubPublisher{}
+	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+
+	const signupEmail = "different@example.com"
+	if _, err := svc.SignUpWithEmail(ctx, signupEmail, "password123", rawToken); err != nil {
+		t.Fatalf("SignUpWithEmail with wrong-email invite: %v", err)
+	}
+	assertFallbackDefaults(t, ctx, db, signupEmail)
+}
+
+// TestSignUpWithEmail_InviteFallback_Expired pins the expired-invite
+// fallback. Backdates the email_action_token's expires_at; the
+// AcceptInviteInTx token lookup ("valid" query filters expired) returns
+// ErrInviteNotFound, isInviteClientError returns true, fallback path runs.
+func TestSignUpWithEmail_InviteFallback_Expired(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	ctx := context.Background()
+
+	const inviteeEmail = "expired-fallback@example.com"
+	rawToken, inv := seedInviteForFallbackTest(t, ctx, db, inviteeEmail)
+
+	if _, err := db.PgW.Exec(ctx,
+		`update email_action_tokens set expires_at = $1 where org_invitation_id = $2`,
+		time.Now().Add(-1*time.Hour), inv.ID,
+	); err != nil {
+		t.Fatalf("backdate email_action_token: %v", err)
+	}
+
+	pub := &stubPublisher{}
+	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+
+	if _, err := svc.SignUpWithEmail(ctx, inviteeEmail, "password123", rawToken); err != nil {
+		t.Fatalf("SignUpWithEmail with expired invite: %v", err)
+	}
+	assertFallbackDefaults(t, ctx, db, inviteeEmail)
+	_ = rawToken
+}
+
+// TestSignUpWithEmail_InviteFallback_NotPending pins the
+// already-accepted-invite fallback. Flips the invitation status directly to
+// ACCEPTED; AcceptInviteInTx then returns ErrInviteNotPending.
+func TestSignUpWithEmail_InviteFallback_NotPending(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	ctx := context.Background()
+
+	const inviteeEmail = "notpending-fallback@example.com"
+	rawToken, inv := seedInviteForFallbackTest(t, ctx, db, inviteeEmail)
+
+	if _, err := db.PgW.Exec(ctx,
+		`update org_invitations set status = $1 where id = $2`,
+		orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String(), inv.ID,
+	); err != nil {
+		t.Fatalf("flip status: %v", err)
+	}
+
+	pub := &stubPublisher{}
+	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+
+	if _, err := svc.SignUpWithEmail(ctx, inviteeEmail, "password123", rawToken); err != nil {
+		t.Fatalf("SignUpWithEmail with not-pending invite: %v", err)
+	}
+	assertFallbackDefaults(t, ctx, db, inviteeEmail)
+}
+
+// TestEmailPublishFailureCountersByKind pins SG2-14 + SG2-15 + the
+// password_reset/verification_resend gaps in the existing
+// TestSignUpWithEmailCountsPublishFailure: every payload-kind path through
+// publishEmailJob must tick emails.publish_failure_total with the right
+// {kind} attribute when the underlying publish fails.
+//
+// All sub-tests share one MeterProvider because otel-go's global delegating
+// instruments lock to the FIRST SetMeterProvider call; SetMeterProvider in
+// each sub-test would silently route ticks to the first sub-test's reader.
+// One provider, one reader, sub-tests filter by kind.
+func TestEmailPublishFailureCountersByKind(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	reader := sdkmetric.NewManualReader()
+	prevProvider := otel.GetMeterProvider()
+	otel.SetMeterProvider(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	t.Cleanup(func() { otel.SetMeterProvider(prevProvider) })
+
+	db := testutil.SetupPostgres(t)
+	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), failingPublisher{})
+	ctx := context.Background()
+
+	t.Run("signup_verify_welcome", func(t *testing.T) {
+		const email = "signup-publish-failure@example.com"
+		token, err := svc.SignUpWithEmail(ctx, email, "password123", "")
+		if err != nil {
+			t.Fatalf("SignUpWithEmail should swallow publish failure, got: %v", err)
+		}
+		if token == "" {
+			t.Fatal("expected JWT despite publish failure")
+		}
+
+		read := dbread.New(db.PgW)
+		customer, err := read.GetCustomerByEmail(ctx, email)
+		if err != nil {
+			t.Fatalf("GetCustomerByEmail: %v", err)
+		}
+		// SignUp must commit the org + admin membership + default project
+		// regardless of publish failure (fire-and-forget contract).
+		var orgCount, projCount int
+		if err := db.PgW.QueryRow(ctx,
+			`select count(*) from org_members where customer_id = $1 and role = $2`,
+			customer.ID, orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+		).Scan(&orgCount); err != nil {
+			t.Fatalf("scan admin memberships: %v", err)
+		}
+		if orgCount != 1 {
+			t.Fatalf("want 1 admin membership for new signup, got %d", orgCount)
+		}
+		if err := db.PgW.QueryRow(ctx,
+			`select count(*) from projects p join org_members m on m.org_id = p.org_id where m.customer_id = $1`,
+			customer.ID,
+		).Scan(&projCount); err != nil {
+			t.Fatalf("scan projects: %v", err)
+		}
+		if projCount != 1 {
+			t.Fatalf("want 1 default project for new signup, got %d", projCount)
+		}
+
+		assertAuthEmailFailureCounter(t, reader, "signup_verify_welcome")
+	})
+
+	t.Run("password_reset", func(t *testing.T) {
+		const email = "pwreset-publish-failure@example.com"
+		if _, err := svc.SignUpWithEmail(ctx, email, "password123", ""); err != nil {
+			t.Fatalf("SignUpWithEmail: %v", err)
+		}
+		if err := svc.RequestPasswordReset(ctx, email); err != nil {
+			t.Fatalf("RequestPasswordReset should swallow publish failure, got: %v", err)
+		}
+		assertAuthEmailFailureCounter(t, reader, "password_reset")
+	})
+
+	t.Run("verification_resend", func(t *testing.T) {
+		const email = "vresend-publish-failure@example.com"
+		if _, err := svc.SignUpWithEmail(ctx, email, "password123", ""); err != nil {
+			t.Fatalf("SignUpWithEmail: %v", err)
+		}
+		if err := svc.ResendVerificationEmail(ctx, email); err != nil {
+			t.Fatalf("ResendVerificationEmail should swallow publish failure, got: %v", err)
+		}
+		assertAuthEmailFailureCounter(t, reader, "verification_resend")
+	})
+
+	t.Run("unknown", func(t *testing.T) {
+		// Direct PublishEmailJobForTest call with an EmailJob whose Payload
+		// oneof is unset hits the default branch of payloadKindFromJob — the
+		// only counter bucket that fires on proto drift, so it must be
+		// observable to operators.
+		svc.PublishEmailJobForTest(ctx, &emailworkerv1.EmailJob{})
+		assertAuthEmailFailureCounter(t, reader, "unknown")
+	})
 }

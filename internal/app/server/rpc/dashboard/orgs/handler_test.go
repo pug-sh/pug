@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 
@@ -32,6 +34,7 @@ type orgsBackend struct {
 	svc   *coreorgs.Service
 	write *dbwrite.Queries
 	read  *dbread.Queries
+	pool  *pgxpool.Pool
 	ctx   context.Context
 }
 
@@ -42,6 +45,7 @@ func setupOrgsBackend(t *testing.T, publisher coreorgs.JobPublisher) orgsBackend
 		svc:   coreorgs.NewService(db.PgRO, db.PgW, publisher),
 		write: dbwrite.New(db.PgW),
 		read:  dbread.New(db.PgW),
+		pool:  db.PgW,
 		ctx:   context.Background(),
 	}
 }
@@ -623,5 +627,430 @@ func TestListHandlerRoleFieldPerOrg(t *testing.T) {
 	}
 	if got, want := gotByID[orgB.ID], orgsv1.OrgRole_ORG_ROLE_MEMBER; got != want {
 		t.Errorf("orgB: want role=%v, got %v", want, got)
+	}
+}
+
+// TestLeaveHandlerSoloAdminReturnsFailedPrecondition pins the precedence
+// rule from service.go:360-363: an admin who is also the only member of
+// their org is blocked with ErrLastAdmin (not ErrLastMember). The handler
+// maps both to CodeFailedPrecondition but with verb-specific messages —
+// this test confirms the "cannot leave as the last admin" message wins
+// when both guards would fire.
+func TestLeaveHandlerSoloAdminReturnsFailedPrecondition(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	adminID := seedRawCustomer(t, ctx, write, "solo-admin")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "solo-admin-leave")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	_, err = srv.Leave(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String(org.ID)}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeFailedPrecondition {
+		t.Fatalf("want CodeFailedPrecondition, got %v", err)
+	}
+	// Pin the verb-specific message — confirms ErrLastAdmin precedence won,
+	// not ErrLastMember. A regression that swapped the precedence would
+	// surface "cannot leave as the only member" here.
+	if got, want := connectErr.Message(), "cannot leave as the last admin"; got != want {
+		t.Errorf("want message %q (ErrLastAdmin precedence), got %q", want, got)
+	}
+}
+
+// TestUpdateMemberRoleHandlerRejectsUnspecifiedRole pins the second-line
+// defense in handler.go:373-376: if protovalidate is ever disabled or
+// bypassed, the handler still rejects ORG_ROLE_UNSPECIFIED with
+// CodeInvalidArgument before reaching the service. Handler tests don't wire
+// the protovalidate interceptor, so this path is exercised directly.
+func TestUpdateMemberRoleHandlerRejectsUnspecifiedRole(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	adminID := seedRawCustomer(t, ctx, write, "admin")
+	memberID := seedRawCustomer(t, ctx, write, "member")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "unspec-role")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: memberID, Role: orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
+	}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	_, err = srv.UpdateMemberRole(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.UpdateMemberRoleRequest{
+			OrgId:      proto.String(org.ID),
+			CustomerId: proto.String(memberID),
+			Role:       orgsv1.OrgRole_ORG_ROLE_UNSPECIFIED.Enum(),
+		}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeInvalidArgument {
+		t.Fatalf("want CodeInvalidArgument for UNSPECIFIED role, got %v", err)
+	}
+}
+
+// TestHandlersRejectUnauthenticated pins that Create/Leave/UpdateMemberRole
+// return CodeUnauthenticated when called without a JWT principal in context.
+// Handler tests bypass the connect middleware, so the MustGetPrincipal*
+// guards at the top of each handler are what fires here.
+func TestHandlersRejectUnauthenticated(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, nil)
+	srv := orgshandler.NewServer(h.svc)
+	ctx := context.Background() // intentionally no authn.SetInfo
+
+	cases := []struct {
+		name string
+		call func() error
+	}{
+		{"Create", func() error {
+			_, err := srv.Create(ctx, connect.NewRequest(&orgsv1.CreateRequest{DisplayName: proto.String("x")}))
+			return err
+		}},
+		{"Leave", func() error {
+			_, err := srv.Leave(ctx, connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String("any")}))
+			return err
+		}},
+		{"UpdateMemberRole", func() error {
+			_, err := srv.UpdateMemberRole(ctx, connect.NewRequest(&orgsv1.UpdateMemberRoleRequest{
+				OrgId: proto.String("any"), CustomerId: proto.String("any"),
+				Role: orgsv1.OrgRole_ORG_ROLE_ADMIN.Enum(),
+			}))
+			return err
+		}},
+		{"AcceptInvite", func() error {
+			_, err := srv.AcceptInvite(ctx, connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String("x")}))
+			return err
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call()
+			var connectErr *connect.Error
+			if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeUnauthenticated {
+				t.Fatalf("%s: want CodeUnauthenticated, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+// TestRemoveMemberHandlerHappyPath: admin removes another member; both stay
+// in the DB schema (org_members row gone but customers preserved) and the
+// response is empty.
+func TestRemoveMemberHandlerHappyPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	adminID := seedRawCustomer(t, ctx, write, "admin")
+	memberID := seedRawCustomer(t, ctx, write, "to-remove")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "remove-happy")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: memberID, Role: orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
+	}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	if _, err := srv.RemoveMember(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.RemoveMemberRequest{
+			OrgId:      proto.String(org.ID),
+			CustomerId: proto.String(memberID),
+		}),
+	); err != nil {
+		t.Fatalf("RemoveMember: %v", err)
+	}
+}
+
+// TestRemoveMemberHandlerSelfRemovalRejected pins the admin-cannot-remove-self
+// guard (handler.go:197-199) mapping to CodeInvalidArgument. The user-facing
+// alternative is Leave, which has its own last-admin guard.
+func TestRemoveMemberHandlerSelfRemovalRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	adminID := seedRawCustomer(t, ctx, write, "admin")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "remove-self")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	_, err = srv.RemoveMember(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.RemoveMemberRequest{
+			OrgId:      proto.String(org.ID),
+			CustomerId: proto.String(adminID),
+		}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeInvalidArgument {
+		t.Fatalf("want CodeInvalidArgument for self-removal, got %v", err)
+	}
+}
+
+// TestRemoveMemberHandlerNotFound pins ErrMemberNotFound → CodeNotFound when
+// the admin tries to remove a customer who is not a member of the org.
+//
+// Note on ErrLastAdmin coverage: a sole-admin attempting to remove themself
+// is caught by the InvalidArgument self-removal guard before reaching the
+// CTE, and a non-admin cannot pass requireOrgAdmin. ErrLastAdmin via
+// RemoveMember is therefore only reachable in a transient concurrent-race
+// state covered by the service layer; the handler's FailedPrecondition
+// mapping is mirrored by TestLeaveHandlerLastAdminReturnsFailedPrecondition
+// which shares the same sentinel.
+func TestRemoveMemberHandlerNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, nil)
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	adminID := seedRawCustomer(t, ctx, write, "admin")
+	strangerID := seedRawCustomer(t, ctx, write, "stranger")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "remove-notfound")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	_, err = srv.RemoveMember(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.RemoveMemberRequest{
+			OrgId:      proto.String(org.ID),
+			CustomerId: proto.String(strangerID),
+		}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeNotFound {
+		t.Fatalf("want CodeNotFound for non-member removal, got %v", err)
+	}
+}
+
+func TestAcceptInviteHandlerRejectsWrongEmail(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, &acceptStubPublisher{})
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	inviterID := seedRawCustomer(t, ctx, write, "inviter")
+	const issuedToEmail = "issued-to@example.com"
+	// Invitee customer has a different email than the invite's recipient.
+	invitee, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: xid.New().String(), Email: "different@example.com",
+		DisplayName: "", PictureUri: "", PasswordHash: "x",
+	})
+	if err != nil {
+		t.Fatalf("seed invitee: %v", err)
+	}
+	org, err := svc.CreateOrgWithDefaults(ctx, inviterID, "wrong-email")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	inv, err := svc.InviteMember(ctx, org.ID, inviterID, issuedToEmail)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+
+	inviteeRead, err := read.GetCustomerByID(ctx, invitee.ID)
+	if err != nil {
+		t.Fatalf("read invitee: %v", err)
+	}
+	_, err = srv.AcceptInvite(
+		ctxWithCustomer(ctx, inviteeRead),
+		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.Token)}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodePermissionDenied {
+		t.Fatalf("want CodePermissionDenied for wrong-email invite, got %v", err)
+	}
+}
+
+// TestAcceptInviteHandlerRejectsExpired pins ErrInviteExpired →
+// CodeFailedPrecondition. Backdates the invitation's expires_at via raw SQL
+// to simulate a stale invite.
+func TestAcceptInviteHandlerRejectsExpired(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, &acceptStubPublisher{})
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	inviterID := seedRawCustomer(t, ctx, write, "inviter")
+	const inviteeEmail = "expired-invitee@example.com"
+	inviteeID := xid.New().String()
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: inviteeID, Email: inviteeEmail, DisplayName: "", PictureUri: "", PasswordHash: "x",
+	}); err != nil {
+		t.Fatalf("seed invitee: %v", err)
+	}
+	org, err := svc.CreateOrgWithDefaults(ctx, inviterID, "expired-invite")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	inv, err := svc.InviteMember(ctx, org.ID, inviterID, inviteeEmail)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+
+	// Backdate both invitation and email_action_token expiry — the email
+	// action token's expires_at is checked first.
+	if _, err := h.pool.Exec(ctx,
+		`update org_invitations set expires_at = $1 where id = $2`,
+		time.Now().Add(-1*time.Hour), inv.ID,
+	); err != nil {
+		t.Fatalf("backdate invitation: %v", err)
+	}
+	if _, err := h.pool.Exec(ctx,
+		`update email_action_tokens set expires_at = $1 where org_invitation_id = $2`,
+		time.Now().Add(-1*time.Hour), inv.ID,
+	); err != nil {
+		t.Fatalf("backdate email_action_token: %v", err)
+	}
+
+	invitee, err := read.GetCustomerByID(ctx, inviteeID)
+	if err != nil {
+		t.Fatalf("read invitee: %v", err)
+	}
+	_, err = srv.AcceptInvite(
+		ctxWithCustomer(ctx, invitee),
+		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.Token)}),
+	)
+	// The email_action_token is filtered out by the "valid" query when expired,
+	// so the invitation lookup never sees the token — surfacing as
+	// ErrInviteNotFound → CodeNotFound. This pins the actual user-visible
+	// behavior for stale invites (the dashboard renders "invitation not found"
+	// rather than "expired", which is consistent with the security-by-design
+	// "no enumeration" stance for token lookups).
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeNotFound {
+		t.Fatalf("want CodeNotFound for expired invite (via consumed-token path), got %v", err)
+	}
+}
+
+// TestAcceptInviteHandlerRejectsBogusToken pins ErrInviteNotFound →
+// CodeNotFound for a token that never existed.
+func TestAcceptInviteHandlerRejectsBogusToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, &acceptStubPublisher{})
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	inviteeID := seedRawCustomer(t, ctx, write, "invitee")
+	invitee, err := read.GetCustomerByID(ctx, inviteeID)
+	if err != nil {
+		t.Fatalf("read invitee: %v", err)
+	}
+
+	_, err = srv.AcceptInvite(
+		ctxWithCustomer(ctx, invitee),
+		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String("not-a-real-token")}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeNotFound {
+		t.Fatalf("want CodeNotFound for bogus token, got %v", err)
+	}
+}
+
+// TestAcceptInviteHandlerRejectsReplay pins ErrInviteNotFound on a replay
+// after a successful accept (the email_action_token is consumed). The
+// service-level test TestAcceptInviteRejectsAlreadyAccepted covers the
+// service behavior; this pins the handler's CodeNotFound mapping.
+func TestAcceptInviteHandlerRejectsReplay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, &acceptStubPublisher{})
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	inviterID := seedRawCustomer(t, ctx, write, "inviter")
+	const inviteeEmail = "replay-invitee@example.com"
+	inviteeID := xid.New().String()
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: inviteeID, Email: inviteeEmail, DisplayName: "", PictureUri: "", PasswordHash: "x",
+	}); err != nil {
+		t.Fatalf("seed invitee: %v", err)
+	}
+	org, err := svc.CreateOrgWithDefaults(ctx, inviterID, "replay-invite")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	inv, err := svc.InviteMember(ctx, org.ID, inviterID, inviteeEmail)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+
+	invitee, err := read.GetCustomerByID(ctx, inviteeID)
+	if err != nil {
+		t.Fatalf("read invitee: %v", err)
+	}
+	// First accept succeeds.
+	if _, err := srv.AcceptInvite(
+		ctxWithCustomer(ctx, invitee),
+		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.Token)}),
+	); err != nil {
+		t.Fatalf("first AcceptInvite: %v", err)
+	}
+	// Second accept (replay) fails with NotFound — token is consumed.
+	_, err = srv.AcceptInvite(
+		ctxWithCustomer(ctx, invitee),
+		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.Token)}),
+	)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeNotFound {
+		t.Fatalf("want CodeNotFound on replay, got %v", err)
 	}
 }

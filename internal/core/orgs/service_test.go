@@ -260,6 +260,160 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// TestInviteMemberRejectsAlreadyMember pins the narrow ErrNoRows→ErrAlreadyMember
+// translation in InviteMember (service.go:405-407). The CTE in
+// CreateOrgInvitation skips the insert when the email already belongs to an
+// existing member; the service must surface that as ErrAlreadyMember rather
+// than letting ErrNoRows leak through.
+func TestInviteMemberRejectsAlreadyMember(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+	ctx := context.Background()
+
+	admin := seedCustomer(t, ctx, write, "admin")
+	existingMemberEmail := "existing-" + xid.New().String() + "@example.com"
+	existingMember, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: xid.New().String(), Email: existingMemberEmail, DisplayName: "Existing", PasswordHash: "x",
+	})
+	if err != nil {
+		t.Fatalf("seed existing member: %v", err)
+	}
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "already-member-test")
+	if err != nil {
+		t.Fatalf("CreateOrgWithDefaults: %v", err)
+	}
+	mustAddMember(t, ctx, write, org.ID, existingMember.ID, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())
+
+	if _, err := svc.InviteMember(ctx, org.ID, admin, existingMemberEmail); !errors.Is(err, orgs.ErrAlreadyMember) {
+		t.Fatalf("want ErrAlreadyMember when inviting existing member, got %v", err)
+	}
+}
+
+// TestInviteMemberRejectsSecondPendingInvite pins the narrow
+// isUniqueViolationOn(orgInvitationsPendingUnique)→ErrInviteAlreadyPending
+// translation in InviteMember (service.go:408-410). A second invite to the
+// same (org, email) collides on the partial unique index from migration 004
+// and must surface as ErrInviteAlreadyPending rather than CodeInternal.
+func TestInviteMemberRejectsSecondPendingInvite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+	ctx := context.Background()
+
+	admin := seedCustomer(t, ctx, write, "admin")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "second-invite-test")
+	if err != nil {
+		t.Fatalf("CreateOrgWithDefaults: %v", err)
+	}
+
+	const inviteeEmail = "invitee-once@example.com"
+	if _, err := svc.InviteMember(ctx, org.ID, admin, inviteeEmail); err != nil {
+		t.Fatalf("first InviteMember: %v", err)
+	}
+	if _, err := svc.InviteMember(ctx, org.ID, admin, inviteeEmail); !errors.Is(err, orgs.ErrInviteAlreadyPending) {
+		t.Fatalf("want ErrInviteAlreadyPending on second invite, got %v", err)
+	}
+}
+
+// TestGetMemberRoleRejectsDriftedDBValue pins the safety net at the boundary:
+// if migration 013's CHECK constraint were ever dropped and a drifted role
+// landed in the DB, GetMemberRole's ParseRole must surface an error rather
+// than letting Role("ORG_ROLE_OWNER") (or similar) flow through equality
+// checks downstream. Setup drops the constraint inside the test's fresh DB.
+func TestGetMemberRoleRejectsDriftedDBValue(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	admin := seedCustomer(t, ctx, write, "admin")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "drift-test")
+	if err != nil {
+		t.Fatalf("CreateOrgWithDefaults: %v", err)
+	}
+
+	// Temporarily drop the CHECK constraint so we can insert a drifted role.
+	// The test's DB is fresh (containerized), so no rollback needed.
+	if _, err := db.PgW.Exec(ctx, `alter table org_members drop constraint org_members_role_check`); err != nil {
+		t.Fatalf("drop constraint: %v", err)
+	}
+	if _, err := db.PgW.Exec(ctx,
+		`update org_members set role = 'ORG_ROLE_OWNER' where org_id = $1 and customer_id = $2`,
+		org.ID, admin,
+	); err != nil {
+		t.Fatalf("inject drifted role: %v", err)
+	}
+
+	if _, err := svc.GetMemberRole(ctx, org.ID, admin); err == nil {
+		t.Fatal("want error for drifted role, got nil")
+	}
+}
+
+// TestMigration013RejectsInvalidRole pins the DB-side CHECK constraint
+// from migration 013 directly: any attempt to insert a role outside the
+// recognized set must fail at the database level, regardless of what the
+// application thinks.
+func TestMigration013RejectsInvalidRole(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	ctx := context.Background()
+
+	cust := seedCustomer(t, ctx, write, "cust")
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID: xid.New().String(), DisplayName: "check-test",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID: org.ID, CustomerID: cust, Role: "ORG_ROLE_OWNER",
+	}); err == nil {
+		t.Fatal("want CHECK violation for invalid role, got nil")
+	}
+}
+
+// TestAddMemberRejectsDuplicate pins the narrow
+// isUniqueViolationOn(orgMembersPKey)→ErrAlreadyMember translation in
+// AddMember (service.go:185-187). A second AddMember for the same
+// (org_id, customer_id) collides on the composite primary key.
+func TestAddMemberRejectsDuplicate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	admin := seedCustomer(t, ctx, write, "admin")
+	other := seedCustomer(t, ctx, write, "other")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "addmember-dup-test")
+	if err != nil {
+		t.Fatalf("CreateOrgWithDefaults: %v", err)
+	}
+
+	if _, err := svc.AddMember(ctx, org.ID, other, orgs.RoleMember); err != nil {
+		t.Fatalf("first AddMember: %v", err)
+	}
+	if _, err := svc.AddMember(ctx, org.ID, other, orgs.RoleMember); !errors.Is(err, orgs.ErrAlreadyMember) {
+		t.Fatalf("want ErrAlreadyMember on second AddMember, got %v", err)
+	}
+}
+
 // inviteFixture sets up an inviter customer + org + invitee customer +
 // pending invitation, and returns the raw invite token. Centralises the
 // boilerplate used by the AcceptInvite test suite below.
@@ -625,9 +779,9 @@ func TestUpdateMemberRoleRejectsDemote(t *testing.T) {
 // TestUpdateMemberRoleRejectsNoOpMemberToMember and
 // TestUpdateMemberRoleRejectsNoOpAdminToAdmin pin the *unallowed* same-role
 // "no-op" transitions. Together with the promote/demote tests they cover the
-// full 2x2 transition matrix and guard the De Morgan'd guard at
-// service.go::UpdateMemberRole against a regression that drops one operand
-// or flips || to &&.
+// full 2×2 {current,new} ∈ {MEMBER,ADMIN} matrix — a regression that
+// accidentally permits any transition other than MEMBER→ADMIN would fail
+// one of these four cases regardless of how the guard is written.
 func TestUpdateMemberRoleRejectsNoOpMemberToMember(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -868,6 +1022,21 @@ func TestLeaveTwoAdminsRaceExactlyOneSucceeds(t *testing.T) {
 		}
 		if successes != 1 || lastAdmins != 1 {
 			t.Fatalf("iter %d: want exactly 1 success and 1 ErrLastAdmin, got successes=%d lastAdmins=%d", i, successes, lastAdmins)
+		}
+
+		// Direct DB post-condition: the org must have exactly one admin and
+		// one total member remaining. Catches subtler regressions a query
+		// rewrite that dropped the org_id filter could pass the (successes,
+		// lastAdmins) tuple by coincidence but mutate state incorrectly.
+		var adminCount, memberCount int
+		if err := db.PgW.QueryRow(ctx,
+			`select count(*) filter (where role = 'ORG_ROLE_ADMIN'), count(*) from org_members where org_id = $1`,
+			org.ID,
+		).Scan(&adminCount, &memberCount); err != nil {
+			t.Fatalf("iter %d: scan post-state: %v", i, err)
+		}
+		if adminCount != 1 || memberCount != 1 {
+			t.Fatalf("iter %d: post-state want adminCount=1 memberCount=1, got admin=%d total=%d", i, adminCount, memberCount)
 		}
 	}
 }

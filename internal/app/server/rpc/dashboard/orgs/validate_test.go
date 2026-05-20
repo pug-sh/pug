@@ -30,8 +30,9 @@ func TestInviteMemberRequest_Valid(t *testing.T) {
 }
 
 // CreateRequest: display_name has required + min_len=1 + max_len=150.
-// Verifying the min_len rule pins the C1 fix (empty string was previously
-// accepted because edition 2023 "required" only checks wire presence).
+// Edition 2023 "required" only checks wire presence, so an explicit min_len=1
+// is needed to reject the empty string — pinning that rule keeps a future
+// removal of min_len from silently regressing empty-name acceptance.
 
 func TestCreateRequest_DisplayNameRequired(t *testing.T) {
 	req := &orgsv1.CreateRequest{}
@@ -54,8 +55,8 @@ func TestCreateRequest_Valid(t *testing.T) {
 	}
 }
 
-// UpdateDisplayNameRequest: same display_name rules as CreateRequest;
-// pinning the min_len fix here too since the same gap applied to this path.
+// UpdateDisplayNameRequest: same display_name rules as CreateRequest; pinning
+// min_len here too because edition 2023 "required" alone would accept "".
 
 func TestUpdateDisplayNameRequest_DisplayNameRejectsEmpty(t *testing.T) {
 	req := &orgsv1.UpdateDisplayNameRequest{
