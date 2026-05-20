@@ -601,6 +601,31 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 	}, nil
 }
 
+// LookupInviteEmailInTx resolves a raw org-invite token to the invited email
+// address, without consuming the token or checking an email match. Returns
+// ErrInviteNotFound when the token is unknown, expired, or already consumed
+// (GetValidEmailActionTokenByHashAndPurpose filters expired/consumed rows).
+// Used by invite-driven signup to source the new customer's email from the
+// invitation rather than from client input.
+func LookupInviteEmailInTx(ctx context.Context, r *dbread.Queries, token string) (string, error) {
+	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+		TokenHash: hashInviteToken(token),
+		Purpose:   orgInvitePurpose,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrInviteNotFound
+		}
+		slog.ErrorContext(ctx, "failed to look up org invite token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	if !emailToken.OrgInvitationID.Valid {
+		return "", ErrInviteNotFound
+	}
+	return emailToken.Email, nil
+}
+
 // AcceptInviteInTx performs the invite-acceptance side effects (member insert,
 // invitation status flip, email-action-token consumption) using the given
 // queries handles. Caller owns the tx lifecycle.

@@ -864,6 +864,57 @@ func mustAddMember(t *testing.T, ctx context.Context, w *dbwrite.Queries, orgID,
 	}
 }
 
+func TestLookupInviteEmailInTx(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	ctx := context.Background()
+	w := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+
+	inviterID := xid.New().String()
+	if _, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: inviterID, Email: "inv-" + inviterID + "@example.com", DisplayName: "I", PasswordHash: "h"}); err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	org, err := w.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: xid.New().String(), DisplayName: "Acme"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{OrgID: org.ID, CustomerID: inviterID, Role: orgsv1.OrgRole_ORG_ROLE_ADMIN.String()}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+	inviteeEmail := "invitee-" + xid.New().String() + "@example.com"
+	inv, err := svc.InviteMember(ctx, org.ID, inviterID, inviteeEmail)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+
+	got, err := orgs.LookupInviteEmailInTx(ctx, dbread.New(db.PgW), inv.RawToken)
+	if err != nil {
+		t.Fatalf("LookupInviteEmailInTx: %v", err)
+	}
+	if got != inviteeEmail {
+		t.Errorf("email = %q, want %q", got, inviteeEmail)
+	}
+
+	if _, err := orgs.LookupInviteEmailInTx(ctx, dbread.New(db.PgW), "no-such-token"); !errors.Is(err, orgs.ErrInviteNotFound) {
+		t.Errorf("bad token err = %v, want ErrInviteNotFound", err)
+	}
+
+	// A consumed (accepted) token resolves to ErrInviteNotFound.
+	acceptorID := xid.New().String()
+	if _, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: acceptorID, Email: inviteeEmail, DisplayName: "A", PasswordHash: "h"}); err != nil {
+		t.Fatalf("CreateCustomer acceptor: %v", err)
+	}
+	if _, err := svc.AcceptInvite(ctx, inv.RawToken, acceptorID, inviteeEmail); err != nil {
+		t.Fatalf("AcceptInvite: %v", err)
+	}
+	if _, err := orgs.LookupInviteEmailInTx(ctx, dbread.New(db.PgW), inv.RawToken); !errors.Is(err, orgs.ErrInviteNotFound) {
+		t.Errorf("consumed token err = %v, want ErrInviteNotFound", err)
+	}
+}
+
 func TestLeaveHappyPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
