@@ -1,7 +1,7 @@
 // Package apperr defines application errors tagged with a stable reason code.
-// The correlation id and the google.rpc error details are attached centrally by
-// the RPC error interceptor; this package only carries the {code, reason,
-// message} triple and owns the reason registry.
+// The correlation id is attached centrally by the RPC error interceptor; this
+// package carries the {code, reason, message} triple plus optional typed
+// google.rpc detail payloads, and owns the reason registry.
 package apperr
 
 import (

@@ -15,8 +15,8 @@ func Resource(resourceType, name string) Option {
 // Precondition appends a violation to a single google.rpc.PreconditionFailure
 // (reusing one if already present so multiple options coalesce).
 func Precondition(typ, subject, description string) Option {
-	v := &errdetails.PreconditionFailure_Violation{Type: typ, Subject: subject, Description: description}
 	return func(e *Error) {
+		v := &errdetails.PreconditionFailure_Violation{Type: typ, Subject: subject, Description: description}
 		for _, d := range e.details {
 			if pf, ok := d.(*errdetails.PreconditionFailure); ok {
 				pf.Violations = append(pf.Violations, v)
@@ -31,8 +31,8 @@ func Precondition(typ, subject, description string) Option {
 
 // Field appends a field violation to a single google.rpc.BadRequest.
 func Field(field, description string) Option {
-	fv := &errdetails.BadRequest_FieldViolation{Field: field, Description: description}
 	return func(e *Error) {
+		fv := &errdetails.BadRequest_FieldViolation{Field: field, Description: description}
 		for _, d := range e.details {
 			if br, ok := d.(*errdetails.BadRequest); ok {
 				br.FieldViolations = append(br.FieldViolations, fv)
