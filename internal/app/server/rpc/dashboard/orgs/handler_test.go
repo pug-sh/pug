@@ -777,9 +777,12 @@ func TestHandlersRejectUnauthenticated(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.call()
-			var connectErr *connect.Error
-			if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodeUnauthenticated {
-				t.Fatalf("%s: want CodeUnauthenticated, got %v", tc.name, err)
+			var ae *apperr.Error
+			if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+				t.Fatalf("%s: want unauthenticated apperr, got %v (%T)", tc.name, err, err)
+			}
+			if ae.Reason != apperr.ReasonUnauthenticated {
+				t.Errorf("%s: reason = %q, want %q", tc.name, ae.Reason, apperr.ReasonUnauthenticated)
 			}
 		})
 	}
