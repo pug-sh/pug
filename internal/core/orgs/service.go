@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -30,16 +31,31 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Mirror of auth.emailPublishFailureCounter — see that declaration for the
-// alerting rationale. Lives in its own package to avoid an orgs→auth import.
+// emailPublishFailureCounter is incremented whenever an invite-email job is
+// created (invitation row committed) but the subsequent NATS publish errors.
+// Operators should alert on a non-zero rate: it means admins see an
+// "invitation sent" 200 response for invites whose emails were never queued.
+// The {kind} attribute lets ops bucket failures by payload type — for this
+// package the only emitted kind is "org_member_invite".
+//
+// Lives in its own package (separate from auth.emailPublishFailureCounter)
+// to avoid an orgs→auth import; both counters share the same metric name and
+// are aggregated by the OTel collector by scope+kind.
 var emailPublishFailureCounter metric.Int64Counter
 
 func init() {
 	meter := otel.Meter("github.com/pug-sh/pug/internal/core/orgs")
-	emailPublishFailureCounter, _ = meter.Int64Counter(
+	// Panic on init failure: without this counter, every subsequent
+	// Add() is a no-op and the only alarm for silent email drops is gone.
+	// Fail loud at startup rather than silently lose the alerting signal.
+	c, err := meter.Int64Counter(
 		"emails.publish_failure_total",
 		metric.WithDescription("Email jobs whose tx committed but NATS publish failed; indicates user-visible silent drops."),
 	)
+	if err != nil {
+		panic("orgs: failed to register emails.publish_failure_total counter: " + err.Error())
+	}
+	emailPublishFailureCounter = c
 }
 
 var (
@@ -49,39 +65,135 @@ var (
 	ErrInviteNotFound       = errors.New("invitation not found")
 	ErrInviteNotPending     = errors.New("invitation is not pending")
 	ErrInviteWrongEmail     = errors.New("invitation was issued to a different email address")
-	ErrLastAdmin            = errors.New("cannot remove the last admin")
-	ErrMemberNotFound       = errors.New("member not found")
-	ErrOrgNotFound          = errors.New("org not found")
+	// ErrLastAdmin is returned by both RemoveMemberSafe and Leave when the
+	// target is an admin and removing them would leave the org with zero
+	// admins. In Leave, this also takes precedence over ErrLastMember when
+	// the caller is an admin who is also the sole member of the org.
+	// Handlers build their own client-facing message (different wording for
+	// remove vs leave) — never pass this sentinel directly into
+	// connect.NewError, as the neutral phrasing here is not a substitute for
+	// the verb-specific message.
+	ErrLastAdmin                 = errors.New("blocked: last admin of org")
+	ErrLastMember                = errors.New("blocked: only member of org")
+	ErrMemberNotFound            = errors.New("member not found")
+	ErrOrgNotFound               = errors.New("org not found")
+	ErrUnsupportedRoleTransition = errors.New("role transition not supported")
 )
 
 const (
 	inviteTTL        = 7 * 24 * time.Hour
 	orgInvitePurpose = "org_invite"
+
+	// Postgres constraint / index names used to disambiguate UniqueViolation
+	// errors. Kept narrow on purpose: catching a generic "unique violation"
+	// would mis-translate any future constraint added to these tables.
+	//
+	// These names are load-bearing: if either is renamed in a future migration
+	// without updating this constant, the narrow translation silently falls
+	// through and ErrAlreadyMember / ErrInviteAlreadyPending stop firing.
+	// Sources:
+	//   - org_members_pkey: auto-generated PK in schema/postgres/migrations/003_create_org_members.sql
+	//   - org_invitations_org_email_pending: named partial index in
+	//     schema/postgres/migrations/004_create_org_invitations.sql:13
+	orgMembersPKey              = "org_members_pkey"
+	orgInvitationsPendingUnique = "org_invitations_org_email_pending"
 )
 
 type Service struct {
 	read      *dbread.Queries
 	write     *dbwrite.Queries
 	pgW       *pgxpool.Pool
-	publisher jobPublisher
+	publisher JobPublisher
 }
 
-type jobPublisher interface {
+type JobPublisher interface {
 	Publish(ctx context.Context, subject string, data []byte) error
 }
 
+// InviteDispatch bundles a persisted invitation with the raw (unhashed) token
+// it was issued under. The token hash lives in email_action_tokens; the raw
+// form is returned here so handlers can surface it to the inviter for
+// link-sharing without re-reading the DB.
 type InviteDispatch struct {
 	Invitation dbwrite.OrgInvitation
 	RawToken   string
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher jobPublisher) *Service {
+func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher JobPublisher) *Service {
 	return &Service{
 		read:      dbread.New(pgRO),
 		write:     dbwrite.New(pgW),
 		pgW:       pgW,
 		publisher: publisher,
 	}
+}
+
+// CreateOrgWithDefaultsInTx performs the org + admin member + default project
+// inserts inside an existing transaction. Caller owns the tx lifecycle.
+// Used by auth.SignUpWithEmail (which keeps customer + verify-token + org in
+// one tx) and by CreateOrgWithDefaults (which owns its own tx).
+func CreateOrgWithDefaultsInTx(
+	ctx context.Context,
+	w *dbwrite.Queries,
+	customerID, displayName string,
+) (dbwrite.Org, error) {
+	org, err := w.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID:          xid.New().String(),
+		DisplayName: displayName,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to create org", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+
+	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      org.ID,
+		CustomerID: customerID,
+		Role:       RoleAdmin.String(),
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to add customer as admin", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+
+	if _, err := projects.CreateProjectInTx(ctx, w, org.ID, "default"); err != nil {
+		// projects.CreateProjectInTx logs + records at source.
+		return dbwrite.Org{}, err
+	}
+	return org, nil
+}
+
+// CreateOrgWithDefaults opens its own transaction around CreateOrgWithDefaultsInTx.
+// Use this from RPC handlers and other callers without an active tx.
+func (s *Service) CreateOrgWithDefaults(
+	ctx context.Context,
+	customerID, displayName string,
+) (dbwrite.Org, error) {
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin CreateOrgWithDefaults tx", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+	defer func() {
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back CreateOrgWithDefaults tx", slogx.Error(rollbackErr))
+			telemetry.RecordError(ctx, rollbackErr)
+		}
+	}()
+
+	org, err := CreateOrgWithDefaultsInTx(ctx, dbwrite.New(tx), customerID, displayName)
+	if err != nil {
+		return dbwrite.Org{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit CreateOrgWithDefaults tx", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Org{}, err
+	}
+	return org, nil
 }
 
 func (s *Service) CreateOrg(ctx context.Context, displayName string) (dbwrite.Org, error) {
@@ -91,35 +203,33 @@ func (s *Service) CreateOrg(ctx context.Context, displayName string) (dbwrite.Or
 	})
 }
 
-func (s *Service) AddMember(ctx context.Context, orgID, customerID, role string) (dbwrite.OrgMember, error) {
+func (s *Service) AddMember(ctx context.Context, orgID, customerID string, role Role) (dbwrite.OrgMember, error) {
 	member, err := s.write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
-		Role:       role,
+		Role:       role.String(),
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if isUniqueViolationOn(err, orgMembersPKey) {
 			return dbwrite.OrgMember{}, ErrAlreadyMember
 		}
+		slog.ErrorContext(ctx, "failed to create org member", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
 		return dbwrite.OrgMember{}, err
 	}
 	return member, nil
 }
 
-func (s *Service) GetOrgByID(ctx context.Context, id string) (dbread.Org, error) {
-	org, err := s.read.GetOrgByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return dbread.Org{}, ErrOrgNotFound
-		}
-		return dbread.Org{}, err
+// isUniqueViolationOn reports whether err is a Postgres unique-violation
+// against the given constraint name. Used to translate specific constraint
+// collisions into typed sentinels without mis-mapping unrelated violations.
+func isUniqueViolationOn(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
 	}
-	return org, nil
-}
-
-func (s *Service) GetOrgsByCustomerID(ctx context.Context, customerID string) ([]dbread.Org, error) {
-	return s.read.GetOrgsByCustomerID(ctx, customerID)
+	return pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == constraint
 }
 
 func (s *Service) UpdateDisplayName(ctx context.Context, id, displayName string) (dbwrite.Org, error) {
@@ -147,8 +257,33 @@ func (s *Service) ListMembers(ctx context.Context, orgID string) ([]dbread.GetOr
 	return s.read.GetOrgMembersByOrgID(ctx, orgID)
 }
 
-func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (string, error) {
-	role, err := s.read.GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
+// GetMember returns one member with the joined customer fields (display_name,
+// email). Reads from the write pool so callers may chain this after a write
+// without risking replica lag — used by UpdateMemberRole to populate the
+// response with the same shape as ListMembers.
+func (s *Service) GetMember(ctx context.Context, orgID, customerID string) (dbread.GetOrgMemberByOrgIDAndCustomerIDRow, error) {
+	row, err := dbread.New(s.pgW).GetOrgMemberByOrgIDAndCustomerID(ctx, dbread.GetOrgMemberByOrgIDAndCustomerIDParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbread.GetOrgMemberByOrgIDAndCustomerIDRow{}, ErrMemberNotFound
+		}
+		slog.ErrorContext(ctx, "failed to get org member", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return dbread.GetOrgMemberByOrgIDAndCustomerIDRow{}, err
+	}
+	return row, nil
+}
+
+// GetMemberRole returns the calling customer's role for the given org. The
+// raw DB string is parsed through ParseRole so callers receive a validated
+// Role — values that drift outside the recognized set surface as errors at
+// this boundary rather than silently flowing through equality checks.
+func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (Role, error) {
+	raw, err := s.read.GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
 	})
@@ -156,6 +291,16 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrMemberNotFound
 		}
+		slog.ErrorContext(ctx, "failed to get org member role", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	role, err := ParseRole(raw)
+	if err != nil {
+		slog.ErrorContext(ctx, "unrecognized role in org_members", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 	return role, nil
@@ -196,6 +341,77 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 	return nil
 }
 
+// Leave removes the calling customer from the org. Refuses if the caller is
+// the only admin (ErrLastAdmin) or the only non-admin member (ErrLastMember).
+// Returns ErrMemberNotFound if the caller is not a member.
+//
+// The guard and delete are a single CTE-based statement for atomicity against
+// concurrent Leave / RemoveMember calls. ErrLastAdmin takes precedence over
+// ErrLastMember: an admin who is also the sole member must first transfer
+// ownership before they can leave.
+//
+// Disambiguation is best-effort: when the CTE returns 0 rows, a separate
+// non-transactional read on org_members determines the cause. If a concurrent
+// RemoveMember (or another Leave) lands between the CTE rejection and the
+// disambig read, the caller may see ErrMemberNotFound instead of the rejection
+// reason that originally fired. The reverse cannot happen — a row that exists
+// at disambig time was either there throughout or re-inserted, and an
+// in-flight removal cannot produce a ghost ErrLastAdmin / ErrLastMember. The
+// caller's atomicity invariant ("either removed or definitely still a member")
+// is preserved either way — only the error code on the rejection path is racy.
+func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
+	n, err := s.write.DeleteOrgMemberIfNotLastAdminAndNotLastMember(
+		ctx,
+		dbwrite.DeleteOrgMemberIfNotLastAdminAndNotLastMemberParams{
+			OrgID:      orgID,
+			CustomerID: customerID,
+		},
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed Leave query", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if n == 1 {
+		return nil
+	}
+
+	// 0 rows: either not a member, last admin, or only member. Disambiguate.
+	// Read from write pool to avoid replica lag.
+	raw, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrMemberNotFound
+		}
+		slog.ErrorContext(ctx, "failed to disambiguate Leave block", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	role, err := ParseRole(raw)
+	if err != nil {
+		slog.ErrorContext(ctx, "unrecognized role in org_members during Leave disambig", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+
+	// ErrLastAdmin takes priority: if the caller is an admin they were blocked
+	// by the admin-count guard in the CTE (or by both guards simultaneously
+	// when they are also the sole member). In both cases the actionable message
+	// is "promote someone else before leaving."
+	if role == RoleAdmin {
+		return ErrLastAdmin
+	}
+
+	// Non-admin blocked → only the member-count guard could have fired.
+	return ErrLastMember
+}
+
 func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email string) (InviteDispatch, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
@@ -232,8 +448,7 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 		if errors.Is(err, pgx.ErrNoRows) {
 			return InviteDispatch{}, ErrAlreadyMember
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if isUniqueViolationOn(err, orgInvitationsPendingUnique) {
 			return InviteDispatch{}, ErrInviteAlreadyPending
 		}
 		slog.ErrorContext(ctx, "failed to create org invitation", slogx.Error(err),
@@ -360,78 +575,8 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		}
 	}()
 
-	r := dbread.New(tx)
-	w := dbwrite.New(tx)
-
-	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
-		TokenHash: hashInviteToken(token),
-		Purpose:   orgInvitePurpose,
-	})
+	orgID, err := AcceptInviteInTx(ctx, dbread.New(tx), dbwrite.New(tx), token, customerID, customerEmail)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return dbread.Org{}, ErrInviteNotFound
-		}
-		slog.ErrorContext(ctx, "failed to get org invite token", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-	if !emailToken.OrgInvitationID.Valid {
-		return dbread.Org{}, ErrInviteNotFound
-	}
-
-	inv, err := w.GetOrgInvitationByIDForUpdate(ctx, emailToken.OrgInvitationID.String)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return dbread.Org{}, ErrInviteNotFound
-		}
-		slog.ErrorContext(ctx, "failed to get org invitation by id", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-
-	if !strings.EqualFold(inv.Email, customerEmail) {
-		return dbread.Org{}, ErrInviteWrongEmail
-	}
-	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
-		return dbread.Org{}, ErrInviteNotPending
-	}
-	if time.Now().After(inv.ExpiresAt.Time) {
-		return dbread.Org{}, ErrInviteExpired
-	}
-
-	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID:      inv.OrgID,
-		CustomerID: customerID,
-		Role:       orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
-	}); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			return dbread.Org{}, ErrAlreadyMember
-		}
-		slog.ErrorContext(ctx, "failed to create org member on invite accept", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-
-	if _, err := w.UpdateOrgInvitationStatus(ctx, dbwrite.UpdateOrgInvitationStatusParams{
-		ID:     inv.ID,
-		Status: orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String(),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to update invitation status", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-
-	// ErrNoRows here is safe to ignore: the row lock taken by
-	// GetOrgInvitationByIDForUpdate above serializes us against any concurrent
-	// ResendInvite, so the token can only become consumed/expired strictly
-	// before or strictly after this tx — never mid-flight. A missing row at
-	// this point means the token expired between GetValid and now (a sub-
-	// second window) and the invitation's expiry guard above should have
-	// already rejected the request.
-	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		slog.ErrorContext(ctx, "failed to consume org invite token", slogx.Error(err), slog.String("token_id", emailToken.ID))
-		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
 
@@ -442,9 +587,9 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 	}
 
 	// Read from write pool to avoid read-replica lag after the commit.
-	wOrg, err := s.write.GetOrgByID(ctx, inv.OrgID)
+	wOrg, err := s.write.GetOrgByID(ctx, orgID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("org_id", inv.OrgID))
+		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
 		return dbread.Org{}, err
 	}
@@ -454,6 +599,88 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		CreateTime:  wOrg.CreateTime,
 		UpdateTime:  wOrg.UpdateTime,
 	}, nil
+}
+
+// AcceptInviteInTx performs the invite-acceptance side effects (member insert,
+// invitation status flip, email-action-token consumption) using the given
+// queries handles. Caller owns the tx lifecycle.
+//
+// Returns the org_id the customer was added to so callers can chain follow-up
+// work (e.g. fetching the org row outside the tx after commit) without an
+// extra lookup. Returns one of ErrInviteNotFound, ErrInviteNotPending,
+// ErrInviteExpired, ErrInviteWrongEmail, ErrAlreadyMember for client-input
+// failures; all other errors are logged + recorded at source.
+func AcceptInviteInTx(
+	ctx context.Context,
+	r *dbread.Queries,
+	w *dbwrite.Queries,
+	token, customerID, customerEmail string,
+) (string, error) {
+	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+		TokenHash: hashInviteToken(token),
+		Purpose:   orgInvitePurpose,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrInviteNotFound
+		}
+		slog.ErrorContext(ctx, "failed to get org invite token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	if !emailToken.OrgInvitationID.Valid {
+		return "", ErrInviteNotFound
+	}
+
+	inv, err := w.GetOrgInvitationByIDForUpdate(ctx, emailToken.OrgInvitationID.String)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrInviteNotFound
+		}
+		slog.ErrorContext(ctx, "failed to get org invitation by id", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	if !strings.EqualFold(inv.Email, customerEmail) {
+		return "", ErrInviteWrongEmail
+	}
+	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
+		return "", ErrInviteNotPending
+	}
+	if time.Now().After(inv.ExpiresAt.Time) {
+		return "", ErrInviteExpired
+	}
+
+	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      inv.OrgID,
+		CustomerID: customerID,
+		Role:       RoleMember.String(),
+	}); err != nil {
+		if isUniqueViolationOn(err, orgMembersPKey) {
+			return "", ErrAlreadyMember
+		}
+		slog.ErrorContext(ctx, "failed to create org member on invite accept", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	if _, err := w.UpdateOrgInvitationStatus(ctx, dbwrite.UpdateOrgInvitationStatusParams{
+		ID:     inv.ID,
+		Status: orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String(),
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to update invitation status", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.ErrorContext(ctx, "failed to consume org invite token", slogx.Error(err), slog.String("token_id", emailToken.ID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	return inv.OrgID, nil
 }
 
 func (s *Service) ListInvitations(ctx context.Context, orgID string) ([]dbread.OrgInvitation, error) {
@@ -520,6 +747,90 @@ func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvi
 		telemetry.RecordError(ctx, err)
 		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", "org_member_invite")))
 	}
+}
+
+// UpdateMemberRole changes a member's role. In this scope, only the
+// MEMBER -> ADMIN transition is permitted. Other transitions return
+// ErrUnsupportedRoleTransition (mapped to CodeInvalidArgument at the handler).
+//
+// Returns ErrMemberNotFound if the target is not a member of the org.
+//
+// This read-modify-write is intentionally non-transactional: it is safe only
+// because the lone allowed transition (MEMBER → ADMIN) is monotonic — a
+// concurrent re-promotion is a no-op, a concurrent removal yields ErrNoRows
+// → ErrMemberNotFound, and demotion is not permitted. If any non-monotonic
+// transition is added (e.g. demote, transfer-ownership), wrap in a tx with
+// SELECT ... FOR UPDATE on the org_members row.
+func (s *Service) UpdateMemberRole(
+	ctx context.Context,
+	orgID, customerID string,
+	newRole Role,
+) (dbwrite.OrgMember, error) {
+	rawCurrent, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbwrite.OrgMember{}, ErrMemberNotFound
+		}
+		slog.ErrorContext(ctx, "failed to look up current role", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.OrgMember{}, err
+	}
+	current, err := ParseRole(rawCurrent)
+	if err != nil {
+		slog.ErrorContext(ctx, "unrecognized current role in org_members", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.OrgMember{}, err
+	}
+
+	if current != RoleMember || newRole != RoleAdmin {
+		return dbwrite.OrgMember{}, ErrUnsupportedRoleTransition
+	}
+
+	updated, err := s.write.UpdateOrgMemberRole(ctx, dbwrite.UpdateOrgMemberRoleParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+		Role:       newRole.String(),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbwrite.OrgMember{}, ErrMemberNotFound
+		}
+		slog.ErrorContext(ctx, "failed to update member role", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID),
+			slog.String("new_role", newRole.String()))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.OrgMember{}, err
+	}
+	return updated, nil
+}
+
+func (s *Service) GetOrgsWithRole(ctx context.Context, customerID string) ([]dbread.GetOrgsWithRoleByCustomerIDRow, error) {
+	return s.read.GetOrgsWithRoleByCustomerID(ctx, customerID)
+}
+
+// GetOrgWithRole returns a single org plus the caller's role. Returns
+// ErrOrgNotFound when there is no org-and-membership for the (org_id, customer_id)
+// pair — does not distinguish "no such org" from "not a member".
+func (s *Service) GetOrgWithRole(ctx context.Context, orgID, customerID string) (dbread.GetOrgWithRoleByIDAndCustomerIDRow, error) {
+	row, err := s.read.GetOrgWithRoleByIDAndCustomerID(ctx, dbread.GetOrgWithRoleByIDAndCustomerIDParams{
+		OrgID:      orgID,
+		CustomerID: customerID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dbread.GetOrgWithRoleByIDAndCustomerIDRow{}, ErrOrgNotFound
+		}
+		slog.ErrorContext(ctx, "failed to get org with role", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return dbread.GetOrgWithRoleByIDAndCustomerIDRow{}, err
+	}
+	return row, nil
 }
 
 func hashInviteToken(token string) string {

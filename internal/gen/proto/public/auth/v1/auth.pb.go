@@ -125,7 +125,13 @@ type SignUpWithEmailRequest struct {
 	Email *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
 	// bcrypt accepts at most 72 bytes; rejecting longer inputs at the
 	// interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
-	Password      *string `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
+	Password *string `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
+	// Optional org-invite token. When present and valid, the new customer is
+	// added as a member of the invited org, the customer's email is auto-verified
+	// (inbox access proven by the invite delivery), and no default org/project
+	// is created. When the token is invalid, expired, or addressed to a different
+	// email, signup falls back to the normal default-org flow.
+	InviteToken   *string `protobuf:"bytes,3,opt,name=invite_token,json=inviteToken" json:"invite_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -170,6 +176,13 @@ func (x *SignUpWithEmailRequest) GetEmail() string {
 func (x *SignUpWithEmailRequest) GetPassword() string {
 	if x != nil && x.Password != nil {
 		return *x.Password
+	}
+	return ""
+}
+
+func (x *SignUpWithEmailRequest) GetInviteToken() string {
+	if x != nil && x.InviteToken != nil {
+		return *x.InviteToken
 	}
 	return ""
 }
@@ -559,12 +572,13 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\bpassword\x18\x02 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\"/\n" +
 	"\x17SignInWithEmailResponse\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"b\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"\x85\x01\n" +
 	"\x16SignUpWithEmailRequest\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12&\n" +
 	"\bpassword\x18\x02 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\"/\n" +
+	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\x12!\n" +
+	"\finvite_token\x18\x03 \x01(\tR\vinviteToken\"/\n" +
 	"\x17SignUpWithEmailResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"2\n" +
 	"\x12VerifyEmailRequest\x12\x1c\n" +

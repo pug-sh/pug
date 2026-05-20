@@ -57,6 +57,13 @@ const (
 	// OrgsServiceListInvitationsProcedure is the fully-qualified name of the OrgsService's
 	// ListInvitations RPC.
 	OrgsServiceListInvitationsProcedure = "/dashboard.orgs.v1.OrgsService/ListInvitations"
+	// OrgsServiceCreateProcedure is the fully-qualified name of the OrgsService's Create RPC.
+	OrgsServiceCreateProcedure = "/dashboard.orgs.v1.OrgsService/Create"
+	// OrgsServiceLeaveProcedure is the fully-qualified name of the OrgsService's Leave RPC.
+	OrgsServiceLeaveProcedure = "/dashboard.orgs.v1.OrgsService/Leave"
+	// OrgsServiceUpdateMemberRoleProcedure is the fully-qualified name of the OrgsService's
+	// UpdateMemberRole RPC.
+	OrgsServiceUpdateMemberRoleProcedure = "/dashboard.orgs.v1.OrgsService/UpdateMemberRole"
 )
 
 // OrgsServiceClient is a client for the dashboard.orgs.v1.OrgsService service.
@@ -70,6 +77,9 @@ type OrgsServiceClient interface {
 	ResendInvite(context.Context, *connect.Request[v1.ResendInviteRequest]) (*connect.Response[v1.ResendInviteResponse], error)
 	AcceptInvite(context.Context, *connect.Request[v1.AcceptInviteRequest]) (*connect.Response[v1.AcceptInviteResponse], error)
 	ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error)
+	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
+	Leave(context.Context, *connect.Request[v1.LeaveRequest]) (*connect.Response[v1.LeaveResponse], error)
+	UpdateMemberRole(context.Context, *connect.Request[v1.UpdateMemberRoleRequest]) (*connect.Response[v1.UpdateMemberRoleResponse], error)
 }
 
 // NewOrgsServiceClient constructs a client for the dashboard.orgs.v1.OrgsService service. By
@@ -137,6 +147,24 @@ func NewOrgsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(orgsServiceMethods.ByName("ListInvitations")),
 			connect.WithClientOptions(opts...),
 		),
+		create: connect.NewClient[v1.CreateRequest, v1.CreateResponse](
+			httpClient,
+			baseURL+OrgsServiceCreateProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("Create")),
+			connect.WithClientOptions(opts...),
+		),
+		leave: connect.NewClient[v1.LeaveRequest, v1.LeaveResponse](
+			httpClient,
+			baseURL+OrgsServiceLeaveProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("Leave")),
+			connect.WithClientOptions(opts...),
+		),
+		updateMemberRole: connect.NewClient[v1.UpdateMemberRoleRequest, v1.UpdateMemberRoleResponse](
+			httpClient,
+			baseURL+OrgsServiceUpdateMemberRoleProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("UpdateMemberRole")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -151,6 +179,9 @@ type orgsServiceClient struct {
 	resendInvite      *connect.Client[v1.ResendInviteRequest, v1.ResendInviteResponse]
 	acceptInvite      *connect.Client[v1.AcceptInviteRequest, v1.AcceptInviteResponse]
 	listInvitations   *connect.Client[v1.ListInvitationsRequest, v1.ListInvitationsResponse]
+	create            *connect.Client[v1.CreateRequest, v1.CreateResponse]
+	leave             *connect.Client[v1.LeaveRequest, v1.LeaveResponse]
+	updateMemberRole  *connect.Client[v1.UpdateMemberRoleRequest, v1.UpdateMemberRoleResponse]
 }
 
 // List calls dashboard.orgs.v1.OrgsService.List.
@@ -198,6 +229,21 @@ func (c *orgsServiceClient) ListInvitations(ctx context.Context, req *connect.Re
 	return c.listInvitations.CallUnary(ctx, req)
 }
 
+// Create calls dashboard.orgs.v1.OrgsService.Create.
+func (c *orgsServiceClient) Create(ctx context.Context, req *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error) {
+	return c.create.CallUnary(ctx, req)
+}
+
+// Leave calls dashboard.orgs.v1.OrgsService.Leave.
+func (c *orgsServiceClient) Leave(ctx context.Context, req *connect.Request[v1.LeaveRequest]) (*connect.Response[v1.LeaveResponse], error) {
+	return c.leave.CallUnary(ctx, req)
+}
+
+// UpdateMemberRole calls dashboard.orgs.v1.OrgsService.UpdateMemberRole.
+func (c *orgsServiceClient) UpdateMemberRole(ctx context.Context, req *connect.Request[v1.UpdateMemberRoleRequest]) (*connect.Response[v1.UpdateMemberRoleResponse], error) {
+	return c.updateMemberRole.CallUnary(ctx, req)
+}
+
 // OrgsServiceHandler is an implementation of the dashboard.orgs.v1.OrgsService service.
 type OrgsServiceHandler interface {
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
@@ -209,6 +255,9 @@ type OrgsServiceHandler interface {
 	ResendInvite(context.Context, *connect.Request[v1.ResendInviteRequest]) (*connect.Response[v1.ResendInviteResponse], error)
 	AcceptInvite(context.Context, *connect.Request[v1.AcceptInviteRequest]) (*connect.Response[v1.AcceptInviteResponse], error)
 	ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error)
+	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
+	Leave(context.Context, *connect.Request[v1.LeaveRequest]) (*connect.Response[v1.LeaveResponse], error)
+	UpdateMemberRole(context.Context, *connect.Request[v1.UpdateMemberRoleRequest]) (*connect.Response[v1.UpdateMemberRoleResponse], error)
 }
 
 // NewOrgsServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -272,6 +321,24 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(orgsServiceMethods.ByName("ListInvitations")),
 		connect.WithHandlerOptions(opts...),
 	)
+	orgsServiceCreateHandler := connect.NewUnaryHandler(
+		OrgsServiceCreateProcedure,
+		svc.Create,
+		connect.WithSchema(orgsServiceMethods.ByName("Create")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceLeaveHandler := connect.NewUnaryHandler(
+		OrgsServiceLeaveProcedure,
+		svc.Leave,
+		connect.WithSchema(orgsServiceMethods.ByName("Leave")),
+		connect.WithHandlerOptions(opts...),
+	)
+	orgsServiceUpdateMemberRoleHandler := connect.NewUnaryHandler(
+		OrgsServiceUpdateMemberRoleProcedure,
+		svc.UpdateMemberRole,
+		connect.WithSchema(orgsServiceMethods.ByName("UpdateMemberRole")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.orgs.v1.OrgsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case OrgsServiceListProcedure:
@@ -292,6 +359,12 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 			orgsServiceAcceptInviteHandler.ServeHTTP(w, r)
 		case OrgsServiceListInvitationsProcedure:
 			orgsServiceListInvitationsHandler.ServeHTTP(w, r)
+		case OrgsServiceCreateProcedure:
+			orgsServiceCreateHandler.ServeHTTP(w, r)
+		case OrgsServiceLeaveProcedure:
+			orgsServiceLeaveHandler.ServeHTTP(w, r)
+		case OrgsServiceUpdateMemberRoleProcedure:
+			orgsServiceUpdateMemberRoleHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -335,4 +408,16 @@ func (UnimplementedOrgsServiceHandler) AcceptInvite(context.Context, *connect.Re
 
 func (UnimplementedOrgsServiceHandler) ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.ListInvitations is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.Create is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) Leave(context.Context, *connect.Request[v1.LeaveRequest]) (*connect.Response[v1.LeaveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.Leave is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) UpdateMemberRole(context.Context, *connect.Request[v1.UpdateMemberRoleRequest]) (*connect.Response[v1.UpdateMemberRoleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.UpdateMemberRole is not implemented"))
 }

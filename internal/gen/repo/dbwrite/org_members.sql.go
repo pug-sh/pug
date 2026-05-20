@@ -51,13 +51,16 @@ func (q *Queries) DeleteOrgMember(ctx context.Context, arg DeleteOrgMemberParams
 }
 
 const deleteOrgMemberIfNotLastAdmin = `-- name: DeleteOrgMemberIfNotLastAdmin :execrows
-with target as (
-  select role from org_members
-  where org_id = $1 and customer_id = $2
+with locked as (
+  select customer_id, role from org_members
+  where org_id = $1
+  for update
+),
+target as (
+  select role from locked where customer_id = $2
 ),
 admin_count as (
-  select count(*) as cnt from org_members
-  where org_id = $1 and role = 'ORG_ROLE_ADMIN'
+  select count(*) as cnt from locked where role = 'ORG_ROLE_ADMIN'
 )
 delete from org_members om
 where om.org_id = $1 and om.customer_id = $2
@@ -72,8 +75,49 @@ type DeleteOrgMemberIfNotLastAdminParams struct {
 	CustomerID string
 }
 
+// 'locked' acquires row-level locks on every member of the org so concurrent
+// callers serialize on the admin set — without it, two snapshots could both
+// see admin_count = 2 and both succeed, leaving the org with zero admins.
 func (q *Queries) DeleteOrgMemberIfNotLastAdmin(ctx context.Context, arg DeleteOrgMemberIfNotLastAdminParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteOrgMemberIfNotLastAdmin, arg.OrgID, arg.CustomerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOrgMemberIfNotLastAdminAndNotLastMember = `-- name: DeleteOrgMemberIfNotLastAdminAndNotLastMember :execrows
+with locked as (
+  select customer_id, role from org_members
+  where org_id = $1
+  for update
+),
+target as (
+  select role from locked where customer_id = $2
+),
+admin_count as (
+  select count(*) as cnt from locked where role = 'ORG_ROLE_ADMIN'
+),
+member_count as (
+  select count(*) as cnt from locked
+)
+delete from org_members om
+where om.org_id = $1 and om.customer_id = $2
+  and (select cnt from member_count) > 1
+  and (
+    (select role from target) != 'ORG_ROLE_ADMIN'
+    or (select cnt from admin_count) > 1
+  )
+`
+
+type DeleteOrgMemberIfNotLastAdminAndNotLastMemberParams struct {
+	OrgID      string
+	CustomerID string
+}
+
+// See DeleteOrgMemberIfNotLastAdmin for the rationale behind the 'locked' CTE.
+func (q *Queries) DeleteOrgMemberIfNotLastAdminAndNotLastMember(ctx context.Context, arg DeleteOrgMemberIfNotLastAdminAndNotLastMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOrgMemberIfNotLastAdminAndNotLastMember, arg.OrgID, arg.CustomerID)
 	if err != nil {
 		return 0, err
 	}
@@ -94,4 +138,29 @@ func (q *Queries) GetOrgMemberRole(ctx context.Context, arg GetOrgMemberRolePara
 	var role string
 	err := row.Scan(&role)
 	return role, err
+}
+
+const updateOrgMemberRole = `-- name: UpdateOrgMemberRole :one
+update org_members
+set role = $1
+where org_id = $2 and customer_id = $3
+returning create_time, customer_id, org_id, role
+`
+
+type UpdateOrgMemberRoleParams struct {
+	Role       string
+	OrgID      string
+	CustomerID string
+}
+
+func (q *Queries) UpdateOrgMemberRole(ctx context.Context, arg UpdateOrgMemberRoleParams) (OrgMember, error) {
+	row := q.db.QueryRow(ctx, updateOrgMemberRole, arg.Role, arg.OrgID, arg.CustomerID)
+	var i OrgMember
+	err := row.Scan(
+		&i.CreateTime,
+		&i.CustomerID,
+		&i.OrgID,
+		&i.Role,
+	)
+	return i, err
 }

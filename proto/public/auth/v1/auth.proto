@@ -42,6 +42,12 @@ message SignUpWithEmailRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_bytes = 72
   ];
+  // Optional org-invite token. When present and valid, the new customer is
+  // added as a member of the invited org, the customer's email is auto-verified
+  // (inbox access proven by the invite delivery), and no default org/project
+  // is created. When the token is invalid, expired, or addressed to a different
+  // email, signup falls back to the normal default-org flow.
+  string invite_token = 3;
 }
 
 message SignUpWithEmailResponse {

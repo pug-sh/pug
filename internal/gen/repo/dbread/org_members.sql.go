@@ -11,6 +11,47 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getOrgMemberByOrgIDAndCustomerID = `-- name: GetOrgMemberByOrgIDAndCustomerID :one
+select
+  om.customer_id,
+  om.create_time,
+  om.org_id,
+  om.role,
+  c.display_name,
+  c.email
+from org_members om
+join customers c on c.id = om.customer_id
+where om.org_id = $1 and om.customer_id = $2
+`
+
+type GetOrgMemberByOrgIDAndCustomerIDParams struct {
+	OrgID      string
+	CustomerID string
+}
+
+type GetOrgMemberByOrgIDAndCustomerIDRow struct {
+	CustomerID  string
+	CreateTime  pgtype.Timestamptz
+	OrgID       string
+	Role        string
+	DisplayName string
+	Email       string
+}
+
+func (q *Queries) GetOrgMemberByOrgIDAndCustomerID(ctx context.Context, arg GetOrgMemberByOrgIDAndCustomerIDParams) (GetOrgMemberByOrgIDAndCustomerIDRow, error) {
+	row := q.db.QueryRow(ctx, getOrgMemberByOrgIDAndCustomerID, arg.OrgID, arg.CustomerID)
+	var i GetOrgMemberByOrgIDAndCustomerIDRow
+	err := row.Scan(
+		&i.CustomerID,
+		&i.CreateTime,
+		&i.OrgID,
+		&i.Role,
+		&i.DisplayName,
+		&i.Email,
+	)
+	return i, err
+}
+
 const getOrgMemberRole = `-- name: GetOrgMemberRole :one
 select role from org_members where org_id = $1 and customer_id = $2
 `

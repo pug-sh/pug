@@ -184,7 +184,6 @@ func start(ctx context.Context, d *deps) error {
 	// Dashboard only (CORS + JWT auth)
 	mux.Handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
 	mux.Handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
-	mux.Handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
 	mux.Handle(dashboardsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
 	mux.Handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
 
@@ -209,7 +208,6 @@ func start(ctx context.Context, d *deps) error {
 		// Dashboard
 		orgsv1connect.OrgsServiceName,
 		projectsv1connect.ProjectsServiceName,
-		orgemailprovidersv1connect.OrgEmailProvidersServiceName,
 		dashboardsv1connect.DashboardsServiceName,
 		orgemailprovidersv1connect.OrgEmailProvidersServiceName,
 		// Shared

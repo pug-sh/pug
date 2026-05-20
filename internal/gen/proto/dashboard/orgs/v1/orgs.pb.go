@@ -124,6 +124,7 @@ type Org struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
 	Id            *string                `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
+	Role          *OrgRole               `protobuf:"varint,3,opt,name=role,enum=dashboard.orgs.v1.OrgRole" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -170,6 +171,13 @@ func (x *Org) GetId() string {
 		return *x.Id
 	}
 	return ""
+}
+
+func (x *Org) GetRole() OrgRole {
+	if x != nil && x.Role != nil {
+		return *x.Role
+	}
+	return OrgRole_ORG_ROLE_UNSPECIFIED
 }
 
 type OrgMember struct {
@@ -1132,14 +1140,287 @@ func (x *ListInvitationsResponse) GetInvitations() []*OrgInvitation {
 	return nil
 }
 
+type CreateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateRequest) Reset() {
+	*x = CreateRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateRequest) ProtoMessage() {}
+
+func (x *CreateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateRequest.ProtoReflect.Descriptor instead.
+func (*CreateRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *CreateRequest) GetDisplayName() string {
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
+	}
+	return ""
+}
+
+type CreateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Org           *Org                   `protobuf:"bytes,1,opt,name=org" json:"org,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateResponse) Reset() {
+	*x = CreateResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateResponse) ProtoMessage() {}
+
+func (x *CreateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateResponse.ProtoReflect.Descriptor instead.
+func (*CreateResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *CreateResponse) GetOrg() *Org {
+	if x != nil {
+		return x.Org
+	}
+	return nil
+}
+
+type LeaveRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LeaveRequest) Reset() {
+	*x = LeaveRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LeaveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LeaveRequest) ProtoMessage() {}
+
+func (x *LeaveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LeaveRequest.ProtoReflect.Descriptor instead.
+func (*LeaveRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *LeaveRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+type LeaveResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LeaveResponse) Reset() {
+	*x = LeaveResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LeaveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LeaveResponse) ProtoMessage() {}
+
+func (x *LeaveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LeaveResponse.ProtoReflect.Descriptor instead.
+func (*LeaveResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{24}
+}
+
+type UpdateMemberRoleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         *string                `protobuf:"bytes,1,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	CustomerId    *string                `protobuf:"bytes,2,opt,name=customer_id,json=customerId" json:"customer_id,omitempty"`
+	Role          *OrgRole               `protobuf:"varint,3,opt,name=role,enum=dashboard.orgs.v1.OrgRole" json:"role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateMemberRoleRequest) Reset() {
+	*x = UpdateMemberRoleRequest{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateMemberRoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateMemberRoleRequest) ProtoMessage() {}
+
+func (x *UpdateMemberRoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateMemberRoleRequest.ProtoReflect.Descriptor instead.
+func (*UpdateMemberRoleRequest) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *UpdateMemberRoleRequest) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *UpdateMemberRoleRequest) GetCustomerId() string {
+	if x != nil && x.CustomerId != nil {
+		return *x.CustomerId
+	}
+	return ""
+}
+
+func (x *UpdateMemberRoleRequest) GetRole() OrgRole {
+	if x != nil && x.Role != nil {
+		return *x.Role
+	}
+	return OrgRole_ORG_ROLE_UNSPECIFIED
+}
+
+type UpdateMemberRoleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Member        *OrgMember             `protobuf:"bytes,1,opt,name=member" json:"member,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateMemberRoleResponse) Reset() {
+	*x = UpdateMemberRoleResponse{}
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateMemberRoleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateMemberRoleResponse) ProtoMessage() {}
+
+func (x *UpdateMemberRoleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dashboard_orgs_v1_orgs_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateMemberRoleResponse.ProtoReflect.Descriptor instead.
+func (*UpdateMemberRoleResponse) Descriptor() ([]byte, []int) {
+	return file_dashboard_orgs_v1_orgs_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *UpdateMemberRoleResponse) GetMember() *OrgMember {
+	if x != nil {
+		return x.Member
+	}
+	return nil
+}
+
 var File_dashboard_orgs_v1_orgs_proto protoreflect.FileDescriptor
 
 const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\n" +
-	"\x1cdashboard/orgs/v1/orgs.proto\x12\x11dashboard.orgs.v1\x1a\x1bbuf/validate/validate.proto\"8\n" +
+	"\x1cdashboard/orgs/v1/orgs.proto\x12\x11dashboard.orgs.v1\x1a\x1bbuf/validate/validate.proto\"h\n" +
 	"\x03Org\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xac\x01\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12.\n" +
+	"\x04role\x18\x03 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\"\xac\x01\n" +
 	"\tOrgMember\x12\x1f\n" +
 	"\vcustomer_id\x18\x01 \x01(\tR\n" +
 	"customerId\x12!\n" +
@@ -1161,9 +1442,10 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"GetRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"7\n" +
 	"\vGetResponse\x12(\n" +
-	"\x03org\x18\x01 \x01(\v2\x16.dashboard.orgs.v1.OrgR\x03org\"i\n" +
-	"\x18UpdateDisplayNameRequest\x12.\n" +
-	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12\x1d\n" +
+	"\x03org\x18\x01 \x01(\v2\x16.dashboard.orgs.v1.OrgR\x03org\"k\n" +
+	"\x18UpdateDisplayNameRequest\x120\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\r\xbaH\n" +
+	"\xc8\x01\x01r\x05\x10\x01\x18\x96\x01R\vdisplayName\x12\x1d\n" +
 	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"E\n" +
 	"\x19UpdateDisplayNameResponse\x12(\n" +
 	"\x03org\x18\x01 \x01(\v2\x16.dashboard.orgs.v1.OrgR\x03org\"3\n" +
@@ -1198,7 +1480,23 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x16ListInvitationsRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"]\n" +
 	"\x17ListInvitationsResponse\x12B\n" +
-	"\vinvitations\x18\x01 \x03(\v2 .dashboard.orgs.v1.OrgInvitationR\vinvitations*L\n" +
+	"\vinvitations\x18\x01 \x03(\v2 .dashboard.orgs.v1.OrgInvitationR\vinvitations\"A\n" +
+	"\rCreateRequest\x120\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\r\xbaH\n" +
+	"\xc8\x01\x01r\x05\x10\x01\x18\x96\x01R\vdisplayName\":\n" +
+	"\x0eCreateResponse\x12(\n" +
+	"\x03org\x18\x01 \x01(\v2\x16.dashboard.orgs.v1.OrgR\x03org\"-\n" +
+	"\fLeaveRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"\x0f\n" +
+	"\rLeaveResponse\"\xa0\x01\n" +
+	"\x17UpdateMemberRoleRequest\x12\x1d\n" +
+	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12'\n" +
+	"\vcustomer_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
+	"customerId\x12=\n" +
+	"\x04role\x18\x03 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleB\r\xbaH\n" +
+	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x04role\"P\n" +
+	"\x18UpdateMemberRoleResponse\x124\n" +
+	"\x06member\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgMemberR\x06member*L\n" +
 	"\aOrgRole\x12\x18\n" +
 	"\x14ORG_ROLE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eORG_ROLE_ADMIN\x10\x01\x12\x13\n" +
@@ -1206,7 +1504,7 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x10InvitationStatus\x12!\n" +
 	"\x1dINVITATION_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19INVITATION_STATUS_PENDING\x10\x01\x12\x1e\n" +
-	"\x1aINVITATION_STATUS_ACCEPTED\x10\x022\xea\x06\n" +
+	"\x1aINVITATION_STATUS_ACCEPTED\x10\x022\xf8\b\n" +
 	"\vOrgsService\x12I\n" +
 	"\x04List\x12\x1e.dashboard.orgs.v1.ListRequest\x1a\x1f.dashboard.orgs.v1.ListResponse\"\x00\x12F\n" +
 	"\x03Get\x12\x1d.dashboard.orgs.v1.GetRequest\x1a\x1e.dashboard.orgs.v1.GetResponse\"\x00\x12p\n" +
@@ -1216,7 +1514,10 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\fInviteMember\x12&.dashboard.orgs.v1.InviteMemberRequest\x1a'.dashboard.orgs.v1.InviteMemberResponse\"\x00\x12a\n" +
 	"\fResendInvite\x12&.dashboard.orgs.v1.ResendInviteRequest\x1a'.dashboard.orgs.v1.ResendInviteResponse\"\x00\x12a\n" +
 	"\fAcceptInvite\x12&.dashboard.orgs.v1.AcceptInviteRequest\x1a'.dashboard.orgs.v1.AcceptInviteResponse\"\x00\x12j\n" +
-	"\x0fListInvitations\x12).dashboard.orgs.v1.ListInvitationsRequest\x1a*.dashboard.orgs.v1.ListInvitationsResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
+	"\x0fListInvitations\x12).dashboard.orgs.v1.ListInvitationsRequest\x1a*.dashboard.orgs.v1.ListInvitationsResponse\"\x00\x12O\n" +
+	"\x06Create\x12 .dashboard.orgs.v1.CreateRequest\x1a!.dashboard.orgs.v1.CreateResponse\"\x00\x12L\n" +
+	"\x05Leave\x12\x1f.dashboard.orgs.v1.LeaveRequest\x1a .dashboard.orgs.v1.LeaveResponse\"\x00\x12m\n" +
+	"\x10UpdateMemberRole\x12*.dashboard.orgs.v1.UpdateMemberRoleRequest\x1a+.dashboard.orgs.v1.UpdateMemberRoleResponse\"\x00BCZAgithub.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1;orgsv1b\beditionsp\xe8\a"
 
 var (
 	file_dashboard_orgs_v1_orgs_proto_rawDescOnce sync.Once
@@ -1231,7 +1532,7 @@ func file_dashboard_orgs_v1_orgs_proto_rawDescGZIP() []byte {
 }
 
 var file_dashboard_orgs_v1_orgs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_dashboard_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_dashboard_orgs_v1_orgs_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_dashboard_orgs_v1_orgs_proto_goTypes = []any{
 	(OrgRole)(0),                      // 0: dashboard.orgs.v1.OrgRole
 	(InvitationStatus)(0),             // 1: dashboard.orgs.v1.InvitationStatus
@@ -1256,41 +1557,57 @@ var file_dashboard_orgs_v1_orgs_proto_goTypes = []any{
 	(*AcceptInviteResponse)(nil),      // 20: dashboard.orgs.v1.AcceptInviteResponse
 	(*ListInvitationsRequest)(nil),    // 21: dashboard.orgs.v1.ListInvitationsRequest
 	(*ListInvitationsResponse)(nil),   // 22: dashboard.orgs.v1.ListInvitationsResponse
+	(*CreateRequest)(nil),             // 23: dashboard.orgs.v1.CreateRequest
+	(*CreateResponse)(nil),            // 24: dashboard.orgs.v1.CreateResponse
+	(*LeaveRequest)(nil),              // 25: dashboard.orgs.v1.LeaveRequest
+	(*LeaveResponse)(nil),             // 26: dashboard.orgs.v1.LeaveResponse
+	(*UpdateMemberRoleRequest)(nil),   // 27: dashboard.orgs.v1.UpdateMemberRoleRequest
+	(*UpdateMemberRoleResponse)(nil),  // 28: dashboard.orgs.v1.UpdateMemberRoleResponse
 }
 var file_dashboard_orgs_v1_orgs_proto_depIdxs = []int32{
-	0,  // 0: dashboard.orgs.v1.OrgMember.role:type_name -> dashboard.orgs.v1.OrgRole
-	1,  // 1: dashboard.orgs.v1.OrgInvitation.status:type_name -> dashboard.orgs.v1.InvitationStatus
-	2,  // 2: dashboard.orgs.v1.ListResponse.orgs:type_name -> dashboard.orgs.v1.Org
-	2,  // 3: dashboard.orgs.v1.GetResponse.org:type_name -> dashboard.orgs.v1.Org
-	2,  // 4: dashboard.orgs.v1.UpdateDisplayNameResponse.org:type_name -> dashboard.orgs.v1.Org
-	3,  // 5: dashboard.orgs.v1.ListMembersResponse.members:type_name -> dashboard.orgs.v1.OrgMember
-	4,  // 6: dashboard.orgs.v1.InviteMemberResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
-	4,  // 7: dashboard.orgs.v1.ResendInviteResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
-	2,  // 8: dashboard.orgs.v1.AcceptInviteResponse.org:type_name -> dashboard.orgs.v1.Org
-	4,  // 9: dashboard.orgs.v1.ListInvitationsResponse.invitations:type_name -> dashboard.orgs.v1.OrgInvitation
-	5,  // 10: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
-	7,  // 11: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
-	9,  // 12: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
-	11, // 13: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
-	13, // 14: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
-	15, // 15: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
-	17, // 16: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
-	19, // 17: dashboard.orgs.v1.OrgsService.AcceptInvite:input_type -> dashboard.orgs.v1.AcceptInviteRequest
-	21, // 18: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
-	6,  // 19: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
-	8,  // 20: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
-	10, // 21: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
-	12, // 22: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
-	14, // 23: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
-	16, // 24: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
-	18, // 25: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
-	20, // 26: dashboard.orgs.v1.OrgsService.AcceptInvite:output_type -> dashboard.orgs.v1.AcceptInviteResponse
-	22, // 27: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
-	19, // [19:28] is the sub-list for method output_type
-	10, // [10:19] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	0,  // 0: dashboard.orgs.v1.Org.role:type_name -> dashboard.orgs.v1.OrgRole
+	0,  // 1: dashboard.orgs.v1.OrgMember.role:type_name -> dashboard.orgs.v1.OrgRole
+	1,  // 2: dashboard.orgs.v1.OrgInvitation.status:type_name -> dashboard.orgs.v1.InvitationStatus
+	2,  // 3: dashboard.orgs.v1.ListResponse.orgs:type_name -> dashboard.orgs.v1.Org
+	2,  // 4: dashboard.orgs.v1.GetResponse.org:type_name -> dashboard.orgs.v1.Org
+	2,  // 5: dashboard.orgs.v1.UpdateDisplayNameResponse.org:type_name -> dashboard.orgs.v1.Org
+	3,  // 6: dashboard.orgs.v1.ListMembersResponse.members:type_name -> dashboard.orgs.v1.OrgMember
+	4,  // 7: dashboard.orgs.v1.InviteMemberResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
+	4,  // 8: dashboard.orgs.v1.ResendInviteResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
+	2,  // 9: dashboard.orgs.v1.AcceptInviteResponse.org:type_name -> dashboard.orgs.v1.Org
+	4,  // 10: dashboard.orgs.v1.ListInvitationsResponse.invitations:type_name -> dashboard.orgs.v1.OrgInvitation
+	2,  // 11: dashboard.orgs.v1.CreateResponse.org:type_name -> dashboard.orgs.v1.Org
+	0,  // 12: dashboard.orgs.v1.UpdateMemberRoleRequest.role:type_name -> dashboard.orgs.v1.OrgRole
+	3,  // 13: dashboard.orgs.v1.UpdateMemberRoleResponse.member:type_name -> dashboard.orgs.v1.OrgMember
+	5,  // 14: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
+	7,  // 15: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
+	9,  // 16: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
+	11, // 17: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
+	13, // 18: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
+	15, // 19: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
+	17, // 20: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
+	19, // 21: dashboard.orgs.v1.OrgsService.AcceptInvite:input_type -> dashboard.orgs.v1.AcceptInviteRequest
+	21, // 22: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
+	23, // 23: dashboard.orgs.v1.OrgsService.Create:input_type -> dashboard.orgs.v1.CreateRequest
+	25, // 24: dashboard.orgs.v1.OrgsService.Leave:input_type -> dashboard.orgs.v1.LeaveRequest
+	27, // 25: dashboard.orgs.v1.OrgsService.UpdateMemberRole:input_type -> dashboard.orgs.v1.UpdateMemberRoleRequest
+	6,  // 26: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
+	8,  // 27: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
+	10, // 28: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
+	12, // 29: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
+	14, // 30: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
+	16, // 31: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
+	18, // 32: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
+	20, // 33: dashboard.orgs.v1.OrgsService.AcceptInvite:output_type -> dashboard.orgs.v1.AcceptInviteResponse
+	22, // 34: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
+	24, // 35: dashboard.orgs.v1.OrgsService.Create:output_type -> dashboard.orgs.v1.CreateResponse
+	26, // 36: dashboard.orgs.v1.OrgsService.Leave:output_type -> dashboard.orgs.v1.LeaveResponse
+	28, // 37: dashboard.orgs.v1.OrgsService.UpdateMemberRole:output_type -> dashboard.orgs.v1.UpdateMemberRoleResponse
+	26, // [26:38] is the sub-list for method output_type
+	14, // [14:26] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_orgs_v1_orgs_proto_init() }
@@ -1304,7 +1621,7 @@ func file_dashboard_orgs_v1_orgs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dashboard_orgs_v1_orgs_proto_rawDesc), len(file_dashboard_orgs_v1_orgs_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   21,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

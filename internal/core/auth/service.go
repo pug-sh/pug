@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -14,11 +15,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pug-sh/pug/internal/core/projects"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
-	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -40,10 +40,17 @@ var emailPublishFailureCounter metric.Int64Counter
 
 func init() {
 	meter := otel.Meter("github.com/pug-sh/pug/internal/core/auth")
-	emailPublishFailureCounter, _ = meter.Int64Counter(
+	// Panic on init failure: without this counter, every subsequent
+	// Add() is a no-op and the only alarm for silent email drops is gone.
+	// Fail loud at startup rather than silently lose the alerting signal.
+	c, err := meter.Int64Counter(
 		"emails.publish_failure_total",
 		metric.WithDescription("Email jobs whose tx committed but NATS publish failed; indicates user-visible silent drops."),
 	)
+	if err != nil {
+		panic("auth: failed to register emails.publish_failure_total counter: " + err.Error())
+	}
+	emailPublishFailureCounter = c
 }
 
 var (
@@ -90,7 +97,7 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher 
 	}
 }
 
-func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (string, error) {
+func (s *Service) SignUpWithEmail(ctx context.Context, email, password, inviteToken string) (string, error) {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
@@ -101,28 +108,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return "", err
 	}
 
-	privKey, err := projects.NewPrivateKey()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	pubKey, err := projects.NewPublicKey()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate project public key", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
 	customerID := xid.New().String()
-	orgID := xid.New().String()
-	verifyToken, err := newActionToken()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate verify token", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	verifyTokenHash := hashToken(verifyToken)
 
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
@@ -137,6 +123,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		}
 	}()
 
+	r := dbread.New(tx)
 	w := dbwrite.New(tx)
 
 	if _, err = w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
@@ -155,49 +142,54 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return "", err
 	}
 
-	if _, err = w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
-		ID:              xid.New().String(),
-		CustomerID:      postgres.NewOptionalText(customerID),
-		Email:           email,
-		Purpose:         verifyEmailPurpose,
-		TokenHash:       verifyTokenHash,
-		OrgInvitationID: postgres.NewOptionalText(""),
-		ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(verifyEmailTTL)),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to create email verification token", slogx.Error(err), slog.String("customer_id", customerID))
-		telemetry.RecordError(ctx, err)
-		return "", err
+	// Invite-driven signup: attempt to accept the invite inside the signup tx.
+	// On any client-input failure (bad/expired/wrong-email token), fall through
+	// to the default-org path — the customer row is kept; only the invite-bound
+	// side effects are skipped. Other errors propagate.
+	inviteAccepted := false
+	if inviteToken != "" {
+		if _, err := coreorgs.AcceptInviteInTx(ctx, r, w, inviteToken, customerID, email); err != nil {
+			if !isInviteClientError(err) {
+				return "", err
+			}
+			slog.WarnContext(ctx, "invite-driven signup: token rejected, falling back to default org",
+				slogx.Error(err), slog.String("customer_id", customerID))
+		} else {
+			if _, err := w.MarkCustomerEmailVerified(ctx, customerID); err != nil {
+				slog.ErrorContext(ctx, "failed to mark customer email verified on invite signup", slogx.Error(err), slog.String("customer_id", customerID))
+				telemetry.RecordError(ctx, err)
+				return "", err
+			}
+			inviteAccepted = true
+		}
 	}
 
-	if _, err = w.CreateOrg(ctx, dbwrite.CreateOrgParams{
-		ID:          orgID,
-		DisplayName: "default",
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to create default org", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
+	var verifyToken string
+	if !inviteAccepted {
+		verifyToken, err = newActionToken()
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to generate verify token", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return "", err
+		}
 
-	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID:      orgID,
-		CustomerID: customerID,
-		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to add customer to default org", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
+		if _, err = w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
+			ID:              xid.New().String(),
+			CustomerID:      postgres.NewOptionalText(customerID),
+			Email:           email,
+			Purpose:         verifyEmailPurpose,
+			TokenHash:       hashToken(verifyToken),
+			OrgInvitationID: postgres.NewOptionalText(""),
+			ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(verifyEmailTTL)),
+		}); err != nil {
+			slog.ErrorContext(ctx, "failed to create email verification token", slogx.Error(err), slog.String("customer_id", customerID))
+			telemetry.RecordError(ctx, err)
+			return "", err
+		}
 
-	if _, err = w.CreateProject(ctx, dbwrite.CreateProjectParams{
-		ID:            xid.New().String(),
-		OrgID:         orgID,
-		DisplayName:   "default",
-		PrivateApiKey: privKey,
-		PublicApiKey:  pubKey,
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to create default project", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
+		if _, err = coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
+			return "", err
+		}
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -206,14 +198,16 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return "", err
 	}
 
-	s.publishEmailJob(ctx, &emailworkerv1.EmailJob{
-		Payload: &emailworkerv1.EmailJob_SignupVerifyWelcome{
-			SignupVerifyWelcome: &emailworkerv1.SignUpVerifyWelcomePayload{
-				Email: proto.String(email),
-				Token: proto.String(verifyToken),
+	if !inviteAccepted {
+		s.publishEmailJob(ctx, &emailworkerv1.EmailJob{
+			Payload: &emailworkerv1.EmailJob_SignupVerifyWelcome{
+				SignupVerifyWelcome: &emailworkerv1.SignUpVerifyWelcomePayload{
+					Email: proto.String(email),
+					Token: proto.String(verifyToken),
+				},
 			},
-		},
-	})
+		})
+	}
 
 	token, err := s.generateJWT(customerID)
 	if err != nil {
@@ -223,6 +217,17 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	}
 
 	return token, nil
+}
+
+// isInviteClientError reports whether an AcceptInviteInTx error came from
+// bad/missing/expired/wrong-email invite token input, in which case the
+// signup falls back to default-org creation. Other errors (DB failures,
+// already-a-member) propagate.
+func isInviteClientError(err error) bool {
+	return errors.Is(err, coreorgs.ErrInviteNotFound) ||
+		errors.Is(err, coreorgs.ErrInviteNotPending) ||
+		errors.Is(err, coreorgs.ErrInviteExpired) ||
+		errors.Is(err, coreorgs.ErrInviteWrongEmail)
 }
 
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (string, error) {
@@ -536,17 +541,17 @@ func (s *Service) publishEmailJob(ctx context.Context, job *emailworkerv1.EmailJ
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to marshal email job", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", payloadKindFromJob(job))))
+		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", payloadKindFromJob(ctx, job))))
 		return
 	}
 	if err := s.publisher.Publish(ctx, nats.MiscEmailJobsSubject, data); err != nil {
 		slog.ErrorContext(ctx, "failed to publish email job", slogx.Error(err), slog.String("subject", nats.MiscEmailJobsSubject))
 		telemetry.RecordError(ctx, err)
-		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", payloadKindFromJob(job))))
+		emailPublishFailureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", payloadKindFromJob(ctx, job))))
 	}
 }
 
-func payloadKindFromJob(job *emailworkerv1.EmailJob) string {
+func payloadKindFromJob(ctx context.Context, job *emailworkerv1.EmailJob) string {
 	switch job.GetPayload().(type) {
 	case *emailworkerv1.EmailJob_SignupVerifyWelcome:
 		return "signup_verify_welcome"
@@ -557,6 +562,12 @@ func payloadKindFromJob(job *emailworkerv1.EmailJob) string {
 	case *emailworkerv1.EmailJob_OrgMemberInvite:
 		return "org_member_invite"
 	default:
+		// Unknown payload type means the EmailJob proto grew a new oneof case
+		// that this switch hasn't been updated to handle. The counter still
+		// records the failure under kind="unknown", but the warn log is the
+		// signal to add the missing case here.
+		slog.WarnContext(ctx, "unknown email job payload kind; counter falling back to 'unknown'",
+			slog.String("payload_type", fmt.Sprintf("%T", job.GetPayload())))
 		return "unknown"
 	}
 }

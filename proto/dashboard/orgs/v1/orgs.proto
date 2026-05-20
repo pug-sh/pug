@@ -27,11 +27,15 @@ service OrgsService {
   rpc ResendInvite(ResendInviteRequest) returns (ResendInviteResponse) {}
   rpc AcceptInvite(AcceptInviteRequest) returns (AcceptInviteResponse) {}
   rpc ListInvitations(ListInvitationsRequest) returns (ListInvitationsResponse) {}
+  rpc Create(CreateRequest) returns (CreateResponse) {}
+  rpc Leave(LeaveRequest) returns (LeaveResponse) {}
+  rpc UpdateMemberRole(UpdateMemberRoleRequest) returns (UpdateMemberRoleResponse) {}
 }
 
 message Org {
   string display_name = 1;
   string id = 2;
+  OrgRole role = 3;
 }
 
 message OrgMember {
@@ -67,6 +71,7 @@ message GetResponse {
 message UpdateDisplayNameRequest {
   string display_name = 1 [
     (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 150
   ];
   string org_id = 2 [(buf.validate.field).required = true];
@@ -126,4 +131,35 @@ message ListInvitationsRequest {
 
 message ListInvitationsResponse {
   repeated OrgInvitation invitations = 1;
+}
+
+message CreateRequest {
+  string display_name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 150
+  ];
+}
+
+message CreateResponse {
+  Org org = 1;
+}
+
+message LeaveRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+}
+
+message LeaveResponse {}
+
+message UpdateMemberRoleRequest {
+  string org_id = 1 [(buf.validate.field).required = true];
+  string customer_id = 2 [(buf.validate.field).required = true];
+  OrgRole role = 3 [(buf.validate.field) = {
+    required: true
+    enum: {defined_only: true, not_in: [0]}
+  }];
+}
+
+message UpdateMemberRoleResponse {
+  OrgMember member = 1;
 }
