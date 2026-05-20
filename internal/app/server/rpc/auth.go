@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/authn"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -249,12 +250,12 @@ func MustGetPrincipalWithCustomer(ctx context.Context) (*Principal, error) {
 	principal, err := getPrincipalFromContext(ctx)
 	if err != nil {
 		slog.DebugContext(ctx, "principal extraction failed", slogx.Error(err))
-		return nil, err
+		return nil, apperr.Unauthenticated(apperr.ReasonUnauthenticated, "unauthenticated")
 	}
 
 	if principal.Customer == nil {
 		slog.DebugContext(ctx, "customer not set in principal")
-		return nil, authn.Errorf("customer not set in principal")
+		return nil, apperr.Unauthenticated(apperr.ReasonUnauthenticated, "unauthenticated")
 	}
 
 	return principal, nil
@@ -266,12 +267,12 @@ func MustGetPrincipalWithProject(ctx context.Context) (*Principal, error) {
 	principal, err := getPrincipalFromContext(ctx)
 	if err != nil {
 		slog.DebugContext(ctx, "principal extraction failed", slogx.Error(err))
-		return nil, err
+		return nil, apperr.Unauthenticated(apperr.ReasonUnauthenticated, "unauthenticated")
 	}
 
 	if principal.Project == nil {
 		slog.DebugContext(ctx, "project not set in principal")
-		return nil, authn.Errorf("project not set in principal")
+		return nil, apperr.Unauthenticated(apperr.ReasonUnauthenticated, "unauthenticated")
 	}
 
 	return principal, nil
