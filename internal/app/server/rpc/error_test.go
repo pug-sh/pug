@@ -287,6 +287,54 @@ func TestSanitizeError_ctxCancelNoDetail(t *testing.T) {
 	}
 }
 
+func TestErrorInterceptor_fullDetailRoundTrip(t *testing.T) {
+	handlerErr := apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found",
+		apperr.Resource("profile", "p_123"))
+	err := testInterceptor(t, context.Background(), handlerErr)
+
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("want *connect.Error, got %v (%T)", err, err)
+	}
+	if connectErr.Code() != connect.CodeNotFound {
+		t.Errorf("code = %v, want CodeNotFound", connectErr.Code())
+	}
+
+	var (
+		gotReason, gotDomain, gotErrorID, gotResType, gotResName string
+		sawErrorInfo, sawRequestInfo, sawResource                bool
+	)
+	for _, d := range connectErr.Details() {
+		msg, verr := d.Value()
+		if verr != nil {
+			continue
+		}
+		switch m := msg.(type) {
+		case *errdetails.ErrorInfo:
+			sawErrorInfo = true
+			gotReason, gotDomain = m.GetReason(), m.GetDomain()
+		case *errdetails.RequestInfo:
+			sawRequestInfo = true
+			gotErrorID = m.GetRequestId()
+		case *errdetails.ResourceInfo:
+			sawResource = true
+			gotResType, gotResName = m.GetResourceType(), m.GetResourceName()
+		}
+	}
+
+	if !sawErrorInfo || gotReason != apperr.ReasonProfileNotFound || gotDomain != apperr.Domain {
+		t.Errorf("ErrorInfo: saw=%v reason=%q domain=%q; want reason=%q domain=%q",
+			sawErrorInfo, gotReason, gotDomain, apperr.ReasonProfileNotFound, apperr.Domain)
+	}
+	if !sawRequestInfo || gotErrorID == "" {
+		t.Errorf("RequestInfo: saw=%v error_id=%q; want a non-empty error_id", sawRequestInfo, gotErrorID)
+	}
+	if !sawResource || gotResType != "profile" || gotResName != "p_123" {
+		t.Errorf("ResourceInfo: saw=%v type=%q name=%q; want type=profile name=p_123",
+			sawResource, gotResType, gotResName)
+	}
+}
+
 func TestErrorInterceptor_validationBecomesBadRequest(t *testing.T) {
 	v, err := protovalidate.New()
 	if err != nil {
