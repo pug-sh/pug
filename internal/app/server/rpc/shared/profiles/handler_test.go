@@ -3,6 +3,7 @@ package profiles
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -221,8 +223,9 @@ func TestDelete_AlreadyDeleted(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for already-deleted profile, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeNotFound {
-		t.Errorf("got code %v, want CodeNotFound", code)
+	var appErr *apperr.Error
+	if !errors.As(err, &appErr) || appErr.Code != connect.CodeNotFound {
+		t.Errorf("got %v, want apperr CodeNotFound", err)
 	}
 }
 
@@ -251,8 +254,9 @@ func TestDelete_NonExistent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-existent profile, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeNotFound {
-		t.Errorf("got code %v, want CodeNotFound", code)
+	var appErr *apperr.Error
+	if !errors.As(err, &appErr) || appErr.Code != connect.CodeNotFound {
+		t.Errorf("got %v, want apperr CodeNotFound", err)
 	}
 }
 

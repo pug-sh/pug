@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -46,7 +47,7 @@ func (s *Server) Delete(
 	err = s.service.Delete(ctx, principal.Project.ID, profileID)
 	if err != nil {
 		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
+			return nil, apperr.Err(connect.CodeNotFound, apperr.ReasonProfileNotFound, "profile not found")
 		}
 		if errors.Is(err, coreprofiles.ErrProfileDeleteUnavailable) {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("profiles delete is unavailable"))
@@ -255,7 +256,7 @@ func (s *Server) getProfile(ctx context.Context, projectID, id string) (*profile
 	profile, err := s.service.GetByID(ctx, projectID, id)
 	if err != nil {
 		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
+			return nil, apperr.Err(connect.CodeNotFound, apperr.ReasonProfileNotFound, "profile not found")
 		}
 		slog.ErrorContext(ctx, "failed reading profile from clickhouse", slogx.Error(err), slog.String("profile_id", id))
 		telemetry.RecordError(ctx, err)
@@ -277,7 +278,7 @@ func (s *Server) getProfileByExternalID(ctx context.Context, projectID, external
 	profile, err := s.service.GetByExternalID(ctx, projectID, externalID)
 	if err != nil {
 		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("profile not found"))
+			return nil, apperr.Err(connect.CodeNotFound, apperr.ReasonProfileNotFound, "profile not found")
 		}
 		slog.ErrorContext(ctx, "failed reading profile by external ID from clickhouse", slogx.Error(err), slog.String("external_id", externalID))
 		telemetry.RecordError(ctx, err)
