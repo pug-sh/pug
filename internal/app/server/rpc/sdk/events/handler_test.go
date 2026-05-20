@@ -2,12 +2,20 @@ package events
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"testing"
 
+	"connectrpc.com/authn"
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/geo"
 	"github.com/pug-sh/pug/internal/useragent"
 )
@@ -481,6 +489,44 @@ func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 	}
 
 	assertProps(t, events[0], want)
+}
+
+func ctxWithProject(ctx context.Context) context.Context {
+	return authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypePublicKey,
+		Project:  &dbread.Project{ID: "test-project"},
+	})
+}
+
+// TestBatchCreate_DuplicateEventID verifies that a batch with duplicate event IDs
+// is rejected with CodeInvalidArgument and ReasonInvalidEventBatch.
+func TestBatchCreate_DuplicateEventID(t *testing.T) {
+	s := &Server{
+		publisher:   nil, // not reached — validation fails first
+		geoProvider: stubProvider{},
+		uaParser:    nil,
+	}
+	req := connect.NewRequest(&eventsv1.BatchCreateRequest{
+		Events: []*eventsv1.Event{
+			{EventId: proto.String("dup-id")},
+			{EventId: proto.String("dup-id")},
+		},
+	})
+	ctx := ctxWithProject(context.Background())
+	_, err := s.BatchCreate(ctx, req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want *apperr.Error, got %T: %v", err, err)
+	}
+	if ae.Code != connect.CodeInvalidArgument {
+		t.Errorf("want CodeInvalidArgument, got %v", ae.Code)
+	}
+	if ae.Reason != apperr.ReasonInvalidEventBatch {
+		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidEventBatch, ae.Reason)
+	}
 }
 
 // TestEnrichBotAndVerified_TypedSlots pins the oneof contract that the regular
