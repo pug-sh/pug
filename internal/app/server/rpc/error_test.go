@@ -213,6 +213,42 @@ func TestErrorInterceptor_attachesDetails(t *testing.T) {
 	})
 }
 
+func TestErrorInterceptor_attachesDetailsToShortCircuitedError(t *testing.T) {
+	// Models validate.NewInterceptor(): an inner interceptor that fails the request
+	// before the handler runs. ErrorInterceptor (registered outside it) must still
+	// attach ErrorInfo + RequestInfo.
+	shortCircuit := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(_ context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid request"))
+		}
+	})
+
+	h := connect.NewUnaryHandler(
+		"/test.v1.Svc/Method",
+		func(_ context.Context, _ *connect.Request[emptypb.Empty]) (*connect.Response[emptypb.Empty], error) {
+			return connect.NewResponse(&emptypb.Empty{}), nil // never reached
+		},
+		connect.WithInterceptors(CorrelationInterceptor(), ErrorInterceptor(), shortCircuit),
+	)
+	mux := http.NewServeMux()
+	mux.Handle("/test.v1.Svc/Method", h)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connect.NewClient[emptypb.Empty, emptypb.Empty](srv.Client(), srv.URL+"/test.v1.Svc/Method")
+	_, err := client.CallUnary(context.Background(), connect.NewRequest(&emptypb.Empty{}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	info := errorInfoFrom(t, err)
+	if info == nil || info.GetReason() != apperr.ReasonInvalidArgument {
+		t.Errorf("ErrorInfo = %+v, want reason INVALID_ARGUMENT", info)
+	}
+	if ri := requestInfoFrom(t, err); ri == nil || ri.GetRequestId() == "" {
+		t.Errorf("RequestInfo = %+v, want non-empty request id", ri)
+	}
+}
+
 func TestSanitizeError_ctxCancelNoDetail(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

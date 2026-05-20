@@ -67,12 +67,18 @@ func Run(ctx context.Context) error {
 func start(ctx context.Context, d *deps) error {
 	queriesRo := dbread.New(d.pgRo)
 
+	// Interceptor order matters. ErrorInterceptor must wrap validate.NewInterceptor():
+	// validate short-circuits on a bad request (returns the error without calling the
+	// inner chain), so ErrorInterceptor has to be OUTSIDE it to attach error details
+	// (reason + correlation id) to validation failures. It stays inside otel so a span
+	// is present for trace_id. CorrelationInterceptor is first so the id is in context
+	// for every downstream interceptor and handler.
 	handlerOpts := connect.WithInterceptors(
 		pogrpc.CorrelationInterceptor(),
 		d.otelInterceptor,
 		pogrpc.LoggingInterceptor(),
-		validate.NewInterceptor(),
 		pogrpc.ErrorInterceptor(),
+		validate.NewInterceptor(),
 		pogrpc.PrincipalInterceptor(),
 	)
 
