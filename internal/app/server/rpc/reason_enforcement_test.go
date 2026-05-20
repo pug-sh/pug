@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -118,4 +120,151 @@ func mustParse(t interface{ Fatal(...any) }, src string) (*token.FileSet, *ast.F
 		t.Fatal(err)
 	}
 	return fset, file
+}
+
+// ---- real-package raw-error enforcement ----
+
+func TestNoClientFacingRawErrors(t *testing.T) {
+	fset := token.NewFileSet()
+	var findings []finding
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, perr := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if perr != nil {
+			return perr
+		}
+		findings = append(findings, scanFile(fset, file)...)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		t.Errorf("%s: client-facing %s must use apperr.* (or // apperr:exempt)", f.pos, f.code)
+	}
+}
+
+// ---- generic-reason scanner ----
+
+// genericReasons are the code-mirror fallback reasons; using one at a non-auth
+// client-facing constructor defeats the "actual reason" guarantee.
+var genericReasons = map[string]bool{
+	"ReasonUnknown": true, "ReasonCanceled": true, "ReasonInvalidArgument": true,
+	"ReasonDeadlineExceeded": true, "ReasonNotFound": true, "ReasonAlreadyExists": true,
+	"ReasonPermissionDenied": true, "ReasonResourceExhausted": true, "ReasonFailedPrecondition": true,
+	"ReasonAborted": true, "ReasonOutOfRange": true, "ReasonUnimplemented": true,
+	"ReasonInternal": true, "ReasonUnavailable": true, "ReasonDataLoss": true,
+	"ReasonUnauthenticated": true,
+}
+
+// nonAuthClientFacingConstructors are the apperr constructors that must carry a specific reason.
+var nonAuthClientFacingConstructors = map[string]bool{
+	"NotFound": true, "Invalid": true, "AlreadyExists": true,
+	"PermissionDenied": true, "FailedPrecondition": true,
+}
+
+// scanGenericReasons flags apperr.<Constructor>(apperr.Reason<Generic>, ...) calls
+// at non-auth client-facing constructors, unless the line is apperr:exempt.
+func scanGenericReasons(fset *token.FileSet, file *ast.File) []finding {
+	exempt := exemptLines(fset, file)
+	var out []finding
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		if !isApperrSelector(call.Fun, nonAuthClientFacingConstructors) {
+			return true
+		}
+		reasonSel, ok := call.Args[0].(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		rpkg, ok := reasonSel.X.(*ast.Ident)
+		if !ok || rpkg.Name != "apperr" || !genericReasons[reasonSel.Sel.Name] {
+			return true
+		}
+		pos := fset.Position(call.Pos())
+		if exempt[pos.Line] {
+			return true
+		}
+		out = append(out, finding{pos: pos, code: reasonSel.Sel.Name})
+		return true
+	})
+	return out
+}
+
+// isApperrSelector reports whether e is apperr.<name> with name in names.
+func isApperrSelector(e ast.Expr, names map[string]bool) bool {
+	sel, ok := e.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	id, ok := sel.X.(*ast.Ident)
+	return ok && id.Name == "apperr" && names[sel.Sel.Name]
+}
+
+// ---- generic-reason fixture self-tests ----
+
+const fixtureGenericReason = `package h
+import "github.com/pug-sh/pug/internal/apperr"
+func f() error { return apperr.NotFound(apperr.ReasonNotFound, "x") }`
+
+const fixtureSpecificReason = `package h
+import "github.com/pug-sh/pug/internal/apperr"
+func f() error { return apperr.NotFound(apperr.ReasonProfileNotFound, "x") }`
+
+const fixtureGenericExempt = `package h
+import "github.com/pug-sh/pug/internal/apperr"
+func f() error { return apperr.AlreadyExists(apperr.ReasonAlreadyExists, "x") // apperr:exempt — legacy
+}`
+
+func TestScanGenericReasons(t *testing.T) {
+	if got := scanGenericReasonsSrc(t, fixtureGenericReason); len(got) != 1 {
+		t.Errorf("generic: got %d, want 1", len(got))
+	}
+	if got := scanGenericReasonsSrc(t, fixtureSpecificReason); len(got) != 0 {
+		t.Errorf("specific: got %d, want 0", len(got))
+	}
+	if got := scanGenericReasonsSrc(t, fixtureGenericExempt); len(got) != 0 {
+		t.Errorf("exempt: got %d, want 0", len(got))
+	}
+}
+
+func scanGenericReasonsSrc(t *testing.T, src string) []finding {
+	t.Helper()
+	fset, file := mustParse(t, src)
+	return scanGenericReasons(fset, file)
+}
+
+// ---- real-package generic-reason enforcement ----
+
+func TestNoGenericReasonAtClientFacing(t *testing.T) {
+	fset := token.NewFileSet()
+	var findings []finding
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, perr := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if perr != nil {
+			return perr
+		}
+		findings = append(findings, scanGenericReasons(fset, file)...)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		t.Errorf("%s: client-facing constructor uses generic reason apperr.%s; use a specific reason (or // apperr:exempt)", f.pos, f.code)
+	}
 }
