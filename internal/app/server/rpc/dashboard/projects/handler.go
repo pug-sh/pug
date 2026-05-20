@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -64,7 +65,7 @@ func (s *server) BatchGet(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isMember {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
+		return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
 	}
 
 	projectsData, err := s.service.GetProjectsByOrgID(ctx, orgID)
@@ -99,10 +100,10 @@ func (s *server) Create(
 	projectData, err := s.service.CreateProjectAsAdmin(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetDisplayName())
 	if err != nil {
 		if errors.Is(err, projects.ErrAdminRequired) {
-			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
+			return nil, apperr.PermissionDenied(apperr.ReasonOrgAdminRequired, "admin role required")
 		}
 		if errors.Is(err, projects.ErrProjectNameTaken) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("a project with this name already exists"))
+			return nil, apperr.AlreadyExists(apperr.ReasonProjectNameTaken, "a project with this name already exists")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -131,7 +132,7 @@ func (s *server) Delete(
 
 	if err := s.service.DeleteProject(ctx, wParams); err != nil {
 		if errors.Is(err, projects.ErrProjectNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
+			return nil, apperr.NotFound(apperr.ReasonProjectNotFound, "project not found", apperr.Resource("project", principal.Project.ID))
 		}
 		slog.ErrorContext(ctx, "failed deleting project", slogx.Error(err), slog.String("org_id", principal.Project.OrgID), slog.String("id", principal.Project.ID))
 		telemetry.RecordError(ctx, err)
@@ -159,7 +160,7 @@ func (s *server) UpdateDisplayName(
 	projectData, err := s.service.UpdateProjectDisplayName(ctx, wParams)
 	if err != nil {
 		if errors.Is(err, projects.ErrProjectNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
+			return nil, apperr.NotFound(apperr.ReasonProjectNotFound, "project not found", apperr.Resource("project", wParams.ID))
 		}
 		slog.ErrorContext(ctx, "failed to update project display name", slogx.Error(err), slog.String("project_id", wParams.ID))
 		telemetry.RecordError(ctx, err)
@@ -190,7 +191,7 @@ func (s *server) UpdateFCMServiceJSON(
 	}
 	if _, err := s.service.UpdateFCMServiceJSON(ctx, wParams); err != nil {
 		if errors.Is(err, projects.ErrProjectNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("project not found"))
+			return nil, apperr.NotFound(apperr.ReasonProjectNotFound, "project not found", apperr.Resource("project", wParams.ID))
 		}
 		slog.ErrorContext(ctx, "failed to update project FCM service JSON", slogx.Error(err), slog.String("project_id", wParams.ID), slog.String("org_id", wParams.OrgID))
 		telemetry.RecordError(ctx, err)
