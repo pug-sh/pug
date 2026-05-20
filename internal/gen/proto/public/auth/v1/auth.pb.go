@@ -122,9 +122,10 @@ func (x *SignInWithEmailResponse) GetToken() string {
 
 type SignUpWithEmailRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Ignored when invite_token is set (the email is taken from the invitation
-	// server-side). Required and must be a valid email when no invite_token is
-	// provided.
+	// When invite_token is set this value is not used (the email is taken from the
+	// invitation server-side) — but if non-empty it must still be a valid email,
+	// because the field rule below applies unconditionally. Required and must be a
+	// valid email when no invite_token is provided.
 	Email *string `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
 	// bcrypt accepts at most 72 bytes; rejecting longer inputs at the
 	// interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.

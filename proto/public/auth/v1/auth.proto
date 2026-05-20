@@ -37,9 +37,10 @@ message SignUpWithEmailRequest {
     message: "email is required unless invite_token is provided"
     expression: "this.invite_token != '' || this.email != ''"
   };
-  // Ignored when invite_token is set (the email is taken from the invitation
-  // server-side). Required and must be a valid email when no invite_token is
-  // provided.
+  // When invite_token is set this value is not used (the email is taken from the
+  // invitation server-side) — but if non-empty it must still be a valid email,
+  // because the field rule below applies unconditionally. Required and must be a
+  // valid email when no invite_token is provided.
   string email = 1 [(buf.validate.field).cel = {
     id: "email.empty_or_valid"
     message: "email must be a valid email address"

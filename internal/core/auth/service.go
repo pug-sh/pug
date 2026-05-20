@@ -133,6 +133,9 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password, inviteTo
 
 	// With a valid invite token the email comes from the invitation (client
 	// email ignored); an invalid token is a hard error (no default-org fallback).
+	// This lookup and AcceptInviteInTx below each read the token: the first to
+	// source the email before CreateCustomer, the second under a row lock to
+	// accept. Two reads in one tx — intentional, don't collapse them.
 	customerEmail := email
 	if inviteToken != "" {
 		invEmail, err := coreorgs.LookupInviteEmailInTx(ctx, r, inviteToken)
@@ -235,11 +238,15 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password, inviteTo
 // token input. When true, SignUpWithEmail returns ErrInviteInvalid and rolls
 // back the signup transaction. Other errors (DB failures, already-a-member)
 // propagate as-is.
+//
+// ErrInviteWrongEmail is intentionally excluded: signup sources the customer's
+// email from the invitation itself (see SignUpWithEmail), so AcceptInviteInTx's
+// email-match check cannot fail on this path. That sentinel stays load-bearing
+// only for the standalone AcceptInvite RPC.
 func isInviteClientError(err error) bool {
 	return errors.Is(err, coreorgs.ErrInviteNotFound) ||
 		errors.Is(err, coreorgs.ErrInviteNotPending) ||
-		errors.Is(err, coreorgs.ErrInviteExpired) ||
-		errors.Is(err, coreorgs.ErrInviteWrongEmail)
+		errors.Is(err, coreorgs.ErrInviteExpired)
 }
 
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (string, error) {

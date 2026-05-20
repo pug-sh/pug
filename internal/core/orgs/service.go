@@ -601,6 +601,19 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 	}, nil
 }
 
+// orphanedInviteTokenErr records a data-integrity breach — an org_invite
+// email_action_token whose org_invitation_id is NULL — and returns a
+// client-safe ErrInviteNotFound. issueInviteEmailToken always sets that FK, so
+// reaching this is a "can't happen" invariant violation, not client input; per
+// the log-at-source convention it is logged + recorded here even though callers
+// surface only the benign sentinel.
+func orphanedInviteTokenErr(ctx context.Context, tokenID string) error {
+	err := errors.New("org_invite email_action_token has null org_invitation_id")
+	slog.ErrorContext(ctx, "org invite token has no linked invitation", slogx.Error(err), slog.String("token_id", tokenID))
+	telemetry.RecordError(ctx, err)
+	return ErrInviteNotFound
+}
+
 // LookupInviteEmailInTx resolves a raw org-invite token to the invited email
 // address, without consuming the token or checking an email match. Returns
 // ErrInviteNotFound when the token is unknown, expired, or already consumed
@@ -621,7 +634,7 @@ func LookupInviteEmailInTx(ctx context.Context, r *dbread.Queries, token string)
 		return "", err
 	}
 	if !emailToken.OrgInvitationID.Valid {
-		return "", ErrInviteNotFound
+		return "", orphanedInviteTokenErr(ctx, emailToken.ID)
 	}
 	return emailToken.Email, nil
 }
@@ -654,7 +667,7 @@ func AcceptInviteInTx(
 		return "", err
 	}
 	if !emailToken.OrgInvitationID.Valid {
-		return "", ErrInviteNotFound
+		return "", orphanedInviteTokenErr(ctx, emailToken.ID)
 	}
 
 	inv, err := w.GetOrgInvitationByIDForUpdate(ctx, emailToken.OrgInvitationID.String)

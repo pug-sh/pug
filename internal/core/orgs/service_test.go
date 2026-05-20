@@ -913,6 +913,24 @@ func TestLookupInviteEmailInTx(t *testing.T) {
 	if _, err := orgs.LookupInviteEmailInTx(ctx, dbread.New(db.PgW), inv.RawToken); !errors.Is(err, orgs.ErrInviteNotFound) {
 		t.Errorf("consumed token err = %v, want ErrInviteNotFound", err)
 	}
+
+	// An expired token resolves to ErrInviteNotFound: the valid-token query
+	// filters expires_at <= now(). Use a fresh invitation so the cases above are
+	// unaffected, then backdate its email_action_token.
+	expEmail := "expired-" + xid.New().String() + "@example.com"
+	expInv, err := svc.InviteMember(ctx, org.ID, inviterID, expEmail)
+	if err != nil {
+		t.Fatalf("InviteMember (expired): %v", err)
+	}
+	if _, err := db.PgW.Exec(ctx,
+		`update email_action_tokens set expires_at = now() - interval '1 hour' where org_invitation_id = $1`,
+		expInv.Invitation.ID,
+	); err != nil {
+		t.Fatalf("backdate expires_at: %v", err)
+	}
+	if _, err := orgs.LookupInviteEmailInTx(ctx, dbread.New(db.PgW), expInv.RawToken); !errors.Is(err, orgs.ErrInviteNotFound) {
+		t.Errorf("expired token err = %v, want ErrInviteNotFound", err)
+	}
 }
 
 func TestLeaveHappyPath(t *testing.T) {

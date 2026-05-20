@@ -49,4 +49,10 @@ func TestGetMe(t *testing.T) {
 	if _, err := NewServer().GetMe(context.Background(), connect.NewRequest(&customersv1.GetMeRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("no-principal code = %v, want Unauthenticated", connect.CodeOf(err))
 	}
+
+	// Principal present but Customer nil (e.g. an API-key path) → CodeUnauthenticated.
+	ctxNilCust := ctxWithCustomer(&rpc.Principal{Customer: nil})
+	if _, err := NewServer().GetMe(ctxNilCust, connect.NewRequest(&customersv1.GetMeRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Errorf("nil-customer code = %v, want Unauthenticated", connect.CodeOf(err))
+	}
 }
