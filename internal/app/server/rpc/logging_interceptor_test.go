@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"testing"
@@ -112,6 +113,32 @@ func TestIsClientError_apperr(t *testing.T) {
 	}
 	if isClientError(apperr.Err(connect.CodeInternal, apperr.ReasonInternal, "x")) {
 		t.Error("apperr with CodeInternal must NOT classify as a client error (ERROR)")
+	}
+}
+
+// Client-driven cancellations and deadline expirations must classify as client
+// errors (WARN), not server errors. connect.CodeOf returns Unknown for a raw
+// context error, so isClientError matches them via errors.Is — including a wrapped
+// context error, which is what sanitizeError's ctx.Err() branch can surface.
+func TestIsClientError_contextErrors(t *testing.T) {
+	for _, err := range []error{
+		context.Canceled,
+		context.DeadlineExceeded,
+		fmt.Errorf("db call failed: %w", context.Canceled),
+	} {
+		if !isClientError(err) {
+			t.Errorf("isClientError(%v) = false, want true", err)
+		}
+	}
+}
+
+// TestLoggingInterceptor_ContextCancelled pins the user-visible effect: a request
+// failing with a context cancellation logs at WARN, not ERROR, so ordinary client
+// disconnects do not generate server-error noise.
+func TestLoggingInterceptor_ContextCancelled(t *testing.T) {
+	rec := callLogging(t, context.Canceled)
+	if rec.Level != slog.LevelWarn {
+		t.Errorf("level = %v, want Warn", rec.Level)
 	}
 }
 
