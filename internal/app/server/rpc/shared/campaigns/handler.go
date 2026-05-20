@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/core/campaigns"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -109,7 +110,7 @@ func (s *server) Create(
 
 	var notificationData map[string]any
 	if err := json.Unmarshal(req.Msg.GetNotificationData(), &notificationData); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, apperr.Invalid(apperr.ReasonInvalidNotificationData, "notification_data is not valid JSON")
 	}
 
 	campaign, err := s.service.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
