@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	protovalidate "buf.build/go/protovalidate"
 	"connectrpc.com/connect"
 	"github.com/pug-sh/pug/internal/apperr"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -282,5 +284,34 @@ func TestSanitizeError_ctxCancelNoDetail(t *testing.T) {
 	}
 	if _, ok := errors.AsType[*connect.Error](err); ok {
 		t.Errorf("expected raw context error (no connect error / no details), got %v", err)
+	}
+}
+
+func TestErrorInterceptor_validationBecomesBadRequest(t *testing.T) {
+	v, err := protovalidate.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	verr := v.Validate(&insightsv1.QueryRequest{}) // empty → required fields fail
+	if verr == nil {
+		t.Skip("empty QueryRequest unexpectedly valid")
+	}
+	handlerErr := connect.NewError(connect.CodeInvalidArgument, verr)
+
+	got := testInterceptor(t, context.Background(), handlerErr)
+	var connectErr *connect.Error
+	if !errors.As(got, &connectErr) {
+		t.Fatalf("want *connect.Error, got %T", got)
+	}
+	var sawBadRequest bool
+	for _, d := range connectErr.Details() {
+		if msg, e := d.Value(); e == nil {
+			if _, ok := msg.(*errdetails.BadRequest); ok {
+				sawBadRequest = true
+			}
+		}
+	}
+	if !sawBadRequest {
+		t.Error("BadRequest detail not synthesized from ValidationError")
 	}
 }

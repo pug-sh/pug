@@ -12,8 +12,8 @@ import (
 	"connectrpc.com/grpcreflect"
 	"connectrpc.com/validate"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
-	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
 	dashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/dashboards"
+	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
 	orgsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/projects"
 	"github.com/pug-sh/pug/internal/app/server/rpc/public/auth"
@@ -32,8 +32,8 @@ import (
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
-	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/public/auth/v1/authv1connect"
@@ -78,7 +78,7 @@ func start(ctx context.Context, d *deps) error {
 		d.otelInterceptor,
 		pogrpc.LoggingInterceptor(),
 		pogrpc.ErrorInterceptor(),
-		validate.NewInterceptor(),
+		validate.NewInterceptor(validate.WithoutErrorDetails()),
 		pogrpc.PrincipalInterceptor(),
 	)
 

@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
+	validatepb "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
+	protovalidate "buf.build/go/protovalidate"
 	"connectrpc.com/connect"
 	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/correlation"
@@ -57,6 +60,9 @@ func sanitizeError(ctx context.Context, procedure string, err error) error {
 	// Already a connect error: attach a generic reason mapped from the code.
 	if connectErr, ok := errors.AsType[*connect.Error](err); ok {
 		attachDetails(ctx, connectErr, apperr.ReasonForCode(connectErr.Code()))
+		if vErr, ok := errors.AsType[*protovalidate.ValidationError](connectErr); ok {
+			addDetail(ctx, connectErr, badRequestFromViolations(vErr))
+		}
 		return connectErr
 	}
 
@@ -99,4 +105,27 @@ func addDetail(ctx context.Context, cerr *connect.Error, msg proto.Message) {
 		return
 	}
 	cerr.AddDetail(detail)
+}
+
+// badRequestFromViolations maps protovalidate violations to a google.rpc.BadRequest.
+func badRequestFromViolations(vErr *protovalidate.ValidationError) *errdetails.BadRequest {
+	br := &errdetails.BadRequest{}
+	for _, v := range vErr.ToProto().GetViolations() {
+		br.FieldViolations = append(br.FieldViolations, &errdetails.BadRequest_FieldViolation{
+			Field:       fieldPathString(v.GetField()),
+			Description: v.GetMessage(),
+		})
+	}
+	return br
+}
+
+func fieldPathString(fp *validatepb.FieldPath) string {
+	if fp == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(fp.GetElements()))
+	for _, el := range fp.GetElements() {
+		parts = append(parts, el.GetFieldName())
+	}
+	return strings.Join(parts, ".")
 }
