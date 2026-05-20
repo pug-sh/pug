@@ -194,7 +194,7 @@ func TestErrorInterceptor_attachesDetails(t *testing.T) {
 		if info == nil {
 			t.Fatal("no ErrorInfo detail attached")
 		}
-		if info.GetReason() != apperr.ReasonNotFound {
+		if info.GetReason() != string(apperr.ReasonNotFound) {
 			t.Errorf("reason = %q, want %q", info.GetReason(), apperr.ReasonNotFound)
 		}
 		if info.GetDomain() != apperr.Domain {
@@ -220,7 +220,7 @@ func TestErrorInterceptor_attachesDetails(t *testing.T) {
 			t.Errorf("message = %q", connectErr.Message())
 		}
 		info := errorInfoFrom(t, err)
-		if info == nil || info.GetReason() != apperr.ReasonProfileNotFound {
+		if info == nil || info.GetReason() != string(apperr.ReasonProfileNotFound) {
 			t.Errorf("ErrorInfo = %+v, want reason PROFILE_NOT_FOUND", info)
 		}
 		if ri := requestInfoFrom(t, err); ri == nil || ri.GetRequestId() == "" {
@@ -231,7 +231,7 @@ func TestErrorInterceptor_attachesDetails(t *testing.T) {
 	t.Run("leaked error sanitized to internal with INTERNAL reason", func(t *testing.T) {
 		err := testInterceptor(t, context.Background(), errors.New("db boom"))
 		info := errorInfoFrom(t, err)
-		if info == nil || info.GetReason() != apperr.ReasonInternal {
+		if info == nil || info.GetReason() != string(apperr.ReasonInternal) {
 			t.Errorf("ErrorInfo = %+v, want reason INTERNAL", info)
 		}
 	})
@@ -265,7 +265,7 @@ func TestErrorInterceptor_attachesDetailsToShortCircuitedError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	info := errorInfoFrom(t, err)
-	if info == nil || info.GetReason() != apperr.ReasonInvalidArgument {
+	if info == nil || info.GetReason() != string(apperr.ReasonInvalidArgument) {
 		t.Errorf("ErrorInfo = %+v, want reason INVALID_ARGUMENT", info)
 	}
 	if ri := requestInfoFrom(t, err); ri == nil || ri.GetRequestId() == "" {
@@ -322,7 +322,7 @@ func TestErrorInterceptor_fullDetailRoundTrip(t *testing.T) {
 		}
 	}
 
-	if !sawErrorInfo || gotReason != apperr.ReasonProfileNotFound || gotDomain != apperr.Domain {
+	if !sawErrorInfo || gotReason != string(apperr.ReasonProfileNotFound) || gotDomain != apperr.Domain {
 		t.Errorf("ErrorInfo: saw=%v reason=%q domain=%q; want reason=%q domain=%q",
 			sawErrorInfo, gotReason, gotDomain, apperr.ReasonProfileNotFound, apperr.Domain)
 	}
@@ -332,6 +332,85 @@ func TestErrorInterceptor_fullDetailRoundTrip(t *testing.T) {
 	if !sawResource || gotResType != "profile" || gotResName != "p_123" {
 		t.Errorf("ResourceInfo: saw=%v type=%q name=%q; want type=profile name=p_123",
 			sawResource, gotResType, gotResName)
+	}
+}
+
+func TestErrorInterceptor_preconditionAndFieldOnWire(t *testing.T) {
+	// fullDetailRoundTrip covers Resource; this covers the other two option
+	// constructors (Precondition -> PreconditionFailure, Field -> BadRequest)
+	// surviving the interceptor and arriving intact at the client.
+	handlerErr := apperr.FailedPrecondition(apperr.ReasonProfileNotFound, "blocked",
+		apperr.Precondition("TOS", "user", "must accept"),
+		apperr.Field("email", "is required"))
+	err := testInterceptor(t, context.Background(), handlerErr)
+
+	var sawPF, sawBR bool
+	for _, msg := range allDetails(t, err) {
+		switch m := msg.(type) {
+		case *errdetails.PreconditionFailure:
+			if vs := m.GetViolations(); len(vs) == 1 && vs[0].GetType() == "TOS" && vs[0].GetSubject() == "user" {
+				sawPF = true
+			}
+		case *errdetails.BadRequest:
+			if fvs := m.GetFieldViolations(); len(fvs) == 1 && fvs[0].GetField() == "email" {
+				sawBR = true
+			}
+		}
+	}
+	if !sawPF {
+		t.Error("PreconditionFailure (TOS/user) not present on the wire")
+	}
+	if !sawBR {
+		t.Error("BadRequest (email field) not present on the wire")
+	}
+}
+
+// TestErrorInterceptor_streamingError covers WrapStreamingHandler: a
+// server-streaming handler returning an apperr must reach the client with the
+// same structured envelope (reason + error_id + detail) as a unary error.
+// ProfilesService.List is the real server-streaming RPC this protects.
+func TestErrorInterceptor_streamingError(t *testing.T) {
+	const path = "/test.v1.Svc/Stream"
+	h := connect.NewServerStreamHandler(
+		path,
+		func(_ context.Context, _ *connect.Request[emptypb.Empty], _ *connect.ServerStream[emptypb.Empty]) error {
+			return apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found",
+				apperr.Resource("profile", "p_1"))
+		},
+		connect.WithInterceptors(CorrelationInterceptor(), ErrorInterceptor()),
+	)
+	mux := http.NewServeMux()
+	mux.Handle(path, h)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connect.NewClient[emptypb.Empty, emptypb.Empty](srv.Client(), srv.URL+path)
+	stream, err := client.CallServerStream(context.Background(), connect.NewRequest(&emptypb.Empty{}))
+	if err == nil { // error typically surfaces during iteration for server streams
+		for stream.Receive() {
+		}
+		err = stream.Err()
+		_ = stream.Close()
+	}
+	if err == nil {
+		t.Fatal("expected streaming error, got nil")
+	}
+
+	info := errorInfoFrom(t, err)
+	if info == nil || info.GetReason() != string(apperr.ReasonProfileNotFound) {
+		t.Errorf("ErrorInfo = %+v, want reason PROFILE_NOT_FOUND", info)
+	}
+	if ri := requestInfoFrom(t, err); ri == nil || ri.GetRequestId() == "" {
+		t.Errorf("RequestInfo = %+v, want non-empty error_id on stream error", ri)
+	}
+	var sawResource bool
+	for _, msg := range allDetails(t, err) {
+		if ri, ok := msg.(*errdetails.ResourceInfo); ok && ri.GetResourceName() == "p_1" {
+			sawResource = true
+		}
+	}
+	if !sawResource {
+		t.Error("ResourceInfo detail not propagated on streaming error")
 	}
 }
 
@@ -351,15 +430,28 @@ func TestErrorInterceptor_validationBecomesBadRequest(t *testing.T) {
 	if !errors.As(got, &connectErr) {
 		t.Fatalf("want *connect.Error, got %T", got)
 	}
-	var sawBadRequest bool
+	var br *errdetails.BadRequest
 	for _, d := range connectErr.Details() {
 		if msg, e := d.Value(); e == nil {
-			if _, ok := msg.(*errdetails.BadRequest); ok {
-				sawBadRequest = true
+			if got, ok := msg.(*errdetails.BadRequest); ok {
+				br = got
 			}
 		}
 	}
-	if !sawBadRequest {
-		t.Error("BadRequest detail not synthesized from ValidationError")
+	if br == nil {
+		t.Fatal("BadRequest detail not synthesized from ValidationError")
+	}
+	// Assert content, not just presence: empty violations or blank field paths
+	// would mean badRequestFromViolations/fieldPathString silently dropped data.
+	if len(br.GetFieldViolations()) == 0 {
+		t.Fatal("BadRequest has no field violations")
+	}
+	for _, fv := range br.GetFieldViolations() {
+		if fv.GetField() == "" {
+			t.Error("field violation has empty Field (fieldPathString produced nothing)")
+		}
+		if fv.GetDescription() == "" {
+			t.Error("field violation has empty Description")
+		}
 	}
 }

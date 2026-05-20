@@ -23,8 +23,11 @@ func (h *correlationHandler) Enabled(ctx context.Context, l slog.Level) bool {
 
 func (h *correlationHandler) Handle(ctx context.Context, r slog.Record) error {
 	// error_id mirrors the key returned in API error responses, so a user-reported
-	// id cross-references directly to these logs. trace_id is added as a plain slog
-	// attr for local/text output; otelslog already carries trace context into OTLP.
+	// id cross-references directly to these logs. trace_id is also stamped here for
+	// text/stderr output (e.g. the shutdown fallback handler), which has no native
+	// trace field. Because this handler wraps otelslog, the trace_id attr is also
+	// emitted into OTLP, where it duplicates the SDK-set native trace id — harmless,
+	// but not OTLP-free as the layering might suggest.
 	if id := correlation.IDFromContext(ctx); id != "" {
 		r.AddAttrs(slog.String("error_id", id))
 	}

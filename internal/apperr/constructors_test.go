@@ -11,7 +11,7 @@ func TestConstructors_setCodeAndReason(t *testing.T) {
 		name   string
 		err    error
 		code   connect.Code
-		reason string
+		reason Reason
 	}{
 		{"NotFound", NotFound(ReasonProfileNotFound, "m"), connect.CodeNotFound, ReasonProfileNotFound},
 		{"Invalid", Invalid(ReasonProfileNotFound, "m"), connect.CodeInvalidArgument, ReasonProfileNotFound},
@@ -22,11 +22,11 @@ func TestConstructors_setCodeAndReason(t *testing.T) {
 	}
 	for _, c := range cases {
 		ae := c.err.(*Error)
-		if ae.Code != c.code {
-			t.Errorf("%s: code = %v, want %v", c.name, ae.Code, c.code)
+		if ae.Code() != c.code {
+			t.Errorf("%s: code = %v, want %v", c.name, ae.Code(), c.code)
 		}
-		if ae.Reason != c.reason {
-			t.Errorf("%s: reason = %q, want %q", c.name, ae.Reason, c.reason)
+		if ae.Reason() != c.reason {
+			t.Errorf("%s: reason = %q, want %q", c.name, ae.Reason(), c.reason)
 		}
 	}
 }

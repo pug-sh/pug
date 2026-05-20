@@ -150,11 +150,11 @@ func TestLeaveHandlerLastAdminReturnsFailedPrecondition(t *testing.T) {
 		connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String(org.ID)}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeFailedPrecondition {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeFailedPrecondition {
 		t.Fatalf("want apperr CodeFailedPrecondition, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonCannotRemoveLastAdmin {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonCannotRemoveLastAdmin)
+	if ae.Reason() != apperr.ReasonCannotRemoveLastAdmin {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonCannotRemoveLastAdmin)
 	}
 }
 
@@ -278,11 +278,11 @@ func TestUpdateMemberRoleHandlerNonAdminRejected(t *testing.T) {
 		}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodePermissionDenied {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
 		t.Fatalf("want apperr CodePermissionDenied, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonOrgAdminRequired {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonOrgAdminRequired)
+	if ae.Reason() != apperr.ReasonOrgAdminRequired {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
 	}
 }
 
@@ -319,11 +319,11 @@ func TestUpdateMemberRoleHandlerDemoteRejected(t *testing.T) {
 		}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeInvalidArgument {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeInvalidArgument {
 		t.Fatalf("want apperr CodeInvalidArgument, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonOrgUnsupportedRoleTransit {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonOrgUnsupportedRoleTransit)
+	if ae.Reason() != apperr.ReasonOrgUnsupportedRoleTransit {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgUnsupportedRoleTransit)
 	}
 }
 
@@ -351,11 +351,11 @@ func TestLeaveHandlerNonMemberReturnsNotFound(t *testing.T) {
 		connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String(org.ID)}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeNotFound {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
 		t.Fatalf("want apperr CodeNotFound, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonOrgMemberNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonOrgMemberNotFound)
+	if ae.Reason() != apperr.ReasonOrgMemberNotFound {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgMemberNotFound)
 	}
 }
 
@@ -460,11 +460,11 @@ func TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound(t *testing.T) {
 		connect.NewRequest(&orgsv1.GetRequest{OrgId: proto.String(org.ID)}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeNotFound {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
 		t.Fatalf("non-member: want apperr CodeNotFound (enumeration-resistant), got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonOrgNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonOrgNotFound)
+	if ae.Reason() != apperr.ReasonOrgNotFound {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgNotFound)
 	}
 }
 
@@ -589,11 +589,11 @@ func TestLeaveHandlerLastMemberReturnsFailedPrecondition(t *testing.T) {
 		connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String(org.ID)}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeFailedPrecondition {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeFailedPrecondition {
 		t.Fatalf("want apperr CodeFailedPrecondition for ErrLastMember, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonCannotLeaveAsLastMember {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonCannotLeaveAsLastMember)
+	if ae.Reason() != apperr.ReasonCannotLeaveAsLastMember {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonCannotLeaveAsLastMember)
 	}
 }
 
@@ -678,16 +678,16 @@ func TestLeaveHandlerSoloAdminReturnsFailedPrecondition(t *testing.T) {
 		connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String(org.ID)}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeFailedPrecondition {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeFailedPrecondition {
 		t.Fatalf("want apperr CodeFailedPrecondition, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonCannotRemoveLastAdmin {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonCannotRemoveLastAdmin)
+	if ae.Reason() != apperr.ReasonCannotRemoveLastAdmin {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonCannotRemoveLastAdmin)
 	}
 	// Pin the verb-specific message — confirms ErrLastAdmin precedence won,
 	// not ErrLastMember. A regression that swapped the precedence would
 	// surface "cannot leave as the only member" here.
-	if got, want := ae.Message, "cannot leave as the last admin"; got != want {
+	if got, want := ae.Message(), "cannot leave as the last admin"; got != want {
 		t.Errorf("want message %q (ErrLastAdmin precedence), got %q", want, got)
 	}
 }
@@ -730,11 +730,11 @@ func TestUpdateMemberRoleHandlerRejectsUnspecifiedRole(t *testing.T) {
 		}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeInvalidArgument {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeInvalidArgument {
 		t.Fatalf("want apperr CodeInvalidArgument for UNSPECIFIED role, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonOrgUnsupportedRole {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonOrgUnsupportedRole)
+	if ae.Reason() != apperr.ReasonOrgUnsupportedRole {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgUnsupportedRole)
 	}
 }
 
@@ -778,11 +778,11 @@ func TestHandlersRejectUnauthenticated(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.call()
 			var ae *apperr.Error
-			if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+			if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 				t.Fatalf("%s: want unauthenticated apperr, got %v (%T)", tc.name, err, err)
 			}
-			if ae.Reason != apperr.ReasonUnauthenticated {
-				t.Errorf("%s: reason = %q, want %q", tc.name, ae.Reason, apperr.ReasonUnauthenticated)
+			if ae.Reason() != apperr.ReasonUnauthenticated {
+				t.Errorf("%s: reason = %q, want %q", tc.name, ae.Reason(), apperr.ReasonUnauthenticated)
 			}
 		})
 	}
@@ -855,11 +855,11 @@ func TestRemoveMemberHandlerSelfRemovalRejected(t *testing.T) {
 		}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeInvalidArgument {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeInvalidArgument {
 		t.Fatalf("want apperr CodeInvalidArgument for self-removal, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonOrgCannotRemoveSelf {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonOrgCannotRemoveSelf)
+	if ae.Reason() != apperr.ReasonOrgCannotRemoveSelf {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgCannotRemoveSelf)
 	}
 }
 
@@ -900,11 +900,11 @@ func TestRemoveMemberHandlerNotFound(t *testing.T) {
 		}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeNotFound {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
 		t.Fatalf("want apperr CodeNotFound for non-member removal, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonOrgMemberNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonOrgMemberNotFound)
+	if ae.Reason() != apperr.ReasonOrgMemberNotFound {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgMemberNotFound)
 	}
 }
 
@@ -944,11 +944,11 @@ func TestAcceptInviteHandlerRejectsWrongEmail(t *testing.T) {
 		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.RawToken)}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodePermissionDenied {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
 		t.Fatalf("want apperr CodePermissionDenied for wrong-email invite, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonInvitationWrongEmail {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonInvitationWrongEmail)
+	if ae.Reason() != apperr.ReasonInvitationWrongEmail {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationWrongEmail)
 	}
 }
 
@@ -1010,11 +1010,11 @@ func TestAcceptInviteHandlerRejectsExpired(t *testing.T) {
 	// rather than "expired", which is consistent with the security-by-design
 	// "no enumeration" stance for token lookups).
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeNotFound {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
 		t.Fatalf("want apperr CodeNotFound for expired invite (via consumed-token path), got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonInvitationNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonInvitationNotFound)
+	if ae.Reason() != apperr.ReasonInvitationNotFound {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationNotFound)
 	}
 }
 
@@ -1039,11 +1039,11 @@ func TestAcceptInviteHandlerRejectsBogusToken(t *testing.T) {
 		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String("not-a-real-token")}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeNotFound {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
 		t.Fatalf("want apperr CodeNotFound for bogus token, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonInvitationNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonInvitationNotFound)
+	if ae.Reason() != apperr.ReasonInvitationNotFound {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationNotFound)
 	}
 }
 
@@ -1093,11 +1093,11 @@ func TestAcceptInviteHandlerRejectsReplay(t *testing.T) {
 		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.RawToken)}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeNotFound {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
 		t.Fatalf("want apperr CodeNotFound on replay, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonInvitationNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonInvitationNotFound)
+	if ae.Reason() != apperr.ReasonInvitationNotFound {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationNotFound)
 	}
 }
 
@@ -1207,11 +1207,11 @@ func TestResendInviteHandler_RequiresAdmin(t *testing.T) {
 		}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodePermissionDenied {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
 		t.Fatalf("want apperr CodePermissionDenied, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonOrgAdminRequired {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonOrgAdminRequired)
+	if ae.Reason() != apperr.ReasonOrgAdminRequired {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
 	}
 }
 
@@ -1231,11 +1231,11 @@ func TestResendInviteHandler_UnknownReturnsNotFound(t *testing.T) {
 		}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeNotFound {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
 		t.Fatalf("want apperr CodeNotFound, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonInvitationNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonInvitationNotFound)
+	if ae.Reason() != apperr.ReasonInvitationNotFound {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationNotFound)
 	}
 }
 
@@ -1271,11 +1271,11 @@ func TestResendInviteHandler_CrossOrgReturnsNotFound(t *testing.T) {
 		}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeNotFound {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
 		t.Fatalf("want apperr CodeNotFound, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonInvitationNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonInvitationNotFound)
+	if ae.Reason() != apperr.ReasonInvitationNotFound {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationNotFound)
 	}
 }
 
@@ -1311,10 +1311,10 @@ func TestResendInviteHandler_AcceptedReturnsFailedPrecondition(t *testing.T) {
 		}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeFailedPrecondition {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeFailedPrecondition {
 		t.Fatalf("want apperr CodeFailedPrecondition, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonInvitationNotPending {
-		t.Errorf("reason = %q, want %q", ae.Reason, apperr.ReasonInvitationNotPending)
+	if ae.Reason() != apperr.ReasonInvitationNotPending {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationNotPending)
 	}
 }

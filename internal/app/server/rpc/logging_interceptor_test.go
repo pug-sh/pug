@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/pug-sh/pug/internal/apperr"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -95,5 +96,42 @@ func TestLoggingInterceptor_UnauthenticatedError(t *testing.T) {
 	rec := callLogging(t, connect.NewError(connect.CodeUnauthenticated, errors.New("no token")))
 	if rec.Level != slog.LevelWarn {
 		t.Errorf("level = %v, want Warn", rec.Level)
+	}
+}
+
+// isClientError must classify a raw *apperr.Error by its Code(), not via
+// connect.CodeOf (which returns Unknown for apperr — it has a Code field, not a
+// Code() method that satisfies Connect's coder interface). This keeps log levels
+// correct even if LoggingInterceptor ever runs inside ErrorInterceptor.
+func TestIsClientError_apperr(t *testing.T) {
+	if !isClientError(apperr.NotFound(apperr.ReasonProfileNotFound, "x")) {
+		t.Error("apperr.NotFound should classify as a client error (WARN)")
+	}
+	if !isClientError(apperr.Unauthenticated(apperr.ReasonUnauthenticated, "x")) {
+		t.Error("apperr.Unauthenticated should classify as a client error (WARN)")
+	}
+	if isClientError(apperr.Err(connect.CodeInternal, apperr.ReasonInternal, "x")) {
+		t.Error("apperr with CodeInternal must NOT classify as a client error (ERROR)")
+	}
+}
+
+// TestLoggingInterceptor_apperrClientError pins the composed behavior: a handler
+// returning a raw apperr.NotFound, run through Error+Logging in production order,
+// logs at WARN.
+func TestLoggingInterceptor_apperrClientError(t *testing.T) {
+	ch := &captureHandler{}
+	old := slog.Default()
+	slog.SetDefault(slog.New(ch))
+	defer slog.SetDefault(old)
+
+	// Production order: Logging outermost, Error inside it.
+	handler := func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		return nil, apperr.NotFound(apperr.ReasonProfileNotFound, "nope")
+	}
+	chain := LoggingInterceptor().WrapUnary(ErrorInterceptor().WrapUnary(handler))
+	_, _ = chain(context.Background(), connect.NewRequest(&emptypb.Empty{}))
+
+	if got := ch.last().Level; got != slog.LevelWarn {
+		t.Errorf("level = %v, want Warn", got)
 	}
 }

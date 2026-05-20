@@ -116,7 +116,7 @@ func TestIdentify_Unauthenticated(t *testing.T) {
 		t.Fatal("expected error for unauthenticated request")
 	}
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }

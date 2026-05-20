@@ -521,11 +521,11 @@ func TestBatchCreate_DuplicateEventID(t *testing.T) {
 	if !errors.As(err, &ae) {
 		t.Fatalf("want *apperr.Error, got %T: %v", err, err)
 	}
-	if ae.Code != connect.CodeInvalidArgument {
-		t.Errorf("want CodeInvalidArgument, got %v", ae.Code)
+	if ae.Code() != connect.CodeInvalidArgument {
+		t.Errorf("want CodeInvalidArgument, got %v", ae.Code())
 	}
-	if ae.Reason != apperr.ReasonInvalidEventBatch {
-		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidEventBatch, ae.Reason)
+	if ae.Reason() != apperr.ReasonInvalidEventBatch {
+		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidEventBatch, ae.Reason())
 	}
 }
 

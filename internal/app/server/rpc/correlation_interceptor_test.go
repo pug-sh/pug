@@ -26,6 +26,40 @@ func TestCorrelationInterceptor_SetsID(t *testing.T) {
 	}
 }
 
+func TestCorrelationInterceptor_reusesExistingID(t *testing.T) {
+	// When an id is already in context (e.g. minted by WithCorrelationID outside
+	// the Connect chain), the interceptor must reuse it, not overwrite it — so the
+	// id an authn rejection used matches the one a successful request logs.
+	var seen string
+	next := connect.UnaryFunc(func(ctx context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
+		seen = correlation.IDFromContext(ctx)
+		return connect.NewResponse(&emptypb.Empty{}), nil
+	})
+	ctx := correlation.WithID(context.Background(), "preset-id")
+	if _, err := CorrelationInterceptor().WrapUnary(next)(ctx, connect.NewRequest(&emptypb.Empty{})); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if seen != "preset-id" {
+		t.Errorf("id = %q, want preset-id (must reuse an upstream-minted id)", seen)
+	}
+}
+
+func TestCorrelationInterceptor_uniquePerRequest(t *testing.T) {
+	ids := map[string]bool{}
+	next := connect.UnaryFunc(func(ctx context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
+		ids[correlation.IDFromContext(ctx)] = true
+		return connect.NewResponse(&emptypb.Empty{}), nil
+	})
+	for range 3 {
+		if _, err := CorrelationInterceptor().WrapUnary(next)(context.Background(), connect.NewRequest(&emptypb.Empty{})); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if len(ids) != 3 {
+		t.Errorf("got %d distinct ids across 3 requests, want 3", len(ids))
+	}
+}
+
 func TestCorrelationInterceptor_SetsID_Streaming(t *testing.T) {
 	var seen string
 	next := connect.StreamingHandlerFunc(func(ctx context.Context, _ connect.StreamingHandlerConn) error {

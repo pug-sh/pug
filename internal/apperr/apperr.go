@@ -15,29 +15,55 @@ import (
 // Domain namespaces all reason codes (google.rpc.ErrorInfo style).
 const Domain = "pug.sh"
 
-// Error is an application error tagged with a stable, public reason code.
+// Reason is a stable, public error reason code. The only valid values are those
+// minted by codes.add in a reasons_*.go file; Err panics on any other value, so
+// a Reason that reaches an Error is always registered, format-valid, and unique.
+type Reason string
+
+// Error is an application error tagged with a stable, public reason code. It is
+// immutable once built by Err: the fields are unexported and read through
+// accessors, so neither a consumer holding the recovered *Error nor an Option
+// can rewrite the code/reason/message after construction.
 type Error struct {
-	Code    connect.Code
-	Reason  string
-	Message string
+	code    connect.Code
+	reason  Reason
+	message string
 	details []proto.Message
 }
 
-func (e *Error) Error() string { return e.Message }
+func (e *Error) Error() string { return e.message }
+
+// Code returns the Connect code the error maps to.
+func (e *Error) Code() connect.Code { return e.code }
+
+// Reason returns the stable, registered reason code.
+func (e *Error) Reason() Reason { return e.reason }
+
+// Message returns the client-facing message.
+func (e *Error) Message() string { return e.message }
 
 // Details returns the google.rpc errdetails payloads to attach to the response.
 func (e *Error) Details() []proto.Message { return e.details }
 
-// Option augments an Error with typed google.rpc error details.
-type Option func(*Error)
+// detailSink is the only mutation surface exposed to Options. It can accumulate
+// google.rpc detail payloads but cannot touch the Error's code/reason/message,
+// which keeps those invariant-bearing fields construct-only.
+type detailSink struct{ details []proto.Message }
 
-// Err builds a tagged application error. Pass a registered Reason* value.
-func Err(code connect.Code, reason, message string, opts ...Option) error {
-	e := &Error{Code: code, Reason: reason, Message: message}
-	for _, opt := range opts {
-		opt(e)
+// Option augments an Error with typed google.rpc error details.
+type Option func(*detailSink)
+
+// Err builds a tagged application error. Pass a registered Reason* value; an
+// unregistered reason panics (see the construction-time guard below).
+func Err(code connect.Code, reason Reason, message string, opts ...Option) error {
+	if !codes.registered(reason) {
+		panic(fmt.Sprintf("apperr: unregistered reason %q (declare it via codes.add in a reasons_*.go file)", reason))
 	}
-	return e
+	var sink detailSink
+	for _, opt := range opts {
+		opt(&sink)
+	}
+	return &Error{code: code, reason: reason, message: message, details: sink.details}
 }
 
 // reasonFormat is canonical UPPER_SNAKE_CASE: a leading letter, then
@@ -46,20 +72,28 @@ func Err(code connect.Code, reason, message string, opts ...Option) error {
 var reasonFormat = regexp.MustCompile(`^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$`)
 
 // reasonRegistry enforces format + uniqueness of reason codes at package init.
-type reasonRegistry struct{ seen map[string]struct{} }
+type reasonRegistry struct{ seen map[Reason]struct{} }
 
-func (r *reasonRegistry) add(code string) string {
+func (r *reasonRegistry) add(code string) Reason {
 	if !reasonFormat.MatchString(code) {
 		panic(fmt.Sprintf("apperr: invalid reason code %q (want UPPER_SNAKE_CASE)", code))
 	}
-	if _, dup := r.seen[code]; dup {
+	reason := Reason(code)
+	if _, dup := r.seen[reason]; dup {
 		panic(fmt.Sprintf("apperr: duplicate reason code %q", code))
 	}
-	r.seen[code] = struct{}{}
-	return code
+	r.seen[reason] = struct{}{}
+	return reason
 }
 
-var codes = &reasonRegistry{seen: map[string]struct{}{}}
+// registered reports whether reason was minted via add (i.e. is a valid public
+// reason). Err uses it to reject unregistered reasons at construction time.
+func (r *reasonRegistry) registered(reason Reason) bool {
+	_, ok := r.seen[reason]
+	return ok
+}
+
+var codes = &reasonRegistry{seen: map[Reason]struct{}{}}
 
 // Generic reasons — mirror Connect codes, used as fallbacks for untagged errors.
 var (
@@ -83,10 +117,8 @@ var (
 
 // ReasonForCode returns the generic reason for a Connect code (fallback for
 // errors that were not tagged with a specific reason).
-func ReasonForCode(c connect.Code) string {
+func ReasonForCode(c connect.Code) Reason {
 	switch c {
-	case connect.CodeUnknown:
-		return ReasonUnknown
 	case connect.CodeCanceled:
 		return ReasonCanceled
 	case connect.CodeInvalidArgument:

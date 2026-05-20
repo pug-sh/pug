@@ -72,7 +72,10 @@ func start(ctx context.Context, d *deps) error {
 	// inner chain), so ErrorInterceptor has to be OUTSIDE it to attach error details
 	// (reason + correlation id) to validation failures. It stays inside otel so a span
 	// is present for trace_id. CorrelationInterceptor is first so the id is in context
-	// for every downstream interceptor and handler.
+	// for every downstream interceptor and handler. LoggingInterceptor must stay
+	// OUTSIDE ErrorInterceptor so it observes the final *connect.Error with its
+	// resolved code for client-vs-server log-level classification (isClientError also
+	// reads *apperr.Error directly as a safety net, but order keeps that path moot).
 	handlerOpts := connect.WithInterceptors(
 		pogrpc.CorrelationInterceptor(),
 		d.otelInterceptor,
@@ -232,9 +235,12 @@ func start(ctx context.Context, d *deps) error {
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))
 	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
 
+	// WithCorrelationID wraps the whole mux so a correlation id exists before the
+	// authn middleware runs on any route — auth rejections happen outside the
+	// Connect interceptor chain, and this lets them carry an error_id too.
 	server := &http.Server{
 		Addr:    ":" + d.port,
-		Handler: mux,
+		Handler: pogrpc.WithCorrelationID(mux),
 	}
 	if err := http2.ConfigureServer(server, &http2.Server{}); err != nil {
 		return err

@@ -54,7 +54,7 @@ func TestDelete_Unauthenticated(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
@@ -67,7 +67,7 @@ func TestGet_Unauthenticated(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
@@ -229,11 +229,11 @@ func TestDelete_AlreadyDeleted(t *testing.T) {
 	if !errors.As(err, &appErr) {
 		t.Fatalf("want *apperr.Error, got %v (%T)", err, err)
 	}
-	if appErr.Code != connect.CodeNotFound {
-		t.Errorf("code = %v, want CodeNotFound", appErr.Code)
+	if appErr.Code() != connect.CodeNotFound {
+		t.Errorf("code = %v, want CodeNotFound", appErr.Code())
 	}
-	if appErr.Reason != apperr.ReasonProfileNotFound {
-		t.Errorf("reason = %q, want %q", appErr.Reason, apperr.ReasonProfileNotFound)
+	if appErr.Reason() != apperr.ReasonProfileNotFound {
+		t.Errorf("reason = %q, want %q", appErr.Reason(), apperr.ReasonProfileNotFound)
 	}
 }
 
@@ -266,11 +266,11 @@ func TestDelete_NonExistent(t *testing.T) {
 	if !errors.As(err, &appErr) {
 		t.Fatalf("want *apperr.Error, got %v (%T)", err, err)
 	}
-	if appErr.Code != connect.CodeNotFound {
-		t.Errorf("code = %v, want CodeNotFound", appErr.Code)
+	if appErr.Code() != connect.CodeNotFound {
+		t.Errorf("code = %v, want CodeNotFound", appErr.Code())
 	}
-	if appErr.Reason != apperr.ReasonProfileNotFound {
-		t.Errorf("reason = %q, want %q", appErr.Reason, apperr.ReasonProfileNotFound)
+	if appErr.Reason() != apperr.ReasonProfileNotFound {
+		t.Errorf("reason = %q, want %q", appErr.Reason(), apperr.ReasonProfileNotFound)
 	}
 }
 
@@ -372,11 +372,11 @@ func TestList_RejectsUnsupportedFilterSources(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeInvalidArgument {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeInvalidArgument {
 		t.Fatalf("want apperr CodeInvalidArgument, got %v (%T)", err, err)
 	}
-	if ae.Reason != apperr.ReasonInvalidProfileFilter {
-		t.Fatalf("want INVALID_PROFILE_FILTER reason, got %q", ae.Reason)
+	if ae.Reason() != apperr.ReasonInvalidProfileFilter {
+		t.Fatalf("want INVALID_PROFILE_FILTER reason, got %q", ae.Reason())
 	}
 }
 

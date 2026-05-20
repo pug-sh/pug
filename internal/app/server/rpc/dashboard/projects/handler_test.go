@@ -43,8 +43,8 @@ func assertCode(t *testing.T, err error, want connect.Code) {
 	}
 	var ae *apperr.Error
 	if errors.As(err, &ae) {
-		if ae.Code != want {
-			t.Errorf("got code %v, want %v (err: %v)", ae.Code, want, err)
+		if ae.Code() != want {
+			t.Errorf("got code %v, want %v (err: %v)", ae.Code(), want, err)
 		}
 		return
 	}
@@ -53,7 +53,7 @@ func assertCode(t *testing.T, err error, want connect.Code) {
 	}
 }
 
-func assertReason(t *testing.T, err error, want string) {
+func assertReason(t *testing.T, err error, want apperr.Reason) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("expected error, got nil")
@@ -63,8 +63,8 @@ func assertReason(t *testing.T, err error, want string) {
 		t.Errorf("expected *apperr.Error to assert reason %q, got %T", want, err)
 		return
 	}
-	if ae.Reason != want {
-		t.Errorf("got reason %q, want %q (err: %v)", ae.Reason, want, err)
+	if ae.Reason() != want {
+		t.Errorf("got reason %q, want %q (err: %v)", ae.Reason(), want, err)
 	}
 }
 

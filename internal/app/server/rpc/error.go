@@ -49,8 +49,8 @@ func sanitizeError(ctx context.Context, procedure string, err error) error {
 
 	// Handler-tagged error: build the connect error and attach its stable reason.
 	if appErr, ok := errors.AsType[*apperr.Error](err); ok {
-		cerr := connect.NewError(appErr.Code, errors.New(appErr.Message))
-		attachDetails(ctx, cerr, appErr.Reason)
+		cerr := connect.NewError(appErr.Code(), errors.New(appErr.Message()))
+		attachDetails(ctx, cerr, appErr.Reason())
 		for _, d := range appErr.Details() {
 			addDetail(ctx, cerr, d)
 		}
@@ -81,11 +81,11 @@ func sanitizeError(ctx context.Context, procedure string, err error) error {
 }
 
 // attachDetails attaches the standard google.rpc error details: an ErrorInfo
-// (reason + domain, trace id in metadata) and a RequestInfo carrying the
-// per-request correlation id. The id/trace/domain are sourced here (one place)
-// so the response id always matches the logged id.
-func attachDetails(ctx context.Context, cerr *connect.Error, reason string) {
-	info := &errdetails.ErrorInfo{Reason: reason, Domain: apperr.Domain}
+// (reason + domain, plus trace_id in metadata when a span is active) and, when a
+// correlation id is present, a RequestInfo carrying it. The id/trace/domain are
+// sourced here (one place) so the response id always matches the logged id.
+func attachDetails(ctx context.Context, cerr *connect.Error, reason apperr.Reason) {
+	info := &errdetails.ErrorInfo{Reason: string(reason), Domain: apperr.Domain}
 	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
 		info.Metadata = map[string]string{"trace_id": sc.TraceID().String()}
 	}

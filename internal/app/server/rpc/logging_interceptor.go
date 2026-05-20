@@ -2,10 +2,12 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -70,6 +72,12 @@ func logRPC(ctx context.Context, err error, args []any) {
 
 func isClientError(err error) bool {
 	code := connect.CodeOf(err)
+	// A raw *apperr.Error (not yet rewritten by ErrorInterceptor) carries its code
+	// in a field, so connect.CodeOf returns Unknown for it. Read the code directly
+	// so classification is correct regardless of interceptor ordering.
+	if ae, ok := errors.AsType[*apperr.Error](err); ok {
+		code = ae.Code()
+	}
 	switch code {
 	case connect.CodeInvalidArgument,
 		connect.CodeNotFound,

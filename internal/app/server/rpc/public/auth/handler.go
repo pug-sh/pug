@@ -12,8 +12,20 @@ import (
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
 )
 
+// authService is the coreauth.Service surface the handler depends on, defined
+// consumer-side so handlers can be unit-tested with a fake (instead of
+// re-implementing the mapping logic in tests).
+type authService interface {
+	SignUpWithEmail(ctx context.Context, email, password, inviteToken string) (string, error)
+	SignInWithEmail(ctx context.Context, email, password string) (string, error)
+	VerifyEmail(ctx context.Context, token string) error
+	RequestPasswordReset(ctx context.Context, email string) error
+	ResetPassword(ctx context.Context, token, password string) error
+	ResendVerificationEmail(ctx context.Context, email string) error
+}
+
 type server struct {
-	service *coreauth.Service
+	service authService
 }
 
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient) *server {

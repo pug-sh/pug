@@ -22,7 +22,7 @@ func TestQuery_Unauthenticated(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
@@ -34,7 +34,7 @@ func TestSegmentUsers_Unauthenticated(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
@@ -46,7 +46,7 @@ func TestGetFilterSchema_Unauthenticated(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
@@ -58,7 +58,7 @@ func TestGetPropertyValues_Unauthenticated(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
@@ -130,10 +130,10 @@ func TestQuery_InvalidBuildError(t *testing.T) {
 	if !errors.As(err, &ae) {
 		t.Fatalf("want apperr.Error, got %T: %v", err, err)
 	}
-	if ae.Code != connect.CodeInvalidArgument {
-		t.Errorf("want CodeInvalidArgument, got %v", ae.Code)
+	if ae.Code() != connect.CodeInvalidArgument {
+		t.Errorf("want CodeInvalidArgument, got %v", ae.Code())
 	}
-	if ae.Reason != apperr.ReasonInvalidInsightQuery {
-		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidInsightQuery, ae.Reason)
+	if ae.Reason() != apperr.ReasonInvalidInsightQuery {
+		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidInsightQuery, ae.Reason())
 	}
 }

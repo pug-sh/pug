@@ -95,11 +95,11 @@ func TestGetActivityFeed_InvalidPageToken(t *testing.T) {
 	if !errors.As(err, &ae) {
 		t.Fatalf("want *apperr.Error, got %T: %v", err, err)
 	}
-	if ae.Code != connect.CodeInvalidArgument {
-		t.Errorf("want CodeInvalidArgument, got %v", ae.Code)
+	if ae.Code() != connect.CodeInvalidArgument {
+		t.Errorf("want CodeInvalidArgument, got %v", ae.Code())
 	}
-	if ae.Reason != apperr.ReasonInvalidPageToken {
-		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidPageToken, ae.Reason)
+	if ae.Reason() != apperr.ReasonInvalidPageToken {
+		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidPageToken, ae.Reason())
 	}
 }
 
@@ -117,11 +117,11 @@ func TestGetEventExplorer_InvalidPageToken(t *testing.T) {
 	if !errors.As(err, &ae) {
 		t.Fatalf("want *apperr.Error, got %T: %v", err, err)
 	}
-	if ae.Code != connect.CodeInvalidArgument {
-		t.Errorf("want CodeInvalidArgument, got %v", ae.Code)
+	if ae.Code() != connect.CodeInvalidArgument {
+		t.Errorf("want CodeInvalidArgument, got %v", ae.Code())
 	}
-	if ae.Reason != apperr.ReasonInvalidPageToken {
-		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidPageToken, ae.Reason)
+	if ae.Reason() != apperr.ReasonInvalidPageToken {
+		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidPageToken, ae.Reason())
 	}
 }
 
@@ -132,7 +132,7 @@ func TestGetActivityHeatmap_Unauthenticated(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
@@ -144,7 +144,7 @@ func TestGetProfileStats_Unauthenticated(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code != connect.CodeUnauthenticated {
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }

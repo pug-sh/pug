@@ -80,6 +80,43 @@ func TestCorrelationHandler_stampsTraceID(t *testing.T) {
 	}
 }
 
+func TestCorrelationHandler_stampsIDAndTraceTogether(t *testing.T) {
+	// The production path: a traced request with a correlation id stamps both attrs.
+	cap := &capturingHandler{}
+	h := newCorrelationHandler(cap)
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+		SpanID:  trace.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+	})
+	ctx := trace.ContextWithSpanContext(correlation.WithID(context.Background(), "id-both"), sc)
+
+	rec := slog.NewRecord(time.Time{}, slog.LevelInfo, "msg", 0)
+	if err := h.Handle(ctx, rec); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if got, ok := attrValue(cap.rec, "error_id"); !ok || got != "id-both" {
+		t.Errorf("error_id = %q (found=%v), want id-both", got, ok)
+	}
+	if got, ok := attrValue(cap.rec, "trace_id"); !ok || got != sc.TraceID().String() {
+		t.Errorf("trace_id = %q (found=%v), want %q", got, ok, sc.TraceID().String())
+	}
+}
+
+func TestCorrelationHandler_stampsAfterWithGroup(t *testing.T) {
+	// The wrapper must survive WithGroup and still stamp the id.
+	cap := &capturingHandler{}
+	h := newCorrelationHandler(cap).WithGroup("grp")
+	ctx := correlation.WithID(context.Background(), "id-grp")
+
+	rec := slog.NewRecord(time.Time{}, slog.LevelInfo, "msg", 0)
+	if err := h.Handle(ctx, rec); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if got, ok := attrValue(cap.rec, "error_id"); !ok || got != "id-grp" {
+		t.Errorf("error_id after WithGroup = %q (found=%v), want id-grp", got, ok)
+	}
+}
+
 func TestCorrelationHandler_stampsAfterWithAttrs(t *testing.T) {
 	cap := &capturingHandler{}
 	// The wrapper must survive WithAttrs and still stamp the id.
