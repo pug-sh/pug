@@ -10,3 +10,6 @@ docs/superpowers
 docs/test-deploy.md
 /server
 .cache/
+docs/design
+docs/plans
+docs/specs
