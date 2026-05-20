@@ -109,13 +109,6 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password, inviteTo
 	}
 
 	customerID := xid.New().String()
-	verifyToken, err := newActionToken()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate verify token", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	verifyTokenHash := hashToken(verifyToken)
 
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
@@ -171,13 +164,21 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password, inviteTo
 		}
 	}
 
+	var verifyToken string
 	if !inviteAccepted {
+		verifyToken, err = newActionToken()
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to generate verify token", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return "", err
+		}
+
 		if _, err = w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
 			ID:              xid.New().String(),
 			CustomerID:      postgres.NewOptionalText(customerID),
 			Email:           email,
 			Purpose:         verifyEmailPurpose,
-			TokenHash:       verifyTokenHash,
+			TokenHash:       hashToken(verifyToken),
 			OrgInvitationID: postgres.NewOptionalText(""),
 			ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(verifyEmailTTL)),
 		}); err != nil {

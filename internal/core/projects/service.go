@@ -25,6 +25,23 @@ var (
 	ErrProjectNameTaken = errors.New("a project with this name already exists in the org")
 )
 
+// projectNameUnique is the Postgres-auto-generated name of the
+// (org_id, display_name) unique constraint declared in
+// schema/postgres/migrations/005_create_projects.sql:11. Kept narrow on
+// purpose: a generic UniqueViolation catch would mis-translate a future
+// constraint (e.g. a private/public API key collision) as a name conflict.
+const projectNameUnique = "projects_org_id_display_name_key"
+
+// isUniqueViolationOn reports whether err is a Postgres unique-violation
+// against the given constraint name.
+func isUniqueViolationOn(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == constraint
+}
+
 type Service struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
@@ -104,8 +121,7 @@ func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, d
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dbwrite.Project{}, ErrAdminRequired
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if isUniqueViolationOn(err, projectNameUnique) {
 			return dbwrite.Project{}, ErrProjectNameTaken
 		}
 		slog.ErrorContext(ctx, "failed to create project as admin", slogx.Error(err),
@@ -145,8 +161,7 @@ func CreateProjectInTx(ctx context.Context, w *dbwrite.Queries, orgID, displayNa
 		DisplayName:   displayName,
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if isUniqueViolationOn(err, projectNameUnique) {
 			return dbwrite.Project{}, ErrProjectNameTaken
 		}
 		slog.ErrorContext(ctx, "failed to create project", slogx.Error(err),

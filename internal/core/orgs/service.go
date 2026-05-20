@@ -31,8 +31,16 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Mirror of auth.emailPublishFailureCounter — see that declaration for the
-// alerting rationale. Lives in its own package to avoid an orgs→auth import.
+// emailPublishFailureCounter is incremented whenever an invite-email job is
+// created (invitation row committed) but the subsequent NATS publish errors.
+// Operators should alert on a non-zero rate: it means admins see an
+// "invitation sent" 200 response for invites whose emails were never queued.
+// The {kind} attribute lets ops bucket failures by payload type — for this
+// package the only emitted kind is "org_member_invite".
+//
+// Lives in its own package (separate from auth.emailPublishFailureCounter)
+// to avoid an orgs→auth import; both counters share the same metric name and
+// are aggregated by the OTel collector by scope+kind.
 var emailPublishFailureCounter metric.Int64Counter
 
 func init() {
@@ -58,10 +66,13 @@ var (
 	ErrInviteNotPending     = errors.New("invitation is not pending")
 	ErrInviteWrongEmail     = errors.New("invitation was issued to a different email address")
 	// ErrLastAdmin is returned by both RemoveMemberSafe and Leave when the
-	// target is the only remaining admin. Handlers build their own client-
-	// facing message (different wording for remove vs leave) — never pass
-	// this sentinel directly into connect.NewError, as the neutral phrasing
-	// here is not a substitute for the verb-specific message.
+	// target is an admin and removing them would leave the org with zero
+	// admins. In Leave, this also takes precedence over ErrLastMember when
+	// the caller is an admin who is also the sole member of the org.
+	// Handlers build their own client-facing message (different wording for
+	// remove vs leave) — never pass this sentinel directly into
+	// connect.NewError, as the neutral phrasing here is not a substitute for
+	// the verb-specific message.
 	ErrLastAdmin                 = errors.New("blocked: last admin of org")
 	ErrLastMember                = errors.New("blocked: only member of org")
 	ErrMemberNotFound            = errors.New("member not found")
@@ -76,6 +87,14 @@ const (
 	// Postgres constraint / index names used to disambiguate UniqueViolation
 	// errors. Kept narrow on purpose: catching a generic "unique violation"
 	// would mis-translate any future constraint added to these tables.
+	//
+	// These names are load-bearing: if either is renamed in a future migration
+	// without updating this constant, the narrow translation silently falls
+	// through and ErrAlreadyMember / ErrInviteAlreadyPending stop firing.
+	// Sources:
+	//   - org_members_pkey: auto-generated PK in schema/postgres/migrations/003_create_org_members.sql
+	//   - org_invitations_org_email_pending: named partial index in
+	//     schema/postgres/migrations/004_create_org_invitations.sql:13
 	orgMembersPKey              = "org_members_pkey"
 	orgInvitationsPendingUnique = "org_invitations_org_email_pending"
 )
@@ -185,6 +204,9 @@ func (s *Service) AddMember(ctx context.Context, orgID, customerID string, role 
 		if isUniqueViolationOn(err, orgMembersPKey) {
 			return dbwrite.OrgMember{}, ErrAlreadyMember
 		}
+		slog.ErrorContext(ctx, "failed to create org member", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
 		return dbwrite.OrgMember{}, err
 	}
 	return member, nil
@@ -260,6 +282,9 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrMemberNotFound
 		}
+		slog.ErrorContext(ctx, "failed to get org member role", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
 		return "", err
 	}
 	role, err := ParseRole(raw)
@@ -319,10 +344,12 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 // Disambiguation is best-effort: when the CTE returns 0 rows, a separate
 // non-transactional read on org_members determines the cause. If a concurrent
 // RemoveMember (or another Leave) lands between the CTE rejection and the
-// disambig read, the caller may see ErrMemberNotFound instead of the true
-// ErrLastAdmin / ErrLastMember. The caller's atomicity invariant ("either
-// removed or definitely still a member") is preserved either way — only the
-// error code on the rejection path is racy.
+// disambig read, the caller may see ErrMemberNotFound instead of the rejection
+// reason that originally fired. The reverse cannot happen — a row that exists
+// at disambig time was either there throughout or re-inserted, and an
+// in-flight removal cannot produce a ghost ErrLastAdmin / ErrLastMember. The
+// caller's atomicity invariant ("either removed or definitely still a member")
+// is preserved either way — only the error code on the rejection path is racy.
 func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 	n, err := s.write.DeleteOrgMemberIfNotLastAdminAndNotLastMember(
 		ctx,
@@ -343,7 +370,7 @@ func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 
 	// 0 rows: either not a member, last admin, or only member. Disambiguate.
 	// Read from write pool to avoid replica lag.
-	role, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+	raw, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
 	})
@@ -356,12 +383,19 @@ func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 		telemetry.RecordError(ctx, err)
 		return err
 	}
+	role, err := ParseRole(raw)
+	if err != nil {
+		slog.ErrorContext(ctx, "unrecognized role in org_members during Leave disambig", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
 
 	// ErrLastAdmin takes priority: if the caller is an admin they were blocked
 	// by the admin-count guard in the CTE (or by both guards simultaneously
 	// when they are also the sole member). In both cases the actionable message
 	// is "promote someone else before leaving."
-	if Role(role) == RoleAdmin {
+	if role == RoleAdmin {
 		return ErrLastAdmin
 	}
 
@@ -615,7 +649,7 @@ func (s *Service) UpdateMemberRole(
 	orgID, customerID string,
 	newRole Role,
 ) (dbwrite.OrgMember, error) {
-	current, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+	rawCurrent, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
 	})
@@ -628,8 +662,15 @@ func (s *Service) UpdateMemberRole(
 		telemetry.RecordError(ctx, err)
 		return dbwrite.OrgMember{}, err
 	}
+	current, err := ParseRole(rawCurrent)
+	if err != nil {
+		slog.ErrorContext(ctx, "unrecognized current role in org_members", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return dbwrite.OrgMember{}, err
+	}
 
-	if Role(current) != RoleMember || newRole != RoleAdmin {
+	if current != RoleMember || newRole != RoleAdmin {
 		return dbwrite.OrgMember{}, ErrUnsupportedRoleTransition
 	}
 
@@ -667,6 +708,9 @@ func (s *Service) GetOrgWithRole(ctx context.Context, orgID, customerID string) 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dbread.GetOrgWithRoleByIDAndCustomerIDRow{}, ErrOrgNotFound
 		}
+		slog.ErrorContext(ctx, "failed to get org with role", slogx.Error(err),
+			slog.String("org_id", orgID), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
 		return dbread.GetOrgWithRoleByIDAndCustomerIDRow{}, err
 	}
 	return row, nil
