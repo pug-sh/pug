@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 )
 
 func assertPanics(t *testing.T, fn func()) {
@@ -54,6 +55,27 @@ func TestReasonForCode_coversConnectCodes(t *testing.T) {
 		if _, ok := codes.seen[r]; !ok {
 			t.Errorf("ReasonForCode(%v)=%q not registered", c, r)
 		}
+	}
+}
+
+func TestErr_threadsOptionsIntoDetails(t *testing.T) {
+	applied := func(e *Error) { e.details = append(e.details, &errdetails.ResourceInfo{ResourceType: "x"}) }
+	err := Err(connect.CodeNotFound, ReasonProfileNotFound, "nope", applied)
+	var ae *Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want *Error, got %T", err)
+	}
+	if len(ae.Details()) != 1 {
+		t.Fatalf("Details() len = %d, want 1", len(ae.Details()))
+	}
+}
+
+func TestErr_noOptions_nilDetails(t *testing.T) {
+	err := Err(connect.CodeNotFound, ReasonProfileNotFound, "nope")
+	var ae *Error
+	errors.As(err, &ae)
+	if ae.Details() != nil {
+		t.Errorf("Details() = %v, want nil", ae.Details())
 	}
 }
 

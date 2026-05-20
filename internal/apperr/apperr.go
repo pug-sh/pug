@@ -9,6 +9,7 @@ import (
 	"regexp"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 )
 
 // Domain namespaces all reason codes (google.rpc.ErrorInfo style).
@@ -19,13 +20,24 @@ type Error struct {
 	Code    connect.Code
 	Reason  string
 	Message string
+	details []proto.Message
 }
 
 func (e *Error) Error() string { return e.Message }
 
+// Details returns the google.rpc errdetails payloads to attach to the response.
+func (e *Error) Details() []proto.Message { return e.details }
+
+// Option augments an Error with typed google.rpc error details.
+type Option func(*Error)
+
 // Err builds a tagged application error. Pass a registered Reason* value.
-func Err(code connect.Code, reason, message string) error {
-	return &Error{Code: code, Reason: reason, Message: message}
+func Err(code connect.Code, reason, message string, opts ...Option) error {
+	e := &Error{Code: code, Reason: reason, Message: message}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 // reasonFormat is canonical UPPER_SNAKE_CASE: a leading letter, then
