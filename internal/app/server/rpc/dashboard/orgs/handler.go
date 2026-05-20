@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -37,7 +38,7 @@ func (s *server) requireOrgMember(ctx context.Context, orgID string) (*rpc.Princ
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !isMember {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
+		return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
 	}
 
 	return principal, nil
@@ -54,13 +55,13 @@ func (s *server) requireOrgAdmin(ctx context.Context, orgID string) (*rpc.Princi
 	role, err := s.service.GetMemberRole(ctx, orgID, principal.Customer.ID)
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
+			return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
 		}
 		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if role != coreorgs.RoleAdmin {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
+		return nil, apperr.PermissionDenied(apperr.ReasonOrgAdminRequired, "admin role required")
 	}
 
 	return principal, nil
@@ -113,7 +114,7 @@ func (s *server) Get(
 	row, err := s.service.GetOrgWithRole(ctx, req.Msg.GetOrgId(), principal.Customer.ID)
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrOrgNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("org not found"))
+			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", req.Msg.GetOrgId()))
 		}
 		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -137,7 +138,7 @@ func (s *server) UpdateDisplayName(
 	org, err := s.service.UpdateDisplayName(ctx, req.Msg.GetOrgId(), req.Msg.GetDisplayName())
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrOrgNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("org not found"))
+			return nil, apperr.NotFound(apperr.ReasonOrgNotFound, "org not found", apperr.Resource("org", req.Msg.GetOrgId()))
 		}
 		slog.ErrorContext(ctx, "failed to update org", slogx.Error(err), slog.String("org_id", req.Msg.GetOrgId()))
 		telemetry.RecordError(ctx, err)
@@ -194,15 +195,15 @@ func (s *server) RemoveMember(
 	}
 
 	if req.Msg.GetCustomerId() == principal.Customer.ID {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("cannot remove yourself from an org"))
+		return nil, apperr.Invalid(apperr.ReasonOrgCannotRemoveSelf, "cannot remove yourself from an org")
 	}
 
 	if err := s.service.RemoveMemberSafe(ctx, req.Msg.GetOrgId(), req.Msg.GetCustomerId()); err != nil {
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("member not found"))
+			return nil, apperr.NotFound(apperr.ReasonOrgMemberNotFound, "member not found", apperr.Resource("org_member", req.Msg.GetCustomerId()))
 		}
 		if errors.Is(err, coreorgs.ErrLastAdmin) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cannot remove the last admin"))
+			return nil, apperr.FailedPrecondition(apperr.ReasonCannotRemoveLastAdmin, "cannot remove the last admin")
 		}
 		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -227,10 +228,10 @@ func (s *server) InviteMember(
 	dispatch, err := s.service.InviteMember(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetEmail())
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrAlreadyMember) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("this email is already a member of the org"))
+			return nil, apperr.AlreadyExists(apperr.ReasonOrgMemberAlreadyExists, "this email is already a member of the org")
 		}
 		if errors.Is(err, coreorgs.ErrInviteAlreadyPending) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("a pending invitation already exists for this email"))
+			return nil, apperr.AlreadyExists(apperr.ReasonInvitationAlreadyPending, "a pending invitation already exists for this email")
 		}
 		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -254,10 +255,10 @@ func (s *server) ResendInvite(
 	dispatch, err := s.service.ResendInvite(ctx, req.Msg.GetOrgId(), req.Msg.GetInvitationId())
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrInviteNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("invitation not found"))
+			return nil, apperr.NotFound(apperr.ReasonInvitationNotFound, "invitation not found", apperr.Resource("invitation", req.Msg.GetInvitationId()))
 		}
 		if errors.Is(err, coreorgs.ErrInviteNotPending) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("invitation is no longer pending"))
+			return nil, apperr.FailedPrecondition(apperr.ReasonInvitationNotPending, "invitation is no longer pending")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -281,19 +282,19 @@ func (s *server) AcceptInvite(
 	org, err := s.service.AcceptInvite(ctx, req.Msg.GetToken(), principal.Customer.ID, principal.Customer.Email)
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrInviteWrongEmail) {
-			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("invitation was issued to a different email address"))
+			return nil, apperr.PermissionDenied(apperr.ReasonInvitationWrongEmail, "invitation was issued to a different email address")
 		}
 		if errors.Is(err, coreorgs.ErrInviteNotPending) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("invitation is no longer pending"))
+			return nil, apperr.FailedPrecondition(apperr.ReasonInvitationNotPending, "invitation is no longer pending")
 		}
 		if errors.Is(err, coreorgs.ErrInviteExpired) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("invitation has expired"))
+			return nil, apperr.FailedPrecondition(apperr.ReasonInvitationExpired, "invitation has expired")
 		}
 		if errors.Is(err, coreorgs.ErrAlreadyMember) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("already a member of this org"))
+			return nil, apperr.AlreadyExists(apperr.ReasonOrgMemberAlreadyExists, "already a member of this org")
 		}
 		if errors.Is(err, coreorgs.ErrInviteNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("invitation not found"))
+			return nil, apperr.NotFound(apperr.ReasonInvitationNotFound, "invitation not found")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -350,7 +351,7 @@ func (s *server) Create(
 		// a future change ever surfaces ErrProjectNameTaken to this handler
 		// translate it to AlreadyExists so the user sees actionable feedback.
 		if errors.Is(err, coreprojects.ErrProjectNameTaken) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("default project name already exists in this org"))
+			return nil, apperr.AlreadyExists(apperr.ReasonProjectNameTaken, "default project name already exists in this org")
 		}
 		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -376,13 +377,13 @@ func (s *server) Leave(
 
 	if err := s.service.Leave(ctx, req.Msg.GetOrgId(), principal.Customer.ID); err != nil {
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("not a member of this org"))
+			return nil, apperr.NotFound(apperr.ReasonOrgMemberNotFound, "not a member of this org")
 		}
 		if errors.Is(err, coreorgs.ErrLastAdmin) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cannot leave as the last admin"))
+			return nil, apperr.FailedPrecondition(apperr.ReasonCannotRemoveLastAdmin, "cannot leave as the last admin")
 		}
 		if errors.Is(err, coreorgs.ErrLastMember) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cannot leave as the only member"))
+			return nil, apperr.FailedPrecondition(apperr.ReasonCannotLeaveAsLastMember, "cannot leave as the only member")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -404,7 +405,7 @@ func (s *server) UpdateMemberRole(
 
 	newRole, ok := roleFromProto(req.Msg.GetRole())
 	if !ok {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("role enum value not supported by this server"))
+		return nil, apperr.Invalid(apperr.ReasonOrgUnsupportedRole, "role enum value not supported by this server")
 	}
 
 	if _, err := s.service.UpdateMemberRole(
@@ -414,10 +415,10 @@ func (s *server) UpdateMemberRole(
 		newRole,
 	); err != nil {
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("member not found"))
+			return nil, apperr.NotFound(apperr.ReasonOrgMemberNotFound, "member not found", apperr.Resource("org_member", req.Msg.GetCustomerId()))
 		}
 		if errors.Is(err, coreorgs.ErrUnsupportedRoleTransition) {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("role transition not supported"))
+			return nil, apperr.Invalid(apperr.ReasonOrgUnsupportedRoleTransit, "role transition not supported")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -430,7 +431,7 @@ func (s *server) UpdateMemberRole(
 		// update and the re-fetch — translate accordingly; everything else is
 		// already logged at the service layer.
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("member not found"))
+			return nil, apperr.NotFound(apperr.ReasonOrgMemberNotFound, "member not found", apperr.Resource("org_member", req.Msg.GetCustomerId()))
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
