@@ -1,0 +1,19 @@
+edition = "2023";
+package dashboard.customers.v1;
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1;customersv1";
+
+// CustomersService exposes the authenticated caller's own account. JWT-only
+// (dashboard) — it never reveals any other customer's data.
+service CustomersService {
+  // GetMe returns the calling customer's id, email, and verification status.
+  rpc GetMe(GetMeRequest) returns (GetMeResponse) {}
+}
+
+message GetMeRequest {}
+
+message GetMeResponse {
+  string customer_id = 1;
+  string email = 2;
+  bool email_verified = 3;
+}
