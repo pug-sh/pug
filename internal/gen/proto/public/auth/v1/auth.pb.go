@@ -122,15 +122,17 @@ func (x *SignInWithEmailResponse) GetToken() string {
 
 type SignUpWithEmailRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Email *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	// Ignored when invite_token is set (the email is taken from the invitation
+	// server-side). Required and must be a valid email when no invite_token is
+	// provided.
+	Email *string `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
 	// bcrypt accepts at most 72 bytes; rejecting longer inputs at the
 	// interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
 	Password *string `protobuf:"bytes,2,opt,name=password" json:"password,omitempty"`
-	// Optional org-invite token. When present and valid, the new customer is
-	// added as a member of the invited org, the customer's email is auto-verified
-	// (inbox access proven by the invite delivery), and no default org/project
-	// is created. When the token is invalid, expired, or addressed to a different
-	// email, signup falls back to the normal default-org flow.
+	// Optional org-invite token. When present and valid, the new customer's email
+	// is taken from the invitation, the customer joins the invited org, the email
+	// is auto-verified, and no default org/project is created. An invalid/expired
+	// token is rejected with FailedPrecondition (no default-org fallback).
 	InviteToken   *string `protobuf:"bytes,3,opt,name=invite_token,json=inviteToken" json:"invite_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -572,13 +574,14 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\bpassword\x18\x02 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\"/\n" +
 	"\x17SignInWithEmailResponse\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"\x85\x01\n" +
-	"\x16SignUpWithEmailRequest\x12 \n" +
-	"\x05email\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12&\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"\xea\x02\n" +
+	"\x16SignUpWithEmailRequest\x12u\n" +
+	"\x05email\x18\x01 \x01(\tB_\xbaH\\\xba\x01Y\n" +
+	"\x14email.empty_or_valid\x12#email must be a valid email address\x1a\x1cthis == '' || this.isEmail()R\x05email\x12&\n" +
 	"\bpassword\x18\x02 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\x12!\n" +
-	"\finvite_token\x18\x03 \x01(\tR\vinviteToken\"/\n" +
+	"\finvite_token\x18\x03 \x01(\tR\vinviteToken:\x8d\x01\xbaH\x89\x01\x1a\x86\x01\n" +
+	"$signup.email_required_without_invite\x121email is required unless invite_token is provided\x1a+this.invite_token != '' || this.email != ''\"/\n" +
 	"\x17SignUpWithEmailResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"2\n" +
 	"\x12VerifyEmailRequest\x12\x1c\n" +
