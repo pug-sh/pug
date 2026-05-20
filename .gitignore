@@ -8,5 +8,7 @@ pr-*review.md
 .agents/
 docs/superpowers
 docs/test-deploy.md
+docs/design
+docs/plans
 /server
 .cache/
