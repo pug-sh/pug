@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/pug-sh/pug/internal/apperr"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -31,7 +33,7 @@ func testInterceptorWithOpts(t *testing.T, ctx context.Context, middleware func(
 	var h http.Handler = connect.NewUnaryHandler(
 		"/test.v1.Svc/Method",
 		handler,
-		connect.WithInterceptors(ErrorInterceptor()),
+		connect.WithInterceptors(CorrelationInterceptor(), ErrorInterceptor()),
 	)
 	if middleware != nil {
 		h = middleware(h)
@@ -60,7 +62,7 @@ func TestErrorInterceptor(t *testing.T) {
 		}
 	})
 
-	t.Run("connect error passes through unchanged", func(t *testing.T) {
+	t.Run("connect error code and message unchanged", func(t *testing.T) {
 		orig := connect.NewError(connect.CodeNotFound, errors.New("not found"))
 		err := testInterceptor(t, context.Background(), orig)
 		if err == nil {
@@ -121,4 +123,106 @@ func TestErrorInterceptor(t *testing.T) {
 			t.Errorf("code = %v, want %v", connectErr.Code(), connect.CodeCanceled)
 		}
 	})
+}
+
+func allDetails(t *testing.T, err error) []any {
+	t.Helper()
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected *connect.Error, got %T", err)
+	}
+	var out []any
+	for _, d := range connectErr.Details() {
+		msg, derr := d.Value()
+		if derr != nil {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
+func errorInfoFrom(t *testing.T, err error) *errdetails.ErrorInfo {
+	t.Helper()
+	for _, msg := range allDetails(t, err) {
+		if info, ok := msg.(*errdetails.ErrorInfo); ok {
+			return info
+		}
+	}
+	return nil
+}
+
+func requestInfoFrom(t *testing.T, err error) *errdetails.RequestInfo {
+	t.Helper()
+	for _, msg := range allDetails(t, err) {
+		if ri, ok := msg.(*errdetails.RequestInfo); ok {
+			return ri
+		}
+	}
+	return nil
+}
+
+func TestErrorInterceptor_attachesDetails(t *testing.T) {
+	t.Run("plain connect error: ErrorInfo generic reason + RequestInfo id", func(t *testing.T) {
+		err := testInterceptor(t, context.Background(),
+			connect.NewError(connect.CodeNotFound, errors.New("nope")))
+		info := errorInfoFrom(t, err)
+		if info == nil {
+			t.Fatal("no ErrorInfo detail attached")
+		}
+		if info.GetReason() != apperr.ReasonNotFound {
+			t.Errorf("reason = %q, want %q", info.GetReason(), apperr.ReasonNotFound)
+		}
+		if info.GetDomain() != apperr.Domain {
+			t.Errorf("domain = %q, want %q", info.GetDomain(), apperr.Domain)
+		}
+		ri := requestInfoFrom(t, err)
+		if ri == nil || ri.GetRequestId() == "" {
+			t.Errorf("RequestInfo = %+v, want non-empty request id", ri)
+		}
+	})
+
+	t.Run("apperr error carries its specific reason", func(t *testing.T) {
+		err := testInterceptor(t, context.Background(),
+			apperr.Err(connect.CodeNotFound, apperr.ReasonProfileNotFound, "profile not found"))
+		var connectErr *connect.Error
+		if !errors.As(err, &connectErr) {
+			t.Fatalf("expected *connect.Error, got %T", err)
+		}
+		if connectErr.Code() != connect.CodeNotFound {
+			t.Errorf("code = %v, want NotFound", connectErr.Code())
+		}
+		if connectErr.Message() != "profile not found" {
+			t.Errorf("message = %q", connectErr.Message())
+		}
+		info := errorInfoFrom(t, err)
+		if info == nil || info.GetReason() != apperr.ReasonProfileNotFound {
+			t.Errorf("ErrorInfo = %+v, want reason PROFILE_NOT_FOUND", info)
+		}
+		if ri := requestInfoFrom(t, err); ri == nil || ri.GetRequestId() == "" {
+			t.Errorf("RequestInfo = %+v, want non-empty request id", ri)
+		}
+	})
+
+	t.Run("leaked error sanitized to internal with INTERNAL reason", func(t *testing.T) {
+		err := testInterceptor(t, context.Background(), errors.New("db boom"))
+		info := errorInfoFrom(t, err)
+		if info == nil || info.GetReason() != apperr.ReasonInternal {
+			t.Errorf("ErrorInfo = %+v, want reason INTERNAL", info)
+		}
+	})
+}
+
+func TestSanitizeError_ctxCancelNoDetail(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	// A raw (non-connect) error arriving with a cancelled context returns the
+	// bare context error and attaches no detail (the ctx.Err() safety-net branch).
+	err := sanitizeError(ctx, "/test.v1.Svc/Method", errors.New("boom"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context.Canceled, got %v", err)
+	}
+	if _, ok := errors.AsType[*connect.Error](err); ok {
+		t.Errorf("expected raw context error (no connect error / no details), got %v", err)
+	}
 }
