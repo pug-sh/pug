@@ -7,5 +7,6 @@ pr-review.md
 pr-*review.md
 .agents/
 docs/superpowers
+docs/test-deploy.md
 /server
 .cache/
