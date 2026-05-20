@@ -10,6 +10,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -55,8 +56,7 @@ func (s *server) requireOrgAdmin(ctx context.Context, orgID string) (*rpc.Princi
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
 		}
-		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err), slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
-		telemetry.RecordError(ctx, err)
+		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if role != coreorgs.RoleAdmin {
@@ -91,7 +91,7 @@ func (s *server) List(
 		result = append(result, &orgsv1.Org{
 			DisplayName: proto.String(r.DisplayName),
 			Id:          proto.String(r.ID),
-			Role:        toRPCRole(ctx, r.Role).Enum(),
+			Role:        toRPCRole(roleFromDBJoinRow(ctx, r.Role)).Enum(),
 		})
 	}
 	return connect.NewResponse(&orgsv1.ListResponse{Orgs: result}), nil
@@ -115,8 +115,7 @@ func (s *server) Get(
 		if errors.Is(err, coreorgs.ErrOrgNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("org not found"))
 		}
-		slog.ErrorContext(ctx, "failed to get org", slogx.Error(err), slog.String("org_id", req.Msg.GetOrgId()))
-		telemetry.RecordError(ctx, err)
+		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
@@ -145,7 +144,7 @@ func (s *server) UpdateDisplayName(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&orgsv1.UpdateDisplayNameResponse{Org: toRPCOrgFromWrite(ctx, org, coreorgs.RoleAdmin.String())}), nil
+	return connect.NewResponse(&orgsv1.UpdateDisplayNameResponse{Org: toRPCOrgFromWrite(org, coreorgs.RoleAdmin)}), nil
 }
 
 func (s *server) ListMembers(
@@ -174,7 +173,7 @@ func (s *server) ListMembers(
 			DisplayName: proto.String(m.DisplayName),
 			Email:       proto.String(m.Email),
 			OrgId:       proto.String(m.OrgID),
-			Role:        toRPCRole(ctx, m.Role).Enum(),
+			Role:        toRPCRole(roleFromDBJoinRow(ctx, m.Role)).Enum(),
 		})
 	}
 
@@ -273,7 +272,7 @@ func (s *server) AcceptInvite(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&orgsv1.AcceptInviteResponse{Org: toRPCOrg(ctx, org, coreorgs.RoleMember.String())}), nil
+	return connect.NewResponse(&orgsv1.AcceptInviteResponse{Org: toRPCOrg(org, coreorgs.RoleMember)}), nil
 }
 
 func (s *server) ListInvitations(
@@ -316,16 +315,23 @@ func (s *server) Create(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	// display_name validation (required, max_len=150) is enforced by the
-	// protovalidate interceptor on CreateRequest before this handler runs.
+	// display_name validation (required, min_len=1, max_len=150) is enforced
+	// by the protovalidate interceptor on CreateRequest before this handler runs.
 	org, err := s.service.CreateOrgWithDefaults(ctx, principal.Customer.ID, req.Msg.GetDisplayName())
 	if err != nil {
+		// Defense-in-depth: the default-project insert into a brand-new org
+		// cannot collide on (org_id, display_name) under current code, but if
+		// a future change ever surfaces ErrProjectNameTaken to this handler
+		// translate it to AlreadyExists so the user sees actionable feedback.
+		if errors.Is(err, coreprojects.ErrProjectNameTaken) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("default project name already exists in this org"))
+		}
 		// Service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&orgsv1.CreateResponse{
-		Org: toRPCOrgFromWrite(ctx, org, coreorgs.RoleAdmin.String()),
+		Org: toRPCOrgFromWrite(org, coreorgs.RoleAdmin),
 	}), nil
 }
 
@@ -409,7 +415,7 @@ func (s *server) UpdateMemberRole(
 			DisplayName: proto.String(row.DisplayName),
 			Email:       proto.String(row.Email),
 			OrgId:       proto.String(row.OrgID),
-			Role:        toRPCRole(ctx, row.Role).Enum(),
+			Role:        toRPCRole(roleFromDBJoinRow(ctx, row.Role)).Enum(),
 		},
 	}), nil
 }

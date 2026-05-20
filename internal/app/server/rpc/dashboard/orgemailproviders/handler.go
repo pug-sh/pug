@@ -49,9 +49,7 @@ func (s *server) requireAdmin(ctx context.Context, orgID string) (*rpc.Principal
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
 		}
-		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err),
-			slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
-		telemetry.RecordError(ctx, err)
+		// orgs service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if role != coreorgs.RoleAdmin {
