@@ -122,6 +122,7 @@ func TestHandler_Get_NotFound_MapsToCodeNotFound(t *testing.T) {
 		Id: proto.String("nonexistent_dashboard"),
 	}))
 	assertCode(t, err, connect.CodeNotFound)
+	assertReason(t, err, apperr.ReasonDashboardNotFound)
 }
 
 func TestHandler_Delete_NotFound_MapsToCodeNotFound(t *testing.T) {
@@ -162,6 +163,7 @@ func TestHandler_CreateTile_DashboardNotFound_MapsToCodeNotFound(t *testing.T) {
 		},
 	}))
 	assertCode(t, err, connect.CodeNotFound)
+	assertReason(t, err, apperr.ReasonDashboardNotFound)
 }
 
 func TestHandler_CreateTile_DisplayNameConflict_MapsToCodeAlreadyExists(t *testing.T) {
@@ -189,6 +191,7 @@ func TestHandler_CreateTile_DisplayNameConflict_MapsToCodeAlreadyExists(t *testi
 		},
 	}))
 	assertCode(t, err, connect.CodeAlreadyExists)
+	assertReason(t, err, apperr.ReasonDashboardTileNameConflict)
 }
 
 func TestHandler_UpdateTile_NotFound_MapsToCodeNotFound(t *testing.T) {
@@ -205,6 +208,7 @@ func TestHandler_UpdateTile_NotFound_MapsToCodeNotFound(t *testing.T) {
 		},
 	}))
 	assertCode(t, err, connect.CodeNotFound)
+	assertReason(t, err, apperr.ReasonDashboardTileNotFound)
 }
 
 func TestHandler_DeleteTile_NotFound_MapsToCodeNotFound(t *testing.T) {
@@ -236,6 +240,21 @@ func assertCode(t *testing.T, err error, want connect.Code) {
 	}
 	if got := connect.CodeOf(err); got != want {
 		t.Errorf("got code %v, want %v (err: %v)", got, want, err)
+	}
+}
+
+func assertReason(t *testing.T, err error, want string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) {
+		t.Errorf("expected *apperr.Error to assert reason %q, got %T", want, err)
+		return
+	}
+	if ae.Reason != want {
+		t.Errorf("got reason %q, want %q (err: %v)", ae.Reason, want, err)
 	}
 }
 
