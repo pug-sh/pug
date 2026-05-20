@@ -68,6 +68,7 @@ func start(ctx context.Context, d *deps) error {
 	queriesRo := dbread.New(d.pgRo)
 
 	handlerOpts := connect.WithInterceptors(
+		pogrpc.CorrelationInterceptor(),
 		d.otelInterceptor,
 		pogrpc.LoggingInterceptor(),
 		validate.NewInterceptor(),
