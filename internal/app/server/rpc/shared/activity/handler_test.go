@@ -5,11 +5,23 @@ import (
 	"errors"
 	"testing"
 
+	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	activityv1 "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+// ctxWithProject returns a context carrying a project-only principal.
+func ctxWithProject(ctx context.Context) context.Context {
+	return authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypePrivateKey,
+		Project:  &dbread.Project{},
+	})
+}
 
 func TestMapToStruct(t *testing.T) {
 	t.Run("converts typed map to struct", func(t *testing.T) {
@@ -65,6 +77,51 @@ func TestMapToStruct_AllValuesAreStrings(t *testing.T) {
 	v := s.Fields["key"]
 	if _, ok := v.Kind.(*structpb.Value_StringValue); !ok {
 		t.Errorf("expected StringValue, got %T", v.Kind)
+	}
+}
+
+func TestGetActivityFeed_InvalidPageToken(t *testing.T) {
+	s := &server{}
+	req := connect.NewRequest(&activityv1.GetActivityFeedRequest{
+		PageToken: proto.String("!!!not-valid-base64!!!"),
+	})
+	// Inject a project principal so we reach the page-token decode path.
+	ctx := ctxWithProject(context.Background())
+	_, err := s.GetActivityFeed(ctx, req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want *apperr.Error, got %T: %v", err, err)
+	}
+	if ae.Code != connect.CodeInvalidArgument {
+		t.Errorf("want CodeInvalidArgument, got %v", ae.Code)
+	}
+	if ae.Reason != apperr.ReasonInvalidPageToken {
+		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidPageToken, ae.Reason)
+	}
+}
+
+func TestGetEventExplorer_InvalidPageToken(t *testing.T) {
+	s := &server{}
+	req := connect.NewRequest(&activityv1.GetEventExplorerRequest{
+		PageToken: proto.String("!!!not-valid-base64!!!"),
+	})
+	ctx := ctxWithProject(context.Background())
+	_, err := s.GetEventExplorer(ctx, req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want *apperr.Error, got %T: %v", err, err)
+	}
+	if ae.Code != connect.CodeInvalidArgument {
+		t.Errorf("want CodeInvalidArgument, got %v", ae.Code)
+	}
+	if ae.Reason != apperr.ReasonInvalidPageToken {
+		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidPageToken, ae.Reason)
 	}
 }
 

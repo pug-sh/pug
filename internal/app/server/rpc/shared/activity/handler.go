@@ -10,6 +10,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/jackc/pgx/v5"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/core/events"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -64,7 +65,7 @@ func (s *server) GetActivityFeed(
 	if req.Msg.GetPageToken() != "" {
 		cursor, err := events.DecodeEventCursor(req.Msg.GetPageToken())
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidPageToken, "invalid page token")
 		}
 		params.PageToken = cursor
 	}
@@ -75,7 +76,7 @@ func (s *server) GetActivityFeed(
 			slog.WarnContext(ctx, "invalid filter in activity feed request",
 				slogx.Error(err),
 				slog.String("project_id", principal.Project.ID))
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid filter parameters"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidActivityFilter, "invalid filter parameters")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -127,7 +128,7 @@ func (s *server) GetEventExplorer(
 	if req.Msg.GetPageToken() != "" {
 		cursor, err := events.DecodeEventCursor(req.Msg.GetPageToken())
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidPageToken, "invalid page token")
 		}
 		params.PageToken = cursor
 	}
@@ -138,7 +139,7 @@ func (s *server) GetEventExplorer(
 			slog.WarnContext(ctx, "invalid filter in event explorer request",
 				slogx.Error(err),
 				slog.String("project_id", principal.Project.ID))
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid filter parameters"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidActivityFilter, "invalid filter parameters")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
