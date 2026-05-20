@@ -24,6 +24,7 @@ service OrgsService {
   rpc ListMembers(ListMembersRequest) returns (ListMembersResponse) {}
   rpc RemoveMember(RemoveMemberRequest) returns (RemoveMemberResponse) {}
   rpc InviteMember(InviteMemberRequest) returns (InviteMemberResponse) {}
+  rpc ResendInvite(ResendInviteRequest) returns (ResendInviteResponse) {}
   rpc AcceptInvite(AcceptInviteRequest) returns (AcceptInviteResponse) {}
   rpc ListInvitations(ListInvitationsRequest) returns (ListInvitationsResponse) {}
   rpc Create(CreateRequest) returns (CreateResponse) {}
@@ -51,7 +52,6 @@ message OrgInvitation {
   string id = 3;
   string org_id = 4;
   InvitationStatus status = 5;
-  string token = 6;
 }
 
 message ListRequest {}
@@ -105,6 +105,15 @@ message InviteMemberRequest {
 }
 
 message InviteMemberResponse {
+  OrgInvitation invitation = 1;
+}
+
+message ResendInviteRequest {
+  string invitation_id = 1 [(buf.validate.field).required = true];
+  string org_id = 2 [(buf.validate.field).required = true];
+}
+
+message ResendInviteResponse {
   OrgInvitation invitation = 1;
 }
 

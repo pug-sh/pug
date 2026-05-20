@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,11 @@ import (
 )
 
 const testNATSImage = "nats@sha256:6b2156f7491cdeddfa8b7ca15cd6fd59b9cabadec5019e933c65c01cf82b1c5f" // 2.12.8-alpine
+
+const (
+	testStreamMaxBytes = 128 * 1024 * 1024
+	testStreamMaxAge   = 24 * time.Hour
+)
 
 // TestNATS holds a NATS testcontainer for testing.
 type TestNATS struct {
@@ -113,18 +119,7 @@ func (tn *TestNATS) runMigrations(ctx context.Context, t *testing.T) error {
 		slog.InfoContext(ctx, "testutil: creating stream",
 			slog.String("name", stream.Name))
 
-		cfg := jetstream.StreamConfig{
-			Name:         stream.Name,
-			Description:  stream.Description,
-			Subjects:     stream.Subjects,
-			Retention:    jetstream.LimitsPolicy,
-			MaxConsumers: stream.MaxConsumers,
-			MaxMsgs:      stream.MaxMsgs,
-			MaxBytes:     stream.MaxBytes,
-			MaxAge:       stream.MaxAge,
-			Storage:      jetstream.FileStorage,
-			Replicas:     stream.NumReplicas,
-		}
+		cfg := testStreamConfig(stream)
 
 		if _, err := js.CreateOrUpdateStream(ctx, cfg); err != nil {
 			return fmt.Errorf("create stream %s: %w", stream.Name, err)
@@ -158,6 +153,43 @@ func (tn *TestNATS) runMigrations(ctx context.Context, t *testing.T) error {
 	}
 
 	return nil
+}
+
+func testStreamConfig(stream natsdeps.StreamConfig) jetstream.StreamConfig {
+	maxBytes := stream.MaxBytes
+	if maxBytes <= 0 || maxBytes > testStreamMaxBytes {
+		maxBytes = testStreamMaxBytes
+	}
+
+	maxAge := stream.MaxAge
+	if maxAge <= 0 || maxAge > testStreamMaxAge {
+		maxAge = testStreamMaxAge
+	}
+
+	return jetstream.StreamConfig{
+		Name:         stream.Name,
+		Description:  stream.Description,
+		Subjects:     stream.Subjects,
+		Retention:    testRetentionPolicy(stream.RetentionPolicy),
+		MaxConsumers: stream.MaxConsumers,
+		MaxMsgs:      stream.MaxMsgs,
+		MaxBytes:     maxBytes,
+		MaxAge:       maxAge,
+		// CI test containers do not have production-scale disk budgets.
+		Storage:  jetstream.MemoryStorage,
+		Replicas: 1,
+	}
+}
+
+func testRetentionPolicy(policy string) jetstream.RetentionPolicy {
+	switch strings.ToLower(policy) {
+	case "interest":
+		return jetstream.InterestPolicy
+	case "workqueue":
+		return jetstream.WorkQueuePolicy
+	default:
+		return jetstream.LimitsPolicy
+	}
 }
 
 func readStreamConfig() ([]natsdeps.StreamConfig, error) {

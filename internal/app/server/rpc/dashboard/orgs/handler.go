@@ -224,7 +224,7 @@ func (s *server) InviteMember(
 		return nil, err
 	}
 
-	inv, err := s.service.InviteMember(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetEmail())
+	dispatch, err := s.service.InviteMember(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetEmail())
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrAlreadyMember) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("this email is already a member of the org"))
@@ -236,7 +236,33 @@ func (s *server) InviteMember(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&orgsv1.InviteMemberResponse{Invitation: toRPCInvitation(ctx, inv)}), nil
+	return connect.NewResponse(&orgsv1.InviteMemberResponse{Invitation: toRPCInvitation(ctx, dispatch.Invitation)}), nil
+}
+
+func (s *server) ResendInvite(
+	ctx context.Context,
+	req *connect.Request[orgsv1.ResendInviteRequest],
+) (*connect.Response[orgsv1.ResendInviteResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if _, err := s.requireOrgAdmin(ctx, req.Msg.GetOrgId()); err != nil {
+		return nil, err
+	}
+
+	dispatch, err := s.service.ResendInvite(ctx, req.Msg.GetOrgId(), req.Msg.GetInvitationId())
+	if err != nil {
+		if errors.Is(err, coreorgs.ErrInviteNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("invitation not found"))
+		}
+		if errors.Is(err, coreorgs.ErrInviteNotPending) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("invitation is no longer pending"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+
+	return connect.NewResponse(&orgsv1.ResendInviteResponse{Invitation: toRPCInvitation(ctx, dispatch.Invitation)}), nil
 }
 
 func (s *server) AcceptInvite(

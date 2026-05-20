@@ -42,3 +42,11 @@ where customer_id = @customer_id
   and purpose = @purpose
   and consumed_at is null
   and expires_at > now();
+
+-- name: InvalidateActiveEmailActionTokensByInvitation :execrows
+update email_action_tokens
+set consumed_at = now()
+where org_invitation_id = @org_invitation_id
+  and purpose = @purpose
+  and consumed_at is null
+  and expires_at > now();

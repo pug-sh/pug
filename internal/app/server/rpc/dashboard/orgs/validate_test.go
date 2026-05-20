@@ -129,3 +129,14 @@ func TestUpdateMemberRoleRequest_Valid(t *testing.T) {
 		t.Errorf("expected valid, got error: %v", err)
 	}
 }
+
+// ResendInviteRequest: org_id + invitation_id both required.
+
+func TestResendInviteRequest_InvitationIDRequired(t *testing.T) {
+	req := &orgsv1.ResendInviteRequest{
+		OrgId: proto.String("org-1"),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Error("expected validation error for missing invitation_id, got nil")
+	}
+}

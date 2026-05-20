@@ -137,3 +137,25 @@ func (q *Queries) InvalidateActiveEmailActionTokensByEmail(ctx context.Context, 
 	}
 	return result.RowsAffected(), nil
 }
+
+const invalidateActiveEmailActionTokensByInvitation = `-- name: InvalidateActiveEmailActionTokensByInvitation :execrows
+update email_action_tokens
+set consumed_at = now()
+where org_invitation_id = $1
+  and purpose = $2
+  and consumed_at is null
+  and expires_at > now()
+`
+
+type InvalidateActiveEmailActionTokensByInvitationParams struct {
+	OrgInvitationID pgtype.Text
+	Purpose         string
+}
+
+func (q *Queries) InvalidateActiveEmailActionTokensByInvitation(ctx context.Context, arg InvalidateActiveEmailActionTokensByInvitationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, invalidateActiveEmailActionTokensByInvitation, arg.OrgInvitationID, arg.Purpose)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

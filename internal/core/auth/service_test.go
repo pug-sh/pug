@@ -466,7 +466,7 @@ func TestSignUpWithEmail_InviteHappyPath(t *testing.T) {
 	authPub := &stubPublisher{}
 	authSvc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), authPub)
 
-	if _, err := authSvc.SignUpWithEmail(ctx, inviteeEmail, "password123", inv.Token); err != nil {
+	if _, err := authSvc.SignUpWithEmail(ctx, inviteeEmail, "password123", inv.RawToken); err != nil {
 		t.Fatalf("SignUpWithEmail with invite token: %v", err)
 	}
 
@@ -603,7 +603,7 @@ func seedInviteForFallbackTest(t *testing.T, ctx context.Context, db *testutil.T
 	if err != nil {
 		t.Fatalf("InviteMember: %v", err)
 	}
-	return invitation.Token, invitation
+	return invitation.RawToken, invitation.Invitation
 }
 
 // assertFallbackDefaults checks the three invariants of a fallback signup:
