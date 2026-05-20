@@ -224,8 +224,14 @@ func TestDelete_AlreadyDeleted(t *testing.T) {
 		t.Fatal("expected error for already-deleted profile, got nil")
 	}
 	var appErr *apperr.Error
-	if !errors.As(err, &appErr) || appErr.Code != connect.CodeNotFound {
-		t.Errorf("got %v, want apperr CodeNotFound", err)
+	if !errors.As(err, &appErr) {
+		t.Fatalf("want *apperr.Error, got %v (%T)", err, err)
+	}
+	if appErr.Code != connect.CodeNotFound {
+		t.Errorf("code = %v, want CodeNotFound", appErr.Code)
+	}
+	if appErr.Reason != apperr.ReasonProfileNotFound {
+		t.Errorf("reason = %q, want %q", appErr.Reason, apperr.ReasonProfileNotFound)
 	}
 }
 
@@ -255,8 +261,14 @@ func TestDelete_NonExistent(t *testing.T) {
 		t.Fatal("expected error for non-existent profile, got nil")
 	}
 	var appErr *apperr.Error
-	if !errors.As(err, &appErr) || appErr.Code != connect.CodeNotFound {
-		t.Errorf("got %v, want apperr CodeNotFound", err)
+	if !errors.As(err, &appErr) {
+		t.Fatalf("want *apperr.Error, got %v (%T)", err, err)
+	}
+	if appErr.Code != connect.CodeNotFound {
+		t.Errorf("code = %v, want CodeNotFound", appErr.Code)
+	}
+	if appErr.Reason != apperr.ReasonProfileNotFound {
+		t.Errorf("reason = %q, want %q", appErr.Reason, apperr.ReasonProfileNotFound)
 	}
 }
 
@@ -357,8 +369,12 @@ func TestList_RejectsUnsupportedFilterSources(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeInvalidArgument {
-		t.Fatalf("got code %v, want CodeInvalidArgument", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code != connect.CodeInvalidArgument {
+		t.Fatalf("want apperr CodeInvalidArgument, got %v (%T)", err, err)
+	}
+	if ae.Reason != apperr.ReasonInvalidProfileFilter {
+		t.Fatalf("want INVALID_PROFILE_FILTER reason, got %q", ae.Reason)
 	}
 }
 

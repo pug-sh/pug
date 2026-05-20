@@ -47,7 +47,7 @@ func (s *Server) Delete(
 	err = s.service.Delete(ctx, principal.Project.ID, profileID)
 	if err != nil {
 		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
-			return nil, apperr.Err(connect.CodeNotFound, apperr.ReasonProfileNotFound, "profile not found")
+			return nil, apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found", apperr.Resource("profile", profileID))
 		}
 		if errors.Is(err, coreprofiles.ErrProfileDeleteUnavailable) {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("profiles delete is unavailable"))
@@ -119,7 +119,7 @@ func (s *Server) List(
 	if token := req.Msg.GetPageToken(); token != "" {
 		cursor, err := decodeProfileListCursor(token)
 		if err != nil {
-			return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
+			return apperr.Invalid(apperr.ReasonInvalidPageToken, "invalid page token")
 		}
 		cursorTime = postgres.NewTimestamptz(cursor.CreateTime)
 		cursorID = cursor.ID
@@ -128,7 +128,7 @@ func (s *Server) List(
 
 	chFilterCond, err := buildProfileFilterCondition(req.Msg.GetFilterGroups(), req.Msg.GetFilterGroupsOperator())
 	if err != nil {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid filters"))
+		return apperr.Invalid(apperr.ReasonInvalidProfileFilter, "invalid filters")
 	}
 	if s.service == nil {
 		return connect.NewError(connect.CodeInternal, errors.New("profiles list is unavailable"))
@@ -256,7 +256,7 @@ func (s *Server) getProfile(ctx context.Context, projectID, id string) (*profile
 	profile, err := s.service.GetByID(ctx, projectID, id)
 	if err != nil {
 		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
-			return nil, apperr.Err(connect.CodeNotFound, apperr.ReasonProfileNotFound, "profile not found")
+			return nil, apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found", apperr.Resource("profile", id))
 		}
 		slog.ErrorContext(ctx, "failed reading profile from clickhouse", slogx.Error(err), slog.String("profile_id", id))
 		telemetry.RecordError(ctx, err)
@@ -278,7 +278,7 @@ func (s *Server) getProfileByExternalID(ctx context.Context, projectID, external
 	profile, err := s.service.GetByExternalID(ctx, projectID, externalID)
 	if err != nil {
 		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
-			return nil, apperr.Err(connect.CodeNotFound, apperr.ReasonProfileNotFound, "profile not found")
+			return nil, apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found", apperr.Resource("profile", externalID))
 		}
 		slog.ErrorContext(ctx, "failed reading profile by external ID from clickhouse", slogx.Error(err), slog.String("external_id", externalID))
 		telemetry.RecordError(ctx, err)

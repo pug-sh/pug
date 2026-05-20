@@ -81,12 +81,6 @@ var (
 	ReasonUnauthenticated    = codes.add("UNAUTHENTICATED")
 )
 
-// Domain reasons — specific, client-facing meanings. Immutable once shipped:
-// never rename, only add. Add new ones here as handlers adopt them.
-var (
-	ReasonProfileNotFound = codes.add("PROFILE_NOT_FOUND")
-)
-
 // ReasonForCode returns the generic reason for a Connect code (fallback for
 // errors that were not tagged with a specific reason).
 func ReasonForCode(c connect.Code) string {
