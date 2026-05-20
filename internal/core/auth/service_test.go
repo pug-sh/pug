@@ -466,14 +466,15 @@ func TestSignUpWithEmail_InviteHappyPath(t *testing.T) {
 	authPub := &stubPublisher{}
 	authSvc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), authPub)
 
-	if _, err := authSvc.SignUpWithEmail(ctx, inviteeEmail, "password123", inv.RawToken); err != nil {
+	// Pass a DIFFERENT client email; it must be ignored in favor of the invite email.
+	if _, err := authSvc.SignUpWithEmail(ctx, "typed-"+xid.New().String()+"@example.com", "password123", inv.RawToken); err != nil {
 		t.Fatalf("SignUpWithEmail with invite token: %v", err)
 	}
 
 	read := dbread.New(db.PgW)
-	customer, err := read.GetCustomerByEmail(ctx, inviteeEmail)
+	customer, err := read.GetCustomerByEmail(ctx, inviteeEmail) // invite email, not the typed one
 	if err != nil {
-		t.Fatalf("GetCustomerByEmail: %v", err)
+		t.Fatalf("expected customer under the invite email: %v", err)
 	}
 	if !customer.EmailVerifiedAt.Valid {
 		t.Fatal("expected invite-driven signup to auto-verify email")
@@ -520,63 +521,38 @@ func TestSignUpWithEmail_InviteHappyPath(t *testing.T) {
 	}
 }
 
-// TestSignUpWithEmail_InviteFallback pins the bad-token fallback path: an
-// invalid invite_token (token never existed) is treated as if no token was
-// passed — customer is created, default org+project seeded, verification
-// email queued. The customer is NOT auto-verified because invite-delivery
-// proof did not actually happen.
-func TestSignUpWithEmail_InviteFallback(t *testing.T) {
+// TestSignUpWithEmail_InviteInvalidToken pins the no-fallback contract: an
+// explicit invite_token that is unknown is a hard error — ErrInviteInvalid is
+// returned, no customer is created, and no SignupVerifyWelcome is published.
+func TestSignUpWithEmail_InviteInvalidToken(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-
 	db := testutil.SetupPostgres(t)
 	ctx := context.Background()
 	pub := &stubPublisher{}
 	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
 
-	email := "fallback-" + xid.New().String() + "@example.com"
-	if _, err := svc.SignUpWithEmail(ctx, email, "password123", "this-token-does-not-exist"); err != nil {
-		t.Fatalf("SignUpWithEmail with bad invite token: %v", err)
+	email := "noinvite-" + xid.New().String() + "@example.com"
+	_, err := svc.SignUpWithEmail(ctx, email, "password123", "this-token-does-not-exist")
+	if !errors.Is(err, auth.ErrInviteInvalid) {
+		t.Fatalf("err = %v, want auth.ErrInviteInvalid", err)
 	}
-
 	read := dbread.New(db.PgW)
-	customer, err := read.GetCustomerByEmail(ctx, email)
-	if err != nil {
-		t.Fatalf("GetCustomerByEmail: %v", err)
+	if _, err := read.GetCustomerByEmail(ctx, email); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expected no customer created, got err=%v", err)
 	}
-	if customer.EmailVerifiedAt.Valid {
-		t.Fatal("fallback signup must not auto-verify email — invite was bogus")
-	}
-
-	var defaultProjects int
-	if err := db.PgW.QueryRow(ctx,
-		`select count(*) from projects p
-		 join org_members m on m.org_id = p.org_id
-		 where m.customer_id = $1 and p.display_name = 'default'`,
-		customer.ID,
-	).Scan(&defaultProjects); err != nil {
-		t.Fatalf("scan default projects: %v", err)
-	}
-	if defaultProjects != 1 {
-		t.Fatalf("expected 1 default project on fallback, got %d", defaultProjects)
-	}
-
-	var verifyJobs int
 	for _, j := range pub.jobs {
 		if j.job.GetSignupVerifyWelcome() != nil {
-			verifyJobs++
+			t.Fatal("invalid-token signup must not publish SignupVerifyWelcome")
 		}
-	}
-	if verifyJobs != 1 {
-		t.Fatalf("expected 1 SignupVerifyWelcome publish on fallback, got %d", verifyJobs)
 	}
 }
 
-// seedInviteForFallbackTest sets up an inviter + org + pending invitation
+// seedInviteForErrorTest sets up an inviter + org + pending invitation
 // issued to inviteeEmail, returning the raw token and the invitation row so
 // callers can scenario-specifically corrupt it (backdate, status flip).
-func seedInviteForFallbackTest(t *testing.T, ctx context.Context, db *testutil.TestPostgres, inviteeEmail string) (rawToken string, inv dbwrite.OrgInvitation) {
+func seedInviteForErrorTest(t *testing.T, ctx context.Context, db *testutil.TestPostgres, inviteeEmail string) (rawToken string, inv dbwrite.OrgInvitation) {
 	t.Helper()
 	write := dbwrite.New(db.PgW)
 	orgSvc := coreorgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
@@ -589,7 +565,7 @@ func seedInviteForFallbackTest(t *testing.T, ctx context.Context, db *testutil.T
 		t.Fatalf("seed inviter: %v", err)
 	}
 	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
-		ID: xid.New().String(), DisplayName: "Fallback Org",
+		ID: xid.New().String(), DisplayName: "Error Test Org",
 	})
 	if err != nil {
 		t.Fatalf("CreateOrg: %v", err)
@@ -606,71 +582,20 @@ func seedInviteForFallbackTest(t *testing.T, ctx context.Context, db *testutil.T
 	return invitation.RawToken, invitation.Invitation
 }
 
-// assertFallbackDefaults checks the three invariants of a fallback signup:
-// the customer was created, NOT auto-verified, and has exactly one default
-// project. Used by all IM2-4 fallback variants.
-func assertFallbackDefaults(t *testing.T, ctx context.Context, db *testutil.TestPostgres, email string) {
-	t.Helper()
-	read := dbread.New(db.PgW)
-	customer, err := read.GetCustomerByEmail(ctx, email)
-	if err != nil {
-		t.Fatalf("GetCustomerByEmail: %v", err)
-	}
-	if customer.EmailVerifiedAt.Valid {
-		t.Fatal("fallback signup must not auto-verify email — invite was rejected")
-	}
-	var defaultProjects int
-	if err := db.PgW.QueryRow(ctx,
-		`select count(*) from projects p
-		 join org_members m on m.org_id = p.org_id
-		 where m.customer_id = $1 and p.display_name = 'default'`,
-		customer.ID,
-	).Scan(&defaultProjects); err != nil {
-		t.Fatalf("scan default projects: %v", err)
-	}
-	if defaultProjects != 1 {
-		t.Fatalf("expected 1 default project on fallback, got %d", defaultProjects)
-	}
-}
-
-// TestSignUpWithEmail_InviteFallback_WrongEmail pins that an invite issued
-// to a different email is treated as client-input error and falls back to
-// default-org creation. Security-relevant: an attacker who steals a token
-// cannot redeem it under their own email, but their signup must still
-// succeed (otherwise stolen tokens would block legitimate signups).
-func TestSignUpWithEmail_InviteFallback_WrongEmail(t *testing.T) {
+// TestSignUpWithEmail_InviteError_Expired pins the expired-invite hard-error
+// path. Backdates the email_action_token's expires_at; LookupInviteEmailInTx
+// returns ErrInviteNotFound (valid query filters expired), isInviteClientError
+// returns true, and SignUpWithEmail returns ErrInviteInvalid with no customer
+// created.
+func TestSignUpWithEmail_InviteError_Expired(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	db := testutil.SetupPostgres(t)
 	ctx := context.Background()
 
-	const issuedToEmail = "issued-to@example.com"
-	rawToken, _ := seedInviteForFallbackTest(t, ctx, db, issuedToEmail)
-
-	pub := &stubPublisher{}
-	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
-
-	const signupEmail = "different@example.com"
-	if _, err := svc.SignUpWithEmail(ctx, signupEmail, "password123", rawToken); err != nil {
-		t.Fatalf("SignUpWithEmail with wrong-email invite: %v", err)
-	}
-	assertFallbackDefaults(t, ctx, db, signupEmail)
-}
-
-// TestSignUpWithEmail_InviteFallback_Expired pins the expired-invite
-// fallback. Backdates the email_action_token's expires_at; the
-// AcceptInviteInTx token lookup ("valid" query filters expired) returns
-// ErrInviteNotFound, isInviteClientError returns true, fallback path runs.
-func TestSignUpWithEmail_InviteFallback_Expired(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	db := testutil.SetupPostgres(t)
-	ctx := context.Background()
-
-	const inviteeEmail = "expired-fallback@example.com"
-	rawToken, inv := seedInviteForFallbackTest(t, ctx, db, inviteeEmail)
+	const inviteeEmail = "expired-error@example.com"
+	rawToken, inv := seedInviteForErrorTest(t, ctx, db, inviteeEmail)
 
 	if _, err := db.PgW.Exec(ctx,
 		`update email_action_tokens set expires_at = $1 where org_invitation_id = $2`,
@@ -682,25 +607,31 @@ func TestSignUpWithEmail_InviteFallback_Expired(t *testing.T) {
 	pub := &stubPublisher{}
 	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
 
-	if _, err := svc.SignUpWithEmail(ctx, inviteeEmail, "password123", rawToken); err != nil {
-		t.Fatalf("SignUpWithEmail with expired invite: %v", err)
+	_, err := svc.SignUpWithEmail(ctx, inviteeEmail, "password123", rawToken)
+	if !errors.Is(err, auth.ErrInviteInvalid) {
+		t.Fatalf("err = %v, want auth.ErrInviteInvalid", err)
 	}
-	assertFallbackDefaults(t, ctx, db, inviteeEmail)
-	_ = rawToken
+	read := dbread.New(db.PgW)
+	if _, err := read.GetCustomerByEmail(ctx, inviteeEmail); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expected no customer created, got err=%v", err)
+	}
 }
 
-// TestSignUpWithEmail_InviteFallback_NotPending pins the
-// already-accepted-invite fallback. Flips the invitation status directly to
-// ACCEPTED; AcceptInviteInTx then returns ErrInviteNotPending.
-func TestSignUpWithEmail_InviteFallback_NotPending(t *testing.T) {
+// TestSignUpWithEmail_InviteError_NotPending pins the already-accepted-invite
+// hard-error path. Flips the invitation status directly to ACCEPTED.
+// The email_action_token is still valid, so LookupInviteEmailInTx succeeds and
+// the customer is created; AcceptInviteInTx then detects the non-PENDING status
+// and returns ErrInviteNotPending, which maps to ErrInviteInvalid and rolls back
+// the tx (no customer persists).
+func TestSignUpWithEmail_InviteError_NotPending(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	db := testutil.SetupPostgres(t)
 	ctx := context.Background()
 
-	const inviteeEmail = "notpending-fallback@example.com"
-	rawToken, inv := seedInviteForFallbackTest(t, ctx, db, inviteeEmail)
+	const inviteeEmail = "notpending-error@example.com"
+	rawToken, inv := seedInviteForErrorTest(t, ctx, db, inviteeEmail)
 
 	if _, err := db.PgW.Exec(ctx,
 		`update org_invitations set status = $1 where id = $2`,
@@ -712,10 +643,14 @@ func TestSignUpWithEmail_InviteFallback_NotPending(t *testing.T) {
 	pub := &stubPublisher{}
 	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
 
-	if _, err := svc.SignUpWithEmail(ctx, inviteeEmail, "password123", rawToken); err != nil {
-		t.Fatalf("SignUpWithEmail with not-pending invite: %v", err)
+	_, err := svc.SignUpWithEmail(ctx, inviteeEmail, "password123", rawToken)
+	if !errors.Is(err, auth.ErrInviteInvalid) {
+		t.Fatalf("err = %v, want auth.ErrInviteInvalid", err)
 	}
-	assertFallbackDefaults(t, ctx, db, inviteeEmail)
+	read := dbread.New(db.PgW)
+	if _, err := read.GetCustomerByEmail(ctx, inviteeEmail); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expected no customer created, got err=%v", err)
+	}
 }
 
 // TestEmailPublishFailureCountersByKind pins SG2-14 + SG2-15 + the
