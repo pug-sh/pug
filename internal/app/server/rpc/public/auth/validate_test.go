@@ -19,26 +19,6 @@ func TestSignInWithEmailRequest_EmailRequired(t *testing.T) {
 	}
 }
 
-func TestSignUpWithEmailRequest_EmailRequired(t *testing.T) {
-	req := &authv1.SignUpWithEmailRequest{
-		// email intentionally omitted
-		Password: proto.String("password123"),
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Error("expected validation error for missing email, got nil")
-	}
-}
-
-func TestSignUpWithEmailRequest_ValidEmailNoToken(t *testing.T) {
-	req := &authv1.SignUpWithEmailRequest{
-		Email:    proto.String("test@example.com"),
-		Password: proto.String("password123"),
-	}
-	if err := protovalidate.Validate(req); err != nil {
-		t.Errorf("expected valid, got: %v", err)
-	}
-}
-
 func TestSignInWithEmailRequest_Valid(t *testing.T) {
 	req := &authv1.SignInWithEmailRequest{
 		Email:    proto.String("test@example.com"),

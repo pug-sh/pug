@@ -23,23 +23,6 @@ func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *
 	}
 }
 
-func (s *server) SignUpWithEmail(
-	ctx context.Context,
-	req *connect.Request[authv1.SignUpWithEmailRequest],
-) (*connect.Response[authv1.SignUpWithEmailResponse], error) {
-	token, err := s.service.SignUpWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword())
-	if err != nil {
-		if errors.Is(err, coreauth.ErrEmailAlreadyExists) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("user with this email already exists"))
-		}
-		if errors.Is(err, coreauth.ErrPasswordTooLong) {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("password must be 72 bytes or fewer"))
-		}
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	return connect.NewResponse(&authv1.SignUpWithEmailResponse{Token: &token}), nil
-}
-
 func (s *server) SignInWithEmail(
 	ctx context.Context,
 	req *connect.Request[authv1.SignInWithEmailRequest],

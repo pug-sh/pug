@@ -11,9 +11,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/nats"
@@ -54,14 +52,8 @@ func init() {
 }
 
 var (
-	ErrEmailAlreadyExists = errors.New("user with this email already exists")
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrInvalidToken       = errors.New("invalid or expired token")
-	// ErrPasswordTooLong is returned when a password exceeds bcrypt's 72-byte
-	// input limit. Proto validation enforces the same limit at the
-	// interceptor, so reaching this sentinel from the service is rare in
-	// production (direct calls from tests / future non-RPC callers).
-	ErrPasswordTooLong = errors.New("password is too long")
 )
 
 const (
@@ -96,98 +88,6 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher 
 		jwtKey:    jwtKey,
 		publisher: publisher,
 	}
-}
-
-func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (string, error) {
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
-			return "", ErrPasswordTooLong
-		}
-		slog.ErrorContext(ctx, "failed to hash password", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	customerID := xid.New().String()
-
-	tx, err := s.pgW.Begin(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to begin transaction", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	defer func() {
-		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "failed rolling back signup transaction", slogx.Error(err))
-			telemetry.RecordError(ctx, err)
-		}
-	}()
-
-	w := dbwrite.New(tx)
-
-	if _, err = w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID:           customerID,
-		Email:        email,
-		DisplayName:  "",
-		PictureUri:   "",
-		PasswordHash: string(passwordHash),
-	}); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			return "", ErrEmailAlreadyExists
-		}
-		slog.ErrorContext(ctx, "failed to create customer", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	magicToken, err := newActionToken()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate magic-link token", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	if _, err = w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
-		ID:              xid.New().String(),
-		CustomerID:      postgres.NewOptionalText(customerID),
-		Email:           email,
-		Purpose:         magicLinkPurpose,
-		TokenHash:       hashToken(magicToken),
-		OrgInvitationID: postgres.NewOptionalText(""),
-		ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(magicLinkTTL)),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to create signup magic-link token", slogx.Error(err), slog.String("customer_id", customerID))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	if _, err = coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
-		return "", err
-	}
-
-	if err = tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed to commit signup transaction", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	s.publishEmailJob(ctx, &emailworkerv1.EmailJob{
-		Payload: &emailworkerv1.EmailJob_MagicLink{
-			MagicLink: &emailworkerv1.MagicLinkPayload{
-				Email: proto.String(email),
-				Token: proto.String(magicToken),
-			},
-		},
-	})
-
-	token, err := s.generateJWT(customerID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate JWT", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	return token, nil
 }
 
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (string, error) {

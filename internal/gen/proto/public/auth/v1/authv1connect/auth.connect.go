@@ -36,9 +36,6 @@ const (
 	// AuthServiceSignInWithEmailProcedure is the fully-qualified name of the AuthService's
 	// SignInWithEmail RPC.
 	AuthServiceSignInWithEmailProcedure = "/public.auth.v1.AuthService/SignInWithEmail"
-	// AuthServiceSignUpWithEmailProcedure is the fully-qualified name of the AuthService's
-	// SignUpWithEmail RPC.
-	AuthServiceSignUpWithEmailProcedure = "/public.auth.v1.AuthService/SignUpWithEmail"
 	// AuthServiceRequestMagicLinkProcedure is the fully-qualified name of the AuthService's
 	// RequestMagicLink RPC.
 	AuthServiceRequestMagicLinkProcedure = "/public.auth.v1.AuthService/RequestMagicLink"
@@ -50,7 +47,6 @@ const (
 // AuthServiceClient is a client for the public.auth.v1.AuthService service.
 type AuthServiceClient interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
-	SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
 }
@@ -72,12 +68,6 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("SignInWithEmail")),
 			connect.WithClientOptions(opts...),
 		),
-		signUpWithEmail: connect.NewClient[v1.SignUpWithEmailRequest, v1.SignUpWithEmailResponse](
-			httpClient,
-			baseURL+AuthServiceSignUpWithEmailProcedure,
-			connect.WithSchema(authServiceMethods.ByName("SignUpWithEmail")),
-			connect.WithClientOptions(opts...),
-		),
 		requestMagicLink: connect.NewClient[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse](
 			httpClient,
 			baseURL+AuthServiceRequestMagicLinkProcedure,
@@ -96,7 +86,6 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 // authServiceClient implements AuthServiceClient.
 type authServiceClient struct {
 	signInWithEmail   *connect.Client[v1.SignInWithEmailRequest, v1.SignInWithEmailResponse]
-	signUpWithEmail   *connect.Client[v1.SignUpWithEmailRequest, v1.SignUpWithEmailResponse]
 	requestMagicLink  *connect.Client[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse]
 	completeMagicLink *connect.Client[v1.CompleteMagicLinkRequest, v1.CompleteMagicLinkResponse]
 }
@@ -104,11 +93,6 @@ type authServiceClient struct {
 // SignInWithEmail calls public.auth.v1.AuthService.SignInWithEmail.
 func (c *authServiceClient) SignInWithEmail(ctx context.Context, req *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error) {
 	return c.signInWithEmail.CallUnary(ctx, req)
-}
-
-// SignUpWithEmail calls public.auth.v1.AuthService.SignUpWithEmail.
-func (c *authServiceClient) SignUpWithEmail(ctx context.Context, req *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error) {
-	return c.signUpWithEmail.CallUnary(ctx, req)
 }
 
 // RequestMagicLink calls public.auth.v1.AuthService.RequestMagicLink.
@@ -124,7 +108,6 @@ func (c *authServiceClient) CompleteMagicLink(ctx context.Context, req *connect.
 // AuthServiceHandler is an implementation of the public.auth.v1.AuthService service.
 type AuthServiceHandler interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
-	SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
 }
@@ -140,12 +123,6 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		AuthServiceSignInWithEmailProcedure,
 		svc.SignInWithEmail,
 		connect.WithSchema(authServiceMethods.ByName("SignInWithEmail")),
-		connect.WithHandlerOptions(opts...),
-	)
-	authServiceSignUpWithEmailHandler := connect.NewUnaryHandler(
-		AuthServiceSignUpWithEmailProcedure,
-		svc.SignUpWithEmail,
-		connect.WithSchema(authServiceMethods.ByName("SignUpWithEmail")),
 		connect.WithHandlerOptions(opts...),
 	)
 	authServiceRequestMagicLinkHandler := connect.NewUnaryHandler(
@@ -164,8 +141,6 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		switch r.URL.Path {
 		case AuthServiceSignInWithEmailProcedure:
 			authServiceSignInWithEmailHandler.ServeHTTP(w, r)
-		case AuthServiceSignUpWithEmailProcedure:
-			authServiceSignUpWithEmailHandler.ServeHTTP(w, r)
 		case AuthServiceRequestMagicLinkProcedure:
 			authServiceRequestMagicLinkHandler.ServeHTTP(w, r)
 		case AuthServiceCompleteMagicLinkProcedure:
@@ -181,10 +156,6 @@ type UnimplementedAuthServiceHandler struct{}
 
 func (UnimplementedAuthServiceHandler) SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.SignInWithEmail is not implemented"))
-}
-
-func (UnimplementedAuthServiceHandler) SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.SignUpWithEmail is not implemented"))
 }
 
 func (UnimplementedAuthServiceHandler) RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error) {

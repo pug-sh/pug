@@ -7,7 +7,6 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;aut
 
 service AuthService {
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
-  rpc SignUpWithEmail(SignUpWithEmailRequest) returns (SignUpWithEmailResponse) {}
   rpc RequestMagicLink(RequestMagicLinkRequest) returns (RequestMagicLinkResponse) {}
   rpc CompleteMagicLink(CompleteMagicLinkRequest) returns (CompleteMagicLinkResponse) {}
 }
@@ -26,23 +25,6 @@ message SignInWithEmailRequest {
 }
 
 message SignInWithEmailResponse {
-  string token = 1;
-}
-
-message SignUpWithEmailRequest {
-  string email = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.email = true
-  ];
-  // bcrypt accepts at most 72 bytes; rejecting longer inputs at the
-  // interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
-  string password = 2 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.max_bytes = 72
-  ];
-}
-
-message SignUpWithEmailResponse {
   string token = 1;
 }
 

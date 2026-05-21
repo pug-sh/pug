@@ -127,8 +127,9 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher JobPublisher) *
 
 // CreateOrgWithDefaultsInTx performs the org + admin member + default project
 // inserts inside an existing transaction. Caller owns the tx lifecycle.
-// Used by auth.SignUpWithEmail (which keeps customer + verify-token + org in
-// one tx) and by CreateOrgWithDefaults (which owns its own tx).
+// Used by auth.CompleteMagicLink (which provisions a default org for a brand-new
+// passwordless account in the same tx that consumes the magic-link token) and by
+// CreateOrgWithDefaults (which owns its own tx).
 func CreateOrgWithDefaultsInTx(
 	ctx context.Context,
 	w *dbwrite.Queries,
