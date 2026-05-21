@@ -29,6 +29,17 @@ func TestInviteMemberRequest_Valid(t *testing.T) {
 	}
 }
 
+func TestInviteMemberRequest_ValidWithRole(t *testing.T) {
+	req := &orgsv1.InviteMemberRequest{
+		Email: proto.String("test@example.com"),
+		OrgId: proto.String("org-1"),
+		Role:  orgsv1.OrgRole_ORG_ROLE_ADMIN.Enum(),
+	}
+	if err := protovalidate.Validate(req); err != nil {
+		t.Errorf("expected valid, got error: %v", err)
+	}
+}
+
 // CreateRequest: display_name has required + min_len=1 + max_len=150.
 // Edition 2023 "required" only checks wire presence, so an explicit min_len=1
 // is needed to reject the empty string — pinning that rule keeps a future

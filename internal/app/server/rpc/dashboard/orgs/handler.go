@@ -225,7 +225,12 @@ func (s *server) InviteMember(
 		return nil, err
 	}
 
-	dispatch, err := s.service.InviteMember(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetEmail())
+	role, ok := inviteRoleFromProto(req.Msg.GetRole())
+	if !ok {
+		return nil, apperr.Invalid(apperr.ReasonOrgUnsupportedRole, "role is not supported")
+	}
+
+	dispatch, err := s.service.InviteMemberWithRole(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetEmail(), role)
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrAlreadyMember) {
 			return nil, apperr.AlreadyExists(apperr.ReasonOrgMemberAlreadyExists, "this email is already a member of the org")
@@ -264,42 +269,6 @@ func (s *server) ResendInvite(
 	}
 
 	return connect.NewResponse(&orgsv1.ResendInviteResponse{Invitation: toRPCInvitation(ctx, dispatch.Invitation)}), nil
-}
-
-func (s *server) AcceptInvite(
-	ctx context.Context,
-	req *connect.Request[orgsv1.AcceptInviteRequest],
-) (*connect.Response[orgsv1.AcceptInviteResponse], error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	org, err := s.service.AcceptInvite(ctx, req.Msg.GetToken(), principal.Customer.ID, principal.Customer.Email)
-	if err != nil {
-		if errors.Is(err, coreorgs.ErrInviteWrongEmail) {
-			return nil, apperr.PermissionDenied(apperr.ReasonInvitationWrongEmail, "invitation was issued to a different email address")
-		}
-		if errors.Is(err, coreorgs.ErrInviteNotPending) {
-			return nil, apperr.FailedPrecondition(apperr.ReasonInvitationNotPending, "invitation is no longer pending")
-		}
-		if errors.Is(err, coreorgs.ErrInviteExpired) {
-			return nil, apperr.FailedPrecondition(apperr.ReasonInvitationExpired, "invitation has expired")
-		}
-		if errors.Is(err, coreorgs.ErrAlreadyMember) {
-			return nil, apperr.AlreadyExists(apperr.ReasonOrgMemberAlreadyExists, "already a member of this org")
-		}
-		if errors.Is(err, coreorgs.ErrInviteNotFound) {
-			return nil, apperr.NotFound(apperr.ReasonInvitationNotFound, "invitation not found")
-		}
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-
-	return connect.NewResponse(&orgsv1.AcceptInviteResponse{Org: toRPCOrg(org, coreorgs.RoleMember)}), nil
 }
 
 func (s *server) ListInvitations(

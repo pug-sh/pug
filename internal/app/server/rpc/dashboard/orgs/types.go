@@ -29,6 +29,13 @@ func roleFromProto(p orgsv1.OrgRole) (coreorgs.Role, bool) {
 	}
 }
 
+func inviteRoleFromProto(p orgsv1.OrgRole) (coreorgs.Role, bool) {
+	if p == orgsv1.OrgRole_ORG_ROLE_UNSPECIFIED {
+		return coreorgs.RoleMember, true
+	}
+	return roleFromProto(p)
+}
+
 // roleFromDBJoinRow parses a raw role string from a DB-join row (where the
 // role column is selected as plain text rather than going through
 // Service.GetMemberRole's typed parse). On unknown values, logs a WarnContext
@@ -43,15 +50,6 @@ func roleFromDBJoinRow(ctx context.Context, raw string) coreorgs.Role {
 		return ""
 	}
 	return role
-}
-
-// toRPCOrg converts a dbread.Org plus the caller's role to the proto Org.
-func toRPCOrg(o dbread.Org, role coreorgs.Role) *orgsv1.Org {
-	return &orgsv1.Org{
-		DisplayName: proto.String(o.DisplayName),
-		Id:          proto.String(o.ID),
-		Role:        toRPCRole(role).Enum(),
-	}
 }
 
 func toRPCOrgFromWrite(o dbwrite.Org, role coreorgs.Role) *orgsv1.Org {
@@ -111,6 +109,7 @@ func toRPCInvitation(ctx context.Context, inv dbwrite.OrgInvitation) *orgsv1.Org
 		Id:        proto.String(inv.ID),
 		OrgId:     proto.String(inv.OrgID),
 		Status:    toRPCInvitationStatus(ctx, inv.Status).Enum(),
+		Role:      toRPCRole(roleFromDBJoinRow(ctx, inv.Role)).Enum(),
 	}
 }
 
@@ -125,5 +124,6 @@ func toRPCInvitationRO(ctx context.Context, inv dbread.OrgInvitation) *orgsv1.Or
 		Id:        proto.String(inv.ID),
 		OrgId:     proto.String(inv.OrgID),
 		Status:    toRPCInvitationStatus(ctx, inv.Status).Enum(),
+		Role:      toRPCRole(roleFromDBJoinRow(ctx, inv.Role)).Enum(),
 	}
 }

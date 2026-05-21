@@ -94,42 +94,17 @@ func (s *Service) baseMessage(idempotencyKey, to string) Message {
 	}
 }
 
-// Signup/verify/reset emails are platform messages that always route through
-// the operator-default provider (nil tenantID). At signup time no org exists
-// yet, and for verify/reset of a multi-org customer there is no single
-// "their" org — sending from the operator's reputation domain is also
-// preferable for deliverability. Per-tenant routing is reserved for org-
-// scoped messages like invites (SendOrgMemberInvite below).
-
-func (s *Service) SendSignupVerifyWelcome(ctx context.Context, emailAddr, token, idempotencyKey string) error {
-	link := s.link("/verify-email", token)
+func (s *Service) SendMagicLink(ctx context.Context, emailAddr, token, idempotencyKey string) error {
+	link := s.link("/magic-link", token)
 	msg := s.baseMessage(idempotencyKey, emailAddr)
-	msg.Subject = "Verify your email"
-	msg.TextBody = fmt.Sprintf("Welcome to Pug.\n\nVerify your email: %s", link)
-	msg.HTMLBody = fmt.Sprintf("<p>Welcome to Pug.</p><p><a href=\"%s\">Verify your email</a>.</p>", html.EscapeString(link))
-	return s.send(ctx, nil, msg)
-}
-
-func (s *Service) SendPasswordReset(ctx context.Context, emailAddr, token, idempotencyKey string) error {
-	link := s.link("/reset-password", token)
-	msg := s.baseMessage(idempotencyKey, emailAddr)
-	msg.Subject = "Reset your password"
-	msg.TextBody = fmt.Sprintf("Reset your password: %s", link)
-	msg.HTMLBody = fmt.Sprintf("<p><a href=\"%s\">Reset your password</a>.</p>", html.EscapeString(link))
-	return s.send(ctx, nil, msg)
-}
-
-func (s *Service) SendVerificationResend(ctx context.Context, emailAddr, token, idempotencyKey string) error {
-	link := s.link("/verify-email", token)
-	msg := s.baseMessage(idempotencyKey, emailAddr)
-	msg.Subject = "Verify your email"
-	msg.TextBody = fmt.Sprintf("Verify your email: %s", link)
-	msg.HTMLBody = fmt.Sprintf("<p><a href=\"%s\">Verify your email</a>.</p>", html.EscapeString(link))
+	msg.Subject = "Your sign-in link"
+	msg.TextBody = fmt.Sprintf("Sign in to Pug: %s", link)
+	msg.HTMLBody = fmt.Sprintf("<p><a href=\"%s\">Sign in to Pug</a>.</p>", html.EscapeString(link))
 	return s.send(ctx, nil, msg)
 }
 
 func (s *Service) SendOrgMemberInvite(ctx context.Context, orgID, emailAddr, orgName, inviterName, token, idempotencyKey string) error {
-	link := s.link("/accept-invite", token)
+	link := s.link("/magic-link", token)
 	safeOrg := sanitizeDisplay(orgName)
 	safeInviter := sanitizeDisplay(inviterName)
 	text := fmt.Sprintf("You were invited to join %s.\n\nAccept the invite: %s", safeOrg, link)

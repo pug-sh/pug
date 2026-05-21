@@ -7,11 +7,8 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;aut
 
 service AuthService {
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
-  rpc SignUpWithEmail(SignUpWithEmailRequest) returns (SignUpWithEmailResponse) {}
-  rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse) {}
-  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse) {}
-  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse) {}
-  rpc ResendVerificationEmail(ResendVerificationEmailRequest) returns (ResendVerificationEmailResponse) {}
+  rpc RequestMagicLink(RequestMagicLinkRequest) returns (RequestMagicLinkResponse) {}
+  rpc CompleteMagicLink(CompleteMagicLinkRequest) returns (CompleteMagicLinkResponse) {}
 }
 
 message SignInWithEmailRequest {
@@ -31,61 +28,19 @@ message SignInWithEmailResponse {
   string token = 1;
 }
 
-message SignUpWithEmailRequest {
+message RequestMagicLinkRequest {
   string email = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.email = true
   ];
-  // bcrypt accepts at most 72 bytes; rejecting longer inputs at the
-  // interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
-  string password = 2 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.max_bytes = 72
-  ];
-  // Optional org-invite token. When present and valid, the new customer is
-  // added as a member of the invited org, the customer's email is auto-verified
-  // (inbox access proven by the invite delivery), and no default org/project
-  // is created. When the token is invalid, expired, or addressed to a different
-  // email, signup falls back to the normal default-org flow.
-  string invite_token = 3;
 }
 
-message SignUpWithEmailResponse {
-  string token = 1;
-}
+message RequestMagicLinkResponse {}
 
-message VerifyEmailRequest {
+message CompleteMagicLinkRequest {
   string token = 1 [(buf.validate.field).required = true];
 }
 
-message VerifyEmailResponse {}
-
-message RequestPasswordResetRequest {
-  string email = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.email = true
-  ];
+message CompleteMagicLinkResponse {
+  string token = 1; // session JWT
 }
-
-message RequestPasswordResetResponse {}
-
-message ResetPasswordRequest {
-  string token = 1 [(buf.validate.field).required = true];
-  // bcrypt accepts at most 72 bytes; rejecting longer inputs at the
-  // interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
-  string password = 2 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.max_bytes = 72
-  ];
-}
-
-message ResetPasswordResponse {}
-
-message ResendVerificationEmailRequest {
-  string email = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.email = true
-  ];
-}
-
-message ResendVerificationEmailResponse {}

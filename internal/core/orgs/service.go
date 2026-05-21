@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/emailaction"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -64,7 +64,6 @@ var (
 	ErrInviteExpired        = errors.New("invitation has expired")
 	ErrInviteNotFound       = errors.New("invitation not found")
 	ErrInviteNotPending     = errors.New("invitation is not pending")
-	ErrInviteWrongEmail     = errors.New("invitation was issued to a different email address")
 	// ErrLastAdmin is returned by both RemoveMemberSafe and Leave when the
 	// target is an admin and removing them would leave the org with zero
 	// admins. In Leave, this also takes precedence over ErrLastMember when
@@ -81,8 +80,7 @@ var (
 )
 
 const (
-	inviteTTL        = 7 * 24 * time.Hour
-	orgInvitePurpose = "org_invite"
+	inviteTTL = 7 * 24 * time.Hour
 
 	// Postgres constraint / index names used to disambiguate UniqueViolation
 	// errors. Kept narrow on purpose: catching a generic "unique violation"
@@ -94,7 +92,7 @@ const (
 	// Sources:
 	//   - org_members_pkey: auto-generated PK in schema/postgres/migrations/003_create_org_members.sql
 	//   - org_invitations_org_email_pending: named partial index in
-	//     schema/postgres/migrations/004_create_org_invitations.sql:13
+	//     schema/postgres/migrations/004_create_org_invitations.sql
 	orgMembersPKey              = "org_members_pkey"
 	orgInvitationsPendingUnique = "org_invitations_org_email_pending"
 )
@@ -112,8 +110,9 @@ type JobPublisher interface {
 
 // InviteDispatch bundles a persisted invitation with the raw (unhashed) token
 // it was issued under. The token hash lives in email_action_tokens; the raw
-// form is returned here so handlers can surface it to the inviter for
-// link-sharing without re-reading the DB.
+// form is returned so a caller could surface the invite link without re-reading
+// the DB. No RPC handler reads RawToken today — the invite email receives the
+// token directly at publish time — so it is currently consumed only by tests.
 type InviteDispatch struct {
 	Invitation dbwrite.OrgInvitation
 	RawToken   string
@@ -130,8 +129,9 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher JobPublisher) *
 
 // CreateOrgWithDefaultsInTx performs the org + admin member + default project
 // inserts inside an existing transaction. Caller owns the tx lifecycle.
-// Used by auth.SignUpWithEmail (which keeps customer + verify-token + org in
-// one tx) and by CreateOrgWithDefaults (which owns its own tx).
+// Used by auth.CompleteMagicLink (which provisions a default org for a brand-new
+// passwordless account in the same tx that consumes the magic-link token) and by
+// CreateOrgWithDefaults (which owns its own tx).
 func CreateOrgWithDefaultsInTx(
 	ctx context.Context,
 	w *dbwrite.Queries,
@@ -201,24 +201,6 @@ func (s *Service) CreateOrg(ctx context.Context, displayName string) (dbwrite.Or
 		ID:          xid.New().String(),
 		DisplayName: displayName,
 	})
-}
-
-func (s *Service) AddMember(ctx context.Context, orgID, customerID string, role Role) (dbwrite.OrgMember, error) {
-	member, err := s.write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID:      orgID,
-		CustomerID: customerID,
-		Role:       role.String(),
-	})
-	if err != nil {
-		if isUniqueViolationOn(err, orgMembersPKey) {
-			return dbwrite.OrgMember{}, ErrAlreadyMember
-		}
-		slog.ErrorContext(ctx, "failed to create org member", slogx.Error(err),
-			slog.String("org_id", orgID), slog.String("customer_id", customerID))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.OrgMember{}, err
-	}
-	return member, nil
 }
 
 // isUniqueViolationOn reports whether err is a Postgres unique-violation
@@ -413,6 +395,14 @@ func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 }
 
 func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email string) (InviteDispatch, error) {
+	return s.InviteMemberWithRole(ctx, orgID, inviterID, email, RoleMember)
+}
+
+func (s *Service) InviteMemberWithRole(ctx context.Context, orgID, inviterID, email string, role Role) (InviteDispatch, error) {
+	if !role.IsValid() {
+		return InviteDispatch{}, fmt.Errorf("orgs: invalid invitation role %q", role)
+	}
+
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin invite member transaction", slogx.Error(err))
@@ -439,6 +429,7 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 		OrgID:     orgID,
 		InviterID: postgres.NewOptionalText(inviterID),
 		Email:     email,
+		Role:      role.String(),
 		Token:     storageToken,
 		ExpiresAt: postgres.NewTimestamptz(time.Now().Add(inviteTTL)),
 	})
@@ -524,7 +515,7 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 
 	n, err := w.InvalidateActiveEmailActionTokensByInvitation(ctx, dbwrite.InvalidateActiveEmailActionTokensByInvitationParams{
 		OrgInvitationID: postgres.NewOptionalText(inv.ID),
-		Purpose:         orgInvitePurpose,
+		Purpose:         emailaction.PurposeOrgInvite.String(),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to invalidate org invite tokens", slogx.Error(err), slog.String("invitation_id", inv.ID))
@@ -532,16 +523,16 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 		return InviteDispatch{}, err
 	}
 	if n == 0 {
-		// Zero rows is benign in two cases: the invitation aged past inviteTTL while
-		// staying PENDING (the prior token's expires_at is now in the past, so the
-		// `expires_at > now()` filter on InvalidateActive skips it — see the
+		// Zero rows is benign in two cases: the invitation aged past inviteTTL
+		// while staying PENDING (the prior token's expires_at is now in the past,
+		// so the `expires_at > now()` filter on InvalidateActive skips it — see the
 		// resurrect-expired-invite flow in TestResendInviteExtendsExpiresAt), or a
-		// concurrent AcceptInvite raced ahead and consumed the prior token (the row
-		// lock on org_invitations serializes them but a marked-consumed row is still
-		// filtered out here). A genuine invariant violation — PENDING invitation with
-		// no token ever issued — would also land here. Surface for investigation
-		// without failing the resend; the freshly-issued token below restores the
-		// invariant in every case.
+		// concurrent magic-link acceptance (CompleteMagicLink) raced ahead and
+		// consumed the prior token (the row lock on org_invitations serializes them
+		// but a marked-consumed row is still filtered out here). A genuine invariant
+		// violation — PENDING invitation with no token ever issued — would also land
+		// here. Surface for investigation without failing the resend; the
+		// freshly-issued token below restores the invariant in every case.
 		slog.WarnContext(ctx, "resend invalidated no prior invite tokens",
 			slog.String("invitation_id", inv.ID))
 	}
@@ -559,128 +550,6 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 
 	s.publishInviteEmailJob(ctx, inv, rawToken)
 	return InviteDispatch{Invitation: inv, RawToken: rawToken}, nil
-}
-
-func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerEmail string) (dbread.Org, error) {
-	tx, err := s.pgW.Begin(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to begin accept invite transaction", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-	defer func() {
-		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "failed rolling back accept invite transaction", slogx.Error(err))
-			telemetry.RecordError(ctx, err)
-		}
-	}()
-
-	orgID, err := AcceptInviteInTx(ctx, dbread.New(tx), dbwrite.New(tx), token, customerID, customerEmail)
-	if err != nil {
-		return dbread.Org{}, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed to commit accept invite transaction", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-
-	// Read from write pool to avoid read-replica lag after the commit.
-	wOrg, err := s.write.GetOrgByID(ctx, orgID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("org_id", orgID))
-		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
-	}
-	return dbread.Org{
-		ID:          wOrg.ID,
-		DisplayName: wOrg.DisplayName,
-		CreateTime:  wOrg.CreateTime,
-		UpdateTime:  wOrg.UpdateTime,
-	}, nil
-}
-
-// AcceptInviteInTx performs the invite-acceptance side effects (member insert,
-// invitation status flip, email-action-token consumption) using the given
-// queries handles. Caller owns the tx lifecycle.
-//
-// Returns the org_id the customer was added to so callers can chain follow-up
-// work (e.g. fetching the org row outside the tx after commit) without an
-// extra lookup. Returns one of ErrInviteNotFound, ErrInviteNotPending,
-// ErrInviteExpired, ErrInviteWrongEmail, ErrAlreadyMember for client-input
-// failures; all other errors are logged + recorded at source.
-func AcceptInviteInTx(
-	ctx context.Context,
-	r *dbread.Queries,
-	w *dbwrite.Queries,
-	token, customerID, customerEmail string,
-) (string, error) {
-	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
-		TokenHash: hashInviteToken(token),
-		Purpose:   orgInvitePurpose,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrInviteNotFound
-		}
-		slog.ErrorContext(ctx, "failed to get org invite token", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	if !emailToken.OrgInvitationID.Valid {
-		return "", ErrInviteNotFound
-	}
-
-	inv, err := w.GetOrgInvitationByIDForUpdate(ctx, emailToken.OrgInvitationID.String)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrInviteNotFound
-		}
-		slog.ErrorContext(ctx, "failed to get org invitation by id", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	if !strings.EqualFold(inv.Email, customerEmail) {
-		return "", ErrInviteWrongEmail
-	}
-	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
-		return "", ErrInviteNotPending
-	}
-	if time.Now().After(inv.ExpiresAt.Time) {
-		return "", ErrInviteExpired
-	}
-
-	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID:      inv.OrgID,
-		CustomerID: customerID,
-		Role:       RoleMember.String(),
-	}); err != nil {
-		if isUniqueViolationOn(err, orgMembersPKey) {
-			return "", ErrAlreadyMember
-		}
-		slog.ErrorContext(ctx, "failed to create org member on invite accept", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	if _, err := w.UpdateOrgInvitationStatus(ctx, dbwrite.UpdateOrgInvitationStatusParams{
-		ID:     inv.ID,
-		Status: orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String(),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to update invitation status", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		slog.ErrorContext(ctx, "failed to consume org invite token", slogx.Error(err), slog.String("token_id", emailToken.ID))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	return inv.OrgID, nil
 }
 
 func (s *Service) ListInvitations(ctx context.Context, orgID string) ([]dbread.OrgInvitation, error) {
@@ -707,7 +576,7 @@ func (s *Service) issueInviteEmailToken(ctx context.Context, w *dbwrite.Queries,
 		ID:              xid.New().String(),
 		CustomerID:      postgres.NewOptionalText(""),
 		Email:           inv.Email,
-		Purpose:         orgInvitePurpose,
+		Purpose:         emailaction.PurposeOrgInvite.String(),
 		TokenHash:       hashInviteToken(rawToken),
 		OrgInvitationID: postgres.NewOptionalText(inv.ID),
 		ExpiresAt:       postgres.NewTimestamptz(inv.ExpiresAt.Time),

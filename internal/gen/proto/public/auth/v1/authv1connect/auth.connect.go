@@ -36,30 +36,19 @@ const (
 	// AuthServiceSignInWithEmailProcedure is the fully-qualified name of the AuthService's
 	// SignInWithEmail RPC.
 	AuthServiceSignInWithEmailProcedure = "/public.auth.v1.AuthService/SignInWithEmail"
-	// AuthServiceSignUpWithEmailProcedure is the fully-qualified name of the AuthService's
-	// SignUpWithEmail RPC.
-	AuthServiceSignUpWithEmailProcedure = "/public.auth.v1.AuthService/SignUpWithEmail"
-	// AuthServiceVerifyEmailProcedure is the fully-qualified name of the AuthService's VerifyEmail RPC.
-	AuthServiceVerifyEmailProcedure = "/public.auth.v1.AuthService/VerifyEmail"
-	// AuthServiceRequestPasswordResetProcedure is the fully-qualified name of the AuthService's
-	// RequestPasswordReset RPC.
-	AuthServiceRequestPasswordResetProcedure = "/public.auth.v1.AuthService/RequestPasswordReset"
-	// AuthServiceResetPasswordProcedure is the fully-qualified name of the AuthService's ResetPassword
-	// RPC.
-	AuthServiceResetPasswordProcedure = "/public.auth.v1.AuthService/ResetPassword"
-	// AuthServiceResendVerificationEmailProcedure is the fully-qualified name of the AuthService's
-	// ResendVerificationEmail RPC.
-	AuthServiceResendVerificationEmailProcedure = "/public.auth.v1.AuthService/ResendVerificationEmail"
+	// AuthServiceRequestMagicLinkProcedure is the fully-qualified name of the AuthService's
+	// RequestMagicLink RPC.
+	AuthServiceRequestMagicLinkProcedure = "/public.auth.v1.AuthService/RequestMagicLink"
+	// AuthServiceCompleteMagicLinkProcedure is the fully-qualified name of the AuthService's
+	// CompleteMagicLink RPC.
+	AuthServiceCompleteMagicLinkProcedure = "/public.auth.v1.AuthService/CompleteMagicLink"
 )
 
 // AuthServiceClient is a client for the public.auth.v1.AuthService service.
 type AuthServiceClient interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
-	SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error)
-	VerifyEmail(context.Context, *connect.Request[v1.VerifyEmailRequest]) (*connect.Response[v1.VerifyEmailResponse], error)
-	RequestPasswordReset(context.Context, *connect.Request[v1.RequestPasswordResetRequest]) (*connect.Response[v1.RequestPasswordResetResponse], error)
-	ResetPassword(context.Context, *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.ResetPasswordResponse], error)
-	ResendVerificationEmail(context.Context, *connect.Request[v1.ResendVerificationEmailRequest]) (*connect.Response[v1.ResendVerificationEmailResponse], error)
+	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
+	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
 }
 
 // NewAuthServiceClient constructs a client for the public.auth.v1.AuthService service. By default,
@@ -79,34 +68,16 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("SignInWithEmail")),
 			connect.WithClientOptions(opts...),
 		),
-		signUpWithEmail: connect.NewClient[v1.SignUpWithEmailRequest, v1.SignUpWithEmailResponse](
+		requestMagicLink: connect.NewClient[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse](
 			httpClient,
-			baseURL+AuthServiceSignUpWithEmailProcedure,
-			connect.WithSchema(authServiceMethods.ByName("SignUpWithEmail")),
+			baseURL+AuthServiceRequestMagicLinkProcedure,
+			connect.WithSchema(authServiceMethods.ByName("RequestMagicLink")),
 			connect.WithClientOptions(opts...),
 		),
-		verifyEmail: connect.NewClient[v1.VerifyEmailRequest, v1.VerifyEmailResponse](
+		completeMagicLink: connect.NewClient[v1.CompleteMagicLinkRequest, v1.CompleteMagicLinkResponse](
 			httpClient,
-			baseURL+AuthServiceVerifyEmailProcedure,
-			connect.WithSchema(authServiceMethods.ByName("VerifyEmail")),
-			connect.WithClientOptions(opts...),
-		),
-		requestPasswordReset: connect.NewClient[v1.RequestPasswordResetRequest, v1.RequestPasswordResetResponse](
-			httpClient,
-			baseURL+AuthServiceRequestPasswordResetProcedure,
-			connect.WithSchema(authServiceMethods.ByName("RequestPasswordReset")),
-			connect.WithClientOptions(opts...),
-		),
-		resetPassword: connect.NewClient[v1.ResetPasswordRequest, v1.ResetPasswordResponse](
-			httpClient,
-			baseURL+AuthServiceResetPasswordProcedure,
-			connect.WithSchema(authServiceMethods.ByName("ResetPassword")),
-			connect.WithClientOptions(opts...),
-		),
-		resendVerificationEmail: connect.NewClient[v1.ResendVerificationEmailRequest, v1.ResendVerificationEmailResponse](
-			httpClient,
-			baseURL+AuthServiceResendVerificationEmailProcedure,
-			connect.WithSchema(authServiceMethods.ByName("ResendVerificationEmail")),
+			baseURL+AuthServiceCompleteMagicLinkProcedure,
+			connect.WithSchema(authServiceMethods.ByName("CompleteMagicLink")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -114,12 +85,9 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // authServiceClient implements AuthServiceClient.
 type authServiceClient struct {
-	signInWithEmail         *connect.Client[v1.SignInWithEmailRequest, v1.SignInWithEmailResponse]
-	signUpWithEmail         *connect.Client[v1.SignUpWithEmailRequest, v1.SignUpWithEmailResponse]
-	verifyEmail             *connect.Client[v1.VerifyEmailRequest, v1.VerifyEmailResponse]
-	requestPasswordReset    *connect.Client[v1.RequestPasswordResetRequest, v1.RequestPasswordResetResponse]
-	resetPassword           *connect.Client[v1.ResetPasswordRequest, v1.ResetPasswordResponse]
-	resendVerificationEmail *connect.Client[v1.ResendVerificationEmailRequest, v1.ResendVerificationEmailResponse]
+	signInWithEmail   *connect.Client[v1.SignInWithEmailRequest, v1.SignInWithEmailResponse]
+	requestMagicLink  *connect.Client[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse]
+	completeMagicLink *connect.Client[v1.CompleteMagicLinkRequest, v1.CompleteMagicLinkResponse]
 }
 
 // SignInWithEmail calls public.auth.v1.AuthService.SignInWithEmail.
@@ -127,39 +95,21 @@ func (c *authServiceClient) SignInWithEmail(ctx context.Context, req *connect.Re
 	return c.signInWithEmail.CallUnary(ctx, req)
 }
 
-// SignUpWithEmail calls public.auth.v1.AuthService.SignUpWithEmail.
-func (c *authServiceClient) SignUpWithEmail(ctx context.Context, req *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error) {
-	return c.signUpWithEmail.CallUnary(ctx, req)
+// RequestMagicLink calls public.auth.v1.AuthService.RequestMagicLink.
+func (c *authServiceClient) RequestMagicLink(ctx context.Context, req *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error) {
+	return c.requestMagicLink.CallUnary(ctx, req)
 }
 
-// VerifyEmail calls public.auth.v1.AuthService.VerifyEmail.
-func (c *authServiceClient) VerifyEmail(ctx context.Context, req *connect.Request[v1.VerifyEmailRequest]) (*connect.Response[v1.VerifyEmailResponse], error) {
-	return c.verifyEmail.CallUnary(ctx, req)
-}
-
-// RequestPasswordReset calls public.auth.v1.AuthService.RequestPasswordReset.
-func (c *authServiceClient) RequestPasswordReset(ctx context.Context, req *connect.Request[v1.RequestPasswordResetRequest]) (*connect.Response[v1.RequestPasswordResetResponse], error) {
-	return c.requestPasswordReset.CallUnary(ctx, req)
-}
-
-// ResetPassword calls public.auth.v1.AuthService.ResetPassword.
-func (c *authServiceClient) ResetPassword(ctx context.Context, req *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.ResetPasswordResponse], error) {
-	return c.resetPassword.CallUnary(ctx, req)
-}
-
-// ResendVerificationEmail calls public.auth.v1.AuthService.ResendVerificationEmail.
-func (c *authServiceClient) ResendVerificationEmail(ctx context.Context, req *connect.Request[v1.ResendVerificationEmailRequest]) (*connect.Response[v1.ResendVerificationEmailResponse], error) {
-	return c.resendVerificationEmail.CallUnary(ctx, req)
+// CompleteMagicLink calls public.auth.v1.AuthService.CompleteMagicLink.
+func (c *authServiceClient) CompleteMagicLink(ctx context.Context, req *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error) {
+	return c.completeMagicLink.CallUnary(ctx, req)
 }
 
 // AuthServiceHandler is an implementation of the public.auth.v1.AuthService service.
 type AuthServiceHandler interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
-	SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error)
-	VerifyEmail(context.Context, *connect.Request[v1.VerifyEmailRequest]) (*connect.Response[v1.VerifyEmailResponse], error)
-	RequestPasswordReset(context.Context, *connect.Request[v1.RequestPasswordResetRequest]) (*connect.Response[v1.RequestPasswordResetResponse], error)
-	ResetPassword(context.Context, *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.ResetPasswordResponse], error)
-	ResendVerificationEmail(context.Context, *connect.Request[v1.ResendVerificationEmailRequest]) (*connect.Response[v1.ResendVerificationEmailResponse], error)
+	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
+	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
 }
 
 // NewAuthServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -175,50 +125,26 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("SignInWithEmail")),
 		connect.WithHandlerOptions(opts...),
 	)
-	authServiceSignUpWithEmailHandler := connect.NewUnaryHandler(
-		AuthServiceSignUpWithEmailProcedure,
-		svc.SignUpWithEmail,
-		connect.WithSchema(authServiceMethods.ByName("SignUpWithEmail")),
+	authServiceRequestMagicLinkHandler := connect.NewUnaryHandler(
+		AuthServiceRequestMagicLinkProcedure,
+		svc.RequestMagicLink,
+		connect.WithSchema(authServiceMethods.ByName("RequestMagicLink")),
 		connect.WithHandlerOptions(opts...),
 	)
-	authServiceVerifyEmailHandler := connect.NewUnaryHandler(
-		AuthServiceVerifyEmailProcedure,
-		svc.VerifyEmail,
-		connect.WithSchema(authServiceMethods.ByName("VerifyEmail")),
-		connect.WithHandlerOptions(opts...),
-	)
-	authServiceRequestPasswordResetHandler := connect.NewUnaryHandler(
-		AuthServiceRequestPasswordResetProcedure,
-		svc.RequestPasswordReset,
-		connect.WithSchema(authServiceMethods.ByName("RequestPasswordReset")),
-		connect.WithHandlerOptions(opts...),
-	)
-	authServiceResetPasswordHandler := connect.NewUnaryHandler(
-		AuthServiceResetPasswordProcedure,
-		svc.ResetPassword,
-		connect.WithSchema(authServiceMethods.ByName("ResetPassword")),
-		connect.WithHandlerOptions(opts...),
-	)
-	authServiceResendVerificationEmailHandler := connect.NewUnaryHandler(
-		AuthServiceResendVerificationEmailProcedure,
-		svc.ResendVerificationEmail,
-		connect.WithSchema(authServiceMethods.ByName("ResendVerificationEmail")),
+	authServiceCompleteMagicLinkHandler := connect.NewUnaryHandler(
+		AuthServiceCompleteMagicLinkProcedure,
+		svc.CompleteMagicLink,
+		connect.WithSchema(authServiceMethods.ByName("CompleteMagicLink")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/public.auth.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuthServiceSignInWithEmailProcedure:
 			authServiceSignInWithEmailHandler.ServeHTTP(w, r)
-		case AuthServiceSignUpWithEmailProcedure:
-			authServiceSignUpWithEmailHandler.ServeHTTP(w, r)
-		case AuthServiceVerifyEmailProcedure:
-			authServiceVerifyEmailHandler.ServeHTTP(w, r)
-		case AuthServiceRequestPasswordResetProcedure:
-			authServiceRequestPasswordResetHandler.ServeHTTP(w, r)
-		case AuthServiceResetPasswordProcedure:
-			authServiceResetPasswordHandler.ServeHTTP(w, r)
-		case AuthServiceResendVerificationEmailProcedure:
-			authServiceResendVerificationEmailHandler.ServeHTTP(w, r)
+		case AuthServiceRequestMagicLinkProcedure:
+			authServiceRequestMagicLinkHandler.ServeHTTP(w, r)
+		case AuthServiceCompleteMagicLinkProcedure:
+			authServiceCompleteMagicLinkHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -232,22 +158,10 @@ func (UnimplementedAuthServiceHandler) SignInWithEmail(context.Context, *connect
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.SignInWithEmail is not implemented"))
 }
 
-func (UnimplementedAuthServiceHandler) SignUpWithEmail(context.Context, *connect.Request[v1.SignUpWithEmailRequest]) (*connect.Response[v1.SignUpWithEmailResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.SignUpWithEmail is not implemented"))
+func (UnimplementedAuthServiceHandler) RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.RequestMagicLink is not implemented"))
 }
 
-func (UnimplementedAuthServiceHandler) VerifyEmail(context.Context, *connect.Request[v1.VerifyEmailRequest]) (*connect.Response[v1.VerifyEmailResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.VerifyEmail is not implemented"))
-}
-
-func (UnimplementedAuthServiceHandler) RequestPasswordReset(context.Context, *connect.Request[v1.RequestPasswordResetRequest]) (*connect.Response[v1.RequestPasswordResetResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.RequestPasswordReset is not implemented"))
-}
-
-func (UnimplementedAuthServiceHandler) ResetPassword(context.Context, *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.ResetPasswordResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.ResetPassword is not implemented"))
-}
-
-func (UnimplementedAuthServiceHandler) ResendVerificationEmail(context.Context, *connect.Request[v1.ResendVerificationEmailRequest]) (*connect.Response[v1.ResendVerificationEmailResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.ResendVerificationEmail is not implemented"))
+func (UnimplementedAuthServiceHandler) CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.CompleteMagicLink is not implemented"))
 }

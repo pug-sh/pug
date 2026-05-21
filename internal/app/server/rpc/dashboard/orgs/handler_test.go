@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
@@ -359,10 +358,7 @@ func TestLeaveHandlerNonMemberReturnsNotFound(t *testing.T) {
 	}
 }
 
-// TestAcceptInviteHandlerReturnsMemberRole pins that the accept-invite
-// response carries the caller's role (MEMBER, since the service hard-codes
-// the new member's role as MEMBER on invite acceptance).
-func TestAcceptInviteHandlerReturnsMemberRole(t *testing.T) {
+func TestInviteMemberHandlerAcceptsRole(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -370,49 +366,71 @@ func TestAcceptInviteHandlerReturnsMemberRole(t *testing.T) {
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
 	srv := orgshandler.NewServer(svc)
 
-	inviterID := seedRawCustomer(t, ctx, write, "inviter")
-	const inviteeEmail = "invitee@example.com"
-	inviteeID := xid.New().String()
-	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID:           inviteeID,
-		Email:        inviteeEmail,
-		DisplayName:  "",
-		PictureUri:   "",
-		PasswordHash: "x",
-	}); err != nil {
-		t.Fatalf("seed invitee: %v", err)
-	}
-	org, err := svc.CreateOrgWithDefaults(ctx, inviterID, "invite-handler")
+	adminID := seedRawCustomer(t, ctx, write, "role-inviter")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "role-invite-handler")
 	if err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
-	inv, err := svc.InviteMember(ctx, org.ID, inviterID, inviteeEmail)
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	resp, err := srv.InviteMember(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.InviteMemberRequest{
+			Email: proto.String("role-invitee@example.com"),
+			OrgId: proto.String(org.ID),
+			Role:  orgsv1.OrgRole_ORG_ROLE_ADMIN.Enum(),
+		}),
+	)
 	if err != nil {
 		t.Fatalf("InviteMember: %v", err)
 	}
-
-	invitee, err := read.GetCustomerByID(ctx, inviteeID)
-	if err != nil {
-		t.Fatalf("read invitee: %v", err)
-	}
-	resp, err := srv.AcceptInvite(
-		ctxWithCustomer(ctx, invitee),
-		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.RawToken)}),
-	)
-	if err != nil {
-		t.Fatalf("AcceptInvite: %v", err)
-	}
-	if got := resp.Msg.GetOrg().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_MEMBER {
-		t.Errorf("want role=MEMBER for accepted invite, got %v", got)
-	}
-	if got := resp.Msg.GetOrg().GetId(); got != org.ID {
-		t.Errorf("want org id=%q, got %q", org.ID, got)
+	if got := resp.Msg.GetInvitation().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_ADMIN {
+		t.Fatalf("invitation role = %v, want ADMIN", got)
 	}
 }
 
-// acceptStubPublisher discards published email jobs — AcceptInvite indirectly
-// goes through InviteMember which publishes; the test does not care about the
-// email side-effect, only the response shape.
+// InviteMember with the role field omitted (UNSPECIFIED on the wire) must default
+// to ORG_ROLE_MEMBER via inviteRoleFromProto — not be rejected. This is the whole
+// reason inviteRoleFromProto differs from roleFromProto.
+func TestInviteMemberHandlerDefaultsOmittedRoleToMember(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, &acceptStubPublisher{})
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	adminID := seedRawCustomer(t, ctx, write, "norole-inviter")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "norole-invite-handler")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	resp, err := srv.InviteMember(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.InviteMemberRequest{
+			Email: proto.String("norole-invitee@example.com"),
+			OrgId: proto.String(org.ID),
+			// Role intentionally omitted → UNSPECIFIED → should default to MEMBER.
+		}),
+	)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+	if got := resp.Msg.GetInvitation().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_MEMBER {
+		t.Fatalf("invitation role = %v, want MEMBER (omitted-role default)", got)
+	}
+}
+
+// acceptStubPublisher discards published email jobs. Used by invite-related
+// handler tests where the email side-effect is not under test.
 type acceptStubPublisher struct{}
 
 func (acceptStubPublisher) Publish(_ context.Context, _ string, _ []byte) error { return nil }
@@ -769,10 +787,6 @@ func TestHandlersRejectUnauthenticated(t *testing.T) {
 			}))
 			return err
 		}},
-		{"AcceptInvite", func() error {
-			_, err := srv.AcceptInvite(ctx, connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String("x")}))
-			return err
-		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -908,199 +922,6 @@ func TestRemoveMemberHandlerNotFound(t *testing.T) {
 	}
 }
 
-func TestAcceptInviteHandlerRejectsWrongEmail(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	h := setupOrgsBackend(t, &acceptStubPublisher{})
-	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc)
-
-	inviterID := seedRawCustomer(t, ctx, write, "inviter")
-	const issuedToEmail = "issued-to@example.com"
-	// Invitee customer has a different email than the invite's recipient.
-	invitee, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: xid.New().String(), Email: "different@example.com",
-		DisplayName: "", PictureUri: "", PasswordHash: "x",
-	})
-	if err != nil {
-		t.Fatalf("seed invitee: %v", err)
-	}
-	org, err := svc.CreateOrgWithDefaults(ctx, inviterID, "wrong-email")
-	if err != nil {
-		t.Fatalf("seed org: %v", err)
-	}
-	inv, err := svc.InviteMember(ctx, org.ID, inviterID, issuedToEmail)
-	if err != nil {
-		t.Fatalf("InviteMember: %v", err)
-	}
-
-	inviteeRead, err := read.GetCustomerByID(ctx, invitee.ID)
-	if err != nil {
-		t.Fatalf("read invitee: %v", err)
-	}
-	_, err = srv.AcceptInvite(
-		ctxWithCustomer(ctx, inviteeRead),
-		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.RawToken)}),
-	)
-	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
-		t.Fatalf("want apperr CodePermissionDenied for wrong-email invite, got %v (%T)", err, err)
-	}
-	if ae.Reason() != apperr.ReasonInvitationWrongEmail {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationWrongEmail)
-	}
-}
-
-// TestAcceptInviteHandlerRejectsExpired pins ErrInviteExpired →
-// CodeFailedPrecondition. Backdates the invitation's expires_at via raw SQL
-// to simulate a stale invite.
-func TestAcceptInviteHandlerRejectsExpired(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	h := setupOrgsBackend(t, &acceptStubPublisher{})
-	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc)
-
-	inviterID := seedRawCustomer(t, ctx, write, "inviter")
-	const inviteeEmail = "expired-invitee@example.com"
-	inviteeID := xid.New().String()
-	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: inviteeID, Email: inviteeEmail, DisplayName: "", PictureUri: "", PasswordHash: "x",
-	}); err != nil {
-		t.Fatalf("seed invitee: %v", err)
-	}
-	org, err := svc.CreateOrgWithDefaults(ctx, inviterID, "expired-invite")
-	if err != nil {
-		t.Fatalf("seed org: %v", err)
-	}
-	inv, err := svc.InviteMember(ctx, org.ID, inviterID, inviteeEmail)
-	if err != nil {
-		t.Fatalf("InviteMember: %v", err)
-	}
-
-	// Backdate both invitation and email_action_token expiry — the email
-	// action token's expires_at is checked first.
-	if _, err := h.pool.Exec(ctx,
-		`update org_invitations set expires_at = $1 where id = $2`,
-		time.Now().Add(-1*time.Hour), inv.Invitation.ID,
-	); err != nil {
-		t.Fatalf("backdate invitation: %v", err)
-	}
-	if _, err := h.pool.Exec(ctx,
-		`update email_action_tokens set expires_at = $1 where org_invitation_id = $2`,
-		time.Now().Add(-1*time.Hour), inv.Invitation.ID,
-	); err != nil {
-		t.Fatalf("backdate email_action_token: %v", err)
-	}
-
-	invitee, err := read.GetCustomerByID(ctx, inviteeID)
-	if err != nil {
-		t.Fatalf("read invitee: %v", err)
-	}
-	_, err = srv.AcceptInvite(
-		ctxWithCustomer(ctx, invitee),
-		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.RawToken)}),
-	)
-	// The email_action_token is filtered out by the "valid" query when expired,
-	// so the invitation lookup never sees the token — surfacing as
-	// ErrInviteNotFound → CodeNotFound. This pins the actual user-visible
-	// behavior for stale invites (the dashboard renders "invitation not found"
-	// rather than "expired", which is consistent with the security-by-design
-	// "no enumeration" stance for token lookups).
-	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
-		t.Fatalf("want apperr CodeNotFound for expired invite (via consumed-token path), got %v (%T)", err, err)
-	}
-	if ae.Reason() != apperr.ReasonInvitationNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationNotFound)
-	}
-}
-
-// TestAcceptInviteHandlerRejectsBogusToken pins ErrInviteNotFound →
-// CodeNotFound for a token that never existed.
-func TestAcceptInviteHandlerRejectsBogusToken(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	h := setupOrgsBackend(t, &acceptStubPublisher{})
-	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc)
-
-	inviteeID := seedRawCustomer(t, ctx, write, "invitee")
-	invitee, err := read.GetCustomerByID(ctx, inviteeID)
-	if err != nil {
-		t.Fatalf("read invitee: %v", err)
-	}
-
-	_, err = srv.AcceptInvite(
-		ctxWithCustomer(ctx, invitee),
-		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String("not-a-real-token")}),
-	)
-	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
-		t.Fatalf("want apperr CodeNotFound for bogus token, got %v (%T)", err, err)
-	}
-	if ae.Reason() != apperr.ReasonInvitationNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationNotFound)
-	}
-}
-
-// TestAcceptInviteHandlerRejectsReplay pins ErrInviteNotFound on a replay
-// after a successful accept (the email_action_token is consumed). The
-// service-level test TestAcceptInviteRejectsAlreadyAccepted covers the
-// service behavior; this pins the handler's CodeNotFound mapping.
-func TestAcceptInviteHandlerRejectsReplay(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	h := setupOrgsBackend(t, &acceptStubPublisher{})
-	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc)
-
-	inviterID := seedRawCustomer(t, ctx, write, "inviter")
-	const inviteeEmail = "replay-invitee@example.com"
-	inviteeID := xid.New().String()
-	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: inviteeID, Email: inviteeEmail, DisplayName: "", PictureUri: "", PasswordHash: "x",
-	}); err != nil {
-		t.Fatalf("seed invitee: %v", err)
-	}
-	org, err := svc.CreateOrgWithDefaults(ctx, inviterID, "replay-invite")
-	if err != nil {
-		t.Fatalf("seed org: %v", err)
-	}
-	inv, err := svc.InviteMember(ctx, org.ID, inviterID, inviteeEmail)
-	if err != nil {
-		t.Fatalf("InviteMember: %v", err)
-	}
-
-	invitee, err := read.GetCustomerByID(ctx, inviteeID)
-	if err != nil {
-		t.Fatalf("read invitee: %v", err)
-	}
-	// First accept succeeds.
-	if _, err := srv.AcceptInvite(
-		ctxWithCustomer(ctx, invitee),
-		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.RawToken)}),
-	); err != nil {
-		t.Fatalf("first AcceptInvite: %v", err)
-	}
-	// Second accept (replay) fails with NotFound — token is consumed.
-	_, err = srv.AcceptInvite(
-		ctxWithCustomer(ctx, invitee),
-		connect.NewRequest(&orgsv1.AcceptInviteRequest{Token: proto.String(inv.RawToken)}),
-	)
-	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
-		t.Fatalf("want apperr CodeNotFound on replay, got %v (%T)", err, err)
-	}
-	if ae.Reason() != apperr.ReasonInvitationNotFound {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationNotFound)
-	}
-}
-
 type handlerFixture struct {
 	svc           *coreorgs.Service
 	write         *dbwrite.Queries
@@ -1108,7 +929,6 @@ type handlerFixture struct {
 	memberCust    dbwrite.Customer
 	org           dbwrite.Org
 	invitationID  string
-	rawToken      string
 }
 
 func newHandlerFixture(t *testing.T) *handlerFixture {
@@ -1155,7 +975,7 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	return &handlerFixture{
 		svc: svc, write: write,
 		adminCustomer: admin, memberCust: member, org: org,
-		invitationID: dispatch.Invitation.ID, rawToken: dispatch.RawToken,
+		invitationID: dispatch.Invitation.ID,
 	}
 }
 
@@ -1288,22 +1108,18 @@ func TestResendInviteHandler_AcceptedReturnsFailedPrecondition(t *testing.T) {
 	f := newHandlerFixture(t)
 	ctx := context.Background()
 
-	// Create the acceptor as a real customer matching the invitee email so the
-	// email-equality guard inside AcceptInvite passes. The invitee email in
-	// newHandlerFixture is "invitee-"+orgID+"@example.com" — recompute it here.
-	acceptor, err := f.write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: xid.New().String(), Email: "invitee-" + f.org.ID + "@example.com",
-		DisplayName: "Acceptor", PasswordHash: "h",
-	})
-	if err != nil {
-		t.Fatalf("CreateCustomer acceptor: %v", err)
-	}
-	if _, err := f.svc.AcceptInvite(ctx, f.rawToken, acceptor.ID, acceptor.Email); err != nil {
-		t.Fatalf("AcceptInvite: %v", err)
+	// Flip the invitation status directly to ACCEPTED so ResendInvite sees a
+	// non-PENDING invitation. Acceptance now flows through magic links
+	// (CompleteMagicLink), so we simulate the terminal state via a raw update.
+	if _, err := f.write.UpdateOrgInvitationStatus(ctx, dbwrite.UpdateOrgInvitationStatusParams{
+		ID:     f.invitationID,
+		Status: orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String(),
+	}); err != nil {
+		t.Fatalf("flip invitation to ACCEPTED: %v", err)
 	}
 
 	srv := orgshandler.NewServer(f.svc)
-	_, err = srv.ResendInvite(
+	_, err := srv.ResendInvite(
 		principalCtx(ctx, f.adminCustomer),
 		connect.NewRequest(&orgsv1.ResendInviteRequest{
 			InvitationId: proto.String(f.invitationID),

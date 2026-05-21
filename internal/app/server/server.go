@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/grpcreflect"
 	"connectrpc.com/validate"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/customers"
 	dashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/dashboards"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
 	orgsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
@@ -25,6 +26,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/delivery"
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
+	corecustomers "github.com/pug-sh/pug/internal/core/customers"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/fallback"
 	"github.com/pug-sh/pug/internal/core/email/secret"
@@ -32,6 +34,7 @@ import (
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
@@ -158,6 +161,9 @@ func start(ctx context.Context, d *deps) error {
 		orgemailproviders.NewServer(orgsSvc, queriesRo, dbwrite.New(d.pgW), emailCipher, orgEmailRepo, emailMailer),
 		handlerOpts)
 
+	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
+		customers.NewServer(corecustomers.NewService(d.pgW)), handlerOpts)
+
 	// Shared
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
 	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
@@ -196,6 +202,7 @@ func start(ctx context.Context, d *deps) error {
 	mux.Handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
 	mux.Handle(dashboardsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
 	mux.Handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
+	mux.Handle(customersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(customersHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
 	mux.Handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
@@ -220,6 +227,7 @@ func start(ctx context.Context, d *deps) error {
 		projectsv1connect.ProjectsServiceName,
 		dashboardsv1connect.DashboardsServiceName,
 		orgemailprovidersv1connect.OrgEmailProvidersServiceName,
+		customersv1connect.CustomersServiceName,
 		// Shared
 		insightsv1connect.InsightsServiceName,
 		campaignsv1connect.CampaignServiceName,

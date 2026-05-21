@@ -16,12 +16,9 @@ import (
 // consumer-side so handlers can be unit-tested with a fake (instead of
 // re-implementing the mapping logic in tests).
 type authService interface {
-	SignUpWithEmail(ctx context.Context, email, password, inviteToken string) (string, error)
 	SignInWithEmail(ctx context.Context, email, password string) (string, error)
-	VerifyEmail(ctx context.Context, token string) error
-	RequestPasswordReset(ctx context.Context, email string) error
-	ResetPassword(ctx context.Context, token, password string) error
-	ResendVerificationEmail(ctx context.Context, email string) error
+	RequestMagicLink(ctx context.Context, email string) error
+	CompleteMagicLink(ctx context.Context, token string) (string, error)
 }
 
 type server struct {
@@ -34,23 +31,6 @@ func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *
 	return &server{
 		service: service,
 	}
-}
-
-func (s *server) SignUpWithEmail(
-	ctx context.Context,
-	req *connect.Request[authv1.SignUpWithEmailRequest],
-) (*connect.Response[authv1.SignUpWithEmailResponse], error) {
-	token, err := s.service.SignUpWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword(), req.Msg.GetInviteToken())
-	if err != nil {
-		if errors.Is(err, coreauth.ErrEmailAlreadyExists) {
-			return nil, apperr.AlreadyExists(apperr.ReasonAlreadyExists, "user with this email already exists") // apperr:exempt — pre-existing signup enumeration; see privacy-preserving-signup spec
-		}
-		if errors.Is(err, coreauth.ErrPasswordTooLong) {
-			return nil, apperr.Invalid(apperr.ReasonPasswordTooLong, "password must be 72 bytes or fewer")
-		}
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	return connect.NewResponse(&authv1.SignUpWithEmailResponse{Token: &token}), nil
 }
 
 func (s *server) SignInWithEmail(
@@ -67,51 +47,26 @@ func (s *server) SignInWithEmail(
 	return connect.NewResponse(&authv1.SignInWithEmailResponse{Token: &token}), nil
 }
 
-func (s *server) VerifyEmail(
+func (s *server) RequestMagicLink(
 	ctx context.Context,
-	req *connect.Request[authv1.VerifyEmailRequest],
-) (*connect.Response[authv1.VerifyEmailResponse], error) {
-	if err := s.service.VerifyEmail(ctx, req.Msg.GetToken()); err != nil {
+	req *connect.Request[authv1.RequestMagicLinkRequest],
+) (*connect.Response[authv1.RequestMagicLinkResponse], error) {
+	if err := s.service.RequestMagicLink(ctx, req.Msg.GetEmail()); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	return connect.NewResponse(&authv1.RequestMagicLinkResponse{}), nil
+}
+
+func (s *server) CompleteMagicLink(
+	ctx context.Context,
+	req *connect.Request[authv1.CompleteMagicLinkRequest],
+) (*connect.Response[authv1.CompleteMagicLinkResponse], error) {
+	token, err := s.service.CompleteMagicLink(ctx, req.Msg.GetToken())
+	if err != nil {
 		if errors.Is(err, coreauth.ErrInvalidToken) {
-			return nil, apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired token")
+			return nil, apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired link")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	return connect.NewResponse(&authv1.VerifyEmailResponse{}), nil
-}
-
-func (s *server) RequestPasswordReset(
-	ctx context.Context,
-	req *connect.Request[authv1.RequestPasswordResetRequest],
-) (*connect.Response[authv1.RequestPasswordResetResponse], error) {
-	if err := s.service.RequestPasswordReset(ctx, req.Msg.GetEmail()); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	return connect.NewResponse(&authv1.RequestPasswordResetResponse{}), nil
-}
-
-func (s *server) ResetPassword(
-	ctx context.Context,
-	req *connect.Request[authv1.ResetPasswordRequest],
-) (*connect.Response[authv1.ResetPasswordResponse], error) {
-	if err := s.service.ResetPassword(ctx, req.Msg.GetToken(), req.Msg.GetPassword()); err != nil {
-		if errors.Is(err, coreauth.ErrInvalidToken) {
-			return nil, apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired token")
-		}
-		if errors.Is(err, coreauth.ErrPasswordTooLong) {
-			return nil, apperr.Invalid(apperr.ReasonPasswordTooLong, "password must be 72 bytes or fewer")
-		}
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	return connect.NewResponse(&authv1.ResetPasswordResponse{}), nil
-}
-
-func (s *server) ResendVerificationEmail(
-	ctx context.Context,
-	req *connect.Request[authv1.ResendVerificationEmailRequest],
-) (*connect.Response[authv1.ResendVerificationEmailResponse], error) {
-	if err := s.service.ResendVerificationEmail(ctx, req.Msg.GetEmail()); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	return connect.NewResponse(&authv1.ResendVerificationEmailResponse{}), nil
+	return connect.NewResponse(&authv1.CompleteMagicLinkResponse{Token: &token}), nil
 }

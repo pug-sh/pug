@@ -94,6 +94,38 @@ func (q *Queries) CreateEmailActionToken(ctx context.Context, arg CreateEmailAct
 	return i, err
 }
 
+const getValidEmailActionTokenByHashForUpdate = `-- name: GetValidEmailActionTokenByHashForUpdate :one
+select id, customer_id, email, purpose, token_hash, org_invitation_id, expires_at, consumed_at, create_time
+from email_action_tokens
+where token_hash = $1
+  and consumed_at is null
+  and expires_at > now()
+for update
+`
+
+// Purpose-agnostic lookup that locks the row FOR UPDATE so concurrent
+// redemptions of the same token serialize: the first to commit consumes it, and
+// the rest re-read zero rows (consumed) and fail cleanly with ErrInvalidToken
+// instead of racing on a downstream unique violation (e.g. duplicate customer).
+// token_hash is unique, so the hash alone identifies the token; the caller
+// inspects the returned purpose to decide how to redeem it.
+func (q *Queries) GetValidEmailActionTokenByHashForUpdate(ctx context.Context, tokenHash string) (EmailActionToken, error) {
+	row := q.db.QueryRow(ctx, getValidEmailActionTokenByHashForUpdate, tokenHash)
+	var i EmailActionToken
+	err := row.Scan(
+		&i.ID,
+		&i.CustomerID,
+		&i.Email,
+		&i.Purpose,
+		&i.TokenHash,
+		&i.OrgInvitationID,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CreateTime,
+	)
+	return i, err
+}
+
 const invalidateActiveEmailActionTokensByCustomer = `-- name: InvalidateActiveEmailActionTokensByCustomer :execrows
 update email_action_tokens
 set consumed_at = now()

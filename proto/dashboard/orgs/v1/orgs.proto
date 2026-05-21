@@ -25,7 +25,6 @@ service OrgsService {
   rpc RemoveMember(RemoveMemberRequest) returns (RemoveMemberResponse) {}
   rpc InviteMember(InviteMemberRequest) returns (InviteMemberResponse) {}
   rpc ResendInvite(ResendInviteRequest) returns (ResendInviteResponse) {}
-  rpc AcceptInvite(AcceptInviteRequest) returns (AcceptInviteResponse) {}
   rpc ListInvitations(ListInvitationsRequest) returns (ListInvitationsResponse) {}
   rpc Create(CreateRequest) returns (CreateResponse) {}
   rpc Leave(LeaveRequest) returns (LeaveResponse) {}
@@ -52,6 +51,7 @@ message OrgInvitation {
   string id = 3;
   string org_id = 4;
   InvitationStatus status = 5;
+  OrgRole role = 6;
 }
 
 message ListRequest {}
@@ -102,6 +102,8 @@ message InviteMemberRequest {
     (buf.validate.field).string.email = true
   ];
   string org_id = 2 [(buf.validate.field).required = true];
+  // Optional; when omitted/UNSPECIFIED the invite is issued for ORG_ROLE_MEMBER.
+  OrgRole role = 3 [(buf.validate.field).enum.defined_only = true];
 }
 
 message InviteMemberResponse {
@@ -115,14 +117,6 @@ message ResendInviteRequest {
 
 message ResendInviteResponse {
   OrgInvitation invitation = 1;
-}
-
-message AcceptInviteRequest {
-  string token = 1 [(buf.validate.field).required = true];
-}
-
-message AcceptInviteResponse {
-  Org org = 1;
 }
 
 message ListInvitationsRequest {

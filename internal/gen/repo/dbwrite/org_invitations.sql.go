@@ -17,10 +17,10 @@ with check_member as (
   join customers c on c.id = om.customer_id
   where om.org_id = $5 and lower(c.email) = lower($1)
 )
-insert into org_invitations (email, expires_at, id, inviter_id, org_id, token)
-select $1, $2, $3, $4, $5, $6
+insert into org_invitations (email, expires_at, id, inviter_id, org_id, role, token)
+select $1, $2, $3, $4, $5, $6, $7
 where not exists (select 1 from check_member)
-returning create_time, email, expires_at, id, inviter_id, org_id, status, token
+returning create_time, email, expires_at, id, inviter_id, org_id, status, token, role
 `
 
 type CreateOrgInvitationParams struct {
@@ -29,6 +29,7 @@ type CreateOrgInvitationParams struct {
 	ID        string
 	InviterID pgtype.Text
 	OrgID     string
+	Role      string
 	Token     string
 }
 
@@ -39,6 +40,7 @@ func (q *Queries) CreateOrgInvitation(ctx context.Context, arg CreateOrgInvitati
 		arg.ID,
 		arg.InviterID,
 		arg.OrgID,
+		arg.Role,
 		arg.Token,
 	)
 	var i OrgInvitation
@@ -51,12 +53,13 @@ func (q *Queries) CreateOrgInvitation(ctx context.Context, arg CreateOrgInvitati
 		&i.OrgID,
 		&i.Status,
 		&i.Token,
+		&i.Role,
 	)
 	return i, err
 }
 
 const getOrgInvitationByIDForUpdate = `-- name: GetOrgInvitationByIDForUpdate :one
-select create_time, email, expires_at, id, inviter_id, org_id, status, token from org_invitations where id = $1 for update
+select create_time, email, expires_at, id, inviter_id, org_id, status, token, role from org_invitations where id = $1 for update
 `
 
 func (q *Queries) GetOrgInvitationByIDForUpdate(ctx context.Context, id string) (OrgInvitation, error) {
@@ -71,12 +74,13 @@ func (q *Queries) GetOrgInvitationByIDForUpdate(ctx context.Context, id string) 
 		&i.OrgID,
 		&i.Status,
 		&i.Token,
+		&i.Role,
 	)
 	return i, err
 }
 
 const getOrgInvitationByTokenForUpdate = `-- name: GetOrgInvitationByTokenForUpdate :one
-select create_time, email, expires_at, id, inviter_id, org_id, status, token from org_invitations where token = $1 for update
+select create_time, email, expires_at, id, inviter_id, org_id, status, token, role from org_invitations where token = $1 for update
 `
 
 func (q *Queries) GetOrgInvitationByTokenForUpdate(ctx context.Context, token string) (OrgInvitation, error) {
@@ -91,6 +95,7 @@ func (q *Queries) GetOrgInvitationByTokenForUpdate(ctx context.Context, token st
 		&i.OrgID,
 		&i.Status,
 		&i.Token,
+		&i.Role,
 	)
 	return i, err
 }
@@ -100,7 +105,7 @@ update org_invitations
 set expires_at = $1,
     token = $2
 where id = $3
-returning create_time, email, expires_at, id, inviter_id, org_id, status, token
+returning create_time, email, expires_at, id, inviter_id, org_id, status, token, role
 `
 
 type RefreshOrgInvitationDeliveryParams struct {
@@ -121,13 +126,14 @@ func (q *Queries) RefreshOrgInvitationDelivery(ctx context.Context, arg RefreshO
 		&i.OrgID,
 		&i.Status,
 		&i.Token,
+		&i.Role,
 	)
 	return i, err
 }
 
 const updateOrgInvitationStatus = `-- name: UpdateOrgInvitationStatus :one
 update org_invitations set status = $1 where id = $2
-returning create_time, email, expires_at, id, inviter_id, org_id, status, token
+returning create_time, email, expires_at, id, inviter_id, org_id, status, token, role
 `
 
 type UpdateOrgInvitationStatusParams struct {
@@ -147,6 +153,7 @@ func (q *Queries) UpdateOrgInvitationStatus(ctx context.Context, arg UpdateOrgIn
 		&i.OrgID,
 		&i.Status,
 		&i.Token,
+		&i.Role,
 	)
 	return i, err
 }
