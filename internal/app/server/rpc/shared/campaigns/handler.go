@@ -7,22 +7,35 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/core/campaigns"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	campaignsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/campaigns/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// campaignService is the campaigns.Service surface the handler depends on,
+// defined consumer-side so handlers can be unit-tested with a fake.
+type campaignService interface {
+	CreateCampaign(ctx context.Context, arg dbwrite.CreateCampaignParams) (dbwrite.Campaign, error)
+	GetCampaignByIDAndProjectID(ctx context.Context, id, projectID string) (dbread.Campaign, error)
+	GetCampaignsByProjectID(ctx context.Context, projectID string) ([]dbread.Campaign, error)
+	DeleteCampaign(ctx context.Context, id, projectID string) error
+	UpdateCampaign(ctx context.Context, arg dbwrite.UpdateCampaignParams) (dbwrite.Campaign, error)
+}
+
 type server struct {
-	service  *campaigns.Service
+	service  campaignService
 	producer jetstream.JetStream
 }
 
@@ -32,12 +45,16 @@ func (s *server) Get(
 ) (*connect.Response[campaignsv1.GetResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	campaignID := req.Msg.GetId()
 	campaign, err := s.service.GetCampaignByIDAndProjectID(ctx, campaignID, principal.Project.ID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, apperr.NotFound(apperr.ReasonCampaignNotFound, "campaign not found",
+				apperr.Resource("campaign", campaignID))
+		}
 		slog.ErrorContext(ctx, "failed getting campaign", slogx.Error(err), slog.String("campaign_id", campaignID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
@@ -61,7 +78,7 @@ func (s *server) BatchGet(
 ) (*connect.Response[campaignsv1.BatchGetResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	projectID := principal.Project.ID
@@ -95,7 +112,7 @@ func (s *server) Create(
 ) (*connect.Response[campaignsv1.CreateResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	projectID := principal.Project.ID
@@ -109,7 +126,7 @@ func (s *server) Create(
 
 	var notificationData map[string]any
 	if err := json.Unmarshal(req.Msg.GetNotificationData(), &notificationData); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, apperr.Invalid(apperr.ReasonInvalidNotificationData, "notification_data is not valid JSON")
 	}
 
 	campaign, err := s.service.CreateCampaign(ctx, dbwrite.CreateCampaignParams{
@@ -143,7 +160,7 @@ func (s *server) Delete(
 ) (*connect.Response[campaignsv1.DeleteResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	projectID := principal.Project.ID
@@ -167,7 +184,7 @@ func (s *server) Update(
 ) (*connect.Response[campaignsv1.UpdateResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	// SQL uses COALESCE to preserve existing values for empty/null fields

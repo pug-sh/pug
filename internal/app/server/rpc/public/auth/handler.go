@@ -6,13 +6,26 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
 )
 
+// authService is the coreauth.Service surface the handler depends on, defined
+// consumer-side so handlers can be unit-tested with a fake (instead of
+// re-implementing the mapping logic in tests).
+type authService interface {
+	SignUpWithEmail(ctx context.Context, email, password, inviteToken string) (string, error)
+	SignInWithEmail(ctx context.Context, email, password string) (string, error)
+	VerifyEmail(ctx context.Context, token string) error
+	RequestPasswordReset(ctx context.Context, email string) error
+	ResetPassword(ctx context.Context, token, password string) error
+	ResendVerificationEmail(ctx context.Context, email string) error
+}
+
 type server struct {
-	service *coreauth.Service
+	service authService
 }
 
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient) *server {
@@ -30,10 +43,10 @@ func (s *server) SignUpWithEmail(
 	token, err := s.service.SignUpWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword(), req.Msg.GetInviteToken())
 	if err != nil {
 		if errors.Is(err, coreauth.ErrEmailAlreadyExists) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("user with this email already exists"))
+			return nil, apperr.AlreadyExists(apperr.ReasonAlreadyExists, "user with this email already exists") // apperr:exempt — pre-existing signup enumeration; see privacy-preserving-signup spec
 		}
 		if errors.Is(err, coreauth.ErrPasswordTooLong) {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("password must be 72 bytes or fewer"))
+			return nil, apperr.Invalid(apperr.ReasonPasswordTooLong, "password must be 72 bytes or fewer")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -47,7 +60,7 @@ func (s *server) SignInWithEmail(
 	token, err := s.service.SignInWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword())
 	if err != nil {
 		if errors.Is(err, coreauth.ErrInvalidCredentials) {
-			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
+			return nil, apperr.Unauthenticated(apperr.ReasonInvalidCredentials, "invalid credentials")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -60,7 +73,7 @@ func (s *server) VerifyEmail(
 ) (*connect.Response[authv1.VerifyEmailResponse], error) {
 	if err := s.service.VerifyEmail(ctx, req.Msg.GetToken()); err != nil {
 		if errors.Is(err, coreauth.ErrInvalidToken) {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid or expired token"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired token")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -83,10 +96,10 @@ func (s *server) ResetPassword(
 ) (*connect.Response[authv1.ResetPasswordResponse], error) {
 	if err := s.service.ResetPassword(ctx, req.Msg.GetToken(), req.Msg.GetPassword()); err != nil {
 		if errors.Is(err, coreauth.ErrInvalidToken) {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid or expired token"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired token")
 		}
 		if errors.Is(err, coreauth.ErrPasswordTooLong) {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("password must be 72 bytes or fewer"))
+			return nil, apperr.Invalid(apperr.ReasonPasswordTooLong, "password must be 72 bytes or fewer")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

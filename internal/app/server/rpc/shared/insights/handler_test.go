@@ -9,10 +9,10 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
-	"github.com/pug-sh/pug/internal/gen/repo/dbread"
-
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
 func TestQuery_Unauthenticated(t *testing.T) {
@@ -21,8 +21,9 @@ func TestQuery_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 
@@ -32,8 +33,9 @@ func TestSegmentUsers_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 
@@ -43,8 +45,9 @@ func TestGetFilterSchema_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 
@@ -54,8 +57,9 @@ func TestGetPropertyValues_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 
@@ -99,5 +103,37 @@ func TestQuery_UnsupportedInsightType(t *testing.T) {
 	}
 	if code := connect.CodeOf(err); code != connect.CodeInternal {
 		t.Errorf("got code %v, want CodeInternal", code)
+	}
+}
+
+// TestQuery_InvalidBuildError verifies that a Build*Query failure returns CodeInvalidArgument
+// tagged with ReasonInvalidInsightQuery. A trends request with a filter group that has no
+// filters bypasses protovalidate (this test calls the handler directly) and triggers the
+// builder error path, exercising the apperr.Invalid conversion for all Build* sites.
+func TestQuery_InvalidBuildError(t *testing.T) {
+	ctx := authn.SetInfo(context.Background(), &rpc.Principal{
+		Project: &dbread.Project{ID: "test-project"},
+	})
+	s := &server{}
+	insightType := insightsv1.InsightType_INSIGHT_TYPE_TRENDS
+	_, err := s.Query(ctx, connect.NewRequest(&insightsv1.QueryRequest{
+		InsightType: &insightType,
+		// A filter group with no filters triggers "group must contain at least one filter"
+		// inside buildSingleFilterGroupCondition — this exercises the slog.WarnContext +
+		// apperr.Invalid(ReasonInvalidInsightQuery, ...) path.
+		FilterGroups: []*insightsv1.FilterGroup{{}},
+	}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want apperr.Error, got %T: %v", err, err)
+	}
+	if ae.Code() != connect.CodeInvalidArgument {
+		t.Errorf("want CodeInvalidArgument, got %v", ae.Code())
+	}
+	if ae.Reason() != apperr.ReasonInvalidInsightQuery {
+		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidInsightQuery, ae.Reason())
 	}
 }

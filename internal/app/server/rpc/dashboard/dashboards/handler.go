@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
@@ -45,7 +46,7 @@ func (s *Server) Create(
 	}
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	dashboard, err := s.service.CreateDashboard(ctx, principal.Project.ID, req.Msg.GetDisplayName(), req.Msg.GetDescription())
@@ -67,7 +68,7 @@ func (s *Server) List(
 	}
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	dashboards, err := s.service.ListDashboards(ctx, principal.Project.ID)
@@ -98,13 +99,13 @@ func (s *Server) Get(
 	}
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	dashboard, err := s.service.GetDashboard(ctx, principal.Project.ID, req.Msg.GetId())
 	if err != nil {
 		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard not found"))
+			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetId()))
 		}
 		return nil, serviceErrToConnect(err)
 	}
@@ -128,13 +129,13 @@ func (s *Server) UpdateDisplayName(
 	}
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	dashboard, err := s.service.UpdateDashboardDisplayName(ctx, principal.Project.ID, req.Msg.GetId(), req.Msg.GetDisplayName(), req.Msg.GetDescription())
 	if err != nil {
 		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard not found"))
+			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetId()))
 		}
 		return nil, serviceErrToConnect(err)
 	}
@@ -158,12 +159,12 @@ func (s *Server) Delete(
 	}
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	if err := s.service.DeleteDashboard(ctx, principal.Project.ID, req.Msg.GetId()); err != nil {
 		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard not found"))
+			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetId()))
 		}
 		return nil, serviceErrToConnect(err)
 	}
@@ -180,13 +181,13 @@ func (s *Server) CreateTile(
 	}
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	content, err := tileContentFromCreateRPC(req.Msg.GetContent())
 	if err != nil {
 		slog.WarnContext(ctx, "invalid tile content", slogx.Error(err), slog.String("dashboard_id", req.Msg.GetDashboardId()))
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("tile content required"))
+		return nil, apperr.Invalid(apperr.ReasonInvalidTileContent, "tile content required")
 	}
 
 	tile, err := s.service.CreateDashboardTile(
@@ -201,9 +202,9 @@ func (s *Server) CreateTile(
 	if err != nil {
 		switch {
 		case errors.Is(err, coreprojects.ErrDashboardNotFound):
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard not found"))
+			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetDashboardId()))
 		case errors.Is(err, coreprojects.ErrDashboardTileDisplayNameConflict):
-			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("tile display name already in use"))
+			return nil, apperr.AlreadyExists(apperr.ReasonDashboardTileNameConflict, "tile display name already in use")
 		}
 		// Service already logged + recorded; do not duplicate.
 		return nil, serviceErrToConnect(err)
@@ -232,13 +233,13 @@ func (s *Server) UpdateTile(
 	}
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	content, err := tileContentFromUpdateRPC(req.Msg.GetContent())
 	if err != nil {
 		slog.WarnContext(ctx, "invalid tile content", slogx.Error(err), slog.String("tile_id", req.Msg.GetId()))
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("tile content required"))
+		return nil, apperr.Invalid(apperr.ReasonInvalidTileContent, "tile content required")
 	}
 
 	tile, err := s.service.UpdateDashboardTile(
@@ -254,9 +255,9 @@ func (s *Server) UpdateTile(
 	if err != nil {
 		switch {
 		case errors.Is(err, coreprojects.ErrDashboardTileNotFound):
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard tile not found"))
+			return nil, apperr.NotFound(apperr.ReasonDashboardTileNotFound, "dashboard tile not found", apperr.Resource("dashboard_tile", req.Msg.GetId()))
 		case errors.Is(err, coreprojects.ErrDashboardTileDisplayNameConflict):
-			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("tile display name already in use"))
+			return nil, apperr.AlreadyExists(apperr.ReasonDashboardTileNameConflict, "tile display name already in use")
 		}
 		// Service already logged + recorded; do not duplicate.
 		return nil, serviceErrToConnect(err)
@@ -285,12 +286,12 @@ func (s *Server) DeleteTile(
 	}
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	if err := s.service.DeleteDashboardTile(ctx, principal.Project.ID, req.Msg.GetDashboardId(), req.Msg.GetId()); err != nil {
 		if errors.Is(err, coreprojects.ErrDashboardTileNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("dashboard tile not found"))
+			return nil, apperr.NotFound(apperr.ReasonDashboardTileNotFound, "dashboard tile not found", apperr.Resource("dashboard_tile", req.Msg.GetId()))
 		}
 		return nil, serviceErrToConnect(err)
 	}

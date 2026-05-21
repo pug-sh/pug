@@ -78,7 +78,9 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	if serviceName == "" {
 		slog.WarnContext(ctx, "OTEL_SERVICE_NAME is not set; traces, metrics, and logs will lack a service name identifier")
 	}
-	slog.SetDefault(otelslog.NewLogger(serviceName, otelslog.WithLoggerProvider(loggerProvider), otelslog.WithSource(true)))
+	slog.SetDefault(slog.New(newCorrelationHandler(
+		otelslog.NewHandler(serviceName, otelslog.WithLoggerProvider(loggerProvider), otelslog.WithSource(true)),
+	)))
 
 	shutdown := func(ctx context.Context) error {
 		var errs []error
