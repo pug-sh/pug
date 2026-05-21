@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/deps/telemetry"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -47,6 +48,24 @@ const (
 	TileViewModeBarGrouped  TileViewMode = 3
 	TileViewModeBarStacked  TileViewMode = 4
 	TileViewModeTable       TileViewMode = 5
+)
+
+// TileDefaultTimeRange mirrors common.v1.TimeRangePreset in the DB column.
+type TileDefaultTimeRange int16
+
+const (
+	TileDefaultTimeRangeUnspecified TileDefaultTimeRange = 0
+	TileDefaultTimeRangeLast1Hour   TileDefaultTimeRange = 1
+	TileDefaultTimeRangeLast6Hours  TileDefaultTimeRange = 2
+	TileDefaultTimeRangeLast24Hours TileDefaultTimeRange = 3
+	TileDefaultTimeRangeYesterday   TileDefaultTimeRange = 4
+	TileDefaultTimeRangeLast7Days   TileDefaultTimeRange = 5
+	TileDefaultTimeRangeLast14Days  TileDefaultTimeRange = 6
+	TileDefaultTimeRangeLastWeek    TileDefaultTimeRange = 7
+	TileDefaultTimeRangeLastMonth   TileDefaultTimeRange = 8
+	TileDefaultTimeRangeLast3Months TileDefaultTimeRange = 9
+	TileDefaultTimeRangeLast6Months TileDefaultTimeRange = 10
+	TileDefaultTimeRangeLastYear    TileDefaultTimeRange = 11
 )
 
 // TileContent is a sealed sum type for tile payloads. Encode() returns the
@@ -298,6 +317,7 @@ func (s *Service) CreateDashboardTile(
 	projectID, dashboardID, displayName, description string,
 	content TileContent,
 	viewMode dashboardsv1.DashboardTileViewMode,
+	defaultTimeRange commonv1.TimeRangePreset,
 	layouts []*dashboardsv1.ResponsiveGridLayout,
 ) (dbwrite.DashboardTile, error) {
 	enc, err := content.Encode()
@@ -312,18 +332,20 @@ func (s *Service) CreateDashboardTile(
 	}
 	layoutsMap := LayoutsToMap(layouts)
 	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
+	normalizedDefaultTimeRange := normalizedTileDefaultTimeRange(enc.Kind, defaultTimeRange)
 
 	tile, err := s.write.CreateDashboardTile(ctx, dbwrite.CreateDashboardTileParams{
-		ID:           xid.New().String(),
-		DashboardID:  dashboardID,
-		ProjectID:    projectID,
-		Kind:         int16(enc.Kind),
-		ViewMode:     int16(normalizedViewMode),
-		DisplayName:  displayName,
-		Description:  description,
-		InsightQuery: enc.InsightQuery,
-		MarkdownBody: enc.MarkdownBody,
-		Layouts:      layoutsMap,
+		ID:               xid.New().String(),
+		DashboardID:      dashboardID,
+		ProjectID:        projectID,
+		Kind:             int16(enc.Kind),
+		ViewMode:         int16(normalizedViewMode),
+		DefaultTimeRange: int16(normalizedDefaultTimeRange),
+		DisplayName:      displayName,
+		Description:      description,
+		InsightQuery:     enc.InsightQuery,
+		MarkdownBody:     enc.MarkdownBody,
+		Layouts:          layoutsMap,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -352,6 +374,7 @@ func (s *Service) UpdateDashboardTile(
 	projectID, dashboardID, tileID, displayName, description string,
 	content TileContent,
 	viewMode dashboardsv1.DashboardTileViewMode,
+	defaultTimeRange commonv1.TimeRangePreset,
 	layouts []*dashboardsv1.ResponsiveGridLayout,
 ) (dbwrite.DashboardTile, error) {
 	enc, err := content.Encode()
@@ -367,18 +390,20 @@ func (s *Service) UpdateDashboardTile(
 	}
 	layoutsMap := LayoutsToMap(layouts)
 	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
+	normalizedDefaultTimeRange := normalizedTileDefaultTimeRange(enc.Kind, defaultTimeRange)
 
 	tile, err := s.write.UpdateDashboardTile(ctx, dbwrite.UpdateDashboardTileParams{
-		ID:           tileID,
-		DashboardID:  dashboardID,
-		ProjectID:    projectID,
-		Kind:         int16(enc.Kind),
-		ViewMode:     int16(normalizedViewMode),
-		DisplayName:  displayName,
-		Description:  description,
-		InsightQuery: enc.InsightQuery,
-		MarkdownBody: enc.MarkdownBody,
-		Layouts:      layoutsMap,
+		ID:               tileID,
+		DashboardID:      dashboardID,
+		ProjectID:        projectID,
+		Kind:             int16(enc.Kind),
+		ViewMode:         int16(normalizedViewMode),
+		DefaultTimeRange: int16(normalizedDefaultTimeRange),
+		DisplayName:      displayName,
+		Description:      description,
+		InsightQuery:     enc.InsightQuery,
+		MarkdownBody:     enc.MarkdownBody,
+		Layouts:          layoutsMap,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -458,10 +483,6 @@ func QueryMessageToMap(msg *insightsv1.QueryRequest) (map[string]any, error) {
 	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, err
 	}
-	// Dashboard tiles reuse shared QueryRequest on the wire, but dashboards apply
-	// a shared time range and granularity across all tiles, so per-tile
-	// granularity is intentionally not persisted in tile JSON.
-	delete(out, "granularity")
 	return out, nil
 }
 
@@ -501,6 +522,42 @@ func normalizedTileViewMode(kind TileKind, viewMode dashboardsv1.DashboardTileVi
 		return TileViewModeUnspecified
 	default:
 		return TileViewModeUnspecified
+	}
+}
+
+func normalizedTileDefaultTimeRange(kind TileKind, defaultTimeRange commonv1.TimeRangePreset) TileDefaultTimeRange {
+	switch kind {
+	case TileKindInsight:
+		switch defaultTimeRange {
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR:
+			return TileDefaultTimeRangeLast1Hour
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS:
+			return TileDefaultTimeRangeLast6Hours
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS:
+			return TileDefaultTimeRangeLast24Hours
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_YESTERDAY:
+			return TileDefaultTimeRangeYesterday
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS:
+			return TileDefaultTimeRangeLast7Days
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS:
+			return TileDefaultTimeRangeLast14Days
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_WEEK:
+			return TileDefaultTimeRangeLastWeek
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH:
+			return TileDefaultTimeRangeLastMonth
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_3_MONTHS:
+			return TileDefaultTimeRangeLast3Months
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_MONTHS:
+			return TileDefaultTimeRangeLast6Months
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_YEAR:
+			return TileDefaultTimeRangeLastYear
+		default:
+			return TileDefaultTimeRangeLastMonth
+		}
+	case TileKindMarkdown:
+		return TileDefaultTimeRangeUnspecified
+	default:
+		return TileDefaultTimeRangeUnspecified
 	}
 }
 

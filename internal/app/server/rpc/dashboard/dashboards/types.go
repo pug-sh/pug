@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -61,6 +62,10 @@ func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error)
 		CreateTime:  toTimestamp(tile.CreateTime.Time),
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
 		ViewMode:    tileViewModeToRPC(coreprojects.TileKind(tile.Kind), tile.ViewMode).Enum(),
+		DefaultTimeRange: tileDefaultTimeRangeToRPC(
+			coreprojects.TileKind(tile.Kind),
+			tile.DefaultTimeRange,
+		).Enum(),
 	}
 	if err := setTileContent(msg, tile.ID, coreprojects.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
@@ -82,6 +87,10 @@ func wTileToRPC(tile dbwrite.DashboardTile) (*dashboardsv1.DashboardTile, error)
 		CreateTime:  toTimestamp(tile.CreateTime.Time),
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
 		ViewMode:    tileViewModeToRPC(coreprojects.TileKind(tile.Kind), tile.ViewMode).Enum(),
+		DefaultTimeRange: tileDefaultTimeRangeToRPC(
+			coreprojects.TileKind(tile.Kind),
+			tile.DefaultTimeRange,
+		).Enum(),
 	}
 	if err := setTileContent(msg, tile.ID, coreprojects.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
@@ -142,6 +151,42 @@ func tileViewModeToRPC(kind coreprojects.TileKind, raw int16) dashboardsv1.Dashb
 		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED
 	default:
 		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED
+	}
+}
+
+func tileDefaultTimeRangeToRPC(kind coreprojects.TileKind, raw int16) commonv1.TimeRangePreset {
+	switch kind {
+	case coreprojects.TileKindInsight:
+		switch coreprojects.TileDefaultTimeRange(raw) {
+		case coreprojects.TileDefaultTimeRangeLast1Hour:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR
+		case coreprojects.TileDefaultTimeRangeLast6Hours:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS
+		case coreprojects.TileDefaultTimeRangeLast24Hours:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS
+		case coreprojects.TileDefaultTimeRangeYesterday:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_YESTERDAY
+		case coreprojects.TileDefaultTimeRangeLast7Days:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS
+		case coreprojects.TileDefaultTimeRangeLast14Days:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS
+		case coreprojects.TileDefaultTimeRangeLastWeek:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_WEEK
+		case coreprojects.TileDefaultTimeRangeLastMonth:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH
+		case coreprojects.TileDefaultTimeRangeLast3Months:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_3_MONTHS
+		case coreprojects.TileDefaultTimeRangeLast6Months:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_MONTHS
+		case coreprojects.TileDefaultTimeRangeLastYear:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_YEAR
+		default:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH
+		}
+	case coreprojects.TileKindMarkdown:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED
+	default:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED
 	}
 }
 

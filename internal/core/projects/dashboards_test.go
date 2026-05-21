@@ -36,8 +36,8 @@ func TestEncodeTileContent_Insight(t *testing.T) {
 	if enc.InsightQuery["insightType"] != "INSIGHT_TYPE_TRENDS" {
 		t.Errorf("InsightQuery[insightType] = %v, want INSIGHT_TYPE_TRENDS", enc.InsightQuery["insightType"])
 	}
-	if _, ok := enc.InsightQuery["granularity"]; ok {
-		t.Errorf("InsightQuery unexpectedly contains granularity: %v", enc.InsightQuery["granularity"])
+	if enc.InsightQuery["granularity"] != "GRANULARITY_DAY" {
+		t.Errorf("InsightQuery[granularity] = %v, want GRANULARITY_DAY", enc.InsightQuery["granularity"])
 	}
 }
 

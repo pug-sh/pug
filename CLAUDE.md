@@ -177,6 +177,10 @@ The request-side `QueryRequest.conversion_window` is also a `google.protobuf.Dur
 - The caps fire for any `QueryRequest` regardless of `insight_type`, so funnel/segmentation requests with an oversized `granularity`/`time_range` combo are also rejected even though those insight types ignore granularity at query-build time.
 - `GRANULARITY_UNSPECIFIED` is rejected at the field level via `not_in: [0]` — clients must explicitly choose a granularity. `granularityFunc` returns an error for UNSPECIFIED and any undefined enum value (e.g. a future enum added to the proto but not yet wired into the switch); the error surfaces through the `Build*Query` error path. Direct callers (workers, scripts) bypassing the interceptor must set `Granularity` explicitly.
 
+### Dashboard Tile Default Time Ranges
+
+Dashboard insight tiles persist `QueryRequest.granularity` and expose `DashboardTile.default_time_range` as a `common.v1.TimeRangePreset`. Supported relative presets are `LAST_1_HOUR`, `LAST_6_HOURS`, `LAST_24_HOURS`, `YESTERDAY`, `LAST_7_DAYS`, `LAST_14_DAYS`, `LAST_WEEK`, `LAST_MONTH`, `LAST_3_MONTHS`, `LAST_6_MONTHS`, and `LAST_YEAR`. `UNSPECIFIED` is accepted at the RPC boundary; insight tiles normalize it to `LAST_MONTH`, while markdown tiles normalize any preset to `UNSPECIFIED`.
+
 ### Insights Filter Model
 
 - Top-level insights filters are **group-based only**. In `shared.insights.v1`, use `filter_groups` and `filter_groups_operator` on `QueryRequest` and `SegmentUsersRequest`.

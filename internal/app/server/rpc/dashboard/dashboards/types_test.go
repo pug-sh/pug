@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 )
 
@@ -127,5 +128,48 @@ func TestTileViewModeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
 	got := tileViewModeToRPC(coreprojects.TileKindMarkdown, int16(coreprojects.TileViewModeBarGrouped))
 	if got != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED {
 		t.Fatalf("tileViewModeToRPC(markdown, bar) = %v, want UNSPECIFIED", got)
+	}
+}
+
+func TestTileDefaultTimeRangeToRPC_DefaultsInsightToLastMonth(t *testing.T) {
+	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindInsight, 0)
+	if got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH {
+		t.Fatalf("tileDefaultTimeRangeToRPC(insight, 0) = %v, want LAST_MONTH", got)
+	}
+}
+
+func TestTileDefaultTimeRangeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
+	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindMarkdown, int16(coreprojects.TileDefaultTimeRangeLast3Months))
+	if got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED {
+		t.Fatalf("tileDefaultTimeRangeToRPC(markdown, last3months) = %v, want UNSPECIFIED", got)
+	}
+}
+
+func TestTileDefaultTimeRangeToRPC_AllInsightPresets(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  coreprojects.TileDefaultTimeRange
+		want commonv1.TimeRangePreset
+	}{
+		{"last_1_hour", coreprojects.TileDefaultTimeRangeLast1Hour, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR},
+		{"last_6_hours", coreprojects.TileDefaultTimeRangeLast6Hours, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS},
+		{"last_24_hours", coreprojects.TileDefaultTimeRangeLast24Hours, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS},
+		{"yesterday", coreprojects.TileDefaultTimeRangeYesterday, commonv1.TimeRangePreset_TIME_RANGE_PRESET_YESTERDAY},
+		{"last_7_days", coreprojects.TileDefaultTimeRangeLast7Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS},
+		{"last_14_days", coreprojects.TileDefaultTimeRangeLast14Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS},
+		{"last_week", coreprojects.TileDefaultTimeRangeLastWeek, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_WEEK},
+		{"last_month", coreprojects.TileDefaultTimeRangeLastMonth, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH},
+		{"last_3_months", coreprojects.TileDefaultTimeRangeLast3Months, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_3_MONTHS},
+		{"last_6_months", coreprojects.TileDefaultTimeRangeLast6Months, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_MONTHS},
+		{"last_year", coreprojects.TileDefaultTimeRangeLastYear, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_YEAR},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tileDefaultTimeRangeToRPC(coreprojects.TileKindInsight, int16(tc.raw))
+			if got != tc.want {
+				t.Fatalf("tileDefaultTimeRangeToRPC(insight, %d) = %v, want %v", tc.raw, got, tc.want)
+			}
+		})
 	}
 }

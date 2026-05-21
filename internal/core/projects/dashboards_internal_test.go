@@ -7,6 +7,8 @@ import (
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 )
 
 func TestTranslateUniqueViolation(t *testing.T) {
@@ -58,6 +60,37 @@ func TestTranslateUniqueViolation(t *testing.T) {
 				if got != nil {
 					t.Errorf("translateUniqueViolation(%v) = %v, want nil", tc.err, got)
 				}
+			}
+		})
+	}
+}
+
+func TestNormalizedTileDefaultTimeRange_AllInsightPresets(t *testing.T) {
+	cases := []struct {
+		name string
+		in   commonv1.TimeRangePreset
+		want TileDefaultTimeRange
+	}{
+		{"last_1_hour", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR, TileDefaultTimeRangeLast1Hour},
+		{"last_6_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS, TileDefaultTimeRangeLast6Hours},
+		{"last_24_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS, TileDefaultTimeRangeLast24Hours},
+		{"yesterday", commonv1.TimeRangePreset_TIME_RANGE_PRESET_YESTERDAY, TileDefaultTimeRangeYesterday},
+		{"last_7_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, TileDefaultTimeRangeLast7Days},
+		{"last_14_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS, TileDefaultTimeRangeLast14Days},
+		{"last_week", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_WEEK, TileDefaultTimeRangeLastWeek},
+		{"last_month", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH, TileDefaultTimeRangeLastMonth},
+		{"last_3_months", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_3_MONTHS, TileDefaultTimeRangeLast3Months},
+		{"last_6_months", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_MONTHS, TileDefaultTimeRangeLast6Months},
+		{"last_year", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_YEAR, TileDefaultTimeRangeLastYear},
+		{"unspecified_defaults", commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, TileDefaultTimeRangeLastMonth},
+		{"unknown_defaults", commonv1.TimeRangePreset(99), TileDefaultTimeRangeLastMonth},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizedTileDefaultTimeRange(TileKindInsight, tc.in)
+			if got != tc.want {
+				t.Fatalf("normalizedTileDefaultTimeRange(insight, %v) = %d, want %d", tc.in, got, tc.want)
 			}
 		})
 	}

@@ -198,6 +198,7 @@ func (s *Server) CreateTile(
 		req.Msg.GetDescription(),
 		content,
 		req.Msg.GetViewMode(),
+		req.Msg.GetDefaultTimeRange(),
 		req.Msg.GetLayouts(),
 	)
 	if err != nil {
@@ -252,6 +253,7 @@ func (s *Server) UpdateTile(
 		req.Msg.GetDescription(),
 		content,
 		req.Msg.GetViewMode(),
+		req.Msg.GetDefaultTimeRange(),
 		req.Msg.GetLayouts(),
 	)
 	if err != nil {

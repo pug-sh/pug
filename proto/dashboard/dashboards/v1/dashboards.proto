@@ -2,6 +2,7 @@ edition = "2023";
 package dashboard.dashboards.v1;
 
 import "buf/validate/validate.proto";
+import "common/v1/time.proto";
 import "google/protobuf/timestamp.proto";
 import "shared/insights/v1/insights.proto";
 
@@ -51,6 +52,7 @@ message DashboardTile {
   google.protobuf.Timestamp create_time = 8;
   google.protobuf.Timestamp update_time = 9;
   DashboardTileViewMode view_mode = 10 [(buf.validate.field).enum.defined_only = true];
+  common.v1.TimeRangePreset default_time_range = 11 [(buf.validate.field).enum.defined_only = true];
 }
 
 enum DashboardTileViewMode {
@@ -138,6 +140,7 @@ message DashboardsServiceCreateTileRequest {
   }
   repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
   DashboardTileViewMode view_mode = 7 [(buf.validate.field).enum.defined_only = true];
+  common.v1.TimeRangePreset default_time_range = 8 [(buf.validate.field).enum.defined_only = true];
 }
 
 message DashboardsServiceCreateTileResponse {
@@ -165,6 +168,7 @@ message DashboardsServiceUpdateTileRequest {
   }
   repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
   DashboardTileViewMode view_mode = 8 [(buf.validate.field).enum.defined_only = true];
+  common.v1.TimeRangePreset default_time_range = 9 [(buf.validate.field).enum.defined_only = true];
 }
 
 message DashboardsServiceUpdateTileResponse {
