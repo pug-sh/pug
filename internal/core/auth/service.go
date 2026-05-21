@@ -75,9 +75,11 @@ const (
 
 	verifyEmailPurpose = "verify_email"
 	resetPasswordCause = "reset_password"
+	magicLinkPurpose   = "magic_link"
 
 	verifyEmailTTL   = 24 * time.Hour
 	resetPasswordTTL = 2 * time.Hour
+	magicLinkTTL     = 15 * time.Minute
 )
 
 type JobPublisher interface {
@@ -493,6 +495,44 @@ func (s *Service) ResendVerificationEmail(ctx context.Context, email string) err
 	return nil
 }
 
+// RequestMagicLink issues and emails a single-use magic link for the given
+// email. It always succeeds regardless of whether an account exists (no
+// account-existence oracle); CompleteMagicLink creates the account on first use.
+func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
+	customerID := ""
+	tokenEmail := email
+	if customer, err := s.read.GetCustomerByEmailOptional(ctx, email); err == nil {
+		customerID = customer.ID
+		tokenEmail = customer.Email
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		slog.ErrorContext(ctx, "failed to look up magic-link customer", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+
+	rawToken, err := newActionToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate magic-link token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	return s.issueActionTokenAndPublish(ctx, issueActionTokenInput{
+		CustomerID: customerID,
+		Email:      tokenEmail,
+		Purpose:    magicLinkPurpose,
+		TTL:        magicLinkTTL,
+		RawToken:   rawToken,
+		Job: &emailworkerv1.EmailJob{
+			Payload: &emailworkerv1.EmailJob_MagicLink{
+				MagicLink: &emailworkerv1.MagicLinkPayload{
+					Email: proto.String(tokenEmail),
+					Token: proto.String(rawToken),
+				},
+			},
+		},
+	})
+}
+
 type issueActionTokenInput struct {
 	CustomerID string
 	Email      string
@@ -587,6 +627,8 @@ func payloadKindFromJob(ctx context.Context, job *emailworkerv1.EmailJob) string
 		return "verification_resend"
 	case *emailworkerv1.EmailJob_OrgMemberInvite:
 		return "org_member_invite"
+	case *emailworkerv1.EmailJob_MagicLink:
+		return "magic_link"
 	default:
 		// Unknown payload type means the EmailJob proto grew a new oneof case
 		// that this switch hasn't been updated to handle. The counter still

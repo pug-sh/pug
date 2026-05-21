@@ -564,6 +564,86 @@ func (*ResendVerificationEmailResponse) Descriptor() ([]byte, []int) {
 	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{11}
 }
 
+type RequestMagicLinkRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestMagicLinkRequest) Reset() {
+	*x = RequestMagicLinkRequest{}
+	mi := &file_public_auth_v1_auth_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestMagicLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestMagicLinkRequest) ProtoMessage() {}
+
+func (x *RequestMagicLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_public_auth_v1_auth_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestMagicLinkRequest.ProtoReflect.Descriptor instead.
+func (*RequestMagicLinkRequest) Descriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RequestMagicLinkRequest) GetEmail() string {
+	if x != nil && x.Email != nil {
+		return *x.Email
+	}
+	return ""
+}
+
+type RequestMagicLinkResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestMagicLinkResponse) Reset() {
+	*x = RequestMagicLinkResponse{}
+	mi := &file_public_auth_v1_auth_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestMagicLinkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestMagicLinkResponse) ProtoMessage() {}
+
+func (x *RequestMagicLinkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_public_auth_v1_auth_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestMagicLinkResponse.ProtoReflect.Descriptor instead.
+func (*RequestMagicLinkResponse) Descriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{13}
+}
+
 var File_public_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_public_auth_v1_auth_proto_rawDesc = "" +
@@ -600,14 +680,19 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\x1eResendVerificationEmailRequest\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\"!\n" +
-	"\x1fResendVerificationEmailResponse2\x86\x05\n" +
+	"\x1fResendVerificationEmailResponse\";\n" +
+	"\x17RequestMagicLinkRequest\x12 \n" +
+	"\x05email\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\"\x1a\n" +
+	"\x18RequestMagicLinkResponse2\xef\x05\n" +
 	"\vAuthService\x12d\n" +
 	"\x0fSignInWithEmail\x12&.public.auth.v1.SignInWithEmailRequest\x1a'.public.auth.v1.SignInWithEmailResponse\"\x00\x12d\n" +
 	"\x0fSignUpWithEmail\x12&.public.auth.v1.SignUpWithEmailRequest\x1a'.public.auth.v1.SignUpWithEmailResponse\"\x00\x12X\n" +
 	"\vVerifyEmail\x12\".public.auth.v1.VerifyEmailRequest\x1a#.public.auth.v1.VerifyEmailResponse\"\x00\x12s\n" +
 	"\x14RequestPasswordReset\x12+.public.auth.v1.RequestPasswordResetRequest\x1a,.public.auth.v1.RequestPasswordResetResponse\"\x00\x12^\n" +
 	"\rResetPassword\x12$.public.auth.v1.ResetPasswordRequest\x1a%.public.auth.v1.ResetPasswordResponse\"\x00\x12|\n" +
-	"\x17ResendVerificationEmail\x12..public.auth.v1.ResendVerificationEmailRequest\x1a/.public.auth.v1.ResendVerificationEmailResponse\"\x00B@Z>github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1b\beditionsp\xe8\a"
+	"\x17ResendVerificationEmail\x12..public.auth.v1.ResendVerificationEmailRequest\x1a/.public.auth.v1.ResendVerificationEmailResponse\"\x00\x12g\n" +
+	"\x10RequestMagicLink\x12'.public.auth.v1.RequestMagicLinkRequest\x1a(.public.auth.v1.RequestMagicLinkResponse\"\x00B@Z>github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1b\beditionsp\xe8\a"
 
 var (
 	file_public_auth_v1_auth_proto_rawDescOnce sync.Once
@@ -621,7 +706,7 @@ func file_public_auth_v1_auth_proto_rawDescGZIP() []byte {
 	return file_public_auth_v1_auth_proto_rawDescData
 }
 
-var file_public_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_public_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_public_auth_v1_auth_proto_goTypes = []any{
 	(*SignInWithEmailRequest)(nil),          // 0: public.auth.v1.SignInWithEmailRequest
 	(*SignInWithEmailResponse)(nil),         // 1: public.auth.v1.SignInWithEmailResponse
@@ -635,6 +720,8 @@ var file_public_auth_v1_auth_proto_goTypes = []any{
 	(*ResetPasswordResponse)(nil),           // 9: public.auth.v1.ResetPasswordResponse
 	(*ResendVerificationEmailRequest)(nil),  // 10: public.auth.v1.ResendVerificationEmailRequest
 	(*ResendVerificationEmailResponse)(nil), // 11: public.auth.v1.ResendVerificationEmailResponse
+	(*RequestMagicLinkRequest)(nil),         // 12: public.auth.v1.RequestMagicLinkRequest
+	(*RequestMagicLinkResponse)(nil),        // 13: public.auth.v1.RequestMagicLinkResponse
 }
 var file_public_auth_v1_auth_proto_depIdxs = []int32{
 	0,  // 0: public.auth.v1.AuthService.SignInWithEmail:input_type -> public.auth.v1.SignInWithEmailRequest
@@ -643,14 +730,16 @@ var file_public_auth_v1_auth_proto_depIdxs = []int32{
 	6,  // 3: public.auth.v1.AuthService.RequestPasswordReset:input_type -> public.auth.v1.RequestPasswordResetRequest
 	8,  // 4: public.auth.v1.AuthService.ResetPassword:input_type -> public.auth.v1.ResetPasswordRequest
 	10, // 5: public.auth.v1.AuthService.ResendVerificationEmail:input_type -> public.auth.v1.ResendVerificationEmailRequest
-	1,  // 6: public.auth.v1.AuthService.SignInWithEmail:output_type -> public.auth.v1.SignInWithEmailResponse
-	3,  // 7: public.auth.v1.AuthService.SignUpWithEmail:output_type -> public.auth.v1.SignUpWithEmailResponse
-	5,  // 8: public.auth.v1.AuthService.VerifyEmail:output_type -> public.auth.v1.VerifyEmailResponse
-	7,  // 9: public.auth.v1.AuthService.RequestPasswordReset:output_type -> public.auth.v1.RequestPasswordResetResponse
-	9,  // 10: public.auth.v1.AuthService.ResetPassword:output_type -> public.auth.v1.ResetPasswordResponse
-	11, // 11: public.auth.v1.AuthService.ResendVerificationEmail:output_type -> public.auth.v1.ResendVerificationEmailResponse
-	6,  // [6:12] is the sub-list for method output_type
-	0,  // [0:6] is the sub-list for method input_type
+	12, // 6: public.auth.v1.AuthService.RequestMagicLink:input_type -> public.auth.v1.RequestMagicLinkRequest
+	1,  // 7: public.auth.v1.AuthService.SignInWithEmail:output_type -> public.auth.v1.SignInWithEmailResponse
+	3,  // 8: public.auth.v1.AuthService.SignUpWithEmail:output_type -> public.auth.v1.SignUpWithEmailResponse
+	5,  // 9: public.auth.v1.AuthService.VerifyEmail:output_type -> public.auth.v1.VerifyEmailResponse
+	7,  // 10: public.auth.v1.AuthService.RequestPasswordReset:output_type -> public.auth.v1.RequestPasswordResetResponse
+	9,  // 11: public.auth.v1.AuthService.ResetPassword:output_type -> public.auth.v1.ResetPasswordResponse
+	11, // 12: public.auth.v1.AuthService.ResendVerificationEmail:output_type -> public.auth.v1.ResendVerificationEmailResponse
+	13, // 13: public.auth.v1.AuthService.RequestMagicLink:output_type -> public.auth.v1.RequestMagicLinkResponse
+	7,  // [7:14] is the sub-list for method output_type
+	0,  // [0:7] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
@@ -667,7 +756,7 @@ func file_public_auth_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_public_auth_v1_auth_proto_rawDesc), len(file_public_auth_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -50,6 +50,9 @@ const (
 	// AuthServiceResendVerificationEmailProcedure is the fully-qualified name of the AuthService's
 	// ResendVerificationEmail RPC.
 	AuthServiceResendVerificationEmailProcedure = "/public.auth.v1.AuthService/ResendVerificationEmail"
+	// AuthServiceRequestMagicLinkProcedure is the fully-qualified name of the AuthService's
+	// RequestMagicLink RPC.
+	AuthServiceRequestMagicLinkProcedure = "/public.auth.v1.AuthService/RequestMagicLink"
 )
 
 // AuthServiceClient is a client for the public.auth.v1.AuthService service.
@@ -60,6 +63,7 @@ type AuthServiceClient interface {
 	RequestPasswordReset(context.Context, *connect.Request[v1.RequestPasswordResetRequest]) (*connect.Response[v1.RequestPasswordResetResponse], error)
 	ResetPassword(context.Context, *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.ResetPasswordResponse], error)
 	ResendVerificationEmail(context.Context, *connect.Request[v1.ResendVerificationEmailRequest]) (*connect.Response[v1.ResendVerificationEmailResponse], error)
+	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 }
 
 // NewAuthServiceClient constructs a client for the public.auth.v1.AuthService service. By default,
@@ -109,6 +113,12 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("ResendVerificationEmail")),
 			connect.WithClientOptions(opts...),
 		),
+		requestMagicLink: connect.NewClient[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse](
+			httpClient,
+			baseURL+AuthServiceRequestMagicLinkProcedure,
+			connect.WithSchema(authServiceMethods.ByName("RequestMagicLink")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -120,6 +130,7 @@ type authServiceClient struct {
 	requestPasswordReset    *connect.Client[v1.RequestPasswordResetRequest, v1.RequestPasswordResetResponse]
 	resetPassword           *connect.Client[v1.ResetPasswordRequest, v1.ResetPasswordResponse]
 	resendVerificationEmail *connect.Client[v1.ResendVerificationEmailRequest, v1.ResendVerificationEmailResponse]
+	requestMagicLink        *connect.Client[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse]
 }
 
 // SignInWithEmail calls public.auth.v1.AuthService.SignInWithEmail.
@@ -152,6 +163,11 @@ func (c *authServiceClient) ResendVerificationEmail(ctx context.Context, req *co
 	return c.resendVerificationEmail.CallUnary(ctx, req)
 }
 
+// RequestMagicLink calls public.auth.v1.AuthService.RequestMagicLink.
+func (c *authServiceClient) RequestMagicLink(ctx context.Context, req *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error) {
+	return c.requestMagicLink.CallUnary(ctx, req)
+}
+
 // AuthServiceHandler is an implementation of the public.auth.v1.AuthService service.
 type AuthServiceHandler interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
@@ -160,6 +176,7 @@ type AuthServiceHandler interface {
 	RequestPasswordReset(context.Context, *connect.Request[v1.RequestPasswordResetRequest]) (*connect.Response[v1.RequestPasswordResetResponse], error)
 	ResetPassword(context.Context, *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.ResetPasswordResponse], error)
 	ResendVerificationEmail(context.Context, *connect.Request[v1.ResendVerificationEmailRequest]) (*connect.Response[v1.ResendVerificationEmailResponse], error)
+	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 }
 
 // NewAuthServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -205,6 +222,12 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("ResendVerificationEmail")),
 		connect.WithHandlerOptions(opts...),
 	)
+	authServiceRequestMagicLinkHandler := connect.NewUnaryHandler(
+		AuthServiceRequestMagicLinkProcedure,
+		svc.RequestMagicLink,
+		connect.WithSchema(authServiceMethods.ByName("RequestMagicLink")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/public.auth.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuthServiceSignInWithEmailProcedure:
@@ -219,6 +242,8 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceResetPasswordHandler.ServeHTTP(w, r)
 		case AuthServiceResendVerificationEmailProcedure:
 			authServiceResendVerificationEmailHandler.ServeHTTP(w, r)
+		case AuthServiceRequestMagicLinkProcedure:
+			authServiceRequestMagicLinkHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -250,4 +275,8 @@ func (UnimplementedAuthServiceHandler) ResetPassword(context.Context, *connect.R
 
 func (UnimplementedAuthServiceHandler) ResendVerificationEmail(context.Context, *connect.Request[v1.ResendVerificationEmailRequest]) (*connect.Response[v1.ResendVerificationEmailResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.ResendVerificationEmail is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.RequestMagicLink is not implemented"))
 }

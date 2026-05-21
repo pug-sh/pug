@@ -105,3 +105,13 @@ func (s *server) ResendVerificationEmail(
 	}
 	return connect.NewResponse(&authv1.ResendVerificationEmailResponse{}), nil
 }
+
+func (s *server) RequestMagicLink(
+	ctx context.Context,
+	req *connect.Request[authv1.RequestMagicLinkRequest],
+) (*connect.Response[authv1.RequestMagicLinkResponse], error) {
+	if err := s.service.RequestMagicLink(ctx, req.Msg.GetEmail()); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	return connect.NewResponse(&authv1.RequestMagicLinkResponse{}), nil
+}

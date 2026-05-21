@@ -739,6 +739,17 @@ func TestEmailPublishFailureCountersByKind(t *testing.T) {
 		assertAuthEmailFailureCounter(t, reader, "verification_resend")
 	})
 
+	t.Run("magic_link", func(t *testing.T) {
+		// RequestMagicLink always proceeds to publish regardless of whether an
+		// account exists (no account-existence oracle), so no customer setup is
+		// needed. The publish fails, the error is swallowed, and the counter
+		// must tick with kind="magic_link".
+		if err := svc.RequestMagicLink(ctx, "magic-link-publish-failure@example.com"); err != nil {
+			t.Fatalf("RequestMagicLink should swallow publish failure, got: %v", err)
+		}
+		assertAuthEmailFailureCounter(t, reader, "magic_link")
+	})
+
 	t.Run("unknown", func(t *testing.T) {
 		// Direct PublishEmailJobForTest call with an EmailJob whose Payload
 		// oneof is unset hits the default branch of payloadKindFromJob — the

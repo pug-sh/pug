@@ -12,6 +12,7 @@ service AuthService {
   rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse) {}
   rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse) {}
   rpc ResendVerificationEmail(ResendVerificationEmailRequest) returns (ResendVerificationEmailResponse) {}
+  rpc RequestMagicLink(RequestMagicLinkRequest) returns (RequestMagicLinkResponse) {}
 }
 
 message SignInWithEmailRequest {
@@ -98,3 +99,12 @@ message ResendVerificationEmailRequest {
 }
 
 message ResendVerificationEmailResponse {}
+
+message RequestMagicLinkRequest {
+  string email = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.email = true
+  ];
+}
+
+message RequestMagicLinkResponse {}
