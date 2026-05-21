@@ -346,10 +346,9 @@ func TestLeaveHandlerNonMemberReturnsNotFound(t *testing.T) {
 	}
 }
 
-// TestAcceptInviteHandlerReturnsMemberRole pins that the accept-invite
-// response carries the caller's role (MEMBER, since the service hard-codes
-// the new member's role as MEMBER on invite acceptance).
-func TestAcceptInviteHandlerReturnsMemberRole(t *testing.T) {
+// TestAcceptInviteHandlerReturnsInviteRole pins that the accept-invite
+// response carries the role stored on the invitation, not a hard-coded MEMBER.
+func TestAcceptInviteHandlerReturnsInviteRole(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -373,9 +372,9 @@ func TestAcceptInviteHandlerReturnsMemberRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
-	inv, err := svc.InviteMember(ctx, org.ID, inviterID, inviteeEmail)
+	inv, err := svc.InviteMemberWithRole(ctx, org.ID, inviterID, inviteeEmail, coreorgs.RoleAdmin)
 	if err != nil {
-		t.Fatalf("InviteMember: %v", err)
+		t.Fatalf("InviteMemberWithRole: %v", err)
 	}
 
 	invitee, err := read.GetCustomerByID(ctx, inviteeID)
@@ -389,11 +388,45 @@ func TestAcceptInviteHandlerReturnsMemberRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
-	if got := resp.Msg.GetOrg().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_MEMBER {
-		t.Errorf("want role=MEMBER for accepted invite, got %v", got)
+	if got := resp.Msg.GetOrg().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_ADMIN {
+		t.Errorf("want role=ADMIN for accepted invite, got %v", got)
 	}
 	if got := resp.Msg.GetOrg().GetId(); got != org.ID {
 		t.Errorf("want org id=%q, got %q", org.ID, got)
+	}
+}
+
+func TestInviteMemberHandlerAcceptsRole(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, &acceptStubPublisher{})
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	adminID := seedRawCustomer(t, ctx, write, "role-inviter")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "role-invite-handler")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	resp, err := srv.InviteMember(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.InviteMemberRequest{
+			Email: proto.String("role-invitee@example.com"),
+			OrgId: proto.String(org.ID),
+			Role:  orgsv1.OrgRole_ORG_ROLE_ADMIN.Enum(),
+		}),
+	)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+	if got := resp.Msg.GetInvitation().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_ADMIN {
+		t.Fatalf("invitation role = %v, want ADMIN", got)
 	}
 }
 

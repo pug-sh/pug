@@ -224,7 +224,12 @@ func (s *server) InviteMember(
 		return nil, err
 	}
 
-	dispatch, err := s.service.InviteMember(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetEmail())
+	role, ok := inviteRoleFromProto(req.Msg.GetRole())
+	if !ok {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("role is not supported"))
+	}
+
+	dispatch, err := s.service.InviteMemberWithRole(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetEmail(), role)
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrAlreadyMember) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("this email is already a member of the org"))
@@ -278,7 +283,7 @@ func (s *server) AcceptInvite(
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
 	}
 
-	org, err := s.service.AcceptInvite(ctx, req.Msg.GetToken(), principal.Customer.ID, principal.Customer.Email)
+	accepted, err := s.service.AcceptInviteWithRole(ctx, req.Msg.GetToken(), principal.Customer.ID, principal.Customer.Email)
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrInviteWrongEmail) {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("invitation was issued to a different email address"))
@@ -298,7 +303,7 @@ func (s *server) AcceptInvite(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&orgsv1.AcceptInviteResponse{Org: toRPCOrg(org, coreorgs.RoleMember)}), nil
+	return connect.NewResponse(&orgsv1.AcceptInviteResponse{Org: toRPCOrg(accepted.Org, accepted.Role)}), nil
 }
 
 func (s *server) ListInvitations(

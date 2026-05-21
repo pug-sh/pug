@@ -92,6 +92,7 @@ type OrgInvitation struct {
 	OrgID      string
 	Status     string
 	Token      string
+	Role       string
 }
 
 type OrgMember struct {

@@ -169,7 +169,7 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password, inviteTo
 		// Accept the invite (email matches by construction). Any client error is
 		// fatal here — no fallback — because the customer was created with the
 		// invitation's email.
-		if _, err := coreorgs.AcceptInviteInTx(ctx, r, w, inviteToken, customerID, customerEmail); err != nil {
+		if _, _, err := coreorgs.AcceptInviteInTx(ctx, r, w, inviteToken, customerID, customerEmail); err != nil {
 			if isInviteClientError(err) {
 				slog.WarnContext(ctx, "invite-driven signup: invite rejected at accept", slogx.Error(err), slog.String("customer_id", customerID))
 				return "", ErrInviteInvalid

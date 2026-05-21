@@ -413,6 +413,14 @@ func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 }
 
 func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email string) (InviteDispatch, error) {
+	return s.InviteMemberWithRole(ctx, orgID, inviterID, email, RoleMember)
+}
+
+func (s *Service) InviteMemberWithRole(ctx context.Context, orgID, inviterID, email string, role Role) (InviteDispatch, error) {
+	if !role.IsValid() {
+		return InviteDispatch{}, fmt.Errorf("orgs: invalid invitation role %q", role)
+	}
+
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin invite member transaction", slogx.Error(err))
@@ -439,6 +447,7 @@ func (s *Service) InviteMember(ctx context.Context, orgID, inviterID, email stri
 		OrgID:     orgID,
 		InviterID: postgres.NewOptionalText(inviterID),
 		Email:     email,
+		Role:      role.String(),
 		Token:     storageToken,
 		ExpiresAt: postgres.NewTimestamptz(time.Now().Add(inviteTTL)),
 	})
@@ -561,12 +570,25 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 	return InviteDispatch{Invitation: inv, RawToken: rawToken}, nil
 }
 
+type AcceptedInvite struct {
+	Org  dbread.Org
+	Role Role
+}
+
 func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerEmail string) (dbread.Org, error) {
+	accepted, err := s.AcceptInviteWithRole(ctx, token, customerID, customerEmail)
+	if err != nil {
+		return dbread.Org{}, err
+	}
+	return accepted.Org, nil
+}
+
+func (s *Service) AcceptInviteWithRole(ctx context.Context, token, customerID, customerEmail string) (AcceptedInvite, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin accept invite transaction", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
+		return AcceptedInvite{}, err
 	}
 	defer func() {
 		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
@@ -575,15 +597,15 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 		}
 	}()
 
-	orgID, err := AcceptInviteInTx(ctx, dbread.New(tx), dbwrite.New(tx), token, customerID, customerEmail)
+	orgID, role, err := AcceptInviteInTx(ctx, dbread.New(tx), dbwrite.New(tx), token, customerID, customerEmail)
 	if err != nil {
-		return dbread.Org{}, err
+		return AcceptedInvite{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed to commit accept invite transaction", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
+		return AcceptedInvite{}, err
 	}
 
 	// Read from write pool to avoid read-replica lag after the commit.
@@ -591,14 +613,14 @@ func (s *Service) AcceptInvite(ctx context.Context, token, customerID, customerE
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to fetch org after accepting invite", slogx.Error(err), slog.String("org_id", orgID))
 		telemetry.RecordError(ctx, err)
-		return dbread.Org{}, err
+		return AcceptedInvite{}, err
 	}
-	return dbread.Org{
+	return AcceptedInvite{Org: dbread.Org{
 		ID:          wOrg.ID,
 		DisplayName: wOrg.DisplayName,
 		CreateTime:  wOrg.CreateTime,
 		UpdateTime:  wOrg.UpdateTime,
-	}, nil
+	}, Role: role}, nil
 }
 
 // orphanedInviteTokenErr records a data-integrity breach — an org_invite
@@ -643,9 +665,9 @@ func LookupInviteEmailInTx(ctx context.Context, r *dbread.Queries, token string)
 // invitation status flip, email-action-token consumption) using the given
 // queries handles. Caller owns the tx lifecycle.
 //
-// Returns the org_id the customer was added to so callers can chain follow-up
-// work (e.g. fetching the org row outside the tx after commit) without an
-// extra lookup. Returns one of ErrInviteNotFound, ErrInviteNotPending,
+// Returns the org_id and invitation role the customer was added with so
+// callers can chain follow-up work (e.g. fetching the org row outside the tx
+// after commit) without an extra lookup. Returns one of ErrInviteNotFound,
 // ErrInviteExpired, ErrInviteWrongEmail, ErrAlreadyMember for client-input
 // failures; all other errors are logged + recorded at source.
 func AcceptInviteInTx(
@@ -653,54 +675,62 @@ func AcceptInviteInTx(
 	r *dbread.Queries,
 	w *dbwrite.Queries,
 	token, customerID, customerEmail string,
-) (string, error) {
+) (string, Role, error) {
 	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
 		TokenHash: hashInviteToken(token),
 		Purpose:   orgInvitePurpose,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrInviteNotFound
+			return "", "", ErrInviteNotFound
 		}
 		slog.ErrorContext(ctx, "failed to get org invite token", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return "", "", err
 	}
 	if !emailToken.OrgInvitationID.Valid {
-		return "", orphanedInviteTokenErr(ctx, emailToken.ID)
+		return "", "", orphanedInviteTokenErr(ctx, emailToken.ID)
 	}
 
 	inv, err := w.GetOrgInvitationByIDForUpdate(ctx, emailToken.OrgInvitationID.String)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrInviteNotFound
+			return "", "", ErrInviteNotFound
 		}
 		slog.ErrorContext(ctx, "failed to get org invitation by id", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return "", "", err
 	}
 
 	if !strings.EqualFold(inv.Email, customerEmail) {
-		return "", ErrInviteWrongEmail
+		return "", "", ErrInviteWrongEmail
 	}
 	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
-		return "", ErrInviteNotPending
+		return "", "", ErrInviteNotPending
 	}
 	if time.Now().After(inv.ExpiresAt.Time) {
-		return "", ErrInviteExpired
+		return "", "", ErrInviteExpired
+	}
+	inviteRole, err := ParseRole(inv.Role)
+	if err != nil {
+		slog.ErrorContext(ctx, "unrecognized role in org_invitations", slogx.Error(err),
+			slog.String("invitation_id", inv.ID),
+			slog.String("role", inv.Role))
+		telemetry.RecordError(ctx, err)
+		return "", "", err
 	}
 
 	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      inv.OrgID,
 		CustomerID: customerID,
-		Role:       RoleMember.String(),
+		Role:       inviteRole.String(),
 	}); err != nil {
 		if isUniqueViolationOn(err, orgMembersPKey) {
-			return "", ErrAlreadyMember
+			return "", "", ErrAlreadyMember
 		}
 		slog.ErrorContext(ctx, "failed to create org member on invite accept", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return "", "", err
 	}
 
 	if _, err := w.UpdateOrgInvitationStatus(ctx, dbwrite.UpdateOrgInvitationStatusParams{
@@ -709,16 +739,16 @@ func AcceptInviteInTx(
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to update invitation status", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return "", "", err
 	}
 
 	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.ErrorContext(ctx, "failed to consume org invite token", slogx.Error(err), slog.String("token_id", emailToken.ID))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return "", "", err
 	}
 
-	return inv.OrgID, nil
+	return inv.OrgID, inviteRole, nil
 }
 
 func (s *Service) ListInvitations(ctx context.Context, orgID string) ([]dbread.OrgInvitation, error) {

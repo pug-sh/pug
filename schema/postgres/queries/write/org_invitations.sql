@@ -10,8 +10,8 @@ with check_member as (
   join customers c on c.id = om.customer_id
   where om.org_id = @org_id and lower(c.email) = lower(@email)
 )
-insert into org_invitations (email, expires_at, id, inviter_id, org_id, token)
-select @email, @expires_at, @id, @inviter_id, @org_id, @token
+insert into org_invitations (email, expires_at, id, inviter_id, org_id, role, token)
+select @email, @expires_at, @id, @inviter_id, @org_id, @role, @token
 where not exists (select 1 from check_member)
 returning *;
 

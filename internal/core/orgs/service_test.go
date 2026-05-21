@@ -190,6 +190,77 @@ func TestInviteMemberPublishesEmailJob(t *testing.T) {
 	if inv.Token == dispatch.RawToken {
 		t.Fatal("invitation row stored a redeemable token")
 	}
+	if inv.Role != orgs.RoleMember.String() {
+		t.Fatalf("default invite role = %q, want MEMBER", inv.Role)
+	}
+}
+
+func TestInviteMemberWithRolePersistsAndAcceptsAdmin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+	ctx := context.Background()
+
+	inviter, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           "cust-admin-inviter",
+		Email:        "admin-inviter@example.com",
+		DisplayName:  "Admin Inviter",
+		PasswordHash: "hash",
+		PictureUri:   "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer inviter: %v", err)
+	}
+	invitee, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           "cust-admin-invitee",
+		Email:        "admin-invitee@example.com",
+		DisplayName:  "Admin Invitee",
+		PasswordHash: "hash",
+		PictureUri:   "",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomer invitee: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID:          "org-admin-invite",
+		DisplayName: "Admin Invite Org",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      org.ID,
+		CustomerID: inviter.ID,
+		Role:       orgs.RoleAdmin.String(),
+	}); err != nil {
+		t.Fatalf("CreateOrgMember inviter: %v", err)
+	}
+
+	dispatch, err := svc.InviteMemberWithRole(ctx, org.ID, inviter.ID, invitee.Email, orgs.RoleAdmin)
+	if err != nil {
+		t.Fatalf("InviteMemberWithRole: %v", err)
+	}
+	if dispatch.Invitation.Role != orgs.RoleAdmin.String() {
+		t.Fatalf("invitation role = %q, want ADMIN", dispatch.Invitation.Role)
+	}
+
+	if _, err := svc.AcceptInvite(ctx, dispatch.RawToken, invitee.ID, invitee.Email); err != nil {
+		t.Fatalf("AcceptInvite: %v", err)
+	}
+	role, err := write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+		OrgID:      org.ID,
+		CustomerID: invitee.ID,
+	})
+	if err != nil {
+		t.Fatalf("GetOrgMemberRole: %v", err)
+	}
+	if role != orgs.RoleAdmin.String() {
+		t.Fatalf("accepted member role = %q, want ADMIN", role)
+	}
 }
 
 func TestInviteMemberPreservesOtherOrgInviteTokens(t *testing.T) {

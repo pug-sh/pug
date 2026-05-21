@@ -52,6 +52,7 @@ message OrgInvitation {
   string id = 3;
   string org_id = 4;
   InvitationStatus status = 5;
+  OrgRole role = 6;
 }
 
 message ListRequest {}
@@ -102,6 +103,9 @@ message InviteMemberRequest {
     (buf.validate.field).string.email = true
   ];
   string org_id = 2 [(buf.validate.field).required = true];
+  // Optional for backward compatibility. When omitted/UNSPECIFIED, the invite
+  // is issued for ORG_ROLE_MEMBER.
+  OrgRole role = 3 [(buf.validate.field).enum.defined_only = true];
 }
 
 message InviteMemberResponse {

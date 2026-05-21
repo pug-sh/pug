@@ -29,6 +29,13 @@ func roleFromProto(p orgsv1.OrgRole) (coreorgs.Role, bool) {
 	}
 }
 
+func inviteRoleFromProto(p orgsv1.OrgRole) (coreorgs.Role, bool) {
+	if p == orgsv1.OrgRole_ORG_ROLE_UNSPECIFIED {
+		return coreorgs.RoleMember, true
+	}
+	return roleFromProto(p)
+}
+
 // roleFromDBJoinRow parses a raw role string from a DB-join row (where the
 // role column is selected as plain text rather than going through
 // Service.GetMemberRole's typed parse). On unknown values, logs a WarnContext
@@ -111,6 +118,7 @@ func toRPCInvitation(ctx context.Context, inv dbwrite.OrgInvitation) *orgsv1.Org
 		Id:        proto.String(inv.ID),
 		OrgId:     proto.String(inv.OrgID),
 		Status:    toRPCInvitationStatus(ctx, inv.Status).Enum(),
+		Role:      toRPCRole(roleFromDBJoinRow(ctx, inv.Role)).Enum(),
 	}
 }
 
@@ -125,5 +133,6 @@ func toRPCInvitationRO(ctx context.Context, inv dbread.OrgInvitation) *orgsv1.Or
 		Id:        proto.String(inv.ID),
 		OrgId:     proto.String(inv.OrgID),
 		Status:    toRPCInvitationStatus(ctx, inv.Status).Enum(),
+		Role:      toRPCRole(roleFromDBJoinRow(ctx, inv.Role)).Enum(),
 	}
 }

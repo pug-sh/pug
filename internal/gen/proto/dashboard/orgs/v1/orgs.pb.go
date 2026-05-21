@@ -263,6 +263,7 @@ type OrgInvitation struct {
 	Id            *string                `protobuf:"bytes,3,opt,name=id" json:"id,omitempty"`
 	OrgId         *string                `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	Status        *InvitationStatus      `protobuf:"varint,5,opt,name=status,enum=dashboard.orgs.v1.InvitationStatus" json:"status,omitempty"`
+	Role          *OrgRole               `protobuf:"varint,6,opt,name=role,enum=dashboard.orgs.v1.OrgRole" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -330,6 +331,13 @@ func (x *OrgInvitation) GetStatus() InvitationStatus {
 		return *x.Status
 	}
 	return InvitationStatus_INVITATION_STATUS_UNSPECIFIED
+}
+
+func (x *OrgInvitation) GetRole() OrgRole {
+	if x != nil && x.Role != nil {
+		return *x.Role
+	}
+	return OrgRole_ORG_ROLE_UNSPECIFIED
 }
 
 type ListRequest struct {
@@ -773,9 +781,12 @@ func (*RemoveMemberResponse) Descriptor() ([]byte, []int) {
 }
 
 type InviteMemberRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
-	OrgId         *string                `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Email *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	OrgId *string                `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	// Optional for backward compatibility. When omitted/UNSPECIFIED, the invite
+	// is issued for ORG_ROLE_MEMBER.
+	Role          *OrgRole `protobuf:"varint,3,opt,name=role,enum=dashboard.orgs.v1.OrgRole" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -822,6 +833,13 @@ func (x *InviteMemberRequest) GetOrgId() string {
 		return *x.OrgId
 	}
 	return ""
+}
+
+func (x *InviteMemberRequest) GetRole() OrgRole {
+	if x != nil && x.Role != nil {
+		return *x.Role
+	}
+	return OrgRole_ORG_ROLE_UNSPECIFIED
 }
 
 type InviteMemberResponse struct {
@@ -1427,14 +1445,15 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x14\n" +
 	"\x05email\x18\x03 \x01(\tR\x05email\x12\x15\n" +
 	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12.\n" +
-	"\x04role\x18\x05 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\"\xa8\x01\n" +
+	"\x04role\x18\x05 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\"\xd8\x01\n" +
 	"\rOrgInvitation\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1d\n" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\tR\texpiresAt\x12\x0e\n" +
 	"\x02id\x18\x03 \x01(\tR\x02id\x12\x15\n" +
 	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12;\n" +
-	"\x06status\x18\x05 \x01(\x0e2#.dashboard.orgs.v1.InvitationStatusR\x06status\"\r\n" +
+	"\x06status\x18\x05 \x01(\x0e2#.dashboard.orgs.v1.InvitationStatusR\x06status\x12.\n" +
+	"\x04role\x18\x06 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleR\x04role\"\r\n" +
 	"\vListRequest\":\n" +
 	"\fListResponse\x12*\n" +
 	"\x04orgs\x18\x01 \x03(\v2\x16.dashboard.orgs.v1.OrgR\x04orgs\"+\n" +
@@ -1457,11 +1476,12 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\vcustomer_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"customerId\x12\x1d\n" +
 	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"\x16\n" +
-	"\x14RemoveMemberResponse\"V\n" +
+	"\x14RemoveMemberResponse\"\x90\x01\n" +
 	"\x13InviteMemberRequest\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12\x1d\n" +
-	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"X\n" +
+	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x128\n" +
+	"\x04role\x18\x03 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04role\"X\n" +
 	"\x14InviteMemberResponse\x12@\n" +
 	"\n" +
 	"invitation\x18\x01 \x01(\v2 .dashboard.orgs.v1.OrgInvitationR\n" +
@@ -1568,46 +1588,48 @@ var file_dashboard_orgs_v1_orgs_proto_depIdxs = []int32{
 	0,  // 0: dashboard.orgs.v1.Org.role:type_name -> dashboard.orgs.v1.OrgRole
 	0,  // 1: dashboard.orgs.v1.OrgMember.role:type_name -> dashboard.orgs.v1.OrgRole
 	1,  // 2: dashboard.orgs.v1.OrgInvitation.status:type_name -> dashboard.orgs.v1.InvitationStatus
-	2,  // 3: dashboard.orgs.v1.ListResponse.orgs:type_name -> dashboard.orgs.v1.Org
-	2,  // 4: dashboard.orgs.v1.GetResponse.org:type_name -> dashboard.orgs.v1.Org
-	2,  // 5: dashboard.orgs.v1.UpdateDisplayNameResponse.org:type_name -> dashboard.orgs.v1.Org
-	3,  // 6: dashboard.orgs.v1.ListMembersResponse.members:type_name -> dashboard.orgs.v1.OrgMember
-	4,  // 7: dashboard.orgs.v1.InviteMemberResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
-	4,  // 8: dashboard.orgs.v1.ResendInviteResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
-	2,  // 9: dashboard.orgs.v1.AcceptInviteResponse.org:type_name -> dashboard.orgs.v1.Org
-	4,  // 10: dashboard.orgs.v1.ListInvitationsResponse.invitations:type_name -> dashboard.orgs.v1.OrgInvitation
-	2,  // 11: dashboard.orgs.v1.CreateResponse.org:type_name -> dashboard.orgs.v1.Org
-	0,  // 12: dashboard.orgs.v1.UpdateMemberRoleRequest.role:type_name -> dashboard.orgs.v1.OrgRole
-	3,  // 13: dashboard.orgs.v1.UpdateMemberRoleResponse.member:type_name -> dashboard.orgs.v1.OrgMember
-	5,  // 14: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
-	7,  // 15: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
-	9,  // 16: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
-	11, // 17: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
-	13, // 18: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
-	15, // 19: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
-	17, // 20: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
-	19, // 21: dashboard.orgs.v1.OrgsService.AcceptInvite:input_type -> dashboard.orgs.v1.AcceptInviteRequest
-	21, // 22: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
-	23, // 23: dashboard.orgs.v1.OrgsService.Create:input_type -> dashboard.orgs.v1.CreateRequest
-	25, // 24: dashboard.orgs.v1.OrgsService.Leave:input_type -> dashboard.orgs.v1.LeaveRequest
-	27, // 25: dashboard.orgs.v1.OrgsService.UpdateMemberRole:input_type -> dashboard.orgs.v1.UpdateMemberRoleRequest
-	6,  // 26: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
-	8,  // 27: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
-	10, // 28: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
-	12, // 29: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
-	14, // 30: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
-	16, // 31: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
-	18, // 32: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
-	20, // 33: dashboard.orgs.v1.OrgsService.AcceptInvite:output_type -> dashboard.orgs.v1.AcceptInviteResponse
-	22, // 34: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
-	24, // 35: dashboard.orgs.v1.OrgsService.Create:output_type -> dashboard.orgs.v1.CreateResponse
-	26, // 36: dashboard.orgs.v1.OrgsService.Leave:output_type -> dashboard.orgs.v1.LeaveResponse
-	28, // 37: dashboard.orgs.v1.OrgsService.UpdateMemberRole:output_type -> dashboard.orgs.v1.UpdateMemberRoleResponse
-	26, // [26:38] is the sub-list for method output_type
-	14, // [14:26] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	0,  // 3: dashboard.orgs.v1.OrgInvitation.role:type_name -> dashboard.orgs.v1.OrgRole
+	2,  // 4: dashboard.orgs.v1.ListResponse.orgs:type_name -> dashboard.orgs.v1.Org
+	2,  // 5: dashboard.orgs.v1.GetResponse.org:type_name -> dashboard.orgs.v1.Org
+	2,  // 6: dashboard.orgs.v1.UpdateDisplayNameResponse.org:type_name -> dashboard.orgs.v1.Org
+	3,  // 7: dashboard.orgs.v1.ListMembersResponse.members:type_name -> dashboard.orgs.v1.OrgMember
+	0,  // 8: dashboard.orgs.v1.InviteMemberRequest.role:type_name -> dashboard.orgs.v1.OrgRole
+	4,  // 9: dashboard.orgs.v1.InviteMemberResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
+	4,  // 10: dashboard.orgs.v1.ResendInviteResponse.invitation:type_name -> dashboard.orgs.v1.OrgInvitation
+	2,  // 11: dashboard.orgs.v1.AcceptInviteResponse.org:type_name -> dashboard.orgs.v1.Org
+	4,  // 12: dashboard.orgs.v1.ListInvitationsResponse.invitations:type_name -> dashboard.orgs.v1.OrgInvitation
+	2,  // 13: dashboard.orgs.v1.CreateResponse.org:type_name -> dashboard.orgs.v1.Org
+	0,  // 14: dashboard.orgs.v1.UpdateMemberRoleRequest.role:type_name -> dashboard.orgs.v1.OrgRole
+	3,  // 15: dashboard.orgs.v1.UpdateMemberRoleResponse.member:type_name -> dashboard.orgs.v1.OrgMember
+	5,  // 16: dashboard.orgs.v1.OrgsService.List:input_type -> dashboard.orgs.v1.ListRequest
+	7,  // 17: dashboard.orgs.v1.OrgsService.Get:input_type -> dashboard.orgs.v1.GetRequest
+	9,  // 18: dashboard.orgs.v1.OrgsService.UpdateDisplayName:input_type -> dashboard.orgs.v1.UpdateDisplayNameRequest
+	11, // 19: dashboard.orgs.v1.OrgsService.ListMembers:input_type -> dashboard.orgs.v1.ListMembersRequest
+	13, // 20: dashboard.orgs.v1.OrgsService.RemoveMember:input_type -> dashboard.orgs.v1.RemoveMemberRequest
+	15, // 21: dashboard.orgs.v1.OrgsService.InviteMember:input_type -> dashboard.orgs.v1.InviteMemberRequest
+	17, // 22: dashboard.orgs.v1.OrgsService.ResendInvite:input_type -> dashboard.orgs.v1.ResendInviteRequest
+	19, // 23: dashboard.orgs.v1.OrgsService.AcceptInvite:input_type -> dashboard.orgs.v1.AcceptInviteRequest
+	21, // 24: dashboard.orgs.v1.OrgsService.ListInvitations:input_type -> dashboard.orgs.v1.ListInvitationsRequest
+	23, // 25: dashboard.orgs.v1.OrgsService.Create:input_type -> dashboard.orgs.v1.CreateRequest
+	25, // 26: dashboard.orgs.v1.OrgsService.Leave:input_type -> dashboard.orgs.v1.LeaveRequest
+	27, // 27: dashboard.orgs.v1.OrgsService.UpdateMemberRole:input_type -> dashboard.orgs.v1.UpdateMemberRoleRequest
+	6,  // 28: dashboard.orgs.v1.OrgsService.List:output_type -> dashboard.orgs.v1.ListResponse
+	8,  // 29: dashboard.orgs.v1.OrgsService.Get:output_type -> dashboard.orgs.v1.GetResponse
+	10, // 30: dashboard.orgs.v1.OrgsService.UpdateDisplayName:output_type -> dashboard.orgs.v1.UpdateDisplayNameResponse
+	12, // 31: dashboard.orgs.v1.OrgsService.ListMembers:output_type -> dashboard.orgs.v1.ListMembersResponse
+	14, // 32: dashboard.orgs.v1.OrgsService.RemoveMember:output_type -> dashboard.orgs.v1.RemoveMemberResponse
+	16, // 33: dashboard.orgs.v1.OrgsService.InviteMember:output_type -> dashboard.orgs.v1.InviteMemberResponse
+	18, // 34: dashboard.orgs.v1.OrgsService.ResendInvite:output_type -> dashboard.orgs.v1.ResendInviteResponse
+	20, // 35: dashboard.orgs.v1.OrgsService.AcceptInvite:output_type -> dashboard.orgs.v1.AcceptInviteResponse
+	22, // 36: dashboard.orgs.v1.OrgsService.ListInvitations:output_type -> dashboard.orgs.v1.ListInvitationsResponse
+	24, // 37: dashboard.orgs.v1.OrgsService.Create:output_type -> dashboard.orgs.v1.CreateResponse
+	26, // 38: dashboard.orgs.v1.OrgsService.Leave:output_type -> dashboard.orgs.v1.LeaveResponse
+	28, // 39: dashboard.orgs.v1.OrgsService.UpdateMemberRole:output_type -> dashboard.orgs.v1.UpdateMemberRoleResponse
+	28, // [28:40] is the sub-list for method output_type
+	16, // [16:28] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_dashboard_orgs_v1_orgs_proto_init() }
