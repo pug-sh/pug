@@ -27,8 +27,13 @@ var (
 // SetupSDK bootstraps the OpenTelemetry pipeline (propagator, tracer, meter, and
 // logger providers). It is safe to call from multiple goroutines; only the first
 // call initializes the SDK. Subsequent calls return the same shutdown function.
-// The returned shutdown is idempotent — only the first call performs the actual
-// shutdown; subsequent calls are no-ops that return nil.
+//
+// The returned shutdown is idempotent: only the first call performs the actual
+// shutdown; later calls do not re-run it and return the result (including any
+// error) cached from the first call — so they return nil only if that first
+// shutdown succeeded. The first caller's context governs the shutdown, so pass a
+// context with a live deadline; the cached result is reused for the rest of the
+// process lifetime.
 func SetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	setupOnce.Do(func() {
 		setupResult, setupErr = doSetupSDK(ctx)
@@ -122,7 +127,9 @@ func shutdownContext(ctx context.Context) (context.Context, context.CancelFunc) 
 }
 
 // onceShutdown wraps a shutdown function so that only the first call executes it;
-// subsequent calls return the same result without re-running the function.
+// subsequent calls return the same result without re-running the function. The
+// context passed to the first call is the one used for the shutdown; contexts
+// from later calls are ignored.
 func onceShutdown(fn func(context.Context) error) func(context.Context) error {
 	var once sync.Once
 	var err error
