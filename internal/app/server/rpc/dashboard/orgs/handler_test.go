@@ -379,9 +379,8 @@ func TestInviteMemberHandlerAcceptsRole(t *testing.T) {
 	}
 }
 
-// acceptStubPublisher discards published email jobs — AcceptInvite indirectly
-// goes through InviteMember which publishes; the test does not care about the
-// email side-effect, only the response shape.
+// acceptStubPublisher discards published email jobs. Used by invite-related
+// handler tests where the email side-effect is not under test.
 type acceptStubPublisher struct{}
 
 func (acceptStubPublisher) Publish(_ context.Context, _ string, _ []byte) error { return nil }

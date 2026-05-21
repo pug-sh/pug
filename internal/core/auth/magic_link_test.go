@@ -161,33 +161,19 @@ func TestCompleteMagicLink_InviteJoinsOrgWithRole(t *testing.T) {
 	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{OrgID: org.ID, CustomerID: inviter.ID, Role: coreorgs.RoleAdmin.String()}); err != nil {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
-	dispatch, err := orgsSvc.InviteMemberWithRole(ctx, org.ID, inviter.ID, "mlinv-invitee@example.com", coreorgs.RoleMember)
+	dispatch, err := orgsSvc.InviteMemberWithRole(ctx, org.ID, inviter.ID, "mlinv-invitee@example.com", coreorgs.RoleAdmin)
 	if err != nil {
 		t.Fatalf("InviteMemberWithRole: %v", err)
 	}
 
-	rawToken := "ml-invite-raw-token"
-	if _, err := write.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
-		ID:              "eat-mlinv",
-		CustomerID:      postgres.NewOptionalText(""),
-		Email:           "mlinv-invitee@example.com",
-		Purpose:         coreorgs.MagicLinkTokenPurpose,
-		TokenHash:       hashToken(rawToken),
-		OrgInvitationID: postgres.NewOptionalText(dispatch.Invitation.ID),
-		ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(time.Hour)),
-	}); err != nil {
-		t.Fatalf("CreateEmailActionToken: %v", err)
-	}
-
 	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
-	jwtTok, err := svc.CompleteMagicLink(ctx, rawToken)
+	jwtTok, err := svc.CompleteMagicLink(ctx, dispatch.RawToken)
 	if err != nil {
 		t.Fatalf("CompleteMagicLink: %v", err)
 	}
 	if jwtTok == "" {
 		t.Fatal("expected JWT")
 	}
-
 	cust, err := read.GetCustomerByEmail(ctx, "mlinv-invitee@example.com")
 	if err != nil {
 		t.Fatalf("GetCustomerByEmail: %v", err)
@@ -197,7 +183,92 @@ func TestCompleteMagicLink_InviteJoinsOrgWithRole(t *testing.T) {
 		t.Fatalf("orgs = %+v err=%v, want exactly the invited org %s", orgsForCust, err, org.ID)
 	}
 	role, err := write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{OrgID: org.ID, CustomerID: cust.ID})
-	if err != nil || role != coreorgs.RoleMember.String() {
-		t.Fatalf("role = %q err=%v, want MEMBER", role, err)
+	if err != nil || role != coreorgs.RoleAdmin.String() {
+		t.Fatalf("role = %q err=%v, want ADMIN", role, err)
+	}
+}
+
+func TestCompleteMagicLink_InviteExistingAccountJoinsOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+	ctx := context.Background()
+
+	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+	inviter, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: "cust-mlexist-inviter", Email: "mlexist-inviter@example.com", DisplayName: "Inviter", PasswordHash: "h", PictureUri: ""})
+	if err != nil {
+		t.Fatalf("CreateCustomer inviter: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-mlexist", DisplayName: "ML Exist Org"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{OrgID: org.ID, CustomerID: inviter.ID, Role: coreorgs.RoleAdmin.String()}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+	// Invitee already has an account (with a password).
+	existing, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: "cust-mlexist-invitee", Email: "mlexist-invitee@example.com", DisplayName: "Existing", PasswordHash: "h", PictureUri: ""})
+	if err != nil {
+		t.Fatalf("CreateCustomer invitee: %v", err)
+	}
+	dispatch, err := orgsSvc.InviteMemberWithRole(ctx, org.ID, inviter.ID, "mlexist-invitee@example.com", coreorgs.RoleMember)
+	if err != nil {
+		t.Fatalf("InviteMemberWithRole: %v", err)
+	}
+
+	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
+	if _, err := svc.CompleteMagicLink(ctx, dispatch.RawToken); err != nil {
+		t.Fatalf("CompleteMagicLink: %v", err)
+	}
+	// The EXISTING customer joined the invited org; no new account, no default org.
+	orgsForCust, err := read.GetOrgsByCustomerID(ctx, existing.ID)
+	if err != nil || len(orgsForCust) != 1 || orgsForCust[0].ID != org.ID {
+		t.Fatalf("orgs = %+v err=%v, want exactly the invited org for the existing account", orgsForCust, err)
+	}
+}
+
+func TestCompleteMagicLink_ExpiredInviteTokenRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	ctx := context.Background()
+
+	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+	inviter, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: "cust-mlexp-inviter", Email: "mlexp-inviter@example.com", DisplayName: "Inviter", PasswordHash: "h", PictureUri: ""})
+	if err != nil {
+		t.Fatalf("CreateCustomer inviter: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-mlexp", DisplayName: "ML Exp Org"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{OrgID: org.ID, CustomerID: inviter.ID, Role: coreorgs.RoleAdmin.String()}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+	dispatch, err := orgsSvc.InviteMemberWithRole(ctx, org.ID, inviter.ID, "mlexp-invitee@example.com", coreorgs.RoleMember)
+	if err != nil {
+		t.Fatalf("InviteMemberWithRole: %v", err)
+	}
+	// An EXPIRED magic-link token carrying the same invitation.
+	if _, err := write.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
+		ID:              "eat-mlexp",
+		CustomerID:      postgres.NewOptionalText(""),
+		Email:           "mlexp-invitee@example.com",
+		Purpose:         coreorgs.MagicLinkTokenPurpose,
+		TokenHash:       hashToken("expired-invite-raw"),
+		OrgInvitationID: postgres.NewOptionalText(dispatch.Invitation.ID),
+		ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(-time.Hour)),
+	}); err != nil {
+		t.Fatalf("CreateEmailActionToken: %v", err)
+	}
+
+	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
+	if _, err := svc.CompleteMagicLink(ctx, "expired-invite-raw"); !errors.Is(err, coreauth.ErrInvalidToken) {
+		t.Fatalf("err = %v, want ErrInvalidToken", err)
 	}
 }

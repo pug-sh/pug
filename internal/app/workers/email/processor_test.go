@@ -306,7 +306,7 @@ func TestProcessorOrgInviteLoadsInvitationContext(t *testing.T) {
 	if !strings.Contains(provider.msgs[0].TextBody, "Inviter invited you to join Worker Org") {
 		t.Fatalf("unexpected invite body: %q", provider.msgs[0].TextBody)
 	}
-	if !strings.Contains(provider.msgs[0].TextBody, "https://dashboard.example/accept-invite?token=invite-token") {
+	if !strings.Contains(provider.msgs[0].TextBody, "https://dashboard.example/magic-link?token=invite-token") {
 		t.Fatalf("unexpected invite link: %q", provider.msgs[0].TextBody)
 	}
 }

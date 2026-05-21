@@ -138,7 +138,7 @@ func (s *Service) SendVerificationResend(ctx context.Context, emailAddr, token, 
 }
 
 func (s *Service) SendOrgMemberInvite(ctx context.Context, orgID, emailAddr, orgName, inviterName, token, idempotencyKey string) error {
-	link := s.link("/accept-invite", token)
+	link := s.link("/magic-link", token)
 	safeOrg := sanitizeDisplay(orgName)
 	safeInviter := sanitizeDisplay(inviterName)
 	text := fmt.Sprintf("You were invited to join %s.\n\nAccept the invite: %s", safeOrg, link)
