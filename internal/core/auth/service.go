@@ -533,6 +533,91 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 	})
 }
 
+// CompleteMagicLink validates a single-use magic-link token, ensures an account
+// exists for the token's email (creating a passwordless one with a default org
+// on first use), marks the email verified, consumes the token, and returns a
+// session JWT. It ignores any caller session — the token alone decides identity.
+// Phase 1 handles the plain path only; magic_link tokens never carry an
+// org_invitation_id until Phase 2.
+func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, error) {
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin magic-link transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	defer func() {
+		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back magic-link transaction", slogx.Error(rbErr))
+			telemetry.RecordError(ctx, rbErr)
+		}
+	}()
+
+	r := dbread.New(tx)
+	w := dbwrite.New(tx)
+
+	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+		TokenHash: hashToken(token),
+		Purpose:   magicLinkPurpose,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrInvalidToken
+		}
+		slog.ErrorContext(ctx, "failed to look up magic-link token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	customerID := ""
+	if existing, err := r.GetCustomerByEmailOptional(ctx, emailToken.Email); err == nil {
+		customerID = existing.ID
+	} else if errors.Is(err, pgx.ErrNoRows) {
+		customerID = xid.New().String()
+		if _, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+			ID: customerID, Email: emailToken.Email, DisplayName: "", PictureUri: "", PasswordHash: "",
+		}); err != nil {
+			slog.ErrorContext(ctx, "failed to create magic-link customer", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return "", err
+		}
+		if _, err := coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
+			return "", err
+		}
+	} else {
+		slog.ErrorContext(ctx, "failed to look up magic-link customer", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrInvalidToken
+		}
+		slog.ErrorContext(ctx, "failed to consume magic-link token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	if _, err := w.MarkCustomerEmailVerified(ctx, customerID); err != nil {
+		slog.ErrorContext(ctx, "failed to mark email verified on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit magic-link transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+
+	jwtToken, err := s.generateJWT(customerID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate JWT on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	return jwtToken, nil
+}
+
 type issueActionTokenInput struct {
 	CustomerID string
 	Email      string

@@ -13,6 +13,7 @@ service AuthService {
   rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse) {}
   rpc ResendVerificationEmail(ResendVerificationEmailRequest) returns (ResendVerificationEmailResponse) {}
   rpc RequestMagicLink(RequestMagicLinkRequest) returns (RequestMagicLinkResponse) {}
+  rpc CompleteMagicLink(CompleteMagicLinkRequest) returns (CompleteMagicLinkResponse) {}
 }
 
 message SignInWithEmailRequest {
@@ -108,3 +109,11 @@ message RequestMagicLinkRequest {
 }
 
 message RequestMagicLinkResponse {}
+
+message CompleteMagicLinkRequest {
+  string token = 1 [(buf.validate.field).required = true];
+}
+
+message CompleteMagicLinkResponse {
+  string token = 1; // session JWT
+}

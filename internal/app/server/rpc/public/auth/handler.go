@@ -115,3 +115,17 @@ func (s *server) RequestMagicLink(
 	}
 	return connect.NewResponse(&authv1.RequestMagicLinkResponse{}), nil
 }
+
+func (s *server) CompleteMagicLink(
+	ctx context.Context,
+	req *connect.Request[authv1.CompleteMagicLinkRequest],
+) (*connect.Response[authv1.CompleteMagicLinkResponse], error) {
+	token, err := s.service.CompleteMagicLink(ctx, req.Msg.GetToken())
+	if err != nil {
+		if errors.Is(err, coreauth.ErrInvalidToken) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid or expired link"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	return connect.NewResponse(&authv1.CompleteMagicLinkResponse{Token: &token}), nil
+}

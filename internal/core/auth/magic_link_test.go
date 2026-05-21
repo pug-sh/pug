@@ -7,6 +7,7 @@ import (
 
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -69,4 +70,69 @@ func TestRequestMagicLink_IssuesTokenForKnownAndUnknownEmail(t *testing.T) {
 			t.Fatal("magic link job missing token")
 		}
 	}
+}
+
+func TestCompleteMagicLink_NewEmailCreatesVerifiedAccountAndOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	read := dbread.New(db.PgRO)
+	ctx := context.Background()
+	pub := &stubPublisher{}
+	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+
+	if err := svc.RequestMagicLink(ctx, "fresh@example.com"); err != nil {
+		t.Fatalf("RequestMagicLink: %v", err)
+	}
+	raw := lastMagicToken(t, pub)
+
+	jwtTok, err := svc.CompleteMagicLink(ctx, raw)
+	if err != nil {
+		t.Fatalf("CompleteMagicLink: %v", err)
+	}
+	if jwtTok == "" {
+		t.Fatal("expected a session JWT")
+	}
+	cust, err := read.GetCustomerByEmail(ctx, "fresh@example.com")
+	if err != nil {
+		t.Fatalf("GetCustomerByEmail: %v", err)
+	}
+	if !cust.EmailVerifiedAt.Valid {
+		t.Fatal("expected email_verified_at set")
+	}
+	orgs, err := read.GetOrgsByCustomerID(ctx, cust.ID)
+	if err != nil || len(orgs) == 0 {
+		t.Fatalf("expected a default org, got %d (err=%v)", len(orgs), err)
+	}
+
+	// Single-use: a second completion fails.
+	if _, err := svc.CompleteMagicLink(ctx, raw); !errors.Is(err, coreauth.ErrInvalidToken) {
+		t.Fatalf("second use err = %v, want ErrInvalidToken", err)
+	}
+}
+
+func TestCompleteMagicLink_InvalidToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	ctx := context.Background()
+	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
+	if _, err := svc.CompleteMagicLink(ctx, "no-such-token"); !errors.Is(err, coreauth.ErrInvalidToken) {
+		t.Fatalf("err = %v, want ErrInvalidToken", err)
+	}
+}
+
+func lastMagicToken(t *testing.T, pub *stubPublisher) string {
+	t.Helper()
+	if len(pub.jobs) == 0 {
+		t.Fatal("no published jobs")
+	}
+	last := pub.jobs[len(pub.jobs)-1].job
+	ml, ok := last.Payload.(*emailworkerv1.EmailJob_MagicLink)
+	if !ok {
+		t.Fatalf("last job is not a magic link: %T", last.Payload)
+	}
+	return ml.MagicLink.GetToken()
 }
