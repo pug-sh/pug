@@ -1,0 +1,12 @@
+package templates
+
+templ ProviderTest(b Brand) {
+	@Layout(b, b.ProductName+" email provider test", "Your "+b.ProductName+" email provider is working", "You received this because someone sent a test from your email provider settings.") {
+		@Heading() {
+			Your email provider is configured correctly
+		}
+		@Paragraph() {
+			This is a test message from { b.ProductName }. If you're reading it, your email provider is configured correctly and able to deliver mail.
+		}
+	}
+}

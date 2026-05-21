@@ -1,0 +1,18 @@
+package templates
+
+templ MagicLink(b Brand, link string) {
+	@Layout(b, "Your sign-in link", "Your single-use sign-in link for "+b.ProductName, "You received this because a sign-in was requested for this address. If that wasn't you, you can ignore this email.") {
+		@Heading() {
+			Sign in to { b.ProductName }
+		}
+		@Paragraph() {
+			Use the button below to sign in. The link works once and expires shortly.
+		}
+		@Button("Sign in to "+b.ProductName, link)
+		@Divider()
+		@Muted() {
+			Trouble with the button? Paste this link into your browser:
+		}
+		@LinkFallback(link)
+	}
+}
