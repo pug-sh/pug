@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 
 	"connectrpc.com/otelconnect"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -14,6 +15,8 @@ import (
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 )
+
+const shutdownTimeout = 5 * time.Second
 
 var (
 	setupOnce   sync.Once
@@ -24,8 +27,13 @@ var (
 // SetupSDK bootstraps the OpenTelemetry pipeline (propagator, tracer, meter, and
 // logger providers). It is safe to call from multiple goroutines; only the first
 // call initializes the SDK. Subsequent calls return the same shutdown function.
-// The returned shutdown is safe to call multiple times (OTel providers are no-ops
-// after the first shutdown).
+//
+// The returned shutdown is idempotent: only the first call performs the actual
+// shutdown; later calls do not re-run it and return the result (including any
+// error) cached from the first call — so they return nil only if that first
+// shutdown succeeded. The first caller's context governs the shutdown, so pass a
+// context with a live deadline; the cached result is reused for the rest of the
+// process lifetime.
 func SetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	setupOnce.Do(func() {
 		setupResult, setupErr = doSetupSDK(ctx)
@@ -82,28 +90,53 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 		otelslog.NewHandler(serviceName, otelslog.WithLoggerProvider(loggerProvider), otelslog.WithSource(true)),
 	)))
 
-	shutdown := func(ctx context.Context) error {
+	success = true
+	return onceShutdown(func(ctx context.Context) error {
+		shutdownCtx, cancel := shutdownContext(ctx)
+		defer cancel()
 		var errs []error
-		if err := tracerProvider.Shutdown(ctx); err != nil {
-			slog.ErrorContext(ctx, "failed to shutdown tracer provider", slogx.Error(err))
+		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
+			slog.ErrorContext(shutdownCtx, "failed to shutdown tracer provider", slogx.Error(err))
 			errs = append(errs, err)
 		}
-		if err := meterProvider.Shutdown(ctx); err != nil {
-			slog.ErrorContext(ctx, "failed to shutdown meter provider", slogx.Error(err))
+		if err := meterProvider.Shutdown(shutdownCtx); err != nil {
+			slog.ErrorContext(shutdownCtx, "failed to shutdown meter provider", slogx.Error(err))
 			errs = append(errs, err)
 		}
 		// Restore a plain stderr logger before shutting down the OTel logger
 		// provider so its own shutdown error can still be logged.
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-		if err := loggerProvider.Shutdown(ctx); err != nil {
-			slog.ErrorContext(ctx, "failed to shutdown logger provider", slogx.Error(err))
+		if err := loggerProvider.Shutdown(shutdownCtx); err != nil {
+			slog.ErrorContext(shutdownCtx, "failed to shutdown logger provider", slogx.Error(err))
 			errs = append(errs, err)
 		}
 		return errors.Join(errs...)
-	}
+	}), nil
+}
 
-	success = true
-	return shutdown, nil
+// shutdownContext preserves the caller's deadline when present and applies a
+// fallback timeout only when the caller provides no deadline.
+func shutdownContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		return context.WithTimeout(context.Background(), shutdownTimeout)
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, shutdownTimeout)
+}
+
+// onceShutdown wraps a shutdown function so that only the first call executes it;
+// subsequent calls return the same result without re-running the function. The
+// context passed to the first call is the one used for the shutdown; contexts
+// from later calls are ignored.
+func onceShutdown(fn func(context.Context) error) func(context.Context) error {
+	var once sync.Once
+	var err error
+	return func(ctx context.Context) error {
+		once.Do(func() { err = fn(ctx) })
+		return err
+	}
 }
 
 // NewOtelInterceptor initializes the OpenTelemetry SDK and returns a Connect RPC
