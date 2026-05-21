@@ -49,30 +49,3 @@ func TestSignInWithEmailRequest_Valid(t *testing.T) {
 	}
 }
 
-func TestVerifyEmailRequest_TokenRequired(t *testing.T) {
-	req := &authv1.VerifyEmailRequest{}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Error("expected validation error for missing token, got nil")
-	}
-}
-
-func TestRequestPasswordResetRequest_Valid(t *testing.T) {
-	req := &authv1.RequestPasswordResetRequest{Email: proto.String("test@example.com")}
-	if err := protovalidate.Validate(req); err != nil {
-		t.Errorf("expected valid, got error: %v", err)
-	}
-}
-
-func TestResetPasswordRequest_TokenRequired(t *testing.T) {
-	req := &authv1.ResetPasswordRequest{Password: proto.String("password123")}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Error("expected validation error for missing token, got nil")
-	}
-}
-
-func TestResendVerificationEmailRequest_Valid(t *testing.T) {
-	req := &authv1.ResendVerificationEmailRequest{Email: proto.String("test@example.com")}
-	if err := protovalidate.Validate(req); err != nil {
-		t.Errorf("expected valid, got error: %v", err)
-	}
-}

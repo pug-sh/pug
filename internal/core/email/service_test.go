@@ -70,8 +70,8 @@ func TestServicePlatformEmailPassesNilTenant(t *testing.T) {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
 
-	if err := svc.SendPasswordReset(context.Background(), "to@example.com", "tok", "key-2"); err != nil {
-		t.Fatalf("SendPasswordReset: %v", err)
+	if err := svc.SendMagicLink(context.Background(), "to@example.com", "tok", "key-2"); err != nil {
+		t.Fatalf("SendMagicLink: %v", err)
 	}
 	if resolver.gotTenant != nil {
 		t.Fatalf("expected nil tenant for platform email, got %q", *resolver.gotTenant)

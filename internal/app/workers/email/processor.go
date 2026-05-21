@@ -36,27 +36,6 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 
 	var err error
 	switch payload := job.Payload.(type) {
-	case *emailworkerv1.EmailJob_SignupVerifyWelcome:
-		err = p.mailer.SendSignupVerifyWelcome(
-			ctx,
-			payload.SignupVerifyWelcome.GetEmail(),
-			payload.SignupVerifyWelcome.GetToken(),
-			idempotencyKeyForJob(job),
-		)
-	case *emailworkerv1.EmailJob_PasswordReset:
-		err = p.mailer.SendPasswordReset(
-			ctx,
-			payload.PasswordReset.GetEmail(),
-			payload.PasswordReset.GetToken(),
-			idempotencyKeyForJob(job),
-		)
-	case *emailworkerv1.EmailJob_VerificationResend:
-		err = p.mailer.SendVerificationResend(
-			ctx,
-			payload.VerificationResend.GetEmail(),
-			payload.VerificationResend.GetToken(),
-			idempotencyKeyForJob(job),
-		)
 	case *emailworkerv1.EmailJob_MagicLink:
 		err = p.mailer.SendMagicLink(
 			ctx,
@@ -99,12 +78,6 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 
 func idempotencyKeyForJob(job *emailworkerv1.EmailJob) string {
 	switch payload := job.Payload.(type) {
-	case *emailworkerv1.EmailJob_SignupVerifyWelcome:
-		return "signup_verify_welcome:" + strings.TrimSpace(payload.SignupVerifyWelcome.GetToken())
-	case *emailworkerv1.EmailJob_PasswordReset:
-		return "password_reset:" + strings.TrimSpace(payload.PasswordReset.GetToken())
-	case *emailworkerv1.EmailJob_VerificationResend:
-		return "verification_resend:" + strings.TrimSpace(payload.VerificationResend.GetToken())
 	case *emailworkerv1.EmailJob_MagicLink:
 		return "magic_link:" + strings.TrimSpace(payload.MagicLink.GetToken())
 	case *emailworkerv1.EmailJob_OrgMemberInvite:

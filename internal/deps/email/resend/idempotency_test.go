@@ -11,7 +11,7 @@ import (
 func TestProviderSendSetsIdempotencyKeyHeader(t *testing.T) {
 	var called bool
 	provider := newTestProvider(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if got := r.Header.Get("Idempotency-Key"); got != "password_reset:reset-token" {
+		if got := r.Header.Get("Idempotency-Key"); got != "magic_link:tok" {
 			t.Fatalf("Idempotency-Key = %q", got)
 		}
 		called = true
@@ -19,10 +19,10 @@ func TestProviderSendSetsIdempotencyKeyHeader(t *testing.T) {
 	}))
 
 	err := provider.Send(context.Background(), emailspec.Message{
-		IdempotencyKey: "password_reset:reset-token",
+		IdempotencyKey: "magic_link:tok",
 		From:           "noreply@example.com",
 		To:             "test@example.com",
-		Subject:        "Reset your password",
+		Subject:        "Your sign-in link",
 		TextBody:       "body",
 	})
 	if err != nil {

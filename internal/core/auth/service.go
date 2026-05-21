@@ -68,13 +68,9 @@ const (
 	aud = "pug/dashboard"
 	iss = "pug/auth"
 
-	verifyEmailPurpose = "verify_email"
-	resetPasswordCause = "reset_password"
-	magicLinkPurpose   = coreorgs.MagicLinkTokenPurpose
+	magicLinkPurpose = coreorgs.MagicLinkTokenPurpose
 
-	verifyEmailTTL   = 24 * time.Hour
-	resetPasswordTTL = 2 * time.Hour
-	magicLinkTTL     = 15 * time.Minute
+	magicLinkTTL = 15 * time.Minute
 )
 
 type JobPublisher interface {
@@ -227,212 +223,6 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 	}
 
 	return token, nil
-}
-
-func (s *Service) VerifyEmail(ctx context.Context, token string) error {
-	tx, err := s.pgW.Begin(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to begin verify email transaction", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "failed rolling back verify email transaction", slogx.Error(rollbackErr))
-			telemetry.RecordError(ctx, rollbackErr)
-		}
-	}()
-
-	r := dbread.New(tx)
-	w := dbwrite.New(tx)
-
-	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
-		TokenHash: hashToken(token),
-		Purpose:   verifyEmailPurpose,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrInvalidToken
-		}
-		slog.ErrorContext(ctx, "failed to load verify email token", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	if !emailToken.CustomerID.Valid {
-		return ErrInvalidToken
-	}
-
-	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrInvalidToken
-		}
-		slog.ErrorContext(ctx, "failed to consume verify email token", slogx.Error(err), slog.String("token_id", emailToken.ID))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-
-	if _, err := w.MarkCustomerEmailVerified(ctx, emailToken.CustomerID.String); err != nil {
-		slog.ErrorContext(ctx, "failed to mark customer email verified", slogx.Error(err), slog.String("customer_id", emailToken.CustomerID.String))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed to commit verify email transaction", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-
-	return nil
-}
-
-func (s *Service) RequestPasswordReset(ctx context.Context, email string) error {
-	customer, err := s.read.GetCustomerByEmailOptional(ctx, email)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		slog.ErrorContext(ctx, "failed to lookup password reset customer", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-
-	resetToken, err := newActionToken()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate reset token", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	if err := s.issueActionTokenAndPublish(ctx, issueActionTokenInput{
-		CustomerID: customer.ID,
-		Email:      customer.Email,
-		Purpose:    resetPasswordCause,
-		TTL:        resetPasswordTTL,
-		RawToken:   resetToken,
-		Job: &emailworkerv1.EmailJob{
-			Payload: &emailworkerv1.EmailJob_PasswordReset{
-				PasswordReset: &emailworkerv1.PasswordResetPayload{
-					Email: proto.String(customer.Email),
-					Token: proto.String(resetToken),
-				},
-			},
-		},
-	}); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *Service) ResetPassword(ctx context.Context, token, password string) error {
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
-			return ErrPasswordTooLong
-		}
-		slog.ErrorContext(ctx, "failed to hash reset password", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-
-	tx, err := s.pgW.Begin(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to begin reset password transaction", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "failed rolling back reset password transaction", slogx.Error(rollbackErr))
-			telemetry.RecordError(ctx, rollbackErr)
-		}
-	}()
-
-	r := dbread.New(tx)
-	w := dbwrite.New(tx)
-
-	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
-		TokenHash: hashToken(token),
-		Purpose:   resetPasswordCause,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrInvalidToken
-		}
-		slog.ErrorContext(ctx, "failed to lookup reset password token", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	if !emailToken.CustomerID.Valid {
-		return ErrInvalidToken
-	}
-
-	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrInvalidToken
-		}
-		slog.ErrorContext(ctx, "failed to consume password reset token", slogx.Error(err), slog.String("token_id", emailToken.ID))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-
-	if _, err := w.UpdateCustomerPasswordHash(ctx, dbwrite.UpdateCustomerPasswordHashParams{
-		ID:           emailToken.CustomerID.String,
-		PasswordHash: string(passwordHash),
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to update customer password hash", slogx.Error(err), slog.String("customer_id", emailToken.CustomerID.String))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed to commit reset password transaction", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-
-	return nil
-}
-
-func (s *Service) ResendVerificationEmail(ctx context.Context, email string) error {
-	customer, err := s.read.GetCustomerByEmailOptional(ctx, email)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		slog.ErrorContext(ctx, "failed to lookup verification resend customer", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	if customer.EmailVerifiedAt.Valid {
-		return nil
-	}
-
-	verifyToken, err := newActionToken()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate verify resend token", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	if err := s.issueActionTokenAndPublish(ctx, issueActionTokenInput{
-		CustomerID: customer.ID,
-		Email:      customer.Email,
-		Purpose:    verifyEmailPurpose,
-		TTL:        verifyEmailTTL,
-		RawToken:   verifyToken,
-		Job: &emailworkerv1.EmailJob{
-			Payload: &emailworkerv1.EmailJob_VerificationResend{
-				VerificationResend: &emailworkerv1.VerificationResendPayload{
-					Email: proto.String(customer.Email),
-					Token: proto.String(verifyToken),
-				},
-			},
-		},
-	}); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // RequestMagicLink issues and emails a single-use magic link for the given
@@ -670,12 +460,6 @@ func (s *Service) publishEmailJob(ctx context.Context, job *emailworkerv1.EmailJ
 
 func payloadKindFromJob(ctx context.Context, job *emailworkerv1.EmailJob) string {
 	switch job.GetPayload().(type) {
-	case *emailworkerv1.EmailJob_SignupVerifyWelcome:
-		return "signup_verify_welcome"
-	case *emailworkerv1.EmailJob_PasswordReset:
-		return "password_reset"
-	case *emailworkerv1.EmailJob_VerificationResend:
-		return "verification_resend"
 	case *emailworkerv1.EmailJob_OrgMemberInvite:
 		return "org_member_invite"
 	case *emailworkerv1.EmailJob_MagicLink:
@@ -724,7 +508,7 @@ func (s *Service) generateJWT(id string) (string, error) {
 
 // newActionToken returns a 32-byte cryptographically-random token, hex-encoded
 // (64 chars). This is the sole secret an attacker would need to redeem a
-// password-reset or email-verification, so it must come from crypto/rand —
+// magic link, so it must come from crypto/rand —
 // not a monotonic ID generator like xid.
 func newActionToken() (string, error) {
 	b := make([]byte, 32)

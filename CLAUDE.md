@@ -89,9 +89,9 @@ PostgreSQL uses read/write separation:
 
 - **Org** is the top-level entity. Each customer belongs to one or more orgs via `org_members` (role: `ORG_ROLE_ADMIN` | `ORG_ROLE_MEMBER`).
 - **Projects** belong to an org (`org_id`). A project is always created within an org context.
-- **Invitations** (`org_invitations`) are pending membership records that expire after 7 days and transition from `INVITATION_STATUS_PENDING` → `INVITATION_STATUS_ACCEPTED`. The redeemable invite secret is stored only as a hash in `email_action_tokens` (`purpose = "org_invite"`); `org_invitations.token` is a non-redeemable storage value (rotated on resend via `RefreshOrgInvitationDelivery`) and is never returned by any RPC. Expiry is checked at accept time, not via a status transition. `ResendInvite` rotates the storage token, refreshes `expires_at`, invalidates any prior `email_action_tokens` for the invitation, and issues a fresh redeemable token — it does **not** change `status`; only acceptance flips PENDING → ACCEPTED.
+- **Invitations** (`org_invitations`) are pending membership records that expire after 7 days and transition from `INVITATION_STATUS_PENDING` → `INVITATION_STATUS_ACCEPTED`. The redeemable invite secret is stored only as a hash in `email_action_tokens` (`purpose = "magic_link"`); `org_invitations.token` is a non-redeemable storage value (rotated on resend via `RefreshOrgInvitationDelivery`) and is never returned by any RPC. Expiry is checked at accept time, not via a status transition. `ResendInvite` rotates the storage token, refreshes `expires_at`, invalidates any prior `email_action_tokens` for the invitation, and issues a fresh redeemable token — it does **not** change `status`; only acceptance flips PENDING → ACCEPTED.
 - Admin-only operations: `UpdateDisplayName`, `RemoveMember`, `InviteMember`, `ResendInvite`, `ListInvitations`. All other org endpoints require membership.
-- On sign-up, a default org and default project are created atomically in a single transaction.
+- On sign-up, a default org and default project are created atomically in a single transaction. Completing a *plain* (non-invite) magic link for a new email likewise provisions a default org + project (in `CompleteMagicLink`); an *invite* magic link instead joins the inviting org with the invitation's role.
 
 ### Auth & Principal
 

@@ -6,12 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/rs/xid"
 	"go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -22,7 +18,6 @@ import (
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
-	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
 
@@ -57,9 +52,6 @@ func TestAuthService(t *testing.T) {
 	ctx := context.Background()
 
 	var signupToken string
-	var verifyToken1 string
-	var verifyToken2 string
-	var resetToken string
 
 	t.Run("SignUpWithEmail", func(t *testing.T) {
 		token, err := svc.SignUpWithEmail(ctx, "test@example.com", "password123")
@@ -89,13 +81,13 @@ func TestAuthService(t *testing.T) {
 		if payload == nil {
 			t.Fatal("expected magic-link payload from sign-up")
 		}
-		verifyToken1 = payload.GetToken()
-		if verifyToken1 == "" {
+		magicLinkToken := payload.GetToken()
+		if magicLinkToken == "" {
 			t.Fatal("expected non-empty magic-link token")
 		}
 
 		if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
-			TokenHash: hashToken(verifyToken1),
+			TokenHash: hashToken(magicLinkToken),
 			Purpose:   "magic_link",
 		}); err != nil {
 			t.Fatalf("GetValidEmailActionTokenByHashAndPurpose(signup magic link): %v", err)
@@ -149,95 +141,6 @@ func TestAuthService(t *testing.T) {
 		}
 	})
 
-	t.Run("ResendVerificationEmail_invalidates_previous_token", func(t *testing.T) {
-		if err := svc.ResendVerificationEmail(ctx, "test@example.com"); err != nil {
-			t.Fatalf("ResendVerificationEmail: %v", err)
-		}
-		if len(publisher.jobs) != 2 {
-			t.Fatalf("expected 2 published jobs after resend, got %d", len(publisher.jobs))
-		}
-		payload := publisher.jobs[1].job.GetVerificationResend()
-		if payload == nil {
-			t.Fatal("expected verification resend payload")
-		}
-		verifyToken2 = payload.GetToken()
-		if verifyToken2 == "" || verifyToken2 == verifyToken1 {
-			t.Fatal("expected fresh verification resend token")
-		}
-
-		if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
-			TokenHash: hashToken(verifyToken1),
-			Purpose:   "verify_email",
-		}); !errors.Is(err, pgx.ErrNoRows) {
-			t.Fatalf("expected prior verification token to be invalidated, got %v", err)
-		}
-		if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
-			TokenHash: hashToken(verifyToken2),
-			Purpose:   "verify_email",
-		}); err != nil {
-			t.Fatalf("expected fresh verification token to be active: %v", err)
-		}
-	})
-
-	t.Run("VerifyEmail_rejects_invalidated_token", func(t *testing.T) {
-		if err := svc.VerifyEmail(ctx, verifyToken1); !errors.Is(err, auth.ErrInvalidToken) {
-			t.Fatalf("expected ErrInvalidToken, got %v", err)
-		}
-	})
-
-	t.Run("VerifyEmail_consumes_valid_token", func(t *testing.T) {
-		if err := svc.VerifyEmail(ctx, verifyToken2); err != nil {
-			t.Fatalf("VerifyEmail: %v", err)
-		}
-		customer, err := read.GetCustomerByEmail(ctx, "test@example.com")
-		if err != nil {
-			t.Fatalf("GetCustomerByEmail: %v", err)
-		}
-		if !customer.EmailVerifiedAt.Valid {
-			t.Fatal("expected customer email to be marked verified")
-		}
-		if err := svc.VerifyEmail(ctx, verifyToken2); !errors.Is(err, auth.ErrInvalidToken) {
-			t.Fatalf("expected reused token to fail, got %v", err)
-		}
-	})
-
-	t.Run("RequestPasswordReset_non_enumerating", func(t *testing.T) {
-		before := len(publisher.jobs)
-		if err := svc.RequestPasswordReset(ctx, "missing@example.com"); err != nil {
-			t.Fatalf("RequestPasswordReset(missing): %v", err)
-		}
-		if len(publisher.jobs) != before {
-			t.Fatal("missing customer should not publish a reset job")
-		}
-
-		if err := svc.RequestPasswordReset(ctx, "test@example.com"); err != nil {
-			t.Fatalf("RequestPasswordReset(existing): %v", err)
-		}
-		if len(publisher.jobs) != before+1 {
-			t.Fatalf("expected reset job to be published, got %d jobs", len(publisher.jobs))
-		}
-		payload := publisher.jobs[len(publisher.jobs)-1].job.GetPasswordReset()
-		if payload == nil {
-			t.Fatal("expected password reset payload")
-		}
-		resetToken = payload.GetToken()
-	})
-
-	t.Run("ResetPassword_updates_hash_and_consumes_token", func(t *testing.T) {
-		if err := svc.ResetPassword(ctx, resetToken, "new-password123"); err != nil {
-			t.Fatalf("ResetPassword: %v", err)
-		}
-		if _, err := svc.SignInWithEmail(ctx, "test@example.com", "password123"); !errors.Is(err, auth.ErrInvalidCredentials) {
-			t.Fatalf("expected old password to fail, got %v", err)
-		}
-		if _, err := svc.SignInWithEmail(ctx, "test@example.com", "new-password123"); err != nil {
-			t.Fatalf("expected new password to work, got %v", err)
-		}
-		if err := svc.ResetPassword(ctx, resetToken, "another-password"); !errors.Is(err, auth.ErrInvalidToken) {
-			t.Fatalf("expected reused reset token to fail, got %v", err)
-		}
-	})
-
 	t.Run("JWT_structure", func(t *testing.T) {
 		parsed, err := jwt.Parse(signupToken, func(t *jwt.Token) (any, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -267,18 +170,18 @@ func (failingPublisher) Publish(_ context.Context, _ string, _ []byte) error {
 	return errors.New("simulated publish failure")
 }
 
-// TestSignUpWithEmailCountsPublishFailure pins the alarm contract for
-// emails.publish_failure_total in the auth package. If publishing the welcome
-// verify-email job fails after tx commit:
+// The signup publish-failure alarm contract for emails.publish_failure_total
+// in the auth package (exercised by the signup_magic_link subtest below). If
+// publishing the signup magic-link job fails after tx commit:
 //
 //   - SignUpWithEmail must NOT return an error (fire-and-forget; the user has
 //     a valid account and JWT).
 //   - The customer + org + admin-member + default project rows must all
 //     remain in PG (tx already committed before publish).
-//   - The counter must tick with kind="signup_verify_welcome".
+//   - The counter must tick with kind="magic_link".
 //
 // Without the counter, a regression here would silently drop signup
-// confirmation emails for every new user.
+// magic-link emails for every new user.
 // assertAuthEmailFailureCounter mirrors the orgs-test helper. Lives here
 // (not as a shared helper) to keep the test packages independent.
 func assertAuthEmailFailureCounter(t *testing.T, reader sdkmetric.Reader, kind string) {
@@ -313,120 +216,10 @@ func assertAuthEmailFailureCounter(t *testing.T, reader sdkmetric.Reader, kind s
 	}
 }
 
-// TestVerifyEmailRejectsResetPasswordToken pins purpose-isolation: a token
-// issued for password reset must NOT be redeemable as a verify-email token.
-// If the purpose constants were ever collapsed (or the gate accidentally
-// dropped from the query), an attacker who phished a reset link could redeem
-// it as a verify-email token (or vice versa). Both directions are tested.
-func TestEmailActionTokenPurposeIsolation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	db := testutil.SetupPostgres(t)
-	publisher := &stubPublisher{}
-	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), publisher)
-	ctx := context.Background()
-
-	t.Run("verify_email_rejects_reset_password_token", func(t *testing.T) {
-		const email = "purpose-1@example.com"
-		if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
-			t.Fatalf("SignUpWithEmail: %v", err)
-		}
-		// Consume the signup magic-link token to verify the email, so the
-		// customer is eligible for a password reset.
-		magicTok := publisher.jobs[len(publisher.jobs)-1].job.GetMagicLink().GetToken()
-		if _, err := svc.CompleteMagicLink(ctx, magicTok); err != nil {
-			t.Fatalf("CompleteMagicLink seed: %v", err)
-		}
-		// Issue a reset_password token.
-		if err := svc.RequestPasswordReset(ctx, email); err != nil {
-			t.Fatalf("RequestPasswordReset: %v", err)
-		}
-		resetTok := publisher.jobs[len(publisher.jobs)-1].job.GetPasswordReset().GetToken()
-		// Attempt to redeem the reset token as a verify token.
-		if err := svc.VerifyEmail(ctx, resetTok); !errors.Is(err, auth.ErrInvalidToken) {
-			t.Fatalf("expected ErrInvalidToken when verifying with a reset token, got %v", err)
-		}
-	})
-
-	t.Run("reset_password_rejects_verify_email_token", func(t *testing.T) {
-		const email = "purpose-2@example.com"
-		if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
-			t.Fatalf("SignUpWithEmail: %v", err)
-		}
-		// Signup now sends a magic-link; get a verify_email token via resend.
-		if err := svc.ResendVerificationEmail(ctx, email); err != nil {
-			t.Fatalf("ResendVerificationEmail seed: %v", err)
-		}
-		verifyTok := publisher.jobs[len(publisher.jobs)-1].job.GetVerificationResend().GetToken()
-		// Attempt to redeem the verify token as a reset token.
-		if err := svc.ResetPassword(ctx, verifyTok, "new-password123"); !errors.Is(err, auth.ErrInvalidToken) {
-			t.Fatalf("expected ErrInvalidToken when resetting with a verify token, got %v", err)
-		}
-	})
-}
-
-// TestEmailActionTokenExpiredRejection pins the `expires_at > now()` predicate
-// at the service-call layer (rather than only transitively via "already
-// consumed"). If the SQL predicate were ever removed during a query rewrite,
-// an attacker who learned a stale token would gain indefinite reuse.
-func TestEmailActionTokenExpiredRejection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	db := testutil.SetupPostgres(t)
-	publisher := &stubPublisher{}
-	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), publisher)
-	write := dbwrite.New(db.PgW)
-	ctx := context.Background()
-
-	const email = "expired@example.com"
-	if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
-		t.Fatalf("SignUpWithEmail: %v", err)
-	}
-	customer, err := dbread.New(db.PgW).GetCustomerByEmail(ctx, email)
-	if err != nil {
-		t.Fatalf("GetCustomerByEmail: %v", err)
-	}
-
-	insertExpired := func(t *testing.T, purpose string) string {
-		t.Helper()
-		raw := xid.New().String() + xid.New().String()
-		if _, err := write.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
-			ID:         xid.New().String(),
-			CustomerID: pgtype.Text{String: customer.ID, Valid: true},
-			Email:      email,
-			Purpose:    purpose,
-			TokenHash:  hashToken(raw),
-			ExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(-1 * time.Hour), Valid: true},
-		}); err != nil {
-			t.Fatalf("CreateEmailActionToken: %v", err)
-		}
-		return raw
-	}
-
-	t.Run("verify_email_rejects_expired_token", func(t *testing.T) {
-		tok := insertExpired(t, "verify_email")
-		if err := svc.VerifyEmail(ctx, tok); !errors.Is(err, auth.ErrInvalidToken) {
-			t.Fatalf("expected ErrInvalidToken for expired verify token, got %v", err)
-		}
-	})
-
-	t.Run("reset_password_rejects_expired_token", func(t *testing.T) {
-		tok := insertExpired(t, "reset_password")
-		if err := svc.ResetPassword(ctx, tok, "new-pass123"); !errors.Is(err, auth.ErrInvalidToken) {
-			t.Fatalf("expected ErrInvalidToken for expired reset token, got %v", err)
-		}
-	})
-}
-
-// TestEmailPublishFailureCountersByKind pins SG2-14 + SG2-15 + the
-// password_reset/verification_resend gaps in the existing
-// TestSignUpWithEmailCountsPublishFailure: every payload-kind path through
-// publishEmailJob must tick emails.publish_failure_total with the right
-// {kind} attribute when the underlying publish fails.
+// TestEmailPublishFailureCountersByKind pins the alarm contract: every
+// payload-kind path through publishEmailJob must tick
+// emails.publish_failure_total with the right {kind} attribute when the
+// underlying publish fails.
 //
 // All sub-tests share one MeterProvider because otel-go's global delegating
 // instruments lock to the FIRST SetMeterProvider call; SetMeterProvider in
@@ -484,28 +277,6 @@ func TestEmailPublishFailureCountersByKind(t *testing.T) {
 		}
 
 		assertAuthEmailFailureCounter(t, reader, "magic_link")
-	})
-
-	t.Run("password_reset", func(t *testing.T) {
-		const email = "pwreset-publish-failure@example.com"
-		if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
-			t.Fatalf("SignUpWithEmail: %v", err)
-		}
-		if err := svc.RequestPasswordReset(ctx, email); err != nil {
-			t.Fatalf("RequestPasswordReset should swallow publish failure, got: %v", err)
-		}
-		assertAuthEmailFailureCounter(t, reader, "password_reset")
-	})
-
-	t.Run("verification_resend", func(t *testing.T) {
-		const email = "vresend-publish-failure@example.com"
-		if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
-			t.Fatalf("SignUpWithEmail: %v", err)
-		}
-		if err := svc.ResendVerificationEmail(ctx, email); err != nil {
-			t.Fatalf("ResendVerificationEmail should swallow publish failure, got: %v", err)
-		}
-		assertAuthEmailFailureCounter(t, reader, "verification_resend")
 	})
 
 	t.Run("magic_link", func(t *testing.T) {

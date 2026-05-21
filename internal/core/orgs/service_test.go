@@ -324,7 +324,7 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 	if resendDispatch.RawToken == firstDispatch.RawToken {
 		t.Fatal("resend should rotate the raw invite token")
 	}
-	// Status must remain PENDING — only AcceptInvite advances state.
+	// Status must remain PENDING — only acceptance (ApplyInviteAcceptanceInTx) advances state.
 	if resendDispatch.Invitation.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
 		t.Fatalf("status = %q, want PENDING", resendDispatch.Invitation.Status)
 	}
@@ -612,7 +612,7 @@ func TestAddMemberRejectsDuplicate(t *testing.T) {
 
 // inviteFixture sets up an inviter customer + org + invitee customer +
 // pending invitation, and returns the raw invite token. Centralises the
-// boilerplate used by the AcceptInvite test suite below.
+// boilerplate used by the invite tests below.
 type inviteFixture struct {
 	t        *testing.T
 	svc      *orgs.Service
