@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	coreemail "github.com/pug-sh/pug/internal/core/email"
+	"github.com/pug-sh/pug/internal/core/email/templates"
 )
 
 func newTestRenderer() *coreemail.Renderer {
@@ -22,8 +23,8 @@ func TestRenderMagicLinkHTML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MagicLink: %v", err)
 	}
-	// premailer must have inlined the button background.
-	if !strings.Contains(html, "background-color:#3c68d9") && !strings.Contains(html, "background:#3c68d9") {
+	// premailer must have inlined the button background (brand primary color).
+	if !strings.Contains(html, "background-color:"+templates.ColorPrimary) {
 		t.Fatalf("button background not inlined; html=%s", html)
 	}
 	// The action link must be present and intact.
@@ -83,5 +84,43 @@ func TestRenderProviderTest(t *testing.T) {
 	}
 	if !strings.Contains(text, "configured correctly") {
 		t.Fatalf("provider-test text missing confirmation copy: %q", text)
+	}
+}
+
+// TestRenderInviteEscapesHTMLInjection locks the feature's core safety
+// contract: attacker-controlled org/inviter names must be HTML-escaped by
+// templ, never emitted as live markup.
+func TestRenderInviteEscapesHTMLInjection(t *testing.T) {
+	r := newTestRenderer()
+	const payload = `<script>alert(1)</script>`
+	html, _, err := r.Invite(context.Background(), payload, payload, "https://app.example/x")
+	if err != nil {
+		t.Fatalf("Invite: %v", err)
+	}
+	if strings.Contains(html, payload) {
+		t.Fatalf("raw script payload reached html output (XSS): %s", html)
+	}
+	if !strings.Contains(html, "&lt;script&gt;") {
+		t.Fatalf("expected escaped payload in html, got: %s", html)
+	}
+}
+
+// TestPlaintextTwinsCarryExpiryFacts guards the hand-written plaintext twins
+// against drifting away from the expiry facts their HTML counterparts state.
+func TestPlaintextTwinsCarryExpiryFacts(t *testing.T) {
+	r := newTestRenderer()
+	_, mlText, err := r.MagicLink(context.Background(), "https://app.example/x")
+	if err != nil {
+		t.Fatalf("MagicLink: %v", err)
+	}
+	if !strings.Contains(mlText, "expires shortly") {
+		t.Fatalf("magic-link plaintext missing expiry hint: %q", mlText)
+	}
+	_, invText, err := r.Invite(context.Background(), "Acme", "Alice", "https://app.example/x")
+	if err != nil {
+		t.Fatalf("Invite: %v", err)
+	}
+	if !strings.Contains(invText, "expires in 7 days") {
+		t.Fatalf("invite plaintext missing expiry: %q", invText)
 	}
 }

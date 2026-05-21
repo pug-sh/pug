@@ -152,3 +152,29 @@ func TestServiceSendTestUsesOrgIDWhenProvided(t *testing.T) {
 		t.Fatalf("From override should apply, got %q", cap.got.From)
 	}
 }
+
+func TestServiceInviteSubjectReflectsInviter(t *testing.T) {
+	cap := &captureProvider{}
+	resolver := &staticResolver{provider: cap, from: coreemail.ResolvedFrom{}}
+	svc, err := coreemail.NewServiceWithResolver(coreemail.Config{
+		DashboardBaseURL: "https://dashboard.example",
+		From:             "noreply@operator.com",
+	}, resolver)
+	if err != nil {
+		t.Fatalf("NewServiceWithResolver: %v", err)
+	}
+
+	if err := svc.SendOrgMemberInvite(context.Background(), "org-1", "to@example.com", "Acme", "Alice", "tok", "k1"); err != nil {
+		t.Fatalf("SendOrgMemberInvite: %v", err)
+	}
+	if want := "Alice invited you to join Acme"; cap.got.Subject != want {
+		t.Fatalf("with-inviter subject = %q, want %q", cap.got.Subject, want)
+	}
+
+	if err := svc.SendOrgMemberInvite(context.Background(), "org-1", "to@example.com", "Acme", "", "tok", "k2"); err != nil {
+		t.Fatalf("SendOrgMemberInvite: %v", err)
+	}
+	if want := "Invitation to join Acme"; cap.got.Subject != want {
+		t.Fatalf("no-inviter subject = %q, want %q", cap.got.Subject, want)
+	}
+}
