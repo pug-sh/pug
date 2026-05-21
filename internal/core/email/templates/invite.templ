@@ -1,7 +1,7 @@
 package templates
 
 templ Invite(b Brand, orgName, inviterName, link string) {
-	@Layout(b, "Invitation to join "+orgName, inviterName+" invited you to join "+orgName, "This invitation expires in 7 days. If you weren't expecting it, you can ignore this email.") {
+	@Layout(b, "Invitation to join "+orgName, invitePreview(b, orgName, inviterName), "This invitation expires in 7 days. If you weren't expecting it, you can ignore this email.") {
 		@Heading() {
 			Join { orgName } on { b.ProductName }
 		}

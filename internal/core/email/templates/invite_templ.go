@@ -249,7 +249,7 @@ func Invite(b Brand, orgName, inviterName, link string) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = Layout(b, "Invitation to join "+orgName, inviterName+" invited you to join "+orgName, "This invitation expires in 7 days. If you weren't expecting it, you can ignore this email.").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout(b, "Invitation to join "+orgName, invitePreview(b, orgName, inviterName), "This invitation expires in 7 days. If you weren't expecting it, you can ignore this email.").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
