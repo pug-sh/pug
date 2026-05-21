@@ -85,20 +85,20 @@ func TestAuthService(t *testing.T) {
 		if publisher.jobs[0].subject != natsdeps.MiscEmailJobsSubject {
 			t.Fatalf("subject = %q, want %q", publisher.jobs[0].subject, natsdeps.MiscEmailJobsSubject)
 		}
-		payload := publisher.jobs[0].job.GetSignupVerifyWelcome()
+		payload := publisher.jobs[0].job.GetMagicLink()
 		if payload == nil {
-			t.Fatal("expected signup verify welcome payload")
+			t.Fatal("expected magic-link payload from sign-up")
 		}
 		verifyToken1 = payload.GetToken()
 		if verifyToken1 == "" {
-			t.Fatal("expected non-empty verification token")
+			t.Fatal("expected non-empty magic-link token")
 		}
 
 		if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
 			TokenHash: hashToken(verifyToken1),
-			Purpose:   "verify_email",
+			Purpose:   "magic_link",
 		}); err != nil {
-			t.Fatalf("GetValidEmailActionTokenByHashAndPurpose(signup verify): %v", err)
+			t.Fatalf("GetValidEmailActionTokenByHashAndPurpose(signup magic link): %v", err)
 		}
 
 		// Verify the CreateOrgWithDefaultsInTx wiring: the new customer is the
@@ -333,10 +333,11 @@ func TestEmailActionTokenPurposeIsolation(t *testing.T) {
 		if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
 			t.Fatalf("SignUpWithEmail: %v", err)
 		}
-		// Drain the welcome verify token.
-		verifyTok := publisher.jobs[len(publisher.jobs)-1].job.GetSignupVerifyWelcome().GetToken()
-		if err := svc.VerifyEmail(ctx, verifyTok); err != nil {
-			t.Fatalf("VerifyEmail seed: %v", err)
+		// Consume the signup magic-link token to verify the email, so the
+		// customer is eligible for a password reset.
+		magicTok := publisher.jobs[len(publisher.jobs)-1].job.GetMagicLink().GetToken()
+		if _, err := svc.CompleteMagicLink(ctx, magicTok); err != nil {
+			t.Fatalf("CompleteMagicLink seed: %v", err)
 		}
 		// Issue a reset_password token.
 		if err := svc.RequestPasswordReset(ctx, email); err != nil {
@@ -354,7 +355,11 @@ func TestEmailActionTokenPurposeIsolation(t *testing.T) {
 		if _, err := svc.SignUpWithEmail(ctx, email, "password123"); err != nil {
 			t.Fatalf("SignUpWithEmail: %v", err)
 		}
-		verifyTok := publisher.jobs[len(publisher.jobs)-1].job.GetSignupVerifyWelcome().GetToken()
+		// Signup now sends a magic-link; get a verify_email token via resend.
+		if err := svc.ResendVerificationEmail(ctx, email); err != nil {
+			t.Fatalf("ResendVerificationEmail seed: %v", err)
+		}
+		verifyTok := publisher.jobs[len(publisher.jobs)-1].job.GetVerificationResend().GetToken()
 		// Attempt to redeem the verify token as a reset token.
 		if err := svc.ResetPassword(ctx, verifyTok, "new-password123"); !errors.Is(err, auth.ErrInvalidToken) {
 			t.Fatalf("expected ErrInvalidToken when resetting with a verify token, got %v", err)
@@ -441,7 +446,7 @@ func TestEmailPublishFailureCountersByKind(t *testing.T) {
 	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), failingPublisher{})
 	ctx := context.Background()
 
-	t.Run("signup_verify_welcome", func(t *testing.T) {
+	t.Run("signup_magic_link", func(t *testing.T) {
 		const email = "signup-publish-failure@example.com"
 		token, err := svc.SignUpWithEmail(ctx, email, "password123")
 		if err != nil {
@@ -478,7 +483,7 @@ func TestEmailPublishFailureCountersByKind(t *testing.T) {
 			t.Fatalf("want 1 default project for new signup, got %d", projCount)
 		}
 
-		assertAuthEmailFailureCounter(t, reader, "signup_verify_welcome")
+		assertAuthEmailFailureCounter(t, reader, "magic_link")
 	})
 
 	t.Run("password_reset", func(t *testing.T) {

@@ -143,9 +143,9 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		return "", err
 	}
 
-	verifyToken, err := newActionToken()
+	magicToken, err := newActionToken()
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate verify token", slogx.Error(err))
+		slog.ErrorContext(ctx, "failed to generate magic-link token", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return "", err
 	}
@@ -153,12 +153,12 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 		ID:              xid.New().String(),
 		CustomerID:      postgres.NewOptionalText(customerID),
 		Email:           email,
-		Purpose:         verifyEmailPurpose,
-		TokenHash:       hashToken(verifyToken),
+		Purpose:         magicLinkPurpose,
+		TokenHash:       hashToken(magicToken),
 		OrgInvitationID: postgres.NewOptionalText(""),
-		ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(verifyEmailTTL)),
+		ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(magicLinkTTL)),
 	}); err != nil {
-		slog.ErrorContext(ctx, "failed to create email verification token", slogx.Error(err), slog.String("customer_id", customerID))
+		slog.ErrorContext(ctx, "failed to create signup magic-link token", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
 		return "", err
 	}
@@ -173,10 +173,10 @@ func (s *Service) SignUpWithEmail(ctx context.Context, email, password string) (
 	}
 
 	s.publishEmailJob(ctx, &emailworkerv1.EmailJob{
-		Payload: &emailworkerv1.EmailJob_SignupVerifyWelcome{
-			SignupVerifyWelcome: &emailworkerv1.SignUpVerifyWelcomePayload{
+		Payload: &emailworkerv1.EmailJob_MagicLink{
+			MagicLink: &emailworkerv1.MagicLinkPayload{
 				Email: proto.String(email),
-				Token: proto.String(verifyToken),
+				Token: proto.String(magicToken),
 			},
 		},
 	})

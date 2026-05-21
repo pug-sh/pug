@@ -272,3 +272,40 @@ func TestCompleteMagicLink_ExpiredInviteTokenRejected(t *testing.T) {
 		t.Fatalf("err = %v, want ErrInvalidToken", err)
 	}
 }
+
+func TestSignUpWithEmail_SendsMagicLinkForVerification(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	read := dbread.New(db.PgRO)
+	ctx := context.Background()
+	pub := &stubPublisher{}
+	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+
+	if _, err := svc.SignUpWithEmail(ctx, "signup-ml@example.com", "password123"); err != nil {
+		t.Fatalf("SignUpWithEmail: %v", err)
+	}
+	// Sign-up published a MAGIC-LINK email (not a verify-welcome one).
+	raw := lastMagicToken(t, pub)
+
+	// The account exists but is not yet verified.
+	cust, err := read.GetCustomerByEmail(ctx, "signup-ml@example.com")
+	if err != nil {
+		t.Fatalf("GetCustomerByEmail: %v", err)
+	}
+	if cust.EmailVerifiedAt.Valid {
+		t.Fatal("expected email NOT verified before clicking the link")
+	}
+	// Completing the magic link verifies the email + returns a session.
+	if _, err := svc.CompleteMagicLink(ctx, raw); err != nil {
+		t.Fatalf("CompleteMagicLink: %v", err)
+	}
+	cust2, err := read.GetCustomerByEmail(ctx, "signup-ml@example.com")
+	if err != nil {
+		t.Fatalf("GetCustomerByEmail after: %v", err)
+	}
+	if !cust2.EmailVerifiedAt.Valid {
+		t.Fatal("expected email verified after completing the magic link")
+	}
+}
