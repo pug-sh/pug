@@ -9,6 +9,7 @@ import (
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
+	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -274,6 +275,7 @@ func TestProcessorOrgInviteLoadsInvitationContext(t *testing.T) {
 		ID:        "invite-1",
 		InviterID: postgres.NewOptionalText(customer.ID),
 		OrgID:     org.ID,
+		Role:      orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
 		Token:     "invite-token",
 	})
 	if err != nil {

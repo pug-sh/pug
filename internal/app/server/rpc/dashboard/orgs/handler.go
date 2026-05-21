@@ -270,42 +270,6 @@ func (s *server) ResendInvite(
 	return connect.NewResponse(&orgsv1.ResendInviteResponse{Invitation: toRPCInvitation(ctx, dispatch.Invitation)}), nil
 }
 
-func (s *server) AcceptInvite(
-	ctx context.Context,
-	req *connect.Request[orgsv1.AcceptInviteRequest],
-) (*connect.Response[orgsv1.AcceptInviteResponse], error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
-	}
-
-	accepted, err := s.service.AcceptInviteWithRole(ctx, req.Msg.GetToken(), principal.Customer.ID, principal.Customer.Email)
-	if err != nil {
-		if errors.Is(err, coreorgs.ErrInviteWrongEmail) {
-			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("invitation was issued to a different email address"))
-		}
-		if errors.Is(err, coreorgs.ErrInviteNotPending) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("invitation is no longer pending"))
-		}
-		if errors.Is(err, coreorgs.ErrInviteExpired) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("invitation has expired"))
-		}
-		if errors.Is(err, coreorgs.ErrAlreadyMember) {
-			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("already a member of this org"))
-		}
-		if errors.Is(err, coreorgs.ErrInviteNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("invitation not found"))
-		}
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-
-	return connect.NewResponse(&orgsv1.AcceptInviteResponse{Org: toRPCOrg(accepted.Org, accepted.Role)}), nil
-}
-
 func (s *server) ListInvitations(
 	ctx context.Context,
 	req *connect.Request[orgsv1.ListInvitationsRequest],

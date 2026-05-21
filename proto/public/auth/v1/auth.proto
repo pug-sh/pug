@@ -34,31 +34,16 @@ message SignInWithEmailResponse {
 }
 
 message SignUpWithEmailRequest {
-  option (buf.validate.message).cel = {
-    id: "signup.email_required_without_invite"
-    message: "email is required unless invite_token is provided"
-    expression: "this.invite_token != '' || this.email != ''"
-  };
-  // When invite_token is set this value is not used (the email is taken from the
-  // invitation server-side) — but if non-empty it must still be a valid email,
-  // because the field rule below applies unconditionally. Required and must be a
-  // valid email when no invite_token is provided.
-  string email = 1 [(buf.validate.field).cel = {
-    id: "email.empty_or_valid"
-    message: "email must be a valid email address"
-    expression: "this == '' || this.isEmail()"
-  }];
+  string email = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.email = true
+  ];
   // bcrypt accepts at most 72 bytes; rejecting longer inputs at the
   // interceptor avoids surfacing bcrypt.ErrPasswordTooLong as CodeInternal.
   string password = 2 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_bytes = 72
   ];
-  // Optional org-invite token. When present and valid, the new customer's email
-  // is taken from the invitation, the customer joins the invited org, the email
-  // is auto-verified, and no default org/project is created. An invalid/expired
-  // token is rejected with FailedPrecondition (no default-org fallback).
-  string invite_token = 3;
 }
 
 message SignUpWithEmailResponse {

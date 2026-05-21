@@ -52,15 +52,6 @@ func roleFromDBJoinRow(ctx context.Context, raw string) coreorgs.Role {
 	return role
 }
 
-// toRPCOrg converts a dbread.Org plus the caller's role to the proto Org.
-func toRPCOrg(o dbread.Org, role coreorgs.Role) *orgsv1.Org {
-	return &orgsv1.Org{
-		DisplayName: proto.String(o.DisplayName),
-		Id:          proto.String(o.ID),
-		Role:        toRPCRole(role).Enum(),
-	}
-}
-
 func toRPCOrgFromWrite(o dbwrite.Org, role coreorgs.Role) *orgsv1.Org {
 	return &orgsv1.Org{
 		DisplayName: proto.String(o.DisplayName),
