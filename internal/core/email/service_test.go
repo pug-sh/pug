@@ -107,6 +107,27 @@ func TestServiceLegacyNewServiceUsesOperatorOnly(t *testing.T) {
 	}
 }
 
+func TestSendMagicLink(t *testing.T) {
+	cap := &captureProvider{}
+	resolver := &staticResolver{provider: cap, from: coreemail.ResolvedFrom{}}
+	svc, err := coreemail.NewServiceWithResolver(coreemail.Config{
+		DashboardBaseURL: "https://dashboard.example",
+		From:             "noreply@operator.com",
+	}, resolver)
+	if err != nil {
+		t.Fatalf("NewServiceWithResolver: %v", err)
+	}
+	if err := svc.SendMagicLink(context.Background(), "user@example.com", "tok123", "magic_link:tok123"); err != nil {
+		t.Fatalf("SendMagicLink: %v", err)
+	}
+	if cap.got.To != "user@example.com" {
+		t.Fatalf("To = %q", cap.got.To)
+	}
+	if !strings.Contains(cap.got.TextBody, "/magic-link?token=tok123") {
+		t.Fatalf("TextBody missing magic link: %q", cap.got.TextBody)
+	}
+}
+
 func TestServiceSendTestUsesOrgIDWhenProvided(t *testing.T) {
 	cap := &captureProvider{}
 	resolver := &staticResolver{provider: cap, from: coreemail.ResolvedFrom{From: "tenant@example.com"}}

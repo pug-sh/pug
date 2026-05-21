@@ -12,6 +12,7 @@ message EmailJob {
     PasswordResetPayload password_reset = 2;
     OrgMemberInvitePayload org_member_invite = 3;
     VerificationResendPayload verification_resend = 4;
+    MagicLinkPayload magic_link = 5;
   }
 }
 
@@ -41,6 +42,14 @@ message OrgMemberInvitePayload {
 }
 
 message VerificationResendPayload {
+  string email = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.email = true
+  ];
+  string token = 2 [(buf.validate.field).required = true];
+}
+
+message MagicLinkPayload {
   string email = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.email = true

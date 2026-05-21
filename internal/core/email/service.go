@@ -119,6 +119,15 @@ func (s *Service) SendPasswordReset(ctx context.Context, emailAddr, token, idemp
 	return s.send(ctx, nil, msg)
 }
 
+func (s *Service) SendMagicLink(ctx context.Context, emailAddr, token, idempotencyKey string) error {
+	link := s.link("/magic-link", token)
+	msg := s.baseMessage(idempotencyKey, emailAddr)
+	msg.Subject = "Your sign-in link"
+	msg.TextBody = fmt.Sprintf("Sign in to Pug: %s", link)
+	msg.HTMLBody = fmt.Sprintf("<p><a href=\"%s\">Sign in to Pug</a>.</p>", html.EscapeString(link))
+	return s.send(ctx, nil, msg)
+}
+
 func (s *Service) SendVerificationResend(ctx context.Context, emailAddr, token, idempotencyKey string) error {
 	link := s.link("/verify-email", token)
 	msg := s.baseMessage(idempotencyKey, emailAddr)

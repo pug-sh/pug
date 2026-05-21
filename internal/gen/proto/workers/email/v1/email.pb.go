@@ -30,6 +30,7 @@ type EmailJob struct {
 	//	*EmailJob_PasswordReset
 	//	*EmailJob_OrgMemberInvite
 	//	*EmailJob_VerificationResend
+	//	*EmailJob_MagicLink
 	Payload       isEmailJob_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -108,6 +109,15 @@ func (x *EmailJob) GetVerificationResend() *VerificationResendPayload {
 	return nil
 }
 
+func (x *EmailJob) GetMagicLink() *MagicLinkPayload {
+	if x != nil {
+		if x, ok := x.Payload.(*EmailJob_MagicLink); ok {
+			return x.MagicLink
+		}
+	}
+	return nil
+}
+
 type isEmailJob_Payload interface {
 	isEmailJob_Payload()
 }
@@ -128,6 +138,10 @@ type EmailJob_VerificationResend struct {
 	VerificationResend *VerificationResendPayload `protobuf:"bytes,4,opt,name=verification_resend,json=verificationResend,oneof"`
 }
 
+type EmailJob_MagicLink struct {
+	MagicLink *MagicLinkPayload `protobuf:"bytes,5,opt,name=magic_link,json=magicLink,oneof"`
+}
+
 func (*EmailJob_SignupVerifyWelcome) isEmailJob_Payload() {}
 
 func (*EmailJob_PasswordReset) isEmailJob_Payload() {}
@@ -135,6 +149,8 @@ func (*EmailJob_PasswordReset) isEmailJob_Payload() {}
 func (*EmailJob_OrgMemberInvite) isEmailJob_Payload() {}
 
 func (*EmailJob_VerificationResend) isEmailJob_Payload() {}
+
+func (*EmailJob_MagicLink) isEmailJob_Payload() {}
 
 type SignUpVerifyWelcomePayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -352,16 +368,70 @@ func (x *VerificationResendPayload) GetToken() string {
 	return ""
 }
 
+type MagicLinkPayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
+	Token         *string                `protobuf:"bytes,2,opt,name=token" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MagicLinkPayload) Reset() {
+	*x = MagicLinkPayload{}
+	mi := &file_workers_email_v1_email_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MagicLinkPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MagicLinkPayload) ProtoMessage() {}
+
+func (x *MagicLinkPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_workers_email_v1_email_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MagicLinkPayload.ProtoReflect.Descriptor instead.
+func (*MagicLinkPayload) Descriptor() ([]byte, []int) {
+	return file_workers_email_v1_email_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *MagicLinkPayload) GetEmail() string {
+	if x != nil && x.Email != nil {
+		return *x.Email
+	}
+	return ""
+}
+
+func (x *MagicLinkPayload) GetToken() string {
+	if x != nil && x.Token != nil {
+		return *x.Token
+	}
+	return ""
+}
+
 var File_workers_email_v1_email_proto protoreflect.FileDescriptor
 
 const file_workers_email_v1_email_proto_rawDesc = "" +
 	"\n" +
-	"\x1cworkers/email/v1/email.proto\x12\x10workers.email.v1\x1a\x1bbuf/validate/validate.proto\"\x89\x03\n" +
+	"\x1cworkers/email/v1/email.proto\x12\x10workers.email.v1\x1a\x1bbuf/validate/validate.proto\"\xce\x03\n" +
 	"\bEmailJob\x12b\n" +
 	"\x15signup_verify_welcome\x18\x01 \x01(\v2,.workers.email.v1.SignUpVerifyWelcomePayloadH\x00R\x13signupVerifyWelcome\x12O\n" +
 	"\x0epassword_reset\x18\x02 \x01(\v2&.workers.email.v1.PasswordResetPayloadH\x00R\rpasswordReset\x12V\n" +
 	"\x11org_member_invite\x18\x03 \x01(\v2(.workers.email.v1.OrgMemberInvitePayloadH\x00R\x0forgMemberInvite\x12^\n" +
-	"\x13verification_resend\x18\x04 \x01(\v2+.workers.email.v1.VerificationResendPayloadH\x00R\x12verificationResendB\x10\n" +
+	"\x13verification_resend\x18\x04 \x01(\v2+.workers.email.v1.VerificationResendPayloadH\x00R\x12verificationResend\x12C\n" +
+	"\n" +
+	"magic_link\x18\x05 \x01(\v2\".workers.email.v1.MagicLinkPayloadH\x00R\tmagicLinkB\x10\n" +
 	"\apayload\x12\x05\xbaH\x02\b\x01\"\\\n" +
 	"\x1aSignUpVerifyWelcomePayload\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
@@ -379,6 +449,10 @@ const file_workers_email_v1_email_proto_rawDesc = "" +
 	"\x19VerificationResendPayload\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12\x1c\n" +
+	"\x05token\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\"R\n" +
+	"\x10MagicLinkPayload\x12 \n" +
+	"\x05email\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\x12\x1c\n" +
 	"\x05token\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05tokenBIZGgithub.com/pug-sh/pug/internal/gen/proto/workers/email/v1;emailworkerv1b\beditionsp\xe8\a"
 
 var (
@@ -393,24 +467,26 @@ func file_workers_email_v1_email_proto_rawDescGZIP() []byte {
 	return file_workers_email_v1_email_proto_rawDescData
 }
 
-var file_workers_email_v1_email_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_workers_email_v1_email_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_workers_email_v1_email_proto_goTypes = []any{
 	(*EmailJob)(nil),                   // 0: workers.email.v1.EmailJob
 	(*SignUpVerifyWelcomePayload)(nil), // 1: workers.email.v1.SignUpVerifyWelcomePayload
 	(*PasswordResetPayload)(nil),       // 2: workers.email.v1.PasswordResetPayload
 	(*OrgMemberInvitePayload)(nil),     // 3: workers.email.v1.OrgMemberInvitePayload
 	(*VerificationResendPayload)(nil),  // 4: workers.email.v1.VerificationResendPayload
+	(*MagicLinkPayload)(nil),           // 5: workers.email.v1.MagicLinkPayload
 }
 var file_workers_email_v1_email_proto_depIdxs = []int32{
 	1, // 0: workers.email.v1.EmailJob.signup_verify_welcome:type_name -> workers.email.v1.SignUpVerifyWelcomePayload
 	2, // 1: workers.email.v1.EmailJob.password_reset:type_name -> workers.email.v1.PasswordResetPayload
 	3, // 2: workers.email.v1.EmailJob.org_member_invite:type_name -> workers.email.v1.OrgMemberInvitePayload
 	4, // 3: workers.email.v1.EmailJob.verification_resend:type_name -> workers.email.v1.VerificationResendPayload
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	5, // 4: workers.email.v1.EmailJob.magic_link:type_name -> workers.email.v1.MagicLinkPayload
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_workers_email_v1_email_proto_init() }
@@ -423,6 +499,7 @@ func file_workers_email_v1_email_proto_init() {
 		(*EmailJob_PasswordReset)(nil),
 		(*EmailJob_OrgMemberInvite)(nil),
 		(*EmailJob_VerificationResend)(nil),
+		(*EmailJob_MagicLink)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -430,7 +507,7 @@ func file_workers_email_v1_email_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workers_email_v1_email_proto_rawDesc), len(file_workers_email_v1_email_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
