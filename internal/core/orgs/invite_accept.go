@@ -13,14 +13,6 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-// InviteTokenPurpose is the email_action_tokens.purpose for org-invite tokens.
-// It is deliberately distinct from the auth package's "magic_link" login
-// purpose: issuing or superseding a plain login link invalidates active tokens
-// by (email, purpose), so a separate purpose guarantees that flow can never
-// consume a pending invite token. CompleteMagicLink honors both purposes — only
-// the invalidation scope differs by purpose.
-const InviteTokenPurpose = "org_invite"
-
 // ApplyInviteAcceptanceInTx adds customerID to the invitation's org with the
 // invitation's role and flips the invitation to ACCEPTED. The caller owns the tx
 // and is responsible for resolving and consuming the magic-link token that

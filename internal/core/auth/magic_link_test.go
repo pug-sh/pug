@@ -7,6 +7,7 @@ import (
 	"time"
 
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
+	"github.com/pug-sh/pug/internal/core/emailaction"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
@@ -259,7 +260,7 @@ func TestCompleteMagicLink_ExpiredInviteTokenRejected(t *testing.T) {
 		ID:              "eat-mlexp",
 		CustomerID:      postgres.NewOptionalText(""),
 		Email:           "mlexp-invitee@example.com",
-		Purpose:         coreorgs.InviteTokenPurpose,
+		Purpose:         emailaction.PurposeOrgInvite.String(),
 		TokenHash:       hashToken("expired-invite-raw"),
 		OrgInvitationID: postgres.NewOptionalText(dispatch.Invitation.ID),
 		ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(-time.Hour)),

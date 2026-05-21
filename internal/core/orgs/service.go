@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/emailaction"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -531,7 +532,7 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 
 	n, err := w.InvalidateActiveEmailActionTokensByInvitation(ctx, dbwrite.InvalidateActiveEmailActionTokensByInvitationParams{
 		OrgInvitationID: postgres.NewOptionalText(inv.ID),
-		Purpose:         InviteTokenPurpose,
+		Purpose:         emailaction.PurposeOrgInvite.String(),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to invalidate org invite tokens", slogx.Error(err), slog.String("invitation_id", inv.ID))
@@ -592,7 +593,7 @@ func (s *Service) issueInviteEmailToken(ctx context.Context, w *dbwrite.Queries,
 		ID:              xid.New().String(),
 		CustomerID:      postgres.NewOptionalText(""),
 		Email:           inv.Email,
-		Purpose:         InviteTokenPurpose,
+		Purpose:         emailaction.PurposeOrgInvite.String(),
 		TokenHash:       hashInviteToken(rawToken),
 		OrgInvitationID: postgres.NewOptionalText(inv.ID),
 		ExpiresAt:       postgres.NewTimestamptz(inv.ExpiresAt.Time),

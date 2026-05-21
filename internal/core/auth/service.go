@@ -13,6 +13,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/emailaction"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -59,11 +60,6 @@ var (
 const (
 	aud = "pug/dashboard"
 	iss = "pug/auth"
-
-	// magicLinkPurpose is the email_action_tokens.purpose for passwordless
-	// login links. Distinct from coreorgs.InviteTokenPurpose so that
-	// superseding a login link never consumes a pending invite token.
-	magicLinkPurpose = "magic_link"
 
 	magicLinkTTL = 15 * time.Minute
 )
@@ -152,7 +148,7 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 	return s.issueActionTokenAndPublish(ctx, issueActionTokenInput{
 		CustomerID: customerID,
 		Email:      tokenEmail,
-		Purpose:    magicLinkPurpose,
+		Purpose:    emailaction.PurposeMagicLink.String(),
 		TTL:        magicLinkTTL,
 		RawToken:   rawToken,
 		Job: &emailworkerv1.EmailJob{
@@ -207,10 +203,10 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 	// token minted for any other purpose (e.g. a future password-change flow)
 	// is rejected rather than silently consumed as a login.
 	var isInvite bool
-	switch emailToken.Purpose {
-	case magicLinkPurpose:
+	switch emailaction.Purpose(emailToken.Purpose) {
+	case emailaction.PurposeMagicLink:
 		isInvite = false
-	case coreorgs.InviteTokenPurpose:
+	case emailaction.PurposeOrgInvite:
 		isInvite = true
 	default:
 		return "", ErrInvalidToken
