@@ -75,7 +75,7 @@ const (
 
 	verifyEmailPurpose = "verify_email"
 	resetPasswordCause = "reset_password"
-	magicLinkPurpose   = "magic_link"
+	magicLinkPurpose   = coreorgs.MagicLinkTokenPurpose
 
 	verifyEmailTTL   = 24 * time.Hour
 	resetPasswordTTL = 2 * time.Hour
@@ -534,11 +534,14 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 }
 
 // CompleteMagicLink validates a single-use magic-link token, ensures an account
-// exists for the token's email (creating a passwordless one with a default org
-// on first use), marks the email verified, consumes the token, and returns a
-// session JWT. It ignores any caller session — the token alone decides identity.
-// Phase 1 handles the plain path only; magic_link tokens never carry an
-// org_invitation_id until Phase 2.
+// exists for the token's email (creating a passwordless one on first use), marks
+// the email verified, consumes the token, and returns a session JWT. It ignores
+// any caller session — the token alone decides identity.
+//
+// When the token carries an org_invitation_id (invite branch), the new or
+// existing account joins the invited org with its role; no default org is
+// created. When org_invitation_id is NULL (plain branch), a newly-created
+// account receives a default org + project.
 func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
@@ -569,11 +572,15 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 		return "", err
 	}
 
+	isInvite := emailToken.OrgInvitationID.Valid
+
 	customerID := ""
+	createdNew := false
 	if existing, err := r.GetCustomerByEmailOptional(ctx, emailToken.Email); err == nil {
 		customerID = existing.ID
 	} else if errors.Is(err, pgx.ErrNoRows) {
 		customerID = xid.New().String()
+		createdNew = true
 		if _, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
 			ID: customerID, Email: emailToken.Email, DisplayName: "", PictureUri: "", PasswordHash: "",
 		}); err != nil {
@@ -581,13 +588,32 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 			telemetry.RecordError(ctx, err)
 			return "", err
 		}
-		if _, err := coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
-			return "", err
-		}
 	} else {
 		slog.ErrorContext(ctx, "failed to look up magic-link customer", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return "", err
+	}
+
+	if isInvite {
+		// Invited user joins the invitation's org with its role; no default org.
+		if err := coreorgs.ApplyInviteAcceptanceInTx(ctx, w, emailToken.OrgInvitationID.String, customerID); err != nil {
+			switch {
+			case errors.Is(err, coreorgs.ErrAlreadyMember):
+				// Idempotent — already in the org; just sign in.
+			case errors.Is(err, coreorgs.ErrInviteNotFound),
+				errors.Is(err, coreorgs.ErrInviteNotPending),
+				errors.Is(err, coreorgs.ErrInviteExpired):
+				return "", ErrInvalidToken
+			default:
+				return "", err // logged + recorded at source in coreorgs
+			}
+		}
+	} else if createdNew {
+		// Plain passwordless signup: give the new account a default org + project.
+		if _, err := coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
+			slog.ErrorContext(ctx, "failed to create default org for magic-link user", slogx.Error(err), slog.String("customer_id", customerID))
+			return "", err
+		}
 	}
 
 	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil {
