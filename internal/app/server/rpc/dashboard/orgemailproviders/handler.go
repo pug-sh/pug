@@ -243,6 +243,15 @@ func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprov
 	// this can't be used to spam arbitrary addresses.
 	idempotencyKey := "send_test:" + req.Msg.GetOrgId() + ":" + req.Msg.GetRecipient() + ":" + xid.New().String()
 	if err := s.mailer.SendTest(ctx, req.Msg.GetOrgId(), req.Msg.GetRecipient(), idempotencyKey); err != nil {
+		// Permanent errors are already logged at source by the resolver layer;
+		// render failures and transient provider-send errors are not, so record
+		// the non-permanent case here rather than letting it vanish into the
+		// response body.
+		if !coreemail.IsPermanentError(err) {
+			slog.ErrorContext(ctx, "send test email failed",
+				slogx.Error(err), slog.String("org_id", req.Msg.GetOrgId()))
+			telemetry.RecordError(ctx, err)
+		}
 		errMsg := classifySendTestError(err)
 		return connect.NewResponse(&orgemailprovidersv1.SendTestResponse{
 			Success:      boolPtr(false),
@@ -253,11 +262,11 @@ func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprov
 }
 
 // classifySendTestError converts a raw resolver/provider error into a
-// client-safe message for the SendTest response body. The original error is
-// still logged at source by the resolver/provider layer — this only sanitises
-// what the admin sees in the dashboard. Internal package paths like "secret:"
-// or "email:" are stripped so a decrypt failure doesn't leak the cipher
-// package name to the UI.
+// client-safe message for the SendTest response body — this only sanitises what
+// the admin sees in the dashboard. (Logging is handled by the caller: permanent
+// resolver errors at their source, non-permanent render/send errors in
+// SendTest.) Internal package paths like "secret:" or "email:" are stripped so
+// a decrypt failure doesn't leak the cipher package name to the UI.
 func classifySendTestError(err error) string {
 	if err == nil {
 		return ""
