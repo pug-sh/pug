@@ -68,7 +68,10 @@ const (
 	aud = "pug/dashboard"
 	iss = "pug/auth"
 
-	magicLinkPurpose = coreorgs.MagicLinkTokenPurpose
+	// magicLinkPurpose is the email_action_tokens.purpose for passwordless
+	// login links. Distinct from coreorgs.InviteTokenPurpose so that
+	// superseding a login link never consumes a pending invite token.
+	magicLinkPurpose = "magic_link"
 
 	magicLinkTTL = 15 * time.Minute
 )
@@ -289,10 +292,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 	r := dbread.New(tx)
 	w := dbwrite.New(tx)
 
-	emailToken, err := r.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
-		TokenHash: hashToken(token),
-		Purpose:   magicLinkPurpose,
-	})
+	emailToken, err := r.GetValidEmailActionTokenByHash(ctx, hashToken(token))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrInvalidToken
@@ -302,7 +302,19 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 		return "", err
 	}
 
-	isInvite := emailToken.OrgInvitationID.Valid
+	// token_hash is unique, so the lookup above is purpose-agnostic. Gate on
+	// purpose here so this endpoint only redeems login and invite tokens — a
+	// token minted for any other purpose (e.g. a future password-change flow)
+	// is rejected rather than silently consumed as a login.
+	var isInvite bool
+	switch emailToken.Purpose {
+	case magicLinkPurpose:
+		isInvite = false
+	case coreorgs.InviteTokenPurpose:
+		isInvite = true
+	default:
+		return "", ErrInvalidToken
+	}
 
 	customerID := ""
 	createdNew := false

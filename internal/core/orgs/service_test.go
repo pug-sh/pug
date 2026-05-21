@@ -179,7 +179,7 @@ func TestInviteMemberPublishesEmailJob(t *testing.T) {
 
 	emailToken, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
 		TokenHash: hashToken(dispatch.RawToken),
-		Purpose:   orgs.MagicLinkTokenPurpose,
+		Purpose:   orgs.InviteTokenPurpose,
 	})
 	if err != nil {
 		t.Fatalf("GetValidEmailActionTokenByHashAndPurpose: %v", err)
@@ -256,7 +256,7 @@ func TestInviteMemberPreservesOtherOrgInviteTokens(t *testing.T) {
 	} {
 		emailToken, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
 			TokenHash: hashToken(token),
-			Purpose:   orgs.MagicLinkTokenPurpose,
+			Purpose:   orgs.InviteTokenPurpose,
 		})
 		if err != nil {
 			t.Fatalf("%s GetValidEmailActionTokenByHashAndPurpose: %v", name, err)
@@ -337,7 +337,7 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 
 	if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
 		TokenHash: hashToken(firstDispatch.RawToken),
-		Purpose:   orgs.MagicLinkTokenPurpose,
+		Purpose:   orgs.InviteTokenPurpose,
 	}); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("expected old token consumed after resend, got %v", err)
 	}
@@ -357,13 +357,13 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 	}
 	if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
 		TokenHash: hashToken(resendDispatch.RawToken),
-		Purpose:   orgs.MagicLinkTokenPurpose,
+		Purpose:   orgs.InviteTokenPurpose,
 	}); err != nil {
 		t.Fatalf("resend token lookup: %v", err)
 	}
 	if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
 		TokenHash: hashToken(secondDispatch.RawToken),
-		Purpose:   orgs.MagicLinkTokenPurpose,
+		Purpose:   orgs.InviteTokenPurpose,
 	}); err != nil {
 		t.Fatalf("other org token lookup: %v", err)
 	}

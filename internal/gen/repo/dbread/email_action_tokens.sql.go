@@ -9,6 +9,34 @@ import (
 	"context"
 )
 
+const getValidEmailActionTokenByHash = `-- name: GetValidEmailActionTokenByHash :one
+select id, customer_id, email, purpose, token_hash, org_invitation_id, expires_at, consumed_at, create_time
+from email_action_tokens
+where token_hash = $1
+  and consumed_at is null
+  and expires_at > now()
+`
+
+// Purpose-agnostic lookup: token_hash is unique, so the hash alone identifies
+// the token. The caller inspects the returned purpose to decide how to redeem
+// it (e.g. login vs invite), rejecting purposes it does not handle.
+func (q *Queries) GetValidEmailActionTokenByHash(ctx context.Context, tokenHash string) (EmailActionToken, error) {
+	row := q.db.QueryRow(ctx, getValidEmailActionTokenByHash, tokenHash)
+	var i EmailActionToken
+	err := row.Scan(
+		&i.ID,
+		&i.CustomerID,
+		&i.Email,
+		&i.Purpose,
+		&i.TokenHash,
+		&i.OrgInvitationID,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CreateTime,
+	)
+	return i, err
+}
+
 const getValidEmailActionTokenByHashAndPurpose = `-- name: GetValidEmailActionTokenByHashAndPurpose :one
 select id, customer_id, email, purpose, token_hash, org_invitation_id, expires_at, consumed_at, create_time
 from email_action_tokens

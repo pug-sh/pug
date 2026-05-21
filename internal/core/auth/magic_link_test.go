@@ -259,7 +259,7 @@ func TestCompleteMagicLink_ExpiredInviteTokenRejected(t *testing.T) {
 		ID:              "eat-mlexp",
 		CustomerID:      postgres.NewOptionalText(""),
 		Email:           "mlexp-invitee@example.com",
-		Purpose:         coreorgs.MagicLinkTokenPurpose,
+		Purpose:         coreorgs.InviteTokenPurpose,
 		TokenHash:       hashToken("expired-invite-raw"),
 		OrgInvitationID: postgres.NewOptionalText(dispatch.Invitation.ID),
 		ExpiresAt:       postgres.NewTimestamptz(time.Now().Add(-time.Hour)),
@@ -307,5 +307,57 @@ func TestSignUpWithEmail_SendsMagicLinkForVerification(t *testing.T) {
 	}
 	if !cust2.EmailVerifiedAt.Valid {
 		t.Fatal("expected email verified after completing the magic link")
+	}
+}
+
+// A pending invitation must survive the invitee requesting a plain login link
+// for the same email. Invites and login links are distinct token purposes, so
+// RequestMagicLink (which supersedes prior *login* links) must not consume the
+// invite token — otherwise the invitee silently lands in a fresh default org
+// instead of the inviting org.
+func TestCompleteMagicLink_PlainRequestPreservesPendingInvite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+	ctx := context.Background()
+
+	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+	inviter, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: "cust-pres-inviter", Email: "preserve-inviter@example.com", DisplayName: "Inviter", PasswordHash: "h", PictureUri: ""})
+	if err != nil {
+		t.Fatalf("CreateCustomer inviter: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-preserve", DisplayName: "Preserve Org"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{OrgID: org.ID, CustomerID: inviter.ID, Role: coreorgs.RoleAdmin.String()}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+	dispatch, err := orgsSvc.InviteMemberWithRole(ctx, org.ID, inviter.ID, "preserve-invitee@example.com", coreorgs.RoleMember)
+	if err != nil {
+		t.Fatalf("InviteMemberWithRole: %v", err)
+	}
+
+	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
+
+	// Invitee requests a plain login link for the same email before clicking the invite.
+	if err := svc.RequestMagicLink(ctx, "preserve-invitee@example.com"); err != nil {
+		t.Fatalf("RequestMagicLink: %v", err)
+	}
+
+	// The invite token must still redeem and join the invited org.
+	if _, err := svc.CompleteMagicLink(ctx, dispatch.RawToken); err != nil {
+		t.Fatalf("invite token should survive a plain magic-link request, got: %v", err)
+	}
+	cust, err := read.GetCustomerByEmail(ctx, "preserve-invitee@example.com")
+	if err != nil {
+		t.Fatalf("GetCustomerByEmail: %v", err)
+	}
+	orgsForCust, err := read.GetOrgsByCustomerID(ctx, cust.ID)
+	if err != nil || len(orgsForCust) != 1 || orgsForCust[0].ID != org.ID {
+		t.Fatalf("orgs = %+v err=%v, want exactly the invited org %s", orgsForCust, err, org.ID)
 	}
 }

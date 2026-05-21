@@ -95,4 +95,14 @@ func TestApplyInviteAcceptanceInTx_AlreadyMember(t *testing.T) {
 	if err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID); !errors.Is(err, orgs.ErrAlreadyMember) {
 		t.Fatalf("apply err = %v, want ErrAlreadyMember", err)
 	}
+
+	// Even though no new member row was created, the invitation must be
+	// reconciled to ACCEPTED rather than left dangling as PENDING — the invitee
+	// IS a member of the org, however they got there. A PENDING invitation with
+	// a consumed token would otherwise linger forever (only recoverable via
+	// admin Resend).
+	inv, err := write.GetOrgInvitationByIDForUpdate(ctx, dispatch.Invitation.ID)
+	if err != nil || inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String() {
+		t.Fatalf("invitation status = %q err=%v, want ACCEPTED", inv.Status, err)
+	}
 }

@@ -530,7 +530,7 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 
 	n, err := w.InvalidateActiveEmailActionTokensByInvitation(ctx, dbwrite.InvalidateActiveEmailActionTokensByInvitationParams{
 		OrgInvitationID: postgres.NewOptionalText(inv.ID),
-		Purpose:         MagicLinkTokenPurpose,
+		Purpose:         InviteTokenPurpose,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to invalidate org invite tokens", slogx.Error(err), slog.String("invitation_id", inv.ID))
@@ -591,7 +591,7 @@ func (s *Service) issueInviteEmailToken(ctx context.Context, w *dbwrite.Queries,
 		ID:              xid.New().String(),
 		CustomerID:      postgres.NewOptionalText(""),
 		Email:           inv.Email,
-		Purpose:         MagicLinkTokenPurpose,
+		Purpose:         InviteTokenPurpose,
 		TokenHash:       hashInviteToken(rawToken),
 		OrgInvitationID: postgres.NewOptionalText(inv.ID),
 		ExpiresAt:       postgres.NewTimestamptz(inv.ExpiresAt.Time),
