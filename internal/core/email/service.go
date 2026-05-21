@@ -138,7 +138,7 @@ func (s *Service) SendOrgMemberInvite(ctx context.Context, orgID, emailAddr, org
 // sanitizeDisplay strips control characters and caps length so an attacker-set
 // display name can't smuggle line breaks into text bodies or weird characters
 // into subjects. The SMTP layer also strips CRLF from headers as a final
-// defense; this is the application-layer sanitization for content sites.
+// defense; this is the application-layer sanitization for message content.
 func sanitizeDisplay(s string) string {
 	const maxLen = 120
 	stripped := strings.Map(func(r rune) rune {
