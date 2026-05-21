@@ -1,6 +1,8 @@
 edition = "2023";
 package dashboard.customers.v1;
 
+import "buf/validate/validate.proto";
+
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1;customersv1";
 
 // CustomersService exposes the authenticated caller's own account. JWT-only
@@ -8,6 +10,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/dashboard/customer
 service CustomersService {
   // GetMe returns the calling customer's id, email, and verification status.
   rpc GetMe(GetMeRequest) returns (GetMeResponse) {}
+  rpc SetPassword(SetPasswordRequest) returns (SetPasswordResponse) {}
 }
 
 message GetMeRequest {}
@@ -17,3 +20,11 @@ message GetMeResponse {
   string email = 2;
   bool email_verified = 3;
 }
+
+message SetPasswordRequest {
+  string password = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_bytes = 72
+  ];
+}
+message SetPasswordResponse {}

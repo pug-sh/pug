@@ -35,12 +35,16 @@ const (
 const (
 	// CustomersServiceGetMeProcedure is the fully-qualified name of the CustomersService's GetMe RPC.
 	CustomersServiceGetMeProcedure = "/dashboard.customers.v1.CustomersService/GetMe"
+	// CustomersServiceSetPasswordProcedure is the fully-qualified name of the CustomersService's
+	// SetPassword RPC.
+	CustomersServiceSetPasswordProcedure = "/dashboard.customers.v1.CustomersService/SetPassword"
 )
 
 // CustomersServiceClient is a client for the dashboard.customers.v1.CustomersService service.
 type CustomersServiceClient interface {
 	// GetMe returns the calling customer's id, email, and verification status.
 	GetMe(context.Context, *connect.Request[v1.GetMeRequest]) (*connect.Response[v1.GetMeResponse], error)
+	SetPassword(context.Context, *connect.Request[v1.SetPasswordRequest]) (*connect.Response[v1.SetPasswordResponse], error)
 }
 
 // NewCustomersServiceClient constructs a client for the dashboard.customers.v1.CustomersService
@@ -60,12 +64,19 @@ func NewCustomersServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(customersServiceMethods.ByName("GetMe")),
 			connect.WithClientOptions(opts...),
 		),
+		setPassword: connect.NewClient[v1.SetPasswordRequest, v1.SetPasswordResponse](
+			httpClient,
+			baseURL+CustomersServiceSetPasswordProcedure,
+			connect.WithSchema(customersServiceMethods.ByName("SetPassword")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // customersServiceClient implements CustomersServiceClient.
 type customersServiceClient struct {
-	getMe *connect.Client[v1.GetMeRequest, v1.GetMeResponse]
+	getMe       *connect.Client[v1.GetMeRequest, v1.GetMeResponse]
+	setPassword *connect.Client[v1.SetPasswordRequest, v1.SetPasswordResponse]
 }
 
 // GetMe calls dashboard.customers.v1.CustomersService.GetMe.
@@ -73,11 +84,17 @@ func (c *customersServiceClient) GetMe(ctx context.Context, req *connect.Request
 	return c.getMe.CallUnary(ctx, req)
 }
 
+// SetPassword calls dashboard.customers.v1.CustomersService.SetPassword.
+func (c *customersServiceClient) SetPassword(ctx context.Context, req *connect.Request[v1.SetPasswordRequest]) (*connect.Response[v1.SetPasswordResponse], error) {
+	return c.setPassword.CallUnary(ctx, req)
+}
+
 // CustomersServiceHandler is an implementation of the dashboard.customers.v1.CustomersService
 // service.
 type CustomersServiceHandler interface {
 	// GetMe returns the calling customer's id, email, and verification status.
 	GetMe(context.Context, *connect.Request[v1.GetMeRequest]) (*connect.Response[v1.GetMeResponse], error)
+	SetPassword(context.Context, *connect.Request[v1.SetPasswordRequest]) (*connect.Response[v1.SetPasswordResponse], error)
 }
 
 // NewCustomersServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -93,10 +110,18 @@ func NewCustomersServiceHandler(svc CustomersServiceHandler, opts ...connect.Han
 		connect.WithSchema(customersServiceMethods.ByName("GetMe")),
 		connect.WithHandlerOptions(opts...),
 	)
+	customersServiceSetPasswordHandler := connect.NewUnaryHandler(
+		CustomersServiceSetPasswordProcedure,
+		svc.SetPassword,
+		connect.WithSchema(customersServiceMethods.ByName("SetPassword")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.customers.v1.CustomersService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CustomersServiceGetMeProcedure:
 			customersServiceGetMeHandler.ServeHTTP(w, r)
+		case CustomersServiceSetPasswordProcedure:
+			customersServiceSetPasswordHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -108,4 +133,8 @@ type UnimplementedCustomersServiceHandler struct{}
 
 func (UnimplementedCustomersServiceHandler) GetMe(context.Context, *connect.Request[v1.GetMeRequest]) (*connect.Response[v1.GetMeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.customers.v1.CustomersService.GetMe is not implemented"))
+}
+
+func (UnimplementedCustomersServiceHandler) SetPassword(context.Context, *connect.Request[v1.SetPasswordRequest]) (*connect.Response[v1.SetPasswordResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.customers.v1.CustomersService.SetPassword is not implemented"))
 }

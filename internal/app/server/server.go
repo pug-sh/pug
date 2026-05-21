@@ -26,6 +26,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/delivery"
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
+	corecustomers "github.com/pug-sh/pug/internal/core/customers"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/fallback"
 	"github.com/pug-sh/pug/internal/core/email/secret"
@@ -151,7 +152,7 @@ func start(ctx context.Context, d *deps) error {
 		handlerOpts)
 
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
-		customers.NewServer(), handlerOpts)
+		customers.NewServer(corecustomers.NewService(d.pgW)), handlerOpts)
 
 	// Shared
 	insightsExecutor := coreinsights.NewExecutor(d.ch)

@@ -27,7 +27,7 @@ func TestGetMe(t *testing.T) {
 		},
 	})
 
-	resp, err := NewServer().GetMe(ctx, connect.NewRequest(&customersv1.GetMeRequest{}))
+	resp, err := NewServer(nil).GetMe(ctx, connect.NewRequest(&customersv1.GetMeRequest{}))
 	if err != nil {
 		t.Fatalf("GetMe: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestGetMe(t *testing.T) {
 
 	// Unverified email → email_verified=false.
 	ctx2 := ctxWithCustomer(&rpc.Principal{Customer: &dbread.Customer{ID: "c2", Email: "u@e.com", EmailVerifiedAt: pgtype.Timestamptz{Valid: false}}})
-	resp2, err := NewServer().GetMe(ctx2, connect.NewRequest(&customersv1.GetMeRequest{}))
+	resp2, err := NewServer(nil).GetMe(ctx2, connect.NewRequest(&customersv1.GetMeRequest{}))
 	if err != nil {
 		t.Fatalf("GetMe (unverified): %v", err)
 	}
@@ -46,13 +46,13 @@ func TestGetMe(t *testing.T) {
 	}
 
 	// No principal → CodeUnauthenticated.
-	if _, err := NewServer().GetMe(context.Background(), connect.NewRequest(&customersv1.GetMeRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+	if _, err := NewServer(nil).GetMe(context.Background(), connect.NewRequest(&customersv1.GetMeRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("no-principal code = %v, want Unauthenticated", connect.CodeOf(err))
 	}
 
 	// Principal present but Customer nil (e.g. an API-key path) → CodeUnauthenticated.
 	ctxNilCust := ctxWithCustomer(&rpc.Principal{Customer: nil})
-	if _, err := NewServer().GetMe(ctxNilCust, connect.NewRequest(&customersv1.GetMeRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+	if _, err := NewServer(nil).GetMe(ctxNilCust, connect.NewRequest(&customersv1.GetMeRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("nil-customer code = %v, want Unauthenticated", connect.CodeOf(err))
 	}
 }
