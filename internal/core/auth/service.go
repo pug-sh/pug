@@ -260,6 +260,13 @@ func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (
 		return "", err
 	}
 
+	if customer.PasswordHash == "" {
+		// Passwordless (magic-link) account — no password set. Treat as invalid
+		// credentials rather than letting bcrypt fail on an empty hash (which
+		// returns ErrHashTooShort, not ErrMismatchedHashAndPassword).
+		return "", ErrInvalidCredentials
+	}
+
 	err = bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte(password))
 	if err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
