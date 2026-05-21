@@ -1,7 +1,12 @@
 // Package templates holds the typed templ components and frozen design tokens
 // for transactional emails. Tokens are converted once from cotton-w's OKLCH
 // design system (src/index.css) to hex, because no email client understands
-// oklch(). These hex values are the source of truth for email styling.
+// oklch().
+//
+// The values that actually render are the literals inlined in the stylesheet
+// (styles.go) and the bgcolor in components.templ. The Color* constants below
+// document that palette and are kept in lockstep with the stylesheet by
+// TestEmailCSSContainsAllBrandColors in styles_test.go.
 package templates
 
 // Brand carries the per-environment branding injected into the layout.

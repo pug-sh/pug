@@ -25,3 +25,24 @@ func TestBrandColorConstants(t *testing.T) {
 		t.Fatalf("ColorPrimary = %s, want #3c68d9", ColorPrimary)
 	}
 }
+
+// TestEmailCSSContainsAllBrandColors makes the Color* constants load-bearing:
+// every declared brand color must appear in the inlined stylesheet, so changing
+// one without the other (drift between brand.go and styles.go) fails here.
+func TestEmailCSSContainsAllBrandColors(t *testing.T) {
+	colors := map[string]string{
+		"ColorPrimary":           ColorPrimary,
+		"ColorPrimaryForeground": ColorPrimaryForeground,
+		"ColorForeground":        ColorForeground,
+		"ColorMutedForeground":   ColorMutedForeground,
+		"ColorBackground":        ColorBackground,
+		"ColorCard":              ColorCard,
+		"ColorBorder":            ColorBorder,
+		"ColorMutedBackground":   ColorMutedBackground,
+	}
+	for name, hex := range colors {
+		if !strings.Contains(emailCSS, hex) {
+			t.Errorf("emailCSS missing %s (%s): brand.go and styles.go have drifted", name, hex)
+		}
+	}
+}
