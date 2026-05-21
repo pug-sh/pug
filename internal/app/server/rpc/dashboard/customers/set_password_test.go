@@ -45,8 +45,7 @@ func TestSetPasswordHandler(t *testing.T) {
 		t.Fatal("expected password_hash to be set after SetPassword")
 	}
 
-	// No principal → CodeUnauthenticated.
-	if _, err := srv.SetPassword(context.Background(), connect.NewRequest(&customersv1.SetPasswordRequest{Password: proto.String("x")})); connect.CodeOf(err) != connect.CodeUnauthenticated {
-		t.Fatalf("no-principal code = %v, want Unauthenticated", connect.CodeOf(err))
-	}
+	// No principal → Unauthenticated.
+	_, err = srv.SetPassword(context.Background(), connect.NewRequest(&customersv1.SetPasswordRequest{Password: proto.String("x")}))
+	wantUnauthenticated(t, err)
 }

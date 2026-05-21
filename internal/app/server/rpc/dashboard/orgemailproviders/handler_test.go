@@ -14,6 +14,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/secret"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
@@ -156,8 +157,12 @@ func TestSetRequiresAdmin(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected admin error")
 	}
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied *apperr.Error, got %v", err)
+	}
+	if ae.Reason() != apperr.ReasonOrgAdminRequired {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
 	}
 }
 
@@ -202,8 +207,12 @@ func TestGetRequiresAdmin(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected admin error on Get")
 	}
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied *apperr.Error, got %v", err)
+	}
+	if ae.Reason() != apperr.ReasonOrgAdminRequired {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
 	}
 }
 
@@ -248,8 +257,12 @@ func TestGetWithoutCipherReturnsFailedPrecondition(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected FailedPrecondition when cipher unset")
 	}
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("expected FailedPrecondition, got %v", err)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeFailedPrecondition {
+		t.Fatalf("expected FailedPrecondition *apperr.Error, got %v", err)
+	}
+	if ae.Reason() != apperr.ReasonEmailProviderEncryptionMissing {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonEmailProviderEncryptionMissing)
 	}
 }
 
@@ -294,8 +307,12 @@ func TestGetReturnsNotFoundWhenNoProvider(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected NotFound when no provider configured")
 	}
-	if connect.CodeOf(err) != connect.CodeNotFound {
-		t.Fatalf("expected NotFound, got %v", err)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
+		t.Fatalf("expected NotFound *apperr.Error, got %v", err)
+	}
+	if ae.Reason() != apperr.ReasonEmailProviderNotFound {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonEmailProviderNotFound)
 	}
 }
 
@@ -518,10 +535,16 @@ func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
 		t.Fatalf("Set: %v", err)
 	}
 
-	if _, err := srv.Remove(memberCtx, connect.NewRequest(&orgemailprovidersv1.RemoveRequest{OrgId: strPtr(org.ID)})); err == nil {
+	if _, removeErr := srv.Remove(memberCtx, connect.NewRequest(&orgemailprovidersv1.RemoveRequest{OrgId: strPtr(org.ID)})); removeErr == nil {
 		t.Fatal("expected admin error on Remove for member")
-	} else if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
+	} else {
+		var ae *apperr.Error
+		if !errors.As(removeErr, &ae) || ae.Code() != connect.CodePermissionDenied {
+			t.Fatalf("expected PermissionDenied *apperr.Error, got %v", removeErr)
+		}
+		if ae.Reason() != apperr.ReasonOrgAdminRequired {
+			t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
+		}
 	}
 
 	if _, err := srv.Remove(adminCtx, connect.NewRequest(&orgemailprovidersv1.RemoveRequest{OrgId: strPtr(org.ID)})); err != nil {
@@ -588,8 +611,12 @@ func TestSendTestRequiresAdmin(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected admin error")
 	}
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied *apperr.Error, got %v", err)
+	}
+	if ae.Reason() != apperr.ReasonOrgAdminRequired {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
 	}
 }
 
@@ -638,8 +665,12 @@ func TestSendTestWithoutMailerReturnsFailedPrecondition(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected FailedPrecondition when mailer unset")
 	}
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("expected FailedPrecondition, got %v", err)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeFailedPrecondition {
+		t.Fatalf("expected FailedPrecondition *apperr.Error, got %v", err)
+	}
+	if ae.Reason() != apperr.ReasonEmailTestSendUnavailable {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonEmailTestSendUnavailable)
 	}
 }
 
@@ -696,8 +727,12 @@ func TestSendTestRejectsForeignRecipient(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected PermissionDenied for non-admin recipient")
 	}
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied *apperr.Error, got %v", err)
+	}
+	if ae.Reason() != apperr.ReasonEmailTestRecipientMismatch {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonEmailTestRecipientMismatch)
 	}
 }
 

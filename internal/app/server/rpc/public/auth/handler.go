@@ -6,13 +6,23 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
 )
 
+// authService is the coreauth.Service surface the handler depends on, defined
+// consumer-side so handlers can be unit-tested with a fake (instead of
+// re-implementing the mapping logic in tests).
+type authService interface {
+	SignInWithEmail(ctx context.Context, email, password string) (string, error)
+	RequestMagicLink(ctx context.Context, email string) error
+	CompleteMagicLink(ctx context.Context, token string) (string, error)
+}
+
 type server struct {
-	service *coreauth.Service
+	service authService
 }
 
 func NewServer(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient) *server {
@@ -30,7 +40,7 @@ func (s *server) SignInWithEmail(
 	token, err := s.service.SignInWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword())
 	if err != nil {
 		if errors.Is(err, coreauth.ErrInvalidCredentials) {
-			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credentials"))
+			return nil, apperr.Unauthenticated(apperr.ReasonInvalidCredentials, "invalid credentials")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -54,7 +64,7 @@ func (s *server) CompleteMagicLink(
 	token, err := s.service.CompleteMagicLink(ctx, req.Msg.GetToken())
 	if err != nil {
 		if errors.Is(err, coreauth.ErrInvalidToken) {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid or expired link"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired link")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

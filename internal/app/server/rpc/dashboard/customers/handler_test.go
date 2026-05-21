@@ -2,15 +2,29 @@ package customers
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	customersv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
+
+// wantUnauthenticated asserts err is the *apperr.Error CodeUnauthenticated that
+// MustGetPrincipalWithCustomer returns. Handler-direct calls surface the raw
+// apperr (the wire-level *connect.Error is only built by the interceptor), so
+// connect.CodeOf would not see the code.
+func wantUnauthenticated(t *testing.T, err error) {
+	t.Helper()
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Errorf("err = %v (%T), want apperr CodeUnauthenticated", err, err)
+	}
+}
 
 // ctxWithCustomer injects a *rpc.Principal into context using the same
 // authn.SetInfo mechanism that getPrincipalFromContext reads via authn.GetInfo.
@@ -45,14 +59,12 @@ func TestGetMe(t *testing.T) {
 		t.Error("expected email_verified=false for unverified customer")
 	}
 
-	// No principal → CodeUnauthenticated.
-	if _, err := NewServer(nil).GetMe(context.Background(), connect.NewRequest(&customersv1.GetMeRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
-		t.Errorf("no-principal code = %v, want Unauthenticated", connect.CodeOf(err))
-	}
+	// No principal → Unauthenticated.
+	_, err = NewServer(nil).GetMe(context.Background(), connect.NewRequest(&customersv1.GetMeRequest{}))
+	wantUnauthenticated(t, err)
 
-	// Principal present but Customer nil (e.g. an API-key path) → CodeUnauthenticated.
+	// Principal present but Customer nil (e.g. an API-key path) → Unauthenticated.
 	ctxNilCust := ctxWithCustomer(&rpc.Principal{Customer: nil})
-	if _, err := NewServer(nil).GetMe(ctxNilCust, connect.NewRequest(&customersv1.GetMeRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
-		t.Errorf("nil-customer code = %v, want Unauthenticated", connect.CodeOf(err))
-	}
+	_, err = NewServer(nil).GetMe(ctxNilCust, connect.NewRequest(&customersv1.GetMeRequest{}))
+	wantUnauthenticated(t, err)
 }

@@ -33,7 +33,7 @@ func (s *Server) Identify(
 ) (*connect.Response[sdkprofilesv1.IdentifyResponse], error) {
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	msg := &sdkprofilesv1.ProfileIdentifyMessage{

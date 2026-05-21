@@ -9,8 +9,10 @@ import (
 	"strings"
 
 	"connectrpc.com/authn"
+	"connectrpc.com/connect"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -67,6 +69,18 @@ type projectKeyLookup interface {
 	InvalidateProjectKeys(ctx context.Context, privateKey, publicKey string)
 }
 
+// unauthenticated builds an auth-rejection error carrying the standard error
+// details (reason + correlation id). Auth runs in the authn middleware, OUTSIDE
+// the Connect interceptor chain, so ErrorInterceptor never sees these errors;
+// sourcing the details here keeps auth failures consistent with handler errors
+// (every failure returns an error_id). authn serializes *connect.Error details
+// via connect.NewErrorWriter, so the client receives them.
+func unauthenticated(ctx context.Context, msg string) error {
+	cerr := connect.NewError(connect.CodeUnauthenticated, errors.New(msg)) // apperr:exempt — must be a *connect.Error: authn writes it outside the interceptor chain, so an *apperr.Error would not be translated
+	attachDetails(ctx, cerr, apperr.ReasonUnauthenticated)
+	return cerr
+}
+
 // WithSDKAuth authenticates via API key from the x-api-key header
 // or api_key query parameter (fallback for beacon requests).
 // Accepts both public (pub_) and private (prv_) keys. Public keys are accepted
@@ -79,11 +93,11 @@ func WithSDKAuth(repo projectKeyLookup) authn.AuthFunc {
 		if apiKey == "" {
 			apiKey = req.URL.Query().Get(QueryAPIKey)
 			if apiKey != "" && !strings.HasPrefix(apiKey, publicKeyPrefix) {
-				return nil, authn.Errorf("beacon requests only support public API keys")
+				return nil, unauthenticated(ctx, "beacon requests only support public API keys")
 			}
 		}
 		if apiKey == "" {
-			return nil, authn.Errorf("x-api-key header not present")
+			return nil, unauthenticated(ctx, "x-api-key header not present")
 		}
 
 		var project dbread.Project
@@ -97,14 +111,14 @@ func WithSDKAuth(repo projectKeyLookup) authn.AuthFunc {
 			authType = AuthTypePrivateKey
 			project, err = repo.GetProjectByPrivateApiKey(ctx, apiKey)
 		default:
-			return nil, authn.Errorf("invalid API key")
+			return nil, unauthenticated(ctx, "invalid API key")
 		}
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, authn.Errorf("invalid API key")
+				return nil, unauthenticated(ctx, "invalid API key")
 			}
 			// Repo logs + records non-ErrNoRows DB failures at source.
-			return nil, authn.Errorf("failed to validate API key")
+			return nil, unauthenticated(ctx, "failed to validate API key")
 		}
 
 		slog.DebugContext(ctx, "SDK auth succeeded", slog.String("auth_type", string(authType)), slog.String("project_id", project.ID))
@@ -124,16 +138,16 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		authHeader := req.Header.Get("Authorization")
 		if authHeader == "" {
-			return nil, authn.Errorf("Authorization header not present")
+			return nil, unauthenticated(ctx, "Authorization header not present")
 		}
 
 		if !strings.HasPrefix(authHeader, bearerPrefix) {
-			return nil, authn.Errorf("Authorization header must start with Bearer")
+			return nil, unauthenticated(ctx, "Authorization header must start with Bearer")
 		}
 
 		token := strings.TrimPrefix(authHeader, bearerPrefix)
 		if token == "" {
-			return nil, authn.Errorf("Bearer token is empty")
+			return nil, unauthenticated(ctx, "Bearer token is empty")
 		}
 
 		parsedJWT, err := jwt.Parse(token, func(t *jwt.Token) (any, error) {
@@ -143,18 +157,18 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 			return jwtKey, nil
 		})
 		if err != nil {
-			return nil, authn.Errorf("invalid authorization")
+			return nil, unauthenticated(ctx, "invalid authorization")
 		}
 
 		if !parsedJWT.Valid {
-			return nil, authn.Errorf("invalid authorization")
+			return nil, unauthenticated(ctx, "invalid authorization")
 		}
 
 		customerID, err := parsedJWT.Claims.GetSubject()
 		if err != nil {
 			slog.ErrorContext(ctx, "unable to get subject from JWT", slogx.Error(err))
 			telemetry.RecordError(ctx, err)
-			return nil, authn.Errorf("invalid token claims")
+			return nil, unauthenticated(ctx, "invalid token claims")
 		}
 
 		var jwtID string
@@ -174,7 +188,7 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 				slog.ErrorContext(ctx, "unable to get customer", slogx.Error(err))
 				telemetry.RecordError(ctx, err)
 			}
-			return nil, authn.Errorf("invalid authorization")
+			return nil, unauthenticated(ctx, "invalid authorization")
 		}
 
 		principal := &Principal{
@@ -191,11 +205,11 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 			})
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
-					return nil, authn.Errorf("project not found or access denied")
+					return nil, unauthenticated(ctx, "project not found or access denied")
 				}
 				slog.ErrorContext(ctx, "unable to get project", slogx.Error(err))
 				telemetry.RecordError(ctx, err)
-				return nil, authn.Errorf("failed to verify project access")
+				return nil, unauthenticated(ctx, "failed to verify project access")
 			}
 			principal.Project = &project
 		}
@@ -212,15 +226,15 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup)
 	return func(ctx context.Context, req *http.Request) (any, error) {
 		if apiKey := req.Header.Get(HeaderAPIKey); apiKey != "" {
 			if !strings.HasPrefix(apiKey, privateKeyPrefix) {
-				return nil, authn.Errorf("invalid API key")
+				return nil, unauthenticated(ctx, "invalid API key")
 			}
 			project, err := repo.GetProjectByPrivateApiKey(ctx, apiKey)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
-					return nil, authn.Errorf("invalid API key")
+					return nil, unauthenticated(ctx, "invalid API key")
 				}
 				// Repo logs + records non-ErrNoRows DB failures at source.
-				return nil, authn.Errorf("failed to validate API key")
+				return nil, unauthenticated(ctx, "failed to validate API key")
 			}
 			return &Principal{
 				AuthType:     AuthTypePrivateKey,
@@ -249,12 +263,12 @@ func MustGetPrincipalWithCustomer(ctx context.Context) (*Principal, error) {
 	principal, err := getPrincipalFromContext(ctx)
 	if err != nil {
 		slog.DebugContext(ctx, "principal extraction failed", slogx.Error(err))
-		return nil, err
+		return nil, apperr.Unauthenticated(apperr.ReasonUnauthenticated, "unauthenticated")
 	}
 
 	if principal.Customer == nil {
 		slog.DebugContext(ctx, "customer not set in principal")
-		return nil, authn.Errorf("customer not set in principal")
+		return nil, apperr.Unauthenticated(apperr.ReasonUnauthenticated, "unauthenticated")
 	}
 
 	return principal, nil
@@ -266,12 +280,12 @@ func MustGetPrincipalWithProject(ctx context.Context) (*Principal, error) {
 	principal, err := getPrincipalFromContext(ctx)
 	if err != nil {
 		slog.DebugContext(ctx, "principal extraction failed", slogx.Error(err))
-		return nil, err
+		return nil, apperr.Unauthenticated(apperr.ReasonUnauthenticated, "unauthenticated")
 	}
 
 	if principal.Project == nil {
 		slog.DebugContext(ctx, "project not set in principal")
-		return nil, authn.Errorf("project not set in principal")
+		return nil, apperr.Unauthenticated(apperr.ReasonUnauthenticated, "unauthenticated")
 	}
 
 	return principal, nil
