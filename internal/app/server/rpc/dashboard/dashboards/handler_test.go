@@ -179,7 +179,9 @@ func TestHandler_CreateTile_DisplayNameConflict_MapsToCodeAlreadyExists(t *testi
 	t.Cleanup(func() { _ = svc.DeleteDashboard(context.Background(), projectID, dashboard.ID) })
 
 	if _, err := svc.CreateDashboardTile(context.Background(), projectID, dashboard.ID, "Same Name", "",
-		coreprojects.MarkdownTile{Body: "first"}, nil); err != nil {
+		coreprojects.MarkdownTile{Body: "first"},
+		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
+		nil); err != nil {
 		t.Fatalf("first tile: %v", err)
 	}
 

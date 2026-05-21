@@ -16,10 +16,18 @@ update on dashboards for each row execute procedure moddatetime(update_time);
 -- kind values mirror TileKind in internal/core/projects/dashboards.go:
 --   1 = TileKindInsight  (insight_query payload)
 --   2 = TileKindMarkdown (markdown_body payload)
+-- view_mode values mirror TileViewMode in internal/core/projects/dashboards.go:
+--   0 = Unspecified (markdown only)
+--   1 = Line
+--   2 = Area
+--   3 = BarGrouped
+--   4 = BarStacked
+--   5 = Table
 create table dashboard_tiles (
   id            char(20) primary key,
   dashboard_id  char(20) not null references dashboards(id) on delete cascade,
   kind          smallint not null,
+  view_mode     smallint not null default 0,
   display_name  varchar(150) not null default '',
   description   text not null default '',
   insight_query jsonb,
@@ -28,9 +36,9 @@ create table dashboard_tiles (
   create_time   timestamptz not null default now(),
   update_time   timestamptz not null default now(),
   constraint dashboard_tiles_kind_payload check (
-    (kind = 1 and insight_query is not null and markdown_body is null)
+    (kind = 1 and insight_query is not null and markdown_body is null and view_mode in (1, 2, 3, 4, 5))
     or
-    (kind = 2 and markdown_body is not null and insight_query is null)
+    (kind = 2 and markdown_body is not null and insight_query is null and view_mode = 0)
   ),
   constraint dashboard_tiles_markdown_body_nonempty check (
     markdown_body is null or length(markdown_body) > 0

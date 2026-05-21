@@ -60,6 +60,7 @@ func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error)
 		Layouts:     layouts,
 		CreateTime:  toTimestamp(tile.CreateTime.Time),
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
+		ViewMode:    tileViewModeToRPC(coreprojects.TileKind(tile.Kind), tile.ViewMode).Enum(),
 	}
 	if err := setTileContent(msg, tile.ID, coreprojects.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
@@ -80,6 +81,7 @@ func wTileToRPC(tile dbwrite.DashboardTile) (*dashboardsv1.DashboardTile, error)
 		Layouts:     layouts,
 		CreateTime:  toTimestamp(tile.CreateTime.Time),
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
+		ViewMode:    tileViewModeToRPC(coreprojects.TileKind(tile.Kind), tile.ViewMode).Enum(),
 	}
 	if err := setTileContent(msg, tile.ID, coreprojects.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
@@ -116,6 +118,30 @@ func setTileContent(msg *dashboardsv1.DashboardTile, tileID string, kind corepro
 		return nil
 	default:
 		return fmt.Errorf("tile %s: unknown tile kind %d", tileID, kind)
+	}
+}
+
+func tileViewModeToRPC(kind coreprojects.TileKind, raw int16) dashboardsv1.DashboardTileViewMode {
+	switch kind {
+	case coreprojects.TileKindInsight:
+		switch coreprojects.TileViewMode(raw) {
+		case coreprojects.TileViewModeArea:
+			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA
+		case coreprojects.TileViewModeBarGrouped:
+			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED
+		case coreprojects.TileViewModeBarStacked:
+			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED
+		case coreprojects.TileViewModeTable:
+			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE
+		case coreprojects.TileViewModeLine:
+			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
+		default:
+			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
+		}
+	case coreprojects.TileKindMarkdown:
+		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED
+	default:
+		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED
 	}
 }
 

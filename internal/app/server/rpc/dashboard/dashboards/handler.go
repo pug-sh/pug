@@ -197,6 +197,7 @@ func (s *Server) CreateTile(
 		req.Msg.GetDisplayName(),
 		req.Msg.GetDescription(),
 		content,
+		req.Msg.GetViewMode(),
 		req.Msg.GetLayouts(),
 	)
 	if err != nil {
@@ -250,6 +251,7 @@ func (s *Server) UpdateTile(
 		req.Msg.GetDisplayName(),
 		req.Msg.GetDescription(),
 		content,
+		req.Msg.GetViewMode(),
 		req.Msg.GetLayouts(),
 	)
 	if err != nil {

@@ -115,3 +115,17 @@ func TestSetTileContent_MarkdownEmptyBodyValid(t *testing.T) {
 		t.Errorf("Markdown.Body = %q, want empty string", got)
 	}
 }
+
+func TestTileViewModeToRPC_DefaultsInsightToLine(t *testing.T) {
+	got := tileViewModeToRPC(coreprojects.TileKindInsight, 0)
+	if got != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE {
+		t.Fatalf("tileViewModeToRPC(insight, 0) = %v, want LINE", got)
+	}
+}
+
+func TestTileViewModeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
+	got := tileViewModeToRPC(coreprojects.TileKindMarkdown, int16(coreprojects.TileViewModeBarGrouped))
+	if got != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED {
+		t.Fatalf("tileViewModeToRPC(markdown, bar) = %v, want UNSPECIFIED", got)
+	}
+}

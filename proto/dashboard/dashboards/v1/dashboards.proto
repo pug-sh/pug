@@ -50,6 +50,16 @@ message DashboardTile {
   repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
   google.protobuf.Timestamp create_time = 8;
   google.protobuf.Timestamp update_time = 9;
+  DashboardTileViewMode view_mode = 10 [(buf.validate.field).enum.defined_only = true];
+}
+
+enum DashboardTileViewMode {
+  DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED = 0;
+  DASHBOARD_TILE_VIEW_MODE_LINE = 1;
+  DASHBOARD_TILE_VIEW_MODE_AREA = 2;
+  DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED = 3;
+  DASHBOARD_TILE_VIEW_MODE_BAR_STACKED = 4;
+  DASHBOARD_TILE_VIEW_MODE_TABLE = 5;
 }
 
 message InsightTileContent {
@@ -127,6 +137,7 @@ message DashboardsServiceCreateTileRequest {
     MarkdownTileContent markdown = 5;
   }
   repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
+  DashboardTileViewMode view_mode = 7 [(buf.validate.field).enum.defined_only = true];
 }
 
 message DashboardsServiceCreateTileResponse {
@@ -153,6 +164,7 @@ message DashboardsServiceUpdateTileRequest {
     MarkdownTileContent markdown = 6;
   }
   repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
+  DashboardTileViewMode view_mode = 8 [(buf.validate.field).enum.defined_only = true];
 }
 
 message DashboardsServiceUpdateTileResponse {

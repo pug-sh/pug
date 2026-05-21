@@ -37,6 +37,18 @@ const (
 	TileKindMarkdown TileKind = 2
 )
 
+// TileViewMode mirrors DashboardTileViewMode in the proto and DB column.
+type TileViewMode int16
+
+const (
+	TileViewModeUnspecified TileViewMode = 0
+	TileViewModeLine        TileViewMode = 1
+	TileViewModeArea        TileViewMode = 2
+	TileViewModeBarGrouped  TileViewMode = 3
+	TileViewModeBarStacked  TileViewMode = 4
+	TileViewModeTable       TileViewMode = 5
+)
+
 // TileContent is a sealed sum type for tile payloads. Encode() returns the
 // DB-shaped tuple; every variant must implement it, so adding a new variant
 // without wiring it into the storage layer is a compile error rather than
@@ -285,6 +297,7 @@ func (s *Service) CreateDashboardTile(
 	ctx context.Context,
 	projectID, dashboardID, displayName, description string,
 	content TileContent,
+	viewMode dashboardsv1.DashboardTileViewMode,
 	layouts []*dashboardsv1.ResponsiveGridLayout,
 ) (dbwrite.DashboardTile, error) {
 	enc, err := content.Encode()
@@ -298,12 +311,14 @@ func (s *Service) CreateDashboardTile(
 		return dbwrite.DashboardTile{}, err
 	}
 	layoutsMap := LayoutsToMap(layouts)
+	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
 
 	tile, err := s.write.CreateDashboardTile(ctx, dbwrite.CreateDashboardTileParams{
 		ID:           xid.New().String(),
 		DashboardID:  dashboardID,
 		ProjectID:    projectID,
 		Kind:         int16(enc.Kind),
+		ViewMode:     int16(normalizedViewMode),
 		DisplayName:  displayName,
 		Description:  description,
 		InsightQuery: enc.InsightQuery,
@@ -336,6 +351,7 @@ func (s *Service) UpdateDashboardTile(
 	ctx context.Context,
 	projectID, dashboardID, tileID, displayName, description string,
 	content TileContent,
+	viewMode dashboardsv1.DashboardTileViewMode,
 	layouts []*dashboardsv1.ResponsiveGridLayout,
 ) (dbwrite.DashboardTile, error) {
 	enc, err := content.Encode()
@@ -350,12 +366,14 @@ func (s *Service) UpdateDashboardTile(
 		return dbwrite.DashboardTile{}, err
 	}
 	layoutsMap := LayoutsToMap(layouts)
+	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
 
 	tile, err := s.write.UpdateDashboardTile(ctx, dbwrite.UpdateDashboardTileParams{
 		ID:           tileID,
 		DashboardID:  dashboardID,
 		ProjectID:    projectID,
 		Kind:         int16(enc.Kind),
+		ViewMode:     int16(normalizedViewMode),
 		DisplayName:  displayName,
 		Description:  description,
 		InsightQuery: enc.InsightQuery,
@@ -440,6 +458,10 @@ func QueryMessageToMap(msg *insightsv1.QueryRequest) (map[string]any, error) {
 	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, err
 	}
+	// Dashboard tiles reuse shared QueryRequest on the wire, but dashboards apply
+	// a shared time range and granularity across all tiles, so per-tile
+	// granularity is intentionally not persisted in tile JSON.
+	delete(out, "granularity")
 	return out, nil
 }
 
@@ -456,6 +478,30 @@ func MapToQueryMessage(data map[string]any) (*insightsv1.QueryRequest, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+func normalizedTileViewMode(kind TileKind, viewMode dashboardsv1.DashboardTileViewMode) TileViewMode {
+	switch kind {
+	case TileKindInsight:
+		switch viewMode {
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA:
+			return TileViewModeArea
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED:
+			return TileViewModeBarGrouped
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED:
+			return TileViewModeBarStacked
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE:
+			return TileViewModeTable
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE:
+			return TileViewModeLine
+		default:
+			return TileViewModeLine
+		}
+	case TileKindMarkdown:
+		return TileViewModeUnspecified
+	default:
+		return TileViewModeUnspecified
+	}
 }
 
 func LayoutsToMap(layouts []*dashboardsv1.ResponsiveGridLayout) map[string]any {
