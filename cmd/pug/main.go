@@ -24,6 +24,8 @@ import (
 	"github.com/pug-sh/pug/internal/app/workers/profiles/identify"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/upsert"
 	"github.com/pug-sh/pug/internal/app/workers/scheduler"
+	coreemail "github.com/pug-sh/pug/internal/core/email"
+	"github.com/pug-sh/pug/internal/core/email/templates"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -172,6 +174,67 @@ var emailCmd = &cobra.Command{
 	Use:   "email",
 	Short: "Start the transactional email worker",
 	Run:   run(emailworker.Run),
+}
+
+var (
+	emailPreviewText bool
+	emailPreviewOut  string
+)
+
+// emailToolCmd is a top-level group distinct from `worker email`.
+var emailToolCmd = &cobra.Command{
+	Use:   "email",
+	Short: "Email tooling",
+}
+
+var emailPreviewCmd = &cobra.Command{
+	Use:   "preview <magic_link|invite|provider_test>",
+	Short: "Render a transactional email to HTML (or --text) for preview",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		dashboardURL := os.Getenv("PUG_DASHBOARD_BASE_URL")
+		if dashboardURL == "" {
+			dashboardURL = "https://app.pug.sh"
+		}
+		brand := coreemail.Brand{
+			ProductName:  templates.ProductName,
+			LogoURL:      os.Getenv("PUG_EMAIL_LOGO_URL"),
+			DashboardURL: strings.TrimRight(dashboardURL, "/"),
+		}
+		r := coreemail.NewRenderer(brand)
+		sampleLink := brand.DashboardURL + "/magic-link?token=sample-token-1234567890"
+
+		html, text, err := renderEmailPreview(cmd.Context(), r, args[0], sampleLink)
+		if err != nil {
+			return err
+		}
+
+		out := html
+		if emailPreviewText {
+			out = text
+		}
+		if emailPreviewOut != "" {
+			return os.WriteFile(emailPreviewOut, []byte(out), 0o644)
+		}
+		_, err = os.Stdout.WriteString(out)
+		return err
+	},
+}
+
+// renderEmailPreview dispatches to the renderer for the named email kind. It is
+// kept separate from the cobra wiring so the kind->renderer mapping is
+// unit-testable.
+func renderEmailPreview(ctx context.Context, r *coreemail.Renderer, kind, sampleLink string) (html, text string, err error) {
+	switch kind {
+	case "magic_link":
+		return r.MagicLink(ctx, sampleLink)
+	case "invite":
+		return r.Invite(ctx, "Acme Inc", "Alice", sampleLink)
+	case "provider_test":
+		return r.ProviderTest(ctx)
+	default:
+		return "", "", fmt.Errorf("unknown email %q (want magic_link|invite|provider_test)", kind)
+	}
 }
 
 var schedulerCmd = &cobra.Command{
@@ -360,6 +423,11 @@ func init() {
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)
 	rootCmd.AddCommand(devCmd)
+
+	emailPreviewCmd.Flags().BoolVar(&emailPreviewText, "text", false, "render the plaintext twin instead of HTML")
+	emailPreviewCmd.Flags().StringVar(&emailPreviewOut, "out", "", "write output to a file instead of stdout")
+	emailToolCmd.AddCommand(emailPreviewCmd)
+	rootCmd.AddCommand(emailToolCmd)
 
 	postgresMigrateCmd.Flags().StringP("direction", "d", "up", "can be any of 'up' or 'down' (default: up)")
 	postgresMigrateCmd.Flags().IntP("num", "n", 0, "number of migrations to apply")

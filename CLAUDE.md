@@ -51,6 +51,9 @@ make sqlc
 # Generate protobuf code (after modifying .proto files)
 make rpc
 
+# Generate templ email templates (after modifying .templ files)
+make templ
+
 # Lint Go code
 make lint
 
@@ -204,6 +207,14 @@ Incoming events are enriched with auto-properties before being published to NATS
 - **`internal/geo/`** — resolves geo properties (`$country`, `$city`, `$ip`, etc.) from proxy-injected HTTP headers. `geo.Provider` is an interface; the Cloudflare implementation reads from `CF-Connecting-IP` and `CF-*` headers. Geo properties are **always overwritten** (CDN-injected values are trusted).
 - **`internal/useragent/`** — parses the `User-Agent` header using `ua-parser/uap-go` into properties: `$browser`, `$browserVersion`, `$os`, `$osVersion`, `$device`. Both `browserVersion` and `osVersion` use the major version only (e.g. `"17"` not `"17.2.1"`) to avoid analytics fragmentation. UA properties are only written if not already present in `event.AutoProperties` (client-supplied values win). `$device` is only set when the parser identifies a specific device (e.g., "iPhone", "Pixel 8"); desktop browsers typically yield no `$device` property. The parser is initialized once at startup via `useragent.NewParser()` to avoid reloading regex definitions per request.
 - **bot management enrichment** — reads Cloudflare Bot Management headers (injected via Transform Rule) and sets typed auto-properties: `$bot_score` from `CF-Bot-Score` is parsed as `Int64` (0–255, lower = more bot-like) and `$verified_bot` from `CF-Verified-Bot` is parsed as `Bool` (identifies known good bots like Googlebot). Both are **always overwritten** by the server; client-supplied values are stripped before enrichment. Routing through `internal/autoprop` keeps the typed-Variant story consistent across enrichers (geo `$latitude`/`$longitude` are also stored as `Float64`).
+
+### Email Templating
+
+Transactional emails are rendered with `templ` components in `internal/core/email/templates/` and inlined for email clients with `go-premailer` at send time (`internal/core/email/render.go`). Each email is one `.templ` (HTML) plus a hand-written plaintext twin in `internal/core/email/text.go` — templ is HTML-only, and auto-derived plaintext reads poorly, so the twin is deliberate. The `Renderer` is built inside `NewServiceWithResolver` from `Config`, so `coreemail.Service`'s `Send*` methods just call it; transport, per-tenant routing, and the worker are untouched.
+
+Design tokens are **frozen hex** in `templates/brand.go`, converted once from cotton-w's OKLCH design system (`src/index.css`) because no email client parses `oklch()`. The stylesheet lives as a Go const in `templates/styles.go` and is injected into the layout `<head>` via `@templ.Raw(styleTag)` (templ treats a literal `<style>` as a raw-text element, so a templ expression placed *inside* one is not interpreted). `go-premailer` then inlines those classes onto elements — tests assert the button's `background-color:#3c68d9` is inlined, that no `oklch(` ever reaches the output, and that every `Color*` constant in `brand.go` matches a literal in `styles.go` (the constants document the palette; the inlined stylesheet literals are what render).
+
+Run `make templ` after editing `.templ` files; generated `*_templ.go` is committed (like `internal/gen`). Preview locally with `pug email preview <magic_link|invite|provider_test> [--text] [--out file]`. The header logo URL comes from `PUG_EMAIL_LOGO_URL` (empty ⇒ wordmark-only header); `sanitizeDisplay` is still applied to subjects and plaintext (templ handles HTML escaping for the HTML body).
 
 ### Profile Properties
 

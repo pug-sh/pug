@@ -1,0 +1,24 @@
+package templates
+
+templ Invite(b Brand, orgName, inviterName, link string) {
+	@Layout(b, "Invitation to join "+orgName, invitePreview(b, orgName, inviterName), "This invitation expires in 7 days. If you weren't expecting it, you can ignore this email.") {
+		@Heading() {
+			Join { orgName } on { b.ProductName }
+		}
+		if inviterName != "" {
+			@Paragraph() {
+				{ inviterName } invited you to join { orgName } on { b.ProductName }. Accept the invitation to get started.
+			}
+		} else {
+			@Paragraph() {
+				You've been invited to join { orgName } on { b.ProductName }. Accept the invitation to get started.
+			}
+		}
+		@Button("Accept invitation", link)
+		@Divider()
+		@Muted() {
+			Trouble with the button? Paste this link into your browser:
+		}
+		@LinkFallback(link)
+	}
+}

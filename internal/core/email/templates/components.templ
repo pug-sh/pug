@@ -1,0 +1,34 @@
+package templates
+
+templ Heading() {
+	<h1 class="h1">{ children... }</h1>
+}
+
+templ Paragraph() {
+	<p class="p">{ children... }</p>
+}
+
+templ Muted() {
+	<p class="muted">{ children... }</p>
+}
+
+templ Divider() {
+	<hr class="divider"/>
+}
+
+// Button renders a bulletproof, table-wrapped anchor. bgcolor on the cell
+// keeps Outlook happy; premailer inlines the .btn / .btn-cell classes.
+templ Button(label, url string) {
+	<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+		<tr>
+			<td class="btn-cell" align="center" bgcolor="#3c68d9">
+				<a class="btn" href={ templ.URL(url) } target="_blank" rel="noopener noreferrer">{ label }</a>
+			</td>
+		</tr>
+	</table>
+}
+
+// LinkFallback shows the raw URL for clients that strip the button.
+templ LinkFallback(url string) {
+	<div class="chip">{ url }</div>
+}

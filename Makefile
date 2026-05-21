@@ -45,6 +45,10 @@ sqlc:
 	rm -rf internal/gen/repo
 	go tool sqlc generate
 
+.PHONY: templ
+templ:
+	go tool templ generate
+
 .PHONY: lint-proto
 lint-proto:
 	go tool buf lint
