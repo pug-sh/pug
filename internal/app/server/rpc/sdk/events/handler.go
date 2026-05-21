@@ -15,6 +15,7 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/autoprop"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
@@ -65,7 +66,7 @@ func (s *Server) BatchCreate(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	events := req.Msg.GetEvents()
@@ -76,7 +77,7 @@ func (s *Server) BatchCreate(
 	}
 
 	if err := coreevents.ValidateExternalEvents(events); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, apperr.Invalid(apperr.ReasonInvalidEventBatch, err.Error())
 	}
 
 	projectID := principal.Project.ID

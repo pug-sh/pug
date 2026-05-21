@@ -10,6 +10,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/jackc/pgx/v5"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/core/events"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -48,7 +49,7 @@ func (s *server) GetActivityFeed(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	params := events.ActivityFeedParams{
@@ -64,7 +65,7 @@ func (s *server) GetActivityFeed(
 	if req.Msg.GetPageToken() != "" {
 		cursor, err := events.DecodeEventCursor(req.Msg.GetPageToken())
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidPageToken, "invalid page token")
 		}
 		params.PageToken = cursor
 	}
@@ -75,7 +76,7 @@ func (s *server) GetActivityFeed(
 			slog.WarnContext(ctx, "invalid filter in activity feed request",
 				slogx.Error(err),
 				slog.String("project_id", principal.Project.ID))
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid filter parameters"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidActivityFilter, "invalid filter parameters")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -111,7 +112,7 @@ func (s *server) GetEventExplorer(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	params := events.EventExplorerParams{
@@ -127,7 +128,7 @@ func (s *server) GetEventExplorer(
 	if req.Msg.GetPageToken() != "" {
 		cursor, err := events.DecodeEventCursor(req.Msg.GetPageToken())
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid page token"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidPageToken, "invalid page token")
 		}
 		params.PageToken = cursor
 	}
@@ -138,7 +139,7 @@ func (s *server) GetEventExplorer(
 			slog.WarnContext(ctx, "invalid filter in event explorer request",
 				slogx.Error(err),
 				slog.String("project_id", principal.Project.ID))
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid filter parameters"))
+			return nil, apperr.Invalid(apperr.ReasonInvalidActivityFilter, "invalid filter parameters")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
@@ -219,7 +220,7 @@ func (s *server) GetActivityHeatmap(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	tr := req.Msg.GetTimeRange()
@@ -258,7 +259,7 @@ func (s *server) GetProfileStats(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	stats, heatmap, err := s.eventsReader.GetProfileStats(ctx, principal.Project.ID, req.Msg.GetDistinctId())
@@ -327,7 +328,7 @@ func (s *server) GetFilterSchema(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	projectID := principal.Project.ID
@@ -350,7 +351,7 @@ func (s *server) GetPropertyValues(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	projectID := principal.Project.ID

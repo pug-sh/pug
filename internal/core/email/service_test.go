@@ -70,8 +70,8 @@ func TestServicePlatformEmailPassesNilTenant(t *testing.T) {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
 
-	if err := svc.SendPasswordReset(context.Background(), "to@example.com", "tok", "key-2"); err != nil {
-		t.Fatalf("SendPasswordReset: %v", err)
+	if err := svc.SendMagicLink(context.Background(), "to@example.com", "tok", "key-2"); err != nil {
+		t.Fatalf("SendMagicLink: %v", err)
 	}
 	if resolver.gotTenant != nil {
 		t.Fatalf("expected nil tenant for platform email, got %q", *resolver.gotTenant)
@@ -104,6 +104,27 @@ func TestServiceLegacyNewServiceUsesOperatorOnly(t *testing.T) {
 	}
 	if errors.Unwrap(coreemail.NewPermanentError(errors.New("x"))) == nil {
 		t.Fatal("smoke: PermanentError unwrap broken")
+	}
+}
+
+func TestSendMagicLink(t *testing.T) {
+	cap := &captureProvider{}
+	resolver := &staticResolver{provider: cap, from: coreemail.ResolvedFrom{}}
+	svc, err := coreemail.NewServiceWithResolver(coreemail.Config{
+		DashboardBaseURL: "https://dashboard.example",
+		From:             "noreply@operator.com",
+	}, resolver)
+	if err != nil {
+		t.Fatalf("NewServiceWithResolver: %v", err)
+	}
+	if err := svc.SendMagicLink(context.Background(), "user@example.com", "tok123", "magic_link:tok123"); err != nil {
+		t.Fatalf("SendMagicLink: %v", err)
+	}
+	if cap.got.To != "user@example.com" {
+		t.Fatalf("To = %q", cap.got.To)
+	}
+	if !strings.Contains(cap.got.TextBody, "/magic-link?token=tok123") {
+		t.Fatalf("TextBody missing magic link: %q", cap.got.TextBody)
 	}
 }
 

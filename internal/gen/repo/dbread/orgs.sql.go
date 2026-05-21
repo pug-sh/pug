@@ -7,6 +7,8 @@ package dbread
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getOrgByID = `-- name: GetOrgByID :one
@@ -21,6 +23,39 @@ func (q *Queries) GetOrgByID(ctx context.Context, id string) (Org, error) {
 		&i.DisplayName,
 		&i.ID,
 		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const getOrgWithRoleByIDAndCustomerID = `-- name: GetOrgWithRoleByIDAndCustomerID :one
+select o.id, o.display_name, o.create_time, o.update_time, m.role
+from orgs o
+join org_members m on m.org_id = o.id
+where o.id = $1 and m.customer_id = $2
+`
+
+type GetOrgWithRoleByIDAndCustomerIDParams struct {
+	OrgID      string
+	CustomerID string
+}
+
+type GetOrgWithRoleByIDAndCustomerIDRow struct {
+	ID          string
+	DisplayName string
+	CreateTime  pgtype.Timestamptz
+	UpdateTime  pgtype.Timestamptz
+	Role        string
+}
+
+func (q *Queries) GetOrgWithRoleByIDAndCustomerID(ctx context.Context, arg GetOrgWithRoleByIDAndCustomerIDParams) (GetOrgWithRoleByIDAndCustomerIDRow, error) {
+	row := q.db.QueryRow(ctx, getOrgWithRoleByIDAndCustomerID, arg.OrgID, arg.CustomerID)
+	var i GetOrgWithRoleByIDAndCustomerIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.CreateTime,
+		&i.UpdateTime,
+		&i.Role,
 	)
 	return i, err
 }
@@ -47,6 +82,48 @@ func (q *Queries) GetOrgsByCustomerID(ctx context.Context, customerID string) ([
 			&i.DisplayName,
 			&i.ID,
 			&i.UpdateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getOrgsWithRoleByCustomerID = `-- name: GetOrgsWithRoleByCustomerID :many
+select o.id, o.display_name, o.create_time, o.update_time, m.role
+from orgs o
+join org_members m on m.org_id = o.id
+where m.customer_id = $1
+order by o.create_time asc
+`
+
+type GetOrgsWithRoleByCustomerIDRow struct {
+	ID          string
+	DisplayName string
+	CreateTime  pgtype.Timestamptz
+	UpdateTime  pgtype.Timestamptz
+	Role        string
+}
+
+func (q *Queries) GetOrgsWithRoleByCustomerID(ctx context.Context, customerID string) ([]GetOrgsWithRoleByCustomerIDRow, error) {
+	rows, err := q.db.Query(ctx, getOrgsWithRoleByCustomerID, customerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetOrgsWithRoleByCustomerIDRow
+	for rows.Next() {
+		var i GetOrgsWithRoleByCustomerIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DisplayName,
+			&i.CreateTime,
+			&i.UpdateTime,
+			&i.Role,
 		); err != nil {
 			return nil, err
 		}

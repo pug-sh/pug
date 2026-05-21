@@ -3,6 +3,7 @@ package profiles
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -51,8 +53,9 @@ func TestDelete_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 
@@ -63,8 +66,9 @@ func TestGet_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 
@@ -221,8 +225,15 @@ func TestDelete_AlreadyDeleted(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for already-deleted profile, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeNotFound {
-		t.Errorf("got code %v, want CodeNotFound", code)
+	var appErr *apperr.Error
+	if !errors.As(err, &appErr) {
+		t.Fatalf("want *apperr.Error, got %v (%T)", err, err)
+	}
+	if appErr.Code() != connect.CodeNotFound {
+		t.Errorf("code = %v, want CodeNotFound", appErr.Code())
+	}
+	if appErr.Reason() != apperr.ReasonProfileNotFound {
+		t.Errorf("reason = %q, want %q", appErr.Reason(), apperr.ReasonProfileNotFound)
 	}
 }
 
@@ -251,8 +262,15 @@ func TestDelete_NonExistent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-existent profile, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeNotFound {
-		t.Errorf("got code %v, want CodeNotFound", code)
+	var appErr *apperr.Error
+	if !errors.As(err, &appErr) {
+		t.Fatalf("want *apperr.Error, got %v (%T)", err, err)
+	}
+	if appErr.Code() != connect.CodeNotFound {
+		t.Errorf("code = %v, want CodeNotFound", appErr.Code())
+	}
+	if appErr.Reason() != apperr.ReasonProfileNotFound {
+		t.Errorf("reason = %q, want %q", appErr.Reason(), apperr.ReasonProfileNotFound)
 	}
 }
 
@@ -353,8 +371,12 @@ func TestList_RejectsUnsupportedFilterSources(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeInvalidArgument {
-		t.Fatalf("got code %v, want CodeInvalidArgument", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeInvalidArgument {
+		t.Fatalf("want apperr CodeInvalidArgument, got %v (%T)", err, err)
+	}
+	if ae.Reason() != apperr.ReasonInvalidProfileFilter {
+		t.Fatalf("want INVALID_PROFILE_FILTER reason, got %q", ae.Reason())
 	}
 }
 

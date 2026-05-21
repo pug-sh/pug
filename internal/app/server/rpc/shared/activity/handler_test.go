@@ -2,12 +2,26 @@ package activity
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	activityv1 "github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+// ctxWithProject returns a context carrying a project-only principal.
+func ctxWithProject(ctx context.Context) context.Context {
+	return authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypePrivateKey,
+		Project:  &dbread.Project{},
+	})
+}
 
 func TestMapToStruct(t *testing.T) {
 	t.Run("converts typed map to struct", func(t *testing.T) {
@@ -66,14 +80,60 @@ func TestMapToStruct_AllValuesAreStrings(t *testing.T) {
 	}
 }
 
+func TestGetActivityFeed_InvalidPageToken(t *testing.T) {
+	s := &server{}
+	req := connect.NewRequest(&activityv1.GetActivityFeedRequest{
+		PageToken: proto.String("!!!not-valid-base64!!!"),
+	})
+	// Inject a project principal so we reach the page-token decode path.
+	ctx := ctxWithProject(context.Background())
+	_, err := s.GetActivityFeed(ctx, req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want *apperr.Error, got %T: %v", err, err)
+	}
+	if ae.Code() != connect.CodeInvalidArgument {
+		t.Errorf("want CodeInvalidArgument, got %v", ae.Code())
+	}
+	if ae.Reason() != apperr.ReasonInvalidPageToken {
+		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidPageToken, ae.Reason())
+	}
+}
+
+func TestGetEventExplorer_InvalidPageToken(t *testing.T) {
+	s := &server{}
+	req := connect.NewRequest(&activityv1.GetEventExplorerRequest{
+		PageToken: proto.String("!!!not-valid-base64!!!"),
+	})
+	ctx := ctxWithProject(context.Background())
+	_, err := s.GetEventExplorer(ctx, req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("want *apperr.Error, got %T: %v", err, err)
+	}
+	if ae.Code() != connect.CodeInvalidArgument {
+		t.Errorf("want CodeInvalidArgument, got %v", ae.Code())
+	}
+	if ae.Reason() != apperr.ReasonInvalidPageToken {
+		t.Errorf("want reason %q, got %q", apperr.ReasonInvalidPageToken, ae.Reason())
+	}
+}
+
 func TestGetActivityHeatmap_Unauthenticated(t *testing.T) {
 	s := &server{}
 	_, err := s.GetActivityHeatmap(context.Background(), connect.NewRequest(&activityv1.GetActivityHeatmapRequest{}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 
@@ -83,7 +143,8 @@ func TestGetProfileStats_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("got code %v, want CodeUnauthenticated", code)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }

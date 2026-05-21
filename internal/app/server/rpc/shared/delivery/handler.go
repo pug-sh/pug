@@ -33,7 +33,7 @@ func (s *Server) RecordEvent(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	projectID := principal.Project.ID

@@ -12,13 +12,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/secret"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	orgemailprovidersv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1"
-	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -44,20 +44,18 @@ func NewServer(orgs *coreorgs.Service, read *dbread.Queries, write *dbwrite.Quer
 func (s *server) requireAdmin(ctx context.Context, orgID string) (*rpc.Principal, error) {
 	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 	role, err := s.orgs.GetMemberRole(ctx, orgID, principal.Customer.ID)
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this org"))
+			return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
 		}
-		slog.ErrorContext(ctx, "failed to check org admin", slogx.Error(err),
-			slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
-		telemetry.RecordError(ctx, err)
+		// orgs service logs+records at source per the log-at-source convention.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	if role != orgsv1.OrgRole_ORG_ROLE_ADMIN.String() {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
+	if role != coreorgs.RoleAdmin {
+		return nil, apperr.PermissionDenied(apperr.ReasonOrgAdminRequired, "admin role required")
 	}
 	return principal, nil
 }
@@ -67,8 +65,8 @@ func (s *server) requireAdmin(ctx context.Context, orgID string) (*rpc.Principal
 // decrypt existing ones.
 func (s *server) requireCipher() error {
 	if s.cipher == nil {
-		return connect.NewError(connect.CodeFailedPrecondition,
-			errors.New("email provider encryption key is not configured on this server"))
+		return apperr.FailedPrecondition(apperr.ReasonEmailProviderEncryptionMissing,
+			"email provider encryption key is not configured on this server")
 	}
 	return nil
 }
@@ -84,7 +82,8 @@ func (s *server) Get(ctx context.Context, req *connect.Request[orgemailproviders
 	row, err := s.read.GetOrgEmailProvider(ctx, req.Msg.GetOrgId())
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("no email provider configured for this org"))
+			return nil, apperr.NotFound(apperr.ReasonEmailProviderNotFound, "no email provider configured for this org",
+				apperr.Resource("email_provider", req.Msg.GetOrgId()))
 		}
 		slog.ErrorContext(ctx, "failed to get org email provider", slogx.Error(err),
 			slog.String("org_id", req.Msg.GetOrgId()))
@@ -101,8 +100,8 @@ func (s *server) Get(ctx context.Context, req *connect.Request[orgemailproviders
 		// rotated without re-encrypting rows. The admin can self-recover
 		// by re-saving the provider config (which re-encrypts under the
 		// current key) — surface a typed code rather than a generic 500.
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
-			errors.New("email provider secret cannot be decrypted with the current key; please re-save the provider config"))
+		return nil, apperr.FailedPrecondition(apperr.ReasonEmailProviderDecryptFailed,
+			"email provider secret cannot be decrypted with the current key; please re-save the provider config")
 	}
 	kind := coreemail.ProviderKind(row.Kind)
 	redacted, err := redactPlaintext(kind, plaintext)
@@ -143,7 +142,7 @@ func (s *server) Set(ctx context.Context, req *connect.Request[orgemailproviders
 
 	kind, cfg, err := configFromSetRequest(req.Msg)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid email provider config"))
+		return nil, apperr.Invalid(apperr.ReasonInvalidEmailProviderConfig, "invalid email provider config")
 	}
 
 	plaintext, err := coreemail.EncodeProviderConfig(kind, cfg)
@@ -228,12 +227,12 @@ func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprov
 		return nil, err
 	}
 	if s.mailer == nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition,
-			errors.New("test send is not available on this server"))
+		return nil, apperr.FailedPrecondition(apperr.ReasonEmailTestSendUnavailable,
+			"test send is not available on this server")
 	}
 	if !strings.EqualFold(req.Msg.GetRecipient(), principal.Customer.Email) {
-		return nil, connect.NewError(connect.CodePermissionDenied,
-			errors.New("test recipient must match the calling admin's email"))
+		return nil, apperr.PermissionDenied(apperr.ReasonEmailTestRecipientMismatch,
+			"test recipient must match the calling admin's email")
 	}
 
 	// Unique-per-call key: an admin who fixes their provider config (auth, host,

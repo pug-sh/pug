@@ -1,3 +1,17 @@
+-- name: GetValidEmailActionTokenByHashForUpdate :one
+-- Purpose-agnostic lookup that locks the row FOR UPDATE so concurrent
+-- redemptions of the same token serialize: the first to commit consumes it, and
+-- the rest re-read zero rows (consumed) and fail cleanly with ErrInvalidToken
+-- instead of racing on a downstream unique violation (e.g. duplicate customer).
+-- token_hash is unique, so the hash alone identifies the token; the caller
+-- inspects the returned purpose to decide how to redeem it.
+select *
+from email_action_tokens
+where token_hash = @token_hash
+  and consumed_at is null
+  and expires_at > now()
+for update;
+
 -- name: CreateEmailActionToken :one
 insert into email_action_tokens (
   id,

@@ -7,7 +7,8 @@ create table org_invitations (
   inviter_id char(20) references customers(id) on delete set null,
   org_id char(20) not null references orgs(id) on delete cascade,
   status varchar(30) not null default 'INVITATION_STATUS_PENDING',
-  token char(32) not null unique
+  token char(32) not null unique,
+  constraint org_invitations_status_check check (status in ('INVITATION_STATUS_PENDING', 'INVITATION_STATUS_ACCEPTED'))
 );
 
 create unique index org_invitations_org_email_pending

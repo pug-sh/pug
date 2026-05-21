@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	sdkprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -114,8 +115,9 @@ func TestIdentify_Unauthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unauthenticated request")
 	}
-	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
-		t.Errorf("code = %v, want %v", code, connect.CodeUnauthenticated)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/apperr"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
@@ -49,7 +50,7 @@ func (s *server) Query(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	projectID := principal.Project.ID
@@ -62,7 +63,7 @@ func (s *server) Query(
 		if err != nil {
 			slog.WarnContext(ctx, "failed to build trends query", slogx.Error(err),
 				slog.String("project_id", projectID))
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters: "+err.Error()))
+			return nil, apperr.Invalid(apperr.ReasonInvalidInsightQuery, "invalid query parameters: "+err.Error())
 		}
 		rows, err := s.executor.QueryTrends(ctx, projectID, q)
 		if err != nil {
@@ -81,7 +82,7 @@ func (s *server) Query(
 		if err != nil {
 			slog.WarnContext(ctx, "failed to build segmentation query", slogx.Error(err),
 				slog.String("project_id", projectID))
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters: "+err.Error()))
+			return nil, apperr.Invalid(apperr.ReasonInvalidInsightQuery, "invalid query parameters: "+err.Error())
 		}
 		value, err := s.executor.QueryScalar(ctx, projectID, q)
 		if err != nil {
@@ -99,7 +100,7 @@ func (s *server) Query(
 			if err != nil {
 				slog.WarnContext(ctx, "failed to build funnel timing query", slogx.Error(err),
 					slog.String("project_id", projectID))
-				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters: "+err.Error()))
+				return nil, apperr.Invalid(apperr.ReasonInvalidInsightQuery, "invalid query parameters: "+err.Error())
 			}
 			users, err := s.executor.QueryFunnelUserEvents(ctx, projectID, q)
 			if err != nil {
@@ -115,7 +116,7 @@ func (s *server) Query(
 			if err != nil {
 				slog.WarnContext(ctx, "failed to build funnel query", slogx.Error(err),
 					slog.String("project_id", projectID))
-				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters: "+err.Error()))
+				return nil, apperr.Invalid(apperr.ReasonInvalidInsightQuery, "invalid query parameters: "+err.Error())
 			}
 			funnelRows, err = s.executor.QueryFunnel(ctx, projectID, q)
 			if err != nil {
@@ -136,7 +137,7 @@ func (s *server) Query(
 		if err != nil {
 			slog.WarnContext(ctx, "failed to build retention query", slogx.Error(err),
 				slog.String("project_id", projectID))
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters: "+err.Error()))
+			return nil, apperr.Invalid(apperr.ReasonInvalidInsightQuery, "invalid query parameters: "+err.Error())
 		}
 		rows, err := s.executor.QueryRetention(ctx, projectID, q)
 		if err != nil {
@@ -178,14 +179,14 @@ func (s *server) SegmentUsers(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	sql, args, err := coreinsights.BuildSegmentUsersQuery(req.Msg, principal.Project.ID)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to build segment users query", slogx.Error(err),
 			slog.String("project_id", principal.Project.ID))
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid query parameters: "+err.Error()))
+		return nil, apperr.Invalid(apperr.ReasonInvalidInsightQuery, "invalid query parameters: "+err.Error())
 	}
 
 	ids, err := s.executor.QueryStringColumn(ctx, principal.Project.ID, sql, args)
@@ -224,7 +225,7 @@ func (s *server) GetFilterSchema(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	projectID := principal.Project.ID
@@ -247,7 +248,7 @@ func (s *server) GetPropertyValues(
 
 	principal, err := rpc.MustGetPrincipalWithProject(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("unauthenticated"))
+		return nil, err
 	}
 
 	projectID := principal.Project.ID

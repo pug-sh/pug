@@ -7,7 +7,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	protovalidate "buf.build/go/protovalidate"
 	"connectrpc.com/connect"
+	"github.com/pug-sh/pug/internal/apperr"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -31,7 +35,7 @@ func testInterceptorWithOpts(t *testing.T, ctx context.Context, middleware func(
 	var h http.Handler = connect.NewUnaryHandler(
 		"/test.v1.Svc/Method",
 		handler,
-		connect.WithInterceptors(ErrorInterceptor()),
+		connect.WithInterceptors(CorrelationInterceptor(), ErrorInterceptor()),
 	)
 	if middleware != nil {
 		h = middleware(h)
@@ -60,7 +64,7 @@ func TestErrorInterceptor(t *testing.T) {
 		}
 	})
 
-	t.Run("connect error passes through unchanged", func(t *testing.T) {
+	t.Run("connect error code and message unchanged", func(t *testing.T) {
 		orig := connect.NewError(connect.CodeNotFound, errors.New("not found"))
 		err := testInterceptor(t, context.Background(), orig)
 		if err == nil {
@@ -95,6 +99,28 @@ func TestErrorInterceptor(t *testing.T) {
 		}
 	})
 
+	t.Run("apperr details ride along", func(t *testing.T) {
+		handlerErr := apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found",
+			apperr.Resource("profile", "p_123"))
+		err := testInterceptor(t, context.Background(), handlerErr)
+
+		var connectErr *connect.Error
+		if !errors.As(err, &connectErr) {
+			t.Fatalf("want *connect.Error, got %T", err)
+		}
+		var sawResource bool
+		for _, d := range connectErr.Details() {
+			if msg, verr := d.Value(); verr == nil {
+				if ri, ok := msg.(*errdetails.ResourceInfo); ok && ri.GetResourceName() == "p_123" {
+					sawResource = true
+				}
+			}
+		}
+		if !sawResource {
+			t.Error("ResourceInfo detail not attached")
+		}
+	})
+
 	t.Run("cancelled context returns canceled code", func(t *testing.T) {
 		// Use HTTP middleware to cancel the request context before Connect
 		// processes it. This ensures the interceptor's ctx.Err() check fires.
@@ -121,4 +147,311 @@ func TestErrorInterceptor(t *testing.T) {
 			t.Errorf("code = %v, want %v", connectErr.Code(), connect.CodeCanceled)
 		}
 	})
+}
+
+func allDetails(t *testing.T, err error) []any {
+	t.Helper()
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected *connect.Error, got %T", err)
+	}
+	var out []any
+	for _, d := range connectErr.Details() {
+		msg, derr := d.Value()
+		if derr != nil {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
+func errorInfoFrom(t *testing.T, err error) *errdetails.ErrorInfo {
+	t.Helper()
+	for _, msg := range allDetails(t, err) {
+		if info, ok := msg.(*errdetails.ErrorInfo); ok {
+			return info
+		}
+	}
+	return nil
+}
+
+func requestInfoFrom(t *testing.T, err error) *errdetails.RequestInfo {
+	t.Helper()
+	for _, msg := range allDetails(t, err) {
+		if ri, ok := msg.(*errdetails.RequestInfo); ok {
+			return ri
+		}
+	}
+	return nil
+}
+
+func TestErrorInterceptor_attachesDetails(t *testing.T) {
+	t.Run("plain connect error: ErrorInfo generic reason + RequestInfo id", func(t *testing.T) {
+		err := testInterceptor(t, context.Background(),
+			connect.NewError(connect.CodeNotFound, errors.New("nope")))
+		info := errorInfoFrom(t, err)
+		if info == nil {
+			t.Fatal("no ErrorInfo detail attached")
+		}
+		if info.GetReason() != string(apperr.ReasonNotFound) {
+			t.Errorf("reason = %q, want %q", info.GetReason(), apperr.ReasonNotFound)
+		}
+		if info.GetDomain() != apperr.Domain {
+			t.Errorf("domain = %q, want %q", info.GetDomain(), apperr.Domain)
+		}
+		ri := requestInfoFrom(t, err)
+		if ri == nil || ri.GetRequestId() == "" {
+			t.Errorf("RequestInfo = %+v, want non-empty request id", ri)
+		}
+	})
+
+	t.Run("apperr error carries its specific reason", func(t *testing.T) {
+		err := testInterceptor(t, context.Background(),
+			apperr.Err(connect.CodeNotFound, apperr.ReasonProfileNotFound, "profile not found"))
+		var connectErr *connect.Error
+		if !errors.As(err, &connectErr) {
+			t.Fatalf("expected *connect.Error, got %T", err)
+		}
+		if connectErr.Code() != connect.CodeNotFound {
+			t.Errorf("code = %v, want NotFound", connectErr.Code())
+		}
+		if connectErr.Message() != "profile not found" {
+			t.Errorf("message = %q", connectErr.Message())
+		}
+		info := errorInfoFrom(t, err)
+		if info == nil || info.GetReason() != string(apperr.ReasonProfileNotFound) {
+			t.Errorf("ErrorInfo = %+v, want reason PROFILE_NOT_FOUND", info)
+		}
+		if ri := requestInfoFrom(t, err); ri == nil || ri.GetRequestId() == "" {
+			t.Errorf("RequestInfo = %+v, want non-empty request id", ri)
+		}
+	})
+
+	t.Run("leaked error sanitized to internal with INTERNAL reason", func(t *testing.T) {
+		err := testInterceptor(t, context.Background(), errors.New("db boom"))
+		info := errorInfoFrom(t, err)
+		if info == nil || info.GetReason() != string(apperr.ReasonInternal) {
+			t.Errorf("ErrorInfo = %+v, want reason INTERNAL", info)
+		}
+	})
+}
+
+func TestErrorInterceptor_attachesDetailsToShortCircuitedError(t *testing.T) {
+	// Models validate.NewInterceptor(): an inner interceptor that fails the request
+	// before the handler runs. ErrorInterceptor (registered outside it) must still
+	// attach ErrorInfo + RequestInfo.
+	shortCircuit := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(_ context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid request"))
+		}
+	})
+
+	h := connect.NewUnaryHandler(
+		"/test.v1.Svc/Method",
+		func(_ context.Context, _ *connect.Request[emptypb.Empty]) (*connect.Response[emptypb.Empty], error) {
+			return connect.NewResponse(&emptypb.Empty{}), nil // never reached
+		},
+		connect.WithInterceptors(CorrelationInterceptor(), ErrorInterceptor(), shortCircuit),
+	)
+	mux := http.NewServeMux()
+	mux.Handle("/test.v1.Svc/Method", h)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connect.NewClient[emptypb.Empty, emptypb.Empty](srv.Client(), srv.URL+"/test.v1.Svc/Method")
+	_, err := client.CallUnary(context.Background(), connect.NewRequest(&emptypb.Empty{}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	info := errorInfoFrom(t, err)
+	if info == nil || info.GetReason() != string(apperr.ReasonInvalidArgument) {
+		t.Errorf("ErrorInfo = %+v, want reason INVALID_ARGUMENT", info)
+	}
+	if ri := requestInfoFrom(t, err); ri == nil || ri.GetRequestId() == "" {
+		t.Errorf("RequestInfo = %+v, want non-empty request id", ri)
+	}
+}
+
+func TestSanitizeError_ctxCancelNoDetail(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	// A raw (non-connect) error arriving with a cancelled context returns the
+	// bare context error and attaches no detail (the ctx.Err() safety-net branch).
+	err := sanitizeError(ctx, "/test.v1.Svc/Method", errors.New("boom"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context.Canceled, got %v", err)
+	}
+	if _, ok := errors.AsType[*connect.Error](err); ok {
+		t.Errorf("expected raw context error (no connect error / no details), got %v", err)
+	}
+}
+
+func TestErrorInterceptor_fullDetailRoundTrip(t *testing.T) {
+	handlerErr := apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found",
+		apperr.Resource("profile", "p_123"))
+	err := testInterceptor(t, context.Background(), handlerErr)
+
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("want *connect.Error, got %v (%T)", err, err)
+	}
+	if connectErr.Code() != connect.CodeNotFound {
+		t.Errorf("code = %v, want CodeNotFound", connectErr.Code())
+	}
+
+	var (
+		gotReason, gotDomain, gotErrorID, gotResType, gotResName string
+		sawErrorInfo, sawRequestInfo, sawResource                bool
+	)
+	for _, d := range connectErr.Details() {
+		msg, verr := d.Value()
+		if verr != nil {
+			continue
+		}
+		switch m := msg.(type) {
+		case *errdetails.ErrorInfo:
+			sawErrorInfo = true
+			gotReason, gotDomain = m.GetReason(), m.GetDomain()
+		case *errdetails.RequestInfo:
+			sawRequestInfo = true
+			gotErrorID = m.GetRequestId()
+		case *errdetails.ResourceInfo:
+			sawResource = true
+			gotResType, gotResName = m.GetResourceType(), m.GetResourceName()
+		}
+	}
+
+	if !sawErrorInfo || gotReason != string(apperr.ReasonProfileNotFound) || gotDomain != apperr.Domain {
+		t.Errorf("ErrorInfo: saw=%v reason=%q domain=%q; want reason=%q domain=%q",
+			sawErrorInfo, gotReason, gotDomain, apperr.ReasonProfileNotFound, apperr.Domain)
+	}
+	if !sawRequestInfo || gotErrorID == "" {
+		t.Errorf("RequestInfo: saw=%v error_id=%q; want a non-empty error_id", sawRequestInfo, gotErrorID)
+	}
+	if !sawResource || gotResType != "profile" || gotResName != "p_123" {
+		t.Errorf("ResourceInfo: saw=%v type=%q name=%q; want type=profile name=p_123",
+			sawResource, gotResType, gotResName)
+	}
+}
+
+func TestErrorInterceptor_preconditionAndFieldOnWire(t *testing.T) {
+	// fullDetailRoundTrip covers Resource; this covers the other two option
+	// constructors (Precondition -> PreconditionFailure, Field -> BadRequest)
+	// surviving the interceptor and arriving intact at the client.
+	handlerErr := apperr.FailedPrecondition(apperr.ReasonProfileNotFound, "blocked",
+		apperr.Precondition("TOS", "user", "must accept"),
+		apperr.Field("email", "is required"))
+	err := testInterceptor(t, context.Background(), handlerErr)
+
+	var sawPF, sawBR bool
+	for _, msg := range allDetails(t, err) {
+		switch m := msg.(type) {
+		case *errdetails.PreconditionFailure:
+			if vs := m.GetViolations(); len(vs) == 1 && vs[0].GetType() == "TOS" && vs[0].GetSubject() == "user" {
+				sawPF = true
+			}
+		case *errdetails.BadRequest:
+			if fvs := m.GetFieldViolations(); len(fvs) == 1 && fvs[0].GetField() == "email" {
+				sawBR = true
+			}
+		}
+	}
+	if !sawPF {
+		t.Error("PreconditionFailure (TOS/user) not present on the wire")
+	}
+	if !sawBR {
+		t.Error("BadRequest (email field) not present on the wire")
+	}
+}
+
+// TestErrorInterceptor_streamingError covers WrapStreamingHandler: a
+// server-streaming handler returning an apperr must reach the client with the
+// same structured envelope (reason + error_id + detail) as a unary error.
+// ProfilesService.List is the real server-streaming RPC this protects.
+func TestErrorInterceptor_streamingError(t *testing.T) {
+	const path = "/test.v1.Svc/Stream"
+	h := connect.NewServerStreamHandler(
+		path,
+		func(_ context.Context, _ *connect.Request[emptypb.Empty], _ *connect.ServerStream[emptypb.Empty]) error {
+			return apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found",
+				apperr.Resource("profile", "p_1"))
+		},
+		connect.WithInterceptors(CorrelationInterceptor(), ErrorInterceptor()),
+	)
+	mux := http.NewServeMux()
+	mux.Handle(path, h)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connect.NewClient[emptypb.Empty, emptypb.Empty](srv.Client(), srv.URL+path)
+	stream, err := client.CallServerStream(context.Background(), connect.NewRequest(&emptypb.Empty{}))
+	if err == nil { // error typically surfaces during iteration for server streams
+		for stream.Receive() {
+		}
+		err = stream.Err()
+		_ = stream.Close()
+	}
+	if err == nil {
+		t.Fatal("expected streaming error, got nil")
+	}
+
+	info := errorInfoFrom(t, err)
+	if info == nil || info.GetReason() != string(apperr.ReasonProfileNotFound) {
+		t.Errorf("ErrorInfo = %+v, want reason PROFILE_NOT_FOUND", info)
+	}
+	if ri := requestInfoFrom(t, err); ri == nil || ri.GetRequestId() == "" {
+		t.Errorf("RequestInfo = %+v, want non-empty error_id on stream error", ri)
+	}
+	var sawResource bool
+	for _, msg := range allDetails(t, err) {
+		if ri, ok := msg.(*errdetails.ResourceInfo); ok && ri.GetResourceName() == "p_1" {
+			sawResource = true
+		}
+	}
+	if !sawResource {
+		t.Error("ResourceInfo detail not propagated on streaming error")
+	}
+}
+
+func TestErrorInterceptor_validationBecomesBadRequest(t *testing.T) {
+	v, err := protovalidate.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	verr := v.Validate(&insightsv1.QueryRequest{}) // empty → required fields fail
+	if verr == nil {
+		t.Skip("empty QueryRequest unexpectedly valid")
+	}
+	handlerErr := connect.NewError(connect.CodeInvalidArgument, verr)
+
+	got := testInterceptor(t, context.Background(), handlerErr)
+	var connectErr *connect.Error
+	if !errors.As(got, &connectErr) {
+		t.Fatalf("want *connect.Error, got %T", got)
+	}
+	var br *errdetails.BadRequest
+	for _, d := range connectErr.Details() {
+		if msg, e := d.Value(); e == nil {
+			if got, ok := msg.(*errdetails.BadRequest); ok {
+				br = got
+			}
+		}
+	}
+	if br == nil {
+		t.Fatal("BadRequest detail not synthesized from ValidationError")
+	}
+	// Assert content, not just presence: empty violations or blank field paths
+	// would mean badRequestFromViolations/fieldPathString silently dropped data.
+	if len(br.GetFieldViolations()) == 0 {
+		t.Fatal("BadRequest has no field violations")
+	}
+	for _, fv := range br.GetFieldViolations() {
+		if fv.GetField() == "" {
+			t.Error("field violation has empty Field (fieldPathString produced nothing)")
+		}
+		if fv.GetDescription() == "" {
+			t.Error("field violation has empty Description")
+		}
+	}
 }

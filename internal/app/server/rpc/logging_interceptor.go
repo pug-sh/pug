@@ -2,10 +2,12 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -69,7 +71,22 @@ func logRPC(ctx context.Context, err error, args []any) {
 }
 
 func isClientError(err error) bool {
+	// Client-driven cancellations and deadline expirations are client-class. A raw
+	// context error reports connect.CodeOf == CodeUnknown (Connect only decodes its
+	// own *connect.Error), so match them explicitly before the code switch;
+	// errors.Is also catches a wrapped context error. sanitizeError returns the bare
+	// context error for these, so this check is what keeps cancellations out of
+	// ERROR logs.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
 	code := connect.CodeOf(err)
+	// A raw *apperr.Error (not yet rewritten by ErrorInterceptor) carries its code
+	// in a field, so connect.CodeOf returns Unknown for it. Read the code directly
+	// so classification is correct regardless of interceptor ordering.
+	if ae, ok := errors.AsType[*apperr.Error](err); ok {
+		code = ae.Code()
+	}
 	switch code {
 	case connect.CodeInvalidArgument,
 		connect.CodeNotFound,

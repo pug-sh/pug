@@ -9,6 +9,7 @@ import (
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
+	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -26,48 +27,12 @@ func (p *fakeProvider) Send(_ context.Context, msg coreemail.Message) error {
 	return p.err
 }
 
-func TestProcessorSignupPayloadMapsToVerifyLink(t *testing.T) {
-	provider := &fakeProvider{}
-	mailer, err := coreemail.NewService(coreemail.Config{
-		DashboardBaseURL: "https://dashboard.example",
-		From:             "noreply@example.com",
-	}, provider)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	processor := NewProcessor(nil, mailer)
-	data, err := proto.Marshal(&emailworkerv1.EmailJob{
-		Payload: &emailworkerv1.EmailJob_SignupVerifyWelcome{
-			SignupVerifyWelcome: &emailworkerv1.SignUpVerifyWelcomePayload{
-				Email: proto.String("test@example.com"),
-				Token: proto.String("verify-token"),
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("proto.Marshal: %v", err)
-	}
-
-	if err := processor.ProcessMessage(context.Background(), data); err != nil {
-		t.Fatalf("ProcessMessage: %v", err)
-	}
-	if len(provider.msgs) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(provider.msgs))
-	}
-	if provider.msgs[0].IdempotencyKey != "signup_verify_welcome:verify-token" {
-		t.Fatalf("expected signup idempotency key, got %q", provider.msgs[0].IdempotencyKey)
-	}
-	if !strings.Contains(provider.msgs[0].TextBody, "https://dashboard.example/verify-email?token=verify-token") {
-		t.Fatalf("expected verify link in text body, got %q", provider.msgs[0].TextBody)
-	}
-}
-
-// TestProcessorIdempotencyKeyIsStableOnRetry pins the contract that NATS
-// redelivery (or any duplicate ProcessMessage call) produces the SAME
+// TestProcessorMagicLinkIdempotencyKeyIsStableOnRetry pins the contract that
+// NATS redelivery (or any duplicate ProcessMessage call) produces the SAME
 // idempotency key. Resend and other providers dedupe on this header
 // server-side, so a regression that derived the key from time.Now() or a
 // random nonce would silently break dedup and surface as duplicate emails.
-func TestProcessorIdempotencyKeyIsStableOnRetry(t *testing.T) {
+func TestProcessorMagicLinkIdempotencyKeyIsStableOnRetry(t *testing.T) {
 	provider := &fakeProvider{}
 	mailer, err := coreemail.NewService(coreemail.Config{
 		DashboardBaseURL: "https://dashboard.example",
@@ -78,8 +43,8 @@ func TestProcessorIdempotencyKeyIsStableOnRetry(t *testing.T) {
 	}
 	processor := NewProcessor(nil, mailer)
 	data, err := proto.Marshal(&emailworkerv1.EmailJob{
-		Payload: &emailworkerv1.EmailJob_SignupVerifyWelcome{
-			SignupVerifyWelcome: &emailworkerv1.SignUpVerifyWelcomePayload{
+		Payload: &emailworkerv1.EmailJob_MagicLink{
+			MagicLink: &emailworkerv1.MagicLinkPayload{
 				Email: proto.String("retry@example.com"),
 				Token: proto.String("stable-token"),
 			},
@@ -116,10 +81,10 @@ func TestProcessorPermanentProviderErrorMapsToDLQ(t *testing.T) {
 	}
 	processor := NewProcessor(nil, mailer)
 	data, err := proto.Marshal(&emailworkerv1.EmailJob{
-		Payload: &emailworkerv1.EmailJob_PasswordReset{
-			PasswordReset: &emailworkerv1.PasswordResetPayload{
+		Payload: &emailworkerv1.EmailJob_MagicLink{
+			MagicLink: &emailworkerv1.MagicLinkPayload{
 				Email: proto.String("test@example.com"),
-				Token: proto.String("reset-token"),
+				Token: proto.String("magic-token"),
 			},
 		},
 	})
@@ -154,44 +119,6 @@ func TestProcessorRejectsEmptyPayloadAsPermanent(t *testing.T) {
 	}
 	if err := processor.ProcessMessage(context.Background(), data); err == nil || !natsworker.IsPermanentError(err) {
 		t.Fatalf("expected permanent error for empty payload, got %v", err)
-	}
-}
-
-// TestProcessorVerificationResendMapsToLink pins the VerificationResend
-// dispatch path so a regression that dropped the kind from the switch is
-// caught.
-func TestProcessorVerificationResendMapsToLink(t *testing.T) {
-	provider := &fakeProvider{}
-	mailer, err := coreemail.NewService(coreemail.Config{
-		DashboardBaseURL: "https://dashboard.example",
-		From:             "noreply@example.com",
-	}, provider)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	processor := NewProcessor(nil, mailer)
-	data, err := proto.Marshal(&emailworkerv1.EmailJob{
-		Payload: &emailworkerv1.EmailJob_VerificationResend{
-			VerificationResend: &emailworkerv1.VerificationResendPayload{
-				Email: proto.String("resend@example.com"),
-				Token: proto.String("resend-token"),
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("proto.Marshal: %v", err)
-	}
-	if err := processor.ProcessMessage(context.Background(), data); err != nil {
-		t.Fatalf("ProcessMessage: %v", err)
-	}
-	if len(provider.msgs) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(provider.msgs))
-	}
-	if provider.msgs[0].IdempotencyKey != "verification_resend:resend-token" {
-		t.Fatalf("idempotency key: got %q", provider.msgs[0].IdempotencyKey)
-	}
-	if !strings.Contains(provider.msgs[0].TextBody, "https://dashboard.example/verify-email?token=resend-token") {
-		t.Fatalf("expected verify link in text body, got %q", provider.msgs[0].TextBody)
 	}
 }
 
@@ -274,6 +201,7 @@ func TestProcessorOrgInviteLoadsInvitationContext(t *testing.T) {
 		ID:        "invite-1",
 		InviterID: postgres.NewOptionalText(customer.ID),
 		OrgID:     org.ID,
+		Role:      orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
 		Token:     "invite-token",
 	})
 	if err != nil {
@@ -304,7 +232,7 @@ func TestProcessorOrgInviteLoadsInvitationContext(t *testing.T) {
 	if !strings.Contains(provider.msgs[0].TextBody, "Inviter invited you to join Worker Org") {
 		t.Fatalf("unexpected invite body: %q", provider.msgs[0].TextBody)
 	}
-	if !strings.Contains(provider.msgs[0].TextBody, "https://dashboard.example/accept-invite?token=invite-token") {
+	if !strings.Contains(provider.msgs[0].TextBody, "https://dashboard.example/magic-link?token=invite-token") {
 		t.Fatalf("unexpected invite link: %q", provider.msgs[0].TextBody)
 	}
 }

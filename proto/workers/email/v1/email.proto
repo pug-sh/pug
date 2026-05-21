@@ -8,27 +8,9 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1;e
 message EmailJob {
   oneof payload {
     option (buf.validate.oneof).required = true;
-    SignUpVerifyWelcomePayload signup_verify_welcome = 1;
-    PasswordResetPayload password_reset = 2;
     OrgMemberInvitePayload org_member_invite = 3;
-    VerificationResendPayload verification_resend = 4;
+    MagicLinkPayload magic_link = 5;
   }
-}
-
-message SignUpVerifyWelcomePayload {
-  string email = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.email = true
-  ];
-  string token = 2 [(buf.validate.field).required = true];
-}
-
-message PasswordResetPayload {
-  string email = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.email = true
-  ];
-  string token = 2 [(buf.validate.field).required = true];
 }
 
 message OrgMemberInvitePayload {
@@ -40,7 +22,7 @@ message OrgMemberInvitePayload {
   string token = 3 [(buf.validate.field).required = true];
 }
 
-message VerificationResendPayload {
+message MagicLinkPayload {
   string email = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.email = true

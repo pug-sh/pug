@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/core/projects"
 	dbtypes "github.com/pug-sh/pug/internal/deps/postgres"
-	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/rs/xid"
@@ -143,7 +143,7 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, er
 	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
 		OrgID:      org.ID,
 		CustomerID: customer.ID,
-		Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.String(),
+		Role:       coreorgs.RoleAdmin.String(),
 	}); err != nil {
 		return dbread.Project{}, fmt.Errorf("failed to add customer to org: %w", err)
 	}
