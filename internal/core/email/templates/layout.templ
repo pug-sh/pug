@@ -1,0 +1,40 @@
+package templates
+
+// Layout is the shared email shell: head + inline-able <style>, hidden preview
+// text, branded header, white card holding the children, and a footer.
+templ Layout(b Brand, title, preview, footerNote string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<meta name="x-apple-disable-message-reformatting"/>
+			<title>{ title }</title>
+			@templ.Raw(styleTag)
+		</head>
+		<body>
+			<span style="display:none;max-height:0;overflow:hidden;opacity:0;">{ preview }</span>
+			<table role="presentation" class="canvas" cellpadding="0" cellspacing="0" border="0" width="100%">
+				<tr>
+					<td>
+						<div class="container">
+							<div class="header">
+								if b.LogoURL != "" {
+									<img class="logo" src={ b.LogoURL } alt={ b.ProductName } width="40" height="40"/>
+								}
+								<span class="wordmark">{ b.ProductName }</span>
+							</div>
+							<div class="card">
+								{ children... }
+							</div>
+							<div class="footer">
+								<p class="muted">{ footerNote }</p>
+								<p class="muted">{ b.ProductName } — product analytics</p>
+							</div>
+						</div>
+					</td>
+				</tr>
+			</table>
+		</body>
+	</html>
+}

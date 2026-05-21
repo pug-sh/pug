@@ -24,6 +24,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/workers/profiles/identify"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/upsert"
 	"github.com/pug-sh/pug/internal/app/workers/scheduler"
+	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -172,6 +173,61 @@ var emailCmd = &cobra.Command{
 	Use:   "email",
 	Short: "Start the transactional email worker",
 	Run:   run(emailworker.Run),
+}
+
+var (
+	emailPreviewText bool
+	emailPreviewOut  string
+)
+
+// emailToolCmd is a top-level group distinct from `worker email`.
+var emailToolCmd = &cobra.Command{
+	Use:   "email",
+	Short: "Email tooling",
+}
+
+var emailPreviewCmd = &cobra.Command{
+	Use:   "preview <magic_link|invite|provider_test>",
+	Short: "Render a transactional email to HTML (or --text) for preview",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		brand := coreemail.Brand{
+			ProductName:  "Pug",
+			LogoURL:      os.Getenv("PUG_EMAIL_LOGO_URL"),
+			DashboardURL: os.Getenv("PUG_DASHBOARD_BASE_URL"),
+		}
+		if brand.DashboardURL == "" {
+			brand.DashboardURL = "https://app.pug.sh"
+		}
+		r := coreemail.NewRenderer(brand)
+		sampleLink := brand.DashboardURL + "/magic-link?token=sample-token-1234567890"
+
+		var html, text string
+		var err error
+		switch args[0] {
+		case "magic_link":
+			html, text, err = r.MagicLink(cmd.Context(), sampleLink)
+		case "invite":
+			html, text, err = r.Invite(cmd.Context(), "Acme Inc", "Alice", sampleLink)
+		case "provider_test":
+			html, text, err = r.ProviderTest(cmd.Context())
+		default:
+			return fmt.Errorf("unknown email %q (want magic_link|invite|provider_test)", args[0])
+		}
+		if err != nil {
+			return err
+		}
+
+		out := html
+		if emailPreviewText {
+			out = text
+		}
+		if emailPreviewOut != "" {
+			return os.WriteFile(emailPreviewOut, []byte(out), 0o644)
+		}
+		_, err = os.Stdout.WriteString(out)
+		return err
+	},
 }
 
 var schedulerCmd = &cobra.Command{
@@ -360,6 +416,11 @@ func init() {
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)
 	rootCmd.AddCommand(devCmd)
+
+	emailPreviewCmd.Flags().BoolVar(&emailPreviewText, "text", false, "render the plaintext twin instead of HTML")
+	emailPreviewCmd.Flags().StringVar(&emailPreviewOut, "out", "", "write output to a file instead of stdout")
+	emailToolCmd.AddCommand(emailPreviewCmd)
+	rootCmd.AddCommand(emailToolCmd)
 
 	postgresMigrateCmd.Flags().StringP("direction", "d", "up", "can be any of 'up' or 'down' (default: up)")
 	postgresMigrateCmd.Flags().IntP("num", "n", 0, "number of migrations to apply")

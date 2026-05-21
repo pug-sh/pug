@@ -4,17 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"net/url"
 	"strings"
 
 	"github.com/pug-sh/pug/internal/core/email/spec"
+	"github.com/pug-sh/pug/internal/core/email/templates"
 )
 
 type Config struct {
 	DashboardBaseURL string `env:"PUG_DASHBOARD_BASE_URL,required"`
 	From             string `env:"PUG_EMAIL_FROM,required"`
 	ReplyTo          string `env:"PUG_EMAIL_REPLY_TO"`
+	LogoURL          string `env:"PUG_EMAIL_LOGO_URL"`
 }
 
 // Message, Provider, PermanentError, and the permanent-error helpers are
@@ -36,6 +37,7 @@ type Service struct {
 	operatorFrom    string
 	operatorReplyTo string
 	resolver        ProviderResolver
+	renderer        *Renderer
 }
 
 // NewService wraps a single Provider in an OperatorOnlyResolver. Use this
@@ -68,6 +70,11 @@ func NewServiceWithResolver(cfg Config, resolver ProviderResolver) (*Service, er
 		operatorFrom:    cfg.From,
 		operatorReplyTo: cfg.ReplyTo,
 		resolver:        resolver,
+		renderer: NewRenderer(Brand{
+			ProductName:  templates.ProductName,
+			LogoURL:      cfg.LogoURL,
+			DashboardURL: baseURL,
+		}),
 	}, nil
 }
 
@@ -96,10 +103,14 @@ func (s *Service) baseMessage(idempotencyKey, to string) Message {
 
 func (s *Service) SendMagicLink(ctx context.Context, emailAddr, token, idempotencyKey string) error {
 	link := s.link("/magic-link", token)
+	htmlBody, text, err := s.renderer.MagicLink(ctx, link)
+	if err != nil {
+		return err
+	}
 	msg := s.baseMessage(idempotencyKey, emailAddr)
 	msg.Subject = "Your sign-in link"
-	msg.TextBody = fmt.Sprintf("Sign in to Pug: %s", link)
-	msg.HTMLBody = fmt.Sprintf("<p><a href=\"%s\">Sign in to Pug</a>.</p>", html.EscapeString(link))
+	msg.TextBody = text
+	msg.HTMLBody = htmlBody
 	return s.send(ctx, nil, msg)
 }
 
@@ -107,14 +118,16 @@ func (s *Service) SendOrgMemberInvite(ctx context.Context, orgID, emailAddr, org
 	link := s.link("/magic-link", token)
 	safeOrg := sanitizeDisplay(orgName)
 	safeInviter := sanitizeDisplay(inviterName)
-	text := fmt.Sprintf("You were invited to join %s.\n\nAccept the invite: %s", safeOrg, link)
-	htmlBody := fmt.Sprintf("<p>You were invited to join %s.</p><p><a href=\"%s\">Accept the invite</a>.</p>", html.EscapeString(safeOrg), html.EscapeString(link))
-	if safeInviter != "" {
-		text = fmt.Sprintf("%s invited you to join %s.\n\nAccept the invite: %s", safeInviter, safeOrg, link)
-		htmlBody = fmt.Sprintf("<p>%s invited you to join %s.</p><p><a href=\"%s\">Accept the invite</a>.</p>", html.EscapeString(safeInviter), html.EscapeString(safeOrg), html.EscapeString(link))
+	htmlBody, text, err := s.renderer.Invite(ctx, safeOrg, safeInviter, link)
+	if err != nil {
+		return err
 	}
 	msg := s.baseMessage(idempotencyKey, emailAddr)
-	msg.Subject = fmt.Sprintf("Invitation to join %s", safeOrg)
+	if safeInviter != "" {
+		msg.Subject = fmt.Sprintf("%s invited you to join %s", safeInviter, safeOrg)
+	} else {
+		msg.Subject = fmt.Sprintf("Invitation to join %s", safeOrg)
+	}
 	msg.TextBody = text
 	msg.HTMLBody = htmlBody
 	tenantID := orgID
@@ -141,10 +154,14 @@ func sanitizeDisplay(s string) string {
 
 // SendTest routes through the operator-default provider when orgID is empty.
 func (s *Service) SendTest(ctx context.Context, orgID, recipient, idempotencyKey string) error {
+	htmlBody, text, err := s.renderer.ProviderTest(ctx)
+	if err != nil {
+		return err
+	}
 	msg := s.baseMessage(idempotencyKey, recipient)
 	msg.Subject = "Pug email provider test"
-	msg.TextBody = "This is a test email from Pug to verify your email provider configuration."
-	msg.HTMLBody = "<p>This is a test email from Pug to verify your email provider configuration.</p>"
+	msg.TextBody = text
+	msg.HTMLBody = htmlBody
 	var tenant *string
 	if orgID != "" {
 		tenant = &orgID
