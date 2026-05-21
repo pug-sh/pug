@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	coreemail "github.com/pug-sh/pug/internal/core/email"
+)
 
 func TestEmailDevStatus(t *testing.T) {
 	t.Run("missing dashboard base URL", func(t *testing.T) {
@@ -75,4 +80,24 @@ func TestEmailDevStatus(t *testing.T) {
 			t.Fatalf("status = %q, want %q", status, want)
 		}
 	})
+}
+
+func TestRenderEmailPreviewKinds(t *testing.T) {
+	r := coreemail.NewRenderer(coreemail.Brand{ProductName: "Pug", DashboardURL: "https://app.example"})
+	for _, kind := range []string{"magic_link", "invite", "provider_test"} {
+		html, text, err := renderEmailPreview(context.Background(), r, kind, "https://app.example/x")
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if html == "" || text == "" {
+			t.Fatalf("%s: empty render (html=%d bytes, text=%d bytes)", kind, len(html), len(text))
+		}
+	}
+}
+
+func TestRenderEmailPreviewUnknownKind(t *testing.T) {
+	r := coreemail.NewRenderer(coreemail.Brand{ProductName: "Pug"})
+	if _, _, err := renderEmailPreview(context.Background(), r, "bogus", "https://app.example/x"); err == nil {
+		t.Fatal("expected error for unknown kind")
+	}
 }

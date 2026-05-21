@@ -25,6 +25,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/workers/profiles/upsert"
 	"github.com/pug-sh/pug/internal/app/workers/scheduler"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
+	"github.com/pug-sh/pug/internal/core/email/templates"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -191,29 +192,19 @@ var emailPreviewCmd = &cobra.Command{
 	Short: "Render a transactional email to HTML (or --text) for preview",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		brand := coreemail.Brand{
-			ProductName:  "Pug",
-			LogoURL:      os.Getenv("PUG_EMAIL_LOGO_URL"),
-			DashboardURL: os.Getenv("PUG_DASHBOARD_BASE_URL"),
+		dashboardURL := os.Getenv("PUG_DASHBOARD_BASE_URL")
+		if dashboardURL == "" {
+			dashboardURL = "https://app.pug.sh"
 		}
-		if brand.DashboardURL == "" {
-			brand.DashboardURL = "https://app.pug.sh"
+		brand := coreemail.Brand{
+			ProductName:  templates.ProductName,
+			LogoURL:      os.Getenv("PUG_EMAIL_LOGO_URL"),
+			DashboardURL: strings.TrimRight(dashboardURL, "/"),
 		}
 		r := coreemail.NewRenderer(brand)
 		sampleLink := brand.DashboardURL + "/magic-link?token=sample-token-1234567890"
 
-		var html, text string
-		var err error
-		switch args[0] {
-		case "magic_link":
-			html, text, err = r.MagicLink(cmd.Context(), sampleLink)
-		case "invite":
-			html, text, err = r.Invite(cmd.Context(), "Acme Inc", "Alice", sampleLink)
-		case "provider_test":
-			html, text, err = r.ProviderTest(cmd.Context())
-		default:
-			return fmt.Errorf("unknown email %q (want magic_link|invite|provider_test)", args[0])
-		}
+		html, text, err := renderEmailPreview(cmd.Context(), r, args[0], sampleLink)
 		if err != nil {
 			return err
 		}
@@ -228,6 +219,22 @@ var emailPreviewCmd = &cobra.Command{
 		_, err = os.Stdout.WriteString(out)
 		return err
 	},
+}
+
+// renderEmailPreview dispatches to the renderer for the named email kind. It is
+// kept separate from the cobra wiring so the kind->renderer mapping is
+// unit-testable.
+func renderEmailPreview(ctx context.Context, r *coreemail.Renderer, kind, sampleLink string) (html, text string, err error) {
+	switch kind {
+	case "magic_link":
+		return r.MagicLink(ctx, sampleLink)
+	case "invite":
+		return r.Invite(ctx, "Acme Inc", "Alice", sampleLink)
+	case "provider_test":
+		return r.ProviderTest(ctx)
+	default:
+		return "", "", fmt.Errorf("unknown email %q (want magic_link|invite|provider_test)", kind)
+	}
 }
 
 var schedulerCmd = &cobra.Command{
