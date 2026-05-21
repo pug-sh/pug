@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -323,5 +324,104 @@ func TestCompleteMagicLink_PlainRequestPreservesPendingInvite(t *testing.T) {
 	orgsForCust, err := read.GetOrgsByCustomerID(ctx, cust.ID)
 	if err != nil || len(orgsForCust) != 1 || orgsForCust[0].ID != org.ID {
 		t.Fatalf("orgs = %+v err=%v, want exactly the invited org %s", orgsForCust, err, org.ID)
+	}
+}
+
+// A magic link is single-use even under concurrent redemption: firing N
+// completions of the same token (e.g. a double-click) must yield exactly one
+// success, with the rest returning ErrInvalidToken — never a CodeInternal from a
+// duplicate-customer race. The FOR UPDATE lock on the token row serializes them.
+func TestCompleteMagicLink_ConcurrentRedemptionSerializes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	read := dbread.New(db.PgRO)
+	ctx := context.Background()
+	pub := &stubPublisher{}
+	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+
+	if err := svc.RequestMagicLink(ctx, "concurrent@example.com"); err != nil {
+		t.Fatalf("RequestMagicLink: %v", err)
+	}
+	raw := lastMagicToken(t, pub)
+
+	const n = 8
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	results := make([]error, n)
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := svc.CompleteMagicLink(ctx, raw)
+			results[i] = err
+		}()
+	}
+	close(start) // release all goroutines together to maximize overlap
+	wg.Wait()
+
+	successes := 0
+	for _, err := range results {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, coreauth.ErrInvalidToken):
+			// expected for the losers of the race
+		default:
+			t.Errorf("concurrent completion returned unexpected error: %v", err)
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("want exactly 1 successful redemption, got %d", successes)
+	}
+
+	// Exactly one account + one default org, despite N concurrent attempts.
+	cust, err := read.GetCustomerByEmail(ctx, "concurrent@example.com")
+	if err != nil {
+		t.Fatalf("GetCustomerByEmail: %v", err)
+	}
+	orgsForCust, err := read.GetOrgsByCustomerID(ctx, cust.ID)
+	if err != nil || len(orgsForCust) != 1 {
+		t.Fatalf("orgs = %d err=%v, want exactly 1", len(orgsForCust), err)
+	}
+}
+
+// An existing account completing a plain (non-invite) magic link just signs in;
+// it must NOT be provisioned a second default org. Guards the `createdNew` check
+// in CompleteMagicLink's plain branch.
+func TestCompleteMagicLink_ExistingAccountPlainLinkCreatesNoSecondOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+	ctx := context.Background()
+
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: "cust-existplain", Email: "existplain@example.com", DisplayName: "", PasswordHash: "h", PictureUri: ""}); err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+	if _, err := orgsSvc.CreateOrgWithDefaults(ctx, "cust-existplain", "existing-org"); err != nil {
+		t.Fatalf("CreateOrgWithDefaults: %v", err)
+	}
+
+	pub := &stubPublisher{}
+	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+	if err := svc.RequestMagicLink(ctx, "existplain@example.com"); err != nil {
+		t.Fatalf("RequestMagicLink: %v", err)
+	}
+	if _, err := svc.CompleteMagicLink(ctx, lastMagicToken(t, pub)); err != nil {
+		t.Fatalf("CompleteMagicLink: %v", err)
+	}
+
+	orgsForCust, err := read.GetOrgsByCustomerID(ctx, "cust-existplain")
+	if err != nil {
+		t.Fatalf("GetOrgsByCustomerID: %v", err)
+	}
+	if len(orgsForCust) != 1 {
+		t.Fatalf("org count = %d, want 1 (existing account must not get a second default org)", len(orgsForCust))
 	}
 }

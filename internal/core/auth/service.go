@@ -188,7 +188,12 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 	r := dbread.New(tx)
 	w := dbwrite.New(tx)
 
-	emailToken, err := r.GetValidEmailActionTokenByHash(ctx, hashToken(token))
+	// FOR UPDATE locks the token row so concurrent redemptions of the same token
+	// (double-click, prefetch + click) serialize on it: the first to commit
+	// consumes the token, and the rest re-read zero rows and fall into the
+	// ErrInvalidToken path below rather than racing ahead to a duplicate-customer
+	// unique violation that would surface as CodeInternal.
+	emailToken, err := w.GetValidEmailActionTokenByHashForUpdate(ctx, hashToken(token))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrInvalidToken

@@ -102,8 +102,7 @@ message InviteMemberRequest {
     (buf.validate.field).string.email = true
   ];
   string org_id = 2 [(buf.validate.field).required = true];
-  // Optional for backward compatibility. When omitted/UNSPECIFIED, the invite
-  // is issued for ORG_ROLE_MEMBER.
+  // Optional; when omitted/UNSPECIFIED the invite is issued for ORG_ROLE_MEMBER.
   OrgRole role = 3 [(buf.validate.field).enum.defined_only = true];
 }
 

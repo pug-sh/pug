@@ -583,34 +583,6 @@ func TestMigration013RejectsInvalidRole(t *testing.T) {
 	}
 }
 
-// TestAddMemberRejectsDuplicate pins the narrow
-// isUniqueViolationOn(orgMembersPKey)→ErrAlreadyMember translation in
-// AddMember (service.go:185-187). A second AddMember for the same
-// (org_id, customer_id) collides on the composite primary key.
-func TestAddMemberRejectsDuplicate(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	db := testutil.SetupPostgres(t)
-	write := dbwrite.New(db.PgW)
-	svc := orgs.NewService(db.PgRO, db.PgW, nil)
-	ctx := context.Background()
-
-	admin := seedCustomer(t, ctx, write, "admin")
-	other := seedCustomer(t, ctx, write, "other")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "addmember-dup-test")
-	if err != nil {
-		t.Fatalf("CreateOrgWithDefaults: %v", err)
-	}
-
-	if _, err := svc.AddMember(ctx, org.ID, other, orgs.RoleMember); err != nil {
-		t.Fatalf("first AddMember: %v", err)
-	}
-	if _, err := svc.AddMember(ctx, org.ID, other, orgs.RoleMember); !errors.Is(err, orgs.ErrAlreadyMember) {
-		t.Fatalf("want ErrAlreadyMember on second AddMember, got %v", err)
-	}
-}
-
 // inviteFixture sets up an inviter customer + org + invitee customer +
 // pending invitation, and returns the raw invite token. Centralises the
 // boilerplate used by the invite tests below.

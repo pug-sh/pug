@@ -784,8 +784,7 @@ type InviteMemberRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Email *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
 	OrgId *string                `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	// Optional for backward compatibility. When omitted/UNSPECIFIED, the invite
-	// is issued for ORG_ROLE_MEMBER.
+	// Optional; when omitted/UNSPECIFIED the invite is issued for ORG_ROLE_MEMBER.
 	Role          *OrgRole `protobuf:"varint,3,opt,name=role,enum=dashboard.orgs.v1.OrgRole" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

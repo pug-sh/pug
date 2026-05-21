@@ -6,6 +6,10 @@ import "fmt"
 // String values match what is stored in org_members.role and what the proto
 // OrgRole enum's String() form yields, so DB rows, service code, and wire
 // values map 1:1 with no proto import required inside this package.
+//
+// The zero value Role("") is deliberately invalid (IsValid returns false): it
+// is the reserved drift/UNSPECIFIED sentinel — roleFromDBJoinRow returns it for
+// an unrecognized stored value, and toRPCRole maps it to ORG_ROLE_UNSPECIFIED.
 type Role string
 
 const (

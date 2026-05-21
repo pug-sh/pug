@@ -92,7 +92,7 @@ const (
 	// Sources:
 	//   - org_members_pkey: auto-generated PK in schema/postgres/migrations/003_create_org_members.sql
 	//   - org_invitations_org_email_pending: named partial index in
-	//     schema/postgres/migrations/004_create_org_invitations.sql:13
+	//     schema/postgres/migrations/004_create_org_invitations.sql
 	orgMembersPKey              = "org_members_pkey"
 	orgInvitationsPendingUnique = "org_invitations_org_email_pending"
 )
@@ -110,8 +110,9 @@ type JobPublisher interface {
 
 // InviteDispatch bundles a persisted invitation with the raw (unhashed) token
 // it was issued under. The token hash lives in email_action_tokens; the raw
-// form is returned here so handlers can surface it to the inviter for
-// link-sharing without re-reading the DB.
+// form is returned so a caller could surface the invite link without re-reading
+// the DB. No RPC handler reads RawToken today — the invite email receives the
+// token directly at publish time — so it is currently consumed only by tests.
 type InviteDispatch struct {
 	Invitation dbwrite.OrgInvitation
 	RawToken   string
@@ -200,24 +201,6 @@ func (s *Service) CreateOrg(ctx context.Context, displayName string) (dbwrite.Or
 		ID:          xid.New().String(),
 		DisplayName: displayName,
 	})
-}
-
-func (s *Service) AddMember(ctx context.Context, orgID, customerID string, role Role) (dbwrite.OrgMember, error) {
-	member, err := s.write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID:      orgID,
-		CustomerID: customerID,
-		Role:       role.String(),
-	})
-	if err != nil {
-		if isUniqueViolationOn(err, orgMembersPKey) {
-			return dbwrite.OrgMember{}, ErrAlreadyMember
-		}
-		slog.ErrorContext(ctx, "failed to create org member", slogx.Error(err),
-			slog.String("org_id", orgID), slog.String("customer_id", customerID))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.OrgMember{}, err
-	}
-	return member, nil
 }
 
 // isUniqueViolationOn reports whether err is a Postgres unique-violation
@@ -540,16 +523,16 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 		return InviteDispatch{}, err
 	}
 	if n == 0 {
-		// Zero rows is benign in two cases: the invitation aged past inviteTTL while
-		// staying PENDING (the prior token's expires_at is now in the past, so the
-		// `expires_at > now()` filter on InvalidateActive skips it — see the
+		// Zero rows is benign in two cases: the invitation aged past inviteTTL
+		// while staying PENDING (the prior token's expires_at is now in the past,
+		// so the `expires_at > now()` filter on InvalidateActive skips it — see the
 		// resurrect-expired-invite flow in TestResendInviteExtendsExpiresAt), or a
-		// concurrent magic-link acceptance (CompleteMagicLink) raced ahead and consumed the prior token (the row
-		// lock on org_invitations serializes them but a marked-consumed row is still
-		// filtered out here). A genuine invariant violation — PENDING invitation with
-		// no token ever issued — would also land here. Surface for investigation
-		// without failing the resend; the freshly-issued token below restores the
-		// invariant in every case.
+		// concurrent magic-link acceptance (CompleteMagicLink) raced ahead and
+		// consumed the prior token (the row lock on org_invitations serializes them
+		// but a marked-consumed row is still filtered out here). A genuine invariant
+		// violation — PENDING invitation with no token ever issued — would also land
+		// here. Surface for investigation without failing the resend; the
+		// freshly-issued token below restores the invariant in every case.
 		slog.WarnContext(ctx, "resend invalidated no prior invite tokens",
 			slog.String("invitation_id", inv.ID))
 	}

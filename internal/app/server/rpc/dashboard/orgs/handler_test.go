@@ -379,6 +379,43 @@ func TestInviteMemberHandlerAcceptsRole(t *testing.T) {
 	}
 }
 
+// InviteMember with the role field omitted (UNSPECIFIED on the wire) must default
+// to ORG_ROLE_MEMBER via inviteRoleFromProto — not be rejected. This is the whole
+// reason inviteRoleFromProto differs from roleFromProto.
+func TestInviteMemberHandlerDefaultsOmittedRoleToMember(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, &acceptStubPublisher{})
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	adminID := seedRawCustomer(t, ctx, write, "norole-inviter")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "norole-invite-handler")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	resp, err := srv.InviteMember(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.InviteMemberRequest{
+			Email: proto.String("norole-invitee@example.com"),
+			OrgId: proto.String(org.ID),
+			// Role intentionally omitted → UNSPECIFIED → should default to MEMBER.
+		}),
+	)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+	if got := resp.Msg.GetInvitation().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_MEMBER {
+		t.Fatalf("invitation role = %v, want MEMBER (omitted-role default)", got)
+	}
+}
+
 // acceptStubPublisher discards published email jobs. Used by invite-related
 // handler tests where the email side-effect is not under test.
 type acceptStubPublisher struct{}

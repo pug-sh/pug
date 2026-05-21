@@ -106,3 +106,59 @@ func TestApplyInviteAcceptanceInTx_AlreadyMember(t *testing.T) {
 		t.Fatalf("invitation status = %q err=%v, want ACCEPTED", inv.Status, err)
 	}
 }
+
+func TestApplyInviteAcceptanceInTx_NotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	ctx := context.Background()
+
+	invitee, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: "cust-nf-invitee", Email: "nf-invitee@example.com", DisplayName: "", PasswordHash: "", PictureUri: ""})
+	if err != nil {
+		t.Fatalf("CreateCustomer: %v", err)
+	}
+	if err := orgs.ApplyInviteAcceptanceInTx(ctx, write, "no-such-invitation", invitee.ID); !errors.Is(err, orgs.ErrInviteNotFound) {
+		t.Fatalf("err = %v, want ErrInviteNotFound", err)
+	}
+}
+
+// Invitation-level expiry is a distinct check from token expiry: a still-valid
+// token whose invitation row has aged past expires_at must yield ErrInviteExpired.
+func TestApplyInviteAcceptanceInTx_Expired(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, &stubPublisher{})
+	ctx := context.Background()
+
+	inviter, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: "cust-exp-inviter", Email: "exp-inviter@example.com", DisplayName: "", PasswordHash: "h", PictureUri: ""})
+	if err != nil {
+		t.Fatalf("CreateCustomer inviter: %v", err)
+	}
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-exp", DisplayName: "Exp Org"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{OrgID: org.ID, CustomerID: inviter.ID, Role: orgs.RoleAdmin.String()}); err != nil {
+		t.Fatalf("CreateOrgMember: %v", err)
+	}
+	dispatch, err := svc.InviteMemberWithRole(ctx, org.ID, inviter.ID, "exp-invitee@example.com", orgs.RoleMember)
+	if err != nil {
+		t.Fatalf("InviteMemberWithRole: %v", err)
+	}
+	// Back-date the invitation past its expiry without touching the token.
+	if _, err := db.PgW.Exec(ctx, "update org_invitations set expires_at = now() - interval '1 hour' where id = $1", dispatch.Invitation.ID); err != nil {
+		t.Fatalf("back-date invitation: %v", err)
+	}
+	invitee, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{ID: "cust-exp-invitee", Email: "exp-invitee@example.com", DisplayName: "", PasswordHash: "", PictureUri: ""})
+	if err != nil {
+		t.Fatalf("CreateCustomer invitee: %v", err)
+	}
+	if err := orgs.ApplyInviteAcceptanceInTx(ctx, write, dispatch.Invitation.ID, invitee.ID); !errors.Is(err, orgs.ErrInviteExpired) {
+		t.Fatalf("err = %v, want ErrInviteExpired", err)
+	}
+}
