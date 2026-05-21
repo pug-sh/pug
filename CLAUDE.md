@@ -179,7 +179,7 @@ The request-side `QueryRequest.conversion_window` is also a `google.protobuf.Dur
 
 ### Dashboard Tile Default Time Ranges
 
-Dashboard insight tiles persist `QueryRequest.granularity` and expose `DashboardTile.default_time_range` as a `common.v1.TimeRangePreset`. Supported relative presets are `LAST_1_HOUR`, `LAST_6_HOURS`, `LAST_24_HOURS`, `YESTERDAY`, `LAST_7_DAYS`, `LAST_14_DAYS`, `LAST_WEEK`, `LAST_MONTH`, `LAST_3_MONTHS`, `LAST_6_MONTHS`, and `LAST_YEAR`. `UNSPECIFIED` is accepted at the RPC boundary; insight tiles normalize it to `LAST_MONTH`, while markdown tiles normalize any preset to `UNSPECIFIED`.
+Dashboard insight tiles persist `QueryRequest.granularity` and expose `DashboardTile.default_time_range` as a `common.v1.TimeRangePreset`. Supported relative presets are `LAST_1_HOUR`, `LAST_6_HOURS`, `LAST_24_HOURS`, `LAST_7_DAYS`, `LAST_14_DAYS`, `LAST_30_DAYS`, `LAST_90_DAYS`, `LAST_180_DAYS`, and `LAST_365_DAYS`. `UNSPECIFIED` is accepted at the RPC boundary; insight tiles normalize it to `LAST_30_DAYS`, while markdown tiles normalize any preset to `UNSPECIFIED`.
 
 ### Insights Filter Model
 

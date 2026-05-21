@@ -164,24 +164,20 @@ func tileDefaultTimeRangeToRPC(kind coreprojects.TileKind, raw int16) commonv1.T
 			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS
 		case coreprojects.TileDefaultTimeRangeLast24Hours:
 			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS
-		case coreprojects.TileDefaultTimeRangeYesterday:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_YESTERDAY
 		case coreprojects.TileDefaultTimeRangeLast7Days:
 			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS
 		case coreprojects.TileDefaultTimeRangeLast14Days:
 			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS
-		case coreprojects.TileDefaultTimeRangeLastWeek:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_WEEK
-		case coreprojects.TileDefaultTimeRangeLastMonth:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH
-		case coreprojects.TileDefaultTimeRangeLast3Months:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_3_MONTHS
-		case coreprojects.TileDefaultTimeRangeLast6Months:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_MONTHS
-		case coreprojects.TileDefaultTimeRangeLastYear:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_YEAR
+		case coreprojects.TileDefaultTimeRangeLast30Days:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
+		case coreprojects.TileDefaultTimeRangeLast90Days:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS
+		case coreprojects.TileDefaultTimeRangeLast180Days:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS
+		case coreprojects.TileDefaultTimeRangeLast365Days:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS
 		default:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
 		}
 	case coreprojects.TileKindMarkdown:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED

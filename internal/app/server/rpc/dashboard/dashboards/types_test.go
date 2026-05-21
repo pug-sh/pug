@@ -131,17 +131,17 @@ func TestTileViewModeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
 	}
 }
 
-func TestTileDefaultTimeRangeToRPC_DefaultsInsightToLastMonth(t *testing.T) {
+func TestTileDefaultTimeRangeToRPC_DefaultsInsightToLast30Days(t *testing.T) {
 	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindInsight, 0)
-	if got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH {
-		t.Fatalf("tileDefaultTimeRangeToRPC(insight, 0) = %v, want LAST_MONTH", got)
+	if got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS {
+		t.Fatalf("tileDefaultTimeRangeToRPC(insight, 0) = %v, want LAST_30_DAYS", got)
 	}
 }
 
 func TestTileDefaultTimeRangeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
-	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindMarkdown, int16(coreprojects.TileDefaultTimeRangeLast3Months))
+	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindMarkdown, int16(coreprojects.TileDefaultTimeRangeLast90Days))
 	if got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED {
-		t.Fatalf("tileDefaultTimeRangeToRPC(markdown, last3months) = %v, want UNSPECIFIED", got)
+		t.Fatalf("tileDefaultTimeRangeToRPC(markdown, last90days) = %v, want UNSPECIFIED", got)
 	}
 }
 
@@ -154,14 +154,12 @@ func TestTileDefaultTimeRangeToRPC_AllInsightPresets(t *testing.T) {
 		{"last_1_hour", coreprojects.TileDefaultTimeRangeLast1Hour, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR},
 		{"last_6_hours", coreprojects.TileDefaultTimeRangeLast6Hours, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS},
 		{"last_24_hours", coreprojects.TileDefaultTimeRangeLast24Hours, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS},
-		{"yesterday", coreprojects.TileDefaultTimeRangeYesterday, commonv1.TimeRangePreset_TIME_RANGE_PRESET_YESTERDAY},
 		{"last_7_days", coreprojects.TileDefaultTimeRangeLast7Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS},
 		{"last_14_days", coreprojects.TileDefaultTimeRangeLast14Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS},
-		{"last_week", coreprojects.TileDefaultTimeRangeLastWeek, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_WEEK},
-		{"last_month", coreprojects.TileDefaultTimeRangeLastMonth, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH},
-		{"last_3_months", coreprojects.TileDefaultTimeRangeLast3Months, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_3_MONTHS},
-		{"last_6_months", coreprojects.TileDefaultTimeRangeLast6Months, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_MONTHS},
-		{"last_year", coreprojects.TileDefaultTimeRangeLastYear, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_YEAR},
+		{"last_30_days", coreprojects.TileDefaultTimeRangeLast30Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS},
+		{"last_90_days", coreprojects.TileDefaultTimeRangeLast90Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS},
+		{"last_180_days", coreprojects.TileDefaultTimeRangeLast180Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS},
+		{"last_365_days", coreprojects.TileDefaultTimeRangeLast365Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS},
 	}
 
 	for _, tc := range cases {

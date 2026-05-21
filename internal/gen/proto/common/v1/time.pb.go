@@ -30,45 +30,39 @@ const (
 	TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR   TimeRangePreset = 1
 	TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS  TimeRangePreset = 2
 	TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS TimeRangePreset = 3
-	TimeRangePreset_TIME_RANGE_PRESET_YESTERDAY     TimeRangePreset = 4
-	TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS   TimeRangePreset = 5
-	TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS  TimeRangePreset = 6
-	TimeRangePreset_TIME_RANGE_PRESET_LAST_WEEK     TimeRangePreset = 7
-	TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH    TimeRangePreset = 8
-	TimeRangePreset_TIME_RANGE_PRESET_LAST_3_MONTHS TimeRangePreset = 9
-	TimeRangePreset_TIME_RANGE_PRESET_LAST_6_MONTHS TimeRangePreset = 10
-	TimeRangePreset_TIME_RANGE_PRESET_LAST_YEAR     TimeRangePreset = 11
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS   TimeRangePreset = 4
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS  TimeRangePreset = 5
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS  TimeRangePreset = 6
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS  TimeRangePreset = 7
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS TimeRangePreset = 8
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS TimeRangePreset = 9
 )
 
 // Enum value maps for TimeRangePreset.
 var (
 	TimeRangePreset_name = map[int32]string{
-		0:  "TIME_RANGE_PRESET_UNSPECIFIED",
-		1:  "TIME_RANGE_PRESET_LAST_1_HOUR",
-		2:  "TIME_RANGE_PRESET_LAST_6_HOURS",
-		3:  "TIME_RANGE_PRESET_LAST_24_HOURS",
-		4:  "TIME_RANGE_PRESET_YESTERDAY",
-		5:  "TIME_RANGE_PRESET_LAST_7_DAYS",
-		6:  "TIME_RANGE_PRESET_LAST_14_DAYS",
-		7:  "TIME_RANGE_PRESET_LAST_WEEK",
-		8:  "TIME_RANGE_PRESET_LAST_MONTH",
-		9:  "TIME_RANGE_PRESET_LAST_3_MONTHS",
-		10: "TIME_RANGE_PRESET_LAST_6_MONTHS",
-		11: "TIME_RANGE_PRESET_LAST_YEAR",
+		0: "TIME_RANGE_PRESET_UNSPECIFIED",
+		1: "TIME_RANGE_PRESET_LAST_1_HOUR",
+		2: "TIME_RANGE_PRESET_LAST_6_HOURS",
+		3: "TIME_RANGE_PRESET_LAST_24_HOURS",
+		4: "TIME_RANGE_PRESET_LAST_7_DAYS",
+		5: "TIME_RANGE_PRESET_LAST_14_DAYS",
+		6: "TIME_RANGE_PRESET_LAST_30_DAYS",
+		7: "TIME_RANGE_PRESET_LAST_90_DAYS",
+		8: "TIME_RANGE_PRESET_LAST_180_DAYS",
+		9: "TIME_RANGE_PRESET_LAST_365_DAYS",
 	}
 	TimeRangePreset_value = map[string]int32{
 		"TIME_RANGE_PRESET_UNSPECIFIED":   0,
 		"TIME_RANGE_PRESET_LAST_1_HOUR":   1,
 		"TIME_RANGE_PRESET_LAST_6_HOURS":  2,
 		"TIME_RANGE_PRESET_LAST_24_HOURS": 3,
-		"TIME_RANGE_PRESET_YESTERDAY":     4,
-		"TIME_RANGE_PRESET_LAST_7_DAYS":   5,
-		"TIME_RANGE_PRESET_LAST_14_DAYS":  6,
-		"TIME_RANGE_PRESET_LAST_WEEK":     7,
-		"TIME_RANGE_PRESET_LAST_MONTH":    8,
-		"TIME_RANGE_PRESET_LAST_3_MONTHS": 9,
-		"TIME_RANGE_PRESET_LAST_6_MONTHS": 10,
-		"TIME_RANGE_PRESET_LAST_YEAR":     11,
+		"TIME_RANGE_PRESET_LAST_7_DAYS":   4,
+		"TIME_RANGE_PRESET_LAST_14_DAYS":  5,
+		"TIME_RANGE_PRESET_LAST_30_DAYS":  6,
+		"TIME_RANGE_PRESET_LAST_90_DAYS":  7,
+		"TIME_RANGE_PRESET_LAST_180_DAYS": 8,
+		"TIME_RANGE_PRESET_LAST_365_DAYS": 9,
 	}
 )
 
@@ -159,21 +153,18 @@ const file_common_v1_time_proto_rawDesc = "" +
 	"\tTimeRange\x126\n" +
 	"\x04from\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x04from\x122\n" +
 	"\x02to\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x02to:c\xbaH`\x1a^\n" +
-	"\x19time_range.from_before_to\x12,time_range.from must be before time_range.to\x1a\x13this.from < this.to*\xb6\x03\n" +
+	"\x19time_range.from_before_to\x12,time_range.from must be before time_range.to\x1a\x13this.from < this.to*\xf9\x02\n" +
 	"\x0fTimeRangePreset\x12!\n" +
 	"\x1dTIME_RANGE_PRESET_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dTIME_RANGE_PRESET_LAST_1_HOUR\x10\x01\x12\"\n" +
 	"\x1eTIME_RANGE_PRESET_LAST_6_HOURS\x10\x02\x12#\n" +
-	"\x1fTIME_RANGE_PRESET_LAST_24_HOURS\x10\x03\x12\x1f\n" +
-	"\x1bTIME_RANGE_PRESET_YESTERDAY\x10\x04\x12!\n" +
-	"\x1dTIME_RANGE_PRESET_LAST_7_DAYS\x10\x05\x12\"\n" +
-	"\x1eTIME_RANGE_PRESET_LAST_14_DAYS\x10\x06\x12\x1f\n" +
-	"\x1bTIME_RANGE_PRESET_LAST_WEEK\x10\a\x12 \n" +
-	"\x1cTIME_RANGE_PRESET_LAST_MONTH\x10\b\x12#\n" +
-	"\x1fTIME_RANGE_PRESET_LAST_3_MONTHS\x10\t\x12#\n" +
-	"\x1fTIME_RANGE_PRESET_LAST_6_MONTHS\x10\n" +
-	"\x12\x1f\n" +
-	"\x1bTIME_RANGE_PRESET_LAST_YEAR\x10\vB=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
+	"\x1fTIME_RANGE_PRESET_LAST_24_HOURS\x10\x03\x12!\n" +
+	"\x1dTIME_RANGE_PRESET_LAST_7_DAYS\x10\x04\x12\"\n" +
+	"\x1eTIME_RANGE_PRESET_LAST_14_DAYS\x10\x05\x12\"\n" +
+	"\x1eTIME_RANGE_PRESET_LAST_30_DAYS\x10\x06\x12\"\n" +
+	"\x1eTIME_RANGE_PRESET_LAST_90_DAYS\x10\a\x12#\n" +
+	"\x1fTIME_RANGE_PRESET_LAST_180_DAYS\x10\b\x12#\n" +
+	"\x1fTIME_RANGE_PRESET_LAST_365_DAYS\x10\tB=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_time_proto_rawDescOnce sync.Once

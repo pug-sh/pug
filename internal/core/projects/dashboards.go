@@ -58,14 +58,12 @@ const (
 	TileDefaultTimeRangeLast1Hour   TileDefaultTimeRange = 1
 	TileDefaultTimeRangeLast6Hours  TileDefaultTimeRange = 2
 	TileDefaultTimeRangeLast24Hours TileDefaultTimeRange = 3
-	TileDefaultTimeRangeYesterday   TileDefaultTimeRange = 4
-	TileDefaultTimeRangeLast7Days   TileDefaultTimeRange = 5
-	TileDefaultTimeRangeLast14Days  TileDefaultTimeRange = 6
-	TileDefaultTimeRangeLastWeek    TileDefaultTimeRange = 7
-	TileDefaultTimeRangeLastMonth   TileDefaultTimeRange = 8
-	TileDefaultTimeRangeLast3Months TileDefaultTimeRange = 9
-	TileDefaultTimeRangeLast6Months TileDefaultTimeRange = 10
-	TileDefaultTimeRangeLastYear    TileDefaultTimeRange = 11
+	TileDefaultTimeRangeLast7Days   TileDefaultTimeRange = 4
+	TileDefaultTimeRangeLast14Days  TileDefaultTimeRange = 5
+	TileDefaultTimeRangeLast30Days  TileDefaultTimeRange = 6
+	TileDefaultTimeRangeLast90Days  TileDefaultTimeRange = 7
+	TileDefaultTimeRangeLast180Days TileDefaultTimeRange = 8
+	TileDefaultTimeRangeLast365Days TileDefaultTimeRange = 9
 )
 
 // TileContent is a sealed sum type for tile payloads. Encode() returns the
@@ -535,24 +533,20 @@ func normalizedTileDefaultTimeRange(kind TileKind, defaultTimeRange commonv1.Tim
 			return TileDefaultTimeRangeLast6Hours
 		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS:
 			return TileDefaultTimeRangeLast24Hours
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_YESTERDAY:
-			return TileDefaultTimeRangeYesterday
 		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS:
 			return TileDefaultTimeRangeLast7Days
 		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS:
 			return TileDefaultTimeRangeLast14Days
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_WEEK:
-			return TileDefaultTimeRangeLastWeek
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH:
-			return TileDefaultTimeRangeLastMonth
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_3_MONTHS:
-			return TileDefaultTimeRangeLast3Months
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_MONTHS:
-			return TileDefaultTimeRangeLast6Months
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_YEAR:
-			return TileDefaultTimeRangeLastYear
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS:
+			return TileDefaultTimeRangeLast30Days
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS:
+			return TileDefaultTimeRangeLast90Days
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS:
+			return TileDefaultTimeRangeLast180Days
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS:
+			return TileDefaultTimeRangeLast365Days
 		default:
-			return TileDefaultTimeRangeLastMonth
+			return TileDefaultTimeRangeLast30Days
 		}
 	case TileKindMarkdown:
 		return TileDefaultTimeRangeUnspecified

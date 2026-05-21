@@ -16,26 +16,6 @@ update on dashboards for each row execute procedure moddatetime(update_time);
 -- kind values mirror TileKind in internal/core/projects/dashboards.go:
 --   1 = TileKindInsight  (insight_query payload)
 --   2 = TileKindMarkdown (markdown_body payload)
--- view_mode values mirror TileViewMode in internal/core/projects/dashboards.go:
---   0 = Unspecified (markdown only)
---   1 = Line
---   2 = Area
---   3 = BarGrouped
---   4 = BarStacked
---   5 = Table
--- default_time_range values mirror TileDefaultTimeRange in internal/core/projects/dashboards.go:
---   0 = Unspecified (markdown only)
---   1 = Last1Hour
---   2 = Last6Hours
---   3 = Last24Hours
---   4 = Yesterday
---   5 = Last7Days
---   6 = Last14Days
---   7 = LastWeek
---   8 = LastMonth
---   9 = Last3Months
---   10 = Last6Months
---   11 = LastYear
 create table dashboard_tiles (
   id            char(20) primary key,
   dashboard_id  char(20) not null references dashboards(id) on delete cascade,
@@ -50,9 +30,9 @@ create table dashboard_tiles (
   create_time   timestamptz not null default now(),
   update_time   timestamptz not null default now(),
   constraint dashboard_tiles_kind_payload check (
-    (kind = 1 and insight_query is not null and markdown_body is null and view_mode in (1, 2, 3, 4, 5) and default_time_range in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11))
+    (kind = 1 and insight_query is not null and markdown_body is null)
     or
-    (kind = 2 and markdown_body is not null and insight_query is null and view_mode = 0 and default_time_range = 0)
+    (kind = 2 and markdown_body is not null and insight_query is null)
   ),
   constraint dashboard_tiles_markdown_body_nonempty check (
     markdown_body is null or length(markdown_body) > 0

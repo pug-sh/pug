@@ -359,7 +359,7 @@ func TestProjectsService(t *testing.T) {
 				},
 			}},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_MONTHS,
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS,
 			[]*dashboardsv1.ResponsiveGridLayout{
 				{Breakpoint: proto.String("lg"), X: proto.Int32(6), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(5)},
 				{Breakpoint: proto.String("md"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(10), H: proto.Int32(6)},
@@ -374,8 +374,8 @@ func TestProjectsService(t *testing.T) {
 		if updatedInsight.ViewMode != int16(projects.TileViewModeArea) {
 			t.Fatalf("updatedInsight.ViewMode = %d, want %d", updatedInsight.ViewMode, projects.TileViewModeArea)
 		}
-		if updatedInsight.DefaultTimeRange != int16(projects.TileDefaultTimeRangeLast6Months) {
-			t.Fatalf("updatedInsight.DefaultTimeRange = %d, want %d", updatedInsight.DefaultTimeRange, projects.TileDefaultTimeRangeLast6Months)
+		if updatedInsight.DefaultTimeRange != int16(projects.TileDefaultTimeRangeLast180Days) {
+			t.Fatalf("updatedInsight.DefaultTimeRange = %d, want %d", updatedInsight.DefaultTimeRange, projects.TileDefaultTimeRangeLast180Days)
 		}
 
 		list, err := svc.ListDashboards(ctx, projectID)
@@ -438,7 +438,7 @@ func TestProjectsService(t *testing.T) {
 		swapped, err := svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, tile.ID, "Now Markdown", "",
 			projects.MarkdownTile{Body: body},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_3_MONTHS,
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS,
 			nil,
 		)
 		if err != nil {

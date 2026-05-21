@@ -74,16 +74,14 @@ func TestNormalizedTileDefaultTimeRange_AllInsightPresets(t *testing.T) {
 		{"last_1_hour", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR, TileDefaultTimeRangeLast1Hour},
 		{"last_6_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS, TileDefaultTimeRangeLast6Hours},
 		{"last_24_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS, TileDefaultTimeRangeLast24Hours},
-		{"yesterday", commonv1.TimeRangePreset_TIME_RANGE_PRESET_YESTERDAY, TileDefaultTimeRangeYesterday},
 		{"last_7_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, TileDefaultTimeRangeLast7Days},
 		{"last_14_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS, TileDefaultTimeRangeLast14Days},
-		{"last_week", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_WEEK, TileDefaultTimeRangeLastWeek},
-		{"last_month", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_MONTH, TileDefaultTimeRangeLastMonth},
-		{"last_3_months", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_3_MONTHS, TileDefaultTimeRangeLast3Months},
-		{"last_6_months", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_MONTHS, TileDefaultTimeRangeLast6Months},
-		{"last_year", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_YEAR, TileDefaultTimeRangeLastYear},
-		{"unspecified_defaults", commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, TileDefaultTimeRangeLastMonth},
-		{"unknown_defaults", commonv1.TimeRangePreset(99), TileDefaultTimeRangeLastMonth},
+		{"last_30_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, TileDefaultTimeRangeLast30Days},
+		{"last_90_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS, TileDefaultTimeRangeLast90Days},
+		{"last_180_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS, TileDefaultTimeRangeLast180Days},
+		{"last_365_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS, TileDefaultTimeRangeLast365Days},
+		{"unspecified_defaults", commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, TileDefaultTimeRangeLast30Days},
+		{"unknown_defaults", commonv1.TimeRangePreset(99), TileDefaultTimeRangeLast30Days},
 	}
 
 	for _, tc := range cases {
