@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pug-sh/pug/internal/core/email/spec"
 	"github.com/pug-sh/pug/internal/core/email/templates"
@@ -147,7 +148,13 @@ func sanitizeDisplay(s string) string {
 		return r
 	}, s)
 	if len(stripped) > maxLen {
-		stripped = stripped[:maxLen]
+		// Back off to a rune boundary so a multi-byte rune straddling the cap
+		// isn't split into invalid UTF-8 (which would corrupt subjects/bodies).
+		cut := maxLen
+		for cut > 0 && !utf8.RuneStart(stripped[cut]) {
+			cut--
+		}
+		stripped = stripped[:cut]
 	}
 	return stripped
 }
