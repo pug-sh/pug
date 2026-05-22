@@ -1,17 +1,4 @@
 services:
-  mongo:
-    image: mongo:8.0.23
-    restart: always
-    volumes:
-      - mongo-data:/data/db
-    networks:
-      - pug-net
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   otel-collector:
     image: hyperdx/hyperdx-otel-collector:2.27.0
     restart: always
@@ -52,7 +39,6 @@ services:
       HYPERDX_APP_PORT: 3001
       HYPERDX_APP_URL: http://localhost:3001
       HYPERDX_LOG_LEVEL: info
-      MONGO_URI: mongodb://mongo:27017/hyperdx
       SERVER_URL: http://127.0.0.1:8081
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: hyperdx
@@ -63,11 +49,6 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
-      mongo:
-        condition: service_healthy
-
-volumes:
-  mongo-data:
 
 networks:
   pug-net:
