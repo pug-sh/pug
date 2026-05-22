@@ -19,7 +19,7 @@ services:
       retries: 5
 
   nats:
-    image: nats:2.12
+    image: nats:2.14
     restart: always
     command: ["--jetstream", "--store_dir=/data"]
     volumes:
@@ -37,7 +37,7 @@ services:
       retries: 5
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.3
+    image: clickhouse/clickhouse-server:26.5
     restart: always
     environment:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-pug}
@@ -63,7 +63,7 @@ services:
       retries: 5
 
   dragonfly:
-    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.36.0
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.38.1
     restart: always
     ports:
       - "${DRAGONFLY_PORT:-6380}:6379"
