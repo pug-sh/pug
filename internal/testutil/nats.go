@@ -19,7 +19,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-const testNATSImage = "nats@sha256:6b2156f7491cdeddfa8b7ca15cd6fd59b9cabadec5019e933c65c01cf82b1c5f" // 2.12.8-alpine
+const testNATSImage = "nats@sha256:ea17b9b7f74279b9239cf65e5786c0133e9a7c353bf218d29004abf2e7a33181" // 2.14.1-alpine
 
 const (
 	testStreamMaxBytes = 128 * 1024 * 1024
