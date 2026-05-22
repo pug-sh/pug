@@ -55,7 +55,7 @@ lint-proto:
 
 .PHONY: lint
 lint:
-	go tool golangci-lint run --timeout 5m ./...
+	go tool golangci-lint run --allow-parallel-runners --timeout 5m ./...
 
 .PHONY: rpc
 rpc: lint-proto
