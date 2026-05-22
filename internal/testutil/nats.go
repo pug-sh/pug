@@ -16,7 +16,7 @@ import (
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/nats"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 const testNATSImage = "nats@sha256:ea17b9b7f74279b9239cf65e5786c0133e9a7c353bf218d29004abf2e7a33181" // 2.14.1-alpine
