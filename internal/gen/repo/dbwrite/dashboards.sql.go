@@ -44,29 +44,33 @@ func (q *Queries) CreateDashboard(ctx context.Context, arg CreateDashboardParams
 }
 
 const createDashboardTile = `-- name: CreateDashboardTile :one
-insert into dashboard_tiles (id, dashboard_id, kind, display_name, description, insight_query, markdown_body, layouts)
-select $1, d.id, $2, $3, $4, $5, $6, $7
+insert into dashboard_tiles (id, dashboard_id, kind, view_mode, default_time_range, display_name, description, insight_query, markdown_body, layouts)
+select $1, d.id, $2, $3, $4, $5, $6, $7, $8, $9
 from dashboards d
-where d.id = $8 and d.project_id = $9
-returning id, dashboard_id, kind, display_name, description, insight_query, markdown_body, layouts, create_time, update_time
+where d.id = $10 and d.project_id = $11
+returning id, dashboard_id, kind, view_mode, default_time_range, display_name, description, insight_query, markdown_body, layouts, create_time, update_time
 `
 
 type CreateDashboardTileParams struct {
-	ID           string
-	Kind         int16
-	DisplayName  string
-	Description  string
-	InsightQuery map[string]any
-	MarkdownBody pgtype.Text
-	Layouts      map[string]any
-	DashboardID  string
-	ProjectID    string
+	ID               string
+	Kind             int16
+	ViewMode         int16
+	DefaultTimeRange int16
+	DisplayName      string
+	Description      string
+	InsightQuery     map[string]any
+	MarkdownBody     pgtype.Text
+	Layouts          map[string]any
+	DashboardID      string
+	ProjectID        string
 }
 
 func (q *Queries) CreateDashboardTile(ctx context.Context, arg CreateDashboardTileParams) (DashboardTile, error) {
 	row := q.db.QueryRow(ctx, createDashboardTile,
 		arg.ID,
 		arg.Kind,
+		arg.ViewMode,
+		arg.DefaultTimeRange,
 		arg.DisplayName,
 		arg.Description,
 		arg.InsightQuery,
@@ -80,6 +84,8 @@ func (q *Queries) CreateDashboardTile(ctx context.Context, arg CreateDashboardTi
 		&i.ID,
 		&i.DashboardID,
 		&i.Kind,
+		&i.ViewMode,
+		&i.DefaultTimeRange,
 		&i.DisplayName,
 		&i.Description,
 		&i.InsightQuery,
@@ -123,7 +129,7 @@ where dt.id = $1
   and dt.dashboard_id = $2
   and d.id = dt.dashboard_id
   and d.project_id = $3
-returning dt.id, dt.dashboard_id, dt.kind, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
+returning dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.default_time_range, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
 `
 
 type DeleteDashboardTileParams struct {
@@ -139,6 +145,8 @@ func (q *Queries) DeleteDashboardTile(ctx context.Context, arg DeleteDashboardTi
 		&i.ID,
 		&i.DashboardID,
 		&i.Kind,
+		&i.ViewMode,
+		&i.DefaultTimeRange,
 		&i.DisplayName,
 		&i.Description,
 		&i.InsightQuery,
@@ -190,27 +198,31 @@ set
   display_name  = coalesce(nullif($1, ''), dt.display_name),
   description   = coalesce(nullif($2, ''), dt.description),
   kind          = $3,
-  insight_query = $4,
-  markdown_body = $5,
-  layouts       = $6
+  view_mode     = $4,
+  default_time_range = $5,
+  insight_query = $6,
+  markdown_body = $7,
+  layouts       = $8
 from dashboards d
-where dt.id = $7
-  and dt.dashboard_id = $8
+where dt.id = $9
+  and dt.dashboard_id = $10
   and d.id = dt.dashboard_id
-  and d.project_id = $9
-returning dt.id, dt.dashboard_id, dt.kind, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
+  and d.project_id = $11
+returning dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.default_time_range, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
 `
 
 type UpdateDashboardTileParams struct {
-	DisplayName  interface{}
-	Description  interface{}
-	Kind         int16
-	InsightQuery map[string]any
-	MarkdownBody pgtype.Text
-	Layouts      map[string]any
-	ID           string
-	DashboardID  string
-	ProjectID    string
+	DisplayName      interface{}
+	Description      interface{}
+	Kind             int16
+	ViewMode         int16
+	DefaultTimeRange int16
+	InsightQuery     map[string]any
+	MarkdownBody     pgtype.Text
+	Layouts          map[string]any
+	ID               string
+	DashboardID      string
+	ProjectID        string
 }
 
 func (q *Queries) UpdateDashboardTile(ctx context.Context, arg UpdateDashboardTileParams) (DashboardTile, error) {
@@ -218,6 +230,8 @@ func (q *Queries) UpdateDashboardTile(ctx context.Context, arg UpdateDashboardTi
 		arg.DisplayName,
 		arg.Description,
 		arg.Kind,
+		arg.ViewMode,
+		arg.DefaultTimeRange,
 		arg.InsightQuery,
 		arg.MarkdownBody,
 		arg.Layouts,
@@ -230,6 +244,8 @@ func (q *Queries) UpdateDashboardTile(ctx context.Context, arg UpdateDashboardTi
 		&i.ID,
 		&i.DashboardID,
 		&i.Kind,
+		&i.ViewMode,
+		&i.DefaultTimeRange,
 		&i.DisplayName,
 		&i.Description,
 		&i.InsightQuery,

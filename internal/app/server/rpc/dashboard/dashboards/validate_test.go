@@ -45,6 +45,8 @@ func TestCreateDashboardTileRequest_AcceptsInsightArm(t *testing.T) {
 		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
 			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
 		},
+		ViewMode:         dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.Enum(),
+		DefaultTimeRange: commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.Enum(),
 		Layouts: []*dashboardsv1.ResponsiveGridLayout{
 			{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
 			{Breakpoint: proto.String("md"), X: proto.Int32(0), Y: proto.Int32(4), W: proto.Int32(10), H: proto.Int32(5)},
@@ -52,6 +54,34 @@ func TestCreateDashboardTileRequest_AcceptsInsightArm(t *testing.T) {
 	}
 	if err := protovalidate.Validate(req); err != nil {
 		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestCreateDashboardTileRequest_RejectsUnknownViewMode(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
+		DashboardId: proto.String("dash_123"),
+		DisplayName: proto.String("Signups"),
+		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
+			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
+		},
+		ViewMode: dashboardsv1.DashboardTileViewMode(99).Enum(),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for unknown view_mode")
+	}
+}
+
+func TestCreateDashboardTileRequest_RejectsUnknownDefaultTimeRange(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
+		DashboardId: proto.String("dash_123"),
+		DisplayName: proto.String("Signups"),
+		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
+			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
+		},
+		DefaultTimeRange: commonv1.TimeRangePreset(99).Enum(),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for unknown default_time_range")
 	}
 }
 
@@ -408,9 +438,39 @@ func TestUpdateTileRequest_AcceptsInsightArm(t *testing.T) {
 		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
 			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
 		},
+		ViewMode:         dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.Enum(),
+		DefaultTimeRange: commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS.Enum(),
 	}
 	if err := protovalidate.Validate(req); err != nil {
 		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestUpdateTileRequest_RejectsUnknownViewMode(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
+		Id:          proto.String("tile_123"),
+		DashboardId: proto.String("dash_123"),
+		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
+			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
+		},
+		ViewMode: dashboardsv1.DashboardTileViewMode(99).Enum(),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for unknown view_mode")
+	}
+}
+
+func TestUpdateTileRequest_RejectsUnknownDefaultTimeRange(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
+		Id:          proto.String("tile_123"),
+		DashboardId: proto.String("dash_123"),
+		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
+			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
+		},
+		DefaultTimeRange: commonv1.TimeRangePreset(99).Enum(),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for unknown default_time_range")
 	}
 }
 

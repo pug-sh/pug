@@ -16,8 +16,8 @@ where id = @id and project_id = @project_id
 returning *;
 
 -- name: CreateDashboardTile :one
-insert into dashboard_tiles (id, dashboard_id, kind, display_name, description, insight_query, markdown_body, layouts)
-select @id, d.id, @kind, @display_name, @description, @insight_query, @markdown_body, @layouts
+insert into dashboard_tiles (id, dashboard_id, kind, view_mode, default_time_range, display_name, description, insight_query, markdown_body, layouts)
+select @id, d.id, @kind, @view_mode, @default_time_range, @display_name, @description, @insight_query, @markdown_body, @layouts
 from dashboards d
 where d.id = @dashboard_id and d.project_id = @project_id
 returning *;
@@ -28,6 +28,8 @@ set
   display_name  = coalesce(nullif(@display_name, ''), dt.display_name),
   description   = coalesce(nullif(@description, ''), dt.description),
   kind          = @kind,
+  view_mode     = @view_mode,
+  default_time_range = @default_time_range,
   insight_query = @insight_query,
   markdown_body = @markdown_body,
   layouts       = @layouts

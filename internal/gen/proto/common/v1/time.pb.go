@@ -23,6 +23,76 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type TimeRangePreset int32
+
+const (
+	TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED   TimeRangePreset = 0
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR   TimeRangePreset = 1
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS  TimeRangePreset = 2
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS TimeRangePreset = 3
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS   TimeRangePreset = 4
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS  TimeRangePreset = 5
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS  TimeRangePreset = 6
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS  TimeRangePreset = 7
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS TimeRangePreset = 8
+	TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS TimeRangePreset = 9
+)
+
+// Enum value maps for TimeRangePreset.
+var (
+	TimeRangePreset_name = map[int32]string{
+		0: "TIME_RANGE_PRESET_UNSPECIFIED",
+		1: "TIME_RANGE_PRESET_LAST_1_HOUR",
+		2: "TIME_RANGE_PRESET_LAST_6_HOURS",
+		3: "TIME_RANGE_PRESET_LAST_24_HOURS",
+		4: "TIME_RANGE_PRESET_LAST_7_DAYS",
+		5: "TIME_RANGE_PRESET_LAST_14_DAYS",
+		6: "TIME_RANGE_PRESET_LAST_30_DAYS",
+		7: "TIME_RANGE_PRESET_LAST_90_DAYS",
+		8: "TIME_RANGE_PRESET_LAST_180_DAYS",
+		9: "TIME_RANGE_PRESET_LAST_365_DAYS",
+	}
+	TimeRangePreset_value = map[string]int32{
+		"TIME_RANGE_PRESET_UNSPECIFIED":   0,
+		"TIME_RANGE_PRESET_LAST_1_HOUR":   1,
+		"TIME_RANGE_PRESET_LAST_6_HOURS":  2,
+		"TIME_RANGE_PRESET_LAST_24_HOURS": 3,
+		"TIME_RANGE_PRESET_LAST_7_DAYS":   4,
+		"TIME_RANGE_PRESET_LAST_14_DAYS":  5,
+		"TIME_RANGE_PRESET_LAST_30_DAYS":  6,
+		"TIME_RANGE_PRESET_LAST_90_DAYS":  7,
+		"TIME_RANGE_PRESET_LAST_180_DAYS": 8,
+		"TIME_RANGE_PRESET_LAST_365_DAYS": 9,
+	}
+)
+
+func (x TimeRangePreset) Enum() *TimeRangePreset {
+	p := new(TimeRangePreset)
+	*p = x
+	return p
+}
+
+func (x TimeRangePreset) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TimeRangePreset) Descriptor() protoreflect.EnumDescriptor {
+	return file_common_v1_time_proto_enumTypes[0].Descriptor()
+}
+
+func (TimeRangePreset) Type() protoreflect.EnumType {
+	return &file_common_v1_time_proto_enumTypes[0]
+}
+
+func (x TimeRangePreset) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TimeRangePreset.Descriptor instead.
+func (TimeRangePreset) EnumDescriptor() ([]byte, []int) {
+	return file_common_v1_time_proto_rawDescGZIP(), []int{0}
+}
+
 type TimeRange struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	From          *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=from" json:"from,omitempty"`
@@ -83,7 +153,18 @@ const file_common_v1_time_proto_rawDesc = "" +
 	"\tTimeRange\x126\n" +
 	"\x04from\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x04from\x122\n" +
 	"\x02to\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x02to:c\xbaH`\x1a^\n" +
-	"\x19time_range.from_before_to\x12,time_range.from must be before time_range.to\x1a\x13this.from < this.toB=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
+	"\x19time_range.from_before_to\x12,time_range.from must be before time_range.to\x1a\x13this.from < this.to*\xf9\x02\n" +
+	"\x0fTimeRangePreset\x12!\n" +
+	"\x1dTIME_RANGE_PRESET_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dTIME_RANGE_PRESET_LAST_1_HOUR\x10\x01\x12\"\n" +
+	"\x1eTIME_RANGE_PRESET_LAST_6_HOURS\x10\x02\x12#\n" +
+	"\x1fTIME_RANGE_PRESET_LAST_24_HOURS\x10\x03\x12!\n" +
+	"\x1dTIME_RANGE_PRESET_LAST_7_DAYS\x10\x04\x12\"\n" +
+	"\x1eTIME_RANGE_PRESET_LAST_14_DAYS\x10\x05\x12\"\n" +
+	"\x1eTIME_RANGE_PRESET_LAST_30_DAYS\x10\x06\x12\"\n" +
+	"\x1eTIME_RANGE_PRESET_LAST_90_DAYS\x10\a\x12#\n" +
+	"\x1fTIME_RANGE_PRESET_LAST_180_DAYS\x10\b\x12#\n" +
+	"\x1fTIME_RANGE_PRESET_LAST_365_DAYS\x10\tB=Z;github.com/pug-sh/pug/internal/gen/proto/common/v1;commonv1b\beditionsp\xe8\a"
 
 var (
 	file_common_v1_time_proto_rawDescOnce sync.Once
@@ -97,14 +178,16 @@ func file_common_v1_time_proto_rawDescGZIP() []byte {
 	return file_common_v1_time_proto_rawDescData
 }
 
+var file_common_v1_time_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_common_v1_time_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_common_v1_time_proto_goTypes = []any{
-	(*TimeRange)(nil),             // 0: common.v1.TimeRange
-	(*timestamppb.Timestamp)(nil), // 1: google.protobuf.Timestamp
+	(TimeRangePreset)(0),          // 0: common.v1.TimeRangePreset
+	(*TimeRange)(nil),             // 1: common.v1.TimeRange
+	(*timestamppb.Timestamp)(nil), // 2: google.protobuf.Timestamp
 }
 var file_common_v1_time_proto_depIdxs = []int32{
-	1, // 0: common.v1.TimeRange.from:type_name -> google.protobuf.Timestamp
-	1, // 1: common.v1.TimeRange.to:type_name -> google.protobuf.Timestamp
+	2, // 0: common.v1.TimeRange.from:type_name -> google.protobuf.Timestamp
+	2, // 1: common.v1.TimeRange.to:type_name -> google.protobuf.Timestamp
 	2, // [2:2] is the sub-list for method output_type
 	2, // [2:2] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
@@ -122,13 +205,14 @@ func file_common_v1_time_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_v1_time_proto_rawDesc), len(file_common_v1_time_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_common_v1_time_proto_goTypes,
 		DependencyIndexes: file_common_v1_time_proto_depIdxs,
+		EnumInfos:         file_common_v1_time_proto_enumTypes,
 		MessageInfos:      file_common_v1_time_proto_msgTypes,
 	}.Build()
 	File_common_v1_time_proto = out.File

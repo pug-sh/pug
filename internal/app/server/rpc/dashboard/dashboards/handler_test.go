@@ -13,6 +13,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -179,7 +180,10 @@ func TestHandler_CreateTile_DisplayNameConflict_MapsToCodeAlreadyExists(t *testi
 	t.Cleanup(func() { _ = svc.DeleteDashboard(context.Background(), projectID, dashboard.ID) })
 
 	if _, err := svc.CreateDashboardTile(context.Background(), projectID, dashboard.ID, "Same Name", "",
-		coreprojects.MarkdownTile{Body: "first"}, nil); err != nil {
+		coreprojects.MarkdownTile{Body: "first"},
+		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
+		nil); err != nil {
 		t.Fatalf("first tile: %v", err)
 	}
 

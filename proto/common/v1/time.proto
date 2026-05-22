@@ -15,3 +15,16 @@ message TimeRange {
   google.protobuf.Timestamp from = 1 [(buf.validate.field).required = true];
   google.protobuf.Timestamp to = 2 [(buf.validate.field).required = true];
 }
+
+enum TimeRangePreset {
+  TIME_RANGE_PRESET_UNSPECIFIED = 0;
+  TIME_RANGE_PRESET_LAST_1_HOUR = 1;
+  TIME_RANGE_PRESET_LAST_6_HOURS = 2;
+  TIME_RANGE_PRESET_LAST_24_HOURS = 3;
+  TIME_RANGE_PRESET_LAST_7_DAYS = 4;
+  TIME_RANGE_PRESET_LAST_14_DAYS = 5;
+  TIME_RANGE_PRESET_LAST_30_DAYS = 6;
+  TIME_RANGE_PRESET_LAST_90_DAYS = 7;
+  TIME_RANGE_PRESET_LAST_180_DAYS = 8;
+  TIME_RANGE_PRESET_LAST_365_DAYS = 9;
+}

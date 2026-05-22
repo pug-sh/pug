@@ -16,10 +16,16 @@ update on dashboards for each row execute procedure moddatetime(update_time);
 -- kind values mirror TileKind in internal/core/projects/dashboards.go:
 --   1 = TileKindInsight  (insight_query payload)
 --   2 = TileKindMarkdown (markdown_body payload)
+-- view_mode values mirror TileViewMode in internal/core/projects/dashboards.go:
+--   0 = unspecified, 1 = line, 2 = area, 3 = bar_grouped, 4 = bar_stacked, 5 = table
+-- default_time_range values mirror common.v1.TimeRangePreset:
+--   0 = unspecified, then 1..9 = last 1h / 6h / 24h / 7d / 14d / 30d / 90d / 180d / 365d
 create table dashboard_tiles (
   id            char(20) primary key,
   dashboard_id  char(20) not null references dashboards(id) on delete cascade,
   kind          smallint not null,
+  view_mode     smallint not null default 0,
+  default_time_range smallint not null default 0,
   display_name  varchar(150) not null default '',
   description   text not null default '',
   insight_query jsonb,
@@ -34,7 +40,9 @@ create table dashboard_tiles (
   ),
   constraint dashboard_tiles_markdown_body_nonempty check (
     markdown_body is null or length(markdown_body) > 0
-  )
+  ),
+  constraint dashboard_tiles_view_mode_range check (view_mode between 0 and 5),
+  constraint dashboard_tiles_default_time_range_range check (default_time_range between 0 and 9)
 );
 
 create index dashboard_tiles_dashboard_id_idx on dashboard_tiles(dashboard_id);
