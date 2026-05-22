@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 )
 
 func TestTranslateUniqueViolation(t *testing.T) {
@@ -89,6 +90,53 @@ func TestNormalizedTileDefaultTimeRange_AllInsightPresets(t *testing.T) {
 			got := normalizedTileDefaultTimeRange(TileKindInsight, tc.in)
 			if got != tc.want {
 				t.Fatalf("normalizedTileDefaultTimeRange(insight, %v) = %d, want %d", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizedTileViewMode(t *testing.T) {
+	cases := []struct {
+		name string
+		kind TileKind
+		in   dashboardsv1.DashboardTileViewMode
+		want TileViewMode
+	}{
+		{"insight_line", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE, TileViewModeLine},
+		{"insight_area", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA, TileViewModeArea},
+		{"insight_bar_grouped", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED, TileViewModeBarGrouped},
+		{"insight_bar_stacked", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED, TileViewModeBarStacked},
+		{"insight_table", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE, TileViewModeTable},
+		{"insight_unspecified_defaults_line", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED, TileViewModeLine},
+		{"insight_unknown_defaults_line", TileKindInsight, dashboardsv1.DashboardTileViewMode(99), TileViewModeLine},
+		{"markdown_coerces_unspecified", TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED, TileViewModeUnspecified},
+		{"markdown_unspecified", TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED, TileViewModeUnspecified},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizedTileViewMode(tc.kind, tc.in)
+			if got != tc.want {
+				t.Fatalf("normalizedTileViewMode(%v, %v) = %d, want %d", tc.kind, tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizedTileDefaultTimeRange_CoercesMarkdownToUnspecified(t *testing.T) {
+	cases := []struct {
+		name string
+		in   commonv1.TimeRangePreset
+	}{
+		{"markdown_with_preset", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS},
+		{"markdown_unspecified", commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizedTileDefaultTimeRange(TileKindMarkdown, tc.in)
+			if got != TileDefaultTimeRangeUnspecified {
+				t.Fatalf("normalizedTileDefaultTimeRange(markdown, %v) = %d, want %d", tc.in, got, TileDefaultTimeRangeUnspecified)
 			}
 		})
 	}
