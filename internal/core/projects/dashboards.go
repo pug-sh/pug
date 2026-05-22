@@ -38,7 +38,8 @@ const (
 	TileKindMarkdown TileKind = 2
 )
 
-// TileViewMode mirrors DashboardTileViewMode in the proto and DB column.
+// TileViewMode mirrors DashboardTileViewMode in the proto. The DB stores the
+// corresponding proto enum name.
 type TileViewMode int16
 
 const (
@@ -50,7 +51,8 @@ const (
 	TileViewModeTable       TileViewMode = 5
 )
 
-// TileDefaultTimeRange mirrors common.v1.TimeRangePreset in the DB column.
+// TileDefaultTimeRange mirrors common.v1.TimeRangePreset in the proto. The DB
+// stores the corresponding proto enum name.
 type TileDefaultTimeRange int16
 
 const (
@@ -337,8 +339,8 @@ func (s *Service) CreateDashboardTile(
 		DashboardID:      dashboardID,
 		ProjectID:        projectID,
 		Kind:             int16(enc.Kind),
-		ViewMode:         int16(normalizedViewMode),
-		DefaultTimeRange: int16(normalizedDefaultTimeRange),
+		ViewMode:         tileViewModeDBName(normalizedViewMode),
+		DefaultTimeRange: tileDefaultTimeRangeDBName(normalizedDefaultTimeRange),
 		DisplayName:      displayName,
 		Description:      description,
 		InsightQuery:     enc.InsightQuery,
@@ -395,8 +397,8 @@ func (s *Service) UpdateDashboardTile(
 		DashboardID:      dashboardID,
 		ProjectID:        projectID,
 		Kind:             int16(enc.Kind),
-		ViewMode:         int16(normalizedViewMode),
-		DefaultTimeRange: int16(normalizedDefaultTimeRange),
+		ViewMode:         tileViewModeDBName(normalizedViewMode),
+		DefaultTimeRange: tileDefaultTimeRangeDBName(normalizedDefaultTimeRange),
 		DisplayName:      displayName,
 		Description:      description,
 		InsightQuery:     enc.InsightQuery,
@@ -552,6 +554,48 @@ func normalizedTileDefaultTimeRange(kind TileKind, defaultTimeRange commonv1.Tim
 		return TileDefaultTimeRangeUnspecified
 	default:
 		return TileDefaultTimeRangeUnspecified
+	}
+}
+
+func tileViewModeDBName(viewMode TileViewMode) string {
+	switch viewMode {
+	case TileViewModeLine:
+		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.String()
+	case TileViewModeArea:
+		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.String()
+	case TileViewModeBarGrouped:
+		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED.String()
+	case TileViewModeBarStacked:
+		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED.String()
+	case TileViewModeTable:
+		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE.String()
+	default:
+		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String()
+	}
+}
+
+func tileDefaultTimeRangeDBName(defaultTimeRange TileDefaultTimeRange) string {
+	switch defaultTimeRange {
+	case TileDefaultTimeRangeLast1Hour:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR.String()
+	case TileDefaultTimeRangeLast6Hours:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS.String()
+	case TileDefaultTimeRangeLast24Hours:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS.String()
+	case TileDefaultTimeRangeLast7Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.String()
+	case TileDefaultTimeRangeLast14Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS.String()
+	case TileDefaultTimeRangeLast30Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS.String()
+	case TileDefaultTimeRangeLast90Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS.String()
+	case TileDefaultTimeRangeLast180Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS.String()
+	case TileDefaultTimeRangeLast365Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS.String()
+	default:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED.String()
 	}
 }
 

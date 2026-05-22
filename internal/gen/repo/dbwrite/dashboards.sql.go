@@ -54,8 +54,8 @@ returning id, dashboard_id, kind, view_mode, default_time_range, display_name, d
 type CreateDashboardTileParams struct {
 	ID               string
 	Kind             int16
-	ViewMode         int16
-	DefaultTimeRange int16
+	ViewMode         string
+	DefaultTimeRange string
 	DisplayName      string
 	Description      string
 	InsightQuery     map[string]any
@@ -215,8 +215,8 @@ type UpdateDashboardTileParams struct {
 	DisplayName      interface{}
 	Description      interface{}
 	Kind             int16
-	ViewMode         int16
-	DefaultTimeRange int16
+	ViewMode         string
+	DefaultTimeRange string
 	InsightQuery     map[string]any
 	MarkdownBody     pgtype.Text
 	Layouts          map[string]any

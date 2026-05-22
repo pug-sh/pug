@@ -45,8 +45,8 @@ type DashboardTile struct {
 	ID               string
 	DashboardID      string
 	Kind             int16
-	ViewMode         int16
-	DefaultTimeRange int16
+	ViewMode         string
+	DefaultTimeRange string
 	DisplayName      string
 	Description      string
 	InsightQuery     map[string]any
