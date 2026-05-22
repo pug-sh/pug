@@ -130,19 +130,23 @@ func setTileContent(msg *dashboardsv1.DashboardTile, tileID string, kind corepro
 	}
 }
 
-func tileViewModeToRPC(kind coreprojects.TileKind, raw int16) dashboardsv1.DashboardTileViewMode {
+func tileViewModeToRPC(kind coreprojects.TileKind, raw string) dashboardsv1.DashboardTileViewMode {
 	switch kind {
 	case coreprojects.TileKindInsight:
-		switch coreprojects.TileViewMode(raw) {
-		case coreprojects.TileViewModeArea:
+		value, ok := dashboardsv1.DashboardTileViewMode_value[raw]
+		if !ok {
+			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
+		}
+		switch dashboardsv1.DashboardTileViewMode(value) {
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA:
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA
-		case coreprojects.TileViewModeBarGrouped:
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED:
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED
-		case coreprojects.TileViewModeBarStacked:
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED:
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED
-		case coreprojects.TileViewModeTable:
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE:
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE
-		case coreprojects.TileViewModeLine:
+		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE:
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
 		default:
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
@@ -154,27 +158,31 @@ func tileViewModeToRPC(kind coreprojects.TileKind, raw int16) dashboardsv1.Dashb
 	}
 }
 
-func tileDefaultTimeRangeToRPC(kind coreprojects.TileKind, raw int16) commonv1.TimeRangePreset {
+func tileDefaultTimeRangeToRPC(kind coreprojects.TileKind, raw string) commonv1.TimeRangePreset {
 	switch kind {
 	case coreprojects.TileKindInsight:
-		switch coreprojects.TileDefaultTimeRange(raw) {
-		case coreprojects.TileDefaultTimeRangeLast1Hour:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR
-		case coreprojects.TileDefaultTimeRangeLast6Hours:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS
-		case coreprojects.TileDefaultTimeRangeLast24Hours:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS
-		case coreprojects.TileDefaultTimeRangeLast7Days:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS
-		case coreprojects.TileDefaultTimeRangeLast14Days:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS
-		case coreprojects.TileDefaultTimeRangeLast30Days:
+		value, ok := commonv1.TimeRangePreset_value[raw]
+		if !ok {
 			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-		case coreprojects.TileDefaultTimeRangeLast90Days:
+		}
+		switch commonv1.TimeRangePreset(value) {
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS:
+			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS:
 			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS
-		case coreprojects.TileDefaultTimeRangeLast180Days:
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS:
 			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS
-		case coreprojects.TileDefaultTimeRangeLast365Days:
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS:
 			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS
 		default:
 			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS

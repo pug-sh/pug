@@ -120,28 +120,28 @@ func TestSetTileContent_MarkdownEmptyBodyValid(t *testing.T) {
 }
 
 func TestTileViewModeToRPC_DefaultsInsightToLine(t *testing.T) {
-	got := tileViewModeToRPC(coreprojects.TileKindInsight, 0)
+	got := tileViewModeToRPC(coreprojects.TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String())
 	if got != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE {
-		t.Fatalf("tileViewModeToRPC(insight, 0) = %v, want LINE", got)
+		t.Fatalf("tileViewModeToRPC(insight, unspecified) = %v, want LINE", got)
 	}
 }
 
 func TestTileViewModeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
-	got := tileViewModeToRPC(coreprojects.TileKindMarkdown, int16(coreprojects.TileViewModeBarGrouped))
+	got := tileViewModeToRPC(coreprojects.TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED.String())
 	if got != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED {
 		t.Fatalf("tileViewModeToRPC(markdown, bar) = %v, want UNSPECIFIED", got)
 	}
 }
 
 func TestTileDefaultTimeRangeToRPC_DefaultsInsightToLast30Days(t *testing.T) {
-	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindInsight, 0)
+	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindInsight, commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED.String())
 	if got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS {
-		t.Fatalf("tileDefaultTimeRangeToRPC(insight, 0) = %v, want LAST_30_DAYS", got)
+		t.Fatalf("tileDefaultTimeRangeToRPC(insight, unspecified) = %v, want LAST_30_DAYS", got)
 	}
 }
 
 func TestTileDefaultTimeRangeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
-	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindMarkdown, int16(coreprojects.TileDefaultTimeRangeLast90Days))
+	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindMarkdown, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS.String())
 	if got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED {
 		t.Fatalf("tileDefaultTimeRangeToRPC(markdown, last90days) = %v, want UNSPECIFIED", got)
 	}
@@ -150,25 +150,25 @@ func TestTileDefaultTimeRangeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
 func TestTileDefaultTimeRangeToRPC_AllInsightPresets(t *testing.T) {
 	cases := []struct {
 		name string
-		raw  coreprojects.TileDefaultTimeRange
+		raw  string
 		want commonv1.TimeRangePreset
 	}{
-		{"last_1_hour", coreprojects.TileDefaultTimeRangeLast1Hour, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR},
-		{"last_6_hours", coreprojects.TileDefaultTimeRangeLast6Hours, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS},
-		{"last_24_hours", coreprojects.TileDefaultTimeRangeLast24Hours, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS},
-		{"last_7_days", coreprojects.TileDefaultTimeRangeLast7Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS},
-		{"last_14_days", coreprojects.TileDefaultTimeRangeLast14Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS},
-		{"last_30_days", coreprojects.TileDefaultTimeRangeLast30Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS},
-		{"last_90_days", coreprojects.TileDefaultTimeRangeLast90Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS},
-		{"last_180_days", coreprojects.TileDefaultTimeRangeLast180Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS},
-		{"last_365_days", coreprojects.TileDefaultTimeRangeLast365Days, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS},
+		{"last_1_hour", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR.String(), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR},
+		{"last_6_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS.String(), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS},
+		{"last_24_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS.String(), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS},
+		{"last_7_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.String(), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS},
+		{"last_14_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS.String(), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS},
+		{"last_30_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS.String(), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS},
+		{"last_90_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS.String(), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS},
+		{"last_180_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS.String(), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS},
+		{"last_365_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS.String(), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tileDefaultTimeRangeToRPC(coreprojects.TileKindInsight, int16(tc.raw))
+			got := tileDefaultTimeRangeToRPC(coreprojects.TileKindInsight, tc.raw)
 			if got != tc.want {
-				t.Fatalf("tileDefaultTimeRangeToRPC(insight, %d) = %v, want %v", tc.raw, got, tc.want)
+				t.Fatalf("tileDefaultTimeRangeToRPC(insight, %q) = %v, want %v", tc.raw, got, tc.want)
 			}
 		})
 	}
@@ -177,21 +177,21 @@ func TestTileDefaultTimeRangeToRPC_AllInsightPresets(t *testing.T) {
 func TestTileViewModeToRPC_AllInsightModes(t *testing.T) {
 	cases := []struct {
 		name string
-		raw  coreprojects.TileViewMode
+		raw  string
 		want dashboardsv1.DashboardTileViewMode
 	}{
-		{"line", coreprojects.TileViewModeLine, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE},
-		{"area", coreprojects.TileViewModeArea, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA},
-		{"bar_grouped", coreprojects.TileViewModeBarGrouped, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED},
-		{"bar_stacked", coreprojects.TileViewModeBarStacked, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED},
-		{"table", coreprojects.TileViewModeTable, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE},
+		{"line", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE},
+		{"area", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA},
+		{"bar_grouped", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED},
+		{"bar_stacked", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED},
+		{"table", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tileViewModeToRPC(coreprojects.TileKindInsight, int16(tc.raw))
+			got := tileViewModeToRPC(coreprojects.TileKindInsight, tc.raw)
 			if got != tc.want {
-				t.Fatalf("tileViewModeToRPC(insight, %d) = %v, want %v", tc.raw, got, tc.want)
+				t.Fatalf("tileViewModeToRPC(insight, %q) = %v, want %v", tc.raw, got, tc.want)
 			}
 		})
 	}
@@ -205,8 +205,8 @@ func TestRoTileToRPC_EmitsViewModeAndDefaultTimeRange(t *testing.T) {
 		ID:               "tile_1",
 		DashboardID:      "dash_1",
 		Kind:             int16(coreprojects.TileKindInsight),
-		ViewMode:         int16(coreprojects.TileViewModeArea),
-		DefaultTimeRange: int16(coreprojects.TileDefaultTimeRangeLast180Days),
+		ViewMode:         dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.String(),
+		DefaultTimeRange: commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS.String(),
 		InsightQuery:     map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"},
 		Layouts:          map[string]any{},
 	}
@@ -227,8 +227,8 @@ func TestWTileToRPC_EmitsViewModeAndDefaultTimeRange(t *testing.T) {
 		ID:               "tile_1",
 		DashboardID:      "dash_1",
 		Kind:             int16(coreprojects.TileKindInsight),
-		ViewMode:         int16(coreprojects.TileViewModeBarStacked),
-		DefaultTimeRange: int16(coreprojects.TileDefaultTimeRangeLast7Days),
+		ViewMode:         dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED.String(),
+		DefaultTimeRange: commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.String(),
 		InsightQuery:     map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"},
 		Layouts:          map[string]any{},
 	}
