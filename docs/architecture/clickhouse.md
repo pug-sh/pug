@@ -61,7 +61,7 @@ The trailing 5-minute lag ensures the most recent bucket is closed before it's r
 
 **Use a Go worker, not an MV, when** the work has external side effects (NATS publish, API calls, Postgres writes — e.g. the campaign scheduler at `internal/app/workers/scheduler/scheduler.go`), needs multi-step orchestration, or reads from non-CH sources.
 
-**Version requirement.** Refreshable MVs went stable in ClickHouse 24.10. Cotton's dev infra pins `clickhouse/clickhouse-server:26.3` (`infra/dev/docker-compose.yaml`), so the requirement is satisfied; verify before relying on the feature in any new environment.
+**Version requirement.** Refreshable MVs went stable in ClickHouse 24.10. Cotton's dev infra pins `clickhouse/clickhouse-server:26.5` (`infra/dev/docker-compose.yaml`), so the requirement is satisfied; verify before relying on the feature in any new environment.
 
 New MVs go in `schema/clickhouse/migrations/` as goose migrations; pair the rollup table DDL and the `CREATE MATERIALIZED VIEW` statement in the same migration file.
 
@@ -73,3 +73,4 @@ New MVs go in `schema/clickhouse/migrations/` as goose migrations; pair the roll
 - Use parameterized limits (`LIMIT ?`) through `Query.Limit(...)` and pass `int64` values consistently.
 - Use `RawCond(...)` only for expression-level fragments that are awkward to model otherwise (for example `occur_time >= now() - INTERVAL 30 DAY` or `IN ?` tuple bindings). Keep full query structure (`SELECT/FROM/WHERE/GROUP/ORDER/LIMIT`) in the builder.
 - For property-values query helpers, query builder methods now return build errors; callers must propagate those errors instead of relying on raw-SQL fallbacks.
+- **Top-k crash on mixed fixed-length sort keys (CH 26.5+).** A wide-table `ORDER BY <DateTime64> DESC, <UUID> DESC LIMIT n` crashes with `TYPE_MISMATCH` in `__topKFilter` (the events pagination shape — `occur_time` + `event_id`), but only when lazy materialization defers wide `Map(Variant)`/`JSON` columns past the `LIMIT`. Call `Query.DisableTopKDynamicFiltering()` on such queries (see `GetEventExplorer`, `GetActivityFeed`). A sort key containing a variable-length column (`String`) is auto-exempt by ClickHouse — profiles pagination (`create_time` + `id String`) needs no opt-out (verified on 26.5.1). Remove the opt-out once upstream fixes the mis-typing.

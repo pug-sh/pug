@@ -19,9 +19,10 @@ services:
       retries: 5
 
   nats:
-    image: nats:2.12
+    image: nats:2.14-alpine # alpine ships busybox wget for the healthcheck; the default scratch image has none
     restart: always
-    command: ["--jetstream", "--store_dir=/data"]
+    # -m 8222 enables the HTTP monitoring server (/healthz) that the healthcheck probes
+    command: ["--jetstream", "--store_dir=/data", "-m", "8222"]
     volumes:
       - nats-jetstream-data:/data
     ports:
@@ -31,13 +32,13 @@ services:
     networks:
       - pug-net
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8222/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.3
+    image: clickhouse/clickhouse-server:26.5
     restart: always
     environment:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-pug}
@@ -63,7 +64,7 @@ services:
       retries: 5
 
   dragonfly:
-    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.36.0
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.38.1
     restart: always
     ports:
       - "${DRAGONFLY_PORT:-6380}:6379"

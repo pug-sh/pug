@@ -15,7 +15,7 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-const testPostgresImage = "postgres@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7" // PostgreSQL 18.3-alpine
+const testPostgresImage = "postgres@sha256:96d56f7f57c6aacd1fcb908bc83b345ec5f83231ee486dd66a1baadce274db88" // PostgreSQL 18.4-alpine
 
 // TestPostgres holds the container and connection pools for a test database.
 type TestPostgres struct {
