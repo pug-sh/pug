@@ -125,9 +125,9 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
 - **`proto/shared/`** — private API key or JWT (e.g., campaigns, delivery, profiles read/delete)
 - **`proto/common/v1/`** — shared message types with no service definitions, accessible from any auth level. Put types here when (a) they are needed across auth boundaries, or (b) they are reused across multiple services within the same auth boundary and copying would create drift risk (e.g., `GetFilterSchemaRequest`/`Response` is consumed by both `shared.activity` and `shared.insights`). A message used by exactly one service belongs in that service's package, not `common/v1/`.
 
-### Insights Breakdown
+### Subsystem Reference
 
-Breakdowns are supported for trends, funnel, and retention. Segmentation does not support breakdowns.
+Deep per-subsystem documentation lives in [`docs/architecture/`](docs/architecture/). These are **not** loaded by default — read the relevant file when working in that area:
 
 - `QueryRequest.breakdowns` is `repeated Breakdown` — list of property keys to break down by (e.g. `[{property: "$country"}, {property: "$browser"}]`).
 - **Attribution:** first-touch — each user is assigned the breakdown value(s) from their earliest matching event (`argMin(property, occur_time)`). This keeps funnel and retention per-user logic correct by not splitting a user across multiple groups.
@@ -401,6 +401,12 @@ Exceptions:
 - **Defer-rollback / cleanup failures** (e.g. `tx.Rollback`, `rows.Close`) should pair slog + RecordError at the deferred site since no caller can see them.
 - **Wrapper disposition logs.** A wrapper that emits its own log for a wrapper-specific decision (e.g. the NATS worker's "terminating poison message" / "message processing failed" lines) MAY include the underlying processor error as a `slogx.Error(err)` attribute. That log line is a *different fact* (the disposition the wrapper decided on, plus wrapper-only metadata like stream/consumer) than the processor's source log, so it is not a duplicate. The wrapper must still skip `telemetry.RecordError` on the original error — the processor already recorded it.
 - **Pure-passthrough services.** When a service method is a one-line wrapper around a generated `dbread`/`dbwrite` query (no business logic, no enrichment to add), the *handler* is effectively the lowest layer with meaningful context (project_id, customer_id, etc.) — logging the DB error at the handler is acceptable in that case. Services with non-trivial logic (e.g. transactions, orchestration of multiple writes, cross-cutting validation) must log + record at source like everyone else.
+- **Insights** — trends/funnel/retention/segmentation queries; breakdowns, granularity caps, filter model, funnel timing stats, type-specific query builders → [`docs/architecture/insights.md`](docs/architecture/insights.md)
+- **ClickHouse** — type-safe query builder, events table (dedup key, partitioning, `FINAL` policy), materialized-view flavors, query conventions → [`docs/architecture/clickhouse.md`](docs/architecture/clickhouse.md)
+- **Profiles** — read API (ClickHouse-backed), activity summary, property model, soft-delete, device subscriptions → [`docs/architecture/profiles.md`](docs/architecture/profiles.md)
+- **Event ingestion enrichment** — geo, user-agent, and bot-management auto-properties → [`docs/architecture/ingestion.md`](docs/architecture/ingestion.md)
+- **Email templating** — templ + go-premailer rendering, frozen brand tokens, preview CLI → [`docs/architecture/email.md`](docs/architecture/email.md)
+- **OpenTelemetry** — provider bootstrap, per-component instrumentation status, the error-recording convention and its exceptions → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md)
 
 ## Code Style
 
@@ -408,3 +414,4 @@ Exceptions:
 - Always use context-aware slog variants (`slog.InfoContext`, `slog.ErrorContext`, `slog.WarnContext`, `slog.DebugContext`) instead of `slog.Info`, `slog.Error`, etc.
 - Always use `slogx.Error(err)` (from `internal/slogx`) for logging errors. Never use `slog.Any("error", err)` or `slog.Any("err", err)`.
 - Never pass sentinel errors directly to `connect.NewError`. Always create an explicit client-facing message with `errors.New("...")`. Sentinel errors are internal and their strings must not leak to API consumers.
+- Pair `slog.ErrorContext` with `telemetry.RecordError(ctx, err)` at the layer that **detects** the error (executor / service / worker / query helper); downstream handlers and wrappers only translate to `connect.NewError(...)` — never re-log or re-record. Full exceptions (client-input errors, defer-cleanup, wrapper disposition logs, pure-passthrough services) → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md).

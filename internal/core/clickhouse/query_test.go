@@ -426,6 +426,24 @@ func TestSettingsHelpers(t *testing.T) {
 		}
 	})
 
+	t.Run("DisableTopKDynamicFiltering appends setting after LIMIT", func(t *testing.T) {
+		sql, args := build(t,
+			chq.NewQuery().
+				Select("1").
+				From("events").
+				OrderBy("occur_time DESC", "event_id DESC").
+				Limit(100).
+				DisableTopKDynamicFiltering(),
+		)
+		want := "SELECT 1\nFROM events\nORDER BY occur_time DESC, event_id DESC\nLIMIT ?\nSETTINGS use_top_k_dynamic_filtering = 0"
+		if sql != want {
+			t.Errorf("sql:\ngot  %q\nwant %q", sql, want)
+		}
+		if diff := cmp.Diff([]any{int64(100)}, args); diff != "" {
+			t.Errorf("args: %s", diff)
+		}
+	})
+
 	t.Run("repeated WithQueryCache calls dedup by key — last TTL wins", func(t *testing.T) {
 		sql, _ := build(t,
 			chq.NewQuery().

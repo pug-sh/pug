@@ -9,6 +9,11 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
+// testRedisImage pins the Redis image used as the cache test double. Dev/prod run
+// Dragonfly (infra/dev/docker-compose.yaml), which speaks the Redis wire protocol;
+// Redis stands in for it in tests via the testcontainers redis module.
+const testRedisImage = "redis@sha256:d146f83b1e0f02fc27c26a50cee39338c736674c5959db84363e6ae3cd9e02d2" // 8.6.3-alpine
+
 // TestRedis holds a Redis testcontainer for testing.
 type TestRedis struct {
 	container *redis.RedisContainer
@@ -22,7 +27,7 @@ func SetupRedis(t *testing.T) *TestRedis {
 	t.Helper()
 	ctx := context.Background()
 
-	ctr, err := redis.Run(ctx, "redis:7-alpine")
+	ctr, err := redis.Run(ctx, testRedisImage)
 	if err != nil {
 		t.Fatalf("testutil: start redis container: %v", err)
 	}

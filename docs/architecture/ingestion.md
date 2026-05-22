@@ -1,0 +1,9 @@
+# Event Ingestion Enrichment
+
+Detailed reference for auto-property enrichment of incoming events (`internal/geo`, `internal/useragent`, `internal/autoprop`). Linked from the root [`CLAUDE.md`](../../CLAUDE.md) — read this when working on event enrichment.
+
+Incoming events are enriched with auto-properties before being published to NATS:
+
+- **`internal/geo/`** — resolves geo properties (`$country`, `$city`, `$ip`, etc.) from proxy-injected HTTP headers. `geo.Provider` is an interface; the Cloudflare implementation reads from `CF-Connecting-IP` and `CF-*` headers. Geo properties are **always overwritten** (CDN-injected values are trusted).
+- **`internal/useragent/`** — parses the `User-Agent` header using `ua-parser/uap-go` into properties: `$browser`, `$browserVersion`, `$os`, `$osVersion`, `$device`. Both `browserVersion` and `osVersion` use the major version only (e.g. `"17"` not `"17.2.1"`) to avoid analytics fragmentation. UA properties are only written if not already present in `event.AutoProperties` (client-supplied values win). `$device` is only set when the parser identifies a specific device (e.g., "iPhone", "Pixel 8"); desktop browsers typically yield no `$device` property. The parser is initialized once at startup via `useragent.NewParser()` to avoid reloading regex definitions per request.
+- **bot management enrichment** — reads Cloudflare Bot Management headers (injected via Transform Rule) and sets typed auto-properties: `$bot_score` from `CF-Bot-Score` is parsed as `Int64` (0–255, lower = more bot-like) and `$verified_bot` from `CF-Verified-Bot` is parsed as `Bool` (identifies known good bots like Googlebot). Both are **always overwritten** by the server; client-supplied values are stripped before enrichment. Routing through `internal/autoprop` keeps the typed-Variant story consistent across enrichers (geo `$latitude`/`$longitude` are also stored as `Float64`).

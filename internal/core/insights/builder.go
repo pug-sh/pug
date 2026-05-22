@@ -700,7 +700,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	retainedSelect := []string{
 		"c.cohort_time",
 		fmt.Sprintf("%s(e.occur_time) AS t", granFn),
-		"toFloat64(count(DISTINCT e.distinct_id)) AS retained_users",
+		"toFloat64(uniq(e.distinct_id)) AS retained_users",
 	}
 	retainedGroupBy := []string{"c.cohort_time", "t"}
 	for j := range breakdowns {
@@ -1095,9 +1095,14 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 			return "", fmt.Errorf("unsupported aggregation type %s", agg)
 		}
 	case insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS:
-		return "toFloat64(count(DISTINCT distinct_id))", nil
+		// uniq() is an approximate distinct count (HyperLogLog, ~0.5–2% error),
+		// chosen over count(DISTINCT) — which resolves to exact uniqExact under the
+		// default count_distinct_implementation — for bounded memory and speed on
+		// high-cardinality, breakdown, and long-range queries. uniq() is exact for
+		// small cohorts. Do not reuse these expressions for billing/quota counts.
+		return "toFloat64(uniq(distinct_id))", nil
 	case insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG:
-		return "if(count(DISTINCT distinct_id) = 0, 0, toFloat64(count(*)) / toFloat64(count(DISTINCT distinct_id)))", nil
+		return "if(uniq(distinct_id) = 0, 0, toFloat64(count(*)) / toFloat64(uniq(distinct_id)))", nil
 	default: // TOTAL and UNSPECIFIED
 		return "toFloat64(count(*))", nil
 	}

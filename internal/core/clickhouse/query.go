@@ -244,6 +244,14 @@ func (q *Query) WithQueryCache(ttlSeconds int) *Query {
 	return q
 }
 
+// DisableTopKDynamicFiltering disables ClickHouse's top-k dynamic filtering for
+// ORDER BY ... LIMIT queries. ClickHouse 26.5 can build invalid __topKFilter
+// predicates for mixed-type sort keys such as DateTime64 + UUID.
+func (q *Query) DisableTopKDynamicFiltering() *Query {
+	q.settings = upsertSetting(q.settings, intSetting("use_top_k_dynamic_filtering", 0))
+	return q
+}
+
 // With adds a named CTE. The sub-query's args are emitted before the main query's args.
 // Panics if sub is nil — pass a non-nil *Query or guard with a nil check before calling.
 //

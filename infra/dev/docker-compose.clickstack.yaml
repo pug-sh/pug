@@ -1,19 +1,6 @@
 services:
-  mongo:
-    image: mongo:5.0.32-focal
-    restart: always
-    volumes:
-      - mongo-data:/data/db
-    networks:
-      - pug-net
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   otel-collector:
-    image: hyperdx/hyperdx-otel-collector:2
+    image: hyperdx/hyperdx-otel-collector:2.27.0
     restart: always
     environment:
       CLICKHOUSE_ENDPOINT: "tcp://clickhouse:9000?dial_timeout=10s"
@@ -32,10 +19,18 @@ services:
         condition: service_healthy
 
   hyperdx:
-    image: hyperdx/hyperdx-local:latest
+    image: hyperdx/hyperdx-local:2.27.0
     restart: always
+    # The image's built-in healthcheck curls :8080 (its default app port), but we
+    # run the app on 3001 — so override it to hit the API's /health route instead.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     ports:
-      - "${HYPERDX_APP_PORT:-3001}:3000"
+      - "${HYPERDX_APP_PORT:-3001}:3001"
       - "${HYPERDX_API_PORT:-8081}:8081"
     environment:
       FRONTEND_URL: http://localhost:3001
@@ -44,7 +39,6 @@ services:
       HYPERDX_APP_PORT: 3001
       HYPERDX_APP_URL: http://localhost:3001
       HYPERDX_LOG_LEVEL: info
-      MONGO_URI: mongodb://mongo:27017/hyperdx
       SERVER_URL: http://127.0.0.1:8081
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: hyperdx
@@ -55,11 +49,6 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
-      mongo:
-        condition: service_healthy
-
-volumes:
-  mongo-data:
 
 networks:
   pug-net:
