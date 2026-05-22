@@ -99,8 +99,8 @@ func TestTrendsWithFilters(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	if !strings.Contains(sql, "toFloat64(count(DISTINCT distinct_id))") {
-		t.Errorf("expected toFloat64(count(DISTINCT distinct_id)) in SQL, got: %s", sql)
+	if !strings.Contains(sql, "toFloat64(uniq(distinct_id))") {
+		t.Errorf("expected toFloat64(uniq(distinct_id)) in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
 		t.Errorf("expected property resolution expression in SQL, got: %s", sql)
@@ -424,7 +424,7 @@ func TestMultiEventTrends(t *testing.T) {
 	if !strings.Contains(sql, "toFloat64(count(*))") {
 		t.Errorf("expected total aggregation for page_view in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "toFloat64(count(DISTINCT distinct_id))") {
+	if !strings.Contains(sql, "toFloat64(uniq(distinct_id))") {
 		t.Errorf("expected unique users aggregation for purchase in SQL, got: %s", sql)
 	}
 
@@ -451,7 +451,7 @@ func TestPerUserAvg(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	if !strings.Contains(sql, "toFloat64(count(*)) / toFloat64(count(DISTINCT distinct_id))") {
+	if !strings.Contains(sql, "toFloat64(count(*)) / toFloat64(uniq(distinct_id))") {
 		t.Errorf("expected toFloat64 division in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "toStartOfWeek") {
@@ -2719,8 +2719,8 @@ func TestPropertyAggregation_BackwardCompat(t *testing.T) {
 	}{
 		{"TOTAL", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "", "count(*)"},
 		{"TOTAL_with_property", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "revenue", "count(*)"},
-		{"UNIQUE_USERS", insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS, "", "count(DISTINCT distinct_id)"},
-		{"PER_USER_AVG", insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG, "", "count(*)) / toFloat64(count(DISTINCT distinct_id))"},
+		{"UNIQUE_USERS", insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS, "", "uniq(distinct_id)"},
+		{"PER_USER_AVG", insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG, "", "count(*)) / toFloat64(uniq(distinct_id))"},
 	}
 
 	for _, tc := range tests {
