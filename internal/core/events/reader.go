@@ -546,7 +546,10 @@ func (r *Reader) GetEventExplorer(ctx context.Context, params EventExplorerParam
 
 	pageSize := normalizePageSize(params.PageSize)
 
-	sql, args, err := q.OrderBy("occur_time DESC", "event_id DESC").Limit(int64(pageSize)).Build()
+	sql, args, err := q.OrderBy("occur_time DESC", "event_id DESC").
+		Limit(int64(pageSize)).
+		DisableTopKDynamicFiltering().
+		Build()
 	if err != nil {
 		slog.ErrorContext(ctx, "GetEventExplorer: build query failed", slogx.Error(err),
 			slog.String("project_id", params.ProjectID))
@@ -647,7 +650,10 @@ func (r *Reader) GetActivityFeed(ctx context.Context, params ActivityFeedParams)
 
 	pageSize := normalizePageSize(params.PageSize)
 
-	sql, args, err := q.OrderBy("occur_time DESC", "event_id DESC").Limit(int64(pageSize)).Build()
+	sql, args, err := q.OrderBy("occur_time DESC", "event_id DESC").
+		Limit(int64(pageSize)).
+		DisableTopKDynamicFiltering().
+		Build()
 	if err != nil {
 		slog.ErrorContext(ctx, "GetActivityFeed: build query failed", slogx.Error(err),
 			slog.String("project_id", params.ProjectID))
