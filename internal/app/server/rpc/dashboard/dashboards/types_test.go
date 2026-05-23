@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -14,7 +14,7 @@ import (
 func TestSetTileContent_InsightHappyPath(t *testing.T) {
 	msg := &dashboardsv1.DashboardTile{}
 	q := map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"}
-	if err := setTileContent(msg, "tile_abc", coreprojects.TileKindInsight, q, "", false); err != nil {
+	if err := setTileContent(msg, "tile_abc", coredashboards.TileKindInsight, q, "", false); err != nil {
 		t.Fatalf("setTileContent insight: %v", err)
 	}
 	insight, ok := msg.Content.(*dashboardsv1.DashboardTile_Insight)
@@ -28,7 +28,7 @@ func TestSetTileContent_InsightHappyPath(t *testing.T) {
 
 func TestSetTileContent_MarkdownHappyPath(t *testing.T) {
 	msg := &dashboardsv1.DashboardTile{}
-	if err := setTileContent(msg, "tile_abc", coreprojects.TileKindMarkdown, nil, "# heading", true); err != nil {
+	if err := setTileContent(msg, "tile_abc", coredashboards.TileKindMarkdown, nil, "# heading", true); err != nil {
 		t.Fatalf("setTileContent markdown: %v", err)
 	}
 	markdown, ok := msg.Content.(*dashboardsv1.DashboardTile_Markdown)
@@ -48,7 +48,7 @@ func TestSetTileContent_MarkdownHappyPath(t *testing.T) {
 
 func TestSetTileContent_InsightNilQuery(t *testing.T) {
 	msg := &dashboardsv1.DashboardTile{}
-	err := setTileContent(msg, "tile_abc", coreprojects.TileKindInsight, nil, "", false)
+	err := setTileContent(msg, "tile_abc", coredashboards.TileKindInsight, nil, "", false)
 	if err == nil {
 		t.Fatal("setTileContent: expected error for nil insight query, got nil")
 	}
@@ -62,7 +62,7 @@ func TestSetTileContent_InsightNilQuery(t *testing.T) {
 
 func TestSetTileContent_InsightEmptyQuery(t *testing.T) {
 	msg := &dashboardsv1.DashboardTile{}
-	err := setTileContent(msg, "tile_abc", coreprojects.TileKindInsight, map[string]any{}, "", false)
+	err := setTileContent(msg, "tile_abc", coredashboards.TileKindInsight, map[string]any{}, "", false)
 	if err == nil {
 		t.Fatal("setTileContent: expected error for empty insight query map, got nil")
 	}
@@ -74,7 +74,7 @@ func TestSetTileContent_InsightEmptyQuery(t *testing.T) {
 func TestSetTileContent_MarkdownInvalidBody(t *testing.T) {
 	msg := &dashboardsv1.DashboardTile{}
 	// markdownValid=false means the DB column was SQL NULL — invalid for kind=markdown.
-	err := setTileContent(msg, "tile_abc", coreprojects.TileKindMarkdown, nil, "", false)
+	err := setTileContent(msg, "tile_abc", coredashboards.TileKindMarkdown, nil, "", false)
 	if err == nil {
 		t.Fatal("setTileContent: expected error for invalid markdown body, got nil")
 	}
@@ -88,7 +88,7 @@ func TestSetTileContent_MarkdownInvalidBody(t *testing.T) {
 
 func TestSetTileContent_UnknownKind(t *testing.T) {
 	msg := &dashboardsv1.DashboardTile{}
-	err := setTileContent(msg, "tile_abc", coreprojects.TileKind(99), nil, "", false)
+	err := setTileContent(msg, "tile_abc", coredashboards.TileKind(99), nil, "", false)
 	if err == nil {
 		t.Fatal("setTileContent: expected error for unknown kind, got nil")
 	}
@@ -107,7 +107,7 @@ func TestSetTileContent_UnknownKind(t *testing.T) {
 // reaches the encoder.)
 func TestSetTileContent_MarkdownEmptyBodyValid(t *testing.T) {
 	msg := &dashboardsv1.DashboardTile{}
-	if err := setTileContent(msg, "tile_abc", coreprojects.TileKindMarkdown, nil, "", true); err != nil {
+	if err := setTileContent(msg, "tile_abc", coredashboards.TileKindMarkdown, nil, "", true); err != nil {
 		t.Fatalf("setTileContent markdown empty-but-valid: %v", err)
 	}
 	markdown, ok := msg.Content.(*dashboardsv1.DashboardTile_Markdown)
@@ -120,28 +120,28 @@ func TestSetTileContent_MarkdownEmptyBodyValid(t *testing.T) {
 }
 
 func TestTileViewModeToRPC_DefaultsInsightToLine(t *testing.T) {
-	got := tileViewModeToRPC(coreprojects.TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String())
+	got := tileViewModeToRPC(coredashboards.TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String())
 	if got != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE {
 		t.Fatalf("tileViewModeToRPC(insight, unspecified) = %v, want LINE", got)
 	}
 }
 
 func TestTileViewModeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
-	got := tileViewModeToRPC(coreprojects.TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED.String())
+	got := tileViewModeToRPC(coredashboards.TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED.String())
 	if got != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED {
 		t.Fatalf("tileViewModeToRPC(markdown, bar) = %v, want UNSPECIFIED", got)
 	}
 }
 
 func TestTileDefaultTimeRangeToRPC_DefaultsInsightToLast30Days(t *testing.T) {
-	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindInsight, commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED.String())
+	got := tileDefaultTimeRangeToRPC(coredashboards.TileKindInsight, commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED.String())
 	if got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS {
 		t.Fatalf("tileDefaultTimeRangeToRPC(insight, unspecified) = %v, want LAST_30_DAYS", got)
 	}
 }
 
 func TestTileDefaultTimeRangeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
-	got := tileDefaultTimeRangeToRPC(coreprojects.TileKindMarkdown, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS.String())
+	got := tileDefaultTimeRangeToRPC(coredashboards.TileKindMarkdown, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS.String())
 	if got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED {
 		t.Fatalf("tileDefaultTimeRangeToRPC(markdown, last90days) = %v, want UNSPECIFIED", got)
 	}
@@ -166,7 +166,7 @@ func TestTileDefaultTimeRangeToRPC_AllInsightPresets(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tileDefaultTimeRangeToRPC(coreprojects.TileKindInsight, tc.raw)
+			got := tileDefaultTimeRangeToRPC(coredashboards.TileKindInsight, tc.raw)
 			if got != tc.want {
 				t.Fatalf("tileDefaultTimeRangeToRPC(insight, %q) = %v, want %v", tc.raw, got, tc.want)
 			}
@@ -189,7 +189,7 @@ func TestTileViewModeToRPC_AllInsightModes(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tileViewModeToRPC(coreprojects.TileKindInsight, tc.raw)
+			got := tileViewModeToRPC(coredashboards.TileKindInsight, tc.raw)
 			if got != tc.want {
 				t.Fatalf("tileViewModeToRPC(insight, %q) = %v, want %v", tc.raw, got, tc.want)
 			}
@@ -204,7 +204,7 @@ func TestRoTileToRPC_EmitsViewModeAndDefaultTimeRange(t *testing.T) {
 	tile := dbread.DashboardTile{
 		ID:               "tile_1",
 		DashboardID:      "dash_1",
-		Kind:             int16(coreprojects.TileKindInsight),
+		Kind:             int16(coredashboards.TileKindInsight),
 		ViewMode:         dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.String(),
 		DefaultTimeRange: commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS.String(),
 		InsightQuery:     map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"},
@@ -226,7 +226,7 @@ func TestWTileToRPC_EmitsViewModeAndDefaultTimeRange(t *testing.T) {
 	tile := dbwrite.DashboardTile{
 		ID:               "tile_1",
 		DashboardID:      "dash_1",
-		Kind:             int16(coreprojects.TileKindInsight),
+		Kind:             int16(coredashboards.TileKindInsight),
 		ViewMode:         dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED.String(),
 		DefaultTimeRange: commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.String(),
 		InsightQuery:     map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"},

@@ -13,7 +13,7 @@ create index dashboards_project_id_idx on dashboards(project_id);
 create trigger update_timestamp before
 update on dashboards for each row execute procedure moddatetime(update_time);
 
--- kind values mirror TileKind in internal/core/projects/dashboards.go:
+-- kind values mirror TileKind in internal/core/dashboards/dashboards.go:
 --   1 = TileKindInsight  (insight_query payload)
 --   2 = TileKindMarkdown (markdown_body payload)
 -- view_mode stores DashboardTileViewMode proto enum names.

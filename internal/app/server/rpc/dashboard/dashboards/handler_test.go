@@ -16,7 +16,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
-	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
@@ -161,7 +161,7 @@ func TestHandler_QueryDashboard_ReturnsTrendResults(t *testing.T) {
 	ch := testutil.SetupClickHouse(t)
 	ctx := context.Background()
 
-	svc := coreprojects.NewService(db.PgRO, db.PgW, nil)
+	svc := coredashboards.NewService(db.PgRO, db.PgW)
 	executor := coreinsights.NewExecutor(ch.Conn)
 	s := NewServer(svc, executor)
 
@@ -205,7 +205,7 @@ func TestHandler_QueryDashboard_ReturnsTrendResults(t *testing.T) {
 		},
 	}
 	if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Page views", "",
-		coreprojects.InsightTile{Query: insightQuery},
+		coredashboards.InsightTile{Query: insightQuery},
 		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
 		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS,
 		nil,
@@ -290,7 +290,7 @@ func TestHandler_CreateTile_DisplayNameConflict_MapsToCodeAlreadyExists(t *testi
 	t.Cleanup(func() { _ = svc.DeleteDashboard(context.Background(), projectID, dashboard.ID) })
 
 	if _, err := svc.CreateDashboardTile(context.Background(), projectID, dashboard.ID, "Same Name", "",
-		coreprojects.MarkdownTile{Body: "first"},
+		coredashboards.MarkdownTile{Body: "first"},
 		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 		commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 		nil); err != nil {
@@ -375,10 +375,10 @@ func assertReason(t *testing.T, err error, want apperr.Reason) {
 // newIntegrationServer sets up a real Postgres + service + handler. Returns
 // the handler, a project ID with a backing org row, and the service (for
 // callers that need to seed dashboards/tiles).
-func newIntegrationServer(t *testing.T) (*Server, string, *coreprojects.Service) {
+func newIntegrationServer(t *testing.T) (*Server, string, *coredashboards.Service) {
 	t.Helper()
 	db := testutil.SetupPostgres(t)
-	svc := coreprojects.NewService(db.PgRO, db.PgW, nil)
+	svc := coredashboards.NewService(db.PgRO, db.PgW)
 
 	ctx := context.Background()
 	orgID := xid.New().String()

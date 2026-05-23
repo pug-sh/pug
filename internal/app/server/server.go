@@ -33,6 +33,7 @@ import (
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
+	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
@@ -90,6 +91,7 @@ func start(ctx context.Context, d *deps) error {
 
 	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
 	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
+	dashboardsSvc := coredashboards.NewService(d.pgRo, d.pgW)
 	orgsSvc := coreorgs.NewService(d.pgRo, d.pgW, d.nats)
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
 	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
@@ -114,7 +116,7 @@ func start(ctx context.Context, d *deps) error {
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
 		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
 	dashboardsPath, dashboardsHandler := dashboardsv1connect.NewDashboardsServiceHandler(
-		dashboardsrpc.NewServer(projectsSvc, insightsExecutor), handlerOpts)
+		dashboardsrpc.NewServer(dashboardsSvc, insightsExecutor), handlerOpts)
 
 	// Email providers — JWT + admin gate. Cipher and OrgProviderRepo are only
 	// present when PUG_EMAIL_PROVIDER_SECRET_KEY is configured; otherwise the

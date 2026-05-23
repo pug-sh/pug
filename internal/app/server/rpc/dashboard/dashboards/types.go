@@ -8,14 +8,14 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
-func roDashboardToRPC(dashboard coreprojects.DashboardWithTiles) (*dashboardsv1.Dashboard, error) {
+func roDashboardToRPC(dashboard coredashboards.DashboardWithTiles) (*dashboardsv1.Dashboard, error) {
 	tiles := make([]*dashboardsv1.DashboardTile, 0, len(dashboard.Tiles))
 	for _, tile := range dashboard.Tiles {
 		msg, err := roTileToRPC(tile)
@@ -49,7 +49,7 @@ func wDashboardToRPC(dashboard dbwrite.Dashboard) *dashboardsv1.Dashboard {
 }
 
 func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error) {
-	layouts, err := coreprojects.MapToLayouts(tile.Layouts)
+	layouts, err := coredashboards.MapToLayouts(tile.Layouts)
 	if err != nil {
 		return nil, err
 	}
@@ -61,20 +61,20 @@ func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error)
 		Layouts:     layouts,
 		CreateTime:  toTimestamp(tile.CreateTime.Time),
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
-		ViewMode:    tileViewModeToRPC(coreprojects.TileKind(tile.Kind), tile.ViewMode).Enum(),
+		ViewMode:    tileViewModeToRPC(coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
 		DefaultTimeRange: tileDefaultTimeRangeToRPC(
-			coreprojects.TileKind(tile.Kind),
+			coredashboards.TileKind(tile.Kind),
 			tile.DefaultTimeRange,
 		).Enum(),
 	}
-	if err := setTileContent(msg, tile.ID, coreprojects.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
+	if err := setTileContent(msg, tile.ID, coredashboards.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
 	}
 	return msg, nil
 }
 
 func wTileToRPC(tile dbwrite.DashboardTile) (*dashboardsv1.DashboardTile, error) {
-	layouts, err := coreprojects.MapToLayouts(tile.Layouts)
+	layouts, err := coredashboards.MapToLayouts(tile.Layouts)
 	if err != nil {
 		return nil, err
 	}
@@ -86,13 +86,13 @@ func wTileToRPC(tile dbwrite.DashboardTile) (*dashboardsv1.DashboardTile, error)
 		Layouts:     layouts,
 		CreateTime:  toTimestamp(tile.CreateTime.Time),
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
-		ViewMode:    tileViewModeToRPC(coreprojects.TileKind(tile.Kind), tile.ViewMode).Enum(),
+		ViewMode:    tileViewModeToRPC(coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
 		DefaultTimeRange: tileDefaultTimeRangeToRPC(
-			coreprojects.TileKind(tile.Kind),
+			coredashboards.TileKind(tile.Kind),
 			tile.DefaultTimeRange,
 		).Enum(),
 	}
-	if err := setTileContent(msg, tile.ID, coreprojects.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
+	if err := setTileContent(msg, tile.ID, coredashboards.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
 	}
 	return msg, nil
@@ -103,13 +103,13 @@ func wTileToRPC(tile dbwrite.DashboardTile) (*dashboardsv1.DashboardTile, error)
 // constraint guarantees the appropriate payload column is non-NULL for each
 // kind, so the missing-payload branches only trip on data corruption or
 // manual DB tinkering — but failing loudly is safer than encoding garbage.
-func setTileContent(msg *dashboardsv1.DashboardTile, tileID string, kind coreprojects.TileKind, insightQuery map[string]any, markdownBody string, markdownValid bool) error {
+func setTileContent(msg *dashboardsv1.DashboardTile, tileID string, kind coredashboards.TileKind, insightQuery map[string]any, markdownBody string, markdownValid bool) error {
 	switch kind {
-	case coreprojects.TileKindInsight:
+	case coredashboards.TileKindInsight:
 		if len(insightQuery) == 0 {
 			return fmt.Errorf("tile %s: insight tile row missing query", tileID)
 		}
-		query, err := coreprojects.MapToQueryMessage(insightQuery)
+		query, err := coredashboards.MapToQueryMessage(insightQuery)
 		if err != nil {
 			return err
 		}
@@ -117,7 +117,7 @@ func setTileContent(msg *dashboardsv1.DashboardTile, tileID string, kind corepro
 			Insight: &dashboardsv1.InsightTileContent{Query: query},
 		}
 		return nil
-	case coreprojects.TileKindMarkdown:
+	case coredashboards.TileKindMarkdown:
 		if !markdownValid {
 			return fmt.Errorf("tile %s: markdown tile row missing body", tileID)
 		}
@@ -130,9 +130,9 @@ func setTileContent(msg *dashboardsv1.DashboardTile, tileID string, kind corepro
 	}
 }
 
-func tileViewModeToRPC(kind coreprojects.TileKind, raw string) dashboardsv1.DashboardTileViewMode {
+func tileViewModeToRPC(kind coredashboards.TileKind, raw string) dashboardsv1.DashboardTileViewMode {
 	switch kind {
-	case coreprojects.TileKindInsight:
+	case coredashboards.TileKindInsight:
 		value, ok := dashboardsv1.DashboardTileViewMode_value[raw]
 		if !ok {
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
@@ -151,34 +151,34 @@ func tileViewModeToRPC(kind coreprojects.TileKind, raw string) dashboardsv1.Dash
 		default:
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
 		}
-	case coreprojects.TileKindMarkdown:
+	case coredashboards.TileKindMarkdown:
 		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED
 	default:
 		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED
 	}
 }
 
-func tileDefaultTimeRangeToRPC(kind coreprojects.TileKind, raw string) commonv1.TimeRangePreset {
-	return coreprojects.TileDefaultTimeRangePresetFromDB(kind, raw)
+func tileDefaultTimeRangeToRPC(kind coredashboards.TileKind, raw string) commonv1.TimeRangePreset {
+	return coredashboards.TileDefaultTimeRangePresetFromDB(kind, raw)
 }
 
-func tileContentFromCreateRPC(c any) (coreprojects.TileContent, error) {
+func tileContentFromCreateRPC(c any) (coredashboards.TileContent, error) {
 	switch v := c.(type) {
 	case *dashboardsv1.DashboardsServiceCreateTileRequest_Insight:
-		return coreprojects.InsightTile{Query: v.Insight.GetQuery()}, nil
+		return coredashboards.InsightTile{Query: v.Insight.GetQuery()}, nil
 	case *dashboardsv1.DashboardsServiceCreateTileRequest_Markdown:
-		return coreprojects.MarkdownTile{Body: v.Markdown.GetBody()}, nil
+		return coredashboards.MarkdownTile{Body: v.Markdown.GetBody()}, nil
 	default:
 		return nil, errors.New("unknown tile content")
 	}
 }
 
-func tileContentFromUpdateRPC(c any) (coreprojects.TileContent, error) {
+func tileContentFromUpdateRPC(c any) (coredashboards.TileContent, error) {
 	switch v := c.(type) {
 	case *dashboardsv1.DashboardsServiceUpdateTileRequest_Insight:
-		return coreprojects.InsightTile{Query: v.Insight.GetQuery()}, nil
+		return coredashboards.InsightTile{Query: v.Insight.GetQuery()}, nil
 	case *dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown:
-		return coreprojects.MarkdownTile{Body: v.Markdown.GetBody()}, nil
+		return coredashboards.MarkdownTile{Body: v.Markdown.GetBody()}, nil
 	default:
 		return nil, errors.New("unknown tile content")
 	}

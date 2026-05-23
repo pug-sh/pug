@@ -12,7 +12,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
-	coreprojects "github.com/pug-sh/pug/internal/core/projects"
+	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
@@ -20,12 +20,12 @@ import (
 )
 
 type Server struct {
-	service  *coreprojects.Service
+	service  *coredashboards.Service
 	executor *coreinsights.Executor
 	dashboardsv1connect.UnimplementedDashboardsServiceHandler
 }
 
-func NewServer(service *coreprojects.Service, executor *coreinsights.Executor) *Server {
+func NewServer(service *coredashboards.Service, executor *coreinsights.Executor) *Server {
 	if service == nil {
 		panic("dashboards: service is nil")
 	}
@@ -117,7 +117,7 @@ func (s *Server) Get(
 
 	dashboard, err := s.service.GetDashboard(ctx, principal.Project.ID, req.Msg.GetId())
 	if err != nil {
-		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
+		if errors.Is(err, coredashboards.ErrDashboardNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetId()))
 		}
 		return nil, serviceErrToConnect(err)
@@ -147,7 +147,7 @@ func (s *Server) UpdateDisplayName(
 
 	dashboard, err := s.service.UpdateDashboardDisplayName(ctx, principal.Project.ID, req.Msg.GetId(), req.Msg.GetDisplayName(), req.Msg.GetDescription())
 	if err != nil {
-		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
+		if errors.Is(err, coredashboards.ErrDashboardNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetId()))
 		}
 		return nil, serviceErrToConnect(err)
@@ -176,7 +176,7 @@ func (s *Server) Delete(
 	}
 
 	if err := s.service.DeleteDashboard(ctx, principal.Project.ID, req.Msg.GetId()); err != nil {
-		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
+		if errors.Is(err, coredashboards.ErrDashboardNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetId()))
 		}
 		return nil, serviceErrToConnect(err)
@@ -216,9 +216,9 @@ func (s *Server) CreateTile(
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, coreprojects.ErrDashboardNotFound):
+		case errors.Is(err, coredashboards.ErrDashboardNotFound):
 			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetDashboardId()))
-		case errors.Is(err, coreprojects.ErrDashboardTileDisplayNameConflict):
+		case errors.Is(err, coredashboards.ErrDashboardTileDisplayNameConflict):
 			return nil, apperr.AlreadyExists(apperr.ReasonDashboardTileNameConflict, "tile display name already in use")
 		}
 		// Service already logged + recorded; do not duplicate.
@@ -271,9 +271,9 @@ func (s *Server) UpdateTile(
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, coreprojects.ErrDashboardTileNotFound):
+		case errors.Is(err, coredashboards.ErrDashboardTileNotFound):
 			return nil, apperr.NotFound(apperr.ReasonDashboardTileNotFound, "dashboard tile not found", apperr.Resource("dashboard_tile", req.Msg.GetId()))
-		case errors.Is(err, coreprojects.ErrDashboardTileDisplayNameConflict):
+		case errors.Is(err, coredashboards.ErrDashboardTileDisplayNameConflict):
 			return nil, apperr.AlreadyExists(apperr.ReasonDashboardTileNameConflict, "tile display name already in use")
 		}
 		// Service already logged + recorded; do not duplicate.
@@ -307,7 +307,7 @@ func (s *Server) DeleteTile(
 	}
 
 	if err := s.service.DeleteDashboardTile(ctx, principal.Project.ID, req.Msg.GetDashboardId(), req.Msg.GetId()); err != nil {
-		if errors.Is(err, coreprojects.ErrDashboardTileNotFound) {
+		if errors.Is(err, coredashboards.ErrDashboardTileNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonDashboardTileNotFound, "dashboard tile not found", apperr.Resource("dashboard_tile", req.Msg.GetId()))
 		}
 		return nil, serviceErrToConnect(err)
@@ -330,17 +330,17 @@ func (s *Server) QueryDashboard(
 
 	dashboard, err := s.service.GetDashboard(ctx, principal.Project.ID, req.Msg.GetDashboardId())
 	if err != nil {
-		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
+		if errors.Is(err, coredashboards.ErrDashboardNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetDashboardId()))
 		}
 		return nil, serviceErrToConnect(err)
 	}
 
-	overrides := coreprojects.DashboardQueryOverrides{
+	overrides := coredashboards.DashboardQueryOverrides{
 		TimeRange:   req.Msg.GetTimeRangeOverride(),
 		Granularity: req.Msg.GetGranularityOverride(),
 	}
-	outcomes := coreprojects.QueryDashboardTiles(ctx, s.executor, dashboard, overrides)
+	outcomes := coredashboards.QueryDashboardTiles(ctx, s.executor, dashboard, overrides)
 
 	results := make([]*dashboardsv1.DashboardTileQueryResult, 0, len(outcomes))
 	for _, outcome := range outcomes {
