@@ -566,6 +566,15 @@ func TestQueryDashboardRequest_RejectsMissingDashboardID(t *testing.T) {
 	}
 }
 
+func TestDashboardTileQueryResult_RejectsMissingOutcome(t *testing.T) {
+	req := &dashboardsv1.DashboardTileQueryResult{
+		TileId: proto.String("tile_123"),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for missing outcome")
+	}
+}
+
 func validQueryRequest() *insightsv1.QueryRequest {
 	return &insightsv1.QueryRequest{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),

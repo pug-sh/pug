@@ -30,37 +30,27 @@ func lastNDays(now time.Time, n int) *commonv1.TimeRange {
 // TileDefaultTimeRangePresetFromDB normalizes the stored default_time_range column
 // for the given tile kind.
 func TileDefaultTimeRangePresetFromDB(kind TileKind, raw string) commonv1.TimeRangePreset {
-	switch kind {
-	case TileKindInsight:
-		value, ok := commonv1.TimeRangePreset_value[raw]
-		if !ok {
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-		}
-		switch commonv1.TimeRangePreset(value) {
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS
-		default:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-		}
-	default:
+	if kind != TileKindInsight {
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED
 	}
+	preset := commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
+	if value, ok := commonv1.TimeRangePreset_value[raw]; ok {
+		preset = commonv1.TimeRangePreset(value)
+	}
+	tr := normalizedTileDefaultTimeRange(TileKindInsight, preset)
+	name := tileDefaultTimeRangeDBName(tr)
+	value, ok := commonv1.TimeRangePreset_value[name]
+	if !ok {
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
+	}
+	return commonv1.TimeRangePreset(value)
+}
+
+func validAbsoluteTimeRange(tr *commonv1.TimeRange) bool {
+	if tr == nil || tr.GetFrom() == nil || tr.GetTo() == nil {
+		return false
+	}
+	return tr.GetFrom().AsTime().Before(tr.GetTo().AsTime())
 }
 
 // ResolveDashboardTimeRangePreset resolves a dashboard tile preset to an absolute

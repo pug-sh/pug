@@ -1486,10 +1486,13 @@ func (x *DashboardsServiceQueryDashboardRequest) GetGranularityOverride() v11.Gr
 }
 
 type DashboardTileQueryResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TileId        *string                `protobuf:"bytes,1,opt,name=tile_id,json=tileId" json:"tile_id,omitempty"`
-	Result        *v11.QueryResponse     `protobuf:"bytes,2,opt,name=result" json:"result,omitempty"`
-	ErrorMessage  *string                `protobuf:"bytes,3,opt,name=error_message,json=errorMessage" json:"error_message,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TileId *string                `protobuf:"bytes,1,opt,name=tile_id,json=tileId" json:"tile_id,omitempty"`
+	// Types that are valid to be assigned to Outcome:
+	//
+	//	*DashboardTileQueryResult_Result
+	//	*DashboardTileQueryResult_ErrorMessage
+	Outcome       isDashboardTileQueryResult_Outcome `protobuf_oneof:"outcome"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1531,19 +1534,46 @@ func (x *DashboardTileQueryResult) GetTileId() string {
 	return ""
 }
 
+func (x *DashboardTileQueryResult) GetOutcome() isDashboardTileQueryResult_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return nil
+}
+
 func (x *DashboardTileQueryResult) GetResult() *v11.QueryResponse {
 	if x != nil {
-		return x.Result
+		if x, ok := x.Outcome.(*DashboardTileQueryResult_Result); ok {
+			return x.Result
+		}
 	}
 	return nil
 }
 
 func (x *DashboardTileQueryResult) GetErrorMessage() string {
-	if x != nil && x.ErrorMessage != nil {
-		return *x.ErrorMessage
+	if x != nil {
+		if x, ok := x.Outcome.(*DashboardTileQueryResult_ErrorMessage); ok {
+			return x.ErrorMessage
+		}
 	}
 	return ""
 }
+
+type isDashboardTileQueryResult_Outcome interface {
+	isDashboardTileQueryResult_Outcome()
+}
+
+type DashboardTileQueryResult_Result struct {
+	Result *v11.QueryResponse `protobuf:"bytes,2,opt,name=result,oneof"`
+}
+
+type DashboardTileQueryResult_ErrorMessage struct {
+	ErrorMessage string `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,oneof"`
+}
+
+func (*DashboardTileQueryResult_Result) isDashboardTileQueryResult_Outcome() {}
+
+func (*DashboardTileQueryResult_ErrorMessage) isDashboardTileQueryResult_Outcome() {}
 
 type DashboardsServiceQueryDashboardResponse struct {
 	state         protoimpl.MessageState      `protogen:"open.v1"`
@@ -1697,11 +1727,13 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"&DashboardsServiceQueryDashboardRequest\x12)\n" +
 	"\fdashboard_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdashboardId\x12D\n" +
 	"\x13time_range_override\x18\x02 \x01(\v2\x14.common.v1.TimeRangeR\x11timeRangeOverride\x12\\\n" +
-	"\x14granularity_override\x18\x03 \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\x13granularityOverride\"\x9b\x01\n" +
+	"\x14granularity_override\x18\x03 \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\x13granularityOverride\"\xbd\x02\n" +
 	"\x18DashboardTileQueryResult\x12\x1f\n" +
-	"\atile_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x06tileId\x129\n" +
-	"\x06result\x18\x02 \x01(\v2!.shared.insights.v1.QueryResponseR\x06result\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"v\n" +
+	"\atile_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x06tileId\x12;\n" +
+	"\x06result\x18\x02 \x01(\v2!.shared.insights.v1.QueryResponseH\x00R\x06result\x12.\n" +
+	"\rerror_message\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01H\x00R\ferrorMessage:\x87\x01\xbaH\x83\x01\x1a\x80\x01\n" +
+	",dashboard_tile_query_result.outcome_required\x12#result or error_message is required\x1a+has(this.result) || has(this.error_message)B\t\n" +
+	"\aoutcome\"v\n" +
 	"'DashboardsServiceQueryDashboardResponse\x12K\n" +
 	"\aresults\x18\x01 \x03(\v21.dashboard.dashboards.v1.DashboardTileQueryResultR\aresults*\xff\x01\n" +
 	"\x15DashboardTileViewMode\x12(\n" +
@@ -1845,6 +1877,10 @@ func file_dashboard_dashboards_v1_dashboards_proto_init() {
 	file_dashboard_dashboards_v1_dashboards_proto_msgTypes[15].OneofWrappers = []any{
 		(*DashboardsServiceUpdateTileRequest_Insight)(nil),
 		(*DashboardsServiceUpdateTileRequest_Markdown)(nil),
+	}
+	file_dashboard_dashboards_v1_dashboards_proto_msgTypes[22].OneofWrappers = []any{
+		(*DashboardTileQueryResult_Result)(nil),
+		(*DashboardTileQueryResult_ErrorMessage)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

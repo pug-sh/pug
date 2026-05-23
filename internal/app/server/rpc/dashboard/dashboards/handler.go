@@ -348,9 +348,13 @@ func (s *Server) QueryDashboard(
 			TileId: proto.String(outcome.TileID),
 		}
 		if outcome.ErrorMessage != "" {
-			msg.ErrorMessage = proto.String(outcome.ErrorMessage)
+			msg.Outcome = &dashboardsv1.DashboardTileQueryResult_ErrorMessage{
+				ErrorMessage: outcome.ErrorMessage,
+			}
 		} else {
-			msg.Result = outcome.Result
+			msg.Outcome = &dashboardsv1.DashboardTileQueryResult_Result{
+				Result: outcome.Result,
+			}
 		}
 		results = append(results, msg)
 	}

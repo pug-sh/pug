@@ -96,6 +96,18 @@ PostgreSQL uses read/write separation:
 - Admin-only operations: `UpdateDisplayName`, `RemoveMember`, `InviteMember`, `ResendInvite`, `ListInvitations`. All other org endpoints require membership.
 - New accounts are created by completing a magic link — there is no password-signup endpoint (`SignUpWithEmail` was removed). Completing a *plain* (non-invite) magic link for a new email provisions a default org + project atomically (in `CompleteMagicLink`); an *invite* magic link instead joins the inviting org with the invitation's role. `CompleteMagicLink` looks the token up by hash (unique) and dispatches on its `purpose`: it honors only `"magic_link"` and `"org_invite"`, rejecting any other purpose with `ErrInvalidToken` so a token minted for a future flow can't be redeemed as a login. Password login (`SignInWithEmail`) and authenticated `SetPassword` remain, so a magic-link account can opt into a password and then sign in with it.
 
+### Dashboards
+
+Dashboards belong to a **project** (`dashboard.dashboards.v1.DashboardsService`, JWT + `x-project-id`). Tiles are stored in PostgreSQL (`dashboard_tiles`).
+
+- **Tile kinds:** `insight` (persisted `insight_query` JSONB + `view_mode` / `default_time_range` columns) or `markdown` (`markdown_body`). Insight tiles require a valid `shared.insights.v1.QueryRequest` payload; markdown tiles ignore time-range fields.
+- **Column vs JSON split:** `view_mode` and `default_time_range` are dedicated range-checked columns mirroring `TileViewMode` / `TileDefaultTimeRange` in `internal/core/projects/dashboards.go`. `granularity`, absolute `time_range`, breakdowns, group-by, and filters live in `insight_query`. `UpdateTile` full-replaces `view_mode`, `default_time_range`, `layouts`, and `insight_query` — clients must send them on every update or they reset.
+- **`QueryDashboard`:** batch-executes insight tiles server-side via `coreprojects.QueryDashboardTiles` → `coreinsights.ExecuteQuery` (same execution path as `shared.insights.v1.InsightsService.Query`). Markdown tiles are omitted. Results are returned in dashboard tile order, keyed by `tile_id`. Per-tile failures populate `DashboardTileQueryResult.error_message` (a `oneof` with `result`) without failing the whole RPC.
+- **Effective time range priority** (when building each tile query): request `time_range_override` → stored `insight_query.time_range` when valid (`from`/`to` set, `from < to`) → `default_time_range` preset resolved through `ResolveDashboardTimeRangePreset`. Optional `granularity_override`; otherwise use the stored query granularity (defaulting to `DAY` when unspecified).
+- **Preset normalization:** DB enum names round-trip through `normalizedTileDefaultTimeRange` / `tileDefaultTimeRangeDBName`; read-side mapping uses `TileDefaultTimeRangePresetFromDB`. Insight tiles normalize unknown/`UNSPECIFIED` presets to `LAST_30_DAYS`; markdown tiles coerce any preset to `UNSPECIFIED`.
+- **Handler wiring:** `dashboardsrpc.NewServer(projectsSvc, insightsExecutor)` — the dashboards handler needs the insights executor, not just the projects service.
+- Deeper query/filter conventions → [`docs/architecture/insights.md`](docs/architecture/insights.md)
+
 ### Auth & Principal
 
 RPC handlers authenticate via `connectrpc.com/authn` middleware. Three auth modes are supported:
@@ -121,7 +133,7 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
 
 - **`proto/public/`** — no auth (e.g., auth service)
 - **`proto/sdk/`** — API key auth (public or private). Write-only — never expose read endpoints or return sensitive data. Public keys are extractable from client apps, so SDK endpoints must assume an untrusted caller regardless of key type.
-- **`proto/dashboard/`** — JWT only (e.g., orgs, projects, insights)
+- **`proto/dashboard/`** — JWT only (e.g., orgs, projects, dashboards)
 - **`proto/shared/`** — private API key or JWT (e.g., campaigns, delivery, profiles read/delete)
 - **`proto/common/v1/`** — shared message types with no service definitions, accessible from any auth level. Put types here when (a) they are needed across auth boundaries, or (b) they are reused across multiple services within the same auth boundary and copying would create drift risk (e.g., `GetFilterSchemaRequest`/`Response` is consumed by both `shared.activity` and `shared.insights`). A message used by exactly one service belongs in that service's package, not `common/v1/`.
 

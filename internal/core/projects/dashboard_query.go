@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -31,6 +32,7 @@ type DashboardTileQueryOutcome struct {
 }
 
 // QueryDashboardTiles executes insight queries for all insight tiles on a dashboard.
+// Results preserve dashboard tile order; markdown tiles are omitted.
 func QueryDashboardTiles(
 	ctx context.Context,
 	executor *coreinsights.Executor,
@@ -38,10 +40,15 @@ func QueryDashboardTiles(
 	overrides DashboardQueryOverrides,
 ) []DashboardTileQueryOutcome {
 	now := time.Now()
-	insightTiles := make([]dbread.DashboardTile, 0, len(dashboard.Tiles))
-	for _, tile := range dashboard.Tiles {
+
+	type indexedTile struct {
+		index int
+		tile  dbread.DashboardTile
+	}
+	insightTiles := make([]indexedTile, 0, len(dashboard.Tiles))
+	for index, tile := range dashboard.Tiles {
 		if TileKind(tile.Kind) == TileKindInsight {
-			insightTiles = append(insightTiles, tile)
+			insightTiles = append(insightTiles, indexedTile{index: index, tile: tile})
 		}
 	}
 	if len(insightTiles) == 0 {
@@ -52,12 +59,19 @@ func QueryDashboardTiles(
 	sem := make(chan struct{}, maxConcurrentDashboardTileQueries)
 	group, groupCtx := errgroup.WithContext(ctx)
 
-	for index, tile := range insightTiles {
+	for outcomeIndex, entry := range insightTiles {
 		group.Go(func() error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			outcomes[index] = queryDashboardTile(groupCtx, executor, dashboard.Dashboard.ProjectID, tile, overrides, now)
+			outcomes[outcomeIndex] = queryDashboardTile(
+				groupCtx,
+				executor,
+				dashboard.Dashboard.ProjectID,
+				entry.tile,
+				overrides,
+				now,
+			)
 			return nil
 		})
 	}
@@ -77,29 +91,25 @@ func queryDashboardTile(
 	outcome := DashboardTileQueryOutcome{TileID: tile.ID}
 
 	if len(tile.InsightQuery) == 0 {
-		outcome.ErrorMessage = fmt.Sprintf("tile %s: insight tile row missing query", tile.ID)
-		return outcome
+		return tileQueryClientError(ctx, tile.ID, fmt.Sprintf("tile %s: insight tile row missing query", tile.ID))
 	}
 
 	storedQuery, err := MapToQueryMessage(tile.InsightQuery)
 	if err != nil {
-		outcome.ErrorMessage = err.Error()
-		return outcome
+		return tileQueryClientError(ctx, tile.ID, err.Error())
 	}
 	if len(storedQuery.GetEvents()) == 0 {
-		outcome.ErrorMessage = "tile query requires at least one event"
-		return outcome
+		return tileQueryClientError(ctx, tile.ID, "tile query requires at least one event")
 	}
 
 	effectiveQuery, err := buildEffectiveTileQuery(
 		storedQuery,
-		TileDefaultTimeRangePresetFromDB(TileKind(tile.Kind), tile.DefaultTimeRange),
+		TileDefaultTimeRangePresetFromDB(TileKindInsight, tile.DefaultTimeRange),
 		overrides,
 		now,
 	)
 	if err != nil {
-		outcome.ErrorMessage = err.Error()
-		return outcome
+		return tileQueryClientError(ctx, tile.ID, err.Error())
 	}
 
 	result, err := coreinsights.ExecuteQuery(ctx, executor, projectID, effectiveQuery)
@@ -117,6 +127,16 @@ func queryDashboardTile(
 	return outcome
 }
 
+func tileQueryClientError(ctx context.Context, tileID, message string) DashboardTileQueryOutcome {
+	slog.WarnContext(ctx, "dashboard tile query skipped",
+		slog.String("tile_id", tileID),
+		slog.String("reason", message))
+	return DashboardTileQueryOutcome{
+		TileID:       tileID,
+		ErrorMessage: message,
+	}
+}
+
 func buildEffectiveTileQuery(
 	stored *insightsv1.QueryRequest,
 	preset commonv1.TimeRangePreset,
@@ -125,14 +145,9 @@ func buildEffectiveTileQuery(
 ) (*insightsv1.QueryRequest, error) {
 	effective := proto.Clone(stored).(*insightsv1.QueryRequest)
 
-	var timeRange *commonv1.TimeRange
-	if overrides.TimeRange != nil {
-		timeRange = overrides.TimeRange
-	} else {
-		timeRange = ResolveDashboardTimeRangePreset(preset, stored.GetTimeRange(), now)
-	}
-	if timeRange == nil || timeRange.GetFrom() == nil || timeRange.GetTo() == nil {
-		return nil, fmt.Errorf("missing effective time range")
+	timeRange, err := resolveEffectiveTileTimeRange(stored, preset, overrides, now)
+	if err != nil {
+		return nil, err
 	}
 	effective.TimeRange = timeRange
 
@@ -143,6 +158,29 @@ func buildEffectiveTileQuery(
 	}
 
 	return effective, nil
+}
+
+func resolveEffectiveTileTimeRange(
+	stored *insightsv1.QueryRequest,
+	preset commonv1.TimeRangePreset,
+	overrides DashboardQueryOverrides,
+	now time.Time,
+) (*commonv1.TimeRange, error) {
+	if overrides.TimeRange != nil {
+		if !validAbsoluteTimeRange(overrides.TimeRange) {
+			return nil, fmt.Errorf("invalid time range override")
+		}
+		return overrides.TimeRange, nil
+	}
+	if validAbsoluteTimeRange(stored.GetTimeRange()) {
+		return stored.GetTimeRange(), nil
+	}
+
+	timeRange := ResolveDashboardTimeRangePreset(preset, nil, now)
+	if !validAbsoluteTimeRange(timeRange) {
+		return nil, fmt.Errorf("missing effective time range")
+	}
+	return timeRange, nil
 }
 
 func defaultQueryGranularity(query *insightsv1.QueryRequest) insightsv1.Granularity {
