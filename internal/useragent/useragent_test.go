@@ -38,10 +38,11 @@ func TestParse(t *testing.T) {
 			name: "chrome desktop — browser and os, no device",
 			ua:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
 			want: Properties{
-				PropBrowser:        "Chrome",
+				PropBrowser:        "Google Chrome",
 				PropBrowserVersion: "118",
 				PropOS:             "Windows",
 				PropOSVersion:      "10",
+				PropMobile:         "false",
 			},
 		},
 		{
@@ -51,19 +52,21 @@ func TestParse(t *testing.T) {
 				PropBrowser:        "Mobile Safari",
 				PropBrowserVersion: "17",
 				PropOS:             "iOS",
-				PropOSVersion:      "17",
+				PropOSVersion:      "17.0",
 				PropDevice:         "iPhone",
+				PropMobile:         "true",
 			},
 		},
 		{
 			name: "android chrome — browser, os, and device",
 			ua:   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
 			want: Properties{
-				PropBrowser:        "Chrome Mobile",
+				PropBrowser:        "Google Chrome",
 				PropBrowserVersion: "120",
 				PropOS:             "Android",
 				PropOSVersion:      "14",
 				PropDevice:         "Pixel 8",
+				PropMobile:         "true",
 			},
 		},
 		{
@@ -73,6 +76,7 @@ func TestParse(t *testing.T) {
 				PropBrowser:        "Googlebot",
 				PropBrowserVersion: "2",
 				PropDevice:         "Spider",
+				PropMobile:         "false",
 			},
 		},
 		{
@@ -91,6 +95,7 @@ func TestParse(t *testing.T) {
 			want: Properties{
 				PropBrowser:        "curl",
 				PropBrowserVersion: "8",
+				PropMobile:         "false",
 			},
 		},
 	}

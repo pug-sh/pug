@@ -14,6 +14,7 @@ const (
 	PropOS             = "$os"
 	PropOSVersion      = "$osVersion"
 	PropDevice         = "$device"
+	PropMobile         = "$mobile"
 )
 
 // Properties is a set of user-agent properties resolved for a request.
@@ -34,40 +35,33 @@ func NewParser() (*Parser, error) {
 	return &Parser{parser: p}, nil
 }
 
-// Parse extracts browser, OS, and device properties from the User-Agent request header.
-// Returns nil if the receiver is nil, the header is absent, or the user-agent string
-// cannot be meaningfully parsed.
+// Parse extracts browser, OS, and device properties from User-Agent Client Hints
+// request headers when present, then fills any remaining gaps from the User-Agent
+// header using ua-parser with values normalized to match the web SDK's UA-CH shape.
+// Returns nil if the receiver is nil or no properties could be resolved.
 func (p *Parser) Parse(h http.Header) Properties {
 	if p == nil {
 		return nil
 	}
+
+	props := parseClientHints(h)
+
 	uaStr := h.Get("User-Agent")
-	if uaStr == "" {
-		return nil
-	}
-
-	client := p.parser.Parse(uaStr)
-
-	props := make(Properties, 5)
-	if client.UserAgent.Family != "" && client.UserAgent.Family != "Other" {
-		props[PropBrowser] = client.UserAgent.Family
-		if client.UserAgent.Major != "" {
-			props[PropBrowserVersion] = client.UserAgent.Major
+	if uaStr != "" {
+		uaProps := propertiesFromUAParser(p.parser.Parse(uaStr), uaStr)
+		if props == nil {
+			props = uaProps
+		} else if uaProps != nil {
+			for k, v := range uaProps {
+				if _, exists := props[k]; !exists {
+					props[k] = v
+				}
+			}
 		}
-	}
-	if client.Os.Family != "" && client.Os.Family != "Other" {
-		props[PropOS] = client.Os.Family
-		if client.Os.Major != "" {
-			props[PropOSVersion] = client.Os.Major
-		}
-	}
-	if client.Device.Family != "" && client.Device.Family != "Other" {
-		props[PropDevice] = client.Device.Family
 	}
 
 	if len(props) == 0 {
 		return nil
 	}
-
 	return props
 }
