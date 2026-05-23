@@ -51,7 +51,7 @@ func (p *Parser) Parse(h http.Header) Properties {
 		uaProps := propertiesFromUAParser(p.parser.Parse(uaStr), uaStr)
 		if props == nil {
 			props = uaProps
-		} else if uaProps != nil {
+		} else {
 			for k, v := range uaProps {
 				if _, exists := props[k]; !exists {
 					props[k] = v
