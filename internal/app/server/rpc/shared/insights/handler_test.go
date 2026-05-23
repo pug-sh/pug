@@ -10,6 +10,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -93,7 +94,7 @@ func TestQuery_UnsupportedInsightType(t *testing.T) {
 	ctx := authn.SetInfo(context.Background(), &rpc.Principal{
 		Project: &dbread.Project{ID: "test-project"},
 	})
-	s := &server{}
+	s := &server{executor: &coreinsights.Executor{}}
 	driftedType := insightsv1.InsightType(999)
 	_, err := s.Query(ctx, connect.NewRequest(&insightsv1.QueryRequest{
 		InsightType: &driftedType,
@@ -114,7 +115,7 @@ func TestQuery_InvalidBuildError(t *testing.T) {
 	ctx := authn.SetInfo(context.Background(), &rpc.Principal{
 		Project: &dbread.Project{ID: "test-project"},
 	})
-	s := &server{}
+	s := &server{executor: &coreinsights.Executor{}}
 	insightType := insightsv1.InsightType_INSIGHT_TYPE_TRENDS
 	_, err := s.Query(ctx, connect.NewRequest(&insightsv1.QueryRequest{
 		InsightType: &insightType,

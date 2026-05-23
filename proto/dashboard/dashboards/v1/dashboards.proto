@@ -17,6 +17,7 @@ service DashboardsService {
   rpc CreateTile(DashboardsServiceCreateTileRequest) returns (DashboardsServiceCreateTileResponse) {}
   rpc UpdateTile(DashboardsServiceUpdateTileRequest) returns (DashboardsServiceUpdateTileResponse) {}
   rpc DeleteTile(DashboardsServiceDeleteTileRequest) returns (DashboardsServiceDeleteTileResponse) {}
+  rpc QueryDashboard(DashboardsServiceQueryDashboardRequest) returns (DashboardsServiceQueryDashboardResponse) {}
 }
 
 message Dashboard {
@@ -193,4 +194,20 @@ message DashboardsServiceUpdateDisplayNameRequest {
 
 message DashboardsServiceUpdateDisplayNameResponse {
   Dashboard dashboard = 1;
+}
+
+message DashboardsServiceQueryDashboardRequest {
+  string dashboard_id = 1 [(buf.validate.field).required = true];
+  common.v1.TimeRange time_range_override = 2;
+  shared.insights.v1.Granularity granularity_override = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+message DashboardTileQueryResult {
+  string tile_id = 1 [(buf.validate.field).required = true];
+  shared.insights.v1.QueryResponse result = 2;
+  string error_message = 3;
+}
+
+message DashboardsServiceQueryDashboardResponse {
+  repeated DashboardTileQueryResult results = 1;
 }

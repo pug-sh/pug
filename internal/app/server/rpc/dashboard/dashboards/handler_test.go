@@ -105,6 +105,14 @@ func TestHandler_DeleteTile_Unauthenticated(t *testing.T) {
 	assertCode(t, err, connect.CodeUnauthenticated)
 }
 
+func TestHandler_QueryDashboard_Unauthenticated(t *testing.T) {
+	s := &Server{}
+	_, err := s.QueryDashboard(context.Background(), connect.NewRequest(&dashboardsv1.DashboardsServiceQueryDashboardRequest{
+		DashboardId: proto.String("x"),
+	}))
+	assertCode(t, err, connect.CodeUnauthenticated)
+}
+
 // ----- Service-error → connect.Code mapping (integration) ----------------
 //
 // The handler translates sentinels (ErrDashboardNotFound, ErrDashboardTileNotFound,
@@ -121,6 +129,19 @@ func TestHandler_Get_NotFound_MapsToCodeNotFound(t *testing.T) {
 
 	_, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
 		Id: proto.String("nonexistent_dashboard"),
+	}))
+	assertCode(t, err, connect.CodeNotFound)
+	assertReason(t, err, apperr.ReasonDashboardNotFound)
+}
+
+func TestHandler_QueryDashboard_NotFound_MapsToCodeNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, _ := newIntegrationServer(t)
+
+	_, err := s.QueryDashboard(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceQueryDashboardRequest{
+		DashboardId: proto.String("nonexistent_dashboard"),
 	}))
 	assertCode(t, err, connect.CodeNotFound)
 	assertReason(t, err, apperr.ReasonDashboardNotFound)
@@ -288,5 +309,5 @@ func newIntegrationServer(t *testing.T) (*Server, string, *coreprojects.Service)
 		t.Fatalf("insert project: %v", err)
 	}
 
-	return NewServer(svc), projectID, svc
+	return &Server{service: svc}, projectID, svc
 }

@@ -62,6 +62,8 @@ Dashboard insight tiles persist `QueryRequest.granularity` and expose `Dashboard
 
 Both fields are stored as dedicated range-checked `dashboard_tiles` `smallint` columns (not in the `insight_query` JSONB) and mirror the core `TileViewMode` / `TileDefaultTimeRange` enums in `internal/core/projects/dashboards.go`. `granularity`, the absolute `time_range`, breakdowns/group-by, and filters stay in `insight_query`. `UpdateTile` full-replaces `view_mode`/`default_time_range` (like `layouts` and `insight_query`), so a client must send them on every update or they reset to the insight defaults.
 
+`DashboardsService.QueryDashboard` loads stored insight tiles for a dashboard, resolves each tile's `default_time_range` preset (or applies optional request-level `time_range_override` / `granularity_override`), executes the effective query server-side, and returns `repeated DashboardTileQueryResult` keyed by `tile_id`. Markdown tiles are omitted. Per-tile failures populate `error_message` without failing the whole batch. Tile metadata stays on `Get`; this RPC returns analytics results only.
+
 ## Insights Filter Model
 
 - Top-level insights filters are **group-based only**. In `shared.insights.v1`, use `filter_groups` and `filter_groups_operator` on `QueryRequest` and `SegmentUsersRequest`.

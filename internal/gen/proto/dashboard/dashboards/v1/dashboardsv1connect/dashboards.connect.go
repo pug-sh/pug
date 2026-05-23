@@ -55,6 +55,9 @@ const (
 	// DashboardsServiceDeleteTileProcedure is the fully-qualified name of the DashboardsService's
 	// DeleteTile RPC.
 	DashboardsServiceDeleteTileProcedure = "/dashboard.dashboards.v1.DashboardsService/DeleteTile"
+	// DashboardsServiceQueryDashboardProcedure is the fully-qualified name of the DashboardsService's
+	// QueryDashboard RPC.
+	DashboardsServiceQueryDashboardProcedure = "/dashboard.dashboards.v1.DashboardsService/QueryDashboard"
 )
 
 // DashboardsServiceClient is a client for the dashboard.dashboards.v1.DashboardsService service.
@@ -67,6 +70,7 @@ type DashboardsServiceClient interface {
 	CreateTile(context.Context, *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error)
 	UpdateTile(context.Context, *connect.Request[v1.DashboardsServiceUpdateTileRequest]) (*connect.Response[v1.DashboardsServiceUpdateTileResponse], error)
 	DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error)
+	QueryDashboard(context.Context, *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error)
 }
 
 // NewDashboardsServiceClient constructs a client for the dashboard.dashboards.v1.DashboardsService
@@ -128,6 +132,12 @@ func NewDashboardsServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(dashboardsServiceMethods.ByName("DeleteTile")),
 			connect.WithClientOptions(opts...),
 		),
+		queryDashboard: connect.NewClient[v1.DashboardsServiceQueryDashboardRequest, v1.DashboardsServiceQueryDashboardResponse](
+			httpClient,
+			baseURL+DashboardsServiceQueryDashboardProcedure,
+			connect.WithSchema(dashboardsServiceMethods.ByName("QueryDashboard")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -141,6 +151,7 @@ type dashboardsServiceClient struct {
 	createTile        *connect.Client[v1.DashboardsServiceCreateTileRequest, v1.DashboardsServiceCreateTileResponse]
 	updateTile        *connect.Client[v1.DashboardsServiceUpdateTileRequest, v1.DashboardsServiceUpdateTileResponse]
 	deleteTile        *connect.Client[v1.DashboardsServiceDeleteTileRequest, v1.DashboardsServiceDeleteTileResponse]
+	queryDashboard    *connect.Client[v1.DashboardsServiceQueryDashboardRequest, v1.DashboardsServiceQueryDashboardResponse]
 }
 
 // Create calls dashboard.dashboards.v1.DashboardsService.Create.
@@ -183,6 +194,11 @@ func (c *dashboardsServiceClient) DeleteTile(ctx context.Context, req *connect.R
 	return c.deleteTile.CallUnary(ctx, req)
 }
 
+// QueryDashboard calls dashboard.dashboards.v1.DashboardsService.QueryDashboard.
+func (c *dashboardsServiceClient) QueryDashboard(ctx context.Context, req *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error) {
+	return c.queryDashboard.CallUnary(ctx, req)
+}
+
 // DashboardsServiceHandler is an implementation of the dashboard.dashboards.v1.DashboardsService
 // service.
 type DashboardsServiceHandler interface {
@@ -194,6 +210,7 @@ type DashboardsServiceHandler interface {
 	CreateTile(context.Context, *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error)
 	UpdateTile(context.Context, *connect.Request[v1.DashboardsServiceUpdateTileRequest]) (*connect.Response[v1.DashboardsServiceUpdateTileResponse], error)
 	DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error)
+	QueryDashboard(context.Context, *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error)
 }
 
 // NewDashboardsServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -251,6 +268,12 @@ func NewDashboardsServiceHandler(svc DashboardsServiceHandler, opts ...connect.H
 		connect.WithSchema(dashboardsServiceMethods.ByName("DeleteTile")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardsServiceQueryDashboardHandler := connect.NewUnaryHandler(
+		DashboardsServiceQueryDashboardProcedure,
+		svc.QueryDashboard,
+		connect.WithSchema(dashboardsServiceMethods.ByName("QueryDashboard")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dashboard.dashboards.v1.DashboardsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DashboardsServiceCreateProcedure:
@@ -269,6 +292,8 @@ func NewDashboardsServiceHandler(svc DashboardsServiceHandler, opts ...connect.H
 			dashboardsServiceUpdateTileHandler.ServeHTTP(w, r)
 		case DashboardsServiceDeleteTileProcedure:
 			dashboardsServiceDeleteTileHandler.ServeHTTP(w, r)
+		case DashboardsServiceQueryDashboardProcedure:
+			dashboardsServiceQueryDashboardHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -308,4 +333,8 @@ func (UnimplementedDashboardsServiceHandler) UpdateTile(context.Context, *connec
 
 func (UnimplementedDashboardsServiceHandler) DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.DeleteTile is not implemented"))
+}
+
+func (UnimplementedDashboardsServiceHandler) QueryDashboard(context.Context, *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.QueryDashboard is not implemented"))
 }

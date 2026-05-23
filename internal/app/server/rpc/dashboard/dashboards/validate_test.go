@@ -545,6 +545,27 @@ func TestUpdateTileRequest_RejectsOverMaxDisplayName(t *testing.T) {
 	}
 }
 
+func TestQueryDashboardRequest_AcceptsOverrides(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceQueryDashboardRequest{
+		DashboardId: proto.String("dash_123"),
+		TimeRangeOverride: &commonv1.TimeRange{
+			From: timestamppb.New(time.Now().Add(-24 * time.Hour)),
+			To:   timestamppb.New(time.Now()),
+		},
+		GranularityOverride: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}
+	if err := protovalidate.Validate(req); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestQueryDashboardRequest_RejectsMissingDashboardID(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceQueryDashboardRequest{}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for missing dashboard_id")
+	}
+}
+
 func validQueryRequest() *insightsv1.QueryRequest {
 	return &insightsv1.QueryRequest{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),

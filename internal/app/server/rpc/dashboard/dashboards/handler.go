@@ -7,8 +7,11 @@ import (
 
 	"connectrpc.com/connect"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
@@ -17,12 +20,22 @@ import (
 )
 
 type Server struct {
-	service *coreprojects.Service
+	service  *coreprojects.Service
+	executor *coreinsights.Executor
 	dashboardsv1connect.UnimplementedDashboardsServiceHandler
 }
 
-func NewServer(service *coreprojects.Service) *Server {
-	return &Server{service: service}
+func NewServer(service *coreprojects.Service, executor *coreinsights.Executor) *Server {
+	if service == nil {
+		panic("dashboards: service is nil")
+	}
+	if executor == nil {
+		panic("dashboards: executor is nil")
+	}
+	return &Server{
+		service:  service,
+		executor: executor,
+	}
 }
 
 // serviceErrToConnect maps a non-sentinel service error to a connect error.
@@ -301,4 +314,48 @@ func (s *Server) DeleteTile(
 	}
 
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceDeleteTileResponse{}), nil
+}
+
+func (s *Server) QueryDashboard(
+	ctx context.Context,
+	req *connect.Request[dashboardsv1.DashboardsServiceQueryDashboardRequest],
+) (*connect.Response[dashboardsv1.DashboardsServiceQueryDashboardResponse], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, rpc.ConnectCtxErr(err)
+	}
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	dashboard, err := s.service.GetDashboard(ctx, principal.Project.ID, req.Msg.GetDashboardId())
+	if err != nil {
+		if errors.Is(err, coreprojects.ErrDashboardNotFound) {
+			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetDashboardId()))
+		}
+		return nil, serviceErrToConnect(err)
+	}
+
+	overrides := coreprojects.DashboardQueryOverrides{
+		TimeRange:   req.Msg.GetTimeRangeOverride(),
+		Granularity: req.Msg.GetGranularityOverride(),
+	}
+	outcomes := coreprojects.QueryDashboardTiles(ctx, s.executor, dashboard, overrides)
+
+	results := make([]*dashboardsv1.DashboardTileQueryResult, 0, len(outcomes))
+	for _, outcome := range outcomes {
+		msg := &dashboardsv1.DashboardTileQueryResult{
+			TileId: proto.String(outcome.TileID),
+		}
+		if outcome.ErrorMessage != "" {
+			msg.ErrorMessage = proto.String(outcome.ErrorMessage)
+		} else {
+			msg.Result = outcome.Result
+		}
+		results = append(results, msg)
+	}
+
+	return connect.NewResponse(&dashboardsv1.DashboardsServiceQueryDashboardResponse{
+		Results: results,
+	}), nil
 }

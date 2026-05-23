@@ -159,39 +159,7 @@ func tileViewModeToRPC(kind coreprojects.TileKind, raw string) dashboardsv1.Dash
 }
 
 func tileDefaultTimeRangeToRPC(kind coreprojects.TileKind, raw string) commonv1.TimeRangePreset {
-	switch kind {
-	case coreprojects.TileKindInsight:
-		value, ok := commonv1.TimeRangePreset_value[raw]
-		if !ok {
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-		}
-		switch commonv1.TimeRangePreset(value) {
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS
-		default:
-			return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-		}
-	case coreprojects.TileKindMarkdown:
-		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED
-	default:
-		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED
-	}
+	return coreprojects.TileDefaultTimeRangePresetFromDB(kind, raw)
 }
 
 func tileContentFromCreateRPC(c any) (coreprojects.TileContent, error) {
