@@ -46,15 +46,27 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "iphone safari — browser, os, and device populated",
+			name: "iphone safari — browser normalized to Safari, mobile true",
 			ua:   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
 			want: Properties{
-				PropBrowser:        "Mobile Safari",
+				PropBrowser:        "Safari",
 				PropBrowserVersion: "17",
 				PropOS:             "iOS",
 				PropOSVersion:      "17.0",
 				PropDevice:         "iPhone",
 				PropMobile:         "true",
+			},
+		},
+		{
+			name: "ipad safari — tablet is not mobile, browser Safari",
+			ua:   "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+			want: Properties{
+				PropBrowser:        "Safari",
+				PropBrowserVersion: "17",
+				PropOS:             "iOS",
+				PropOSVersion:      "17.0",
+				PropDevice:         "iPad",
+				PropMobile:         "false",
 			},
 		},
 		{
@@ -67,6 +79,27 @@ func TestParse(t *testing.T) {
 				PropOSVersion:      "14",
 				PropDevice:         "Pixel 8",
 				PropMobile:         "true",
+			},
+		},
+		{
+			name: "firefox on ubuntu — distro folded to Linux",
+			ua:   "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0",
+			want: Properties{
+				PropBrowser:        "Firefox",
+				PropBrowserVersion: "126",
+				PropOS:             "Linux",
+				PropMobile:         "false",
+			},
+		},
+		{
+			name: "chrome os — not folded to Linux",
+			ua:   "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+			want: Properties{
+				PropBrowser:        "Google Chrome",
+				PropBrowserVersion: "124",
+				PropOS:             "Chrome OS",
+				PropOSVersion:      "14541.0.0",
+				PropMobile:         "false",
 			},
 		},
 		{
