@@ -35,7 +35,7 @@ func ExecuteQuery(
 
 	resp := &insightsv1.QueryResponse{}
 
-	switch req.GetInsightType() {
+	switch req.GetSpec().GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
 		q, err := BuildTrendsQuery(req, projectID)
 		if err != nil {
@@ -73,7 +73,7 @@ func ExecuteQuery(
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
 		var funnelRows []FunnelRow
 		var funnelProperties []string
-		if req.GetIncludeStepTiming() {
+		if req.GetSpec().GetIncludeStepTiming() {
 			q, err := BuildFunnelTimingQuery(req, projectID)
 			if err != nil {
 				slog.WarnContext(ctx, "failed to build funnel timing query", slogx.Error(err),
@@ -130,11 +130,11 @@ func ExecuteQuery(
 		}
 
 	default:
-		err := fmt.Errorf("unsupported insight type %s", req.GetInsightType().String())
+		err := fmt.Errorf("unsupported insight type %s", req.GetSpec().GetInsightType().String())
 		slog.ErrorContext(ctx, "unsupported insight type reached ExecuteQuery default",
 			slogx.Error(err),
 			slog.String("project_id", projectID),
-			slog.String("insight_type", req.GetInsightType().String()))
+			slog.String("insight_type", req.GetSpec().GetInsightType().String()))
 		telemetry.RecordError(ctx, err)
 		return nil, errors.New("query failed")
 	}
