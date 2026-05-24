@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	chcol "github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -61,9 +62,9 @@ func TestHandler_Get_Unauthenticated(t *testing.T) {
 	assertCode(t, err, connect.CodeUnauthenticated)
 }
 
-func TestHandler_UpdateDisplayName_Unauthenticated(t *testing.T) {
+func TestHandler_Update_Unauthenticated(t *testing.T) {
 	s := &Server{}
-	_, err := s.UpdateDisplayName(context.Background(), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateDisplayNameRequest{
+	_, err := s.Update(context.Background(), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateRequest{
 		Id:          proto.String("x"),
 		DisplayName: proto.String("y"),
 	}))
@@ -183,15 +184,16 @@ func TestHandler_QueryDashboard_ReturnsTrendResults(t *testing.T) {
 
 	seedDashboardQueryEvents(t, ctx, ch, projectID)
 
-	dashboard, err := svc.CreateDashboard(ctx, projectID, "Overview", "")
+	dashboard, err := svc.CreateDashboard(ctx, projectID, "Overview", "",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
 	if err != nil {
 		t.Fatalf("CreateDashboard: %v", err)
 	}
 
-	queryFrom := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	queryTo := time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)
-	insightQuery := &insightsv1.QueryRequest{
-		Spec: &insightsv1.InsightQuerySpec{
+	// The tile stores only what to measure; the window comes from the request
+	// override (the seeded events are in 2024, outside any "last N days" preset).
+	if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Page views", "",
+		coredashboards.InsightTile{Spec: &insightsv1.InsightQuerySpec{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 			Events: []*insightsv1.EventQuery{
 				{
@@ -199,37 +201,36 @@ func TestHandler_QueryDashboard_ReturnsTrendResults(t *testing.T) {
 					Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
 				},
 			},
-		},
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		TimeRange: &commonv1.TimeRange{
-			From: timestamppb.New(queryFrom),
-			To:   timestamppb.New(queryTo),
-		},
-	}
-	if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Page views", "",
-		coredashboards.InsightTile{Query: insightQuery},
+		}},
 		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS,
 		nil,
 	); err != nil {
 		t.Fatalf("CreateDashboardTile: %v", err)
 	}
 
+	queryFrom := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	queryTo := time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)
 	resp, err := s.QueryDashboard(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceQueryDashboardRequest{
 		DashboardId: proto.String(dashboard.ID),
+		TimeRange: &commonv1.TimeRange{
+			From: timestamppb.New(queryFrom),
+			To:   timestamppb.New(queryTo),
+		},
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 	}))
 	if err != nil {
 		t.Fatalf("QueryDashboard: %v", err)
 	}
-	if len(resp.Msg.GetResults()) != 1 {
-		t.Fatalf("results = %d, want 1", len(resp.Msg.GetResults()))
+	tiles := resp.Msg.GetDashboard().GetTiles()
+	if len(tiles) != 1 {
+		t.Fatalf("tiles = %d, want 1", len(tiles))
 	}
 
-	result := resp.Msg.GetResults()[0]
-	if result.GetErrorMessage() != "" {
-		t.Fatalf("unexpected tile error: %s", result.GetErrorMessage())
+	tile := tiles[0]
+	if tile.GetErrorMessage() != "" {
+		t.Fatalf("unexpected tile error: %s", tile.GetErrorMessage())
 	}
-	series := result.GetResult().GetTrends().GetSeries()
+	series := tile.GetResult().GetTrends().GetSeries()
 	if len(series) != 1 {
 		t.Fatalf("series = %d, want 1", len(series))
 	}
@@ -250,13 +251,13 @@ func TestHandler_Delete_NotFound_MapsToCodeNotFound(t *testing.T) {
 	assertCode(t, err, connect.CodeNotFound)
 }
 
-func TestHandler_UpdateDisplayName_NotFound_MapsToCodeNotFound(t *testing.T) {
+func TestHandler_Update_NotFound_MapsToCodeNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
 	s, projectID, _ := newIntegrationServer(t)
 
-	_, err := s.UpdateDisplayName(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateDisplayNameRequest{
+	_, err := s.Update(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateRequest{
 		Id:          proto.String("nonexistent_dashboard"),
 		DisplayName: proto.String("renamed"),
 	}))
@@ -285,7 +286,8 @@ func TestHandler_CreateTile_DisplayNameConflict_MapsToCodeAlreadyExists(t *testi
 	}
 	s, projectID, svc := newIntegrationServer(t)
 
-	dashboard, err := svc.CreateDashboard(context.Background(), projectID, "Conflict Dashboard", "")
+	dashboard, err := svc.CreateDashboard(context.Background(), projectID, "Conflict Dashboard", "",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, insightsv1.Granularity_GRANULARITY_UNSPECIFIED)
 	if err != nil {
 		t.Fatalf("CreateDashboard: %v", err)
 	}
@@ -294,7 +296,6 @@ func TestHandler_CreateTile_DisplayNameConflict_MapsToCodeAlreadyExists(t *testi
 	if _, err := svc.CreateDashboardTile(context.Background(), projectID, dashboard.ID, "Same Name", "",
 		coredashboards.MarkdownTile{Body: "first"},
 		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 		nil); err != nil {
 		t.Fatalf("first tile: %v", err)
 	}
@@ -427,7 +428,7 @@ func seedDashboardQueryEvents(t *testing.T, ctx context.Context, ch *testutil.Te
 		if err != nil {
 			t.Fatalf("PrepareBatch: %v", err)
 		}
-		if err := batch.Append(projectID, uuid.New().String(), "page_view", e.user, occurTime, map[string]any{}); err != nil {
+		if err := batch.Append(projectID, uuid.New().String(), "page_view", e.user, occurTime, map[string]chcol.Variant{}); err != nil {
 			t.Fatalf("Append: %v", err)
 		}
 		if err := batch.Send(); err != nil {

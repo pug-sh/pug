@@ -9,7 +9,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
-	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -25,13 +24,15 @@ func roDashboardToRPC(dashboard coredashboards.DashboardWithTiles) (*dashboardsv
 		tiles = append(tiles, msg)
 	}
 	return &dashboardsv1.Dashboard{
-		Id:          proto.String(dashboard.Dashboard.ID),
-		ProjectId:   proto.String(dashboard.Dashboard.ProjectID),
-		DisplayName: proto.String(dashboard.Dashboard.DisplayName),
-		Description: proto.String(dashboard.Dashboard.Description),
-		CreateTime:  toTimestamp(dashboard.Dashboard.CreateTime.Time),
-		UpdateTime:  toTimestamp(dashboard.Dashboard.UpdateTime.Time),
-		Tiles:       tiles,
+		Id:                 proto.String(dashboard.Dashboard.ID),
+		ProjectId:          proto.String(dashboard.Dashboard.ProjectID),
+		DisplayName:        proto.String(dashboard.Dashboard.DisplayName),
+		Description:        proto.String(dashboard.Dashboard.Description),
+		CreateTime:         toTimestamp(dashboard.Dashboard.CreateTime.Time),
+		UpdateTime:         toTimestamp(dashboard.Dashboard.UpdateTime.Time),
+		Tiles:              tiles,
+		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(dashboard.Dashboard.DefaultTimeRange).Enum(),
+		DefaultGranularity: coredashboards.DashboardGranularityFromDB(dashboard.Dashboard.DefaultGranularity).Enum(),
 	}, nil
 }
 
@@ -39,13 +40,43 @@ func roDashboardToRPC(dashboard coredashboards.DashboardWithTiles) (*dashboardsv
 // intentionally absent — a brand-new dashboard has no tiles.
 func wDashboardToRPC(dashboard dbwrite.Dashboard) *dashboardsv1.Dashboard {
 	return &dashboardsv1.Dashboard{
-		Id:          proto.String(dashboard.ID),
-		ProjectId:   proto.String(dashboard.ProjectID),
-		DisplayName: proto.String(dashboard.DisplayName),
-		Description: proto.String(dashboard.Description),
-		CreateTime:  toTimestamp(dashboard.CreateTime.Time),
-		UpdateTime:  toTimestamp(dashboard.UpdateTime.Time),
+		Id:                 proto.String(dashboard.ID),
+		ProjectId:          proto.String(dashboard.ProjectID),
+		DisplayName:        proto.String(dashboard.DisplayName),
+		Description:        proto.String(dashboard.Description),
+		CreateTime:         toTimestamp(dashboard.CreateTime.Time),
+		UpdateTime:         toTimestamp(dashboard.UpdateTime.Time),
+		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(dashboard.DefaultTimeRange).Enum(),
+		DefaultGranularity: coredashboards.DashboardGranularityFromDB(dashboard.DefaultGranularity).Enum(),
 	}
+}
+
+func renderedDashboardToRPC(rd coredashboards.RenderedDashboard) (*dashboardsv1.RenderedDashboard, error) {
+	tiles := make([]*dashboardsv1.RenderedTile, 0, len(rd.Tiles))
+	for _, rt := range rd.Tiles {
+		tileMsg, err := roTileToRPC(rt.Tile)
+		if err != nil {
+			return nil, err
+		}
+		msg := &dashboardsv1.RenderedTile{Tile: tileMsg}
+		switch {
+		case rt.ErrorMessage != "":
+			msg.Outcome = &dashboardsv1.RenderedTile_ErrorMessage{ErrorMessage: rt.ErrorMessage}
+		case rt.Result != nil:
+			msg.Outcome = &dashboardsv1.RenderedTile_Result{Result: rt.Result}
+		}
+		tiles = append(tiles, msg)
+	}
+	return &dashboardsv1.RenderedDashboard{
+		Id:                 proto.String(rd.Dashboard.ID),
+		DisplayName:        proto.String(rd.Dashboard.DisplayName),
+		Description:        proto.String(rd.Dashboard.Description),
+		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(rd.Dashboard.DefaultTimeRange).Enum(),
+		DefaultGranularity: coredashboards.DashboardGranularityFromDB(rd.Dashboard.DefaultGranularity).Enum(),
+		CreateTime:         toTimestamp(rd.Dashboard.CreateTime.Time),
+		UpdateTime:         toTimestamp(rd.Dashboard.UpdateTime.Time),
+		Tiles:              tiles,
+	}, nil
 }
 
 func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error) {
@@ -62,10 +93,6 @@ func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error)
 		CreateTime:  toTimestamp(tile.CreateTime.Time),
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
 		ViewMode:    tileViewModeToRPC(coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
-		DefaultTimeRange: tileDefaultTimeRangeToRPC(
-			coredashboards.TileKind(tile.Kind),
-			tile.DefaultTimeRange,
-		).Enum(),
 	}
 	if err := setTileContent(msg, tile.ID, coredashboards.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
@@ -87,10 +114,6 @@ func wTileToRPC(tile dbwrite.DashboardTile) (*dashboardsv1.DashboardTile, error)
 		CreateTime:  toTimestamp(tile.CreateTime.Time),
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
 		ViewMode:    tileViewModeToRPC(coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
-		DefaultTimeRange: tileDefaultTimeRangeToRPC(
-			coredashboards.TileKind(tile.Kind),
-			tile.DefaultTimeRange,
-		).Enum(),
 	}
 	if err := setTileContent(msg, tile.ID, coredashboards.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
@@ -109,12 +132,12 @@ func setTileContent(msg *dashboardsv1.DashboardTile, tileID string, kind coredas
 		if len(insightQuery) == 0 {
 			return fmt.Errorf("tile %s: insight tile row missing query", tileID)
 		}
-		query, err := coredashboards.MapToQueryMessage(insightQuery)
+		spec, err := coredashboards.MapToSpecMessage(insightQuery)
 		if err != nil {
 			return err
 		}
 		msg.Content = &dashboardsv1.DashboardTile_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Query: query},
+			Insight: &dashboardsv1.InsightTileContent{Spec: spec},
 		}
 		return nil
 	case coredashboards.TileKindMarkdown:
@@ -158,14 +181,10 @@ func tileViewModeToRPC(kind coredashboards.TileKind, raw string) dashboardsv1.Da
 	}
 }
 
-func tileDefaultTimeRangeToRPC(kind coredashboards.TileKind, raw string) commonv1.TimeRangePreset {
-	return coredashboards.TileDefaultTimeRangePresetFromDB(kind, raw)
-}
-
 func tileContentFromCreateRPC(c any) (coredashboards.TileContent, error) {
 	switch v := c.(type) {
 	case *dashboardsv1.DashboardsServiceCreateTileRequest_Insight:
-		return coredashboards.InsightTile{Query: v.Insight.GetQuery()}, nil
+		return coredashboards.InsightTile{Spec: v.Insight.GetSpec()}, nil
 	case *dashboardsv1.DashboardsServiceCreateTileRequest_Markdown:
 		return coredashboards.MarkdownTile{Body: v.Markdown.GetBody()}, nil
 	default:
@@ -176,7 +195,7 @@ func tileContentFromCreateRPC(c any) (coredashboards.TileContent, error) {
 func tileContentFromUpdateRPC(c any) (coredashboards.TileContent, error) {
 	switch v := c.(type) {
 	case *dashboardsv1.DashboardsServiceUpdateTileRequest_Insight:
-		return coredashboards.InsightTile{Query: v.Insight.GetQuery()}, nil
+		return coredashboards.InsightTile{Spec: v.Insight.GetSpec()}, nil
 	case *dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown:
 		return coredashboards.MarkdownTile{Body: v.Markdown.GetBody()}, nil
 	default:

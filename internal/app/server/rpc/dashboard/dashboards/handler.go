@@ -7,12 +7,10 @@ import (
 
 	"connectrpc.com/connect"
 
-	"google.golang.org/protobuf/proto"
-
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
-	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
+	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
@@ -62,7 +60,7 @@ func (s *Server) Create(
 		return nil, err
 	}
 
-	dashboard, err := s.service.CreateDashboard(ctx, principal.Project.ID, req.Msg.GetDisplayName(), req.Msg.GetDescription())
+	dashboard, err := s.service.CreateDashboard(ctx, principal.Project.ID, req.Msg.GetDisplayName(), req.Msg.GetDescription(), req.Msg.GetDefaultTimeRange(), req.Msg.GetDefaultGranularity())
 	if err != nil {
 		return nil, serviceErrToConnect(err)
 	}
@@ -133,10 +131,10 @@ func (s *Server) Get(
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceGetResponse{Dashboard: msg}), nil
 }
 
-func (s *Server) UpdateDisplayName(
+func (s *Server) Update(
 	ctx context.Context,
-	req *connect.Request[dashboardsv1.DashboardsServiceUpdateDisplayNameRequest],
-) (*connect.Response[dashboardsv1.DashboardsServiceUpdateDisplayNameResponse], error) {
+	req *connect.Request[dashboardsv1.DashboardsServiceUpdateRequest],
+) (*connect.Response[dashboardsv1.DashboardsServiceUpdateResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, rpc.ConnectCtxErr(err)
 	}
@@ -145,7 +143,7 @@ func (s *Server) UpdateDisplayName(
 		return nil, err
 	}
 
-	dashboard, err := s.service.UpdateDashboardDisplayName(ctx, principal.Project.ID, req.Msg.GetId(), req.Msg.GetDisplayName(), req.Msg.GetDescription())
+	dashboard, err := s.service.UpdateDashboard(ctx, principal.Project.ID, req.Msg.GetId(), req.Msg.GetDisplayName(), req.Msg.GetDescription(), req.Msg.GetDefaultTimeRange(), req.Msg.GetDefaultGranularity())
 	if err != nil {
 		if errors.Is(err, coredashboards.ErrDashboardNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetId()))
@@ -160,7 +158,7 @@ func (s *Server) UpdateDisplayName(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&dashboardsv1.DashboardsServiceUpdateDisplayNameResponse{Dashboard: msg}), nil
+	return connect.NewResponse(&dashboardsv1.DashboardsServiceUpdateResponse{Dashboard: msg}), nil
 }
 
 func (s *Server) Delete(
@@ -211,7 +209,6 @@ func (s *Server) CreateTile(
 		req.Msg.GetDescription(),
 		content,
 		req.Msg.GetViewMode(),
-		req.Msg.GetDefaultTimeRange(),
 		req.Msg.GetLayouts(),
 	)
 	if err != nil {
@@ -266,7 +263,6 @@ func (s *Server) UpdateTile(
 		req.Msg.GetDescription(),
 		content,
 		req.Msg.GetViewMode(),
-		req.Msg.GetDefaultTimeRange(),
 		req.Msg.GetLayouts(),
 	)
 	if err != nil {
@@ -337,29 +333,20 @@ func (s *Server) QueryDashboard(
 	}
 
 	overrides := coredashboards.DashboardQueryOverrides{
-		TimeRange:   req.Msg.GetTimeRangeOverride(),
-		Granularity: req.Msg.GetGranularityOverride(),
+		TimeRange:   req.Msg.GetTimeRange(),
+		Granularity: req.Msg.GetGranularity(),
 	}
-	outcomes := coredashboards.QueryDashboardTiles(ctx, s.executor, dashboard, overrides)
+	rendered := coredashboards.RenderDashboard(ctx, s.executor, dashboard, overrides)
 
-	results := make([]*dashboardsv1.DashboardTileQueryResult, 0, len(outcomes))
-	for _, outcome := range outcomes {
-		msg := &dashboardsv1.DashboardTileQueryResult{
-			TileId: proto.String(outcome.TileID),
-		}
-		if outcome.ErrorMessage != "" {
-			msg.Outcome = &dashboardsv1.DashboardTileQueryResult_ErrorMessage{
-				ErrorMessage: outcome.ErrorMessage,
-			}
-		} else {
-			msg.Outcome = &dashboardsv1.DashboardTileQueryResult_Result{
-				Result: outcome.Result,
-			}
-		}
-		results = append(results, msg)
+	msg, err := renderedDashboardToRPC(rendered)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to encode rendered dashboard",
+			slogx.Error(err), slog.String("dashboard_id", req.Msg.GetDashboardId()))
+		telemetry.RecordError(ctx, err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceQueryDashboardResponse{
-		Results: results,
+		Dashboard: msg,
 	}), nil
 }
