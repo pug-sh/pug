@@ -43,9 +43,9 @@ const (
 	DashboardsServiceGetProcedure = "/dashboard.dashboards.v1.DashboardsService/Get"
 	// DashboardsServiceListProcedure is the fully-qualified name of the DashboardsService's List RPC.
 	DashboardsServiceListProcedure = "/dashboard.dashboards.v1.DashboardsService/List"
-	// DashboardsServiceUpdateDisplayNameProcedure is the fully-qualified name of the
-	// DashboardsService's UpdateDisplayName RPC.
-	DashboardsServiceUpdateDisplayNameProcedure = "/dashboard.dashboards.v1.DashboardsService/UpdateDisplayName"
+	// DashboardsServiceUpdateProcedure is the fully-qualified name of the DashboardsService's Update
+	// RPC.
+	DashboardsServiceUpdateProcedure = "/dashboard.dashboards.v1.DashboardsService/Update"
 	// DashboardsServiceCreateTileProcedure is the fully-qualified name of the DashboardsService's
 	// CreateTile RPC.
 	DashboardsServiceCreateTileProcedure = "/dashboard.dashboards.v1.DashboardsService/CreateTile"
@@ -66,7 +66,7 @@ type DashboardsServiceClient interface {
 	Delete(context.Context, *connect.Request[v1.DashboardsServiceDeleteRequest]) (*connect.Response[v1.DashboardsServiceDeleteResponse], error)
 	Get(context.Context, *connect.Request[v1.DashboardsServiceGetRequest]) (*connect.Response[v1.DashboardsServiceGetResponse], error)
 	List(context.Context, *connect.Request[v1.DashboardsServiceListRequest]) (*connect.Response[v1.DashboardsServiceListResponse], error)
-	UpdateDisplayName(context.Context, *connect.Request[v1.DashboardsServiceUpdateDisplayNameRequest]) (*connect.Response[v1.DashboardsServiceUpdateDisplayNameResponse], error)
+	Update(context.Context, *connect.Request[v1.DashboardsServiceUpdateRequest]) (*connect.Response[v1.DashboardsServiceUpdateResponse], error)
 	CreateTile(context.Context, *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error)
 	UpdateTile(context.Context, *connect.Request[v1.DashboardsServiceUpdateTileRequest]) (*connect.Response[v1.DashboardsServiceUpdateTileResponse], error)
 	DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error)
@@ -108,10 +108,10 @@ func NewDashboardsServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(dashboardsServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
-		updateDisplayName: connect.NewClient[v1.DashboardsServiceUpdateDisplayNameRequest, v1.DashboardsServiceUpdateDisplayNameResponse](
+		update: connect.NewClient[v1.DashboardsServiceUpdateRequest, v1.DashboardsServiceUpdateResponse](
 			httpClient,
-			baseURL+DashboardsServiceUpdateDisplayNameProcedure,
-			connect.WithSchema(dashboardsServiceMethods.ByName("UpdateDisplayName")),
+			baseURL+DashboardsServiceUpdateProcedure,
+			connect.WithSchema(dashboardsServiceMethods.ByName("Update")),
 			connect.WithClientOptions(opts...),
 		),
 		createTile: connect.NewClient[v1.DashboardsServiceCreateTileRequest, v1.DashboardsServiceCreateTileResponse](
@@ -143,15 +143,15 @@ func NewDashboardsServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // dashboardsServiceClient implements DashboardsServiceClient.
 type dashboardsServiceClient struct {
-	create            *connect.Client[v1.DashboardsServiceCreateRequest, v1.DashboardsServiceCreateResponse]
-	delete            *connect.Client[v1.DashboardsServiceDeleteRequest, v1.DashboardsServiceDeleteResponse]
-	get               *connect.Client[v1.DashboardsServiceGetRequest, v1.DashboardsServiceGetResponse]
-	list              *connect.Client[v1.DashboardsServiceListRequest, v1.DashboardsServiceListResponse]
-	updateDisplayName *connect.Client[v1.DashboardsServiceUpdateDisplayNameRequest, v1.DashboardsServiceUpdateDisplayNameResponse]
-	createTile        *connect.Client[v1.DashboardsServiceCreateTileRequest, v1.DashboardsServiceCreateTileResponse]
-	updateTile        *connect.Client[v1.DashboardsServiceUpdateTileRequest, v1.DashboardsServiceUpdateTileResponse]
-	deleteTile        *connect.Client[v1.DashboardsServiceDeleteTileRequest, v1.DashboardsServiceDeleteTileResponse]
-	queryDashboard    *connect.Client[v1.DashboardsServiceQueryDashboardRequest, v1.DashboardsServiceQueryDashboardResponse]
+	create         *connect.Client[v1.DashboardsServiceCreateRequest, v1.DashboardsServiceCreateResponse]
+	delete         *connect.Client[v1.DashboardsServiceDeleteRequest, v1.DashboardsServiceDeleteResponse]
+	get            *connect.Client[v1.DashboardsServiceGetRequest, v1.DashboardsServiceGetResponse]
+	list           *connect.Client[v1.DashboardsServiceListRequest, v1.DashboardsServiceListResponse]
+	update         *connect.Client[v1.DashboardsServiceUpdateRequest, v1.DashboardsServiceUpdateResponse]
+	createTile     *connect.Client[v1.DashboardsServiceCreateTileRequest, v1.DashboardsServiceCreateTileResponse]
+	updateTile     *connect.Client[v1.DashboardsServiceUpdateTileRequest, v1.DashboardsServiceUpdateTileResponse]
+	deleteTile     *connect.Client[v1.DashboardsServiceDeleteTileRequest, v1.DashboardsServiceDeleteTileResponse]
+	queryDashboard *connect.Client[v1.DashboardsServiceQueryDashboardRequest, v1.DashboardsServiceQueryDashboardResponse]
 }
 
 // Create calls dashboard.dashboards.v1.DashboardsService.Create.
@@ -174,9 +174,9 @@ func (c *dashboardsServiceClient) List(ctx context.Context, req *connect.Request
 	return c.list.CallUnary(ctx, req)
 }
 
-// UpdateDisplayName calls dashboard.dashboards.v1.DashboardsService.UpdateDisplayName.
-func (c *dashboardsServiceClient) UpdateDisplayName(ctx context.Context, req *connect.Request[v1.DashboardsServiceUpdateDisplayNameRequest]) (*connect.Response[v1.DashboardsServiceUpdateDisplayNameResponse], error) {
-	return c.updateDisplayName.CallUnary(ctx, req)
+// Update calls dashboard.dashboards.v1.DashboardsService.Update.
+func (c *dashboardsServiceClient) Update(ctx context.Context, req *connect.Request[v1.DashboardsServiceUpdateRequest]) (*connect.Response[v1.DashboardsServiceUpdateResponse], error) {
+	return c.update.CallUnary(ctx, req)
 }
 
 // CreateTile calls dashboard.dashboards.v1.DashboardsService.CreateTile.
@@ -206,7 +206,7 @@ type DashboardsServiceHandler interface {
 	Delete(context.Context, *connect.Request[v1.DashboardsServiceDeleteRequest]) (*connect.Response[v1.DashboardsServiceDeleteResponse], error)
 	Get(context.Context, *connect.Request[v1.DashboardsServiceGetRequest]) (*connect.Response[v1.DashboardsServiceGetResponse], error)
 	List(context.Context, *connect.Request[v1.DashboardsServiceListRequest]) (*connect.Response[v1.DashboardsServiceListResponse], error)
-	UpdateDisplayName(context.Context, *connect.Request[v1.DashboardsServiceUpdateDisplayNameRequest]) (*connect.Response[v1.DashboardsServiceUpdateDisplayNameResponse], error)
+	Update(context.Context, *connect.Request[v1.DashboardsServiceUpdateRequest]) (*connect.Response[v1.DashboardsServiceUpdateResponse], error)
 	CreateTile(context.Context, *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error)
 	UpdateTile(context.Context, *connect.Request[v1.DashboardsServiceUpdateTileRequest]) (*connect.Response[v1.DashboardsServiceUpdateTileResponse], error)
 	DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error)
@@ -244,10 +244,10 @@ func NewDashboardsServiceHandler(svc DashboardsServiceHandler, opts ...connect.H
 		connect.WithSchema(dashboardsServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardsServiceUpdateDisplayNameHandler := connect.NewUnaryHandler(
-		DashboardsServiceUpdateDisplayNameProcedure,
-		svc.UpdateDisplayName,
-		connect.WithSchema(dashboardsServiceMethods.ByName("UpdateDisplayName")),
+	dashboardsServiceUpdateHandler := connect.NewUnaryHandler(
+		DashboardsServiceUpdateProcedure,
+		svc.Update,
+		connect.WithSchema(dashboardsServiceMethods.ByName("Update")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dashboardsServiceCreateTileHandler := connect.NewUnaryHandler(
@@ -284,8 +284,8 @@ func NewDashboardsServiceHandler(svc DashboardsServiceHandler, opts ...connect.H
 			dashboardsServiceGetHandler.ServeHTTP(w, r)
 		case DashboardsServiceListProcedure:
 			dashboardsServiceListHandler.ServeHTTP(w, r)
-		case DashboardsServiceUpdateDisplayNameProcedure:
-			dashboardsServiceUpdateDisplayNameHandler.ServeHTTP(w, r)
+		case DashboardsServiceUpdateProcedure:
+			dashboardsServiceUpdateHandler.ServeHTTP(w, r)
 		case DashboardsServiceCreateTileProcedure:
 			dashboardsServiceCreateTileHandler.ServeHTTP(w, r)
 		case DashboardsServiceUpdateTileProcedure:
@@ -319,8 +319,8 @@ func (UnimplementedDashboardsServiceHandler) List(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.List is not implemented"))
 }
 
-func (UnimplementedDashboardsServiceHandler) UpdateDisplayName(context.Context, *connect.Request[v1.DashboardsServiceUpdateDisplayNameRequest]) (*connect.Response[v1.DashboardsServiceUpdateDisplayNameResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.UpdateDisplayName is not implemented"))
+func (UnimplementedDashboardsServiceHandler) Update(context.Context, *connect.Request[v1.DashboardsServiceUpdateRequest]) (*connect.Response[v1.DashboardsServiceUpdateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.Update is not implemented"))
 }
 
 func (UnimplementedDashboardsServiceHandler) CreateTile(context.Context, *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error) {
