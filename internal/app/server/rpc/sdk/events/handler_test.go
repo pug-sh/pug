@@ -185,10 +185,11 @@ func assertProps(t *testing.T, event *eventsv1.Event, want map[string]string) {
 
 func TestEnrichUserAgent(t *testing.T) {
 	chromeProps := map[string]string{
-		useragent.PropBrowser:        "Chrome",
+		useragent.PropBrowser:        "Google Chrome",
 		useragent.PropBrowserVersion: "118",
 		useragent.PropOS:             "Windows",
 		useragent.PropOSVersion:      "10",
+		useragent.PropMobile:         "false",
 	}
 
 	tests := []struct {
@@ -221,10 +222,11 @@ func TestEnrichUserAgent(t *testing.T) {
 			events:   []*eventsv1.Event{{AutoProperties: propMap(map[string]string{"$custom": "value"})}},
 			want: map[string]string{
 				"$custom":                    "value",
-				useragent.PropBrowser:        "Chrome",
+				useragent.PropBrowser:        "Google Chrome",
 				useragent.PropBrowserVersion: "118",
 				useragent.PropOS:             "Windows",
 				useragent.PropOSVersion:      "10",
+				useragent.PropMobile:         "false",
 			},
 		},
 		{
@@ -235,9 +237,10 @@ func TestEnrichUserAgent(t *testing.T) {
 			want: map[string]string{
 				useragent.PropDevice:         "Mobile", // client value preserved
 				useragent.PropOS:             "iOS",    // client value preserved
-				useragent.PropBrowser:        "Chrome",
+				useragent.PropBrowser:        "Google Chrome",
 				useragent.PropBrowserVersion: "118",
 				useragent.PropOSVersion:      "10",
+				useragent.PropMobile:         "false",
 			},
 		},
 	}
@@ -480,9 +483,10 @@ func TestEnrichGeoAndUserAgentAndBotScore(t *testing.T) {
 		geo.PropCity:    "San Francisco",
 		// UA props (skip existing keys — client-supplied OS preserved).
 		useragent.PropOS:             "iOS",
-		useragent.PropBrowser:        "Chrome",
+		useragent.PropBrowser:        "Google Chrome",
 		useragent.PropBrowserVersion: "118",
 		useragent.PropOSVersion:      "10",
+		useragent.PropMobile:         "false",
 		// Bot management (CDN headers overwrite client-supplied values).
 		"$bot_score":    "5",
 		"$verified_bot": "false",
