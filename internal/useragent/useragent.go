@@ -35,33 +35,21 @@ func NewParser() (*Parser, error) {
 	return &Parser{parser: p}, nil
 }
 
-// Parse extracts browser, OS, and device properties from User-Agent Client Hints
-// request headers when present, then fills any remaining gaps from the User-Agent
-// header using ua-parser with values normalized to match the web SDK's UA-CH shape.
-// Returns nil if the receiver is nil or no properties could be resolved.
+// Parse extracts browser, OS, and device properties from the User-Agent request
+// header using ua-parser, normalizing names and versions to match the web SDK's
+// navigator.userAgentData shape (e.g. "Google Chrome", "macOS"). It is the server-side
+// fallback for browsers that do not expose navigator.userAgentData — Firefox, Safari,
+// and all iOS browsers — which send no Client Hints; for Chromium browsers the SDK
+// supplies these properties directly and they take precedence during enrichment.
+// Returns nil if the receiver is nil, the User-Agent header is absent, or the
+// user-agent string cannot be meaningfully parsed.
 func (p *Parser) Parse(h http.Header) Properties {
 	if p == nil {
 		return nil
 	}
-
-	props := parseClientHints(h)
-
 	uaStr := h.Get("User-Agent")
-	if uaStr != "" {
-		uaProps := propertiesFromUAParser(p.parser.Parse(uaStr), uaStr)
-		if props == nil {
-			props = uaProps
-		} else {
-			for k, v := range uaProps {
-				if _, exists := props[k]; !exists {
-					props[k] = v
-				}
-			}
-		}
-	}
-
-	if len(props) == 0 {
+	if uaStr == "" {
 		return nil
 	}
-	return props
+	return propertiesFromUAParser(p.parser.Parse(uaStr), uaStr)
 }
