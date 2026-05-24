@@ -14,6 +14,7 @@ const (
 	PropOS             = "$os"
 	PropOSVersion      = "$osVersion"
 	PropDevice         = "$device"
+	PropMobile         = "$mobile"
 )
 
 // Properties is a set of user-agent properties resolved for a request.
@@ -34,9 +35,14 @@ func NewParser() (*Parser, error) {
 	return &Parser{parser: p}, nil
 }
 
-// Parse extracts browser, OS, and device properties from the User-Agent request header.
-// Returns nil if the receiver is nil, the header is absent, or the user-agent string
-// cannot be meaningfully parsed.
+// Parse extracts browser, OS, and device properties from the User-Agent request
+// header using ua-parser, normalizing names and versions to match the web SDK's
+// navigator.userAgentData shape (e.g. "Google Chrome", "macOS"). It is the server-side
+// fallback for browsers that do not expose navigator.userAgentData — Firefox, Safari,
+// and all iOS browsers — which send no Client Hints; for Chromium browsers the SDK
+// supplies these properties directly and they take precedence during enrichment.
+// Returns nil if the receiver is nil, the User-Agent header is absent, or the
+// user-agent string cannot be meaningfully parsed.
 func (p *Parser) Parse(h http.Header) Properties {
 	if p == nil {
 		return nil
@@ -45,29 +51,5 @@ func (p *Parser) Parse(h http.Header) Properties {
 	if uaStr == "" {
 		return nil
 	}
-
-	client := p.parser.Parse(uaStr)
-
-	props := make(Properties, 5)
-	if client.UserAgent.Family != "" && client.UserAgent.Family != "Other" {
-		props[PropBrowser] = client.UserAgent.Family
-		if client.UserAgent.Major != "" {
-			props[PropBrowserVersion] = client.UserAgent.Major
-		}
-	}
-	if client.Os.Family != "" && client.Os.Family != "Other" {
-		props[PropOS] = client.Os.Family
-		if client.Os.Major != "" {
-			props[PropOSVersion] = client.Os.Major
-		}
-	}
-	if client.Device.Family != "" && client.Device.Family != "Other" {
-		props[PropDevice] = client.Device.Family
-	}
-
-	if len(props) == 0 {
-		return nil
-	}
-
-	return props
+	return propertiesFromUAParser(p.parser.Parse(uaStr), uaStr)
 }
