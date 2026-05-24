@@ -577,14 +577,16 @@ func TestDashboardTileQueryResult_RejectsMissingOutcome(t *testing.T) {
 
 func validQueryRequest() *insightsv1.QueryRequest {
 	return &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
+			},
+		},
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 		TimeRange: &commonv1.TimeRange{
 			From: timestamppb.New(time.Now().Add(-24 * time.Hour)),
 			To:   timestamppb.New(time.Now()),
-		},
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
 		},
 	}
 }

@@ -98,7 +98,7 @@ func queryDashboardTile(
 	if err != nil {
 		return tileQueryClientError(ctx, tile.ID, err.Error())
 	}
-	if len(storedQuery.GetEvents()) == 0 {
+	if len(storedQuery.GetSpec().GetEvents()) == 0 {
 		return tileQueryClientError(ctx, tile.ID, "tile query requires at least one event")
 	}
 

@@ -97,7 +97,9 @@ func TestQuery_UnsupportedInsightType(t *testing.T) {
 	s := &server{executor: &coreinsights.Executor{}}
 	driftedType := insightsv1.InsightType(999)
 	_, err := s.Query(ctx, connect.NewRequest(&insightsv1.QueryRequest{
-		InsightType: &driftedType,
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: &driftedType,
+		},
 	}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -118,11 +120,13 @@ func TestQuery_InvalidBuildError(t *testing.T) {
 	s := &server{executor: &coreinsights.Executor{}}
 	insightType := insightsv1.InsightType_INSIGHT_TYPE_TRENDS
 	_, err := s.Query(ctx, connect.NewRequest(&insightsv1.QueryRequest{
-		InsightType: &insightType,
-		// A filter group with no filters triggers "group must contain at least one filter"
-		// inside buildSingleFilterGroupCondition — this exercises the slog.WarnContext +
-		// apperr.Invalid(ReasonInvalidInsightQuery, ...) path.
-		FilterGroups: []*insightsv1.FilterGroup{{}},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: &insightType,
+			// A filter group with no filters triggers "group must contain at least one filter"
+			// inside buildSingleFilterGroupCondition — this exercises the slog.WarnContext +
+			// apperr.Invalid(ReasonInvalidInsightQuery, ...) path.
+			FilterGroups: []*insightsv1.FilterGroup{{}},
+		},
 	}))
 	if err == nil {
 		t.Fatal("expected error, got nil")

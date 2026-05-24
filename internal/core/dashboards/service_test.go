@@ -73,14 +73,16 @@ func TestDashboardsService(t *testing.T) {
 		}
 
 		insightQuery := &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
+				},
+			},
 			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Now().Add(-24 * time.Hour)),
 				To:   timestamppb.New(time.Now()),
-			},
-			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
 			},
 		}
 
@@ -190,14 +192,16 @@ func TestDashboardsService(t *testing.T) {
 
 		updatedInsight, err := svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, createdInsight.ID, "Activated Users", "Tracks activation volume",
 			dashboards.InsightTile{Query: &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{Event: &commonv1.EventFilter{Kind: proto.String("activated")}},
+					},
+				},
 				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 				TimeRange: &commonv1.TimeRange{
 					From: timestamppb.New(time.Now().Add(-7 * 24 * time.Hour)),
 					To:   timestamppb.New(time.Now()),
-				},
-				Events: []*insightsv1.EventQuery{
-					{Event: &commonv1.EventFilter{Kind: proto.String("activated")}},
 				},
 			}},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA,
@@ -258,14 +262,16 @@ func TestDashboardsService(t *testing.T) {
 
 		tile, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Initially Insight", "",
 			dashboards.InsightTile{Query: &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
+					},
+				},
 				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 				TimeRange: &commonv1.TimeRange{
 					From: timestamppb.New(time.Now().Add(-24 * time.Hour)),
 					To:   timestamppb.New(time.Now()),
-				},
-				Events: []*insightsv1.EventQuery{
-					{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
 				},
 			}},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
@@ -642,4 +648,3 @@ func tileByID(t *testing.T, tiles []dbread.DashboardTile, id string) dbread.Dash
 	t.Fatalf("no tile with id %q in %d-tile slice", id, len(tiles))
 	return dbread.DashboardTile{}
 }
-

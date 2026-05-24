@@ -15,8 +15,8 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
-	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
+	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
@@ -191,17 +191,19 @@ func TestHandler_QueryDashboard_ReturnsTrendResults(t *testing.T) {
 	queryFrom := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	queryTo := time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)
 	insightQuery := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{
+					Event:       &commonv1.EventFilter{Kind: proto.String("page_view")},
+					Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+				},
+			},
+		},
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 		TimeRange: &commonv1.TimeRange{
 			From: timestamppb.New(queryFrom),
 			To:   timestamppb.New(queryTo),
-		},
-		Events: []*insightsv1.EventQuery{
-			{
-				Event:       &commonv1.EventFilter{Kind: proto.String("page_view")},
-				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
-			},
 		},
 	}
 	if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Page views", "",

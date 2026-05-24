@@ -69,14 +69,16 @@ func TestBuildEffectiveTileQuery(t *testing.T) {
 	storedFrom := now.Add(-48 * time.Hour)
 	storedTo := now.Add(-24 * time.Hour)
 	stored := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
+			},
+		},
 		Granularity: insightsv1.Granularity_GRANULARITY_WEEK.Enum(),
 		TimeRange: &commonv1.TimeRange{
 			From: timestamppb.New(storedFrom),
 			To:   timestamppb.New(storedTo),
-		},
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
 		},
 	}
 
