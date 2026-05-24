@@ -51,21 +51,21 @@ const (
 	TileViewModeTable       TileViewMode = 5
 )
 
-// TileDefaultTimeRange mirrors common.v1.TimeRangePreset in the proto. The DB
+// DashboardDefaultTimeRange mirrors common.v1.TimeRangePreset in the proto. The DB
 // stores the corresponding proto enum name.
-type TileDefaultTimeRange int16
+type DashboardDefaultTimeRange int16
 
 const (
-	TileDefaultTimeRangeUnspecified TileDefaultTimeRange = 0
-	TileDefaultTimeRangeLast1Hour   TileDefaultTimeRange = 1
-	TileDefaultTimeRangeLast6Hours  TileDefaultTimeRange = 2
-	TileDefaultTimeRangeLast24Hours TileDefaultTimeRange = 3
-	TileDefaultTimeRangeLast7Days   TileDefaultTimeRange = 4
-	TileDefaultTimeRangeLast14Days  TileDefaultTimeRange = 5
-	TileDefaultTimeRangeLast30Days  TileDefaultTimeRange = 6
-	TileDefaultTimeRangeLast90Days  TileDefaultTimeRange = 7
-	TileDefaultTimeRangeLast180Days TileDefaultTimeRange = 8
-	TileDefaultTimeRangeLast365Days TileDefaultTimeRange = 9
+	DashboardDefaultTimeRangeUnspecified DashboardDefaultTimeRange = 0
+	DashboardDefaultTimeRangeLast1Hour   DashboardDefaultTimeRange = 1
+	DashboardDefaultTimeRangeLast6Hours  DashboardDefaultTimeRange = 2
+	DashboardDefaultTimeRangeLast24Hours DashboardDefaultTimeRange = 3
+	DashboardDefaultTimeRangeLast7Days   DashboardDefaultTimeRange = 4
+	DashboardDefaultTimeRangeLast14Days  DashboardDefaultTimeRange = 5
+	DashboardDefaultTimeRangeLast30Days  DashboardDefaultTimeRange = 6
+	DashboardDefaultTimeRangeLast90Days  DashboardDefaultTimeRange = 7
+	DashboardDefaultTimeRangeLast180Days DashboardDefaultTimeRange = 8
+	DashboardDefaultTimeRangeLast365Days DashboardDefaultTimeRange = 9
 )
 
 // TileContent is a sealed sum type for tile payloads. Encode() returns the
@@ -78,11 +78,12 @@ type TileContent interface {
 	Encode() (EncodedTileContent, error)
 }
 
-// InsightTile is the insight-kind variant of TileContent. Query is a shared
+// InsightTile is the insight-kind variant of TileContent. Spec is a shared
 // pointer; callers must not mutate it after constructing the tile — Encode
-// snapshots it via protojson before any DB write.
+// snapshots it via protojson before any DB write. The time window and
+// granularity live on the dashboard, not the tile.
 type InsightTile struct {
-	Query *insightsv1.QueryRequest
+	Spec *insightsv1.InsightQuerySpec
 }
 
 // MarkdownTile is the markdown-kind variant of TileContent. Empty Body is
@@ -97,7 +98,7 @@ func (MarkdownTile) isTileContent() {}
 // Encode translates the insight payload to the DB-shaped tuple. The jsonb
 // column is map[string]any per sqlc.yaml; nil map maps to SQL NULL via pgx.
 func (i InsightTile) Encode() (EncodedTileContent, error) {
-	queryJSON, err := QueryMessageToMap(i.Query)
+	queryJSON, err := SpecMessageToMap(i.Spec)
 	if err != nil {
 		return EncodedTileContent{}, err
 	}
@@ -126,12 +127,14 @@ type DashboardWithTiles struct {
 	Tiles     []dbread.DashboardTile
 }
 
-func (s *Service) CreateDashboard(ctx context.Context, projectID, displayName, description string) (dbwrite.Dashboard, error) {
+func (s *Service) CreateDashboard(ctx context.Context, projectID, displayName, description string, defaultTimeRange commonv1.TimeRangePreset, defaultGranularity insightsv1.Granularity) (dbwrite.Dashboard, error) {
 	dashboard, err := s.write.CreateDashboard(ctx, dbwrite.CreateDashboardParams{
-		Description: description,
-		ID:          xid.New().String(),
-		ProjectID:   projectID,
-		DisplayName: displayName,
+		Description:        description,
+		ID:                 xid.New().String(),
+		ProjectID:          projectID,
+		DisplayName:        displayName,
+		DefaultTimeRange:   dashboardDefaultTimeRangeDBName(normalizedDashboardDefaultTimeRange(defaultTimeRange)),
+		DefaultGranularity: dashboardGranularityDBName(defaultGranularity),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to create dashboard",
@@ -223,18 +226,21 @@ func (s *Service) GetDashboard(ctx context.Context, projectID, dashboardID strin
 	}, nil
 }
 
-// UpdateDashboardDisplayName renames the dashboard and returns the updated
-// row alongside the dashboard's existing tiles. The response includes tiles
-// so the handler can serialize a complete Dashboard without a follow-up read
-// on the client side. Description is updated with partial-update semantics
-// (empty string preserves the existing value); display_name is a required
-// field at the proto layer and is always replaced.
-func (s *Service) UpdateDashboardDisplayName(ctx context.Context, projectID, dashboardID, displayName, description string) (DashboardWithTiles, error) {
-	dashboard, err := s.write.UpdateDashboardDisplayName(ctx, dbwrite.UpdateDashboardDisplayNameParams{
-		Description: description,
-		ID:          dashboardID,
-		ProjectID:   projectID,
-		DisplayName: displayName,
+// UpdateDashboard updates the dashboard's display name, description, and
+// dashboard-level window (default time range + granularity), and returns the
+// updated row alongside the dashboard's existing tiles so the handler can
+// serialize a complete Dashboard without a follow-up read. Description is
+// updated with partial-update semantics (empty string preserves the existing
+// value); display_name, default_time_range, and default_granularity are
+// full-replaced on every call.
+func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, displayName, description string, defaultTimeRange commonv1.TimeRangePreset, defaultGranularity insightsv1.Granularity) (DashboardWithTiles, error) {
+	dashboard, err := s.write.UpdateDashboard(ctx, dbwrite.UpdateDashboardParams{
+		Description:        description,
+		ID:                 dashboardID,
+		ProjectID:          projectID,
+		DisplayName:        displayName,
+		DefaultTimeRange:   dashboardDefaultTimeRangeDBName(normalizedDashboardDefaultTimeRange(defaultTimeRange)),
+		DefaultGranularity: dashboardGranularityDBName(defaultGranularity),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -303,12 +309,14 @@ func (s *Service) DeleteDashboard(ctx context.Context, projectID, dashboardID st
 // 1:1 but the Go types are distinct.
 func dbwriteToDbread(d dbwrite.Dashboard) dbread.Dashboard {
 	return dbread.Dashboard{
-		ID:          d.ID,
-		ProjectID:   d.ProjectID,
-		DisplayName: d.DisplayName,
-		Description: d.Description,
-		CreateTime:  d.CreateTime,
-		UpdateTime:  d.UpdateTime,
+		ID:                 d.ID,
+		ProjectID:          d.ProjectID,
+		DisplayName:        d.DisplayName,
+		Description:        d.Description,
+		DefaultTimeRange:   d.DefaultTimeRange,
+		DefaultGranularity: d.DefaultGranularity,
+		CreateTime:         d.CreateTime,
+		UpdateTime:         d.UpdateTime,
 	}
 }
 
@@ -317,7 +325,6 @@ func (s *Service) CreateDashboardTile(
 	projectID, dashboardID, displayName, description string,
 	content TileContent,
 	viewMode dashboardsv1.DashboardTileViewMode,
-	defaultTimeRange commonv1.TimeRangePreset,
 	layouts []*dashboardsv1.ResponsiveGridLayout,
 ) (dbwrite.DashboardTile, error) {
 	enc, err := content.Encode()
@@ -332,7 +339,6 @@ func (s *Service) CreateDashboardTile(
 	}
 	layoutsMap := LayoutsToMap(layouts)
 	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
-	normalizedDefaultTimeRange := normalizedTileDefaultTimeRange(enc.Kind, defaultTimeRange)
 
 	tile, err := s.write.CreateDashboardTile(ctx, dbwrite.CreateDashboardTileParams{
 		ID:               xid.New().String(),
@@ -340,7 +346,6 @@ func (s *Service) CreateDashboardTile(
 		ProjectID:        projectID,
 		Kind:             int16(enc.Kind),
 		ViewMode:         tileViewModeDBName(normalizedViewMode),
-		DefaultTimeRange: tileDefaultTimeRangeDBName(normalizedDefaultTimeRange),
 		DisplayName:      displayName,
 		Description:      description,
 		InsightQuery:     enc.InsightQuery,
@@ -374,7 +379,6 @@ func (s *Service) UpdateDashboardTile(
 	projectID, dashboardID, tileID, displayName, description string,
 	content TileContent,
 	viewMode dashboardsv1.DashboardTileViewMode,
-	defaultTimeRange commonv1.TimeRangePreset,
 	layouts []*dashboardsv1.ResponsiveGridLayout,
 ) (dbwrite.DashboardTile, error) {
 	enc, err := content.Encode()
@@ -390,7 +394,6 @@ func (s *Service) UpdateDashboardTile(
 	}
 	layoutsMap := LayoutsToMap(layouts)
 	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
-	normalizedDefaultTimeRange := normalizedTileDefaultTimeRange(enc.Kind, defaultTimeRange)
 
 	tile, err := s.write.UpdateDashboardTile(ctx, dbwrite.UpdateDashboardTileParams{
 		ID:               tileID,
@@ -398,7 +401,6 @@ func (s *Service) UpdateDashboardTile(
 		ProjectID:        projectID,
 		Kind:             int16(enc.Kind),
 		ViewMode:         tileViewModeDBName(normalizedViewMode),
-		DefaultTimeRange: tileDefaultTimeRangeDBName(normalizedDefaultTimeRange),
 		DisplayName:      displayName,
 		Description:      description,
 		InsightQuery:     enc.InsightQuery,
@@ -471,7 +473,7 @@ func translateUniqueViolation(err error) error {
 	return ErrDashboardTileDisplayNameConflict
 }
 
-func QueryMessageToMap(msg *insightsv1.QueryRequest) (map[string]any, error) {
+func SpecMessageToMap(msg *insightsv1.InsightQuerySpec) (map[string]any, error) {
 	if msg == nil {
 		return map[string]any{}, nil
 	}
@@ -486,15 +488,15 @@ func QueryMessageToMap(msg *insightsv1.QueryRequest) (map[string]any, error) {
 	return out, nil
 }
 
-func MapToQueryMessage(data map[string]any) (*insightsv1.QueryRequest, error) {
+func MapToSpecMessage(data map[string]any) (*insightsv1.InsightQuerySpec, error) {
 	if len(data) == 0 {
-		return &insightsv1.QueryRequest{}, nil
+		return &insightsv1.InsightQuerySpec{}, nil
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
 	}
-	var out insightsv1.QueryRequest
+	var out insightsv1.InsightQuerySpec
 	if err := protojson.Unmarshal(raw, &out); err != nil {
 		return nil, err
 	}
@@ -525,35 +527,31 @@ func normalizedTileViewMode(kind TileKind, viewMode dashboardsv1.DashboardTileVi
 	}
 }
 
-func normalizedTileDefaultTimeRange(kind TileKind, defaultTimeRange commonv1.TimeRangePreset) TileDefaultTimeRange {
-	switch kind {
-	case TileKindInsight:
-		switch defaultTimeRange {
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR:
-			return TileDefaultTimeRangeLast1Hour
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS:
-			return TileDefaultTimeRangeLast6Hours
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS:
-			return TileDefaultTimeRangeLast24Hours
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS:
-			return TileDefaultTimeRangeLast7Days
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS:
-			return TileDefaultTimeRangeLast14Days
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS:
-			return TileDefaultTimeRangeLast30Days
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS:
-			return TileDefaultTimeRangeLast90Days
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS:
-			return TileDefaultTimeRangeLast180Days
-		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS:
-			return TileDefaultTimeRangeLast365Days
-		default:
-			return TileDefaultTimeRangeLast30Days
-		}
-	case TileKindMarkdown:
-		return TileDefaultTimeRangeUnspecified
+// normalizedDashboardDefaultTimeRange maps a TimeRangePreset to its enum mirror,
+// defaulting unknown/UNSPECIFIED to LAST_30_DAYS. Dashboard-level: no tile kind,
+// no markdown coercion.
+func normalizedDashboardDefaultTimeRange(defaultTimeRange commonv1.TimeRangePreset) DashboardDefaultTimeRange {
+	switch defaultTimeRange {
+	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR:
+		return DashboardDefaultTimeRangeLast1Hour
+	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS:
+		return DashboardDefaultTimeRangeLast6Hours
+	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS:
+		return DashboardDefaultTimeRangeLast24Hours
+	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS:
+		return DashboardDefaultTimeRangeLast7Days
+	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS:
+		return DashboardDefaultTimeRangeLast14Days
+	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS:
+		return DashboardDefaultTimeRangeLast30Days
+	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS:
+		return DashboardDefaultTimeRangeLast90Days
+	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS:
+		return DashboardDefaultTimeRangeLast180Days
+	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS:
+		return DashboardDefaultTimeRangeLast365Days
 	default:
-		return TileDefaultTimeRangeUnspecified
+		return DashboardDefaultTimeRangeLast30Days
 	}
 }
 
@@ -574,29 +572,48 @@ func tileViewModeDBName(viewMode TileViewMode) string {
 	}
 }
 
-func tileDefaultTimeRangeDBName(defaultTimeRange TileDefaultTimeRange) string {
+func dashboardDefaultTimeRangeDBName(defaultTimeRange DashboardDefaultTimeRange) string {
 	switch defaultTimeRange {
-	case TileDefaultTimeRangeLast1Hour:
+	case DashboardDefaultTimeRangeLast1Hour:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR.String()
-	case TileDefaultTimeRangeLast6Hours:
+	case DashboardDefaultTimeRangeLast6Hours:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS.String()
-	case TileDefaultTimeRangeLast24Hours:
+	case DashboardDefaultTimeRangeLast24Hours:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS.String()
-	case TileDefaultTimeRangeLast7Days:
+	case DashboardDefaultTimeRangeLast7Days:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.String()
-	case TileDefaultTimeRangeLast14Days:
+	case DashboardDefaultTimeRangeLast14Days:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS.String()
-	case TileDefaultTimeRangeLast30Days:
+	case DashboardDefaultTimeRangeLast30Days:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS.String()
-	case TileDefaultTimeRangeLast90Days:
+	case DashboardDefaultTimeRangeLast90Days:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS.String()
-	case TileDefaultTimeRangeLast180Days:
+	case DashboardDefaultTimeRangeLast180Days:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS.String()
-	case TileDefaultTimeRangeLast365Days:
+	case DashboardDefaultTimeRangeLast365Days:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS.String()
 	default:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED.String()
 	}
+}
+
+// normalizedDashboardGranularity defaults unknown/UNSPECIFIED granularity to DAY.
+func normalizedDashboardGranularity(g insightsv1.Granularity) insightsv1.Granularity {
+	switch g {
+	case insightsv1.Granularity_GRANULARITY_MINUTE,
+		insightsv1.Granularity_GRANULARITY_HOUR,
+		insightsv1.Granularity_GRANULARITY_DAY,
+		insightsv1.Granularity_GRANULARITY_WEEK,
+		insightsv1.Granularity_GRANULARITY_MONTH:
+		return g
+	default:
+		return insightsv1.Granularity_GRANULARITY_DAY
+	}
+}
+
+// dashboardGranularityDBName stores the granularity as its proto enum name.
+func dashboardGranularityDBName(g insightsv1.Granularity) string {
+	return normalizedDashboardGranularity(g).String()
 }
 
 func LayoutsToMap(layouts []*dashboardsv1.ResponsiveGridLayout) map[string]any {

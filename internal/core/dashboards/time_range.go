@@ -4,6 +4,7 @@ import (
 	"time"
 
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -27,23 +28,22 @@ func lastNDays(now time.Time, n int) *commonv1.TimeRange {
 	}
 }
 
-// TileDefaultTimeRangePresetFromDB normalizes the stored default_time_range column
-// for the given tile kind.
-func TileDefaultTimeRangePresetFromDB(kind TileKind, raw string) commonv1.TimeRangePreset {
-	if kind != TileKindInsight {
-		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED
+// DashboardDefaultTimeRangePresetFromDB maps the stored dashboards.default_time_range
+// enum name to a preset, normalizing unknown/UNSPECIFIED to LAST_30_DAYS.
+func DashboardDefaultTimeRangePresetFromDB(raw string) commonv1.TimeRangePreset {
+	if value, ok := commonv1.TimeRangePreset_value[raw]; ok && value != int32(commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED) {
+		return commonv1.TimeRangePreset(value)
 	}
-	preset := commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-	if value, ok := commonv1.TimeRangePreset_value[raw]; ok {
-		preset = commonv1.TimeRangePreset(value)
+	return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
+}
+
+// DashboardGranularityFromDB maps the stored dashboards.default_granularity enum
+// name to a Granularity, normalizing unknown/UNSPECIFIED to DAY.
+func DashboardGranularityFromDB(raw string) insightsv1.Granularity {
+	if value, ok := insightsv1.Granularity_value[raw]; ok && value != int32(insightsv1.Granularity_GRANULARITY_UNSPECIFIED) {
+		return insightsv1.Granularity(value)
 	}
-	tr := normalizedTileDefaultTimeRange(TileKindInsight, preset)
-	name := tileDefaultTimeRangeDBName(tr)
-	value, ok := commonv1.TimeRangePreset_value[name]
-	if !ok {
-		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-	}
-	return commonv1.TimeRangePreset(value)
+	return insightsv1.Granularity_GRANULARITY_DAY
 }
 
 func validAbsoluteTimeRange(tr *commonv1.TimeRange) bool {

@@ -12,17 +12,14 @@ import (
 )
 
 func TestEncodeTileContent_Insight(t *testing.T) {
-	q := &insightsv1.QueryRequest{
-		Spec: &insightsv1.InsightQuerySpec{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
-			},
+	spec := &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
 		},
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 	}
 
-	enc, err := dashboards.InsightTile{Query: q}.Encode()
+	enc, err := dashboards.InsightTile{Spec: spec}.Encode()
 	if err != nil {
 		t.Fatalf("EncodeTileContent insight: %v", err)
 	}
@@ -35,15 +32,9 @@ func TestEncodeTileContent_Insight(t *testing.T) {
 	if enc.MarkdownBody.Valid {
 		t.Error("MarkdownBody.Valid = true, want false (SQL NULL)")
 	}
-	spec, ok := enc.InsightQuery["spec"].(map[string]any)
-	if !ok {
-		t.Fatalf("InsightQuery[spec] = %v, want map", enc.InsightQuery["spec"])
-	}
-	if spec["insightType"] != "INSIGHT_TYPE_TRENDS" {
-		t.Errorf("InsightQuery[spec][insightType] = %v, want INSIGHT_TYPE_TRENDS", spec["insightType"])
-	}
-	if enc.InsightQuery["granularity"] != "GRANULARITY_DAY" {
-		t.Errorf("InsightQuery[granularity] = %v, want GRANULARITY_DAY", enc.InsightQuery["granularity"])
+	// The tile stores an InsightQuerySpec directly, so insightType is top-level.
+	if enc.InsightQuery["insightType"] != "INSIGHT_TYPE_TRENDS" {
+		t.Errorf("InsightQuery[insightType] = %v, want INSIGHT_TYPE_TRENDS", enc.InsightQuery["insightType"])
 	}
 }
 

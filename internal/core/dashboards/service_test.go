@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/pug-sh/pug/internal/core/dashboards"
 	"github.com/pug-sh/pug/internal/core/projects"
@@ -15,7 +14,6 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestDashboardsService(t *testing.T) {
@@ -62,34 +60,38 @@ func TestDashboardsService(t *testing.T) {
 	}
 	projectID := project.ID
 
+	// insightSpec builds a minimal valid insight tile payload (what to measure;
+	// the window lives on the dashboard).
+	insightSpec := func(kind string) *insightsv1.InsightQuerySpec {
+		return &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String(kind)}},
+			},
+		}
+	}
+
 	t.Run("DashboardCRUD", func(t *testing.T) {
 		if projectID == "" {
 			t.Skip("skipping: CreateProject did not produce a project ID")
 		}
 
-		dashboard, err := svc.CreateDashboard(ctx, projectID, "Overview", "Executive metrics")
+		dashboard, err := svc.CreateDashboard(ctx, projectID, "Overview", "Executive metrics",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS,
+			insightsv1.Granularity_GRANULARITY_DAY)
 		if err != nil {
 			t.Fatalf("CreateDashboard: %v", err)
 		}
-
-		insightQuery := &insightsv1.QueryRequest{
-			Spec: &insightsv1.InsightQuerySpec{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-				Events: []*insightsv1.EventQuery{
-					{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
-				},
-			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-			TimeRange: &commonv1.TimeRange{
-				From: timestamppb.New(time.Now().Add(-24 * time.Hour)),
-				To:   timestamppb.New(time.Now()),
-			},
+		if dashboard.DefaultTimeRange != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.String() {
+			t.Fatalf("dashboard.DefaultTimeRange = %q, want LAST_7_DAYS", dashboard.DefaultTimeRange)
+		}
+		if dashboard.DefaultGranularity != insightsv1.Granularity_GRANULARITY_DAY.String() {
+			t.Fatalf("dashboard.DefaultGranularity = %q, want GRANULARITY_DAY", dashboard.DefaultGranularity)
 		}
 
 		createdInsight, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Signups", "Tracks signup volume",
-			dashboards.InsightTile{Query: insightQuery},
+			dashboards.InsightTile{Spec: insightSpec("signup")},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS,
 			[]*dashboardsv1.ResponsiveGridLayout{
 				{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
 			},
@@ -106,15 +108,11 @@ func TestDashboardsService(t *testing.T) {
 		if createdInsight.ViewMode != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.String() {
 			t.Fatalf("createdInsight.ViewMode = %q, want LINE", createdInsight.ViewMode)
 		}
-		if createdInsight.DefaultTimeRange != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.String() {
-			t.Fatalf("createdInsight.DefaultTimeRange = %q, want LAST_7_DAYS", createdInsight.DefaultTimeRange)
-		}
 
 		markdownBody := "# Note\n\nSee chart above. ![logo](https://example.com/logo.png)"
 		createdMarkdown, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Context", "",
 			dashboards.MarkdownTile{Body: markdownBody},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			[]*dashboardsv1.ResponsiveGridLayout{
 				{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(4), W: proto.Int32(12), H: proto.Int32(3)},
 			},
@@ -134,9 +132,6 @@ func TestDashboardsService(t *testing.T) {
 		if createdMarkdown.ViewMode != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String() {
 			t.Fatalf("createdMarkdown.ViewMode = %q, want UNSPECIFIED", createdMarkdown.ViewMode)
 		}
-		if createdMarkdown.DefaultTimeRange != commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED.String() {
-			t.Fatalf("createdMarkdown.DefaultTimeRange = %q, want UNSPECIFIED", createdMarkdown.DefaultTimeRange)
-		}
 
 		gotDashboard, err := svc.GetDashboard(ctx, projectID, dashboard.ID)
 		if err != nil {
@@ -144,6 +139,9 @@ func TestDashboardsService(t *testing.T) {
 		}
 		if gotDashboard.Dashboard.DisplayName != "Overview" {
 			t.Fatalf("DisplayName = %q, want %q", gotDashboard.Dashboard.DisplayName, "Overview")
+		}
+		if gotDashboard.Dashboard.DefaultTimeRange != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.String() {
+			t.Fatalf("read-side DefaultTimeRange = %q, want LAST_7_DAYS", gotDashboard.Dashboard.DefaultTimeRange)
 		}
 		if len(gotDashboard.Tiles) != 2 {
 			t.Fatalf("tiles = %d, want 2", len(gotDashboard.Tiles))
@@ -157,17 +155,16 @@ func TestDashboardsService(t *testing.T) {
 		if insightTile.Kind != int16(dashboards.TileKindInsight) {
 			t.Fatalf("insightTile.Kind = %d, want INSIGHT", insightTile.Kind)
 		}
+		// The tile stores an InsightQuerySpec, so insightType is top-level and there
+		// is no granularity/time_range on the tile.
 		if insightTile.InsightQuery["insightType"] != "INSIGHT_TYPE_TRENDS" {
 			t.Fatalf("insightTile insightType = %v, want INSIGHT_TYPE_TRENDS", insightTile.InsightQuery["insightType"])
 		}
-		if insightTile.InsightQuery["granularity"] != "GRANULARITY_DAY" {
-			t.Fatalf("insightTile granularity = %v, want GRANULARITY_DAY", insightTile.InsightQuery["granularity"])
+		if _, ok := insightTile.InsightQuery["granularity"]; ok {
+			t.Fatalf("insightTile must not store granularity (it is dashboard-level)")
 		}
 		if insightTile.ViewMode != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.String() {
 			t.Fatalf("insightTile.ViewMode = %q, want LINE", insightTile.ViewMode)
-		}
-		if insightTile.DefaultTimeRange != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.String() {
-			t.Fatalf("insightTile.DefaultTimeRange = %q, want LAST_7_DAYS", insightTile.DefaultTimeRange)
 		}
 		if markdownTile.Kind != int16(dashboards.TileKindMarkdown) {
 			t.Fatalf("markdownTile.Kind = %d, want MARKDOWN", markdownTile.Kind)
@@ -177,9 +174,6 @@ func TestDashboardsService(t *testing.T) {
 		}
 		if markdownTile.ViewMode != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String() {
 			t.Fatalf("markdownTile.ViewMode = %q, want UNSPECIFIED", markdownTile.ViewMode)
-		}
-		if markdownTile.DefaultTimeRange != commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED.String() {
-			t.Fatalf("markdownTile.DefaultTimeRange = %q, want UNSPECIFIED", markdownTile.DefaultTimeRange)
 		}
 
 		layout, ok := insightTile.Layouts["lg"].(map[string]any)
@@ -191,21 +185,8 @@ func TestDashboardsService(t *testing.T) {
 		}
 
 		updatedInsight, err := svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, createdInsight.ID, "Activated Users", "Tracks activation volume",
-			dashboards.InsightTile{Query: &insightsv1.QueryRequest{
-				Spec: &insightsv1.InsightQuerySpec{
-					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-					Events: []*insightsv1.EventQuery{
-						{Event: &commonv1.EventFilter{Kind: proto.String("activated")}},
-					},
-				},
-				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-				TimeRange: &commonv1.TimeRange{
-					From: timestamppb.New(time.Now().Add(-7 * 24 * time.Hour)),
-					To:   timestamppb.New(time.Now()),
-				},
-			}},
+			dashboards.InsightTile{Spec: insightSpec("activated")},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS,
 			[]*dashboardsv1.ResponsiveGridLayout{
 				{Breakpoint: proto.String("lg"), X: proto.Int32(6), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(5)},
 				{Breakpoint: proto.String("md"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(10), H: proto.Int32(6)},
@@ -219,9 +200,6 @@ func TestDashboardsService(t *testing.T) {
 		}
 		if updatedInsight.ViewMode != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.String() {
 			t.Fatalf("updatedInsight.ViewMode = %q, want AREA", updatedInsight.ViewMode)
-		}
-		if updatedInsight.DefaultTimeRange != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS.String() {
-			t.Fatalf("updatedInsight.DefaultTimeRange = %q, want LAST_180_DAYS", updatedInsight.DefaultTimeRange)
 		}
 
 		list, err := svc.ListDashboards(ctx, projectID)
@@ -252,7 +230,8 @@ func TestDashboardsService(t *testing.T) {
 			t.Skip("skipping: CreateProject did not produce a project ID")
 		}
 
-		dashboard, err := svc.CreateDashboard(ctx, projectID, "Swap Dashboard", "")
+		dashboard, err := svc.CreateDashboard(ctx, projectID, "Swap Dashboard", "",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, insightsv1.Granularity_GRANULARITY_UNSPECIFIED)
 		if err != nil {
 			t.Fatalf("CreateDashboard: %v", err)
 		}
@@ -261,21 +240,8 @@ func TestDashboardsService(t *testing.T) {
 		})
 
 		tile, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Initially Insight", "",
-			dashboards.InsightTile{Query: &insightsv1.QueryRequest{
-				Spec: &insightsv1.InsightQuerySpec{
-					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-					Events: []*insightsv1.EventQuery{
-						{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
-					},
-				},
-				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-				TimeRange: &commonv1.TimeRange{
-					From: timestamppb.New(time.Now().Add(-24 * time.Hour)),
-					To:   timestamppb.New(time.Now()),
-				},
-			}},
+			dashboards.InsightTile{Spec: insightSpec("signup")},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil,
 		)
 		if err != nil {
@@ -286,7 +252,6 @@ func TestDashboardsService(t *testing.T) {
 		swapped, err := svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, tile.ID, "Now Markdown", "",
 			dashboards.MarkdownTile{Body: body},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS,
 			nil,
 		)
 		if err != nil {
@@ -303,9 +268,6 @@ func TestDashboardsService(t *testing.T) {
 		}
 		if swapped.ViewMode != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String() {
 			t.Fatalf("swapped.ViewMode = %q, want UNSPECIFIED", swapped.ViewMode)
-		}
-		if swapped.DefaultTimeRange != commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED.String() {
-			t.Fatalf("swapped.DefaultTimeRange = %q, want UNSPECIFIED", swapped.DefaultTimeRange)
 		}
 
 		// Round-trip through GetDashboard to confirm the read side also sees the swap.
@@ -325,9 +287,6 @@ func TestDashboardsService(t *testing.T) {
 		if got.Tiles[0].ViewMode != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String() {
 			t.Fatalf("read-side Tiles[0].ViewMode = %q, want UNSPECIFIED", got.Tiles[0].ViewMode)
 		}
-		if got.Tiles[0].DefaultTimeRange != commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED.String() {
-			t.Fatalf("read-side Tiles[0].DefaultTimeRange = %q, want UNSPECIFIED", got.Tiles[0].DefaultTimeRange)
-		}
 	})
 
 	t.Run("DashboardNotFoundPaths", func(t *testing.T) {
@@ -339,23 +298,24 @@ func TestDashboardsService(t *testing.T) {
 		if _, err := svc.GetDashboard(ctx, projectID, missingID); !errors.Is(err, dashboards.ErrDashboardNotFound) {
 			t.Errorf("GetDashboard not-found err = %v, want ErrDashboardNotFound", err)
 		}
-		if _, err := svc.UpdateDashboardDisplayName(ctx, projectID, missingID, "x", ""); !errors.Is(err, dashboards.ErrDashboardNotFound) {
-			t.Errorf("UpdateDashboardDisplayName not-found err = %v, want ErrDashboardNotFound", err)
+		if _, err := svc.UpdateDashboard(ctx, projectID, missingID, "x", "",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, insightsv1.Granularity_GRANULARITY_UNSPECIFIED); !errors.Is(err, dashboards.ErrDashboardNotFound) {
+			t.Errorf("UpdateDashboard not-found err = %v, want ErrDashboardNotFound", err)
 		}
 		if err := svc.DeleteDashboard(ctx, projectID, missingID); !errors.Is(err, dashboards.ErrDashboardNotFound) {
 			t.Errorf("DeleteDashboard not-found err = %v, want ErrDashboardNotFound", err)
 		}
 	})
 
-	t.Run("DashboardRenamePreservesTiles", func(t *testing.T) {
+	t.Run("DashboardUpdatePreservesTilesAndWindow", func(t *testing.T) {
 		if projectID == "" {
 			t.Skip("skipping: CreateProject did not produce a project ID")
 		}
 
-		// Pre-I1, UpdateDashboardDisplayName returned a Dashboard with nil tiles,
-		// so the RPC response silently dropped them. This pins both the
-		// happy-path rename and the tile preservation in the returned shape.
-		dashboard, err := svc.CreateDashboard(ctx, projectID, "Original", "first desc")
+		// Update returns the dashboard with its tiles so the RPC response is complete;
+		// it also full-replaces the window and partial-updates the description.
+		dashboard, err := svc.CreateDashboard(ctx, projectID, "Original", "first desc",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
 		if err != nil {
 			t.Fatalf("CreateDashboard: %v", err)
 		}
@@ -365,16 +325,17 @@ func TestDashboardsService(t *testing.T) {
 		tile, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Tile", "",
 			dashboards.MarkdownTile{Body: body},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil)
 		if err != nil {
 			t.Fatalf("CreateDashboardTile: %v", err)
 		}
 
-		// Empty description must be preserved (partial-update semantics from I3).
-		renamed, err := svc.UpdateDashboardDisplayName(ctx, projectID, dashboard.ID, "Renamed", "")
+		// Empty description must be preserved (partial-update semantics); the window
+		// is full-replaced.
+		renamed, err := svc.UpdateDashboard(ctx, projectID, dashboard.ID, "Renamed", "",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS, insightsv1.Granularity_GRANULARITY_WEEK)
 		if err != nil {
-			t.Fatalf("UpdateDashboardDisplayName: %v", err)
+			t.Fatalf("UpdateDashboard: %v", err)
 		}
 		if renamed.Dashboard.DisplayName != "Renamed" {
 			t.Errorf("DisplayName = %q, want %q", renamed.Dashboard.DisplayName, "Renamed")
@@ -382,14 +343,21 @@ func TestDashboardsService(t *testing.T) {
 		if renamed.Dashboard.Description != "first desc" {
 			t.Errorf("Description = %q, want %q (empty input should preserve)", renamed.Dashboard.Description, "first desc")
 		}
+		if renamed.Dashboard.DefaultTimeRange != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS.String() {
+			t.Errorf("DefaultTimeRange = %q, want LAST_90_DAYS (full-replace)", renamed.Dashboard.DefaultTimeRange)
+		}
+		if renamed.Dashboard.DefaultGranularity != insightsv1.Granularity_GRANULARITY_WEEK.String() {
+			t.Errorf("DefaultGranularity = %q, want WEEK (full-replace)", renamed.Dashboard.DefaultGranularity)
+		}
 		if len(renamed.Tiles) != 1 || renamed.Tiles[0].ID != tile.ID {
 			t.Fatalf("Tiles = %+v, want single tile %s", renamed.Tiles, tile.ID)
 		}
 
 		// Non-empty description must overwrite.
-		renamed2, err := svc.UpdateDashboardDisplayName(ctx, projectID, dashboard.ID, "Renamed2", "new desc")
+		renamed2, err := svc.UpdateDashboard(ctx, projectID, dashboard.ID, "Renamed2", "new desc",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
 		if err != nil {
-			t.Fatalf("UpdateDashboardDisplayName second: %v", err)
+			t.Fatalf("UpdateDashboard second: %v", err)
 		}
 		if renamed2.Dashboard.Description != "new desc" {
 			t.Errorf("Description = %q, want %q (non-empty input should overwrite)", renamed2.Dashboard.Description, "new desc")
@@ -411,7 +379,8 @@ func TestDashboardsService(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = projectsSvc.DeleteProject(ctx, dbwrite.DeleteProjectParams{ID: projB.ID, OrgID: org.ID}) })
 
-		dashboardA, err := svc.CreateDashboard(ctx, projectID, "Isolation A", "")
+		dashboardA, err := svc.CreateDashboard(ctx, projectID, "Isolation A", "",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, insightsv1.Granularity_GRANULARITY_UNSPECIFIED)
 		if err != nil {
 			t.Fatalf("CreateDashboard A: %v", err)
 		}
@@ -421,7 +390,6 @@ func TestDashboardsService(t *testing.T) {
 		tileA, err := svc.CreateDashboardTile(ctx, projectID, dashboardA.ID, "Tile A", "",
 			dashboards.MarkdownTile{Body: body},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil)
 		if err != nil {
 			t.Fatalf("CreateDashboardTile A: %v", err)
@@ -433,8 +401,9 @@ func TestDashboardsService(t *testing.T) {
 		}
 
 		// Writes against the dashboard from project B must not succeed.
-		if _, err := svc.UpdateDashboardDisplayName(ctx, projB.ID, dashboardA.ID, "hijack", ""); !errors.Is(err, dashboards.ErrDashboardNotFound) {
-			t.Errorf("UpdateDashboardDisplayName cross-project err = %v, want ErrDashboardNotFound", err)
+		if _, err := svc.UpdateDashboard(ctx, projB.ID, dashboardA.ID, "hijack", "",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, insightsv1.Granularity_GRANULARITY_UNSPECIFIED); !errors.Is(err, dashboards.ErrDashboardNotFound) {
+			t.Errorf("UpdateDashboard cross-project err = %v, want ErrDashboardNotFound", err)
 		}
 		if err := svc.DeleteDashboard(ctx, projB.ID, dashboardA.ID); !errors.Is(err, dashboards.ErrDashboardNotFound) {
 			t.Errorf("DeleteDashboard cross-project err = %v, want ErrDashboardNotFound", err)
@@ -447,7 +416,6 @@ func TestDashboardsService(t *testing.T) {
 		if _, err := svc.CreateDashboardTile(ctx, projB.ID, dashboardA.ID, "Hijack", "",
 			dashboards.MarkdownTile{Body: body2},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil); !errors.Is(err, dashboards.ErrDashboardNotFound) {
 			t.Errorf("CreateDashboardTile cross-project err = %v, want ErrDashboardNotFound", err)
 		}
@@ -459,7 +427,6 @@ func TestDashboardsService(t *testing.T) {
 		if _, err := svc.UpdateDashboardTile(ctx, projB.ID, dashboardA.ID, tileA.ID, "hijack", "",
 			dashboards.MarkdownTile{Body: hijackBody},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil); !errors.Is(err, dashboards.ErrDashboardTileNotFound) {
 			t.Errorf("UpdateDashboardTile cross-project err = %v, want ErrDashboardTileNotFound", err)
 		}
@@ -483,7 +450,8 @@ func TestDashboardsService(t *testing.T) {
 			t.Skip("skipping: CreateProject did not produce a project ID")
 		}
 
-		dashboard, err := svc.CreateDashboard(ctx, projectID, "Conflict Dashboard", "")
+		dashboard, err := svc.CreateDashboard(ctx, projectID, "Conflict Dashboard", "",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, insightsv1.Granularity_GRANULARITY_UNSPECIFIED)
 		if err != nil {
 			t.Fatalf("CreateDashboard: %v", err)
 		}
@@ -500,14 +468,12 @@ func TestDashboardsService(t *testing.T) {
 		if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Notes", "",
 			dashboards.MarkdownTile{Body: bodyA},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil); err != nil {
 			t.Fatalf("first titled tile: %v", err)
 		}
 		_, err = svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "notes", "",
 			dashboards.MarkdownTile{Body: bodyB},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil)
 		if !errors.Is(err, dashboards.ErrDashboardTileDisplayNameConflict) {
 			t.Fatalf("second titled tile err = %v, want ErrDashboardTileDisplayNameConflict", err)
@@ -517,14 +483,12 @@ func TestDashboardsService(t *testing.T) {
 		if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "", "",
 			dashboards.MarkdownTile{Body: bodyC},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil); err != nil {
 			t.Fatalf("first untitled tile: %v", err)
 		}
 		if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "", "",
 			dashboards.MarkdownTile{Body: bodyD},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil); err != nil {
 			t.Fatalf("second untitled tile: %v", err)
 		}
@@ -547,7 +511,6 @@ func TestDashboardsService(t *testing.T) {
 		_, err = svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, untitledID, "Notes", "",
 			dashboards.MarkdownTile{Body: bodyD},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil)
 		if !errors.Is(err, dashboards.ErrDashboardTileDisplayNameConflict) {
 			t.Fatalf("rename-into-conflict err = %v, want ErrDashboardTileDisplayNameConflict", err)
@@ -563,7 +526,8 @@ func TestDashboardsService(t *testing.T) {
 		// and description: an empty string in the request preserves the prior value.
 		// A SQL "simplification" that drops the coalesce would silently let clients
 		// blank out tile names — this subtest pins the cross-layer contract.
-		dashboard, err := svc.CreateDashboard(ctx, projectID, "Partial Update Dashboard", "")
+		dashboard, err := svc.CreateDashboard(ctx, projectID, "Partial Update Dashboard", "",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, insightsv1.Granularity_GRANULARITY_UNSPECIFIED)
 		if err != nil {
 			t.Fatalf("CreateDashboard: %v", err)
 		}
@@ -572,7 +536,6 @@ func TestDashboardsService(t *testing.T) {
 		tile, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Original Title", "original desc",
 			dashboards.MarkdownTile{Body: "body"},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil)
 		if err != nil {
 			t.Fatalf("CreateDashboardTile: %v", err)
@@ -582,7 +545,6 @@ func TestDashboardsService(t *testing.T) {
 		preserved, err := svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, tile.ID, "", "",
 			dashboards.MarkdownTile{Body: "body"},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil)
 		if err != nil {
 			t.Fatalf("UpdateDashboardTile (preserve): %v", err)
@@ -598,7 +560,6 @@ func TestDashboardsService(t *testing.T) {
 		updated, err := svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, tile.ID, "New Title", "new desc",
 			dashboards.MarkdownTile{Body: "body"},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED,
 			nil)
 		if err != nil {
 			t.Fatalf("UpdateDashboardTile (overwrite): %v", err)
@@ -619,7 +580,8 @@ func TestDashboardsService(t *testing.T) {
 		// Pin the empty-tiles read path: a dashboard with no tiles must produce a
 		// well-formed DashboardWithTiles with an empty/nil Tiles slice. Existing
 		// subtests always create at least one tile before reading.
-		dashboard, err := svc.CreateDashboard(ctx, projectID, "Empty Dashboard", "")
+		dashboard, err := svc.CreateDashboard(ctx, projectID, "Empty Dashboard", "",
+			commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, insightsv1.Granularity_GRANULARITY_UNSPECIFIED)
 		if err != nil {
 			t.Fatalf("CreateDashboard: %v", err)
 		}

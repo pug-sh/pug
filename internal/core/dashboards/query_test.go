@@ -8,19 +8,33 @@ import (
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestTileDefaultTimeRangePresetFromDB(t *testing.T) {
-	if got := TileDefaultTimeRangePresetFromDB(TileKindInsight, "TIME_RANGE_PRESET_LAST_7_DAYS"); got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS {
+func TestDashboardDefaultTimeRangePresetFromDB(t *testing.T) {
+	if got := DashboardDefaultTimeRangePresetFromDB("TIME_RANGE_PRESET_LAST_7_DAYS"); got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS {
 		t.Fatalf("got %v, want LAST_7_DAYS", got)
 	}
-	if got := TileDefaultTimeRangePresetFromDB(TileKindInsight, "unknown"); got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS {
-		t.Fatalf("got %v, want LAST_30_DAYS", got)
+	if got := DashboardDefaultTimeRangePresetFromDB("unknown"); got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS {
+		t.Fatalf("unknown got %v, want LAST_30_DAYS", got)
 	}
-	if got := TileDefaultTimeRangePresetFromDB(TileKindMarkdown, "TIME_RANGE_PRESET_LAST_7_DAYS"); got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED {
-		t.Fatalf("got %v, want UNSPECIFIED", got)
+	if got := DashboardDefaultTimeRangePresetFromDB(""); got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS {
+		t.Fatalf("empty got %v, want LAST_30_DAYS", got)
+	}
+	if got := DashboardDefaultTimeRangePresetFromDB("TIME_RANGE_PRESET_UNSPECIFIED"); got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS {
+		t.Fatalf("unspecified got %v, want LAST_30_DAYS", got)
+	}
+}
+
+func TestDashboardGranularityFromDB(t *testing.T) {
+	if got := DashboardGranularityFromDB("GRANULARITY_WEEK"); got != insightsv1.Granularity_GRANULARITY_WEEK {
+		t.Fatalf("got %v, want WEEK", got)
+	}
+	if got := DashboardGranularityFromDB("unknown"); got != insightsv1.Granularity_GRANULARITY_DAY {
+		t.Fatalf("unknown got %v, want DAY", got)
+	}
+	if got := DashboardGranularityFromDB(""); got != insightsv1.Granularity_GRANULARITY_DAY {
+		t.Fatalf("empty got %v, want DAY", got)
 	}
 }
 
@@ -64,87 +78,54 @@ func TestResolveDashboardTimeRangePreset(t *testing.T) {
 	}
 }
 
-func TestBuildEffectiveTileQuery(t *testing.T) {
-	now := time.Date(2026, 5, 23, 12, 0, 0, 0, time.UTC)
-	storedFrom := now.Add(-48 * time.Hour)
-	storedTo := now.Add(-24 * time.Hour)
-	stored := &insightsv1.QueryRequest{
-		Spec: &insightsv1.InsightQuerySpec{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
-			},
-		},
-		Granularity: insightsv1.Granularity_GRANULARITY_WEEK.Enum(),
-		TimeRange: &commonv1.TimeRange{
-			From: timestamppb.New(storedFrom),
-			To:   timestamppb.New(storedTo),
-		},
-	}
+func TestResolveEffectiveWindow_OverrideWins(t *testing.T) {
+	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	override := &commonv1.TimeRange{From: timestamppb.New(now.Add(-2 * time.Hour)), To: timestamppb.New(now)}
+	dash := dbread.Dashboard{DefaultTimeRange: "TIME_RANGE_PRESET_LAST_7_DAYS", DefaultGranularity: "GRANULARITY_WEEK"}
 
-	overrideFrom := now.Add(-6 * time.Hour)
-	overrideTo := now
-	overrideRange := &commonv1.TimeRange{
-		From: timestamppb.New(overrideFrom),
-		To:   timestamppb.New(overrideTo),
+	tr, gran := resolveEffectiveWindow(dash, DashboardQueryOverrides{TimeRange: override, Granularity: insightsv1.Granularity_GRANULARITY_HOUR}, now)
+	if tr != override {
+		t.Fatal("expected override time range to win")
 	}
-
-	effective, err := buildEffectiveTileQuery(
-		stored,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS,
-		DashboardQueryOverrides{
-			TimeRange:   overrideRange,
-			Granularity: insightsv1.Granularity_GRANULARITY_HOUR,
-		},
-		now,
-	)
-	if err != nil {
-		t.Fatalf("buildEffectiveTileQuery: %v", err)
-	}
-	if !effective.GetTimeRange().GetFrom().AsTime().Equal(overrideFrom) {
-		t.Fatalf("time range from = %v, want %v", effective.GetTimeRange().GetFrom().AsTime(), overrideFrom)
-	}
-	if effective.GetGranularity() != insightsv1.Granularity_GRANULARITY_HOUR {
-		t.Fatalf("granularity = %v, want HOUR", effective.GetGranularity())
-	}
-
-	effective, err = buildEffectiveTileQuery(
-		stored,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS,
-		DashboardQueryOverrides{},
-		now,
-	)
-	if err != nil {
-		t.Fatalf("buildEffectiveTileQuery stored range: %v", err)
-	}
-	if !effective.GetTimeRange().GetFrom().AsTime().Equal(storedFrom) {
-		t.Fatalf("time range from = %v, want stored %v", effective.GetTimeRange().GetFrom().AsTime(), storedFrom)
-	}
-	if !effective.GetTimeRange().GetTo().AsTime().Equal(storedTo) {
-		t.Fatalf("time range to = %v, want stored %v", effective.GetTimeRange().GetTo().AsTime(), storedTo)
-	}
-	if effective.GetGranularity() != insightsv1.Granularity_GRANULARITY_WEEK {
-		t.Fatalf("granularity = %v, want WEEK", effective.GetGranularity())
-	}
-
-	storedWithoutRange := proto.Clone(stored).(*insightsv1.QueryRequest)
-	storedWithoutRange.TimeRange = nil
-	effective, err = buildEffectiveTileQuery(
-		storedWithoutRange,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS,
-		DashboardQueryOverrides{},
-		now,
-	)
-	if err != nil {
-		t.Fatalf("buildEffectiveTileQuery preset fallback: %v", err)
-	}
-	if effective.GetTimeRange().GetTo().AsTime() != now {
-		t.Fatalf("to = %v, want %v", effective.GetTimeRange().GetTo().AsTime(), now)
+	if gran != insightsv1.Granularity_GRANULARITY_HOUR {
+		t.Fatalf("granularity = %v, want HOUR", gran)
 	}
 }
 
-func TestQueryDashboardTiles_PreservesDashboardTileOrder(t *testing.T) {
+func TestResolveEffectiveWindow_FallsBackToDashboardDefault(t *testing.T) {
+	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	dash := dbread.Dashboard{DefaultTimeRange: "TIME_RANGE_PRESET_LAST_7_DAYS", DefaultGranularity: "GRANULARITY_WEEK"}
+
+	tr, gran := resolveEffectiveWindow(dash, DashboardQueryOverrides{}, now)
+	if gran != insightsv1.Granularity_GRANULARITY_WEEK {
+		t.Fatalf("granularity = %v, want WEEK", gran)
+	}
+	wantFrom := startOfDay(now.AddDate(0, 0, -7))
+	if !tr.GetFrom().AsTime().Equal(wantFrom) {
+		t.Fatalf("from = %v, want %v", tr.GetFrom().AsTime(), wantFrom)
+	}
+	if !tr.GetTo().AsTime().Equal(now) {
+		t.Fatalf("to = %v, want %v", tr.GetTo().AsTime(), now)
+	}
+}
+
+func TestResolveEffectiveWindow_UnknownDefaultsNormalize(t *testing.T) {
+	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	dash := dbread.Dashboard{DefaultTimeRange: "", DefaultGranularity: ""}
+
+	tr, gran := resolveEffectiveWindow(dash, DashboardQueryOverrides{}, now)
+	if gran != insightsv1.Granularity_GRANULARITY_DAY {
+		t.Fatalf("granularity = %v, want DAY", gran)
+	}
+	wantFrom := startOfDay(now.AddDate(0, 0, -30)) // LAST_30_DAYS fallback
+	if !tr.GetFrom().AsTime().Equal(wantFrom) {
+		t.Fatalf("from = %v, want %v (LAST_30_DAYS)", tr.GetFrom().AsTime(), wantFrom)
+	}
+}
+
+func TestRenderDashboard_PreservesOrderAndIncludesMarkdown(t *testing.T) {
 	dashboard := DashboardWithTiles{
+		Dashboard: dbread.Dashboard{ProjectID: "proj", DefaultTimeRange: "TIME_RANGE_PRESET_LAST_7_DAYS", DefaultGranularity: "GRANULARITY_DAY"},
 		Tiles: []dbread.DashboardTile{
 			{ID: "markdown", Kind: int16(TileKindMarkdown)},
 			{ID: "insight-a", Kind: int16(TileKindInsight)},
@@ -152,11 +133,26 @@ func TestQueryDashboardTiles_PreservesDashboardTileOrder(t *testing.T) {
 		},
 	}
 
-	outcomes := QueryDashboardTiles(context.Background(), nil, dashboard, DashboardQueryOverrides{})
-	if len(outcomes) != 2 {
-		t.Fatalf("outcomes = %d, want 2", len(outcomes))
+	// nil executor is safe: insight tiles have empty InsightQuery, so each fails
+	// before reaching ExecuteQuery.
+	rendered := RenderDashboard(context.Background(), nil, dashboard, DashboardQueryOverrides{})
+
+	if len(rendered.Tiles) != 3 {
+		t.Fatalf("tiles = %d, want 3 (markdown included)", len(rendered.Tiles))
 	}
-	if outcomes[0].TileID != "insight-a" || outcomes[1].TileID != "insight-b" {
-		t.Fatalf("outcome order = [%q, %q], want [insight-a, insight-b]", outcomes[0].TileID, outcomes[1].TileID)
+	gotOrder := []string{rendered.Tiles[0].Tile.ID, rendered.Tiles[1].Tile.ID, rendered.Tiles[2].Tile.ID}
+	wantOrder := []string{"markdown", "insight-a", "insight-b"}
+	for i := range wantOrder {
+		if gotOrder[i] != wantOrder[i] {
+			t.Fatalf("tile order = %v, want %v", gotOrder, wantOrder)
+		}
+	}
+	if rendered.Tiles[0].Result != nil || rendered.Tiles[0].ErrorMessage != "" {
+		t.Fatalf("markdown tile must have no outcome: result=%v err=%q", rendered.Tiles[0].Result, rendered.Tiles[0].ErrorMessage)
+	}
+	for _, idx := range []int{1, 2} {
+		if rendered.Tiles[idx].ErrorMessage == "" {
+			t.Fatalf("insight tile %q expected per-tile error message", rendered.Tiles[idx].Tile.ID)
+		}
 	}
 }

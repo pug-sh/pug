@@ -3,12 +3,11 @@ package dashboards
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
+	"buf.build/go/protovalidate"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/proto"
 
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
@@ -18,180 +17,119 @@ import (
 
 const maxConcurrentDashboardTileQueries = 8
 
-// DashboardQueryOverrides carries optional dashboard-level query overrides.
+// DashboardQueryOverrides carries optional view-time overrides of the dashboard
+// default window. Both are validated at the RPC boundary before reaching here.
 type DashboardQueryOverrides struct {
 	TimeRange   *commonv1.TimeRange
 	Granularity insightsv1.Granularity
 }
 
-// DashboardTileQueryOutcome is the per-tile result of a dashboard batch query.
-type DashboardTileQueryOutcome struct {
-	TileID       string
+// RenderedTile is a tile plus, for insight tiles, its query outcome. Markdown
+// tiles carry an empty Result and ErrorMessage.
+type RenderedTile struct {
+	Tile         dbread.DashboardTile
 	Result       *insightsv1.QueryResponse
 	ErrorMessage string
 }
 
-// QueryDashboardTiles executes insight queries for all insight tiles on a dashboard.
-// Results preserve dashboard tile order; markdown tiles are omitted.
-func QueryDashboardTiles(
+// RenderedDashboard is a dashboard row plus its tiles rendered in dashboard order.
+type RenderedDashboard struct {
+	Dashboard dbread.Dashboard
+	Tiles     []RenderedTile
+}
+
+// RenderDashboard executes every insight tile against the dashboard's effective
+// window (request override → dashboard default), resolved once, and returns all
+// tiles in dashboard order with markdown included. Per-tile failures populate
+// ErrorMessage; the call never fails wholesale.
+func RenderDashboard(
 	ctx context.Context,
 	executor *coreinsights.Executor,
 	dashboard DashboardWithTiles,
 	overrides DashboardQueryOverrides,
-) []DashboardTileQueryOutcome {
+) RenderedDashboard {
 	now := time.Now()
+	timeRange, granularity := resolveEffectiveWindow(dashboard.Dashboard, overrides, now)
 
-	type indexedTile struct {
-		index int
-		tile  dbread.DashboardTile
-	}
-	insightTiles := make([]indexedTile, 0, len(dashboard.Tiles))
-	for index, tile := range dashboard.Tiles {
-		if TileKind(tile.Kind) == TileKindInsight {
-			insightTiles = append(insightTiles, indexedTile{index: index, tile: tile})
-		}
-	}
-	if len(insightTiles) == 0 {
-		return nil
-	}
-
-	outcomes := make([]DashboardTileQueryOutcome, len(insightTiles))
+	rendered := make([]RenderedTile, len(dashboard.Tiles))
 	sem := make(chan struct{}, maxConcurrentDashboardTileQueries)
 	group, groupCtx := errgroup.WithContext(ctx)
 
-	for outcomeIndex, entry := range insightTiles {
+	for i, tile := range dashboard.Tiles {
+		rendered[i] = RenderedTile{Tile: tile}
+		if TileKind(tile.Kind) != TileKindInsight {
+			continue // markdown: structure only, no outcome
+		}
 		group.Go(func() error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-
-			outcomes[outcomeIndex] = queryDashboardTile(
-				groupCtx,
-				executor,
-				dashboard.Dashboard.ProjectID,
-				entry.tile,
-				overrides,
-				now,
-			)
+			result, errMsg := renderInsightTile(groupCtx, executor, dashboard.Dashboard.ProjectID, tile, timeRange, granularity)
+			rendered[i].Result = result
+			rendered[i].ErrorMessage = errMsg
 			return nil
 		})
 	}
 	_ = group.Wait()
 
-	return outcomes
+	return RenderedDashboard{Dashboard: dashboard.Dashboard, Tiles: rendered}
 }
 
-func queryDashboardTile(
+// resolveEffectiveWindow picks the time range and granularity applied to every
+// insight tile: request override wins, else the dashboard's stored default
+// (normalized to LAST_30_DAYS / DAY when unset).
+func resolveEffectiveWindow(dash dbread.Dashboard, overrides DashboardQueryOverrides, now time.Time) (*commonv1.TimeRange, insightsv1.Granularity) {
+	timeRange := overrides.TimeRange
+	if timeRange == nil {
+		preset := DashboardDefaultTimeRangePresetFromDB(dash.DefaultTimeRange)
+		timeRange = ResolveDashboardTimeRangePreset(preset, nil, now)
+	}
+	granularity := overrides.Granularity
+	if granularity == insightsv1.Granularity_GRANULARITY_UNSPECIFIED {
+		granularity = DashboardGranularityFromDB(dash.DefaultGranularity)
+	}
+	return timeRange, granularity
+}
+
+// renderInsightTile assembles a QueryRequest from the tile's stored spec plus the
+// effective window, re-validates it (so the per-granularity range caps apply per
+// tile), and executes it. Returns (result, "") on success or (nil, message) on a
+// per-tile failure, where message is client-safe.
+func renderInsightTile(
 	ctx context.Context,
 	executor *coreinsights.Executor,
 	projectID string,
 	tile dbread.DashboardTile,
-	overrides DashboardQueryOverrides,
-	now time.Time,
-) DashboardTileQueryOutcome {
-	outcome := DashboardTileQueryOutcome{TileID: tile.ID}
-
+	timeRange *commonv1.TimeRange,
+	granularity insightsv1.Granularity,
+) (*insightsv1.QueryResponse, string) {
 	if len(tile.InsightQuery) == 0 {
-		return tileQueryClientError(ctx, tile.ID, fmt.Sprintf("tile %s: insight tile row missing query", tile.ID))
+		return nil, "insight tile is missing its query"
 	}
-
-	storedQuery, err := MapToQueryMessage(tile.InsightQuery)
+	spec, err := MapToSpecMessage(tile.InsightQuery)
 	if err != nil {
-		return tileQueryClientError(ctx, tile.ID, err.Error())
-	}
-	if len(storedQuery.GetSpec().GetEvents()) == 0 {
-		return tileQueryClientError(ctx, tile.ID, "tile query requires at least one event")
-	}
-
-	effectiveQuery, err := buildEffectiveTileQuery(
-		storedQuery,
-		TileDefaultTimeRangePresetFromDB(TileKindInsight, tile.DefaultTimeRange),
-		overrides,
-		now,
-	)
-	if err != nil {
-		return tileQueryClientError(ctx, tile.ID, err.Error())
+		slog.WarnContext(ctx, "dashboard tile query decode failed",
+			slog.String("tile_id", tile.ID), slog.String("reason", err.Error()))
+		return nil, "invalid query parameters: " + err.Error()
 	}
 
-	result, err := coreinsights.ExecuteQuery(ctx, executor, projectID, effectiveQuery)
+	assembled := &insightsv1.QueryRequest{
+		Spec:        spec,
+		TimeRange:   timeRange,
+		Granularity: granularity.Enum(),
+	}
+	if err := protovalidate.Validate(assembled); err != nil {
+		slog.WarnContext(ctx, "dashboard tile query invalid",
+			slog.String("tile_id", tile.ID), slog.String("reason", err.Error()))
+		return nil, "invalid query parameters: " + err.Error()
+	}
+
+	result, err := coreinsights.ExecuteQuery(ctx, executor, projectID, assembled)
 	if err != nil {
 		var invalid *coreinsights.InvalidQueryError
 		if errors.As(err, &invalid) {
-			outcome.ErrorMessage = "invalid query parameters: " + invalid.Message
-			return outcome
+			return nil, "invalid query parameters: " + invalid.Message
 		}
-		outcome.ErrorMessage = "query failed"
-		return outcome
+		return nil, "query failed"
 	}
-
-	outcome.Result = result
-	return outcome
-}
-
-func tileQueryClientError(ctx context.Context, tileID, message string) DashboardTileQueryOutcome {
-	slog.WarnContext(ctx, "dashboard tile query skipped",
-		slog.String("tile_id", tileID),
-		slog.String("reason", message))
-	return DashboardTileQueryOutcome{
-		TileID:       tileID,
-		ErrorMessage: message,
-	}
-}
-
-func buildEffectiveTileQuery(
-	stored *insightsv1.QueryRequest,
-	preset commonv1.TimeRangePreset,
-	overrides DashboardQueryOverrides,
-	now time.Time,
-) (*insightsv1.QueryRequest, error) {
-	effective := proto.Clone(stored).(*insightsv1.QueryRequest)
-
-	timeRange, err := resolveEffectiveTileTimeRange(stored, preset, overrides, now)
-	if err != nil {
-		return nil, err
-	}
-	effective.TimeRange = timeRange
-
-	if overrides.Granularity != insightsv1.Granularity_GRANULARITY_UNSPECIFIED {
-		effective.Granularity = overrides.Granularity.Enum()
-	} else {
-		effective.Granularity = defaultQueryGranularity(stored).Enum()
-	}
-
-	return effective, nil
-}
-
-func resolveEffectiveTileTimeRange(
-	stored *insightsv1.QueryRequest,
-	preset commonv1.TimeRangePreset,
-	overrides DashboardQueryOverrides,
-	now time.Time,
-) (*commonv1.TimeRange, error) {
-	if overrides.TimeRange != nil {
-		if !validAbsoluteTimeRange(overrides.TimeRange) {
-			return nil, fmt.Errorf("invalid time range override")
-		}
-		return overrides.TimeRange, nil
-	}
-	if validAbsoluteTimeRange(stored.GetTimeRange()) {
-		return stored.GetTimeRange(), nil
-	}
-
-	timeRange := ResolveDashboardTimeRangePreset(preset, nil, now)
-	if !validAbsoluteTimeRange(timeRange) {
-		return nil, fmt.Errorf("missing effective time range")
-	}
-	return timeRange, nil
-}
-
-func defaultQueryGranularity(query *insightsv1.QueryRequest) insightsv1.Granularity {
-	granularity := query.GetGranularity()
-	switch granularity {
-	case insightsv1.Granularity_GRANULARITY_HOUR,
-		insightsv1.Granularity_GRANULARITY_DAY,
-		insightsv1.Granularity_GRANULARITY_WEEK,
-		insightsv1.Granularity_GRANULARITY_MONTH:
-		return granularity
-	default:
-		return insightsv1.Granularity_GRANULARITY_DAY
-	}
+	return result, ""
 }
