@@ -4,6 +4,10 @@ create table dashboards (
   project_id char(20) not null references projects(id) on delete cascade,
   display_name varchar(150) not null,
   description text not null default '',
+  -- default_time_range stores common.v1.TimeRangePreset proto enum names;
+  -- default_granularity stores shared.insights.v1.Granularity proto enum names.
+  default_time_range text not null default 'TIME_RANGE_PRESET_LAST_30_DAYS',
+  default_granularity text not null default 'GRANULARITY_DAY',
   create_time timestamptz not null default now(),
   update_time timestamptz not null default now()
 );
@@ -17,13 +21,11 @@ update on dashboards for each row execute procedure moddatetime(update_time);
 --   1 = TileKindInsight  (insight_query payload)
 --   2 = TileKindMarkdown (markdown_body payload)
 -- view_mode stores DashboardTileViewMode proto enum names.
--- default_time_range stores common.v1.TimeRangePreset proto enum names.
 create table dashboard_tiles (
   id            char(20) primary key,
   dashboard_id  char(20) not null references dashboards(id) on delete cascade,
   kind          smallint not null,
   view_mode     text not null default 'DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED',
-  default_time_range text not null default 'TIME_RANGE_PRESET_UNSPECIFIED',
   display_name  varchar(150) not null default '',
   description   text not null default '',
   insight_query jsonb,
