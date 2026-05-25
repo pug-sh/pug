@@ -2,6 +2,7 @@ package insights_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -930,6 +931,167 @@ func TestIntegration(t *testing.T) {
 			t.Errorf("GB cohort_size: got %+v, want 1", gb.Cohorts)
 		}
 	})
+
+	// Rollup parity: ExecuteQuery routes eligible queries to dashboard_event_rollup_daily
+	// (populated by the MV on seed insert); BuildTrendsQuery/BuildSegmentationQuery are the
+	// pure raw-events builders. Seeded under a dedicated project so the assertions are
+	// independent of events inserted by other subtests under testProjectID (which the MV
+	// also rolls up).
+	const rollupProjectID = "proj_rollup"
+	seedRollupEvents(t, ctx, ch, rollupProjectID)
+
+	t.Run("rollup_parity_trends_breakdown", func(t *testing.T) {
+		req := rollupParityTrendsReq(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL)
+		resp, err := insights.ExecuteQuery(ctx, executor, rollupProjectID, req)
+		if err != nil {
+			t.Fatalf("ExecuteQuery (rollup): %v", err)
+		}
+		rollup := flattenTrendsResp(resp)
+
+		rawQ, err := insights.BuildTrendsQuery(req, rollupProjectID)
+		if err != nil {
+			t.Fatalf("BuildTrendsQuery (raw): %v", err)
+		}
+		rawRows, err := executor.QueryTrends(ctx, rollupProjectID, rawQ)
+		if err != nil {
+			t.Fatalf("QueryTrends (raw): %v", err)
+		}
+		raw := flattenTrendsRows(rawRows)
+
+		if !reflect.DeepEqual(rollup, raw) {
+			t.Errorf("rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
+		}
+		if rollup["page_view|US|2024-01-01"] != 2 {
+			t.Errorf("sanity: page_view|US|2024-01-01 = %v, want 2 (all: %v)", rollup["page_view|US|2024-01-01"], rollup)
+		}
+	})
+
+	t.Run("rollup_parity_trends_unique_users", func(t *testing.T) {
+		req := rollupParityTrendsReq(insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS)
+		resp, err := insights.ExecuteQuery(ctx, executor, rollupProjectID, req)
+		if err != nil {
+			t.Fatalf("ExecuteQuery (rollup): %v", err)
+		}
+		rollup := flattenTrendsResp(resp)
+
+		rawQ, err := insights.BuildTrendsQuery(req, rollupProjectID)
+		if err != nil {
+			t.Fatalf("BuildTrendsQuery (raw): %v", err)
+		}
+		rawRows, err := executor.QueryTrends(ctx, rollupProjectID, rawQ)
+		if err != nil {
+			t.Fatalf("QueryTrends (raw): %v", err)
+		}
+		raw := flattenTrendsRows(rawRows)
+
+		if !reflect.DeepEqual(rollup, raw) {
+			t.Errorf("unique-users rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
+		}
+	})
+
+	t.Run("rollup_parity_segmentation", func(t *testing.T) {
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				},
+			},
+			TimeRange:   &commonv1.TimeRange{From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), To: timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC))},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+		resp, err := insights.ExecuteQuery(ctx, executor, rollupProjectID, req)
+		if err != nil {
+			t.Fatalf("ExecuteQuery (rollup): %v", err)
+		}
+		rollupTotal := resp.GetSegmentation().GetTotal()
+
+		rawQ, err := insights.BuildSegmentationQuery(req, rollupProjectID)
+		if err != nil {
+			t.Fatalf("BuildSegmentationQuery (raw): %v", err)
+		}
+		rawTotal, err := executor.QueryScalar(ctx, rollupProjectID, rawQ)
+		if err != nil {
+			t.Fatalf("QueryScalar (raw): %v", err)
+		}
+		if rollupTotal != rawTotal {
+			t.Errorf("segmentation rollup=%v raw=%v", rollupTotal, rawTotal)
+		}
+		if rollupTotal != 6 {
+			t.Errorf("segmentation total = %v, want 6", rollupTotal)
+		}
+	})
+
+	t.Run("rollup_table_populated_by_mv", func(t *testing.T) {
+		var total uint64
+		if err := ch.Conn.QueryRow(ctx,
+			"SELECT toUInt64(sum(cnt)) FROM dashboard_event_rollup_daily WHERE project_id = ? AND dim_name = '$__total__' AND kind = 'page_view'",
+			rollupProjectID,
+		).Scan(&total); err != nil {
+			t.Fatalf("query rollup: %v", err)
+		}
+		if total != 6 {
+			t.Errorf("rollup $__total__ page_view count: got %d, want 6 (MV did not populate)", total)
+		}
+	})
+}
+
+func rollupParityTrendsReq(agg insightsv1.AggregationType) *insightsv1.QueryRequest {
+	return &insightsv1.QueryRequest{
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events:      []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: agg.Enum()}},
+			Breakdowns:  []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+		},
+		TimeRange:   &commonv1.TimeRange{From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), To: timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC))},
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}
+}
+
+func flattenTrendsResp(resp *insightsv1.QueryResponse) map[string]float64 {
+	out := map[string]float64{}
+	for _, s := range resp.GetTrends().GetSeries() {
+		bd := s.GetBreakdown()["$country"]
+		for _, p := range s.GetPoints() {
+			out[s.GetEventKind()+"|"+bd+"|"+p.GetTime().AsTime().Format("2006-01-02")] = p.GetValue()
+		}
+	}
+	return out
+}
+
+func flattenTrendsRows(rows []insights.TrendRow) map[string]float64 {
+	out := map[string]float64{}
+	for _, r := range rows {
+		bd := ""
+		if len(r.Breakdowns) > 0 {
+			bd = r.Breakdowns[0]
+		}
+		out[r.EventKind+"|"+bd+"|"+r.Time.Format("2006-01-02")] = r.Value
+	}
+	return out
+}
+
+// seedRollupEvents inserts a fixed set of page_view events under a dedicated
+// project so rollup parity assertions are deterministic: day 1 = {alice US,
+// bob GB, charlie US}, day 2 = {alice US, bob GB}, day 3 = {alice US}.
+func seedRollupEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string) {
+	t.Helper()
+	events := []struct {
+		day     int
+		user    string
+		country string
+	}{
+		{1, "alice", "US"}, {1, "bob", "GB"}, {1, "charlie", "US"},
+		{2, "alice", "US"}, {2, "bob", "GB"},
+		{3, "alice", "US"},
+	}
+	for _, e := range events {
+		occurTime := time.Date(2024, 1, e.day, 12, 0, 0, 0, time.UTC)
+		if err := insertAutoEvent(ctx, ch.Conn, projectID, uuid.New().String(), "page_view", e.user, occurTime,
+			variantStringMap(map[string]string{"$country": e.country})); err != nil {
+			t.Fatalf("seed rollup event: %v", err)
+		}
+	}
 }
 
 // seedFunnelEvents inserts events for funnel integration tests.

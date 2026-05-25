@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -261,5 +262,26 @@ func TestSegmentationExecution_RoutesToRollup(t *testing.T) {
 	}
 	if !strings.Contains(q.SQL(), rollupTable) {
 		t.Errorf("eligible segmentation query must route to the rollup\nSQL:\n%s", q.SQL())
+	}
+}
+
+// TestMaterializedDimsMatchMigration pins the Go dimension list to the MV's
+// ARRAY JOIN list in migration 006. They are coupled by hand; this fails loud if
+// they drift (a new dimension added to one but not the other).
+func TestMaterializedDimsMatchMigration(t *testing.T) {
+	const path = "../../../schema/clickhouse/migrations/006_create_dashboard_event_rollup.sql"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	sql := string(data)
+	for _, d := range materializedDims {
+		// Each dim appears as the first tuple element, e.g. ('$country', ...).
+		if !strings.Contains(sql, "('"+d+"',") {
+			t.Errorf("materializedDims has %q but migration 006 has no ('%s', ...) ARRAY JOIN entry", d, d)
+		}
+	}
+	if !strings.Contains(sql, "('"+totalDimName+"',") {
+		t.Errorf("migration 006 missing the ('%s', '') total row", totalDimName)
 	}
 }
