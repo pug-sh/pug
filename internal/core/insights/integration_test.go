@@ -2,6 +2,7 @@ package insights_test
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -1292,6 +1293,81 @@ func TestIntegration(t *testing.T) {
 			t.Errorf("expected FR collapsed into $others=1, got %v (all: %v)", rollup["page_view|$others|2024-01-01"], rollup)
 		}
 	})
+
+	t.Run("rollup_parity_matrix", func(t *testing.T) {
+		// Exhaustive rollup == raw across the eligible grid: trends over
+		// {TOTAL, UNIQUE_USERS, PER_USER_AVG} × {DAY, WEEK, MONTH} × {no-breakdown,
+		// $country} × {single, multi-event}, plus segmentation over {agg} × {single,
+		// multi-event}. Each cell runs the request through ExecuteQuery (rollup) and
+		// the raw builder + executor, and asserts identical output. Non-vacuous:
+		// rollup_duplicate_overcount_documented proves ExecuteQuery actually routes
+		// eligible queries to the rollup (rollup=2 vs raw=1), not silently to raw.
+		const projectID = "proj_rollup_matrix"
+		seedMatrixEvents(t, ctx, ch, projectID)
+
+		grans := []struct {
+			g        insightsv1.Granularity
+			from, to time.Time
+		}{
+			{insightsv1.Granularity_GRANULARITY_DAY, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 1, 8, 0, 0, 0, 0, time.UTC)},
+			{insightsv1.Granularity_GRANULARITY_WEEK, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 1, 29, 0, 0, 0, 0, time.UTC)},
+			{insightsv1.Granularity_GRANULARITY_MONTH, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC)},
+		}
+		aggs := []insightsv1.AggregationType{
+			insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL,
+			insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS,
+			insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG,
+		}
+
+		for _, agg := range aggs {
+			for _, gr := range grans {
+				for _, bd := range []bool{false, true} {
+					for _, multi := range []bool{false, true} {
+						name := fmt.Sprintf("trends_%s_%s_bd=%v_multi=%v", agg, gr.g, bd, multi)
+						t.Run(name, func(t *testing.T) {
+							spec := &insightsv1.InsightQuerySpec{
+								InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+								Events:      []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: agg.Enum()}},
+							}
+							if multi {
+								spec.Events = append(spec.Events, &insightsv1.EventQuery{Event: &commonv1.EventFilter{Kind: proto.String("signup")}, Aggregation: agg.Enum()})
+							}
+							if bd {
+								spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$country")}}
+							}
+							req := &insightsv1.QueryRequest{
+								Spec:        spec,
+								TimeRange:   &commonv1.TimeRange{From: timestamppb.New(gr.from), To: timestamppb.New(gr.to)},
+								Granularity: gr.g.Enum(),
+							}
+							assertTrendsParity(t, ctx, executor, projectID, req)
+						})
+					}
+				}
+			}
+		}
+
+		for _, agg := range aggs {
+			for _, multi := range []bool{false, true} {
+				name := fmt.Sprintf("segmentation_%s_multi=%v", agg, multi)
+				t.Run(name, func(t *testing.T) {
+					spec := &insightsv1.InsightQuerySpec{
+						InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+						Events:      []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: agg.Enum()}},
+					}
+					if multi {
+						spec.Events = append(spec.Events, &insightsv1.EventQuery{Event: &commonv1.EventFilter{Kind: proto.String("signup")}, Aggregation: agg.Enum()})
+					}
+					req := &insightsv1.QueryRequest{
+						Spec:        spec,
+						TimeRange:   &commonv1.TimeRange{From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), To: timestamppb.New(time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC))},
+						Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+					}
+					assertSegParity(t, ctx, executor, projectID, req)
+				})
+			}
+		}
+	})
 }
 
 func rollupParityTrendsReq(agg insightsv1.AggregationType) *insightsv1.QueryRequest {
@@ -1349,6 +1425,87 @@ func seedRollupEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickH
 			variantStringMap(map[string]string{"$country": e.country})); err != nil {
 			t.Fatalf("seed rollup event: %v", err)
 		}
+	}
+}
+
+// seedMatrixEvents inserts page_view + signup events spread across Jan–Mar 2024
+// over several users/countries, so the rollup parity matrix has non-trivial buckets
+// at DAY, WEEK, and MONTH granularity and across breakdown values.
+func seedMatrixEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string) {
+	t.Helper()
+	events := []struct {
+		m, d           int
+		kind, user, cc string
+	}{
+		{1, 1, "page_view", "alice", "US"}, {1, 1, "page_view", "bob", "GB"},
+		{1, 2, "page_view", "alice", "US"}, {1, 3, "page_view", "carol", "US"},
+		{1, 5, "page_view", "alice", "US"}, {1, 8, "page_view", "bob", "GB"},
+		{1, 15, "page_view", "alice", "US"}, {1, 22, "page_view", "bob", "GB"},
+		{2, 10, "page_view", "alice", "US"}, {2, 20, "page_view", "carol", "US"},
+		{3, 5, "page_view", "bob", "GB"},
+		{1, 2, "signup", "alice", "US"}, {1, 5, "signup", "carol", "FR"},
+		{1, 15, "signup", "alice", "US"}, {3, 5, "signup", "carol", "FR"},
+	}
+	for _, e := range events {
+		occurTime := time.Date(2024, time.Month(e.m), e.d, 12, 0, 0, 0, time.UTC)
+		if err := insertAutoEvent(ctx, ch.Conn, projectID, uuid.New().String(), e.kind, e.user, occurTime,
+			variantStringMap(map[string]string{"$country": e.cc})); err != nil {
+			t.Fatalf("seed matrix event: %v", err)
+		}
+	}
+}
+
+// assertTrendsParity runs req through ExecuteQuery (rollup) and the raw builder and
+// asserts identical flattened output. Empties are flagged so a seed/window mismatch
+// can't make the assertion vacuously pass.
+func assertTrendsParity(t *testing.T, ctx context.Context, executor *insights.Executor, projectID string, req *insightsv1.QueryRequest) {
+	t.Helper()
+	resp, err := insights.ExecuteQuery(ctx, executor, projectID, req, time.Now())
+	if err != nil {
+		t.Fatalf("rollup ExecuteQuery: %v", err)
+	}
+	rollup := flattenTrendsResp(resp)
+
+	rawQ, err := insights.BuildTrendsQuery(req, projectID)
+	if err != nil {
+		t.Fatalf("raw BuildTrendsQuery: %v", err)
+	}
+	rawRows, err := executor.QueryTrends(ctx, projectID, rawQ)
+	if err != nil {
+		t.Fatalf("raw QueryTrends: %v", err)
+	}
+	raw := flattenTrendsRows(rawRows)
+
+	if !reflect.DeepEqual(rollup, raw) {
+		t.Errorf("rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
+	}
+	if len(rollup) == 0 {
+		t.Error("empty result — seed/window mismatch would make this parity check vacuous")
+	}
+}
+
+// assertSegParity mirrors assertTrendsParity for the scalar segmentation total.
+func assertSegParity(t *testing.T, ctx context.Context, executor *insights.Executor, projectID string, req *insightsv1.QueryRequest) {
+	t.Helper()
+	resp, err := insights.ExecuteQuery(ctx, executor, projectID, req, time.Now())
+	if err != nil {
+		t.Fatalf("rollup ExecuteQuery: %v", err)
+	}
+	rollup := resp.GetSegmentation().GetTotal()
+
+	rawQ, err := insights.BuildSegmentationQuery(req, projectID)
+	if err != nil {
+		t.Fatalf("raw BuildSegmentationQuery: %v", err)
+	}
+	raw, err := executor.QueryScalar(ctx, projectID, rawQ)
+	if err != nil {
+		t.Fatalf("raw QueryScalar: %v", err)
+	}
+	if rollup != raw {
+		t.Errorf("rollup=%v raw=%v", rollup, raw)
+	}
+	if rollup == 0 {
+		t.Error("zero total — seed/window mismatch would make this parity check vacuous")
 	}
 }
 

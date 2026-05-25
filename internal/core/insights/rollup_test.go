@@ -28,6 +28,24 @@ func rollupTrendsSpec(agg insightsv1.AggregationType, kind string, breakdown str
 	return spec
 }
 
+func rollupSegSpec(agg insightsv1.AggregationType, kind string) *insightsv1.InsightQuerySpec {
+	return &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+		Events:      []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String(kind)}, Aggregation: agg.Enum()}},
+	}
+}
+
+func rollupMultiEventTrendsSpec(kinds ...string) *insightsv1.InsightQuerySpec {
+	spec := &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum()}
+	for _, k := range kinds {
+		spec.Events = append(spec.Events, &insightsv1.EventQuery{
+			Event:       &commonv1.EventFilter{Kind: proto.String(k)},
+			Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+		})
+	}
+	return spec
+}
+
 func TestRollupAggExpr(t *testing.T) {
 	cases := []struct {
 		agg  insightsv1.AggregationType
@@ -69,6 +87,20 @@ func TestCanUseEventRollup(t *testing.T) {
 		{"numeric agg rejected", rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_SUM, "page_view", "$country"), day, false},
 		{"empty kind rejected", rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "", ""), day, false},
 		{"funnel rejected", &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(), Events: []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}}}}, day, false},
+		{"month granularity accepted", rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"), insightsv1.Granularity_GRANULARITY_MONTH, true},
+		{"minute granularity rejected", rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", ""), insightsv1.Granularity_GRANULARITY_MINUTE, false},
+		{"unspecified granularity rejected", rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", ""), insightsv1.Granularity_GRANULARITY_UNSPECIFIED, false},
+		{"segmentation no breakdown accepted", rollupSegSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view"), day, true},
+		{"segmentation unique users accepted", rollupSegSpec(insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS, "page_view"), day, true},
+		{"retention rejected", &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(), Events: []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}}}}, day, false},
+		{"unspecified insight type rejected", &insightsv1.InsightQuerySpec{Events: []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}}}}, day, false},
+		{"zero events rejected", &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum()}, day, false},
+		{"multi-event all valid accepted", rollupMultiEventTrendsSpec("page_view", "signup"), day, true},
+		{"multi-event one empty kind rejected", rollupMultiEventTrendsSpec("page_view", ""), day, false},
+		{"multi-event one numeric agg rejected", &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(), Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			{Event: &commonv1.EventFilter{Kind: proto.String("signup")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum()},
+		}}, day, false},
 	}
 	for _, c := range cases {
 		if got := canUseEventRollup(c.spec, c.gran); got != c.want {
@@ -255,14 +287,50 @@ func TestRollupWindowAligned(t *testing.T) {
 		want bool
 	}{
 		{"both midnight aligned", rollupTimeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"), true},
+		{"single aligned day", rollupTimeRange("2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z"), true},
 		{"from midnight, to=now (live preset)", &commonv1.TimeRange{From: timestamppb.New(startOfDayUTC(now)), To: timestamppb.New(now)}, true},
 		{"from midnight, to future", &commonv1.TimeRange{From: timestamppb.New(startOfDayUTC(now)), To: timestamppb.New(now.Add(time.Hour))}, true},
 		{"from mid-day rejected", rollupTimeRange("2024-01-01T06:00:00Z", "2024-01-08T00:00:00Z"), false},
 		{"to past mid-day rejected", rollupTimeRange("2024-01-01T00:00:00Z", "2024-01-04T06:00:00Z"), false},
+		{"to earlier today (past, mid-day) rejected", &commonv1.TimeRange{From: timestamppb.New(startOfDayUTC(now)), To: timestamppb.New(now.Add(-2 * time.Hour))}, false},
+		// Alignment is evaluated in UTC: a non-UTC instant that *is* midnight UTC is
+		// aligned; a wall-clock midnight in a non-UTC zone is not.
+		{"non-UTC instant equal to midnight UTC accepted", &commonv1.TimeRange{
+			From: timestamppb.New(time.Date(2024, 1, 1, 5, 30, 0, 0, time.FixedZone("IST", 5*3600+30*60))),
+			To:   timestamppb.New(time.Date(2024, 1, 8, 5, 30, 0, 0, time.FixedZone("IST", 5*3600+30*60))),
+		}, true},
+		{"wall-clock midnight in non-UTC zone rejected", &commonv1.TimeRange{
+			From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.FixedZone("IST", 5*3600+30*60))),
+			To:   timestamppb.New(time.Date(2024, 1, 8, 0, 0, 0, 0, time.UTC)),
+		}, false},
 	}
 	for _, c := range cases {
 		if got := rollupWindowAligned(c.tr, now); got != c.want {
 			t.Errorf("%s: rollupWindowAligned = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestRollupDayBounds(t *testing.T) {
+	cases := []struct {
+		name             string
+		fromRFC, toRFC   string
+		wantFrom, wantTo string
+	}{
+		// `to` is exclusive, so the last included day is the day of (to - 1ns).
+		{"aligned week", "2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z", "2024-01-01", "2024-01-07"},
+		{"single day, to exclusive midnight", "2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z", "2024-01-01", "2024-01-01"},
+		{"to exactly midnight rolls back a day", "2024-01-01T00:00:00Z", "2024-01-04T00:00:00Z", "2024-01-01", "2024-01-03"},
+		{"mid-day from floors to its day", "2024-01-01T06:00:00Z", "2024-01-08T12:00:00Z", "2024-01-01", "2024-01-08"},
+		{"mid-day to stays on its day", "2024-01-01T00:00:00Z", "2024-01-05T12:00:00Z", "2024-01-01", "2024-01-05"},
+		{"to one second past midnight stays on that day", "2024-01-01T00:00:00Z", "2024-01-05T00:00:01Z", "2024-01-01", "2024-01-05"},
+		{"non-UTC instant normalized to UTC day", "2024-01-01T05:30:00+05:30", "2024-01-08T05:30:00+05:30", "2024-01-01", "2024-01-07"},
+	}
+	for _, c := range cases {
+		req := &insightsv1.QueryRequest{TimeRange: rollupTimeRange(c.fromRFC, c.toRFC)}
+		gotFrom, gotTo := rollupDayBounds(req)
+		if gotFrom != c.wantFrom || gotTo != c.wantTo {
+			t.Errorf("%s: rollupDayBounds = (%q, %q), want (%q, %q)", c.name, gotFrom, gotTo, c.wantFrom, c.wantTo)
 		}
 	}
 }
