@@ -110,6 +110,21 @@ type DashboardWithTiles struct {
 	Tiles     []dbread.DashboardTile
 }
 
+// recordServiceError logs + records a service-layer error at the layer that detects
+// it (per telemetry.md), then returns it unchanged so handlers map the status. It
+// is the single chokepoint for the service's DB error paths. A client context
+// cancellation/deadline is returned unchanged but NOT logged or recorded — a
+// disconnected or timed-out caller would otherwise manufacture error-rate noise
+// (mirrors the insights executor's recordQueryError).
+func recordServiceError(ctx context.Context, msg string, err error, attrs ...any) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	slog.ErrorContext(ctx, msg, append([]any{slogx.Error(err)}, attrs...)...)
+	telemetry.RecordError(ctx, err)
+	return err
+}
+
 // CreateDashboard persists a dashboard with its display fields and dashboard-level
 // window. The (default_time_range, default_granularity) pair is normalized but NOT
 // checked for satisfiability against the per-granularity range caps: an
@@ -128,12 +143,8 @@ func (s *Service) CreateDashboard(ctx context.Context, projectID, displayName, d
 		DefaultGranularity: dashboardGranularityDBName(defaultGranularity),
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to create dashboard",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-		)
-		telemetry.RecordError(ctx, err)
-		return dbwrite.Dashboard{}, err
+		return dbwrite.Dashboard{}, recordServiceError(ctx, "failed to create dashboard", err,
+			slog.String("project_id", projectID))
 	}
 	return dashboard, nil
 }
@@ -141,22 +152,14 @@ func (s *Service) CreateDashboard(ctx context.Context, projectID, displayName, d
 func (s *Service) ListDashboards(ctx context.Context, projectID string) ([]DashboardWithTiles, error) {
 	dashboards, err := s.read.ListDashboardsByProjectID(ctx, projectID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to list dashboards",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-		)
-		telemetry.RecordError(ctx, err)
-		return nil, err
+		return nil, recordServiceError(ctx, "failed to list dashboards", err,
+			slog.String("project_id", projectID))
 	}
 
 	tiles, err := s.read.ListDashboardTilesByProjectID(ctx, projectID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to list dashboard tiles",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-		)
-		telemetry.RecordError(ctx, err)
-		return nil, err
+		return nil, recordServiceError(ctx, "failed to list dashboard tiles", err,
+			slog.String("project_id", projectID))
 	}
 
 	tilesByDashboardID := make(map[string][]dbread.DashboardTile, len(dashboards))
@@ -188,13 +191,8 @@ func (s *Service) GetDashboard(ctx context.Context, projectID, dashboardID strin
 			)
 			return DashboardWithTiles{}, ErrDashboardNotFound
 		}
-		slog.ErrorContext(ctx, "failed to get dashboard",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-			slog.String("dashboard_id", dashboardID),
-		)
-		telemetry.RecordError(ctx, err)
-		return DashboardWithTiles{}, err
+		return DashboardWithTiles{}, recordServiceError(ctx, "failed to get dashboard", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
 	tiles, err := s.read.ListDashboardTilesByDashboardIDAndProjectID(ctx, dbread.ListDashboardTilesByDashboardIDAndProjectIDParams{
@@ -202,13 +200,8 @@ func (s *Service) GetDashboard(ctx context.Context, projectID, dashboardID strin
 		ProjectID:   projectID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to list dashboard tiles",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-			slog.String("dashboard_id", dashboardID),
-		)
-		telemetry.RecordError(ctx, err)
-		return DashboardWithTiles{}, err
+		return DashboardWithTiles{}, recordServiceError(ctx, "failed to list dashboard tiles", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
 	return DashboardWithTiles{
@@ -241,13 +234,8 @@ func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, d
 			)
 			return DashboardWithTiles{}, ErrDashboardNotFound
 		}
-		slog.ErrorContext(ctx, "failed to update dashboard display name",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-			slog.String("dashboard_id", dashboardID),
-		)
-		telemetry.RecordError(ctx, err)
-		return DashboardWithTiles{}, err
+		return DashboardWithTiles{}, recordServiceError(ctx, "failed to update dashboard display name", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
 	tiles, err := s.read.ListDashboardTilesByDashboardIDAndProjectID(ctx, dbread.ListDashboardTilesByDashboardIDAndProjectIDParams{
@@ -255,13 +243,8 @@ func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, d
 		ProjectID:   projectID,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to list dashboard tiles after rename",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-			slog.String("dashboard_id", dashboardID),
-		)
-		telemetry.RecordError(ctx, err)
-		return DashboardWithTiles{}, err
+		return DashboardWithTiles{}, recordServiceError(ctx, "failed to list dashboard tiles after rename", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
 	return DashboardWithTiles{
@@ -282,13 +265,8 @@ func (s *Service) DeleteDashboard(ctx context.Context, projectID, dashboardID st
 			)
 			return ErrDashboardNotFound
 		}
-		slog.ErrorContext(ctx, "failed to delete dashboard",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-			slog.String("dashboard_id", dashboardID),
-		)
-		telemetry.RecordError(ctx, err)
-		return err
+		return recordServiceError(ctx, "failed to delete dashboard", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 	return nil
 }
@@ -354,13 +332,8 @@ func (s *Service) CreateDashboardTile(
 		if conflict := translateUniqueViolation(err); conflict != nil {
 			return dbwrite.DashboardTile{}, conflict
 		}
-		slog.ErrorContext(ctx, "failed to create dashboard tile",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-			slog.String("dashboard_id", dashboardID),
-		)
-		telemetry.RecordError(ctx, err)
-		return dbwrite.DashboardTile{}, err
+		return dbwrite.DashboardTile{}, recordServiceError(ctx, "failed to create dashboard tile", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 	return tile, nil
 }
@@ -410,14 +383,8 @@ func (s *Service) UpdateDashboardTile(
 		if conflict := translateUniqueViolation(err); conflict != nil {
 			return dbwrite.DashboardTile{}, conflict
 		}
-		slog.ErrorContext(ctx, "failed to update dashboard tile",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-			slog.String("dashboard_id", dashboardID),
-			slog.String("tile_id", tileID),
-		)
-		telemetry.RecordError(ctx, err)
-		return dbwrite.DashboardTile{}, err
+		return dbwrite.DashboardTile{}, recordServiceError(ctx, "failed to update dashboard tile", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID), slog.String("tile_id", tileID))
 	}
 	return tile, nil
 }
@@ -436,14 +403,8 @@ func (s *Service) DeleteDashboardTile(ctx context.Context, projectID, dashboardI
 			)
 			return ErrDashboardTileNotFound
 		}
-		slog.ErrorContext(ctx, "failed to delete dashboard tile",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-			slog.String("dashboard_id", dashboardID),
-			slog.String("tile_id", tileID),
-		)
-		telemetry.RecordError(ctx, err)
-		return err
+		return recordServiceError(ctx, "failed to delete dashboard tile", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID), slog.String("tile_id", tileID))
 	}
 	return nil
 }

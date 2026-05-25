@@ -1,8 +1,10 @@
 package dashboards
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +97,32 @@ func TestDashboardGranularityFromDB(t *testing.T) {
 	}
 }
 
+// TestRecordServiceError_SkipsContextErrors pins that a client cancellation/deadline
+// is returned unchanged but not logged/recorded (it would manufacture error-rate
+// noise), while a genuine failure is both returned and logged at the detecting layer.
+func TestRecordServiceError_SkipsContextErrors(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	if err := recordServiceError(context.Background(), "boom", context.Canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("context error: got %v, want context.Canceled", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("context error must not be logged, got: %s", buf.String())
+	}
+
+	buf.Reset()
+	sentinel := errors.New("db exploded")
+	if err := recordServiceError(context.Background(), "boom", sentinel); !errors.Is(err, sentinel) {
+		t.Fatalf("real error: got %v, want sentinel", err)
+	}
+	if !strings.Contains(buf.String(), "boom") {
+		t.Errorf("real error must be logged, got: %q", buf.String())
+	}
+}
+
 func TestValidAbsoluteTimeRange(t *testing.T) {
 	now := time.Date(2026, 5, 23, 12, 0, 0, 0, time.UTC)
 	if validAbsoluteTimeRange(nil) {
@@ -132,6 +160,31 @@ func TestResolveDashboardTimeRangePreset(t *testing.T) {
 	got = ResolveDashboardTimeRangePreset(commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, fallback, now)
 	if !got.GetFrom().AsTime().Equal(fallback.GetFrom().AsTime()) || !got.GetTo().AsTime().Equal(fallback.GetTo().AsTime()) {
 		t.Fatalf("got fallback range %v-%v, want %v-%v", got.GetFrom().AsTime(), got.GetTo().AsTime(), fallback.GetFrom().AsTime(), fallback.GetTo().AsTime())
+	}
+}
+
+// TestResolveDashboardTimeRangePreset_DayPresetsAreMidnightUTC pins that day-grain
+// presets resolve to a midnight-UTC `from` even when the reference clock is in a
+// non-UTC zone. The day-keyed rollup's eligibility guard
+// (insights.rollupWindowAligned) accepts only midnight-UTC `from`; a midnight-local
+// `from` silently disqualifies every default-window tile and forces a raw scan.
+func TestResolveDashboardTimeRangePreset_DayPresetsAreMidnightUTC(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("tz data unavailable: %v", err)
+	}
+	now := time.Date(2026, 4, 26, 14, 0, 0, 0, loc) // 14:00 EDT == 18:00 UTC
+
+	for _, preset := range []commonv1.TimeRangePreset{
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS,
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS,
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS,
+	} {
+		from := ResolveDashboardTimeRangePreset(preset, nil, now).GetFrom().AsTime().UTC()
+		midnight := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
+		if !from.Equal(midnight) {
+			t.Errorf("%v: from = %v, want midnight UTC (%v)", preset, from, midnight)
+		}
 	}
 }
 
@@ -270,7 +323,7 @@ func TestRenderDashboard_PropagatesContextCancellation(t *testing.T) {
 	// A context cancellation / deadline arriving during tile execution must fail
 	// the whole RenderDashboard call (so the handler maps it to Canceled/
 	// DeadlineExceeded) rather than being masked as a per-tile "query failed" in a
-	// 200 response. Guards R2-A: the executor wraps the context error, and
+	// 200 response. Guards that the executor wraps the context error, and
 	// ExecuteQuery must preserve its identity so renderInsightTile can propagate it.
 	spec := &insightsv1.InsightQuerySpec{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
@@ -422,7 +475,7 @@ func TestRenderDashboard_EmptyDashboard(t *testing.T) {
 func TestRenderDashboard_PartialSuccessIsolatesFailure(t *testing.T) {
 	// One tile fails (missing query) while a sibling succeeds with a real Result in
 	// the same render — proves per-tile isolation doesn't poison healthy siblings.
-	// Guards R2-F partial-success.
+	// Guards partial-success isolation.
 	spec := &insightsv1.InsightQuerySpec{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
 		Events: []*insightsv1.EventQuery{

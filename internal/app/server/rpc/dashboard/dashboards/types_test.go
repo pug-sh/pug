@@ -1,14 +1,53 @@
 package dashboards
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
+
+// TestRenderedDashboardToRPC_CorruptTileDegradesGracefully pins that a tile whose
+// stored row can't be re-decoded by the RPC encoder yields a per-tile error_message
+// outcome rather than failing the whole QueryDashboard — matching renderInsightTile's
+// per-tile handling of the same corruption. Sibling tiles still render.
+func TestRenderedDashboardToRPC_CorruptTileDegradesGracefully(t *testing.T) {
+	rd := coredashboards.RenderedDashboard{
+		Dashboard: dbread.Dashboard{ID: "dash", DisplayName: "D"},
+		Tiles: []coredashboards.RenderedTile{
+			{
+				// Insight row with no stored query: setTileContent fails to encode it.
+				Tile:         dbread.DashboardTile{ID: "bad", DashboardID: "dash", Kind: int16(coredashboards.TileKindInsight)},
+				ErrorMessage: "insight tile is missing its query",
+			},
+			{
+				Tile: dbread.DashboardTile{ID: "md", DashboardID: "dash", Kind: int16(coredashboards.TileKindMarkdown), MarkdownBody: pgtype.Text{String: "# hi", Valid: true}},
+			},
+		},
+	}
+
+	msg := renderedDashboardToRPC(context.Background(), rd)
+	if len(msg.GetTiles()) != 2 {
+		t.Fatalf("got %d tiles, want 2", len(msg.GetTiles()))
+	}
+	bad := msg.GetTiles()[0]
+	if bad.GetErrorMessage() == "" {
+		t.Errorf("corrupt insight tile: want error_message outcome, got %T", bad.GetOutcome())
+	}
+	if bad.GetTile().GetId() != "bad" {
+		t.Errorf("corrupt tile id = %q, want structural tile preserved (id %q)", bad.GetTile().GetId(), "bad")
+	}
+	md := msg.GetTiles()[1]
+	if md.GetTile().GetMarkdown().GetBody() != "# hi" {
+		t.Errorf("sibling markdown tile failed to render: body = %q", md.GetTile().GetMarkdown().GetBody())
+	}
+}
 
 func TestSetTileContent_InsightHappyPath(t *testing.T) {
 	msg := &dashboardsv1.DashboardTile{}

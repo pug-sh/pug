@@ -8,8 +8,14 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// startOfDay truncates t to midnight UTC. UTC (not t's local zone) is deliberate:
+// the day-keyed ClickHouse rollup is UTC-aligned, and insights.rollupWindowAligned
+// only treats a window as rollup-eligible when `from` is exactly midnight UTC. A
+// midnight-local boundary on a non-UTC server would silently disqualify every
+// default-window dashboard tile and force a raw scan.
 func startOfDay(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	t = t.UTC()
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func lastNHours(now time.Time, n int) *commonv1.TimeRange {

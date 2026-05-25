@@ -60,7 +60,7 @@ func rollupAggExpr(agg insightsv1.AggregationType) (string, bool) {
 // kind, event_id) and collapses retries/redeliveries on merge; the incremental MV
 // (migration 006) sums count() into a key WITHOUT event_id, so a duplicate insert
 // is retained permanently. The drift equals the pipeline's redelivery rate
-// (typically <1%, monotonic, never self-correcting). UNIQUE_USERS is immune
+// (monotonic, never self-correcting). UNIQUE_USERS is immune
 // (uniqState on distinct_id is idempotent). This is an accepted, bounded
 // inaccuracy for dashboard visualization — see docs/architecture/clickhouse.md;
 // pinned by TestIntegration/rollup_duplicate_overcount_documented.
@@ -137,7 +137,7 @@ func startOfDayUTC(t time.Time) time.Time {
 // trailing slice lies at/after `now` and holds no events. A past, mid-day `to` (e.g.
 // a "same time on a prior day" comparison) strands real events on the excluded side,
 // so it is rejected and the query falls back to the raw builders. Without this guard
-// the rollup silently over-counts the partial boundary days (R2-B). `now` is the
+// the rollup silently over-counts the partial boundary days. `now` is the
 // request's reference time, threaded so a live preset's `to == now` is treated as
 // aligned rather than rejected by sub-second skew.
 func rollupWindowAligned(tr *commonv1.TimeRange, now time.Time) bool {

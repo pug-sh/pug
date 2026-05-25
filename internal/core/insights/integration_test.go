@@ -1123,7 +1123,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("rollup_duplicate_overcount_documented", func(t *testing.T) {
-		// Pins the accepted C1 tradeoff: the rollup over-counts duplicate event
+		// Pins the accepted tradeoff: the rollup over-counts duplicate event
 		// deliveries that the raw ReplacingMergeTree dedups. Seeded under its own
 		// project so the OPTIMIZE below is isolated.
 		const dupProjectID = "proj_rollup_dup"
@@ -1152,7 +1152,7 @@ func TestIntegration(t *testing.T) {
 					Events:      []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: agg.Enum()}},
 				},
 				// Day-aligned window (midnight→midnight) covering the occur day, so it
-				// stays rollup-eligible after the R2-B window-alignment guard; a mid-day
+				// stays rollup-eligible after the window-alignment guard; a mid-day
 				// window would correctly fall back to raw and not exercise the over-count.
 				TimeRange:   &commonv1.TimeRange{From: timestamppb.New(time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)), To: timestamppb.New(time.Date(2024, 2, 2, 0, 0, 0, 0, time.UTC))},
 				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
@@ -1183,7 +1183,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("rollup_parity_trends_multi_event_breakdown", func(t *testing.T) {
-		// R2-D: two event kinds + a breakdown exercises the shared top_vals CTE,
+		// Two event kinds + a breakdown exercises the shared top_vals CTE,
 		// which is built over Or(kind...) for all kinds and attached to only the
 		// first UNION ALL branch yet referenced by every branch. Parity with the raw
 		// builder proves the cross-branch CTE reference and per-kind grouping are
@@ -1241,7 +1241,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("rollup_parity_trends_others_bucket", func(t *testing.T) {
-		// R2-E: more breakdown values than breakdown_limit forces the rollup's top-N
+		// More breakdown values than breakdown_limit forces the rollup's top-N
 		// + '$others' collapse (top_vals ... LIMIT n, then if(dim_value IN top_vals,
 		// dim_value, '$others')). The rollup picks top-N from pre-summed daily cnt
 		// while raw picks from rows; parity proves they bucket identically.

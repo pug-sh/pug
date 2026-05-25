@@ -1,17 +1,21 @@
 package dashboards
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 func roDashboardToRPC(dashboard coredashboards.DashboardWithTiles) (*dashboardsv1.Dashboard, error) {
@@ -51,21 +55,10 @@ func wDashboardToRPC(dashboard dbwrite.Dashboard) *dashboardsv1.Dashboard {
 	}
 }
 
-func renderedDashboardToRPC(rd coredashboards.RenderedDashboard) (*dashboardsv1.RenderedDashboard, error) {
+func renderedDashboardToRPC(ctx context.Context, rd coredashboards.RenderedDashboard) *dashboardsv1.RenderedDashboard {
 	tiles := make([]*dashboardsv1.RenderedTile, 0, len(rd.Tiles))
 	for _, rt := range rd.Tiles {
-		tileMsg, err := roTileToRPC(rt.Tile)
-		if err != nil {
-			return nil, err
-		}
-		msg := &dashboardsv1.RenderedTile{Tile: tileMsg}
-		switch {
-		case rt.ErrorMessage != "":
-			msg.Outcome = &dashboardsv1.RenderedTile_ErrorMessage{ErrorMessage: rt.ErrorMessage}
-		case rt.Result != nil:
-			msg.Outcome = &dashboardsv1.RenderedTile_Result{Result: rt.Result}
-		}
-		tiles = append(tiles, msg)
+		tiles = append(tiles, renderedTileToRPC(ctx, rt))
 	}
 	return &dashboardsv1.RenderedDashboard{
 		Id:                 proto.String(rd.Dashboard.ID),
@@ -76,7 +69,60 @@ func renderedDashboardToRPC(rd coredashboards.RenderedDashboard) (*dashboardsv1.
 		CreateTime:         toTimestamp(rd.Dashboard.CreateTime.Time),
 		UpdateTime:         toTimestamp(rd.Dashboard.UpdateTime.Time),
 		Tiles:              tiles,
-	}, nil
+	}
+}
+
+// renderedTileToRPC encodes one rendered tile. If the stored tile row can't be
+// decoded by roTileToRPC (corrupt payload / cross-deploy schema drift), it records
+// the data-integrity error server-side and degrades to a structural tile carrying an
+// error_message outcome — a corrupt tile must not fail the whole QueryDashboard, the
+// same per-tile contract renderInsightTile upholds at execution time.
+func renderedTileToRPC(ctx context.Context, rt coredashboards.RenderedTile) *dashboardsv1.RenderedTile {
+	tileMsg, err := roTileToRPC(rt.Tile)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to encode rendered dashboard tile",
+			slogx.Error(err), slog.String("tile_id", rt.Tile.ID))
+		telemetry.RecordError(ctx, err)
+		// Reuse the render-phase message when present (e.g. "invalid query
+		// parameters: …"); otherwise a generic, client-safe message. The internal
+		// encode error is logged above, never surfaced to the client.
+		errMsg := rt.ErrorMessage
+		if errMsg == "" {
+			errMsg = "tile could not be rendered"
+		}
+		return &dashboardsv1.RenderedTile{
+			Tile:    structuralTileToRPC(rt.Tile),
+			Outcome: &dashboardsv1.RenderedTile_ErrorMessage{ErrorMessage: errMsg},
+		}
+	}
+	msg := &dashboardsv1.RenderedTile{Tile: tileMsg}
+	switch {
+	case rt.ErrorMessage != "":
+		msg.Outcome = &dashboardsv1.RenderedTile_ErrorMessage{ErrorMessage: rt.ErrorMessage}
+	case rt.Result != nil:
+		msg.Outcome = &dashboardsv1.RenderedTile_Result{Result: rt.Result}
+	}
+	return msg
+}
+
+// structuralTileToRPC builds a tile message with identity, timestamps, and (best
+// effort) layout but no content oneof — for the degraded path where the content
+// payload can't be decoded. Layouts are attempted but omitted on their own failure
+// (the primary error is already recorded by the caller).
+func structuralTileToRPC(tile dbread.DashboardTile) *dashboardsv1.DashboardTile {
+	msg := &dashboardsv1.DashboardTile{
+		Id:          proto.String(tile.ID),
+		DashboardId: proto.String(tile.DashboardID),
+		DisplayName: proto.String(tile.DisplayName),
+		Description: proto.String(tile.Description),
+		CreateTime:  toTimestamp(tile.CreateTime.Time),
+		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
+		ViewMode:    tileViewModeToRPC(coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
+	}
+	if layouts, err := coredashboards.MapToLayouts(tile.Layouts); err == nil {
+		msg.Layouts = layouts
+	}
+	return msg
 }
 
 func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error) {

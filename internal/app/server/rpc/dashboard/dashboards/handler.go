@@ -343,15 +343,9 @@ func (s *Server) QueryDashboard(
 		return nil, serviceErrToConnect(err)
 	}
 
-	msg, err := renderedDashboardToRPC(rendered)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to encode rendered dashboard",
-			slogx.Error(err), slog.String("dashboard_id", req.Msg.GetDashboardId()))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-
+	// renderedDashboardToRPC degrades any undecodable tile to a per-tile error
+	// outcome (recorded at source) rather than failing the whole response.
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceQueryDashboardResponse{
-		Dashboard: msg,
+		Dashboard: renderedDashboardToRPC(ctx, rendered),
 	}), nil
 }

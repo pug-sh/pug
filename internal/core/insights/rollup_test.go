@@ -1,7 +1,10 @@
 package insights
 
 import (
+	"fmt"
 	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -264,7 +267,7 @@ func TestTrendsExecution_FallsBackToRaw_NonAlignedWindow(t *testing.T) {
 	// Rollup-eligible spec (DAY granularity, no filters, materialized breakdown) but
 	// a non-day-aligned absolute window (mid-day bounds, in the past) must fall back
 	// to raw: the rollup is keyed on whole days and would widen the window, over-
-	// counting the partial boundary days (R2-B). The raw builder filters exact instants.
+	// counting the partial boundary days. The raw builder filters exact instants.
 	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"))
 	req.TimeRange = rollupTimeRange("2024-01-01T06:00:00Z", "2024-01-08T12:00:00Z")
 	q, _, err := trendsQueryForExecution(req, "proj_123", time.Now())
@@ -372,23 +375,75 @@ func TestSegmentationExecution_RoutesToRollup(t *testing.T) {
 	}
 }
 
-// TestMaterializedDimsMatchMigration pins the Go dimension list to the MV's
-// ARRAY JOIN list in migration 006. They are coupled by hand; this fails loud if
-// they drift (a new dimension added to one but not the other).
+// checkMaterializedDimsMatch verifies that BOTH ARRAY JOIN dimension lists in the
+// migration (the incremental MV and the one-time backfill INSERT) contain exactly
+// the Go materializedDims plus the total sentinel — no more, no less. It returns a
+// descriptive error on any drift: a Go↔migration mismatch in either direction, or
+// the MV and backfill copies diverging from each other. A whole-file substring
+// check cannot catch either, because the two copies share the same tokens.
+func checkMaterializedDimsMatch(sql string, goDims []string, total string) error {
+	// `] AS dim` (whitespace-tolerant) terminates each list — a bare `]` would
+	// stop early on the `auto_properties['$country']` subscripts inside the list.
+	blockRe := regexp.MustCompile(`(?s)ARRAY JOIN \[(.*?)\]\s+AS\s+dim`)
+	blocks := blockRe.FindAllStringSubmatch(sql, -1)
+	if len(blocks) != 2 {
+		return fmt.Errorf("expected 2 ARRAY JOIN blocks (MV + backfill), found %d", len(blocks))
+	}
+
+	want := append([]string{total}, goDims...)
+	slices.Sort(want)
+
+	dimRe := regexp.MustCompile(`\('([^']*)',`) // first tuple element, e.g. ('$country',
+	for i, block := range blocks {
+		var got []string
+		for _, m := range dimRe.FindAllStringSubmatch(block[1], -1) {
+			got = append(got, m[1])
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			return fmt.Errorf("ARRAY JOIN block %d dims %v != materializedDims+%q %v", i, got, total, want)
+		}
+	}
+	return nil
+}
+
+// TestCheckMaterializedDimsMatch exercises the drift detector itself: a matching
+// migration passes, and every drift direction (MV/backfill divergence, a
+// migration-only dim, a Go-only dim) is caught.
+func TestCheckMaterializedDimsMatch(t *testing.T) {
+	const total = "$__total__"
+	goDims := []string{"$a", "$b"}
+	mk := func(mv, backfill string) string {
+		return "CREATE MATERIALIZED VIEW x AS SELECT a ARRAY JOIN [\n" + mv + "\n] AS dim GROUP BY a;\n" +
+			"INSERT INTO x SELECT a ARRAY JOIN [\n" + backfill + "\n] AS dim GROUP BY a;\n"
+	}
+	good := "('$__total__', ''), ('$a', x), ('$b', y)"
+
+	if err := checkMaterializedDimsMatch(mk(good, good), goDims, total); err != nil {
+		t.Errorf("matching migration flagged: %v", err)
+	}
+	if err := checkMaterializedDimsMatch(mk(good, "('$__total__', ''), ('$a', x)"), goDims, total); err == nil {
+		t.Error("expected MV/backfill divergence (backfill missing $b) to be detected")
+	}
+	withExtra := "('$__total__', ''), ('$a', x), ('$b', y), ('$c', z)"
+	if err := checkMaterializedDimsMatch(mk(withExtra, withExtra), goDims, total); err == nil {
+		t.Error("expected migration-only dimension ($c) to be detected")
+	}
+	if err := checkMaterializedDimsMatch(mk(good, good), []string{"$a", "$b", "$d"}, total); err == nil {
+		t.Error("expected Go-only dimension ($d) to be detected")
+	}
+}
+
+// TestMaterializedDimsMatchMigration pins the Go dimension list to BOTH ARRAY JOIN
+// lists in migration 006 (the MV and the backfill). Hand-coupled; fails loud on any
+// drift in either direction or between the two copies.
 func TestMaterializedDimsMatchMigration(t *testing.T) {
 	const path = "../../../schema/clickhouse/migrations/006_create_dashboard_event_rollup.sql"
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read migration: %v", err)
 	}
-	sql := string(data)
-	for _, d := range materializedDims {
-		// Each dim appears as the first tuple element, e.g. ('$country', ...).
-		if !strings.Contains(sql, "('"+d+"',") {
-			t.Errorf("materializedDims has %q but migration 006 has no ('%s', ...) ARRAY JOIN entry", d, d)
-		}
-	}
-	if !strings.Contains(sql, "('"+totalDimName+"',") {
-		t.Errorf("migration 006 missing the ('%s', '') total row", totalDimName)
+	if err := checkMaterializedDimsMatch(string(data), materializedDims, totalDimName); err != nil {
+		t.Error(err)
 	}
 }
