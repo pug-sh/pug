@@ -70,26 +70,29 @@ func TestNormalizedDashboardDefaultTimeRange_AllPresets(t *testing.T) {
 	cases := []struct {
 		name string
 		in   commonv1.TimeRangePreset
-		want DashboardDefaultTimeRange
+		want commonv1.TimeRangePreset
 	}{
-		{"last_1_hour", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR, DashboardDefaultTimeRangeLast1Hour},
-		{"last_6_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS, DashboardDefaultTimeRangeLast6Hours},
-		{"last_24_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS, DashboardDefaultTimeRangeLast24Hours},
-		{"last_7_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, DashboardDefaultTimeRangeLast7Days},
-		{"last_14_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS, DashboardDefaultTimeRangeLast14Days},
-		{"last_30_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, DashboardDefaultTimeRangeLast30Days},
-		{"last_90_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS, DashboardDefaultTimeRangeLast90Days},
-		{"last_180_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS, DashboardDefaultTimeRangeLast180Days},
-		{"last_365_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS, DashboardDefaultTimeRangeLast365Days},
-		{"unspecified_defaults", commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, DashboardDefaultTimeRangeLast30Days},
-		{"unknown_defaults", commonv1.TimeRangePreset(99), DashboardDefaultTimeRangeLast30Days},
+		{"last_1_hour", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR},
+		{"last_6_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS},
+		{"last_24_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS},
+		{"last_7_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS},
+		{"last_14_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS},
+		{"last_30_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS},
+		{"last_90_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS},
+		{"last_180_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS},
+		{"last_365_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS},
+		{"unspecified_defaults", commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS},
+		{"unknown_defaults", commonv1.TimeRangePreset(99), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := normalizedDashboardDefaultTimeRange(tc.in)
-			if got != tc.want {
-				t.Fatalf("normalizedDashboardDefaultTimeRange(%v) = %d, want %d", tc.in, got, tc.want)
+			if got := normalizedDashboardDefaultTimeRange(tc.in); got != tc.want {
+				t.Fatalf("normalizedDashboardDefaultTimeRange(%v) = %v, want %v", tc.in, got, tc.want)
+			}
+			// DB name must round-trip to the normalized preset's enum name.
+			if got := dashboardDefaultTimeRangeDBName(tc.in); got != tc.want.String() {
+				t.Fatalf("dashboardDefaultTimeRangeDBName(%v) = %q, want %q", tc.in, got, tc.want.String())
 			}
 		})
 	}

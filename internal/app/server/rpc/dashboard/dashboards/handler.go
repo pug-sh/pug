@@ -336,7 +336,12 @@ func (s *Server) QueryDashboard(
 		TimeRange:   req.Msg.GetTimeRange(),
 		Granularity: req.Msg.GetGranularity(),
 	}
-	rendered := coredashboards.RenderDashboard(ctx, s.executor, dashboard, overrides)
+	rendered, err := coredashboards.RenderDashboard(ctx, s.executor, dashboard, overrides)
+	if err != nil {
+		// Only a request-level context cancellation/deadline reaches here; per-tile
+		// failures are carried in each tile's outcome. Already recorded at source.
+		return nil, serviceErrToConnect(err)
+	}
 
 	msg, err := renderedDashboardToRPC(rendered)
 	if err != nil {

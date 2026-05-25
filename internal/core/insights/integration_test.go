@@ -1034,6 +1034,149 @@ func TestIntegration(t *testing.T) {
 			t.Errorf("rollup $__total__ page_view count: got %d, want 6 (MV did not populate)", total)
 		}
 	})
+
+	t.Run("rollup_parity_trends_week_unique_users", func(t *testing.T) {
+		// WEEK granularity over a window where alice appears on days 1/2/3 (all in
+		// the same ISO week) forces the rollup's per-day uniq_state to merge across
+		// days within one bucket — the cross-day uniqMerge that DAY-granularity
+		// tests never exercise. Parity with the raw builder proves the merge is
+		// correct, and the per-country totals prove the repeat user collapses to 1.
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Events:      []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()}},
+				Breakdowns:  []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			},
+			TimeRange:   &commonv1.TimeRange{From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), To: timestamppb.New(time.Date(2024, 1, 8, 0, 0, 0, 0, time.UTC))},
+			Granularity: insightsv1.Granularity_GRANULARITY_WEEK.Enum(),
+		}
+		resp, err := insights.ExecuteQuery(ctx, executor, rollupProjectID, req)
+		if err != nil {
+			t.Fatalf("ExecuteQuery (rollup): %v", err)
+		}
+		rollup := flattenTrendsResp(resp)
+
+		rawQ, err := insights.BuildTrendsQuery(req, rollupProjectID)
+		if err != nil {
+			t.Fatalf("BuildTrendsQuery (raw): %v", err)
+		}
+		rawRows, err := executor.QueryTrends(ctx, rollupProjectID, rawQ)
+		if err != nil {
+			t.Fatalf("QueryTrends (raw): %v", err)
+		}
+		raw := flattenTrendsRows(rawRows)
+
+		if !reflect.DeepEqual(rollup, raw) {
+			t.Errorf("week unique-users rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
+		}
+		for _, s := range resp.GetTrends().GetSeries() {
+			var sum float64
+			for _, p := range s.GetPoints() {
+				sum += p.GetValue()
+			}
+			switch country := s.GetBreakdown()["$country"]; country {
+			case "US":
+				if sum != 2 {
+					t.Errorf("US weekly unique users = %v, want 2 (alice merged across days 1-3 + charlie)", sum)
+				}
+			case "GB":
+				if sum != 1 {
+					t.Errorf("GB weekly unique users = %v, want 1 (bob merged across days 1-2)", sum)
+				}
+			}
+		}
+	})
+
+	t.Run("rollup_parity_segmentation_per_user_avg", func(t *testing.T) {
+		// PER_USER_AVG = sum(cnt)/uniqMerge(uniq_state): the numerator and
+		// denominator come from different aggregate states, so verify the ratio
+		// matches the raw count(*)/uniq(distinct_id) over the same window.
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+				Events:      []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG.Enum()}},
+			},
+			TimeRange:   &commonv1.TimeRange{From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), To: timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC))},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+		resp, err := insights.ExecuteQuery(ctx, executor, rollupProjectID, req)
+		if err != nil {
+			t.Fatalf("ExecuteQuery (rollup): %v", err)
+		}
+		rollupAvg := resp.GetSegmentation().GetTotal()
+
+		rawQ, err := insights.BuildSegmentationQuery(req, rollupProjectID)
+		if err != nil {
+			t.Fatalf("BuildSegmentationQuery (raw): %v", err)
+		}
+		rawAvg, err := executor.QueryScalar(ctx, rollupProjectID, rawQ)
+		if err != nil {
+			t.Fatalf("QueryScalar (raw): %v", err)
+		}
+		if rollupAvg != rawAvg {
+			t.Errorf("per-user-avg rollup=%v raw=%v", rollupAvg, rawAvg)
+		}
+		if rollupAvg != 2 {
+			t.Errorf("per-user-avg = %v, want 2 (6 events / 3 users)", rollupAvg)
+		}
+	})
+
+	t.Run("rollup_duplicate_overcount_documented", func(t *testing.T) {
+		// Pins the accepted C1 tradeoff: the rollup over-counts duplicate event
+		// deliveries that the raw ReplacingMergeTree dedups. Seeded under its own
+		// project so the OPTIMIZE below is isolated.
+		const dupProjectID = "proj_rollup_dup"
+		occur := time.Date(2024, 2, 1, 12, 0, 0, 0, time.UTC)
+		eventID := uuid.New().String()
+		// Insert the same event twice (identical dedup key): an at-least-once
+		// redelivery / client retry. Raw collapses these on merge; the incremental
+		// MV fires per insert and sums them.
+		for i := 0; i < 2; i++ {
+			if err := insertAutoEvent(ctx, ch.Conn, dupProjectID, eventID, "page_view", "alice", occur,
+				variantStringMap(map[string]string{"$country": "US"})); err != nil {
+				t.Fatalf("seed dup event %d: %v", i, err)
+			}
+		}
+		// Force the raw-side ReplacingMergeTree merge so the raw builder (no FINAL)
+		// reads the deduplicated truth, mirroring production eventual consistency.
+		// Without this, raw also over-counts pre-merge and the divergence is hidden.
+		if err := ch.Conn.Exec(ctx, "OPTIMIZE TABLE events FINAL"); err != nil {
+			t.Fatalf("optimize events: %v", err)
+		}
+
+		totals := func(agg insightsv1.AggregationType) (rollup, rawVal float64) {
+			req := &insightsv1.QueryRequest{
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+					Events:      []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: agg.Enum()}},
+				},
+				TimeRange:   &commonv1.TimeRange{From: timestamppb.New(occur.AddDate(0, 0, -1)), To: timestamppb.New(occur.AddDate(0, 0, 1))},
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+			}
+			resp, err := insights.ExecuteQuery(ctx, executor, dupProjectID, req)
+			if err != nil {
+				t.Fatalf("ExecuteQuery: %v", err)
+			}
+			rawQ, err := insights.BuildSegmentationQuery(req, dupProjectID)
+			if err != nil {
+				t.Fatalf("BuildSegmentationQuery: %v", err)
+			}
+			raw, err := executor.QueryScalar(ctx, dupProjectID, rawQ)
+			if err != nil {
+				t.Fatalf("QueryScalar: %v", err)
+			}
+			return resp.GetSegmentation().GetTotal(), raw
+		}
+
+		// TOTAL: rollup keeps the duplicate (2), raw dedups it (1) — documented drift.
+		if rollup, raw := totals(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL); rollup != 2 || raw != 1 {
+			t.Errorf("TOTAL rollup=%v raw=%v, want rollup=2 raw=1 (accepted over-count; see rollup.go canUseEventRollup)", rollup, raw)
+		}
+		// UNIQUE_USERS: immune — uniqState on distinct_id is idempotent.
+		if rollup, raw := totals(insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS); rollup != raw || rollup != 1 {
+			t.Errorf("UNIQUE_USERS rollup=%v raw=%v, want both=1 (dedup-immune)", rollup, raw)
+		}
+	})
 }
 
 func rollupParityTrendsReq(agg insightsv1.AggregationType) *insightsv1.QueryRequest {

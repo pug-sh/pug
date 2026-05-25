@@ -11,6 +11,18 @@ CREATE TABLE IF NOT EXISTS dashboard_event_rollup_daily (
 ) ENGINE = AggregatingMergeTree
 ORDER BY (project_id, kind, dim_name, day, dim_value);
 
+-- Accepted accuracy tradeoff: the ORDER BY key has no event_id, and the
+-- incremental MV below sums count() at insert time. The raw events table is
+-- ReplacingMergeTree keyed on (project_id, minute(occur_time), kind, event_id),
+-- so it dedups retries/redeliveries on merge — but a duplicate insert is summed
+-- into cnt here and can never be reconciled. So cnt (TOTAL) and the
+-- cnt/uniq ratio (PER_USER_AVG) over-count vs the raw builders by the pipeline's
+-- redelivery rate (monotonic, never self-correcting). uniq_state (UNIQUE_USERS)
+-- is immune — uniqState on distinct_id is idempotent. This is accepted as a
+-- bounded inaccuracy for dashboard visualization. If exact reconciliation with
+-- the raw insights path is ever required, switch to a refreshable APPEND MV with
+-- FROM events FINAL + a closed-bucket watermark (see docs/architecture/clickhouse.md).
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS dashboard_event_rollup_daily_mv
 TO dashboard_event_rollup_daily AS
 SELECT

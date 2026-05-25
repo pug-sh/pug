@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	chcol "github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	chcol "github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/google/uuid"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"

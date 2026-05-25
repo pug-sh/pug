@@ -960,9 +960,9 @@ func BuildProfilePropertyKeysQuery(projectID string) (string, []any, error) {
 // until ReplacingMergeTree background merges complete. Acceptable for typeahead
 // (showing the user every value they've ever stored) but worth knowing.
 //
-// The `!= ''` filter collapses two cases that the underlying JSON column can
-// distinguish but the string projection cannot: properties absent from a
-// profile and properties stored as the literal empty string both surface as
+// The non-empty-string filter collapses two cases that the underlying JSON
+// column can distinguish but the string projection cannot: properties absent
+// from a profile and properties stored as the literal empty string both surface as
 // "" after the coalesce. Both are excluded from the returned distinct-values
 // set; callers needing to surface stored empty strings as a value would need
 // a different projection.

@@ -20,8 +20,15 @@ func lastNHours(now time.Time, n int) *commonv1.TimeRange {
 	}
 }
 
+// lastNDays spans the N calendar days ending today: from the start of the day
+// (N-1) days ago, to now. The span is therefore (N-1) full days plus the partial
+// current day — strictly less than N*24h — so the largest preset in each tier
+// (e.g. LAST_365_DAYS with GRANULARITY_DAY, LAST_14_DAYS with GRANULARITY_HOUR)
+// fits its per-granularity range cap (proto QueryRequest CEL) instead of
+// overshooting by the partial day and failing per-tile validation. It also
+// yields exactly N daily buckets rather than N+1.
 func lastNDays(now time.Time, n int) *commonv1.TimeRange {
-	from := startOfDay(now.AddDate(0, 0, -n))
+	from := startOfDay(now.AddDate(0, 0, -(n - 1)))
 	return &commonv1.TimeRange{
 		From: timestamppb.New(from),
 		To:   timestamppb.New(now),

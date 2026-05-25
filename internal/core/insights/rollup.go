@@ -13,7 +13,7 @@ import (
 // dashboard_event_rollup_daily_mv (migration 006).
 const rollupTable = "dashboard_event_rollup_daily"
 
-// totalDimName is the synthetic dimension whose single ('') value per
+// totalDimName is the synthetic dimension whose single empty-string value per
 // (project, day, kind) carries the no-breakdown / segmentation totals.
 const totalDimName = "$__total__"
 
@@ -52,6 +52,17 @@ func rollupAggExpr(agg insightsv1.AggregationType) (string, bool) {
 // canUseEventRollup reports whether a trends/segmentation query can be served from
 // the dimensional rollup. Conservative by construction: anything it rejects falls
 // back to the raw-events builders with identical results.
+//
+// Accepted accuracy caveat for the rollup-served path: TOTAL and PER_USER_AVG can
+// over-count relative to the raw builders under duplicate event delivery. The
+// events table is ReplacingMergeTree keyed on (project_id, minute(occur_time),
+// kind, event_id) and collapses retries/redeliveries on merge; the incremental MV
+// (migration 006) sums count() into a key WITHOUT event_id, so a duplicate insert
+// is retained permanently. The drift equals the pipeline's redelivery rate
+// (typically <1%, monotonic, never self-correcting). UNIQUE_USERS is immune
+// (uniqState on distinct_id is idempotent). This is an accepted, bounded
+// inaccuracy for dashboard visualization — see docs/architecture/clickhouse.md;
+// pinned by TestRollupDuplicateOvercount.
 func canUseEventRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Granularity) bool {
 	switch spec.GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
@@ -232,7 +243,7 @@ func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string)
 	}
 
 	sql, args, err := chq.NewQuery().
-		Select(aggExpr + " AS value").
+		Select(aggExpr+" AS value").
 		From(rollupTable).
 		Where(
 			chq.Eq("project_id", projectID),

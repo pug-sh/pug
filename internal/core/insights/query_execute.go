@@ -39,17 +39,15 @@ func ExecuteQuery(
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
 		q, err := trendsQueryForExecution(req, projectID)
 		if err != nil {
-			slog.WarnContext(ctx, "failed to build trends query", slogx.Error(err),
-				slog.String("project_id", projectID))
-			return nil, &InvalidQueryError{Message: err.Error()}
+			return nil, buildQueryError(ctx, projectID, req, "trends", err)
 		}
 		rows, err := executor.QueryTrends(ctx, projectID, q)
 		if err != nil {
-			return nil, recordQueryFailure(ctx, projectID, err)
+			return nil, queryFailed()
 		}
 		series, err := GroupSeries(ctx, rows, q.Properties())
 		if err != nil {
-			return nil, recordQueryFailure(ctx, projectID, err)
+			return nil, queryFailed()
 		}
 		resp.Result = &insightsv1.QueryResponse_Trends{
 			Trends: &insightsv1.TrendsResult{Series: series},
@@ -58,13 +56,11 @@ func ExecuteQuery(
 	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
 		q, err := segmentationQueryForExecution(req, projectID)
 		if err != nil {
-			slog.WarnContext(ctx, "failed to build segmentation query", slogx.Error(err),
-				slog.String("project_id", projectID))
-			return nil, &InvalidQueryError{Message: err.Error()}
+			return nil, buildQueryError(ctx, projectID, req, "segmentation", err)
 		}
 		value, err := executor.QueryScalar(ctx, projectID, q)
 		if err != nil {
-			return nil, recordQueryFailure(ctx, projectID, err)
+			return nil, queryFailed()
 		}
 		resp.Result = &insightsv1.QueryResponse_Segmentation{
 			Segmentation: &insightsv1.SegmentationResult{Total: proto.Float64(value)},
@@ -82,11 +78,11 @@ func ExecuteQuery(
 			}
 			users, err := executor.QueryFunnelUserEvents(ctx, projectID, q)
 			if err != nil {
-				return nil, recordQueryFailure(ctx, projectID, err)
+				return nil, queryFailed()
 			}
 			funnelRows, err = ComputeFunnelTiming(ctx, projectID, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
 			if err != nil {
-				return nil, recordQueryFailure(ctx, projectID, err)
+				return nil, queryFailed()
 			}
 			funnelProperties = q.Properties()
 		} else {
@@ -98,13 +94,13 @@ func ExecuteQuery(
 			}
 			funnelRows, err = executor.QueryFunnel(ctx, projectID, q)
 			if err != nil {
-				return nil, recordQueryFailure(ctx, projectID, err)
+				return nil, queryFailed()
 			}
 			funnelProperties = q.Properties()
 		}
 		funnelSeries, err := GroupFunnelSeries(ctx, funnelRows, funnelProperties)
 		if err != nil {
-			return nil, recordQueryFailure(ctx, projectID, err)
+			return nil, queryFailed()
 		}
 		resp.Result = &insightsv1.QueryResponse_Funnel{
 			Funnel: &insightsv1.FunnelResult{Series: funnelSeries},
@@ -119,11 +115,11 @@ func ExecuteQuery(
 		}
 		rows, err := executor.QueryRetention(ctx, projectID, q)
 		if err != nil {
-			return nil, recordQueryFailure(ctx, projectID, err)
+			return nil, queryFailed()
 		}
 		retentionSeries, err := GroupRetentionSeries(ctx, rows, q.Properties())
 		if err != nil {
-			return nil, recordQueryFailure(ctx, projectID, err)
+			return nil, queryFailed()
 		}
 		resp.Result = &insightsv1.QueryResponse_Retention{
 			Retention: &insightsv1.RetentionResult{Series: retentionSeries},
@@ -142,10 +138,30 @@ func ExecuteQuery(
 	return resp, nil
 }
 
-func recordQueryFailure(ctx context.Context, projectID string, err error) error {
-	slog.ErrorContext(ctx, "insights query failed",
-		slogx.Error(err),
-		slog.String("project_id", projectID))
-	telemetry.RecordError(ctx, err)
+// buildQueryError classifies a trends/segmentation build failure. When the
+// request was rollup-eligible the failing builder was buildTrendsFromRollup /
+// buildSegmentationFromRollup, whose preconditions canUseEventRollup already
+// guaranteed — so any error is an internal bug: logged + recorded at source
+// here and returned as a generic failure. Otherwise it is a client
+// BuildTrendsQuery / BuildSegmentationQuery validation error, which surfaces as
+// InvalidQueryError (WarnContext, not recorded — telemetry.md's client-input
+// exception).
+func buildQueryError(ctx context.Context, projectID string, req *insightsv1.QueryRequest, insight string, err error) error {
+	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) {
+		slog.ErrorContext(ctx, "rollup query build failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("insight", insight))
+		telemetry.RecordError(ctx, err)
+		return errors.New("query failed")
+	}
+	slog.WarnContext(ctx, "failed to build query", slogx.Error(err),
+		slog.String("project_id", projectID), slog.String("insight", insight))
+	return &InvalidQueryError{Message: err.Error()}
+}
+
+// queryFailed is the client-facing translation of an execution failure. The
+// detecting layer (Executor / Group*Series / ComputeFunnelTiming) already
+// logged + recorded via telemetry.RecordError at source; per telemetry.md this
+// downstream layer only translates and must not re-log or re-record.
+func queryFailed() error {
 	return errors.New("query failed")
 }

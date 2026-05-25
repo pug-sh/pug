@@ -40,14 +40,18 @@ type RenderedDashboard struct {
 
 // RenderDashboard executes every insight tile against the dashboard's effective
 // window (request override → dashboard default), resolved once, and returns all
-// tiles in dashboard order with markdown included. Per-tile failures populate
-// ErrorMessage; the call never fails wholesale.
+// tiles in dashboard order with markdown included. A per-tile query/validation
+// failure populates that tile's ErrorMessage without failing the call. The only
+// error returned is a request-level context cancellation/deadline: a tile
+// goroutine returns it so the errgroup cancels the siblings and Wait surfaces it
+// for the handler to map to the right status (rather than a 200 of "failed"
+// tiles).
 func RenderDashboard(
 	ctx context.Context,
 	executor *coreinsights.Executor,
 	dashboard DashboardWithTiles,
 	overrides DashboardQueryOverrides,
-) RenderedDashboard {
+) (RenderedDashboard, error) {
 	now := time.Now()
 	timeRange, granularity := resolveEffectiveWindow(dashboard.Dashboard, overrides, now)
 
@@ -63,15 +67,20 @@ func RenderDashboard(
 		group.Go(func() error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			result, errMsg := renderInsightTile(groupCtx, executor, dashboard.Dashboard.ProjectID, tile, timeRange, granularity)
+			result, errMsg, err := renderInsightTile(groupCtx, executor, dashboard.Dashboard.ProjectID, tile, timeRange, granularity)
+			if err != nil {
+				return err // context cancellation/deadline: cancel siblings, surface via Wait
+			}
 			rendered[i].Result = result
 			rendered[i].ErrorMessage = errMsg
 			return nil
 		})
 	}
-	_ = group.Wait()
+	if err := group.Wait(); err != nil {
+		return RenderedDashboard{}, err
+	}
 
-	return RenderedDashboard{Dashboard: dashboard.Dashboard, Tiles: rendered}
+	return RenderedDashboard{Dashboard: dashboard.Dashboard, Tiles: rendered}, nil
 }
 
 // resolveEffectiveWindow picks the time range and granularity applied to every
@@ -92,8 +101,10 @@ func resolveEffectiveWindow(dash dbread.Dashboard, overrides DashboardQueryOverr
 
 // renderInsightTile assembles a QueryRequest from the tile's stored spec plus the
 // effective window, re-validates it (so the per-granularity range caps apply per
-// tile), and executes it. Returns (result, "") on success or (nil, message) on a
-// per-tile failure, where message is client-safe.
+// tile), and executes it. Returns (result, "", nil) on success or (nil, message,
+// nil) on a per-tile failure, where message is client-safe. A non-nil error is
+// returned only for a request-level context cancellation/deadline, which the
+// caller propagates instead of masking as a per-tile failure.
 func renderInsightTile(
 	ctx context.Context,
 	executor *coreinsights.Executor,
@@ -101,15 +112,15 @@ func renderInsightTile(
 	tile dbread.DashboardTile,
 	timeRange *commonv1.TimeRange,
 	granularity insightsv1.Granularity,
-) (*insightsv1.QueryResponse, string) {
+) (*insightsv1.QueryResponse, string, error) {
 	if len(tile.InsightQuery) == 0 {
-		return nil, "insight tile is missing its query"
+		return nil, "insight tile is missing its query", nil
 	}
 	spec, err := MapToSpecMessage(tile.InsightQuery)
 	if err != nil {
 		slog.WarnContext(ctx, "dashboard tile query decode failed",
 			slog.String("tile_id", tile.ID), slog.String("reason", err.Error()))
-		return nil, "invalid query parameters: " + err.Error()
+		return nil, "invalid query parameters: " + err.Error(), nil
 	}
 
 	assembled := &insightsv1.QueryRequest{
@@ -120,16 +131,26 @@ func renderInsightTile(
 	if err := protovalidate.Validate(assembled); err != nil {
 		slog.WarnContext(ctx, "dashboard tile query invalid",
 			slog.String("tile_id", tile.ID), slog.String("reason", err.Error()))
-		return nil, "invalid query parameters: " + err.Error()
+		return nil, "invalid query parameters: " + err.Error(), nil
 	}
 
 	result, err := coreinsights.ExecuteQuery(ctx, executor, projectID, assembled)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, "", err // request lifecycle, not a tile fault — propagate
+		}
 		var invalid *coreinsights.InvalidQueryError
 		if errors.As(err, &invalid) {
-			return nil, "invalid query parameters: " + invalid.Message
+			return nil, "invalid query parameters: " + invalid.Message, nil
 		}
-		return nil, "query failed"
+		return nil, "query failed", nil
 	}
-	return result, ""
+	if result == nil {
+		// ExecuteQuery returning (nil, nil) would violate the rendered_tile
+		// "insight requires outcome" invariant (the response oneof is not
+		// validated outbound). Guard so a future regression can't emit an
+		// outcome-less insight tile.
+		return nil, "query failed", nil
+	}
+	return result, "", nil
 }
