@@ -37,7 +37,7 @@ func ExecuteQuery(
 
 	switch req.GetSpec().GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
-		q, err := BuildTrendsQuery(req, projectID)
+		q, err := trendsQueryForExecution(req, projectID)
 		if err != nil {
 			slog.WarnContext(ctx, "failed to build trends query", slogx.Error(err),
 				slog.String("project_id", projectID))
@@ -56,7 +56,7 @@ func ExecuteQuery(
 		}
 
 	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
-		q, err := BuildSegmentationQuery(req, projectID)
+		q, err := segmentationQueryForExecution(req, projectID)
 		if err != nil {
 			slog.WarnContext(ctx, "failed to build segmentation query", slogx.Error(err),
 				slog.String("project_id", projectID))

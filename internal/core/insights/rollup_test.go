@@ -215,3 +215,51 @@ func TestBuildSegmentationFromRollup(t *testing.T) {
 		t.Errorf("segmentation must filter dim_name = $__total__; args = %v", q.Args())
 	}
 }
+
+func TestTrendsExecution_RoutesToRollup(t *testing.T) {
+	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"))
+	q, err := trendsQueryForExecution(req, "proj_123")
+	if err != nil {
+		t.Fatalf("trendsQueryForExecution: %v", err)
+	}
+	if !strings.Contains(q.SQL(), rollupTable) {
+		t.Errorf("eligible trends query must route to the rollup\nSQL:\n%s", q.SQL())
+	}
+}
+
+func TestTrendsExecution_FallsBackToRaw(t *testing.T) {
+	// HOUR granularity is rollup-ineligible → must hit raw events.
+	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"))
+	req.Granularity = insightsv1.Granularity_GRANULARITY_HOUR.Enum()
+	q, err := trendsQueryForExecution(req, "proj_123")
+	if err != nil {
+		t.Fatalf("trendsQueryForExecution: %v", err)
+	}
+	if strings.Contains(q.SQL(), rollupTable) {
+		t.Errorf("ineligible trends query must hit raw events, got rollup\nSQL:\n%s", q.SQL())
+	}
+	if !strings.Contains(q.SQL(), "FROM events") {
+		t.Errorf("expected raw events query\nSQL:\n%s", q.SQL())
+	}
+}
+
+func TestSegmentationExecution_RoutesToRollup(t *testing.T) {
+	spec := &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+		},
+	}
+	req := &insightsv1.QueryRequest{
+		Spec:        spec,
+		TimeRange:   rollupTimeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}
+	q, err := segmentationQueryForExecution(req, "proj_123")
+	if err != nil {
+		t.Fatalf("segmentationQueryForExecution: %v", err)
+	}
+	if !strings.Contains(q.SQL(), rollupTable) {
+		t.Errorf("eligible segmentation query must route to the rollup\nSQL:\n%s", q.SQL())
+	}
+}

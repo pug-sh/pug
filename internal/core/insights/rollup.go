@@ -248,3 +248,21 @@ func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string)
 	}
 	return ScalarQuery{sql: sql, args: args}, nil
 }
+
+// trendsQueryForExecution returns the rollup-backed trends query when the request
+// is rollup-eligible, else the raw-events query. Keeps BuildTrendsQuery a pure raw
+// builder while routing transparently at execution time.
+func trendsQueryForExecution(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
+	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) {
+		return buildTrendsFromRollup(req, projectID)
+	}
+	return BuildTrendsQuery(req, projectID)
+}
+
+// segmentationQueryForExecution mirrors trendsQueryForExecution for segmentation.
+func segmentationQueryForExecution(req *insightsv1.QueryRequest, projectID string) (ScalarQuery, error) {
+	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) {
+		return buildSegmentationFromRollup(req, projectID)
+	}
+	return BuildSegmentationQuery(req, projectID)
+}
