@@ -88,10 +88,8 @@ func ResolveDashboardTimeRangePreset(
 	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS:
 		return lastNDays(now, 365)
 	default:
-		if fallback != nil && fallback.GetFrom() != nil && fallback.GetTo() != nil {
-			if fallback.GetFrom().AsTime().Before(fallback.GetTo().AsTime()) {
-				return fallback
-			}
+		if validAbsoluteTimeRange(fallback) {
+			return fallback
 		}
 		return lastNDays(now, 30)
 	}

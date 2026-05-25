@@ -218,12 +218,20 @@ func buildTopValsCTE(breakdowns []*insightsv1.Breakdown, projectID string, from,
 		chq.Gte("occur_time", from),
 		chq.Lt("occur_time", to),
 	}, extraConds...)
+	// Break count ties on the breakdown value(s) so the top-N (and thus which values
+	// collapse into $others) is deterministic — and matches the rollup's top_vals,
+	// which applies the same tie-break (see rollup.go buildTrendsFromRollup).
+	orderBy := make([]string, 0, len(groupByCols)+1)
+	orderBy = append(orderBy, "count(*) DESC")
+	for _, c := range groupByCols {
+		orderBy = append(orderBy, c+" ASC")
+	}
 	return chq.NewQuery().
 		Select(selectExprs...).
 		From("events").
 		Where(conds...).
 		GroupBy(groupByCols...).
-		OrderBy("count(*) DESC").
+		OrderBy(orderBy...).
 		Limit(int64(limit))
 }
 

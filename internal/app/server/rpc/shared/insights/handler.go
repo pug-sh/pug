@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -52,8 +53,11 @@ func (s *server) Query(
 		return nil, err
 	}
 
-	resp, err := coreinsights.ExecuteQuery(ctx, s.executor, principal.Project.ID, req.Msg)
+	resp, err := coreinsights.ExecuteQuery(ctx, s.executor, principal.Project.ID, req.Msg, time.Now())
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, rpc.ConnectCtxErr(err)
+		}
 		var invalid *coreinsights.InvalidQueryError
 		if errors.As(err, &invalid) {
 			return nil, apperr.Invalid(apperr.ReasonInvalidInsightQuery, "invalid query parameters: "+invalid.Message)

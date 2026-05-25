@@ -6,6 +6,7 @@ import (
 	"time"
 
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
@@ -55,14 +56,14 @@ func rollupAggExpr(agg insightsv1.AggregationType) (string, bool) {
 //
 // Accepted accuracy caveat for the rollup-served path: TOTAL and PER_USER_AVG can
 // over-count relative to the raw builders under duplicate event delivery. The
-// events table is ReplacingMergeTree keyed on (project_id, minute(occur_time),
+// events table is ReplacingMergeTree keyed on (project_id, toStartOfMinute(occur_time),
 // kind, event_id) and collapses retries/redeliveries on merge; the incremental MV
 // (migration 006) sums count() into a key WITHOUT event_id, so a duplicate insert
 // is retained permanently. The drift equals the pipeline's redelivery rate
 // (typically <1%, monotonic, never self-correcting). UNIQUE_USERS is immune
 // (uniqState on distinct_id is idempotent). This is an accepted, bounded
 // inaccuracy for dashboard visualization — see docs/architecture/clickhouse.md;
-// pinned by TestRollupDuplicateOvercount.
+// pinned by TestIntegration/rollup_duplicate_overcount_documented.
 func canUseEventRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Granularity) bool {
 	switch spec.GetInsightType() {
 	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS,
@@ -120,6 +121,37 @@ func rollupDayBounds(req *insightsv1.QueryRequest) (string, string) {
 	return from.Format(layout), toIncl.Format(layout)
 }
 
+// startOfDayUTC truncates t to midnight UTC.
+func startOfDayUTC(t time.Time) time.Time {
+	t = t.UTC()
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// rollupWindowAligned reports whether [from, to) maps onto whole rollup days with
+// no partial-day truncation, so the day-keyed rollup returns the same event set as
+// the raw instant filter (occur_time >= from AND occur_time < to).
+//
+// `from` must be midnight UTC — a mid-day `from` strands the events before it on the
+// day the rollup would include in full. `to` is fine when it is midnight UTC, or
+// when it is now/future: the rollup widens the final day to its end, but that
+// trailing slice lies at/after `now` and holds no events. A past, mid-day `to` (e.g.
+// a "same time on a prior day" comparison) strands real events on the excluded side,
+// so it is rejected and the query falls back to the raw builders. Without this guard
+// the rollup silently over-counts the partial boundary days (R2-B). `now` is the
+// request's reference time, threaded so a live preset's `to == now` is treated as
+// aligned rather than rejected by sub-second skew.
+func rollupWindowAligned(tr *commonv1.TimeRange, now time.Time) bool {
+	from := tr.GetFrom().AsTime().UTC()
+	to := tr.GetTo().AsTime().UTC()
+	if !from.Equal(startOfDayUTC(from)) {
+		return false
+	}
+	if to.Equal(startOfDayUTC(to)) {
+		return true
+	}
+	return !to.Before(now)
+}
+
 // rollupBreakdownLimit mirrors buildTopValsCTE's default of top-10.
 func rollupBreakdownLimit(limit int32) int64 {
 	if limit == 0 {
@@ -168,7 +200,9 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 				chq.Or(kindConds...),
 			).
 			GroupBy("dim_value").
-			OrderBy("sum(cnt) DESC").
+			// Tie-break on dim_value so the top-N matches the raw buildTopValsCTE
+			// (count DESC, value ASC) and $others bucketing is deterministic.
+			OrderBy("sum(cnt) DESC", "dim_value ASC").
 			Limit(rollupBreakdownLimit(spec.GetBreakdownLimit()))
 	}
 
@@ -261,19 +295,26 @@ func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string)
 }
 
 // trendsQueryForExecution returns the rollup-backed trends query when the request
-// is rollup-eligible, else the raw-events query. Keeps BuildTrendsQuery a pure raw
-// builder while routing transparently at execution time.
-func trendsQueryForExecution(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
-	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) {
-		return buildTrendsFromRollup(req, projectID)
+// is rollup-eligible (structurally per canUseEventRollup and window-wise per
+// rollupWindowAligned), else the raw-events query. Keeps BuildTrendsQuery a pure raw
+// builder while routing transparently at execution time. The returned bool reports
+// whether the rollup builder was used, so the caller classifies a build failure
+// correctly without re-evaluating eligibility.
+func trendsQueryForExecution(req *insightsv1.QueryRequest, projectID string, now time.Time) (TrendsQuery, bool, error) {
+	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
+		q, err := buildTrendsFromRollup(req, projectID)
+		return q, true, err
 	}
-	return BuildTrendsQuery(req, projectID)
+	q, err := BuildTrendsQuery(req, projectID)
+	return q, false, err
 }
 
 // segmentationQueryForExecution mirrors trendsQueryForExecution for segmentation.
-func segmentationQueryForExecution(req *insightsv1.QueryRequest, projectID string) (ScalarQuery, error) {
-	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) {
-		return buildSegmentationFromRollup(req, projectID)
+func segmentationQueryForExecution(req *insightsv1.QueryRequest, projectID string, now time.Time) (ScalarQuery, bool, error) {
+	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
+		q, err := buildSegmentationFromRollup(req, projectID)
+		return q, true, err
 	}
-	return BuildSegmentationQuery(req, projectID)
+	q, err := BuildSegmentationQuery(req, projectID)
+	return q, false, err
 }

@@ -219,7 +219,7 @@ func TestBuildSegmentationFromRollup(t *testing.T) {
 
 func TestTrendsExecution_RoutesToRollup(t *testing.T) {
 	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"))
-	q, err := trendsQueryForExecution(req, "proj_123")
+	q, _, err := trendsQueryForExecution(req, "proj_123", time.Now())
 	if err != nil {
 		t.Fatalf("trendsQueryForExecution: %v", err)
 	}
@@ -228,11 +228,50 @@ func TestTrendsExecution_RoutesToRollup(t *testing.T) {
 	}
 }
 
+func TestTrendsExecution_FallsBackToRaw_NonAlignedWindow(t *testing.T) {
+	// Rollup-eligible spec (DAY granularity, no filters, materialized breakdown) but
+	// a non-day-aligned absolute window (mid-day bounds, in the past) must fall back
+	// to raw: the rollup is keyed on whole days and would widen the window, over-
+	// counting the partial boundary days (R2-B). The raw builder filters exact instants.
+	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"))
+	req.TimeRange = rollupTimeRange("2024-01-01T06:00:00Z", "2024-01-08T12:00:00Z")
+	q, _, err := trendsQueryForExecution(req, "proj_123", time.Now())
+	if err != nil {
+		t.Fatalf("trendsQueryForExecution: %v", err)
+	}
+	if strings.Contains(q.SQL(), rollupTable) {
+		t.Errorf("non-day-aligned window must hit raw events, got rollup\nSQL:\n%s", q.SQL())
+	}
+	if !strings.Contains(q.SQL(), "FROM events") {
+		t.Errorf("expected raw events query\nSQL:\n%s", q.SQL())
+	}
+}
+
+func TestRollupWindowAligned(t *testing.T) {
+	now := time.Date(2026, 5, 25, 14, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		tr   *commonv1.TimeRange
+		want bool
+	}{
+		{"both midnight aligned", rollupTimeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"), true},
+		{"from midnight, to=now (live preset)", &commonv1.TimeRange{From: timestamppb.New(startOfDayUTC(now)), To: timestamppb.New(now)}, true},
+		{"from midnight, to future", &commonv1.TimeRange{From: timestamppb.New(startOfDayUTC(now)), To: timestamppb.New(now.Add(time.Hour))}, true},
+		{"from mid-day rejected", rollupTimeRange("2024-01-01T06:00:00Z", "2024-01-08T00:00:00Z"), false},
+		{"to past mid-day rejected", rollupTimeRange("2024-01-01T00:00:00Z", "2024-01-04T06:00:00Z"), false},
+	}
+	for _, c := range cases {
+		if got := rollupWindowAligned(c.tr, now); got != c.want {
+			t.Errorf("%s: rollupWindowAligned = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 func TestTrendsExecution_FallsBackToRaw(t *testing.T) {
 	// HOUR granularity is rollup-ineligible → must hit raw events.
 	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"))
 	req.Granularity = insightsv1.Granularity_GRANULARITY_HOUR.Enum()
-	q, err := trendsQueryForExecution(req, "proj_123")
+	q, _, err := trendsQueryForExecution(req, "proj_123", time.Now())
 	if err != nil {
 		t.Fatalf("trendsQueryForExecution: %v", err)
 	}
@@ -256,7 +295,7 @@ func TestSegmentationExecution_RoutesToRollup(t *testing.T) {
 		TimeRange:   rollupTimeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 	}
-	q, err := segmentationQueryForExecution(req, "proj_123")
+	q, _, err := segmentationQueryForExecution(req, "proj_123", time.Now())
 	if err != nil {
 		t.Fatalf("segmentationQueryForExecution: %v", err)
 	}

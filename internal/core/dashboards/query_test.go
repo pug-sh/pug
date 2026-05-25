@@ -2,16 +2,68 @@ package dashboards
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+
+	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// canceledConn is a driver.Conn whose Query always returns context.Canceled,
+// simulating a client disconnect / deadline firing mid-query (the ClickHouse
+// driver surfaces cancellation as a context error). Only Query is exercised; the
+// embedded nil Conn satisfies the rest of the interface.
+type canceledConn struct{ driver.Conn }
+
+func (canceledConn) Query(_ context.Context, _ string, _ ...any) (driver.Rows, error) {
+	return nil, context.Canceled
+}
+
+// scalarConn is a driver.Conn whose Query returns a single-row result carrying a
+// fixed float64, enough to drive a segmentation tile to a real Result without
+// ClickHouse.
+type scalarConn struct {
+	driver.Conn
+	value float64
+}
+
+func (c scalarConn) Query(_ context.Context, _ string, _ ...any) (driver.Rows, error) {
+	return &scalarRows{value: c.value}, nil
+}
+
+type scalarRows struct {
+	driver.Rows
+	value float64
+	done  bool
+}
+
+func (r *scalarRows) Next() bool {
+	if r.done {
+		return false
+	}
+	r.done = true
+	return true
+}
+
+func (r *scalarRows) Scan(dest ...any) error {
+	if len(dest) > 0 {
+		if p, ok := dest[0].(*float64); ok {
+			*p = r.value
+		}
+	}
+	return nil
+}
+
+func (r *scalarRows) Err() error   { return nil }
+func (r *scalarRows) Close() error { return nil }
 
 func TestDashboardDefaultTimeRangePresetFromDB(t *testing.T) {
 	if got := DashboardDefaultTimeRangePresetFromDB("TIME_RANGE_PRESET_LAST_7_DAYS"); got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS {
@@ -208,5 +260,75 @@ func TestRenderDashboard_PerTileRangeCapErrorIsolation(t *testing.T) {
 	markdown := rendered.Tiles[1]
 	if markdown.Result != nil || markdown.ErrorMessage != "" {
 		t.Errorf("markdown tile must have no outcome: result=%v err=%q", markdown.Result, markdown.ErrorMessage)
+	}
+}
+
+func TestRenderDashboard_PropagatesContextCancellation(t *testing.T) {
+	// A context cancellation / deadline arriving during tile execution must fail
+	// the whole RenderDashboard call (so the handler maps it to Canceled/
+	// DeadlineExceeded) rather than being masked as a per-tile "query failed" in a
+	// 200 response. Guards R2-A: the executor wraps the context error, and
+	// ExecuteQuery must preserve its identity so renderInsightTile can propagate it.
+	spec := &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+		},
+	}
+	queryJSON, err := SpecMessageToMap(spec)
+	if err != nil {
+		t.Fatalf("SpecMessageToMap: %v", err)
+	}
+	dashboard := DashboardWithTiles{
+		Dashboard: dbread.Dashboard{ProjectID: "proj", DefaultTimeRange: "TIME_RANGE_PRESET_LAST_7_DAYS", DefaultGranularity: "GRANULARITY_DAY"},
+		Tiles: []dbread.DashboardTile{
+			{ID: "insight", Kind: int16(TileKindInsight), InsightQuery: queryJSON},
+		},
+	}
+	executor := coreinsights.NewExecutor(canceledConn{})
+
+	_, err = RenderDashboard(context.Background(), executor, dashboard, DashboardQueryOverrides{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RenderDashboard error = %v, want context.Canceled propagated (not masked as a per-tile failure)", err)
+	}
+}
+
+func TestRenderDashboard_PartialSuccessIsolatesFailure(t *testing.T) {
+	// One tile fails (missing query) while a sibling succeeds with a real Result in
+	// the same render — proves per-tile isolation doesn't poison healthy siblings.
+	// Guards R2-F partial-success.
+	spec := &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+		},
+	}
+	queryJSON, err := SpecMessageToMap(spec)
+	if err != nil {
+		t.Fatalf("SpecMessageToMap: %v", err)
+	}
+	dashboard := DashboardWithTiles{
+		Dashboard: dbread.Dashboard{ProjectID: "proj", DefaultTimeRange: "TIME_RANGE_PRESET_LAST_7_DAYS", DefaultGranularity: "GRANULARITY_DAY"},
+		Tiles: []dbread.DashboardTile{
+			{ID: "broken", Kind: int16(TileKindInsight)}, // empty InsightQuery → per-tile error
+			{ID: "ok", Kind: int16(TileKindInsight), InsightQuery: queryJSON},
+		},
+	}
+	executor := coreinsights.NewExecutor(scalarConn{value: 42})
+
+	rendered, err := RenderDashboard(context.Background(), executor, dashboard, DashboardQueryOverrides{})
+	if err != nil {
+		t.Fatalf("RenderDashboard returned error: %v", err)
+	}
+	broken := rendered.Tiles[0]
+	if broken.Result != nil || broken.ErrorMessage == "" {
+		t.Errorf("broken tile: want error message, got result=%v err=%q", broken.Result, broken.ErrorMessage)
+	}
+	ok := rendered.Tiles[1]
+	if ok.ErrorMessage != "" {
+		t.Errorf("ok tile: unexpected error %q", ok.ErrorMessage)
+	}
+	if ok.Result.GetSegmentation().GetTotal() != 42 {
+		t.Errorf("ok tile total = %v, want 42 (sibling failure must not poison it)", ok.Result.GetSegmentation().GetTotal())
 	}
 }

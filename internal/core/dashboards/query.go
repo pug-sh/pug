@@ -18,14 +18,23 @@ import (
 const maxConcurrentDashboardTileQueries = 8
 
 // DashboardQueryOverrides carries optional view-time overrides of the dashboard
-// default window. Both are validated at the RPC boundary before reaching here.
+// default window. Both are validated at the RPC boundary before reaching here, and
+// both use their zero value to mean "no override" (resolveEffectiveWindow then
+// falls back to the dashboard default).
 type DashboardQueryOverrides struct {
-	TimeRange   *commonv1.TimeRange
-	Granularity insightsv1.Granularity
+	TimeRange   *commonv1.TimeRange    // nil = no override
+	Granularity insightsv1.Granularity // GRANULARITY_UNSPECIFIED (zero) = no override
 }
 
-// RenderedTile is a tile plus, for insight tiles, its query outcome. Markdown
-// tiles carry an empty Result and ErrorMessage.
+// RenderedTile is a tile plus, for insight tiles, its query outcome.
+//
+// Invariant, upheld by renderInsightTile (the sole producer): for an insight tile
+// exactly one of Result / ErrorMessage is set, and Result is non-nil whenever
+// ErrorMessage == ""; markdown tiles carry neither. renderedDashboardToRPC depends
+// on this — it checks ErrorMessage before Result — and renderInsightTile's
+// result == nil guard prevents an outcome-less insight tile. The proto RenderedTile
+// models this as a oneof, but that is not validated outbound, so this Go-side
+// discipline is the actual enforcement.
 type RenderedTile struct {
 	Tile         dbread.DashboardTile
 	Result       *insightsv1.QueryResponse
@@ -56,8 +65,8 @@ func RenderDashboard(
 	timeRange, granularity := resolveEffectiveWindow(dashboard.Dashboard, overrides, now)
 
 	rendered := make([]RenderedTile, len(dashboard.Tiles))
-	sem := make(chan struct{}, maxConcurrentDashboardTileQueries)
 	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(maxConcurrentDashboardTileQueries)
 
 	for i, tile := range dashboard.Tiles {
 		rendered[i] = RenderedTile{Tile: tile}
@@ -65,9 +74,7 @@ func RenderDashboard(
 			continue // markdown: structure only, no outcome
 		}
 		group.Go(func() error {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			result, errMsg, err := renderInsightTile(groupCtx, executor, dashboard.Dashboard.ProjectID, tile, timeRange, granularity)
+			result, errMsg, err := renderInsightTile(groupCtx, executor, dashboard.Dashboard.ProjectID, tile, timeRange, granularity, now)
 			if err != nil {
 				return err // context cancellation/deadline: cancel siblings, surface via Wait
 			}
@@ -112,6 +119,7 @@ func renderInsightTile(
 	tile dbread.DashboardTile,
 	timeRange *commonv1.TimeRange,
 	granularity insightsv1.Granularity,
+	now time.Time,
 ) (*insightsv1.QueryResponse, string, error) {
 	if len(tile.InsightQuery) == 0 {
 		return nil, "insight tile is missing its query", nil
@@ -134,7 +142,7 @@ func renderInsightTile(
 		return nil, "invalid query parameters: " + err.Error(), nil
 	}
 
-	result, err := coreinsights.ExecuteQuery(ctx, executor, projectID, assembled)
+	result, err := coreinsights.ExecuteQuery(ctx, executor, projectID, assembled, now)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, "", err // request lifecycle, not a tile fault — propagate
