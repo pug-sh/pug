@@ -98,7 +98,7 @@ func waitForNATS(url string, timeout time.Duration) error {
 	}
 }
 
-func (tn *TestNATS) runMigrations(ctx context.Context, t *testing.T) error {
+func (tn *TestNATS) runMigrations(ctx context.Context, _ *testing.T) error {
 	nc, err := natsgo.Connect(tn.URL)
 	if err != nil {
 		return fmt.Errorf("connect to nats: %w", err)
