@@ -1,31 +1,30 @@
-package projects_test
+package dashboards_test
 
 import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/pug-sh/pug/internal/core/projects"
+	"github.com/pug-sh/pug/internal/core/dashboards"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
 func TestEncodeTileContent_Insight(t *testing.T) {
-	q := &insightsv1.QueryRequest{
+	spec := &insightsv1.InsightQuerySpec{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 		Events: []*insightsv1.EventQuery{
 			{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
 		},
 	}
 
-	enc, err := projects.InsightTile{Query: q}.Encode()
+	enc, err := dashboards.InsightTile{Spec: spec}.Encode()
 	if err != nil {
 		t.Fatalf("EncodeTileContent insight: %v", err)
 	}
-	if enc.Kind != projects.TileKindInsight {
-		t.Errorf("Kind = %d, want %d", enc.Kind, projects.TileKindInsight)
+	if enc.Kind != dashboards.TileKindInsight {
+		t.Errorf("Kind = %d, want %d", enc.Kind, dashboards.TileKindInsight)
 	}
 	if enc.InsightQuery == nil {
 		t.Error("InsightQuery = nil, want non-nil")
@@ -33,23 +32,21 @@ func TestEncodeTileContent_Insight(t *testing.T) {
 	if enc.MarkdownBody.Valid {
 		t.Error("MarkdownBody.Valid = true, want false (SQL NULL)")
 	}
+	// The tile stores an InsightQuerySpec directly, so insightType is top-level.
 	if enc.InsightQuery["insightType"] != "INSIGHT_TYPE_TRENDS" {
 		t.Errorf("InsightQuery[insightType] = %v, want INSIGHT_TYPE_TRENDS", enc.InsightQuery["insightType"])
-	}
-	if enc.InsightQuery["granularity"] != "GRANULARITY_DAY" {
-		t.Errorf("InsightQuery[granularity] = %v, want GRANULARITY_DAY", enc.InsightQuery["granularity"])
 	}
 }
 
 func TestEncodeTileContent_Markdown(t *testing.T) {
 	body := "# Heading\n\nSome text with an image: ![alt](https://example.com/img.png)"
 
-	enc, err := projects.MarkdownTile{Body: body}.Encode()
+	enc, err := dashboards.MarkdownTile{Body: body}.Encode()
 	if err != nil {
 		t.Fatalf("EncodeTileContent markdown: %v", err)
 	}
-	if enc.Kind != projects.TileKindMarkdown {
-		t.Errorf("Kind = %d, want %d", enc.Kind, projects.TileKindMarkdown)
+	if enc.Kind != dashboards.TileKindMarkdown {
+		t.Errorf("Kind = %d, want %d", enc.Kind, dashboards.TileKindMarkdown)
 	}
 	if enc.InsightQuery != nil {
 		t.Error("InsightQuery != nil, want nil (SQL NULL)")
@@ -95,8 +92,8 @@ func TestLayoutsRoundTrip_AllFields(t *testing.T) {
 		},
 	}
 
-	encoded := projects.LayoutsToMap(in)
-	out, err := projects.MapToLayouts(encoded)
+	encoded := dashboards.LayoutsToMap(in)
+	out, err := dashboards.MapToLayouts(encoded)
 	if err != nil {
 		t.Fatalf("MapToLayouts: %v", err)
 	}
@@ -138,12 +135,12 @@ func TestEncodeTileContent_EmptyMarkdown(t *testing.T) {
 	// but EncodeTileContent must encode the empty string verbatim with Valid=true.
 	// MarkdownTile{Body: ""} is structurally distinct from no markdown content at all
 	// (which is unrepresentable in the sealed TileContent type system).
-	enc, err := projects.MarkdownTile{Body: ""}.Encode()
+	enc, err := dashboards.MarkdownTile{Body: ""}.Encode()
 	if err != nil {
 		t.Fatalf("MarkdownTile.Encode empty body: %v", err)
 	}
-	if enc.Kind != projects.TileKindMarkdown {
-		t.Errorf("Kind = %d, want %d", enc.Kind, projects.TileKindMarkdown)
+	if enc.Kind != dashboards.TileKindMarkdown {
+		t.Errorf("Kind = %d, want %d", enc.Kind, dashboards.TileKindMarkdown)
 	}
 	if enc.InsightQuery != nil {
 		t.Errorf("InsightQuery = %v, want nil", enc.InsightQuery)
