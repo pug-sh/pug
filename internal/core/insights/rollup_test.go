@@ -181,3 +181,37 @@ func TestBuildTrendsFromRollup_UniqueUsers(t *testing.T) {
 		t.Errorf("unique-users trends must use uniqMerge\nSQL:\n%s", q.SQL())
 	}
 }
+
+func TestBuildSegmentationFromRollup(t *testing.T) {
+	spec := &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+		Events: []*insightsv1.EventQuery{
+			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+		},
+	}
+	req := &insightsv1.QueryRequest{
+		Spec:        spec,
+		TimeRange:   rollupTimeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}
+	q, err := buildSegmentationFromRollup(req, "proj_123")
+	if err != nil {
+		t.Fatalf("buildSegmentationFromRollup: %v", err)
+	}
+	sql := q.SQL()
+	if !strings.Contains(sql, "FROM dashboard_event_rollup_daily") {
+		t.Errorf("expected rollup table\nSQL:\n%s", sql)
+	}
+	if !strings.Contains(sql, "toFloat64(sum(cnt)) AS value") {
+		t.Errorf("expected sum(cnt) value\nSQL:\n%s", sql)
+	}
+	found := false
+	for _, a := range q.Args() {
+		if a == "$__total__" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("segmentation must filter dim_name = $__total__; args = %v", q.Args())
+	}
+}

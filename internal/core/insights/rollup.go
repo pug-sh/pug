@@ -212,3 +212,39 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 	}
 	return TrendsQuery{sql: sql, args: args, properties: breakdownProps(bds)}, nil
 }
+
+// buildSegmentationFromRollup builds a scalar segmentation query against the
+// rollup's $__total__ rows. Caller must have checked canUseEventRollup.
+func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string) (ScalarQuery, error) {
+	events := req.GetSpec().GetEvents()
+	if len(events) == 0 {
+		return ScalarQuery{}, fmt.Errorf("segmentation rollup: no events")
+	}
+	aggExpr, ok := rollupAggExpr(aggregationType(req))
+	if !ok {
+		return ScalarQuery{}, fmt.Errorf("segmentation rollup: unsupported aggregation %s", aggregationType(req))
+	}
+	fromDay, toDay := rollupDayBounds(req)
+
+	kindConds := make([]chq.Condition, len(events))
+	for i, ev := range events {
+		kindConds[i] = chq.Eq("kind", ev.GetEvent().GetKind())
+	}
+
+	sql, args, err := chq.NewQuery().
+		Select(aggExpr + " AS value").
+		From(rollupTable).
+		Where(
+			chq.Eq("project_id", projectID),
+			chq.Eq("dim_name", totalDimName),
+			chq.Gte("day", fromDay),
+			chq.Lte("day", toDay),
+			chq.Or(kindConds...),
+		).
+		WithQueryCache(analyticsCacheTTL).
+		Build()
+	if err != nil {
+		return ScalarQuery{}, fmt.Errorf("segmentation rollup: %w", err)
+	}
+	return ScalarQuery{sql: sql, args: args}, nil
+}
