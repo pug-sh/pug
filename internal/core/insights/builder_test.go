@@ -390,7 +390,7 @@ func TestAllEvents(t *testing.T) {
 	}
 }
 
-// TestMultiEventTrends verifies UNION ALL is generated for multiple events with one series per event.
+// TestMultiEventTrends verifies single-scan SQL for multiple events with conditional aggregates.
 func TestMultiEventTrends(t *testing.T) {
 	req := &insightsv1.QueryRequest{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
@@ -408,29 +408,34 @@ func TestMultiEventTrends(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	if !strings.Contains(sql, "UNION ALL") {
-		t.Errorf("expected UNION ALL in SQL, got: %s", sql)
+	if !strings.Contains(sql, "WITH agg AS") {
+		t.Errorf("expected agg CTE in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "kind AS event_kind") {
-		t.Errorf("expected 'kind AS event_kind' in SQL, got: %s", sql)
+	if !strings.Contains(sql, "CROSS JOIN") {
+		t.Errorf("expected CROSS JOIN unpivot in SQL, got: %s", sql)
 	}
-	// Event kinds are passed as args, not inlined.
-	if args[3] != "page_view" {
-		t.Errorf("expected first event kind arg to be 'page_view', got %v", args[3])
+	if !strings.Contains(sql, "s.event_kind") {
+		t.Errorf("expected s.event_kind in SQL, got: %s", sql)
 	}
-	if args[7] != "purchase" {
-		t.Errorf("expected second event kind arg to be 'purchase', got %v", args[7])
+	if strings.Contains(sql, "kind AS event_kind") {
+		t.Errorf("unexpected kind AS event_kind in multi-event SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "toFloat64(count(*))") {
-		t.Errorf("expected total aggregation for page_view in SQL, got: %s", sql)
+	if !strings.Contains(sql, "countIf(") {
+		t.Errorf("expected countIf for page_view in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "toFloat64(uniq(distinct_id))") {
-		t.Errorf("expected unique users aggregation for purchase in SQL, got: %s", sql)
+	if !strings.Contains(sql, "uniqIf(distinct_id,") {
+		t.Errorf("expected uniqIf for purchase in SQL, got: %s", sql)
 	}
 
-	// args: (projectID, from, to, kind) x2 — no top-level filters
-	if len(args) != 8 {
-		t.Errorf("expected 8 args (4 per event), got %d: %v", len(args), args)
+	// args: countIf kind, uniqIf kind, then CTE WHERE (projectID, from, to, OR kinds)
+	if len(args) != 7 {
+		t.Errorf("expected 7 args, got %d: %v", len(args), args)
+	}
+	if args[0] != "page_view" {
+		t.Errorf("expected page_view in countIf args, got %v", args[0])
+	}
+	if args[1] != "purchase" {
+		t.Errorf("expected purchase in uniqIf args, got %v", args[1])
 	}
 }
 
@@ -1690,23 +1695,22 @@ func TestMultiEventTrendsWithFilters(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	if !strings.Contains(sql, "UNION ALL") {
-		t.Error("expected UNION ALL in SQL")
+	if !strings.Contains(sql, "WITH agg AS") {
+		t.Error("expected single-scan agg CTE in SQL")
 	}
-	// Top-level filter should appear in both sub-queries (one ref each now that
-	// promoted columns no longer duplicate auto/custom map lookups).
-	if strings.Count(sql, "coalesce(country, '')") != 2 {
-		t.Errorf("expected top-level filter in both sub-queries (2 refs), got %d", strings.Count(sql, "coalesce(country, '')"))
+	// Top-level filter appears once in the shared scan.
+	if strings.Count(sql, "coalesce(country, '')") != 1 {
+		t.Errorf("expected top-level filter once in agg CTE, got %d", strings.Count(sql, "coalesce(country, '')"))
 	}
-	// Per-event filter only in first sub-query (2 refs from PropertyExpr).
-	if strings.Count(sql, "'url'") != 2 {
-		t.Errorf("expected per-event filter in one sub-query (2 refs), got %d", strings.Count(sql, "'url'"))
+	// Per-event url filter only in the first event's countIf.
+	if !strings.Contains(sql, "countIf(") {
+		t.Error("expected countIf in SQL")
 	}
-	// Verify we have args for both sub-queries' top-level + per-event filters
-	// Sub1: projectID, from, to, kind, $country=US, url LIKE %/blog%
-	// Sub2: projectID, from, to, kind, $country=US
-	if len(args) != 11 {
-		t.Errorf("expected 11 args, got %d: %v", len(args), args)
+	if strings.Count(sql, "'url'") < 2 {
+		t.Errorf("expected per-event url filter in countIf, got %d url refs", strings.Count(sql, "'url'"))
+	}
+	if len(args) != 10 {
+		t.Errorf("expected 10 args, got %d: %v", len(args), args)
 	}
 }
 
@@ -1744,7 +1748,7 @@ func TestNotBetweenEventFilterParenthesization(t *testing.T) {
 	}
 }
 
-// TestMultiEventTrendsWithBreakdowns verifies UNION ALL + CTE for multiple events with breakdowns.
+// TestMultiEventTrendsWithBreakdowns verifies single-scan SQL for multiple events with breakdowns.
 func TestMultiEventTrendsWithBreakdowns(t *testing.T) {
 	req := &insightsv1.QueryRequest{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
@@ -1764,24 +1768,22 @@ func TestMultiEventTrendsWithBreakdowns(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	// Must have UNION ALL (one per event kind); no top_vals CTE.
-	if !strings.Contains(sql, "UNION ALL") {
-		t.Error("expected UNION ALL in SQL")
+	if !strings.Contains(sql, "WITH agg AS") {
+		t.Error("expected agg CTE in SQL")
+	}
+	if !strings.Contains(sql, "CROSS JOIN") {
+		t.Error("expected CROSS JOIN unpivot in SQL")
 	}
 	if strings.Contains(sql, "top_vals") {
 		t.Error("unexpected CTE 'top_vals' in SQL")
 	}
 
-	// Both sub-queries should have breakdown_0 in SELECT and GROUP BY.
-	if strings.Count(sql, "AS breakdown_0") < 2 {
-		t.Errorf("expected at least 2 breakdown_0 aliases (one per sub-query), got %d", strings.Count(sql, "AS breakdown_0"))
+	if strings.Count(sql, "AS breakdown_0") != 1 {
+		t.Errorf("expected one breakdown_0 in agg CTE, got %d", strings.Count(sql, "AS breakdown_0"))
 	}
 
-	// No CTE: Sub1 args: projectID, from, to, kind1 = 4
-	// Sub2 args: projectID, from, to, kind2 = 4
-	// Total = 8
-	if len(args) != 8 {
-		t.Fatalf("expected 8 args (sub1 x4 + sub2 x4), got %d: %v", len(args), args)
+	if len(args) != 7 {
+		t.Fatalf("expected 7 args, got %d: %v", len(args), args)
 	}
 
 	// Breakdown limit is on the query struct, not in SQL args.
@@ -2776,11 +2778,11 @@ func TestPropertyAggregation_MixedEventAggregations(t *testing.T) {
 	}
 	sql := q.SQL()
 
-	if !strings.Contains(sql, "sum(toFloat64OrNull(") {
-		t.Errorf("expected sum(toFloat64OrNull( for purchase event, got: %s", sql)
+	if !strings.Contains(sql, "sumIf(toFloat64OrNull(") {
+		t.Errorf("expected sumIf(toFloat64OrNull( for purchase event, got: %s", sql)
 	}
-	if !strings.Contains(sql, "count(*)") {
-		t.Errorf("expected count(*) for page_view event, got: %s", sql)
+	if !strings.Contains(sql, "countIf(") {
+		t.Errorf("expected countIf for page_view event, got: %s", sql)
 	}
 }
 

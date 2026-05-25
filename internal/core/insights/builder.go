@@ -115,11 +115,24 @@ func (q RetentionQuery) Properties() []string { return q.properties }
 func (q RetentionQuery) BreakdownLimit() int  { return q.breakdownLimit }
 
 func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
-	q, err := buildTrends(req, projectID)
-	if err != nil {
-		return TrendsQuery{}, err
+	events := normalizeTrendsEvents(req.GetEvents())
+	var sql string
+	var args []any
+	var err error
+
+	if len(events) > 1 && trendsNeedsUnionFallback(events) {
+		uq, uerr := buildTrendsUnion(req, projectID, events)
+		if uerr != nil {
+			return TrendsQuery{}, uerr
+		}
+		sql, args, err = uq.WithQueryCache(analyticsCacheTTL).Build()
+	} else {
+		q, qerr := buildTrends(req, projectID)
+		if qerr != nil {
+			return TrendsQuery{}, qerr
+		}
+		sql, args, err = q.WithQueryCache(analyticsCacheTTL).Build()
 	}
-	sql, args, err := q.WithQueryCache(analyticsCacheTTL).Build()
 	if err != nil {
 		return TrendsQuery{}, fmt.Errorf("trends: %w", err)
 	}
@@ -236,22 +249,34 @@ func rawArgMinExpr(colExpr string, i int) string {
 	return fmt.Sprintf("argMin(%s, occur_time) AS breakdown_%d", colExpr, i)
 }
 
-func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.UnionQuery, error) {
-	granFn, err := granularityFunc(req.GetGranularity())
-	if err != nil {
-		return nil, fmt.Errorf("trends: %w", err)
+func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
+	events := normalizeTrendsEvents(req.GetEvents())
+	if len(events) == 1 {
+		return buildTrendsSingleBranch(req, projectID, events[0], 0)
 	}
-	breakdowns := req.GetBreakdowns()
-	events := req.GetEvents()
+	return buildTrendsMultiEvent(req, projectID, events)
+}
 
-	// Normalize: empty events → single unfiltered event with default aggregation.
+func normalizeTrendsEvents(events []*insightsv1.EventQuery) []*insightsv1.EventQuery {
 	if len(events) == 0 {
-		events = []*insightsv1.EventQuery{{
+		return []*insightsv1.EventQuery{{
 			Event:       &commonv1.EventFilter{},
 			Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
 		}}
 	}
+	return events
+}
 
+func trendsNeedsUnionFallback(events []*insightsv1.EventQuery) bool {
+	for _, ev := range events {
+		if ev.GetEvent().GetKind() == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func buildTrendsUnion(req *insightsv1.QueryRequest, projectID string, events []*insightsv1.EventQuery) (*chq.UnionQuery, error) {
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
 		return nil, fmt.Errorf("trends: %w", err)
@@ -259,59 +284,181 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.UnionQuer
 
 	queries := make([]*chq.Query, 0, len(events))
 	for i, ev := range events {
+		q, err := buildTrendsBranchQuery(req, projectID, ev, i, topLevelFilterCond)
+		if err != nil {
+			return nil, err
+		}
+		queries = append(queries, q)
+	}
+
+	orderBy := trendsOrderBy(req.GetBreakdowns())
+	return chq.UnionAll(queries...).OrderBy(orderBy...), nil
+}
+
+func buildTrendsSingleBranch(req *insightsv1.QueryRequest, projectID string, ev *insightsv1.EventQuery, idx int) (*chq.Query, error) {
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+	if err != nil {
+		return nil, fmt.Errorf("trends: %w", err)
+	}
+	q, err := buildTrendsBranchQuery(req, projectID, ev, idx, topLevelFilterCond)
+	if err != nil {
+		return nil, err
+	}
+	return q.OrderBy(trendsOrderBy(req.GetBreakdowns())...), nil
+}
+
+func buildTrendsBranchQuery(
+	req *insightsv1.QueryRequest,
+	projectID string,
+	ev *insightsv1.EventQuery,
+	idx int,
+	topLevelFilterCond chq.Condition,
+) (*chq.Query, error) {
+	granFn, err := granularityFunc(req.GetGranularity())
+	if err != nil {
+		return nil, fmt.Errorf("trends: %w", err)
+	}
+	breakdowns := req.GetBreakdowns()
+
+	agg := ev.GetAggregation()
+	if agg == insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED {
+		agg = insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
+	}
+
+	selectExprs := []string{
+		fmt.Sprintf("%s(occur_time) AS t", granFn),
+		"kind AS event_kind",
+	}
+	for j, bd := range breakdowns {
+		selectExprs = append(selectExprs,
+			fmt.Sprintf("%s AS breakdown_%d", chq.PropertyExpr(bd.GetProperty()), j))
+	}
+
+	aggExpr, err := aggregationExpr(agg, ev.GetAggregationProperty())
+	if err != nil {
+		return nil, fmt.Errorf("trends: events[%d]: %w", idx, err)
+	}
+
+	query := chq.NewQuery().
+		Select(append(selectExprs, aggExpr+" AS value")...).
+		From("events").
+		Where(
+			chq.Eq("project_id", projectID),
+			chq.Gte("occur_time", req.GetTimeRange().GetFrom().AsTime()),
+			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
+			chq.When(ev.GetEvent().GetKind() != "", chq.Eq("kind", ev.GetEvent().GetKind())),
+			topLevelFilterCond,
+		)
+
+	for _, f := range ev.GetEvent().GetFilters() {
+		cond, err := chq.PropertyCondition(f, projectID)
+		if err != nil {
+			return nil, fmt.Errorf("trends: events[%d]: %w", idx, err)
+		}
+		query.Where(cond)
+	}
+
+	groupByCols := []string{"t", "event_kind"}
+	for j := range breakdowns {
+		groupByCols = append(groupByCols, fmt.Sprintf("breakdown_%d", j))
+	}
+	return query.GroupBy(groupByCols...), nil
+}
+
+// buildTrendsMultiEvent compiles a multi-event trends query as a single events scan
+// with conditional aggregates (countIf/uniqIf/…) per event, unpivoted via CROSS JOIN
+// against a compact event-index table — same pattern as funnel counts.
+func buildTrendsMultiEvent(req *insightsv1.QueryRequest, projectID string, events []*insightsv1.EventQuery) (*chq.Query, error) {
+	granFn, err := granularityFunc(req.GetGranularity())
+	if err != nil {
+		return nil, fmt.Errorf("trends: %w", err)
+	}
+	breakdowns := req.GetBreakdowns()
+	from := req.GetTimeRange().GetFrom().AsTime()
+	to := req.GetTimeRange().GetTo().AsTime()
+
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+	if err != nil {
+		return nil, fmt.Errorf("trends: %w", err)
+	}
+
+	orConds := make([]chq.Condition, 0, len(events))
+	eventMetaParts := make([]string, 0, len(events))
+	valueCases := make([]string, 0, len(events))
+
+	aggCTE := chq.NewQuery().
+		Select(fmt.Sprintf("%s(occur_time) AS t", granFn))
+	for j, bd := range breakdowns {
+		aggCTE.Select(fmt.Sprintf("%s AS breakdown_%d", chq.PropertyExpr(bd.GetProperty()), j))
+	}
+
+	for i, ev := range events {
+		cond, err := buildEventCondition([]*insightsv1.EventQuery{ev}, projectID)
+		if err != nil {
+			return nil, fmt.Errorf("trends: events[%d]: %w", i, err)
+		}
+		if cond.IsZero() {
+			return nil, fmt.Errorf("trends: events[%d]: empty event filter", i)
+		}
+		orConds = append(orConds, cond)
+
 		agg := ev.GetAggregation()
 		if agg == insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED {
 			agg = insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
 		}
-
-		selectExprs := []string{
-			fmt.Sprintf("%s(occur_time) AS t", granFn),
-			"kind AS event_kind",
-		}
-		for j, bd := range breakdowns {
-			selectExprs = append(selectExprs,
-				fmt.Sprintf("%s AS breakdown_%d", chq.PropertyExpr(bd.GetProperty()), j))
-		}
-
-		aggExpr, err := aggregationExpr(agg, ev.GetAggregationProperty())
+		valExpr, valArgs, err := aggregationExprIf(cond, agg, ev.GetAggregationProperty())
 		if err != nil {
 			return nil, fmt.Errorf("trends: events[%d]: %w", i, err)
 		}
+		aggCTE.SelectExpr(valExpr+fmt.Sprintf(" AS val_%d", i), valArgs...)
 
-		query := chq.NewQuery().
-			Select(append(selectExprs, aggExpr+" AS value")...).
-			From("events").
-			Where(
-				chq.Eq("project_id", projectID),
-				chq.Gte("occur_time", req.GetTimeRange().GetFrom().AsTime()),
-				chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
-				chq.When(ev.GetEvent().GetKind() != "", chq.Eq("kind", ev.GetEvent().GetKind())),
-				topLevelFilterCond,
-			)
-
-		for _, f := range ev.GetEvent().GetFilters() {
-			cond, err := chq.PropertyCondition(f, projectID)
-			if err != nil {
-				return nil, fmt.Errorf("trends: events[%d]: %w", i, err)
-			}
-			query.Where(cond)
-		}
-
-		groupByCols := []string{"t", "event_kind"}
-		for j := range breakdowns {
-			groupByCols = append(groupByCols, fmt.Sprintf("breakdown_%d", j))
-		}
-		query.GroupBy(groupByCols...)
-
-		queries = append(queries, query)
+		kind := ev.GetEvent().GetKind()
+		eventMetaParts = append(eventMetaParts, fmt.Sprintf(
+			"SELECT CAST(%d AS Int64) AS event_index, %s AS event_kind",
+			i, sqlStringLiteral(kind),
+		))
+		valueCases = append(valueCases, fmt.Sprintf("WHEN %d THEN a.val_%d", i, i))
 	}
 
+	aggGroupBy := []string{"t"}
+	for j := range breakdowns {
+		aggGroupBy = append(aggGroupBy, fmt.Sprintf("breakdown_%d", j))
+	}
+	aggCTE.
+		From("events").
+		Where(
+			chq.Eq("project_id", projectID),
+			chq.Gte("occur_time", from),
+			chq.Lt("occur_time", to),
+			topLevelFilterCond,
+			chq.Or(orConds...),
+		).
+		GroupBy(aggGroupBy...)
+
+	eventsMetaExpr := strings.Join(eventMetaParts, " UNION ALL ")
+	valueExpr := fmt.Sprintf("CASE s.event_index %s END AS value", strings.Join(valueCases, " "))
+
+	finalSelect := []string{"a.t", "s.event_kind"}
+	for j := range breakdowns {
+		finalSelect = append(finalSelect, fmt.Sprintf("a.breakdown_%d", j))
+	}
+	finalSelect = append(finalSelect, valueExpr)
+
+	orderBy := trendsOrderBy(breakdowns)
+
+	return chq.NewQuery().
+		With("agg", aggCTE).
+		Select(finalSelect...).
+		From(fmt.Sprintf("agg a CROSS JOIN (%s) AS s", eventsMetaExpr)).
+		OrderBy(orderBy...), nil
+}
+
+func trendsOrderBy(breakdowns []*insightsv1.Breakdown) []string {
 	orderBy := []string{"t ASC", "event_kind ASC"}
 	for j := range breakdowns {
 		orderBy = append(orderBy, fmt.Sprintf("breakdown_%d ASC", j))
 	}
-
-	return chq.UnionAll(queries...).OrderBy(orderBy...), nil
+	return orderBy
 }
 
 func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
@@ -1093,5 +1240,45 @@ func aggregationExpr(agg insightsv1.AggregationType, property string) (string, e
 		return "if(uniq(distinct_id) = 0, 0, toFloat64(count(*)) / toFloat64(uniq(distinct_id)))", nil
 	default: // TOTAL and UNSPECIFIED
 		return "toFloat64(count(*))", nil
+	}
+}
+
+// aggregationExprIf returns a conditional aggregate expression suitable for a single-scan
+// multi-event trends query (countIf, uniqIf, sumIf, …).
+func aggregationExprIf(cond chq.Condition, agg insightsv1.AggregationType, property string) (expr string, args []any, err error) {
+	if cond.IsZero() {
+		return "", nil, fmt.Errorf("empty event condition")
+	}
+	c := cond.SQL()
+	a := cond.Args()
+	switch agg {
+	case insightsv1.AggregationType_AGGREGATION_TYPE_SUM,
+		insightsv1.AggregationType_AGGREGATION_TYPE_AVG,
+		insightsv1.AggregationType_AGGREGATION_TYPE_MIN,
+		insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
+		numeric := "toFloat64OrNull(" + chq.PropertyExpr(property) + ")"
+		switch agg {
+		case insightsv1.AggregationType_AGGREGATION_TYPE_SUM:
+			return "sumIf(" + numeric + ", " + c + ")", a, nil
+		case insightsv1.AggregationType_AGGREGATION_TYPE_AVG:
+			return "ifNull(avgIf(" + numeric + ", " + c + "), 0)", a, nil
+		case insightsv1.AggregationType_AGGREGATION_TYPE_MIN:
+			return "ifNull(minIf(" + numeric + ", " + c + "), 0)", a, nil
+		case insightsv1.AggregationType_AGGREGATION_TYPE_MAX:
+			return "ifNull(maxIf(" + numeric + ", " + c + "), 0)", a, nil
+		default:
+			return "", nil, fmt.Errorf("unsupported aggregation type %s", agg)
+		}
+	case insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS:
+		return "toFloat64(uniqIf(distinct_id, " + c + "))", a, nil
+	case insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG:
+		expr = "if(uniqIf(distinct_id, " + c + ") = 0, 0, toFloat64(countIf(" + c + ")) / toFloat64(uniqIf(distinct_id, " + c + ")))"
+		args = make([]any, 0, len(a)*3)
+		args = append(args, a...)
+		args = append(args, a...)
+		args = append(args, a...)
+		return expr, args, nil
+	default: // TOTAL and UNSPECIFIED
+		return "toFloat64(countIf(" + c + "))", a, nil
 	}
 }
