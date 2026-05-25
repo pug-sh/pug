@@ -1,0 +1,183 @@
+package insights
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"google.golang.org/protobuf/proto"
+
+	"github.com/pug-sh/pug/internal/deps/telemetry"
+	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
+	"github.com/pug-sh/pug/internal/slogx"
+)
+
+// InvalidQueryError indicates client-side query parameters failed to build.
+// Message carries the client-facing text; err preserves the underlying builder
+// error so callers can traverse the chain with errors.Is / errors.As.
+type InvalidQueryError struct {
+	Message string
+	err     error
+}
+
+func (e *InvalidQueryError) Error() string { return e.Message }
+func (e *InvalidQueryError) Unwrap() error { return e.err }
+
+// ExecuteQuery runs an insights query for the given project. now is the request's
+// reference time, used to decide rollup window eligibility (see rollupWindowAligned);
+// callers pass the same now used to resolve any preset window so a live "to == now"
+// is treated as aligned.
+func ExecuteQuery(
+	ctx context.Context,
+	executor *Executor,
+	projectID string,
+	req *insightsv1.QueryRequest,
+	now time.Time,
+) (*insightsv1.QueryResponse, error) {
+	if executor == nil {
+		panic("insights: executor is nil")
+	}
+
+	resp := &insightsv1.QueryResponse{}
+
+	switch req.GetSpec().GetInsightType() {
+	case insightsv1.InsightType_INSIGHT_TYPE_TRENDS:
+		q, usedRollup, err := trendsQueryForExecution(req, projectID, now)
+		if err != nil {
+			return nil, buildQueryError(ctx, projectID, "trends", usedRollup, err)
+		}
+		rows, err := executor.QueryTrends(ctx, projectID, q)
+		if err != nil {
+			return nil, queryFailed(err)
+		}
+		series, err := GroupSeries(ctx, rows, q.Properties())
+		if err != nil {
+			return nil, queryFailed(err)
+		}
+		resp.Result = &insightsv1.QueryResponse_Trends{
+			Trends: &insightsv1.TrendsResult{Series: series},
+		}
+
+	case insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION:
+		q, usedRollup, err := segmentationQueryForExecution(req, projectID, now)
+		if err != nil {
+			return nil, buildQueryError(ctx, projectID, "segmentation", usedRollup, err)
+		}
+		value, err := executor.QueryScalar(ctx, projectID, q)
+		if err != nil {
+			return nil, queryFailed(err)
+		}
+		resp.Result = &insightsv1.QueryResponse_Segmentation{
+			Segmentation: &insightsv1.SegmentationResult{Total: proto.Float64(value)},
+		}
+
+	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
+		var funnelRows []FunnelRow
+		var funnelProperties []string
+		if req.GetSpec().GetIncludeStepTiming() {
+			q, err := BuildFunnelTimingQuery(req, projectID)
+			if err != nil {
+				slog.WarnContext(ctx, "failed to build funnel timing query", slogx.Error(err),
+					slog.String("project_id", projectID))
+				return nil, &InvalidQueryError{Message: err.Error(), err: err}
+			}
+			users, err := executor.QueryFunnelUserEvents(ctx, projectID, q)
+			if err != nil {
+				return nil, queryFailed(err)
+			}
+			funnelRows, err = ComputeFunnelTiming(ctx, projectID, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
+			if err != nil {
+				return nil, queryFailed(err)
+			}
+			funnelProperties = q.Properties()
+		} else {
+			q, err := BuildFunnelCountsQuery(req, projectID)
+			if err != nil {
+				slog.WarnContext(ctx, "failed to build funnel query", slogx.Error(err),
+					slog.String("project_id", projectID))
+				return nil, &InvalidQueryError{Message: err.Error(), err: err}
+			}
+			funnelRows, err = executor.QueryFunnel(ctx, projectID, q)
+			if err != nil {
+				return nil, queryFailed(err)
+			}
+			funnelProperties = q.Properties()
+		}
+		funnelSeries, err := GroupFunnelSeries(ctx, funnelRows, funnelProperties)
+		if err != nil {
+			return nil, queryFailed(err)
+		}
+		resp.Result = &insightsv1.QueryResponse_Funnel{
+			Funnel: &insightsv1.FunnelResult{Series: funnelSeries},
+		}
+
+	case insightsv1.InsightType_INSIGHT_TYPE_RETENTION:
+		q, err := BuildRetentionQuery(req, projectID)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to build retention query", slogx.Error(err),
+				slog.String("project_id", projectID))
+			return nil, &InvalidQueryError{Message: err.Error(), err: err}
+		}
+		rows, err := executor.QueryRetention(ctx, projectID, q)
+		if err != nil {
+			return nil, queryFailed(err)
+		}
+		retentionSeries, err := GroupRetentionSeries(ctx, rows, q.Properties())
+		if err != nil {
+			return nil, queryFailed(err)
+		}
+		resp.Result = &insightsv1.QueryResponse_Retention{
+			Retention: &insightsv1.RetentionResult{Series: retentionSeries},
+		}
+
+	default:
+		err := fmt.Errorf("unsupported insight type %s", req.GetSpec().GetInsightType().String())
+		slog.ErrorContext(ctx, "unsupported insight type reached ExecuteQuery default",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("insight_type", req.GetSpec().GetInsightType().String()))
+		telemetry.RecordError(ctx, err)
+		return nil, errors.New("query failed")
+	}
+
+	return resp, nil
+}
+
+// buildQueryError classifies a trends/segmentation build failure. usedRollup
+// (reported by the execution dispatcher, so eligibility is evaluated once) means
+// the failing builder was buildTrendsFromRollup / buildSegmentationFromRollup,
+// whose preconditions the dispatcher already guaranteed — so any error is an
+// internal bug: logged + recorded at source here and returned as a generic
+// failure. Otherwise it is a client BuildTrendsQuery / BuildSegmentationQuery
+// validation error, which surfaces as InvalidQueryError (WarnContext, not
+// recorded — telemetry.md's client-input exception).
+func buildQueryError(ctx context.Context, projectID, insight string, usedRollup bool, err error) error {
+	if usedRollup {
+		slog.ErrorContext(ctx, "rollup query build failed", slogx.Error(err),
+			slog.String("project_id", projectID), slog.String("insight", insight))
+		telemetry.RecordError(ctx, err)
+		return errors.New("query failed")
+	}
+	slog.WarnContext(ctx, "failed to build query", slogx.Error(err),
+		slog.String("project_id", projectID), slog.String("insight", insight))
+	return &InvalidQueryError{Message: err.Error(), err: err}
+}
+
+// queryFailed is the client-facing translation of an execution failure. The
+// detecting layer (Executor / Group*Series / ComputeFunnelTiming) already
+// logged + recorded via telemetry.RecordError at source; per telemetry.md this
+// downstream layer only translates and must not re-log or re-record.
+//
+// A context cancellation/deadline is returned unwrapped rather than flattened to
+// the generic message: the executor preserves its identity via %w, and callers
+// such as dashboards.renderInsightTile rely on errors.Is(err, context.Canceled)
+// to propagate it as a request-level failure instead of masking it as a per-tile
+// error. recordQueryError already skipped recording it, so it is not logged here.
+func queryFailed(err error) error {
+	if isContextError(err) {
+		return err
+	}
+	return errors.New("query failed")
+}

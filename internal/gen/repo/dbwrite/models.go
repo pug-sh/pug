@@ -33,27 +33,28 @@ type Customer struct {
 }
 
 type Dashboard struct {
-	ID          string
-	ProjectID   string
-	DisplayName string
-	Description string
-	CreateTime  pgtype.Timestamptz
-	UpdateTime  pgtype.Timestamptz
+	ID                 string
+	ProjectID          string
+	DisplayName        string
+	Description        string
+	DefaultTimeRange   string
+	DefaultGranularity string
+	CreateTime         pgtype.Timestamptz
+	UpdateTime         pgtype.Timestamptz
 }
 
 type DashboardTile struct {
-	ID               string
-	DashboardID      string
-	Kind             int16
-	ViewMode         string
-	DefaultTimeRange string
-	DisplayName      string
-	Description      string
-	InsightQuery     map[string]any
-	MarkdownBody     pgtype.Text
-	Layouts          map[string]any
-	CreateTime       pgtype.Timestamptz
-	UpdateTime       pgtype.Timestamptz
+	ID           string
+	DashboardID  string
+	Kind         int16
+	ViewMode     string
+	DisplayName  string
+	Description  string
+	InsightQuery map[string]any
+	MarkdownBody pgtype.Text
+	Layouts      map[string]any
+	CreateTime   pgtype.Timestamptz
+	UpdateTime   pgtype.Timestamptz
 }
 
 type EmailActionToken struct {

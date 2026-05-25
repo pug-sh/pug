@@ -43,10 +43,9 @@ func TestCreateDashboardTileRequest_AcceptsInsightArm(t *testing.T) {
 		DashboardId: proto.String("dash_123"),
 		DisplayName: proto.String("Signups"),
 		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
+			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
 		},
-		ViewMode:         dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.Enum(),
-		DefaultTimeRange: commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.Enum(),
+		ViewMode: dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.Enum(),
 		Layouts: []*dashboardsv1.ResponsiveGridLayout{
 			{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
 			{Breakpoint: proto.String("md"), X: proto.Int32(0), Y: proto.Int32(4), W: proto.Int32(10), H: proto.Int32(5)},
@@ -62,26 +61,12 @@ func TestCreateDashboardTileRequest_RejectsUnknownViewMode(t *testing.T) {
 		DashboardId: proto.String("dash_123"),
 		DisplayName: proto.String("Signups"),
 		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
+			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
 		},
 		ViewMode: dashboardsv1.DashboardTileViewMode(99).Enum(),
 	}
 	if err := protovalidate.Validate(req); err == nil {
 		t.Fatal("expected validation error for unknown view_mode")
-	}
-}
-
-func TestCreateDashboardTileRequest_RejectsUnknownDefaultTimeRange(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		DisplayName: proto.String("Signups"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
-		},
-		DefaultTimeRange: commonv1.TimeRangePreset(99).Enum(),
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for unknown default_time_range")
 	}
 }
 
@@ -140,7 +125,7 @@ func TestCreateDashboardTileRequest_RejectsDuplicateBreakpoints(t *testing.T) {
 		DashboardId: proto.String("dash_123"),
 		DisplayName: proto.String("Signups"),
 		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
+			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
 		},
 		Layouts: []*dashboardsv1.ResponsiveGridLayout{
 			{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
@@ -335,10 +320,10 @@ func TestCreateDashboardRequest_RejectsOverMaxDescription(t *testing.T) {
 	}
 }
 
-// ----- DashboardsServiceUpdateDisplayNameRequest validation (T7) ---------
+// ----- DashboardsServiceUpdateRequest validation (T7) ---------
 
-func TestUpdateDisplayNameRequest_RejectsMissingID(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateDisplayNameRequest{
+func TestUpdateRequest_RejectsMissingID(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpdateRequest{
 		DisplayName: proto.String("renamed"),
 	}
 	if err := protovalidate.Validate(req); err == nil {
@@ -346,8 +331,8 @@ func TestUpdateDisplayNameRequest_RejectsMissingID(t *testing.T) {
 	}
 }
 
-func TestUpdateDisplayNameRequest_RejectsMissingDisplayName(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateDisplayNameRequest{
+func TestUpdateRequest_RejectsMissingDisplayName(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpdateRequest{
 		Id: proto.String("dash_123"),
 	}
 	if err := protovalidate.Validate(req); err == nil {
@@ -355,8 +340,8 @@ func TestUpdateDisplayNameRequest_RejectsMissingDisplayName(t *testing.T) {
 	}
 }
 
-func TestUpdateDisplayNameRequest_RejectsOverMaxDisplayName(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateDisplayNameRequest{
+func TestUpdateRequest_RejectsOverMaxDisplayName(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpdateRequest{
 		Id:          proto.String("dash_123"),
 		DisplayName: proto.String(strings.Repeat("a", 151)),
 	}
@@ -365,8 +350,8 @@ func TestUpdateDisplayNameRequest_RejectsOverMaxDisplayName(t *testing.T) {
 	}
 }
 
-func TestUpdateDisplayNameRequest_RejectsOverMaxDescription(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateDisplayNameRequest{
+func TestUpdateRequest_RejectsOverMaxDescription(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpdateRequest{
 		Id:          proto.String("dash_123"),
 		DisplayName: proto.String("ok"),
 		Description: proto.String(strings.Repeat("a", 2001)),
@@ -436,10 +421,9 @@ func TestUpdateTileRequest_AcceptsInsightArm(t *testing.T) {
 		Id:          proto.String("tile_123"),
 		DashboardId: proto.String("dash_123"),
 		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
+			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
 		},
-		ViewMode:         dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.Enum(),
-		DefaultTimeRange: commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS.Enum(),
+		ViewMode: dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.Enum(),
 	}
 	if err := protovalidate.Validate(req); err != nil {
 		t.Fatalf("unexpected validation error: %v", err)
@@ -451,26 +435,12 @@ func TestUpdateTileRequest_RejectsUnknownViewMode(t *testing.T) {
 		Id:          proto.String("tile_123"),
 		DashboardId: proto.String("dash_123"),
 		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
+			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
 		},
 		ViewMode: dashboardsv1.DashboardTileViewMode(99).Enum(),
 	}
 	if err := protovalidate.Validate(req); err == nil {
 		t.Fatal("expected validation error for unknown view_mode")
-	}
-}
-
-func TestUpdateTileRequest_RejectsUnknownDefaultTimeRange(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("tile_123"),
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
-		},
-		DefaultTimeRange: commonv1.TimeRangePreset(99).Enum(),
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for unknown default_time_range")
 	}
 }
 
@@ -519,7 +489,7 @@ func TestUpdateTileRequest_RejectsDuplicateBreakpoints(t *testing.T) {
 		Id:          proto.String("tile_123"),
 		DashboardId: proto.String("dash_123"),
 		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Query: validQueryRequest()},
+			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
 		},
 		Layouts: []*dashboardsv1.ResponsiveGridLayout{
 			{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
@@ -545,14 +515,61 @@ func TestUpdateTileRequest_RejectsOverMaxDisplayName(t *testing.T) {
 	}
 }
 
-func validQueryRequest() *insightsv1.QueryRequest {
-	return &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+func TestQueryDashboardRequest_AcceptsOverrides(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceQueryDashboardRequest{
+		DashboardId: proto.String("dash_123"),
 		TimeRange: &commonv1.TimeRange{
 			From: timestamppb.New(time.Now().Add(-24 * time.Hour)),
 			To:   timestamppb.New(time.Now()),
 		},
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}
+	if err := protovalidate.Validate(req); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestQueryDashboardRequest_RejectsMissingDashboardID(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceQueryDashboardRequest{}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for missing dashboard_id")
+	}
+}
+
+func TestRenderedTile_InsightRequiresOutcome(t *testing.T) {
+	insightTile := &dashboardsv1.DashboardTile{
+		Content: &dashboardsv1.DashboardTile_Insight{
+			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
+		},
+	}
+	// Insight rendered tile with no outcome violates rendered_tile.insight_requires_outcome.
+	if err := protovalidate.Validate(&dashboardsv1.RenderedTile{Tile: insightTile}); err == nil {
+		t.Fatal("expected validation error for insight rendered tile with no outcome")
+	}
+	// With an error_message it passes.
+	withErr := &dashboardsv1.RenderedTile{
+		Tile:    insightTile,
+		Outcome: &dashboardsv1.RenderedTile_ErrorMessage{ErrorMessage: "query failed"},
+	}
+	if err := protovalidate.Validate(withErr); err != nil {
+		t.Fatalf("unexpected validation error for insight tile with error_message: %v", err)
+	}
+	// A markdown rendered tile with no outcome is valid.
+	markdownTile := &dashboardsv1.RenderedTile{
+		Tile: &dashboardsv1.DashboardTile{
+			Content: &dashboardsv1.DashboardTile_Markdown{
+				Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("x")},
+			},
+		},
+	}
+	if err := protovalidate.Validate(markdownTile); err != nil {
+		t.Fatalf("unexpected validation error for markdown rendered tile with no outcome: %v", err)
+	}
+}
+
+func validSpec() *insightsv1.InsightQuerySpec {
+	return &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 		Events: []*insightsv1.EventQuery{
 			{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
 		},
