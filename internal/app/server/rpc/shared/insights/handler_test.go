@@ -10,7 +10,6 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
-	coreinsights "github.com/pug-sh/pug/internal/core/insights"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -94,12 +93,10 @@ func TestQuery_UnsupportedInsightType(t *testing.T) {
 	ctx := authn.SetInfo(context.Background(), &rpc.Principal{
 		Project: &dbread.Project{ID: "test-project"},
 	})
-	s := &server{executor: &coreinsights.Executor{}}
+	s := &server{}
 	driftedType := insightsv1.InsightType(999)
 	_, err := s.Query(ctx, connect.NewRequest(&insightsv1.QueryRequest{
-		Spec: &insightsv1.InsightQuerySpec{
-			InsightType: &driftedType,
-		},
+		InsightType: &driftedType,
 	}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -117,16 +114,14 @@ func TestQuery_InvalidBuildError(t *testing.T) {
 	ctx := authn.SetInfo(context.Background(), &rpc.Principal{
 		Project: &dbread.Project{ID: "test-project"},
 	})
-	s := &server{executor: &coreinsights.Executor{}}
+	s := &server{}
 	insightType := insightsv1.InsightType_INSIGHT_TYPE_TRENDS
 	_, err := s.Query(ctx, connect.NewRequest(&insightsv1.QueryRequest{
-		Spec: &insightsv1.InsightQuerySpec{
-			InsightType: &insightType,
-			// A filter group with no filters triggers "group must contain at least one filter"
-			// inside buildSingleFilterGroupCondition — this exercises the slog.WarnContext +
-			// apperr.Invalid(ReasonInvalidInsightQuery, ...) path.
-			FilterGroups: []*insightsv1.FilterGroup{{}},
-		},
+		InsightType: &insightType,
+		// A filter group with no filters triggers "group must contain at least one filter"
+		// inside buildSingleFilterGroupCondition — this exercises the slog.WarnContext +
+		// apperr.Invalid(ReasonInvalidInsightQuery, ...) path.
+		FilterGroups: []*insightsv1.FilterGroup{{}},
 	}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
