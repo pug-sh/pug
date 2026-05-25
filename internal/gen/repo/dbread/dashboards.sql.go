@@ -10,7 +10,7 @@ import (
 )
 
 const getDashboardByIDAndProjectID = `-- name: GetDashboardByIDAndProjectID :one
-select id, project_id, display_name, description, default_time_range, default_granularity, create_time, update_time
+select id, project_id, display_name, description, create_time, update_time
 from dashboards
 where id = $1 and project_id = $2
 `
@@ -28,8 +28,6 @@ func (q *Queries) GetDashboardByIDAndProjectID(ctx context.Context, arg GetDashb
 		&i.ProjectID,
 		&i.DisplayName,
 		&i.Description,
-		&i.DefaultTimeRange,
-		&i.DefaultGranularity,
 		&i.CreateTime,
 		&i.UpdateTime,
 	)
@@ -37,7 +35,7 @@ func (q *Queries) GetDashboardByIDAndProjectID(ctx context.Context, arg GetDashb
 }
 
 const listDashboardTilesByDashboardIDAndProjectID = `-- name: ListDashboardTilesByDashboardIDAndProjectID :many
-select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
+select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.default_time_range, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
 from dashboard_tiles dt
 join dashboards d on d.id = dt.dashboard_id
 where dt.dashboard_id = $1 and d.project_id = $2
@@ -63,6 +61,7 @@ func (q *Queries) ListDashboardTilesByDashboardIDAndProjectID(ctx context.Contex
 			&i.DashboardID,
 			&i.Kind,
 			&i.ViewMode,
+			&i.DefaultTimeRange,
 			&i.DisplayName,
 			&i.Description,
 			&i.InsightQuery,
@@ -82,7 +81,7 @@ func (q *Queries) ListDashboardTilesByDashboardIDAndProjectID(ctx context.Contex
 }
 
 const listDashboardTilesByProjectID = `-- name: ListDashboardTilesByProjectID :many
-select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
+select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.default_time_range, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
 from dashboard_tiles dt
 join dashboards d on d.id = dt.dashboard_id
 where d.project_id = $1
@@ -103,6 +102,7 @@ func (q *Queries) ListDashboardTilesByProjectID(ctx context.Context, projectID s
 			&i.DashboardID,
 			&i.Kind,
 			&i.ViewMode,
+			&i.DefaultTimeRange,
 			&i.DisplayName,
 			&i.Description,
 			&i.InsightQuery,
@@ -122,7 +122,7 @@ func (q *Queries) ListDashboardTilesByProjectID(ctx context.Context, projectID s
 }
 
 const listDashboardsByProjectID = `-- name: ListDashboardsByProjectID :many
-select id, project_id, display_name, description, default_time_range, default_granularity, create_time, update_time
+select id, project_id, display_name, description, create_time, update_time
 from dashboards
 where project_id = $1
 order by create_time asc
@@ -142,8 +142,6 @@ func (q *Queries) ListDashboardsByProjectID(ctx context.Context, projectID strin
 			&i.ProjectID,
 			&i.DisplayName,
 			&i.Description,
-			&i.DefaultTimeRange,
-			&i.DefaultGranularity,
 			&i.CreateTime,
 			&i.UpdateTime,
 		); err != nil {

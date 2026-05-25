@@ -42,17 +42,15 @@ var validQueryAnchor = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 // remain deterministic across runs.
 func validQueryRequest() *insightsv1.QueryRequest {
 	return &insightsv1.QueryRequest{
-		Spec: &insightsv1.InsightQuerySpec{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-			Events: []*insightsv1.EventQuery{{
-				Event: &commonv1.EventFilter{Kind: proto.String("page_view")},
-			}},
-		},
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 		TimeRange: &commonv1.TimeRange{
 			From: timestamppb.New(validQueryAnchor),
 			To:   timestamppb.New(validQueryAnchor.Add(24 * time.Hour)),
 		},
+		Events: []*insightsv1.EventQuery{{
+			Event: &commonv1.EventFilter{Kind: proto.String("page_view")},
+		}},
 	}
 }
 
@@ -73,7 +71,7 @@ func TestInsightTypeValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = tt.insightType.Enum()
+			req.InsightType = tt.insightType.Enum()
 			err := protovalidate.Validate(req)
 			if tt.wantErr && err == nil {
 				t.Error("expected validation error, got nil")
@@ -104,8 +102,8 @@ func TestQueryRequest_FunnelRetentionRequireEvents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = tt.insightType.Enum()
-			req.Spec.Events = tt.events
+			req.InsightType = tt.insightType.Enum()
+			req.Events = tt.events
 			err := protovalidate.Validate(req)
 			if tt.wantErr {
 				if err == nil {
@@ -146,7 +144,7 @@ func TestEventQuery_PropertyRequiredForNumericAgg(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.Events = []*insightsv1.EventQuery{{
+			req.Events = []*insightsv1.EventQuery{{
 				Event:               &commonv1.EventFilter{Kind: proto.String("purchase")},
 				Aggregation:         tt.aggregation.Enum(),
 				AggregationProperty: proto.String(tt.property),
@@ -334,8 +332,8 @@ func TestQueryRequest_GranularityMaxRange_AllInsightTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = tt.insightType.Enum()
-			req.Spec.Events = tt.events
+			req.InsightType = tt.insightType.Enum()
+			req.Events = tt.events
 			req.Granularity = insightsv1.Granularity_GRANULARITY_MINUTE.Enum()
 			req.TimeRange = overCap
 			err := protovalidate.Validate(req)
@@ -436,11 +434,11 @@ func TestFunnelOnlyConversionWindow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = tt.insightType.Enum()
-			req.Spec.ConversionWindow = tt.window
+			req.InsightType = tt.insightType.Enum()
+			req.ConversionWindow = tt.window
 			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_FUNNEL ||
 				tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_RETENTION {
-				req.Spec.Events = append(req.Spec.Events, &insightsv1.EventQuery{
+				req.Events = append(req.Events, &insightsv1.EventQuery{
 					Event: &commonv1.EventFilter{Kind: proto.String("purchase")},
 				})
 			}
@@ -504,10 +502,10 @@ func TestFunnelOnlyStepTiming(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = tt.insightType.Enum()
-			req.Spec.IncludeStepTiming = proto.Bool(tt.include)
+			req.InsightType = tt.insightType.Enum()
+			req.IncludeStepTiming = proto.Bool(tt.include)
 			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_FUNNEL {
-				req.Spec.Events = append(req.Spec.Events, &insightsv1.EventQuery{
+				req.Events = append(req.Events, &insightsv1.EventQuery{
 					Event: &commonv1.EventFilter{Kind: proto.String("purchase")},
 				})
 			}
@@ -546,11 +544,11 @@ func TestConversionWindowMinimum(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum()
-			req.Spec.Events = append(req.Spec.Events, &insightsv1.EventQuery{
+			req.InsightType = insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum()
+			req.Events = append(req.Events, &insightsv1.EventQuery{
 				Event: &commonv1.EventFilter{Kind: proto.String("purchase")},
 			})
-			req.Spec.ConversionWindow = tt.window
+			req.ConversionWindow = tt.window
 			err := protovalidate.Validate(req)
 			if tt.wantErr {
 				if err == nil {
@@ -584,11 +582,11 @@ func TestConversionWindowWholeSeconds(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum()
-			req.Spec.Events = append(req.Spec.Events, &insightsv1.EventQuery{
+			req.InsightType = insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum()
+			req.Events = append(req.Events, &insightsv1.EventQuery{
 				Event: &commonv1.EventFilter{Kind: proto.String("purchase")},
 			})
-			req.Spec.ConversionWindow = tt.window
+			req.ConversionWindow = tt.window
 			err := protovalidate.Validate(req)
 			if tt.wantErr {
 				if err == nil {
@@ -676,8 +674,8 @@ func TestFunnelMaxSteps(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = tt.insightType.Enum()
-			req.Spec.Events = mkSequentialEvents(tt.n)
+			req.InsightType = tt.insightType.Enum()
+			req.Events = mkSequentialEvents(tt.n)
 			err := protovalidate.Validate(req)
 			if tt.wantErr {
 				if err == nil {
@@ -714,8 +712,8 @@ func TestRetentionMaxEvents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = tt.insightType.Enum()
-			req.Spec.Events = mkSequentialEvents(tt.n)
+			req.InsightType = tt.insightType.Enum()
+			req.Events = mkSequentialEvents(tt.n)
 			err := protovalidate.Validate(req)
 			if tt.wantErr {
 				if err == nil {
@@ -754,7 +752,7 @@ func TestUniqueBreakdownProperties(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.Breakdowns = tt.breakdowns
+			req.Breakdowns = tt.breakdowns
 			err := protovalidate.Validate(req)
 			if tt.wantErr {
 				if err == nil {
@@ -791,8 +789,8 @@ func TestBreakdownLimitRequiresBreakdowns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.BreakdownLimit = proto.Int32(tt.limit)
-			req.Spec.Breakdowns = tt.breakdowns
+			req.BreakdownLimit = proto.Int32(tt.limit)
+			req.Breakdowns = tt.breakdowns
 			err := protovalidate.Validate(req)
 			if tt.wantErr {
 				if err == nil {
@@ -830,8 +828,8 @@ func TestSegmentationNoBreakdowns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = tt.insightType.Enum()
-			req.Spec.Breakdowns = tt.breakdowns
+			req.InsightType = tt.insightType.Enum()
+			req.Breakdowns = tt.breakdowns
 			// Funnel and retention require at least one event (already provided by validQueryRequest);
 			// no extra setup needed.
 			err := protovalidate.Validate(req)
@@ -872,8 +870,8 @@ func TestNumericAggOnlyTrendsSegmentation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
-			req.Spec.InsightType = tt.insightType.Enum()
-			req.Spec.Events = []*insightsv1.EventQuery{{
+			req.InsightType = tt.insightType.Enum()
+			req.Events = []*insightsv1.EventQuery{{
 				Event:               &commonv1.EventFilter{Kind: proto.String("purchase")},
 				Aggregation:         tt.agg.Enum(),
 				AggregationProperty: proto.String("amount"), // satisfies property_required_for_numeric_agg

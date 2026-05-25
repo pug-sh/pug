@@ -27,7 +27,6 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
-	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/fallback"
 	"github.com/pug-sh/pug/internal/core/email/secret"
@@ -91,10 +90,7 @@ func start(ctx context.Context, d *deps) error {
 
 	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
 	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
-	dashboardsSvc := coredashboards.NewService(d.pgRo, d.pgW)
 	orgsSvc := coreorgs.NewService(d.pgRo, d.pgW, d.nats)
-	insightsExecutor := coreinsights.NewExecutor(d.ch)
-	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
 
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)
@@ -116,7 +112,7 @@ func start(ctx context.Context, d *deps) error {
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
 		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
 	dashboardsPath, dashboardsHandler := dashboardsv1connect.NewDashboardsServiceHandler(
-		dashboardsrpc.NewServer(dashboardsSvc, insightsExecutor), handlerOpts)
+		dashboardsrpc.NewServer(projectsSvc), handlerOpts)
 
 	// Email providers — JWT + admin gate. Cipher and OrgProviderRepo are only
 	// present when PUG_EMAIL_PROVIDER_SECRET_KEY is configured; otherwise the
@@ -169,6 +165,8 @@ func start(ctx context.Context, d *deps) error {
 		customers.NewServer(corecustomers.NewService(d.pgW)), handlerOpts)
 
 	// Shared
+	insightsExecutor := coreinsights.NewExecutor(d.ch)
+	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
 		insights.NewServer(insightsSvc, insightsExecutor), handlerOpts)
 	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(

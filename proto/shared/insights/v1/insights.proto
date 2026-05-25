@@ -22,9 +22,9 @@ service InsightsService {
   rpc GetPropertyValues(GetPropertyValuesRequest) returns (GetPropertyValuesResponse);
 }
 
-message InsightQuerySpec {
+message QueryRequest {
   option (buf.validate.message).cel = {
-    id: "insight_query_spec.funnel_retention_require_events"
+    id: "query_request.funnel_retention_require_events"
     message: "funnel and retention insight types require at least one event"
     expression:
       "(this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
@@ -32,14 +32,14 @@ message InsightQuerySpec {
       "|| this.events.size() > 0"
   };
   option (buf.validate.message).cel = {
-    id: "insight_query_spec.funnel_only_conversion_window"
+    id: "query_request.funnel_only_conversion_window"
     message: "conversion_window is only valid for funnel insight type"
     expression:
       "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
       "|| !has(this.conversion_window)"
   };
   option (buf.validate.message).cel = {
-    id: "insight_query_spec.funnel_only_step_timing"
+    id: "query_request.funnel_only_step_timing"
     message: "include_step_timing is only valid for funnel insight type"
     expression:
       "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
@@ -49,7 +49,7 @@ message InsightQuerySpec {
   // Breakdowns are supported for trends, funnel, and retention.
   // Segmentation ignores them — reject at the boundary instead.
   option (buf.validate.message).cel = {
-    id: "insight_query_spec.segmentation_no_breakdowns"
+    id: "query_request.segmentation_no_breakdowns"
     message: "breakdowns are not supported for segmentation insight type"
     expression:
       "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION"
@@ -58,7 +58,7 @@ message InsightQuerySpec {
 
   // Duplicate breakdown properties produce silently wrong aggregation.
   option (buf.validate.message).cel = {
-    id: "insight_query_spec.unique_breakdown_properties"
+    id: "query_request.unique_breakdown_properties"
     message: "breakdown properties must be unique"
     expression:
       "this.breakdowns.size() <= 1"
@@ -68,7 +68,7 @@ message InsightQuerySpec {
 
   // breakdown_limit without breakdowns is a no-op — likely a client mistake.
   option (buf.validate.message).cel = {
-    id: "insight_query_spec.breakdown_limit_requires_breakdowns"
+    id: "query_request.breakdown_limit_requires_breakdowns"
     message: "breakdown_limit requires at least one breakdown"
     expression: "this.breakdown_limit == 0 || this.breakdowns.size() > 0"
   };
@@ -76,7 +76,7 @@ message InsightQuerySpec {
   // Retention uses events[0] as start event and events[1] as return event.
   // Additional events are silently ignored — cap at 2 to surface the mistake.
   option (buf.validate.message).cel = {
-    id: "insight_query_spec.retention_max_events"
+    id: "query_request.retention_max_events"
     message: "retention supports at most 2 events (start event and optional return event)"
     expression:
       "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION"
@@ -86,70 +86,13 @@ message InsightQuerySpec {
   // Cap funnel steps to bound query cost — applies to both `windowFunnel()` (counts) and
   // the array-based timing path (per-user array sizes and one StepTiming per non-entry step).
   option (buf.validate.message).cel = {
-    id: "insight_query_spec.funnel_max_steps"
+    id: "query_request.funnel_max_steps"
     message: "funnel supports at most 20 steps"
     expression:
       "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
       "|| this.events.size() <= 20"
   };
 
-  // SUM/AVG/MIN/MAX are only meaningful for trends and segmentation.
-  // Funnel and retention builders ignore the aggregation field, so reject early.
-  option (buf.validate.message).cel = {
-    id: "insight_query_spec.numeric_agg_only_trends_segmentation"
-    message: "SUM/AVG/MIN/MAX aggregation types are only supported for trends and segmentation"
-    expression:
-      "this.insight_type in ["
-      "  shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS,"
-      "  shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION"
-      "] || this.events.all(e,"
-      "  !(e.aggregation in ["
-      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,"
-      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,"
-      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,"
-      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX"
-      "  ]))"
-  };
-
-  InsightType insight_type = 1 [(buf.validate.field) = {
-    required: true
-    enum: {defined_only: true, not_in: [0]}
-  }];
-  repeated EventQuery events = 2;
-  repeated Breakdown breakdowns = 3 [(buf.validate.field).repeated.max_items = 5];
-  int32 breakdown_limit = 4 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 100
-  }];
-
-  // Optional grouped filters for top-level conditions.
-  // Each group combines its filters via group.operator.
-  // Groups are combined via filter_groups_operator.
-  repeated FilterGroup filter_groups = 5;
-  common.v1.LogicalOperator filter_groups_operator = 6;
-
-  // Funnel conversion window. Only used for INSIGHT_TYPE_FUNNEL.
-  // The maximum time allowed from the first step to the last step per user.
-  // Absent means use the full time range as the window (no constraint).
-  // Must be a whole-second value of at least 1 second — windowFunnel only accepts
-  // integer-second windows, so sub-second precision would be silently truncated.
-  google.protobuf.Duration conversion_window = 7 [
-    (buf.validate.field).duration.gte = {seconds: 1},
-    (buf.validate.field).cel = {
-      id: "conversion_window.whole_seconds"
-      message: "conversion_window must be a whole-second value (windowFunnel only accepts integer seconds)"
-      expression: "this == duration(string(this.getSeconds()) + 's')"
-    }
-  ];
-
-  // When true, funnel queries include per-step conversion-time statistics:
-  // average, median, p95, and an 8-bucket distribution histogram.
-  // Uses an array-based single-scan query that captures per-step timestamps,
-  // then computes timing in Go. When false (default), uses windowFunnel() for faster counts only.
-  bool include_step_timing = 8;
-}
-
-message QueryRequest {
   // Per-granularity time-range caps bound query cost (partition scan range) and result set size
   // (data points per series). Values are sized in hours; CLAUDE.md documents the human-friendly
   // approximations.
@@ -189,15 +132,64 @@ message QueryRequest {
       "|| this.time_range.to - this.time_range.from <= duration('87660h')"
   };
 
-  InsightQuerySpec spec = 1 [(buf.validate.field).required = true];
+  // SUM/AVG/MIN/MAX are only meaningful for trends and segmentation.
+  // Funnel and retention builders ignore the aggregation field, so reject early.
+  option (buf.validate.message).cel = {
+    id: "query_request.numeric_agg_only_trends_segmentation"
+    message: "SUM/AVG/MIN/MAX aggregation types are only supported for trends and segmentation"
+    expression:
+      "this.insight_type in ["
+      "  shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS,"
+      "  shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION"
+      "] || this.events.all(e,"
+      "  !(e.aggregation in ["
+      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,"
+      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,"
+      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,"
+      "    shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX"
+      "  ]))"
+  };
+  InsightType insight_type = 1 [(buf.validate.field) = {
+    required: true
+    enum: {defined_only: true, not_in: [0]}
+  }];
   common.v1.TimeRange time_range = 2 [(buf.validate.field).required = true];
   Granularity granularity = 3 [(buf.validate.field) = {
     required: true
     enum: {defined_only: true, not_in: [0]}
   }];
+  repeated EventQuery events = 4;
+  repeated Breakdown breakdowns = 6 [(buf.validate.field).repeated.max_items = 5];
+  int32 breakdown_limit = 7 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
 
-  reserved 4, 5, 6, 7, 8, 9, 10, 11;
-  reserved insight_type, events, breakdowns, breakdown_limit, filter_groups, filter_groups_operator, conversion_window, include_step_timing;
+  // Optional grouped filters for top-level conditions.
+  // Each group combines its filters via group.operator.
+  // Groups are combined via filter_groups_operator.
+  repeated FilterGroup filter_groups = 8;
+  common.v1.LogicalOperator filter_groups_operator = 9;
+
+  // Funnel conversion window. Only used for INSIGHT_TYPE_FUNNEL.
+  // The maximum time allowed from the first step to the last step per user.
+  // Absent means use the full time range as the window (no constraint).
+  // Must be a whole-second value of at least 1 second — windowFunnel only accepts
+  // integer-second windows, so sub-second precision would be silently truncated.
+  google.protobuf.Duration conversion_window = 10 [
+    (buf.validate.field).duration.gte = {seconds: 1},
+    (buf.validate.field).cel = {
+      id: "conversion_window.whole_seconds"
+      message: "conversion_window must be a whole-second value (windowFunnel only accepts integer seconds)"
+      expression: "this == duration(string(this.getSeconds()) + 's')"
+    }
+  ];
+
+  // When true, funnel queries include per-step conversion-time statistics:
+  // average, median, p95, and an 8-bucket distribution histogram.
+  // Uses an array-based single-scan query that captures per-step timestamps,
+  // then computes timing in Go. When false (default), uses windowFunnel() for faster counts only.
+  bool include_step_timing = 11;
 }
 
 message QueryResponse {

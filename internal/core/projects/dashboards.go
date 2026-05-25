@@ -1,4 +1,4 @@
-package dashboards
+package projects
 
 import (
 	"context"
@@ -51,6 +51,23 @@ const (
 	TileViewModeTable       TileViewMode = 5
 )
 
+// TileDefaultTimeRange mirrors common.v1.TimeRangePreset in the proto. The DB
+// stores the corresponding proto enum name.
+type TileDefaultTimeRange int16
+
+const (
+	TileDefaultTimeRangeUnspecified TileDefaultTimeRange = 0
+	TileDefaultTimeRangeLast1Hour   TileDefaultTimeRange = 1
+	TileDefaultTimeRangeLast6Hours  TileDefaultTimeRange = 2
+	TileDefaultTimeRangeLast24Hours TileDefaultTimeRange = 3
+	TileDefaultTimeRangeLast7Days   TileDefaultTimeRange = 4
+	TileDefaultTimeRangeLast14Days  TileDefaultTimeRange = 5
+	TileDefaultTimeRangeLast30Days  TileDefaultTimeRange = 6
+	TileDefaultTimeRangeLast90Days  TileDefaultTimeRange = 7
+	TileDefaultTimeRangeLast180Days TileDefaultTimeRange = 8
+	TileDefaultTimeRangeLast365Days TileDefaultTimeRange = 9
+)
+
 // TileContent is a sealed sum type for tile payloads. Encode() returns the
 // DB-shaped tuple; every variant must implement it, so adding a new variant
 // without wiring it into the storage layer is a compile error rather than
@@ -61,12 +78,11 @@ type TileContent interface {
 	Encode() (EncodedTileContent, error)
 }
 
-// InsightTile is the insight-kind variant of TileContent. Spec is a shared
+// InsightTile is the insight-kind variant of TileContent. Query is a shared
 // pointer; callers must not mutate it after constructing the tile — Encode
-// snapshots it via protojson before any DB write. The time window and
-// granularity live on the dashboard, not the tile.
+// snapshots it via protojson before any DB write.
 type InsightTile struct {
-	Spec *insightsv1.InsightQuerySpec
+	Query *insightsv1.QueryRequest
 }
 
 // MarkdownTile is the markdown-kind variant of TileContent. Empty Body is
@@ -81,7 +97,7 @@ func (MarkdownTile) isTileContent() {}
 // Encode translates the insight payload to the DB-shaped tuple. The jsonb
 // column is map[string]any per sqlc.yaml; nil map maps to SQL NULL via pgx.
 func (i InsightTile) Encode() (EncodedTileContent, error) {
-	queryJSON, err := SpecMessageToMap(i.Spec)
+	queryJSON, err := QueryMessageToMap(i.Query)
 	if err != nil {
 		return EncodedTileContent{}, err
 	}
@@ -110,41 +126,20 @@ type DashboardWithTiles struct {
 	Tiles     []dbread.DashboardTile
 }
 
-// recordServiceError logs + records a service-layer error at the layer that detects
-// it (per telemetry.md), then returns it unchanged so handlers map the status. It
-// is the single chokepoint for the service's DB error paths. A client context
-// cancellation/deadline is returned unchanged but NOT logged or recorded — a
-// disconnected or timed-out caller would otherwise manufacture error-rate noise
-// (mirrors the insights executor's recordQueryError).
-func recordServiceError(ctx context.Context, msg string, err error, attrs ...any) error {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	slog.ErrorContext(ctx, msg, append([]any{slogx.Error(err)}, attrs...)...)
-	telemetry.RecordError(ctx, err)
-	return err
-}
-
-// CreateDashboard persists a dashboard with its display fields and dashboard-level
-// window. The (default_time_range, default_granularity) pair is normalized but NOT
-// checked for satisfiability against the per-granularity range caps: an
-// unsatisfiable pair (e.g. GRANULARITY_MINUTE + LAST_365_DAYS) is surfaced as each
-// tile's error_message at render time (QueryDashboard re-validates the assembled
-// per-tile QueryRequest), not rejected here. The caps live in proto CEL on
-// QueryRequest; re-deriving them at write time would duplicate that rule and risk
-// drift, so the window pairing is the client's responsibility.
-func (s *Service) CreateDashboard(ctx context.Context, projectID, displayName, description string, defaultTimeRange commonv1.TimeRangePreset, defaultGranularity insightsv1.Granularity) (dbwrite.Dashboard, error) {
+func (s *Service) CreateDashboard(ctx context.Context, projectID, displayName, description string) (dbwrite.Dashboard, error) {
 	dashboard, err := s.write.CreateDashboard(ctx, dbwrite.CreateDashboardParams{
-		Description:        description,
-		ID:                 xid.New().String(),
-		ProjectID:          projectID,
-		DisplayName:        displayName,
-		DefaultTimeRange:   dashboardDefaultTimeRangeDBName(defaultTimeRange),
-		DefaultGranularity: dashboardGranularityDBName(defaultGranularity),
+		Description: description,
+		ID:          xid.New().String(),
+		ProjectID:   projectID,
+		DisplayName: displayName,
 	})
 	if err != nil {
-		return dbwrite.Dashboard{}, recordServiceError(ctx, "failed to create dashboard", err,
-			slog.String("project_id", projectID))
+		slog.ErrorContext(ctx, "failed to create dashboard",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+		)
+		telemetry.RecordError(ctx, err)
+		return dbwrite.Dashboard{}, err
 	}
 	return dashboard, nil
 }
@@ -152,14 +147,22 @@ func (s *Service) CreateDashboard(ctx context.Context, projectID, displayName, d
 func (s *Service) ListDashboards(ctx context.Context, projectID string) ([]DashboardWithTiles, error) {
 	dashboards, err := s.read.ListDashboardsByProjectID(ctx, projectID)
 	if err != nil {
-		return nil, recordServiceError(ctx, "failed to list dashboards", err,
-			slog.String("project_id", projectID))
+		slog.ErrorContext(ctx, "failed to list dashboards",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+		)
+		telemetry.RecordError(ctx, err)
+		return nil, err
 	}
 
 	tiles, err := s.read.ListDashboardTilesByProjectID(ctx, projectID)
 	if err != nil {
-		return nil, recordServiceError(ctx, "failed to list dashboard tiles", err,
-			slog.String("project_id", projectID))
+		slog.ErrorContext(ctx, "failed to list dashboard tiles",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+		)
+		telemetry.RecordError(ctx, err)
+		return nil, err
 	}
 
 	tilesByDashboardID := make(map[string][]dbread.DashboardTile, len(dashboards))
@@ -191,8 +194,13 @@ func (s *Service) GetDashboard(ctx context.Context, projectID, dashboardID strin
 			)
 			return DashboardWithTiles{}, ErrDashboardNotFound
 		}
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to get dashboard", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+		slog.ErrorContext(ctx, "failed to get dashboard",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("dashboard_id", dashboardID),
+		)
+		telemetry.RecordError(ctx, err)
+		return DashboardWithTiles{}, err
 	}
 
 	tiles, err := s.read.ListDashboardTilesByDashboardIDAndProjectID(ctx, dbread.ListDashboardTilesByDashboardIDAndProjectIDParams{
@@ -200,8 +208,13 @@ func (s *Service) GetDashboard(ctx context.Context, projectID, dashboardID strin
 		ProjectID:   projectID,
 	})
 	if err != nil {
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to list dashboard tiles", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+		slog.ErrorContext(ctx, "failed to list dashboard tiles",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("dashboard_id", dashboardID),
+		)
+		telemetry.RecordError(ctx, err)
+		return DashboardWithTiles{}, err
 	}
 
 	return DashboardWithTiles{
@@ -210,21 +223,18 @@ func (s *Service) GetDashboard(ctx context.Context, projectID, dashboardID strin
 	}, nil
 }
 
-// UpdateDashboard updates the dashboard's display name, description, and
-// dashboard-level window (default time range + granularity), and returns the
-// updated row alongside the dashboard's existing tiles so the handler can
-// serialize a complete Dashboard without a follow-up read. Description is
-// updated with partial-update semantics (empty string preserves the existing
-// value); display_name, default_time_range, and default_granularity are
-// full-replaced on every call.
-func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, displayName, description string, defaultTimeRange commonv1.TimeRangePreset, defaultGranularity insightsv1.Granularity) (DashboardWithTiles, error) {
-	dashboard, err := s.write.UpdateDashboard(ctx, dbwrite.UpdateDashboardParams{
-		Description:        description,
-		ID:                 dashboardID,
-		ProjectID:          projectID,
-		DisplayName:        displayName,
-		DefaultTimeRange:   dashboardDefaultTimeRangeDBName(defaultTimeRange),
-		DefaultGranularity: dashboardGranularityDBName(defaultGranularity),
+// UpdateDashboardDisplayName renames the dashboard and returns the updated
+// row alongside the dashboard's existing tiles. The response includes tiles
+// so the handler can serialize a complete Dashboard without a follow-up read
+// on the client side. Description is updated with partial-update semantics
+// (empty string preserves the existing value); display_name is a required
+// field at the proto layer and is always replaced.
+func (s *Service) UpdateDashboardDisplayName(ctx context.Context, projectID, dashboardID, displayName, description string) (DashboardWithTiles, error) {
+	dashboard, err := s.write.UpdateDashboardDisplayName(ctx, dbwrite.UpdateDashboardDisplayNameParams{
+		Description: description,
+		ID:          dashboardID,
+		ProjectID:   projectID,
+		DisplayName: displayName,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -234,8 +244,13 @@ func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, d
 			)
 			return DashboardWithTiles{}, ErrDashboardNotFound
 		}
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to update dashboard display name", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+		slog.ErrorContext(ctx, "failed to update dashboard display name",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("dashboard_id", dashboardID),
+		)
+		telemetry.RecordError(ctx, err)
+		return DashboardWithTiles{}, err
 	}
 
 	tiles, err := s.read.ListDashboardTilesByDashboardIDAndProjectID(ctx, dbread.ListDashboardTilesByDashboardIDAndProjectIDParams{
@@ -243,8 +258,13 @@ func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, d
 		ProjectID:   projectID,
 	})
 	if err != nil {
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to list dashboard tiles after rename", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+		slog.ErrorContext(ctx, "failed to list dashboard tiles after rename",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("dashboard_id", dashboardID),
+		)
+		telemetry.RecordError(ctx, err)
+		return DashboardWithTiles{}, err
 	}
 
 	return DashboardWithTiles{
@@ -265,8 +285,13 @@ func (s *Service) DeleteDashboard(ctx context.Context, projectID, dashboardID st
 			)
 			return ErrDashboardNotFound
 		}
-		return recordServiceError(ctx, "failed to delete dashboard", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+		slog.ErrorContext(ctx, "failed to delete dashboard",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("dashboard_id", dashboardID),
+		)
+		telemetry.RecordError(ctx, err)
+		return err
 	}
 	return nil
 }
@@ -278,14 +303,12 @@ func (s *Service) DeleteDashboard(ctx context.Context, projectID, dashboardID st
 // 1:1 but the Go types are distinct.
 func dbwriteToDbread(d dbwrite.Dashboard) dbread.Dashboard {
 	return dbread.Dashboard{
-		ID:                 d.ID,
-		ProjectID:          d.ProjectID,
-		DisplayName:        d.DisplayName,
-		Description:        d.Description,
-		DefaultTimeRange:   d.DefaultTimeRange,
-		DefaultGranularity: d.DefaultGranularity,
-		CreateTime:         d.CreateTime,
-		UpdateTime:         d.UpdateTime,
+		ID:          d.ID,
+		ProjectID:   d.ProjectID,
+		DisplayName: d.DisplayName,
+		Description: d.Description,
+		CreateTime:  d.CreateTime,
+		UpdateTime:  d.UpdateTime,
 	}
 }
 
@@ -294,6 +317,7 @@ func (s *Service) CreateDashboardTile(
 	projectID, dashboardID, displayName, description string,
 	content TileContent,
 	viewMode dashboardsv1.DashboardTileViewMode,
+	defaultTimeRange commonv1.TimeRangePreset,
 	layouts []*dashboardsv1.ResponsiveGridLayout,
 ) (dbwrite.DashboardTile, error) {
 	enc, err := content.Encode()
@@ -308,18 +332,20 @@ func (s *Service) CreateDashboardTile(
 	}
 	layoutsMap := LayoutsToMap(layouts)
 	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
+	normalizedDefaultTimeRange := normalizedTileDefaultTimeRange(enc.Kind, defaultTimeRange)
 
 	tile, err := s.write.CreateDashboardTile(ctx, dbwrite.CreateDashboardTileParams{
-		ID:           xid.New().String(),
-		DashboardID:  dashboardID,
-		ProjectID:    projectID,
-		Kind:         int16(enc.Kind),
-		ViewMode:     tileViewModeDBName(normalizedViewMode),
-		DisplayName:  displayName,
-		Description:  description,
-		InsightQuery: enc.InsightQuery,
-		MarkdownBody: enc.MarkdownBody,
-		Layouts:      layoutsMap,
+		ID:               xid.New().String(),
+		DashboardID:      dashboardID,
+		ProjectID:        projectID,
+		Kind:             int16(enc.Kind),
+		ViewMode:         tileViewModeDBName(normalizedViewMode),
+		DefaultTimeRange: tileDefaultTimeRangeDBName(normalizedDefaultTimeRange),
+		DisplayName:      displayName,
+		Description:      description,
+		InsightQuery:     enc.InsightQuery,
+		MarkdownBody:     enc.MarkdownBody,
+		Layouts:          layoutsMap,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -332,8 +358,13 @@ func (s *Service) CreateDashboardTile(
 		if conflict := translateUniqueViolation(err); conflict != nil {
 			return dbwrite.DashboardTile{}, conflict
 		}
-		return dbwrite.DashboardTile{}, recordServiceError(ctx, "failed to create dashboard tile", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+		slog.ErrorContext(ctx, "failed to create dashboard tile",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("dashboard_id", dashboardID),
+		)
+		telemetry.RecordError(ctx, err)
+		return dbwrite.DashboardTile{}, err
 	}
 	return tile, nil
 }
@@ -343,6 +374,7 @@ func (s *Service) UpdateDashboardTile(
 	projectID, dashboardID, tileID, displayName, description string,
 	content TileContent,
 	viewMode dashboardsv1.DashboardTileViewMode,
+	defaultTimeRange commonv1.TimeRangePreset,
 	layouts []*dashboardsv1.ResponsiveGridLayout,
 ) (dbwrite.DashboardTile, error) {
 	enc, err := content.Encode()
@@ -358,18 +390,20 @@ func (s *Service) UpdateDashboardTile(
 	}
 	layoutsMap := LayoutsToMap(layouts)
 	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
+	normalizedDefaultTimeRange := normalizedTileDefaultTimeRange(enc.Kind, defaultTimeRange)
 
 	tile, err := s.write.UpdateDashboardTile(ctx, dbwrite.UpdateDashboardTileParams{
-		ID:           tileID,
-		DashboardID:  dashboardID,
-		ProjectID:    projectID,
-		Kind:         int16(enc.Kind),
-		ViewMode:     tileViewModeDBName(normalizedViewMode),
-		DisplayName:  displayName,
-		Description:  description,
-		InsightQuery: enc.InsightQuery,
-		MarkdownBody: enc.MarkdownBody,
-		Layouts:      layoutsMap,
+		ID:               tileID,
+		DashboardID:      dashboardID,
+		ProjectID:        projectID,
+		Kind:             int16(enc.Kind),
+		ViewMode:         tileViewModeDBName(normalizedViewMode),
+		DefaultTimeRange: tileDefaultTimeRangeDBName(normalizedDefaultTimeRange),
+		DisplayName:      displayName,
+		Description:      description,
+		InsightQuery:     enc.InsightQuery,
+		MarkdownBody:     enc.MarkdownBody,
+		Layouts:          layoutsMap,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -383,8 +417,14 @@ func (s *Service) UpdateDashboardTile(
 		if conflict := translateUniqueViolation(err); conflict != nil {
 			return dbwrite.DashboardTile{}, conflict
 		}
-		return dbwrite.DashboardTile{}, recordServiceError(ctx, "failed to update dashboard tile", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID), slog.String("tile_id", tileID))
+		slog.ErrorContext(ctx, "failed to update dashboard tile",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("dashboard_id", dashboardID),
+			slog.String("tile_id", tileID),
+		)
+		telemetry.RecordError(ctx, err)
+		return dbwrite.DashboardTile{}, err
 	}
 	return tile, nil
 }
@@ -403,8 +443,14 @@ func (s *Service) DeleteDashboardTile(ctx context.Context, projectID, dashboardI
 			)
 			return ErrDashboardTileNotFound
 		}
-		return recordServiceError(ctx, "failed to delete dashboard tile", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID), slog.String("tile_id", tileID))
+		slog.ErrorContext(ctx, "failed to delete dashboard tile",
+			slogx.Error(err),
+			slog.String("project_id", projectID),
+			slog.String("dashboard_id", dashboardID),
+			slog.String("tile_id", tileID),
+		)
+		telemetry.RecordError(ctx, err)
+		return err
 	}
 	return nil
 }
@@ -425,7 +471,7 @@ func translateUniqueViolation(err error) error {
 	return ErrDashboardTileDisplayNameConflict
 }
 
-func SpecMessageToMap(msg *insightsv1.InsightQuerySpec) (map[string]any, error) {
+func QueryMessageToMap(msg *insightsv1.QueryRequest) (map[string]any, error) {
 	if msg == nil {
 		return map[string]any{}, nil
 	}
@@ -440,15 +486,15 @@ func SpecMessageToMap(msg *insightsv1.InsightQuerySpec) (map[string]any, error) 
 	return out, nil
 }
 
-func MapToSpecMessage(data map[string]any) (*insightsv1.InsightQuerySpec, error) {
+func MapToQueryMessage(data map[string]any) (*insightsv1.QueryRequest, error) {
 	if len(data) == 0 {
-		return &insightsv1.InsightQuerySpec{}, nil
+		return &insightsv1.QueryRequest{}, nil
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
 	}
-	var out insightsv1.InsightQuerySpec
+	var out insightsv1.QueryRequest
 	if err := protojson.Unmarshal(raw, &out); err != nil {
 		return nil, err
 	}
@@ -479,23 +525,35 @@ func normalizedTileViewMode(kind TileKind, viewMode dashboardsv1.DashboardTileVi
 	}
 }
 
-// normalizedDashboardDefaultTimeRange returns the preset unchanged for a known
-// value, defaulting unknown/UNSPECIFIED to LAST_30_DAYS. Mirrors
-// normalizedDashboardGranularity — no parallel enum, so nothing to keep in sync.
-func normalizedDashboardDefaultTimeRange(tr commonv1.TimeRangePreset) commonv1.TimeRangePreset {
-	switch tr {
-	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS,
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS:
-		return tr
+func normalizedTileDefaultTimeRange(kind TileKind, defaultTimeRange commonv1.TimeRangePreset) TileDefaultTimeRange {
+	switch kind {
+	case TileKindInsight:
+		switch defaultTimeRange {
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR:
+			return TileDefaultTimeRangeLast1Hour
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS:
+			return TileDefaultTimeRangeLast6Hours
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS:
+			return TileDefaultTimeRangeLast24Hours
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS:
+			return TileDefaultTimeRangeLast7Days
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS:
+			return TileDefaultTimeRangeLast14Days
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS:
+			return TileDefaultTimeRangeLast30Days
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS:
+			return TileDefaultTimeRangeLast90Days
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS:
+			return TileDefaultTimeRangeLast180Days
+		case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS:
+			return TileDefaultTimeRangeLast365Days
+		default:
+			return TileDefaultTimeRangeLast30Days
+		}
+	case TileKindMarkdown:
+		return TileDefaultTimeRangeUnspecified
 	default:
-		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
+		return TileDefaultTimeRangeUnspecified
 	}
 }
 
@@ -516,30 +574,29 @@ func tileViewModeDBName(viewMode TileViewMode) string {
 	}
 }
 
-// dashboardDefaultTimeRangeDBName stores the preset as its proto enum name,
-// normalizing unknown/UNSPECIFIED to LAST_30_DAYS. Self-normalizing and thus
-// safe to call directly — mirrors dashboardGranularityDBName.
-func dashboardDefaultTimeRangeDBName(tr commonv1.TimeRangePreset) string {
-	return normalizedDashboardDefaultTimeRange(tr).String()
-}
-
-// normalizedDashboardGranularity defaults unknown/UNSPECIFIED granularity to DAY.
-func normalizedDashboardGranularity(g insightsv1.Granularity) insightsv1.Granularity {
-	switch g {
-	case insightsv1.Granularity_GRANULARITY_MINUTE,
-		insightsv1.Granularity_GRANULARITY_HOUR,
-		insightsv1.Granularity_GRANULARITY_DAY,
-		insightsv1.Granularity_GRANULARITY_WEEK,
-		insightsv1.Granularity_GRANULARITY_MONTH:
-		return g
+func tileDefaultTimeRangeDBName(defaultTimeRange TileDefaultTimeRange) string {
+	switch defaultTimeRange {
+	case TileDefaultTimeRangeLast1Hour:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR.String()
+	case TileDefaultTimeRangeLast6Hours:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS.String()
+	case TileDefaultTimeRangeLast24Hours:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS.String()
+	case TileDefaultTimeRangeLast7Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS.String()
+	case TileDefaultTimeRangeLast14Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS.String()
+	case TileDefaultTimeRangeLast30Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS.String()
+	case TileDefaultTimeRangeLast90Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS.String()
+	case TileDefaultTimeRangeLast180Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS.String()
+	case TileDefaultTimeRangeLast365Days:
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS.String()
 	default:
-		return insightsv1.Granularity_GRANULARITY_DAY
+		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED.String()
 	}
-}
-
-// dashboardGranularityDBName stores the granularity as its proto enum name.
-func dashboardGranularityDBName(g insightsv1.Granularity) string {
-	return normalizedDashboardGranularity(g).String()
 }
 
 func LayoutsToMap(layouts []*dashboardsv1.ResponsiveGridLayout) map[string]any {

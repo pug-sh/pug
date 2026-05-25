@@ -13,11 +13,10 @@ service DashboardsService {
   rpc Delete(DashboardsServiceDeleteRequest) returns (DashboardsServiceDeleteResponse) {}
   rpc Get(DashboardsServiceGetRequest) returns (DashboardsServiceGetResponse) {}
   rpc List(DashboardsServiceListRequest) returns (DashboardsServiceListResponse) {}
-  rpc Update(DashboardsServiceUpdateRequest) returns (DashboardsServiceUpdateResponse) {}
+  rpc UpdateDisplayName(DashboardsServiceUpdateDisplayNameRequest) returns (DashboardsServiceUpdateDisplayNameResponse) {}
   rpc CreateTile(DashboardsServiceCreateTileRequest) returns (DashboardsServiceCreateTileResponse) {}
   rpc UpdateTile(DashboardsServiceUpdateTileRequest) returns (DashboardsServiceUpdateTileResponse) {}
   rpc DeleteTile(DashboardsServiceDeleteTileRequest) returns (DashboardsServiceDeleteTileResponse) {}
-  rpc QueryDashboard(DashboardsServiceQueryDashboardRequest) returns (DashboardsServiceQueryDashboardResponse) {}
 }
 
 message Dashboard {
@@ -28,9 +27,6 @@ message Dashboard {
   google.protobuf.Timestamp create_time = 5;
   google.protobuf.Timestamp update_time = 6;
   repeated DashboardTile tiles = 7;
-  // Dashboard-level time window applied to every insight tile at render time.
-  common.v1.TimeRangePreset default_time_range = 8 [(buf.validate.field).enum.defined_only = true];
-  shared.insights.v1.Granularity default_granularity = 9 [(buf.validate.field).enum.defined_only = true];
 }
 
 message DashboardTile {
@@ -56,7 +52,7 @@ message DashboardTile {
   google.protobuf.Timestamp create_time = 8;
   google.protobuf.Timestamp update_time = 9;
   DashboardTileViewMode view_mode = 10 [(buf.validate.field).enum.defined_only = true];
-  reserved 11; // was default_time_range (moved to dashboard level)
+  common.v1.TimeRangePreset default_time_range = 11 [(buf.validate.field).enum.defined_only = true];
 }
 
 enum DashboardTileViewMode {
@@ -69,7 +65,7 @@ enum DashboardTileViewMode {
 }
 
 message InsightTileContent {
-  shared.insights.v1.InsightQuerySpec spec = 1 [(buf.validate.field).required = true];
+  shared.insights.v1.QueryRequest query = 1 [(buf.validate.field).required = true];
 }
 
 message MarkdownTileContent {
@@ -98,8 +94,6 @@ message DashboardsServiceCreateRequest {
     (buf.validate.field).string.max_len = 150
   ];
   string description = 2 [(buf.validate.field).string.max_len = 2000];
-  common.v1.TimeRangePreset default_time_range = 3 [(buf.validate.field).enum.defined_only = true];
-  shared.insights.v1.Granularity default_granularity = 4 [(buf.validate.field).enum.defined_only = true];
 }
 
 message DashboardsServiceCreateResponse {
@@ -146,7 +140,7 @@ message DashboardsServiceCreateTileRequest {
   }
   repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
   DashboardTileViewMode view_mode = 7 [(buf.validate.field).enum.defined_only = true];
-  reserved 8; // was default_time_range (moved to dashboard level)
+  common.v1.TimeRangePreset default_time_range = 8 [(buf.validate.field).enum.defined_only = true];
 }
 
 message DashboardsServiceCreateTileResponse {
@@ -174,7 +168,7 @@ message DashboardsServiceUpdateTileRequest {
   }
   repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
   DashboardTileViewMode view_mode = 8 [(buf.validate.field).enum.defined_only = true];
-  reserved 9; // was default_time_range (moved to dashboard level)
+  common.v1.TimeRangePreset default_time_range = 9 [(buf.validate.field).enum.defined_only = true];
 }
 
 message DashboardsServiceUpdateTileResponse {
@@ -188,65 +182,15 @@ message DashboardsServiceDeleteTileRequest {
 
 message DashboardsServiceDeleteTileResponse {}
 
-message DashboardsServiceUpdateRequest {
+message DashboardsServiceUpdateDisplayNameRequest {
   string id = 1 [(buf.validate.field).required = true];
   string display_name = 2 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 150
   ];
   string description = 3 [(buf.validate.field).string.max_len = 2000];
-  common.v1.TimeRangePreset default_time_range = 4 [(buf.validate.field).enum.defined_only = true];
-  shared.insights.v1.Granularity default_granularity = 5 [(buf.validate.field).enum.defined_only = true];
 }
 
-message DashboardsServiceUpdateResponse {
+message DashboardsServiceUpdateDisplayNameResponse {
   Dashboard dashboard = 1;
-}
-
-message DashboardsServiceQueryDashboardRequest {
-  option (buf.validate.message).cel = {
-    id: "query_dashboard_request.valid_time_range_override"
-    message: "time_range override must have from < to"
-    expression: "!has(this.time_range) || this.time_range.from < this.time_range.to"
-  };
-
-  string dashboard_id = 1 [(buf.validate.field).required = true];
-  // Optional view-time overrides of the dashboard's default window/granularity,
-  // applied uniformly to every insight tile.
-  common.v1.TimeRange time_range = 2;
-  shared.insights.v1.Granularity granularity = 3 [(buf.validate.field).enum.defined_only = true];
-}
-
-message RenderedTile {
-  option (buf.validate.message).cel = {
-    id: "rendered_tile.insight_requires_outcome"
-    message: "insight tile must have a result or error_message"
-    expression: "!has(this.tile.insight) || has(this.result) || has(this.error_message)"
-  };
-  option (buf.validate.message).cel = {
-    id: "rendered_tile.markdown_no_outcome"
-    message: "markdown tile must not have a result or error_message"
-    expression: "!has(this.tile.markdown) || (!has(this.result) && !has(this.error_message))"
-  };
-
-  DashboardTile tile = 1 [(buf.validate.field).required = true];
-  oneof outcome {
-    shared.insights.v1.QueryResponse result = 2;
-    string error_message = 3 [(buf.validate.field).string.min_len = 1];
-  }
-}
-
-message RenderedDashboard {
-  string id = 1;
-  string display_name = 2;
-  string description = 3;
-  common.v1.TimeRangePreset default_time_range = 4;
-  shared.insights.v1.Granularity default_granularity = 5;
-  google.protobuf.Timestamp create_time = 6;
-  google.protobuf.Timestamp update_time = 7;
-  repeated RenderedTile tiles = 8;
-}
-
-message DashboardsServiceQueryDashboardResponse {
-  RenderedDashboard dashboard = 1;
 }
