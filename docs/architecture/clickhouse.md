@@ -49,6 +49,8 @@ Pick the MV flavor based on whether aggregates are mergeable and whether the sou
 
 Default to incremental when both conditions hold — refreshable MVs trade refresh-interval staleness and watermark complexity for `FINAL`, only worth it when you actually need it. Concrete examples in `schema/clickhouse/migrations/004_create_filter_schema_mvs.sql`: `event_names_mv` is incremental, `property_keys_event_buckets_mv` is refreshable APPEND, `property_keys_profile_current_mv` is refreshable rebuild.
 
+**Dashboard dimensional rollup (incremental, EAV).** `dashboard_event_rollup_daily` (migration 006) is an `AggregatingMergeTree` keyed by `(project_id, kind, dim_name, day, dim_value)` storing `SimpleAggregateFunction(sum, UInt64)` event counts and `AggregateFunction(uniq, String)` distinct-user state. Its incremental MV `ARRAY JOIN`s every event into one row per materialized auto-property dimension plus a synthetic `$__total__` row, so a single table answers both breakdown and total trends/segmentation. Reads always `GROUP BY` the key and use `sum(cnt)` / `uniqMerge(uniq_state)` (no `FINAL`). The routing predicate and rollup query builders live in `internal/core/insights/rollup.go`.
+
 **Closed-bucket watermark pattern (refreshable APPEND).** To keep refreshes idempotent and avoid double-counting, scope the source filter to closed buckets keyed off **event time**, not insert time:
 
 ```sql

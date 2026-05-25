@@ -102,3 +102,18 @@ Always use the type-specific builders — they provide compile-time safety betwe
 All query types expose `.SQL()` and `.Args()`. All types except `ScalarQuery` also expose `.Properties()` and `.NumBreakdowns()`. `FunnelTimingQuery` also exposes `.Kinds()` and `.WindowSec()`.
 
 All five emit `SETTINGS use_query_cache = 1, query_cache_ttl = 60` via `WithQueryCache(analyticsCacheTTL)` on the outermost query. Cache isolation between projects relies on `project_id` being a positional parameter on every cached builder; a builder that interpolates `project_id` into raw SQL would silently break tenant isolation. Property keys/values (including profile property keys/values), segment-users, and event-names builders intentionally omit the cache. See `analyticsCacheTTL` in `internal/core/insights/builder.go` for staleness mechanics with ReplacingMergeTree.
+
+## Rollup Fast Path
+
+`ExecuteQuery` serves eligible trends and segmentation queries from the pre-aggregated `dashboard_event_rollup_daily` rollup (see [clickhouse.md](clickhouse.md)) instead of scanning raw events. The decision is `canUseEventRollup` (in `internal/core/insights/rollup.go`):
+
+- insight type TRENDS or SEGMENTATION;
+- every event aggregation in `{TOTAL, UNIQUE_USERS, PER_USER_AVG}` (numeric-property aggs SUM/AVG/MIN/MAX need raw per-event values);
+- at most one breakdown and, if present, on a materialized dimension (`materializedDims`);
+- no filter groups and no per-event filters;
+- non-empty event kind;
+- DAY/WEEK/MONTH granularity.
+
+The dispatchers `trendsQueryForExecution` / `segmentationQueryForExecution` pick `buildTrendsFromRollup` / `buildSegmentationFromRollup` when eligible, else the raw `BuildTrendsQuery` / `BuildSegmentationQuery`. The public builders therefore stay pure raw-events builders, and any query the predicate rejects (filtered, multi-dimension, sub-day, numeric-aggregation, custom-property breakdown, funnel/retention) runs unchanged on raw events.
+
+No-breakdown trends and segmentation read the synthetic `$__total__` dimension row. The exclusive `[from, to)` window maps to inclusive whole-day bounds (the `day` of `to - 1ns`), and the time bucket reuses the raw `granularityFunc` over `toDateTime(day)` so week/month boundaries match raw exactly. Value expressions mirror the raw aggregations: `sum(cnt)` for TOTAL, `uniqMerge(uniq_state)` for UNIQUE_USERS, and their ratio for PER_USER_AVG.
