@@ -850,25 +850,37 @@ func BuildCustomPropertyValuesQuery(projectID, propertyKey, eventKind string) (s
 // string projection.
 func buildPropertyValuesQuery(projectID, propertyKey, mapCol, eventKind string) (string, []any, error) {
 	var selectExpr, propertyNotEmptyClause string
+	var selectArgs, notEmptyArgs []any
 	switch mapCol {
-	case "auto_properties", "custom_properties":
+	case "auto_properties":
+		if dv, ok := chq.AutoPropertyDistinctValuesFor(propertyKey); ok {
+			selectExpr = dv.SelectExpr
+			propertyNotEmptyClause = dv.NotEmptyClause
+			selectArgs = dv.Args
+			notEmptyArgs = dv.Args
+		} else {
+			return "", nil, fmt.Errorf("unsupported auto property key %q", propertyKey)
+		}
+	case "custom_properties":
 		selectExpr = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) AS value", mapCol)
 		propertyNotEmptyClause = fmt.Sprintf("CAST(%s[?] AS Nullable(String)) != ''", mapCol)
+		selectArgs = []any{propertyKey}
+		notEmptyArgs = []any{propertyKey}
 	default:
 		return "", nil, fmt.Errorf("unsupported property source %q", mapCol)
 	}
 
-	return chq.NewQuery().
-		SelectExpr("DISTINCT "+selectExpr, propertyKey).
+	q := chq.NewQuery().
+		SelectExpr("DISTINCT "+selectExpr, selectArgs...).
 		From("events").
 		Where(
 			chq.Eq("project_id", projectID),
 			chq.When(eventKind != "", chq.Eq("kind", eventKind)),
 			chq.RawCond("occur_time >= now() - INTERVAL 30 DAY"),
-			chq.RawCond(propertyNotEmptyClause, propertyKey),
+			chq.RawCond(propertyNotEmptyClause, notEmptyArgs...),
 		).
-		Limit(int64(PropertyValuesLimit)).
-		Build()
+		Limit(int64(PropertyValuesLimit))
+	return q.Build()
 }
 
 // buildTopLevelFilterCondition builds filter groups into a single Condition

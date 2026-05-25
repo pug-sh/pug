@@ -29,14 +29,14 @@ SELECT
     countState()                             AS total_events_state,
     sumState(toUInt64(kind = 'page_view'))   AS pageviews_state,
     uniqState(session_id)                    AS sessions_state,
-    argMaxState(coalesce(CAST(auto_properties['$browser'] AS Nullable(String)), ''), occur_time) AS latest_browser_state,
-    argMaxState(coalesce(CAST(auto_properties['$browserVersion'] AS Nullable(String)), ''), occur_time) AS latest_browser_version_state,
-    argMaxState(coalesce(CAST(auto_properties['$os'] AS Nullable(String)), ''), occur_time) AS latest_os_state,
-    argMaxState(coalesce(CAST(auto_properties['$osVersion'] AS Nullable(String)), ''), occur_time) AS latest_os_version_state,
-    argMaxState(coalesce(CAST(auto_properties['$device'] AS Nullable(String)), ''), occur_time) AS latest_device_state,
-    argMaxState(coalesce(CAST(auto_properties['$country'] AS Nullable(String)), ''), occur_time) AS latest_country_state,
-    argMaxState(coalesce(CAST(auto_properties['$region'] AS Nullable(String)), ''), occur_time) AS latest_region_state,
-    argMaxState(coalesce(CAST(auto_properties['$city'] AS Nullable(String)), ''), occur_time) AS latest_city_state
+    argMaxState(browser, occur_time)         AS latest_browser_state,
+    argMaxState(browser_version, occur_time) AS latest_browser_version_state,
+    argMaxState(os, occur_time)              AS latest_os_state,
+    argMaxState(os_version, occur_time)      AS latest_os_version_state,
+    argMaxState(device, occur_time)          AS latest_device_state,
+    argMaxState(country, occur_time)         AS latest_country_state,
+    argMaxState(region, occur_time)          AS latest_region_state,
+    argMaxState(city, occur_time)            AS latest_city_state
 FROM events
 GROUP BY project_id, distinct_id;
 

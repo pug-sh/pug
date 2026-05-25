@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/pug-sh/pug/internal/core/insights"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -1264,12 +1265,15 @@ func insertAutoEvent(
 	occurTime time.Time,
 	autoProps map[string]chcol.Variant,
 ) error {
-	batch, err := conn.PrepareBatch(ctx,
-		"INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties)")
+	batch, err := conn.PrepareBatch(ctx, chq.EventsInsertStmt)
 	if err != nil {
 		return err
 	}
-	if err := batch.Append(projectID, eventID, kind, distinctID, occurTime, autoProps); err != nil {
+	if err := batch.Append(chq.PrepareEventInsertArgs(
+		eventID, projectID, distinctID, kind,
+		autoProps, nil,
+		occurTime, uuid.NewString(),
+	)...); err != nil {
 		return err
 	}
 	return batch.Send()

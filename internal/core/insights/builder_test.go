@@ -102,7 +102,7 @@ func TestTrendsWithFilters(t *testing.T) {
 	if !strings.Contains(sql, "toFloat64(uniq(distinct_id))") {
 		t.Errorf("expected toFloat64(uniq(distinct_id)) in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
+	if !strings.Contains(sql, "coalesce(country, '')") {
 		t.Errorf("expected property resolution expression in SQL, got: %s", sql)
 	}
 
@@ -305,7 +305,7 @@ func TestFunnelWithFilterGroups(t *testing.T) {
 	sql := q.SQL()
 
 	// Filter group should appear inside the CTE WHERE
-	if !strings.Contains(sql, "$country") {
+	if !strings.Contains(sql, "coalesce(country, '')") {
 		t.Errorf("expected filter group in funnel SQL, got: %s", sql)
 	}
 }
@@ -804,7 +804,7 @@ func TestBuildSegmentUsersQuery(t *testing.T) {
 	if !strings.Contains(sql, "LIMIT ?") {
 		t.Errorf("expected LIMIT ? in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '')") {
+	if !strings.Contains(sql, "coalesce(country, '')") {
 		t.Errorf("expected property filter expression in SQL, got: %s", sql)
 	}
 
@@ -1266,17 +1266,16 @@ func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !strings.Contains(sql, "auto_properties") {
-			t.Error("expected auto_properties in SQL")
+		if !strings.Contains(sql, "browser") {
+			t.Error("expected promoted browser column in SQL")
 		}
 		if !strings.Contains(sql, "kind = ?") {
 			t.Error("expected kind filter in SQL")
 		}
-		if len(args) != 5 {
-			t.Fatalf("expected 5 args, got %d: %v", len(args), args)
+		if len(args) != 3 {
+			t.Fatalf("expected 3 args, got %d: %v", len(args), args)
 		}
-		// args: propertyKey, projectID, eventKind, propertyKey, limit
-		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "page_view" || args[3] != "$browser" || args[4] != int64(100) {
+		if args[0] != "proj_1" || args[1] != "page_view" || args[2] != int64(100) {
 			t.Errorf("unexpected args: %v", args)
 		}
 	})
@@ -1286,16 +1285,16 @@ func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !strings.Contains(sql, "auto_properties") {
-			t.Error("expected auto_properties in SQL")
+		if !strings.Contains(sql, "browser") {
+			t.Error("expected promoted browser column in SQL")
 		}
 		if strings.Contains(sql, "kind = ?") {
 			t.Error("should not have kind filter when eventKind is empty")
 		}
-		if len(args) != 4 {
-			t.Fatalf("expected 4 args, got %d: %v", len(args), args)
+		if len(args) != 2 {
+			t.Fatalf("expected 2 args, got %d: %v", len(args), args)
 		}
-		if args[0] != "$browser" || args[1] != "proj_1" || args[2] != "$browser" || args[3] != int64(100) {
+		if args[0] != "proj_1" || args[1] != int64(100) {
 			t.Errorf("unexpected args: %v", args)
 		}
 	})
@@ -1322,16 +1321,29 @@ func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 		}
 	})
 
-	t.Run("auto_uses_cast_like_custom", func(t *testing.T) {
+	t.Run("auto_promoted_column", func(t *testing.T) {
 		sql, _, err := insights.BuildAutoPropertyValuesQuery("proj_1", "$browser", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !strings.Contains(sql, "CAST(auto_properties[?] AS Nullable(String)) AS value") {
-			t.Errorf("expected CAST(auto_properties[?] AS Nullable(String)) AS value in SQL, got: %s", sql)
+		if !strings.Contains(sql, "nullIf(browser, '') AS value") {
+			t.Errorf("expected nullIf(browser, '') AS value in SQL, got: %s", sql)
 		}
-		if !strings.Contains(sql, "CAST(auto_properties[?] AS Nullable(String)) != ''") {
-			t.Errorf("expected CAST(auto_properties[?] AS Nullable(String)) != '' in SQL, got: %s", sql)
+		if !strings.Contains(sql, "browser != ''") {
+			t.Errorf("expected browser != '' in SQL, got: %s", sql)
+		}
+	})
+
+	t.Run("auto_map_fallback", func(t *testing.T) {
+		sql, args, err := insights.BuildAutoPropertyValuesQuery("proj_1", "$ip", "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(sql, "CAST(auto_properties[?] AS Nullable(String)) AS value") {
+			t.Errorf("expected map access in SQL, got: %s", sql)
+		}
+		if len(args) != 4 || args[0] != "$ip" || args[1] != "proj_1" || args[2] != "$ip" || args[3] != int64(100) {
+			t.Errorf("unexpected args: %v", args)
 		}
 	})
 }
@@ -1702,11 +1714,10 @@ func TestMultiEventTrendsWithFilters(t *testing.T) {
 	if !strings.Contains(sql, "UNION ALL") {
 		t.Error("expected UNION ALL in SQL")
 	}
-	// Top-level filter should appear in both sub-queries.
-	// PropertyExpr references the key twice (auto_properties['$country'], custom_properties['$country']),
-	// so 2 sub-queries × 2 refs = 4.
-	if strings.Count(sql, "$country") != 4 {
-		t.Errorf("expected top-level filter in both sub-queries (4 refs), got %d", strings.Count(sql, "$country"))
+	// Top-level filter should appear in both sub-queries (one ref each now that
+	// promoted columns no longer duplicate auto/custom map lookups).
+	if strings.Count(sql, "coalesce(country, '')") != 2 {
+		t.Errorf("expected top-level filter in both sub-queries (2 refs), got %d", strings.Count(sql, "coalesce(country, '')"))
 	}
 	// Per-event filter only in first sub-query (2 refs from PropertyExpr).
 	if strings.Count(sql, "'url'") != 2 {
@@ -1912,14 +1923,12 @@ func TestRetentionWithFilterGroups(t *testing.T) {
 	}
 	sql := q.SQL()
 
-	// Filter group should appear in both cohorts and retained CTEs.
-	if strings.Count(sql, "$country") < 4 {
-		t.Errorf("expected filter group refs in both cohorts and retained CTEs (>=4), got %d", strings.Count(sql, "$country"))
+	// Filter group should appear in cohorts (bare column) and retained CTE (aliased).
+	if !strings.Contains(sql, "coalesce(country, '')") {
+		t.Errorf("expected filter group in cohorts CTE, got:\n%s", sql)
 	}
-
-	// The retained CTE conditions must use the "e." alias.
-	if !strings.Contains(sql, "e.auto_properties['$country']") {
-		t.Errorf("expected aliased filter group in retained CTE (e.auto_properties), got:\n%s", sql)
+	if !strings.Contains(sql, "coalesce(e.country, '')") {
+		t.Errorf("expected aliased filter group in retained CTE, got:\n%s", sql)
 	}
 }
 
