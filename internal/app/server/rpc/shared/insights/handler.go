@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
+	"golang.org/x/sync/errgroup"
 
 	"google.golang.org/protobuf/proto"
 
@@ -69,7 +70,7 @@ func (s *server) Query(
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		series, err := coreinsights.GroupSeries(ctx, rows, q.Properties())
+		series, err := coreinsights.GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
@@ -95,22 +96,58 @@ func (s *server) Query(
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
 		var funnelRows []coreinsights.FunnelRow
 		var funnelProperties []string
+		var funnelBreakdownLimit int
 		if req.Msg.GetIncludeStepTiming() {
-			q, err := coreinsights.BuildFunnelTimingQuery(req.Msg, projectID)
+			// Run windowFunnel counts and per-user timing in parallel:
+			// counts are fast (single-pass windowFunnel), timing is heavier
+			// (pre-filtered groupArray). Merging takes counts from windowFunnel
+			// and timing stats from ComputeFunnelTiming.
+			countsQ, err := coreinsights.BuildFunnelCountsQuery(req.Msg, projectID)
+			if err != nil {
+				slog.WarnContext(ctx, "failed to build funnel counts query", slogx.Error(err),
+					slog.String("project_id", projectID))
+				return nil, apperr.Invalid(apperr.ReasonInvalidInsightQuery, "invalid query parameters: "+err.Error())
+			}
+			timingQ, err := coreinsights.BuildFunnelTimingQuery(req.Msg, projectID)
 			if err != nil {
 				slog.WarnContext(ctx, "failed to build funnel timing query", slogx.Error(err),
 					slog.String("project_id", projectID))
 				return nil, apperr.Invalid(apperr.ReasonInvalidInsightQuery, "invalid query parameters: "+err.Error())
 			}
-			users, err := s.executor.QueryFunnelUserEvents(ctx, projectID, q)
-			if err != nil {
+
+			var countRows []coreinsights.FunnelRow
+			var timingRows []coreinsights.FunnelRow
+			eg, egCtx := errgroup.WithContext(ctx)
+
+			eg.Go(func() error {
+				rows, err := s.executor.QueryFunnel(egCtx, projectID, countsQ)
+				if err != nil {
+					return err
+				}
+				countRows = rows
+				return nil
+			})
+
+			eg.Go(func() error {
+				users, err := s.executor.QueryFunnelUserEvents(egCtx, projectID, timingQ)
+				if err != nil {
+					return err
+				}
+				rows, err := coreinsights.ComputeFunnelTiming(egCtx, projectID, users, timingQ.Kinds(), timingQ.WindowSec(), timingQ.NumBreakdowns())
+				if err != nil {
+					return err
+				}
+				timingRows = rows
+				return nil
+			})
+
+			if err := eg.Wait(); err != nil {
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
-			funnelRows, err = coreinsights.ComputeFunnelTiming(ctx, projectID, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
-			if err != nil {
-				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-			}
-			funnelProperties = q.Properties()
+
+			funnelRows = coreinsights.MergeFunnelCountsAndTiming(countRows, timingRows)
+			funnelProperties = countsQ.Properties()
+			funnelBreakdownLimit = countsQ.BreakdownLimit()
 		} else {
 			q, err := coreinsights.BuildFunnelCountsQuery(req.Msg, projectID)
 			if err != nil {
@@ -123,8 +160,9 @@ func (s *server) Query(
 				return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 			}
 			funnelProperties = q.Properties()
+			funnelBreakdownLimit = q.BreakdownLimit()
 		}
-		funnelSeries, err := coreinsights.GroupFunnelSeries(ctx, funnelRows, funnelProperties)
+		funnelSeries, err := coreinsights.GroupFunnelSeries(ctx, funnelRows, funnelProperties, funnelBreakdownLimit)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
@@ -143,7 +181,7 @@ func (s *server) Query(
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
-		retentionSeries, err := coreinsights.GroupRetentionSeries(ctx, rows, q.Properties())
+		retentionSeries, err := coreinsights.GroupRetentionSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}

@@ -3,7 +3,6 @@ package insights
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
@@ -48,15 +47,17 @@ const analyticsCacheTTL = 60
 
 // TrendsQuery is the compiled SQL for a trends insight.
 type TrendsQuery struct {
-	sql        string
-	args       []any
-	properties []string // breakdown property names for GroupSeries
+	sql            string
+	args           []any
+	properties     []string // breakdown property names for GroupSeries
+	breakdownLimit int
 }
 
 func (q TrendsQuery) SQL() string          { return q.sql }
 func (q TrendsQuery) Args() []any          { return q.args }
 func (q TrendsQuery) NumBreakdowns() int   { return len(q.properties) }
 func (q TrendsQuery) Properties() []string { return q.properties }
+func (q TrendsQuery) BreakdownLimit() int  { return q.breakdownLimit }
 
 // ScalarQuery is the compiled SQL for a single-value query (segmentation).
 type ScalarQuery struct {
@@ -69,23 +70,26 @@ func (q ScalarQuery) Args() []any { return q.args }
 
 // FunnelQuery is the compiled SQL for funnel step counts (no timing).
 type FunnelQuery struct {
-	sql        string
-	args       []any
-	properties []string
+	sql            string
+	args           []any
+	properties     []string
+	breakdownLimit int
 }
 
 func (q FunnelQuery) SQL() string          { return q.sql }
 func (q FunnelQuery) Args() []any          { return q.args }
 func (q FunnelQuery) NumBreakdowns() int   { return len(q.properties) }
 func (q FunnelQuery) Properties() []string { return q.properties }
+func (q FunnelQuery) BreakdownLimit() int  { return q.breakdownLimit }
 
 // FunnelTimingQuery is the compiled SQL for per-user funnel event arrays.
 type FunnelTimingQuery struct {
-	sql        string
-	args       []any
-	kinds      []string // step event kinds for ComputeFunnelTiming
-	windowSec  int64    // conversion window for ComputeFunnelTiming
-	properties []string
+	sql            string
+	args           []any
+	kinds          []string // step event kinds for ComputeFunnelTiming
+	windowSec      int64    // conversion window for ComputeFunnelTiming
+	properties     []string
+	breakdownLimit int
 }
 
 func (q FunnelTimingQuery) SQL() string          { return q.sql }
@@ -94,18 +98,21 @@ func (q FunnelTimingQuery) Kinds() []string      { return q.kinds }
 func (q FunnelTimingQuery) WindowSec() int64     { return q.windowSec }
 func (q FunnelTimingQuery) NumBreakdowns() int   { return len(q.properties) }
 func (q FunnelTimingQuery) Properties() []string { return q.properties }
+func (q FunnelTimingQuery) BreakdownLimit() int  { return q.breakdownLimit }
 
 // RetentionQuery is the compiled SQL for retention cohort analysis.
 type RetentionQuery struct {
-	sql        string
-	args       []any
-	properties []string
+	sql            string
+	args           []any
+	properties     []string
+	breakdownLimit int
 }
 
 func (q RetentionQuery) SQL() string          { return q.sql }
 func (q RetentionQuery) Args() []any          { return q.args }
 func (q RetentionQuery) NumBreakdowns() int   { return len(q.properties) }
 func (q RetentionQuery) Properties() []string { return q.properties }
+func (q RetentionQuery) BreakdownLimit() int  { return q.breakdownLimit }
 
 func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
 	q, err := buildTrends(req, projectID)
@@ -116,7 +123,12 @@ func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQue
 	if err != nil {
 		return TrendsQuery{}, fmt.Errorf("trends: %w", err)
 	}
-	return TrendsQuery{sql: sql, args: args, properties: breakdownProps(req.GetBreakdowns())}, nil
+	return TrendsQuery{
+		sql:            sql,
+		args:           args,
+		properties:     breakdownProps(req.GetBreakdowns()),
+		breakdownLimit: effectiveBreakdownLimit(req.GetBreakdownLimit()),
+	}, nil
 }
 
 func BuildSegmentationQuery(req *insightsv1.QueryRequest, projectID string) (ScalarQuery, error) {
@@ -140,8 +152,14 @@ func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	if err != nil {
 		return FunnelQuery{}, fmt.Errorf("funnel counts: %w", err)
 	}
-	return FunnelQuery{sql: sql, args: args, properties: breakdownProps(req.GetBreakdowns())}, nil
+	return FunnelQuery{
+		sql:            sql,
+		args:           args,
+		properties:     breakdownProps(req.GetBreakdowns()),
+		breakdownLimit: effectiveBreakdownLimit(req.GetBreakdownLimit()),
+	}, nil
 }
+
 
 // BuildFunnelTimingQuery returns SQL plus per-user event arrays + the kinds and conversion
 // window needed by ComputeFunnelTiming downstream.
@@ -164,11 +182,12 @@ func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 		kinds[i] = s.GetEvent().GetKind()
 	}
 	return FunnelTimingQuery{
-		sql:        sql,
-		args:       args,
-		kinds:      kinds,
-		windowSec:  windowSec,
-		properties: breakdownProps(req.GetBreakdowns()),
+		sql:            sql,
+		args:           args,
+		kinds:          kinds,
+		windowSec:      windowSec,
+		properties:     breakdownProps(req.GetBreakdowns()),
+		breakdownLimit: effectiveBreakdownLimit(req.GetBreakdownLimit()),
 	}, nil
 }
 
@@ -181,7 +200,12 @@ func BuildRetentionQuery(req *insightsv1.QueryRequest, projectID string) (Retent
 	if err != nil {
 		return RetentionQuery{}, fmt.Errorf("retention: %w", err)
 	}
-	return RetentionQuery{sql: sql, args: args, properties: breakdownProps(req.GetBreakdowns())}, nil
+	return RetentionQuery{
+		sql:            sql,
+		args:           args,
+		properties:     breakdownProps(req.GetBreakdowns()),
+		breakdownLimit: effectiveBreakdownLimit(req.GetBreakdownLimit()),
+	}, nil
 }
 
 // breakdownProps extracts the property key from each breakdown descriptor.
@@ -196,51 +220,20 @@ func breakdownProps(bds []*insightsv1.Breakdown) []string {
 	return props
 }
 
-// buildTopValsCTE builds a CTE that selects the top-N breakdown value combinations
-// by event count over the given time range. Returns nil when there are no breakdowns.
-// Defaults to top-10 when limit is zero.
-func buildTopValsCTE(breakdowns []*insightsv1.Breakdown, projectID string, from, to time.Time, limit int32, extraConds ...chq.Condition) *chq.Query {
-	if len(breakdowns) == 0 {
-		return nil
+const defaultBreakdownLimit = 10
+
+// effectiveBreakdownLimit returns the breakdown limit, defaulting to 10 when zero.
+func effectiveBreakdownLimit(limit int32) int {
+	if limit <= 0 {
+		return defaultBreakdownLimit
 	}
-	if limit == 0 {
-		limit = 10
-	}
-	selectExprs := make([]string, len(breakdowns))
-	groupByCols := make([]string, len(breakdowns))
-	for i, bd := range breakdowns {
-		expr := chq.PropertyExpr(bd.GetProperty())
-		selectExprs[i] = fmt.Sprintf("%s AS breakdown_%d", expr, i)
-		groupByCols[i] = fmt.Sprintf("breakdown_%d", i)
-	}
-	conds := append([]chq.Condition{
-		chq.Eq("project_id", projectID),
-		chq.Gte("occur_time", from),
-		chq.Lt("occur_time", to),
-	}, extraConds...)
-	return chq.NewQuery().
-		Select(selectExprs...).
-		From("events").
-		Where(conds...).
-		GroupBy(groupByCols...).
-		OrderBy("count(*) DESC").
-		Limit(int64(limit))
+	return int(limit)
 }
 
 // rawArgMinExpr returns an aggregate SELECT expression that computes first-touch attribution
-// into a named column (raw_bd_N). Use this in the aggregation CTE so argMin is evaluated once.
+// into a named column (breakdown_N). Use this in the aggregation CTE so argMin is evaluated once.
 func rawArgMinExpr(colExpr string, i int) string {
-	return fmt.Sprintf("argMin(%s, occur_time) AS raw_bd_%d", colExpr, i)
-}
-
-// bucketRawExpr returns a scalar expression that buckets the pre-computed raw_bd_N column
-// against the top_vals CTE, falling back to '$others'. Must be called after rawArgMinExpr
-// has materialized raw_bd_N in a CTE row.
-func bucketRawExpr(i int) string {
-	return fmt.Sprintf(
-		"if(raw_bd_%d IN (SELECT breakdown_%d FROM top_vals), raw_bd_%d, '$others') AS breakdown_%d",
-		i, i, i, i,
-	)
+	return fmt.Sprintf("argMin(%s, occur_time) AS breakdown_%d", colExpr, i)
 }
 
 func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.UnionQuery, error) {
@@ -259,26 +252,12 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.UnionQuer
 		}}
 	}
 
-	// Pre-build top-level filter condition — reused in CTE and every sub-query.
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
 		return nil, fmt.Errorf("trends: %w", err)
 	}
 
-	// CTE for top-N breakdown values (shared across all event sub-queries).
-	var topValsCTE *chq.Query
-	if len(breakdowns) > 0 {
-		eventCond, err := buildEventCondition(events, projectID)
-		if err != nil {
-			return nil, err
-		}
-		topValsCTE = buildTopValsCTE(breakdowns, projectID,
-			req.GetTimeRange().GetFrom().AsTime(), req.GetTimeRange().GetTo().AsTime(),
-			req.GetBreakdownLimit(), topLevelFilterCond, eventCond)
-	}
-
 	queries := make([]*chq.Query, 0, len(events))
-	// Build one sub-query per event, joined with UNION ALL.
 	for i, ev := range events {
 		agg := ev.GetAggregation()
 		if agg == insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED {
@@ -290,9 +269,8 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.UnionQuer
 			"kind AS event_kind",
 		}
 		for j, bd := range breakdowns {
-			expr := chq.PropertyExpr(bd.GetProperty())
 			selectExprs = append(selectExprs,
-				fmt.Sprintf("if(%s IN (SELECT breakdown_%d FROM top_vals), %s, '$others') AS breakdown_%d", expr, j, expr, j))
+				fmt.Sprintf("%s AS breakdown_%d", chq.PropertyExpr(bd.GetProperty()), j))
 		}
 
 		aggExpr, err := aggregationExpr(agg, ev.GetAggregationProperty())
@@ -325,9 +303,6 @@ func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.UnionQuer
 		}
 		query.GroupBy(groupByCols...)
 
-		if i == 0 && topValsCTE != nil {
-			query.With("top_vals", topValsCTE)
-		}
 		queries = append(queries, query)
 	}
 
@@ -379,12 +354,13 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Que
 
 // buildFunnelWindowFunnel generates a funnel counts query using ClickHouse's windowFunnel() aggregate.
 // windowFunnel scans the events table once and returns the deepest step reached per user
-// within the conversion window. The outer UNION ALL computes cumulative counts per step.
+// within the conversion window. A CROSS JOIN against a compact steps table produces
+// cumulative counts per step in a single pass — no UNION ALL, no repeated CTE evaluation.
 //
 // Breakdown attribution: when breakdowns are requested, each user is assigned a breakdown
 // value from their earliest step-matching event in the time range (first-touch attribution). windowFunnel
 // then runs over the step-filtered events, and results are grouped by breakdown value.
-func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*chq.UnionQuery, error) {
+func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	steps := req.GetEvents()
 	if len(steps) == 0 {
 		return nil, fmt.Errorf("funnel: at least one step required")
@@ -396,9 +372,6 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*c
 		return nil, fmt.Errorf("funnel: %w", err)
 	}
 
-	// Build step conditions for windowFunnel boolean expressions and OR filter.
-	// The OR filter scopes both top_vals and the funnel CTE to step-matching events,
-	// ensuring argMin attribution and top-N bucketing are consistent with the timing path.
 	stepExprs := make([]string, len(steps))
 	var stepArgs []any
 	orConds := make([]chq.Condition, len(steps))
@@ -425,12 +398,6 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*c
 		windowSec, strings.Join(stepExprs, ", "),
 	)
 
-	topValsCTE := buildTopValsCTE(breakdowns, projectID, from, to, req.GetBreakdownLimit(), stepFilter, topLevelFilterCond)
-
-	// CTE: one row per user with their deepest funnel level.
-	// Pre-filtered to step-matching events so argMin attribution considers only
-	// events relevant to the funnel (first-touch from step events, not all events).
-	// windowFunnel is unaffected — non-matching events contribute nothing to it.
 	funnelCTE := chq.NewQuery().Select("distinct_id")
 	for i, bd := range breakdowns {
 		funnelCTE.Select(rawArgMinExpr(chq.PropertyExpr(bd.GetProperty()), i))
@@ -447,58 +414,67 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*c
 		).
 		GroupBy("distinct_id")
 
-	// Outer: one row per step (per breakdown value when breakdowns are present).
-	// countIf(level >= N) gives users who reached at least step N.
-	// Breakdown bucketing (raw_bd_N → breakdown_N) is a scalar expression here, not an aggregate.
-	bdGroupBy := make([]string, len(breakdowns))
-	bdOrderBy := make([]string, len(breakdowns))
-	for j := range breakdowns {
-		bdGroupBy[j] = fmt.Sprintf("breakdown_%d", j)
-		bdOrderBy[j] = fmt.Sprintf("breakdown_%d ASC", j)
-	}
-
-	unionQueries := make([]*chq.Query, len(steps))
+	// Build a compact steps table: SELECT 0,'page_view' UNION ALL SELECT 1,'click' ...
+	// Event kinds are embedded as escaped SQL literals (validated by proto regex).
+	stepParts := make([]string, len(steps))
 	for i, step := range steps {
-		q := chq.NewQuery().
-			Select(fmt.Sprintf("CAST(%d AS Int64) AS step_index", i)).
-			SelectExpr("CAST(? AS String) AS event_kind", step.GetEvent().GetKind())
-		for j := range breakdowns {
-			q.Select(bucketRawExpr(j))
-		}
-		q.Select(
-			fmt.Sprintf("toFloat64(countIf(level >= %d)) AS value", i+1),
-		).
-			From("funnel")
-		if len(bdGroupBy) > 0 {
-			q.GroupBy(bdGroupBy...)
-		}
-		if i == 0 {
-			if topValsCTE != nil {
-				q.With("top_vals", topValsCTE)
-			}
-			q.With("funnel", funnelCTE)
-		}
-		unionQueries[i] = q
+		stepParts[i] = fmt.Sprintf(
+			"SELECT CAST(%d AS Int64) AS step_index, %s AS event_kind",
+			i, sqlStringLiteral(step.GetEvent().GetKind()),
+		)
+	}
+	stepsExpr := strings.Join(stepParts, " UNION ALL ")
+
+	selectCols := []string{
+		"s.step_index",
+		"s.event_kind",
+	}
+	for j := range breakdowns {
+		selectCols = append(selectCols, fmt.Sprintf("f.breakdown_%d", j))
+	}
+	selectCols = append(selectCols, "toFloat64(countIf(f.level >= s.step_index + 1)) AS value")
+
+	groupByCols := make([]string, 0, 2+len(breakdowns))
+	groupByCols = append(groupByCols, "s.step_index", "s.event_kind")
+	for j := range breakdowns {
+		groupByCols = append(groupByCols, fmt.Sprintf("f.breakdown_%d", j))
 	}
 
-	orderBy := append([]string{"step_index ASC"}, bdOrderBy...)
-	return chq.UnionAll(unionQueries...).OrderBy(orderBy...), nil
+	orderBy := []string{"s.step_index ASC"}
+	for j := range breakdowns {
+		orderBy = append(orderBy, fmt.Sprintf("f.breakdown_%d ASC", j))
+	}
+
+	q := chq.NewQuery().
+		With("funnel", funnelCTE).
+		Select(selectCols...).
+		From(fmt.Sprintf("funnel f CROSS JOIN (%s) AS s", stepsExpr)).
+		GroupBy(groupByCols...).
+		OrderBy(orderBy...)
+	return q, nil
 }
 
-// buildFunnelWithTiming generates a single-scan funnel query that returns per-user
-// event arrays for Go-side step matching and timing computation.
+// sqlStringLiteral wraps s as a single-quoted SQL literal with proper escaping.
+func sqlStringLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "\\'") + "'"
+}
+
+// buildFunnelWithTiming generates a funnel query that returns per-user event arrays
+// for Go-side step matching and timing computation.
 //
 // Strategy: tag each event with which step it matches (via multiIf), aggregate into
 // per-user arrays, then Go walks the arrays to greedily match steps and compute intervals.
-// Single table scan, like windowFunnel, but preserves timestamps.
+//
+// Performance: when >= 2 steps, a windowFunnel pre-filter IN subquery restricts the tagged
+// CTE to users who actually progressed past step 0. This dramatically reduces groupArray
+// output and data transfer for timing computation.
 //
 // Limitation: multiIf short-circuits — if two steps share the same conditions (e.g., both
 // match kind='page_view'), events always tag as the earlier step and the later step never
 // matches. This is uncommon in practice (funnel steps are usually distinct events).
 //
 // Breakdown attribution: when breakdowns are requested, each user's breakdown value is taken
-// from their earliest step-matching event (first-touch attribution). The value is bucketed
-// against the top-N CTE and falls back to '$others'.
+// from their earliest step-matching event (first-touch attribution).
 func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	steps := req.GetEvents()
 	if len(steps) == 0 {
@@ -513,22 +489,83 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 
 	from := req.GetTimeRange().GetFrom().AsTime()
 	to := req.GetTimeRange().GetTo().AsTime()
+	windowSec, err := EffectiveWindowSec(req)
+	if err != nil {
+		return nil, fmt.Errorf("funnel: %w", err)
+	}
 
-	// Build multiIf expression to tag each event with its step index (-1 = no match).
-	// Also build OR condition for WHERE to pre-filter to relevant events only.
-	var multiIfParts []string
-	var multiIfArgs []any
-	var orConds []chq.Condition
+	// Build step conditions once; SQL + args are reused for multiIf, WHERE, and pre-filter.
+	type stepCond struct {
+		sql  string
+		args []any
+	}
+	sc := make([]stepCond, len(steps))
 	for i, step := range steps {
 		cond, err := buildFunnelStepCondition(step, projectID, i)
 		if err != nil {
 			return nil, err
 		}
-		multiIfParts = append(multiIfParts, fmt.Sprintf("%s, %d", cond.SQL(), i))
-		multiIfArgs = append(multiIfArgs, cond.Args()...)
-		orConds = append(orConds, chq.RawCond(cond.SQL(), cond.Args()...))
+		sc[i] = stepCond{sql: cond.SQL(), args: cond.Args()}
+	}
+
+	freshOrConds := func() []chq.Condition {
+		conds := make([]chq.Condition, len(sc))
+		for i, s := range sc {
+			conds[i] = chq.RawCond(s.sql, s.args...)
+		}
+		return conds
+	}
+
+	// multiIf expression to tag each event with its step index (-1 = no match).
+	var multiIfParts []string
+	var multiIfArgs []any
+	for i, s := range sc {
+		multiIfParts = append(multiIfParts, fmt.Sprintf("%s, %d", s.sql, i))
+		multiIfArgs = append(multiIfArgs, s.args...)
 	}
 	multiIfExpr := "multiIf(" + strings.Join(multiIfParts, ", ") + ", -1) AS step_match"
+
+	// Pre-filter: restrict to users who reached at least step 2 in windowFunnel.
+	// Scans events once with windowFunnel (fast), then the tagged CTE only processes
+	// events from users who have timing data to contribute.
+	var preFilterCond chq.Condition
+	if len(steps) >= 2 {
+		pfStepSQLs := make([]string, len(sc))
+		var pfHavingArgs []any
+		pfHavingArgs = append(pfHavingArgs, windowSec)
+		for i, s := range sc {
+			pfStepSQLs[i] = s.sql
+			pfHavingArgs = append(pfHavingArgs, s.args...)
+		}
+		wfHaving := fmt.Sprintf(
+			"windowFunnel(?)(toDateTime(occur_time), %s) >= 2",
+			strings.Join(pfStepSQLs, ", "),
+		)
+
+		pfTopLevel, _ := buildTopLevelFilterCondition(
+			req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+		pfQuery := chq.NewQuery().
+			Select("distinct_id").
+			From("events").
+			Where(
+				chq.Eq("project_id", projectID),
+				chq.Gte("occur_time", from),
+				chq.Lt("occur_time", to),
+				chq.Or(freshOrConds()...),
+				pfTopLevel,
+			).
+			GroupBy("distinct_id").
+			HavingExpr(wfHaving, pfHavingArgs...)
+
+		pfSQL, pfArgs, err := pfQuery.Build()
+		if err != nil {
+			return nil, fmt.Errorf("funnel pre-filter: %w", err)
+		}
+		preFilterCond = chq.RawCond(
+			fmt.Sprintf("distinct_id IN (%s)", pfSQL),
+			pfArgs...,
+		)
+	}
 
 	// CTE: tag events with step index and raw breakdown property values.
 	taggedCTE := chq.NewQuery().
@@ -543,63 +580,25 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", from),
 			chq.Lt("occur_time", to),
-			chq.Or(orConds...),
+			chq.Or(freshOrConds()...),
 			topLevelFilterCond,
+			preFilterCond,
 		)
 
-	// When breakdowns are requested, split into two query levels to avoid a double
-	// evaluation of argMin:
-	//
-	//   user_arrays CTE: aggregates per-user event arrays + computes argMin(bd_N) once into raw_bd_N
-	//   outer SELECT:    buckets raw_bd_N against top_vals (scalar, not aggregate)
-	//
-	// top_vals filters to step-matching events (via orConds) to be consistent with
-	// user_arrays, which aggregates from the tagged CTE (step-matching events only).
-	//
-	// Without breakdowns, a single aggregation is sufficient.
-	if len(breakdowns) > 0 {
-		topValsCTE := buildTopValsCTE(breakdowns, projectID, from, to, req.GetBreakdownLimit(), chq.Or(orConds...), topLevelFilterCond)
-
-		userArraysCTE := chq.NewQuery().
-			Select(
-				"distinct_id",
-				"arraySort(groupArray(occur_time)) AS times",
-				"arrayMap(x -> x.2, arraySort(x -> x.1, arrayZip(groupArray(occur_time), groupArray(toInt64(step_match))))) AS step_matches",
-			)
-		for i := range breakdowns {
-			userArraysCTE.Select(fmt.Sprintf("argMin(bd_%d, occur_time) AS raw_bd_%d", i, i))
-		}
-		userArraysCTE.
-			From("tagged").
-			Where(chq.RawCond("step_match >= 0")).
-			GroupBy("distinct_id")
-
-		outerQ := chq.NewQuery()
-		if topValsCTE != nil {
-			outerQ.With("top_vals", topValsCTE)
-		}
-		outerQ.
-			With("tagged", taggedCTE).
-			With("user_arrays", userArraysCTE).
-			Select("distinct_id", "times", "step_matches")
-		for i := range breakdowns {
-			outerQ.Select(bucketRawExpr(i))
-		}
-		outerQ.From("user_arrays")
-		return outerQ, nil
-	}
-
-	// No breakdowns: single aggregation, no top_vals needed.
-	return chq.NewQuery().
+	q := chq.NewQuery().
 		With("tagged", taggedCTE).
 		Select(
 			"distinct_id",
 			"arraySort(groupArray(occur_time)) AS times",
 			"arrayMap(x -> x.2, arraySort(x -> x.1, arrayZip(groupArray(occur_time), groupArray(toInt64(step_match))))) AS step_matches",
-		).
-		From("tagged").
+		)
+	for i := range breakdowns {
+		q.Select(fmt.Sprintf("argMin(bd_%d, occur_time) AS breakdown_%d", i, i))
+	}
+	q.From("tagged").
 		Where(chq.RawCond("step_match >= 0")).
-		GroupBy("distinct_id"), nil
+		GroupBy("distinct_id")
+	return q, nil
 }
 
 func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
@@ -650,17 +649,9 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	from := req.GetTimeRange().GetFrom().AsTime()
 	to := req.GetTimeRange().GetTo().AsTime()
 
-	// top-N CTE for breakdown bucketing is computed from start-event rows only.
-	topValsCTE := buildTopValsCTE(breakdowns, projectID, from, to, req.GetBreakdownLimit(), startCond, topLevelFilterCond)
-
 	// cohorts: assign each user to a time bucket based on their first start event.
 	// first_event_time is the precise timestamp (not bucketed) — used to exclude
 	// return events that fall within the same bucket but before the actual start.
-	//
-	// With breakdowns, use two CTEs to compute argMin exactly once per breakdown:
-	//   cohorts_raw: aggregates min/argMin into raw_bd_N columns
-	//   cohorts:     buckets raw_bd_N against top_vals (scalar, no second argMin call)
-	// Without breakdowns, a single CTE suffices.
 	cohortsAgg := chq.NewQuery().
 		Select(
 			"distinct_id",
@@ -744,23 +735,8 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	}
 	orderBy = append(orderBy, "r.cohort_time ASC", "r.t ASC")
 
-	q := chq.NewQuery()
-	if topValsCTE != nil {
-		q.With("top_vals", topValsCTE)
-	}
-	if len(breakdowns) > 0 {
-		// cohorts_raw holds the aggregated + raw argMin values;
-		// cohorts buckets them against top_vals.
-		cohortsBucket := chq.NewQuery().Select("distinct_id", "cohort_time", "first_event_time")
-		for i := range breakdowns {
-			cohortsBucket.Select(bucketRawExpr(i))
-		}
-		cohortsBucket.From("cohorts_raw")
-		q.With("cohorts_raw", cohortsAgg).With("cohorts", cohortsBucket)
-	} else {
-		q.With("cohorts", cohortsAgg)
-	}
-	return q.
+	return chq.NewQuery().
+		With("cohorts", cohortsAgg).
 		With("cohort_sizes", cohortSizes).
 		With("retained", retained).
 		Select(finalSelect...).

@@ -163,30 +163,27 @@ func TestFunnel(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	// windowFunnel-based: single CTE, no JOINs
+	// windowFunnel-based: single CTE with CROSS JOIN (no UNION ALL)
 	if !strings.Contains(sql, "WITH funnel AS") {
 		t.Errorf("expected funnel CTE in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "windowFunnel(") {
 		t.Errorf("expected windowFunnel() in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "countIf(level >= 1)") {
-		t.Errorf("expected countIf for step 1 in SQL, got: %s", sql)
+	if !strings.Contains(sql, "countIf(f.level >= s.step_index + 1)") {
+		t.Errorf("expected countIf with CROSS JOIN step_index in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "countIf(level >= 2)") {
-		t.Errorf("expected countIf for step 2 in SQL, got: %s", sql)
+	if !strings.Contains(sql, "CROSS JOIN") {
+		t.Errorf("expected CROSS JOIN in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "ORDER BY step_index ASC") {
+	if !strings.Contains(sql, "ORDER BY s.step_index ASC") {
 		t.Errorf("expected step ordering in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "CAST(? AS String) AS event_kind") {
-		t.Errorf("expected parameterized event_kind in SQL, got: %s", sql)
-	}
 
-	// windowFunnel CTE args: step conditions (page_view, purchase) + step filter OR (page_view, purchase)
-	// + WHERE (project_id, from, to) + outer UNION ALL: parameterized event_kind labels (page_view, purchase)
-	if len(args) != 9 {
-		t.Errorf("expected 9 args for 2-step windowFunnel, got %d: %v", len(args), args)
+	// Args: windowFunnel step conditions (2) + WHERE (project_id, from, to, OR step filter: 2) = 7
+	// Event kinds are SQL literals in the CROSS JOIN, not parameterized.
+	if len(args) != 7 {
+		t.Errorf("expected 7 args for 2-step windowFunnel, got %d: %v", len(args), args)
 	}
 }
 
@@ -258,10 +255,6 @@ func TestFunnelWithStepTiming(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	// Array-based single-scan, not windowFunnel or CTE chain
-	if strings.Contains(sql, "windowFunnel") {
-		t.Errorf("include_step_timing should use array approach, not windowFunnel: %s", sql)
-	}
 	if !strings.Contains(sql, "WITH tagged AS") {
 		t.Errorf("expected tagged CTE in SQL, got: %s", sql)
 	}
@@ -274,10 +267,17 @@ func TestFunnelWithStepTiming(t *testing.T) {
 	if !strings.Contains(sql, "step_matches") {
 		t.Errorf("expected step_matches array in output, got: %s", sql)
 	}
+	// Pre-filter: windowFunnel IN subquery restricts to users who progressed
+	if !strings.Contains(sql, "distinct_id IN (") {
+		t.Errorf("expected pre-filter IN subquery in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "windowFunnel(") {
+		t.Errorf("expected windowFunnel in pre-filter, got: %s", sql)
+	}
 
-	// Args: multiIf(sign_up, purchase) + OR(sign_up, purchase) + WHERE(project, from, to) = 7
-	if len(args) != 7 {
-		t.Errorf("expected 7 args for 2-step timing funnel, got %d: %v", len(args), args)
+	// Args: tagged CTE (multiIf: 2 + OR: 2 + WHERE: 3 + pre-filter subquery: 3+2+1+2 = 8) = 15
+	if len(args) != 15 {
+		t.Errorf("expected 15 args for 2-step timing funnel with pre-filter, got %d: %v", len(args), args)
 	}
 }
 
@@ -483,42 +483,30 @@ func TestBuildTrendsQuery_WithBreakdown(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	// SQL structure checks
-	if !strings.Contains(sql, "top_vals") {
-		t.Errorf("expected CTE 'top_vals' in SQL, got: %s", sql)
+	// SQL structure checks: top_vals CTE removed; breakdowns are plain GROUP BY columns.
+	if strings.Contains(sql, "top_vals") {
+		t.Errorf("unexpected CTE 'top_vals' in SQL, got: %s", sql)
 	}
 	if !strings.Contains(sql, "breakdown_0") {
 		t.Errorf("expected 'breakdown_0' in SQL, got: %s", sql)
 	}
-	if !strings.Contains(sql, "$others") {
-		t.Errorf("expected '$others' in SQL, got: %s", sql)
+	if strings.Contains(sql, "$others") {
+		t.Errorf("unexpected '$others' in SQL (bucketing now in Go), got: %s", sql)
 	}
 
-	// breakdown limit 3 should appear as an arg
-	found := false
-	for _, a := range args {
-		if a == int64(3) {
-			found = true
-			break
-		}
+	// breakdown limit should be on the query struct, not in SQL args.
+	if q.BreakdownLimit() != 3 {
+		t.Errorf("expected BreakdownLimit()=3, got %d", q.BreakdownLimit())
 	}
+	_ = args
+	found := true // limit is no longer in SQL args
 	if !found {
 		t.Errorf("expected breakdown limit int64(3) in args, got: %v", args)
 	}
 
-	// WHERE args must be duplicated: CTE uses same WHERE as main query.
-	// Base args: projectID, from, to, kind = 4. With duplication = 8 + 1 (limit).
-	// CTE: projectID, from, to, kind (4 args) + limit (1) = 5
-	// Main: projectID, from, to, kind (4 args) = 4
-	// Total = 9
-	if len(args) != 9 {
-		t.Fatalf("expected 9 args (CTE where x4 + limit + main where x4), got %d: %v", len(args), args)
-	}
-	// First 4 and args[5:9] should be the same projectID/from/to/kind pair
-	for i := 0; i < 4; i++ {
-		if args[i] != args[5+i] {
-			t.Errorf("arg[%d]=%v != arg[%d]=%v: WHERE args not duplicated", i, args[i], 5+i, args[5+i])
-		}
+	// No CTE: just the main query args: projectID, from, to, kind = 4.
+	if len(args) != 4 {
+		t.Fatalf("expected 4 args (projectID, from, to, kind), got %d: %v", len(args), args)
 	}
 }
 
@@ -552,7 +540,7 @@ func TestBuildTrendsQuery_MultipleBreakdowns(t *testing.T) {
 	}
 }
 
-// TestBuildTrendsQuery_DefaultBreakdownLimit verifies BreakdownLimit=0 defaults to int64(10).
+// TestBuildTrendsQuery_DefaultBreakdownLimit verifies BreakdownLimit=0 defaults to 10 on the query struct.
 func TestBuildTrendsQuery_DefaultBreakdownLimit(t *testing.T) {
 	req := &insightsv1.QueryRequest{
 		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
@@ -569,17 +557,8 @@ func TestBuildTrendsQuery_DefaultBreakdownLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	args := q.Args()
-
-	found := false
-	for _, a := range args {
-		if a == int64(10) {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected default breakdown limit int64(10) in args, got: %v", args)
+	if q.BreakdownLimit() != 10 {
+		t.Errorf("expected default BreakdownLimit()=10, got %d", q.BreakdownLimit())
 	}
 }
 
@@ -1187,7 +1166,7 @@ func TestGroupSeries_Breakdowns(t *testing.T) {
 		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 3},
 	}
 
-	series, err := insights.GroupSeries(t.Context(), rows, []string{"$country"})
+	series, err := insights.GroupSeries(t.Context(), rows, []string{"$country"}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1490,7 +1469,7 @@ func TestGroupSeries_MultiEvent(t *testing.T) {
 		{Time: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 5},
 	}
 
-	series, err := insights.GroupSeries(t.Context(), rows, nil)
+	series, err := insights.GroupSeries(t.Context(), rows, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1522,7 +1501,7 @@ func TestGroupSeries_SortsPointsByTime(t *testing.T) {
 		{Time: mustTime("2024-01-02T00:00:00Z"), EventKind: "page_view", Value: 20},
 	}
 
-	series, err := insights.GroupSeries(t.Context(), rows, nil)
+	series, err := insights.GroupSeries(t.Context(), rows, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1555,7 +1534,7 @@ func TestGroupSeries_SortsPointsByTime_Breakdowns(t *testing.T) {
 		{Time: mustTime("2024-01-02T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"US"}, Value: 20},
 	}
 
-	series, err := insights.GroupSeries(t.Context(), rows, []string{"$country"})
+	series, err := insights.GroupSeries(t.Context(), rows, []string{"$country"}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1593,7 +1572,7 @@ func TestGroupSeries_SortsPointsByTime_MultiEvent(t *testing.T) {
 		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "purchase", Value: 3},
 	}
 
-	series, err := insights.GroupSeries(t.Context(), rows, nil)
+	series, err := insights.GroupSeries(t.Context(), rows, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1619,7 +1598,7 @@ func TestGroupSeries_SortsPointsByTime_MultiEvent(t *testing.T) {
 }
 
 func TestGroupSeries_Empty(t *testing.T) {
-	series, err := insights.GroupSeries(t.Context(), nil, nil)
+	series, err := insights.GroupSeries(t.Context(), nil, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1650,7 +1629,7 @@ func TestGroupRetentionSeries(t *testing.T) {
 		},
 	}
 
-	series, err := insights.GroupRetentionSeries(t.Context(), rows, nil)
+	series, err := insights.GroupRetentionSeries(t.Context(), rows, nil, 0)
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries: %v", err)
 	}
@@ -1785,42 +1764,29 @@ func TestMultiEventTrendsWithBreakdowns(t *testing.T) {
 	}
 	sql, args := q.SQL(), q.Args()
 
-	// Must have both UNION ALL and CTE.
+	// Must have UNION ALL (one per event kind); no top_vals CTE.
 	if !strings.Contains(sql, "UNION ALL") {
 		t.Error("expected UNION ALL in SQL")
 	}
-	if !strings.Contains(sql, "top_vals") {
-		t.Error("expected CTE 'top_vals' in SQL")
-	}
-
-	// Both sub-queries should reference top_vals for breakdown bucketing.
-	if strings.Count(sql, "FROM top_vals") != 2 {
-		t.Errorf("expected 2 references to top_vals (one per sub-query), got %d", strings.Count(sql, "FROM top_vals"))
+	if strings.Contains(sql, "top_vals") {
+		t.Error("unexpected CTE 'top_vals' in SQL")
 	}
 
 	// Both sub-queries should have breakdown_0 in SELECT and GROUP BY.
-	if strings.Count(sql, "AS breakdown_0") < 3 {
-		t.Errorf("expected at least 3 breakdown_0 aliases (CTE + 2 sub-queries), got %d", strings.Count(sql, "AS breakdown_0"))
+	if strings.Count(sql, "AS breakdown_0") < 2 {
+		t.Errorf("expected at least 2 breakdown_0 aliases (one per sub-query), got %d", strings.Count(sql, "AS breakdown_0"))
 	}
 
-	// CTE args: projectID, from, to, kind1, kind2, limit = 6
-	// Sub1 args: projectID, from, to, kind1 = 4
+	// No CTE: Sub1 args: projectID, from, to, kind1 = 4
 	// Sub2 args: projectID, from, to, kind2 = 4
-	// Total = 14
-	if len(args) != 14 {
-		t.Fatalf("expected 14 args (CTE x6 + sub1 x4 + sub2 x4), got %d: %v", len(args), args)
+	// Total = 8
+	if len(args) != 8 {
+		t.Fatalf("expected 8 args (sub1 x4 + sub2 x4), got %d: %v", len(args), args)
 	}
 
-	// Verify the breakdown limit arg (int64(5)) is present.
-	found := false
-	for _, a := range args {
-		if a == int64(5) {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected breakdown limit int64(5) in args, got: %v", args)
+	// Breakdown limit is on the query struct, not in SQL args.
+	if q.BreakdownLimit() != 5 {
+		t.Errorf("expected BreakdownLimit()=5, got %d", q.BreakdownLimit())
 	}
 }
 
@@ -1883,14 +1849,14 @@ func TestSingleEventRetention(t *testing.T) {
 }
 
 func TestGroupRetentionSeries_Empty(t *testing.T) {
-	series, err := insights.GroupRetentionSeries(t.Context(), nil, nil)
+	series, err := insights.GroupRetentionSeries(t.Context(), nil, nil, 0)
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries(nil): %v", err)
 	}
 	if len(series) != 0 {
 		t.Errorf("expected 0 series for nil input, got %d", len(series))
 	}
-	series, err = insights.GroupRetentionSeries(t.Context(), []insights.RetentionRow{}, nil)
+	series, err = insights.GroupRetentionSeries(t.Context(), []insights.RetentionRow{}, nil, 0)
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries(empty): %v", err)
 	}
@@ -1988,7 +1954,7 @@ func TestGroupSeries_BreakdownMismatchError(t *testing.T) {
 	rows := []insights.TrendRow{
 		{EventKind: "page_view", Breakdowns: []string{}, Value: 10},
 	}
-	if _, err := insights.GroupSeries(t.Context(), rows, []string{"$country"}); err == nil {
+	if _, err := insights.GroupSeries(t.Context(), rows, []string{"$country"}, 0); err == nil {
 		t.Error("expected error for mismatched breakdowns/properties")
 	}
 }
@@ -2019,26 +1985,19 @@ func TestFunnelWithBreakdown(t *testing.T) {
 	}
 
 	sql := q.SQL()
-	// top_vals CTE for top-N bucketing, filtered to step-matching events.
-	if !strings.Contains(sql, "top_vals") {
-		t.Error("expected top_vals CTE")
+	// No top_vals CTE; breakdowns are plain GROUP BY columns.
+	if strings.Contains(sql, "top_vals") {
+		t.Error("unexpected top_vals CTE in SQL")
 	}
-	// argMin attribution assigns breakdown value from the user's earliest step-matching event.
 	if !strings.Contains(sql, "argMin") {
 		t.Error("expected argMin for first-touch attribution")
 	}
-	// $others fallback for values outside top-N.
-	if !strings.Contains(sql, "'$others'") {
-		t.Error("expected '$others' fallback in SQL")
+	if strings.Contains(sql, "'$others'") {
+		t.Error("unexpected '$others' in SQL (bucketing now in Go)")
 	}
-	// Breakdown column in outer GROUP BY.
-	if !strings.Contains(sql, "GROUP BY breakdown_0") {
-		t.Error("expected GROUP BY breakdown_0 in outer query")
+	if !strings.Contains(sql, "f.breakdown_0") {
+		t.Error("expected f.breakdown_0 in outer query")
 	}
-	// Funnel CTE must be filtered to step-matching events (OR of step conditions)
-	// so argMin attribution is scoped to funnel-relevant events only.
-	// Step kinds appear as parameterized args — check the SQL contains an OR structure
-	// with both step kind bindings in the args.
 	if !strings.Contains(sql, " OR ") {
 		t.Error("expected OR of step conditions in funnel CTE WHERE clause")
 	}
@@ -2074,33 +2033,23 @@ func TestFunnelTimingWithBreakdown(t *testing.T) {
 
 	sql := q.SQL()
 
-	// top_vals CTE for top-N bucketing (filtered to step-matching events).
-	if !strings.Contains(sql, "top_vals") {
-		t.Error("expected top_vals CTE")
+	// No top_vals CTE; no user_arrays CTE (collapsed into single aggregation).
+	if strings.Contains(sql, "top_vals") {
+		t.Error("unexpected top_vals CTE in SQL")
 	}
-	// user_arrays CTE aggregates per-user arrays + raw argMin values.
-	if !strings.Contains(sql, "user_arrays") {
-		t.Error("expected user_arrays CTE")
+	// tagged CTE for step tagging.
+	if !strings.Contains(sql, "tagged") {
+		t.Error("expected tagged CTE")
 	}
-	// argMin must appear exactly once (in user_arrays, not duplicated in outer SELECT).
-	if c := strings.Count(sql, "argMin"); c != 1 {
-		t.Errorf("expected argMin exactly once, got %d", c)
-	}
-	// raw_bd_0 carries the argMin result into the outer SELECT.
-	if !strings.Contains(sql, "raw_bd_0") {
-		t.Error("expected raw_bd_0 column from user_arrays CTE")
-	}
-	// Outer SELECT applies '$others' bucketing as a scalar.
-	if !strings.Contains(sql, "'$others'") {
-		t.Error("expected '$others' fallback in SQL")
+	// argMin for first-touch attribution.
+	if !strings.Contains(sql, "argMin") {
+		t.Error("expected argMin for first-touch attribution")
 	}
 	if !strings.Contains(sql, "breakdown_0") {
-		t.Error("expected breakdown_0 in outer SELECT")
+		t.Error("expected breakdown_0 in SELECT")
 	}
-	// top_vals must be filtered to step-matching events (not all events).
-	// The OR of step conditions appears in the tagged CTE filter; top_vals inherits it.
-	if !strings.Contains(sql, "top_vals") || !strings.Contains(sql, "tagged") {
-		t.Error("expected both top_vals and tagged CTEs")
+	if strings.Contains(sql, "'$others'") {
+		t.Error("unexpected '$others' in SQL (bucketing now in Go)")
 	}
 }
 
@@ -2131,23 +2080,22 @@ func TestRetentionWithBreakdown(t *testing.T) {
 	}
 
 	sql := q.SQL()
-	if !strings.Contains(sql, "top_vals") {
-		t.Error("expected top_vals CTE")
+	// No top_vals CTE or cohorts_raw; single cohorts CTE.
+	if strings.Contains(sql, "top_vals") {
+		t.Error("unexpected top_vals CTE in SQL")
 	}
-	if !strings.Contains(sql, "cohorts_raw") {
-		t.Error("expected cohorts_raw CTE for two-phase aggregation")
+	if strings.Contains(sql, "cohorts_raw") {
+		t.Error("unexpected cohorts_raw CTE (collapsed into single cohorts)")
 	}
 	if !strings.Contains(sql, "argMin") {
 		t.Error("expected argMin for first-touch attribution in cohorts CTE")
 	}
-	if !strings.Contains(sql, "'$others'") {
-		t.Error("expected '$others' fallback")
+	if strings.Contains(sql, "'$others'") {
+		t.Error("unexpected '$others' in SQL (bucketing now in Go)")
 	}
-	// cohort_sizes must GROUP BY the breakdown column.
 	if !strings.Contains(sql, "breakdown_0") {
 		t.Error("expected breakdown_0 column in SQL")
 	}
-	// JOIN condition must include breakdown equality.
 	if !strings.Contains(sql, "r.breakdown_0 = cs.breakdown_0") {
 		t.Error("expected breakdown equality in final JOIN condition")
 	}
@@ -2159,7 +2107,7 @@ func TestGroupFunnelSeries_NoBreakdown(t *testing.T) {
 		{StepIndex: 0, EventKind: "sign_up", Value: 100},
 		{StepIndex: 1, EventKind: "purchase", Value: 60},
 	}
-	series, err := insights.GroupFunnelSeries(ctx, rows, nil)
+	series, err := insights.GroupFunnelSeries(ctx, rows, nil, 0)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -2185,7 +2133,7 @@ func TestGroupFunnelSeries_WithBreakdown(t *testing.T) {
 		{StepIndex: 0, EventKind: "sign_up", Breakdowns: []string{"Safari"}, Value: 20},
 		{StepIndex: 1, EventKind: "purchase", Breakdowns: []string{"Safari"}, Value: 10},
 	}
-	series, err := insights.GroupFunnelSeries(ctx, rows, []string{"$browser"})
+	series, err := insights.GroupFunnelSeries(ctx, rows, []string{"$browser"}, 0)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -2229,7 +2177,7 @@ func TestGroupRetentionSeries_WithBreakdown(t *testing.T) {
 		},
 	}
 
-	series, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country"})
+	series, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country"}, 0)
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries: %v", err)
 	}
@@ -2252,14 +2200,14 @@ func TestGroupRetentionSeries_WithBreakdown(t *testing.T) {
 
 // TestGroupFunnelSeries_Empty verifies that nil and empty-slice inputs produce an empty result.
 func TestGroupFunnelSeries_Empty(t *testing.T) {
-	series, err := insights.GroupFunnelSeries(ctx, nil, nil)
+	series, err := insights.GroupFunnelSeries(ctx, nil, nil, 0)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries(nil): %v", err)
 	}
 	if len(series) != 0 {
 		t.Errorf("expected 0 series for nil input, got %d", len(series))
 	}
-	series, err = insights.GroupFunnelSeries(ctx, []insights.FunnelRow{}, nil)
+	series, err = insights.GroupFunnelSeries(ctx, []insights.FunnelRow{}, nil, 0)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries(empty): %v", err)
 	}
@@ -2276,7 +2224,7 @@ func TestGroupFunnelSeries_MultiBreakdown(t *testing.T) {
 		{StepIndex: 0, EventKind: "sign_up", Breakdowns: []string{"US", "Safari"}, Value: 20},
 		{StepIndex: 1, EventKind: "purchase", Breakdowns: []string{"US", "Safari"}, Value: 10},
 	}
-	series, err := insights.GroupFunnelSeries(ctx, rows, []string{"$country", "$browser"})
+	series, err := insights.GroupFunnelSeries(ctx, rows, []string{"$country", "$browser"}, 0)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -2296,7 +2244,7 @@ func TestGroupFunnelSeries_BreakdownMismatchError(t *testing.T) {
 	rows := []insights.FunnelRow{
 		{StepIndex: 0, EventKind: "sign_up", Breakdowns: []string{}, Value: 10},
 	}
-	if _, err := insights.GroupFunnelSeries(ctx, rows, []string{"$browser"}); err == nil {
+	if _, err := insights.GroupFunnelSeries(ctx, rows, []string{"$browser"}, 0); err == nil {
 		t.Error("expected error for mismatched breakdowns/properties")
 	}
 }
@@ -2308,7 +2256,7 @@ func TestGroupRetentionSeries_MultiBreakdown(t *testing.T) {
 		{CohortTime: ct, Time: ct, Value: 100, CohortSize: 10, Breakdowns: []string{"US", "Chrome"}},
 		{CohortTime: ct, Time: ct, Value: 100, CohortSize: 5, Breakdowns: []string{"GB", "Safari"}},
 	}
-	series, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country", "$browser"})
+	series, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country", "$browser"}, 0)
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries: %v", err)
 	}
@@ -2329,7 +2277,7 @@ func TestGroupRetentionSeries_BreakdownMismatchError(t *testing.T) {
 	rows := []insights.RetentionRow{
 		{CohortTime: ct, Time: ct, Value: 100, CohortSize: 10, Breakdowns: []string{}},
 	}
-	if _, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country"}); err == nil {
+	if _, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country"}, 0); err == nil {
 		t.Error("expected error for mismatched breakdowns/properties")
 	}
 }
@@ -2404,7 +2352,7 @@ func TestGroupSeries_MultiBreakdown(t *testing.T) {
 		{Time: mustTime("2024-01-01T00:00:00Z"), EventKind: "page_view", Breakdowns: []string{"GB", "Safari"}, Value: 5},
 	}
 
-	series, err := insights.GroupSeries(t.Context(), rows, []string{"$country", "$browser"})
+	series, err := insights.GroupSeries(t.Context(), rows, []string{"$country", "$browser"}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2439,7 +2387,7 @@ func TestGroupRetentionSeries_MultiCohortWithBreakdown(t *testing.T) {
 		{CohortTime: ct2, Time: ct2, Value: 100, CohortSize: 10, Breakdowns: []string{"GB"}},
 	}
 
-	series, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country"})
+	series, err := insights.GroupRetentionSeries(t.Context(), rows, []string{"$country"}, 0)
 	if err != nil {
 		t.Fatalf("GroupRetentionSeries: %v", err)
 	}
@@ -2486,7 +2434,7 @@ func TestGroupFunnelSeries_SortedInputPreservesOrder(t *testing.T) {
 		{StepIndex: 1, EventKind: "purchase", Breakdowns: []string{"US"}, Value: 30},
 	}
 
-	series, err := insights.GroupFunnelSeries(ctx, rows, []string{"$country"})
+	series, err := insights.GroupFunnelSeries(ctx, rows, []string{"$country"}, 0)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -2535,7 +2483,7 @@ func TestGroupFunnelSeries_TimingFieldsProtoTranslation(t *testing.T) {
 			},
 		},
 	}
-	series, err := insights.GroupFunnelSeries(ctx, rows, nil)
+	series, err := insights.GroupFunnelSeries(ctx, rows, nil, 0)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -2616,7 +2564,7 @@ func TestGroupFunnelSeries_ZeroConverterStepEmitsZeroFilledBuckets(t *testing.T)
 			Timing:    &insights.StepTiming{Distribution: make([]int64, 8)},
 		},
 	}
-	series, err := insights.GroupFunnelSeries(ctx, rows, nil)
+	series, err := insights.GroupFunnelSeries(ctx, rows, nil, 0)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -2642,7 +2590,7 @@ func TestGroupFunnelSeries_NilTimingOmitsSubMessage(t *testing.T) {
 	rows := []insights.FunnelRow{
 		{StepIndex: 0, EventKind: "sign_up", Value: 10, Timing: nil},
 	}
-	series, err := insights.GroupFunnelSeries(ctx, rows, nil)
+	series, err := insights.GroupFunnelSeries(ctx, rows, nil, 0)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}
@@ -3088,7 +3036,7 @@ func TestGroupFunnelSeries_TimingFieldsSubSecondTranslation(t *testing.T) {
 			},
 		},
 	}
-	series, err := insights.GroupFunnelSeries(ctx, rows, nil)
+	series, err := insights.GroupFunnelSeries(ctx, rows, nil, 0)
 	if err != nil {
 		t.Fatalf("GroupFunnelSeries: %v", err)
 	}

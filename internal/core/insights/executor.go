@@ -422,21 +422,14 @@ func breakdownKey(vals []string) string {
 
 // GroupSeries groups TrendRow results into TrendSeries, keyed by (event_kind, breakdown_tuple).
 // The properties slice provides the property name for each breakdown dimension.
-// Insertion order is preserved.
+//
+// When breakdownLimit > 0 and breakdowns are present, only the top N breakdown combinations
+// (by total value) are kept per event kind; the rest are merged into a "$others" series.
 //
 // Validation errors (breakdown/property length mismatch) are logged and recorded against ctx's span.
-func GroupSeries(ctx context.Context, rows []TrendRow, properties []string) ([]*insightsv1.TrendSeries, error) {
-	type seriesKey struct {
-		eventKind string
-		breakdown string
-	}
-	type seriesEntry struct {
-		eventKind string
-		breakdown map[string]string
-		points    []*insightsv1.DataPoint
-	}
-	var orderedKeys []seriesKey
-	entriesByKey := map[seriesKey]*seriesEntry{}
+func GroupSeries(ctx context.Context, rows []TrendRow, properties []string, breakdownLimit int) ([]*insightsv1.TrendSeries, error) {
+	var orderedKeys []trendSeriesKey
+	entriesByKey := map[trendSeriesKey]*trendSeriesEntry{}
 
 	for _, r := range rows {
 		if len(r.Breakdowns) != len(properties) {
@@ -445,26 +438,29 @@ func GroupSeries(ctx context.Context, rows []TrendRow, properties []string) ([]*
 			telemetry.RecordError(ctx, err)
 			return nil, err
 		}
-		key := seriesKey{eventKind: r.EventKind, breakdown: breakdownKey(r.Breakdowns)}
+		key := trendSeriesKey{eventKind: r.EventKind, breakdown: breakdownKey(r.Breakdowns)}
 		if _, ok := entriesByKey[key]; !ok {
 			orderedKeys = append(orderedKeys, key)
 			bd := make(map[string]string, len(properties))
 			for i, prop := range properties {
 				bd[prop] = r.Breakdowns[i]
 			}
-			entriesByKey[key] = &seriesEntry{eventKind: r.EventKind, breakdown: bd}
+			entriesByKey[key] = &trendSeriesEntry{eventKind: r.EventKind, breakdown: bd}
 		}
+		entriesByKey[key].total += r.Value
 		entriesByKey[key].points = append(entriesByKey[key].points, &insightsv1.DataPoint{
 			Time:  timestamppb.New(r.Time),
 			Value: proto.Float64(r.Value),
 		})
 	}
 
+	if breakdownLimit > 0 && len(properties) > 0 {
+		orderedKeys, entriesByKey = applyTrendsTopN(orderedKeys, entriesByKey, properties, breakdownLimit)
+	}
+
 	series := make([]*insightsv1.TrendSeries, 0, len(orderedKeys))
 	for _, k := range orderedKeys {
 		e := entriesByKey[k]
-		// ClickHouse UNION ALL does not reliably apply a trailing ORDER BY across
-		// all branches in every version. Sort client-side to guarantee time order.
 		slices.SortStableFunc(e.points, func(a, b *insightsv1.DataPoint) int {
 			return a.GetTime().AsTime().Compare(b.GetTime().AsTime())
 		})
@@ -480,11 +476,116 @@ func GroupSeries(ctx context.Context, rows []TrendRow, properties []string) ([]*
 	return series, nil
 }
 
+type trendSeriesKey struct {
+	eventKind string
+	breakdown string
+}
+
+type trendSeriesEntry struct {
+	eventKind string
+	breakdown map[string]string
+	points    []*insightsv1.DataPoint
+	total     float64
+}
+
+// applyTrendsTopN keeps the top N breakdown combinations per event kind (by total value)
+// and merges the rest into a "$others" series, summing points by time bucket.
+func applyTrendsTopN(
+	orderedKeys []trendSeriesKey,
+	entriesByKey map[trendSeriesKey]*trendSeriesEntry,
+	properties []string,
+	limit int,
+) ([]trendSeriesKey, map[trendSeriesKey]*trendSeriesEntry) {
+	byEventKind := map[string][]trendSeriesKey{}
+	for _, k := range orderedKeys {
+		byEventKind[k.eventKind] = append(byEventKind[k.eventKind], k)
+	}
+
+	othersBreakdown := make(map[string]string, len(properties))
+	for _, prop := range properties {
+		othersBreakdown[prop] = "$others"
+	}
+	othersBreakdownVals := make([]string, len(properties))
+	for i := range othersBreakdownVals {
+		othersBreakdownVals[i] = "$others"
+	}
+	othersBreakdownKey := breakdownKey(othersBreakdownVals)
+
+	var newKeys []trendSeriesKey
+	eventKinds := make([]string, 0, len(byEventKind))
+	for ek := range byEventKind {
+		eventKinds = append(eventKinds, ek)
+	}
+	slices.Sort(eventKinds)
+
+	for _, eventKind := range eventKinds {
+		keys := byEventKind[eventKind]
+		slices.SortFunc(keys, func(a, b trendSeriesKey) int {
+			return cmp.Compare(entriesByKey[b].total, entriesByKey[a].total)
+		})
+
+		if len(keys) <= limit {
+			newKeys = append(newKeys, keys...)
+			continue
+		}
+
+		topKeys := keys[:limit]
+		restKeys := keys[limit:]
+		newKeys = append(newKeys, topKeys...)
+
+		othersKey := trendSeriesKey{eventKind: eventKind, breakdown: othersBreakdownKey}
+		othersEntry := entriesByKey[othersKey]
+		if othersEntry == nil {
+			othersEntry = &trendSeriesEntry{
+				eventKind: eventKind,
+				breakdown: othersBreakdown,
+			}
+			entriesByKey[othersKey] = othersEntry
+		}
+
+		for _, rk := range restKeys {
+			re := entriesByKey[rk]
+			othersEntry.total += re.total
+			mergeTrendPoints(othersEntry, re.points)
+			delete(entriesByKey, rk)
+		}
+		newKeys = append(newKeys, othersKey)
+	}
+
+	return newKeys, entriesByKey
+}
+
+func mergeTrendPoints(dst *trendSeriesEntry, points []*insightsv1.DataPoint) {
+	for _, pt := range points {
+		merged := false
+		for _, op := range dst.points {
+			if op.GetTime().AsTime().Equal(pt.GetTime().AsTime()) {
+				op.Value = proto.Float64(op.GetValue() + pt.GetValue())
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			dst.points = append(dst.points, &insightsv1.DataPoint{
+				Time:  pt.Time,
+				Value: proto.Float64(pt.GetValue()),
+			})
+		}
+	}
+}
+
 // GroupFunnelSeries groups FunnelRow results into FunnelSeries, keyed by breakdown tuple.
 // The properties slice provides the property name for each breakdown dimension.
 //
+// When breakdownLimit > 0, only the top N breakdown combinations (by step-0 total) are kept;
+// the rest are merged into a "$others" series with summed step totals.
+//
 // Validation errors (breakdown/property length mismatch) are logged and recorded against ctx's span.
-func GroupFunnelSeries(ctx context.Context, rows []FunnelRow, properties []string) ([]*insightsv1.FunnelSeries, error) {
+func GroupFunnelSeries(ctx context.Context, rows []FunnelRow, properties []string, breakdownLimit int) ([]*insightsv1.FunnelSeries, error) {
+	if breakdownLimit > 0 && len(properties) > 0 {
+		rows = applyFunnelTopN(rows, properties, breakdownLimit)
+	}
+
 	type seriesEntry struct {
 		breakdown map[string]string
 		steps     []*insightsv1.FunnelStep
@@ -514,8 +615,6 @@ func GroupFunnelSeries(ctx context.Context, rows []FunnelRow, properties []strin
 			Total:     proto.Float64(r.Value),
 		}
 		if r.Timing != nil {
-			// Distribution length is fixed at len(funnelTimingBuckets) by newStepTiming();
-			// no runtime check needed here.
 			buckets := make([]*insightsv1.DistributionBucket, len(r.Timing.Distribution))
 			for i, count := range r.Timing.Distribution {
 				bucket := &insightsv1.DistributionBucket{
@@ -549,12 +648,99 @@ func GroupFunnelSeries(ctx context.Context, rows []FunnelRow, properties []strin
 	return series, nil
 }
 
+// applyFunnelTopN rewrites FunnelRow slices: keeps top N breakdown combos by step-0 total,
+// merges the rest into "$others" with summed values per step. Timing is dropped for merged rows.
+func applyFunnelTopN(rows []FunnelRow, properties []string, limit int) []FunnelRow {
+	type bdTotal struct {
+		key   string
+		total float64
+	}
+	totals := map[string]float64{}
+	for _, r := range rows {
+		if r.StepIndex == 0 {
+			totals[breakdownKey(r.Breakdowns)] += r.Value
+		}
+	}
+	sorted := make([]bdTotal, 0, len(totals))
+	for k, v := range totals {
+		sorted = append(sorted, bdTotal{k, v})
+	}
+	slices.SortFunc(sorted, func(a, b bdTotal) int {
+		return cmp.Compare(b.total, a.total)
+	})
+
+	topSet := make(map[string]bool, limit)
+	for i := range sorted {
+		if i >= limit {
+			break
+		}
+		topSet[sorted[i].key] = true
+	}
+
+	othersBreakdowns := make([]string, len(properties))
+	for i := range othersBreakdowns {
+		othersBreakdowns[i] = "$others"
+	}
+
+	// Rewrite: keep top rows as-is, merge rest into $others by step.
+	type stepKey struct {
+		stepIndex int64
+		eventKind string
+	}
+	othersByStep := map[stepKey]*FunnelRow{}
+	var result []FunnelRow
+	for _, r := range rows {
+		if topSet[breakdownKey(r.Breakdowns)] {
+			result = append(result, r)
+			continue
+		}
+		sk := stepKey{r.StepIndex, r.EventKind}
+		if existing, ok := othersByStep[sk]; ok {
+			existing.Value += r.Value
+		} else {
+			merged := FunnelRow{
+				StepIndex:  r.StepIndex,
+				EventKind:  r.EventKind,
+				Breakdowns: othersBreakdowns,
+				Value:      r.Value,
+			}
+			othersByStep[sk] = &merged
+		}
+	}
+	for _, r := range othersByStep {
+		result = append(result, *r)
+	}
+
+	slices.SortFunc(result, func(a, b FunnelRow) int {
+		for i := range a.Breakdowns {
+			if i >= len(b.Breakdowns) {
+				return 1
+			}
+			if c := cmp.Compare(a.Breakdowns[i], b.Breakdowns[i]); c != 0 {
+				return c
+			}
+		}
+		if len(a.Breakdowns) < len(b.Breakdowns) {
+			return -1
+		}
+		return cmp.Compare(a.StepIndex, b.StepIndex)
+	})
+	return result
+}
+
 // GroupRetentionSeries groups RetentionRow results into RetentionSeries, keyed by breakdown tuple.
 // Within each series, rows are grouped into cohorts. Insertion order is preserved for both
 // series and cohorts.
 //
+// When breakdownLimit > 0, only the top N breakdown combinations (by total cohort size) are
+// kept; the rest are merged into a "$others" series with re-computed retention percentages.
+//
 // Validation errors (breakdown/property length mismatch) are logged and recorded against ctx's span.
-func GroupRetentionSeries(ctx context.Context, rows []RetentionRow, properties []string) ([]*insightsv1.RetentionSeries, error) {
+func GroupRetentionSeries(ctx context.Context, rows []RetentionRow, properties []string, breakdownLimit int) ([]*insightsv1.RetentionSeries, error) {
+	if breakdownLimit > 0 && len(properties) > 0 {
+		rows = applyRetentionTopN(rows, properties, breakdownLimit)
+	}
+
 	type cohortEntry struct {
 		order  []time.Time
 		byTime map[time.Time]*insightsv1.RetentionCohort
@@ -613,4 +799,81 @@ func GroupRetentionSeries(ctx context.Context, rows []RetentionRow, properties [
 		out = append(out, entry.series)
 	}
 	return out, nil
+}
+
+// applyRetentionTopN keeps the top N breakdown combos by total cohort size, merging the
+// rest into "$others". For merged rows, cohort sizes are summed and retention percentages
+// are re-computed as weighted averages.
+func applyRetentionTopN(rows []RetentionRow, properties []string, limit int) []RetentionRow {
+	type bdTotal struct {
+		key       string
+		cohortSum float64
+	}
+	totals := map[string]float64{}
+	for _, r := range rows {
+		totals[breakdownKey(r.Breakdowns)] += r.CohortSize
+	}
+	sorted := make([]bdTotal, 0, len(totals))
+	for k, v := range totals {
+		sorted = append(sorted, bdTotal{k, v})
+	}
+	slices.SortFunc(sorted, func(a, b bdTotal) int {
+		return cmp.Compare(b.cohortSum, a.cohortSum)
+	})
+
+	topSet := make(map[string]bool, limit)
+	for i := range sorted {
+		if i >= limit {
+			break
+		}
+		topSet[sorted[i].key] = true
+	}
+
+	othersBreakdowns := make([]string, len(properties))
+	for i := range othersBreakdowns {
+		othersBreakdowns[i] = "$others"
+	}
+
+	type cellKey struct {
+		cohortTime time.Time
+		time       time.Time
+	}
+	type cellAgg struct {
+		retainedUsers float64
+		cohortSize    float64
+	}
+	othersCells := map[cellKey]*cellAgg{}
+
+	var result []RetentionRow
+	for _, r := range rows {
+		if topSet[breakdownKey(r.Breakdowns)] {
+			result = append(result, r)
+			continue
+		}
+		ck := cellKey{r.CohortTime, r.Time}
+		if existing, ok := othersCells[ck]; ok {
+			retainedThis := (r.Value / 100.0) * r.CohortSize
+			existing.retainedUsers += retainedThis
+			existing.cohortSize += r.CohortSize
+		} else {
+			retainedThis := (r.Value / 100.0) * r.CohortSize
+			othersCells[ck] = &cellAgg{retainedUsers: retainedThis, cohortSize: r.CohortSize}
+		}
+	}
+
+	for ck, agg := range othersCells {
+		pct := 0.0
+		if agg.cohortSize > 0 {
+			pct = (agg.retainedUsers * 100.0) / agg.cohortSize
+		}
+		result = append(result, RetentionRow{
+			CohortTime: ck.cohortTime,
+			Time:       ck.time,
+			Value:      pct,
+			CohortSize: agg.cohortSize,
+			Breakdowns: othersBreakdowns,
+		})
+	}
+
+	return result
 }

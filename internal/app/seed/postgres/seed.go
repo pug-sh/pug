@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/core/projects"
 	dbtypes "github.com/pug-sh/pug/internal/deps/postgres"
@@ -30,6 +31,14 @@ type Seeder struct {
 
 func NewSeeder(deps *deps) *Seeder {
 	return &Seeder{deps: deps}
+}
+
+func NewSeederFromPool(pg *pgxpool.Pool) *Seeder {
+	return &Seeder{deps: &deps{pg: pg}}
+}
+
+func (s *Seeder) RunDashboardOnly(ctx context.Context, projectID string) error {
+	return s.seedDashboard(ctx, projectID)
 }
 
 func (s *Seeder) Run(ctx context.Context) error {
@@ -68,6 +77,10 @@ func (s *Seeder) Run(ctx context.Context) error {
 
 	if err := s.seedMerges(ctx, project.ID, identifiedIDs); err != nil {
 		return fmt.Errorf("failed to seed profile merges: %w", err)
+	}
+
+	if err := s.seedDashboard(ctx, project.ID); err != nil {
+		return fmt.Errorf("failed to seed dashboard: %w", err)
 	}
 
 	slog.DebugContext(ctx, "seed complete",

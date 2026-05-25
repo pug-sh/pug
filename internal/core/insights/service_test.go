@@ -269,7 +269,7 @@ func TestGroupSeriesBoundsCheck(t *testing.T) {
 	rows := []insights.TrendRow{
 		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "pv", Breakdowns: []string{}, Value: 10},
 	}
-	if _, err := insights.GroupSeries(t.Context(), rows, []string{"$country"}); err == nil {
+	if _, err := insights.GroupSeries(t.Context(), rows, []string{"$country"}, 0); err == nil {
 		t.Error("expected error for mismatched breakdowns/properties")
 	}
 }
