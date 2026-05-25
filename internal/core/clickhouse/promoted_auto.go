@@ -46,6 +46,9 @@ var promotedAutoColumns = []PromotedAutoColumn{
 	{Property: useragent.PropDevice, Column: "device", Kind: PromotedString},
 	{Property: "$platform", Column: "platform", Kind: PromotedString},
 	{Property: "$url", Column: "url", Kind: PromotedString},
+	{Property: "$utmSource", Column: "utm_source", Kind: PromotedString},
+	{Property: "$utmMedium", Column: "utm_medium", Kind: PromotedString},
+	{Property: "$utmCampaign", Column: "utm_campaign", Kind: PromotedString},
 }
 
 var promotedAutoByProperty map[string]PromotedAutoColumn
@@ -59,7 +62,7 @@ func init() {
 
 // EventsInsertPromotedColumns lists promoted auto-property columns on the events
 // table, in PromotedAutoRow.AppendArgs / ScanDest order.
-const EventsInsertPromotedColumns = `bot_score, verified_bot, mobile, country, region, city, browser, browser_version, os, os_version, device, platform, url`
+const EventsInsertPromotedColumns = `bot_score, verified_bot, mobile, country, region, city, browser, browser_version, os, os_version, device, platform, url, utm_source, utm_medium, utm_campaign`
 
 // EventsInsertColumns is the full INSERT column list for the events table.
 // insert_time is omitted; ClickHouse fills it via DEFAULT now64(3).
@@ -86,6 +89,9 @@ type PromotedAutoRow struct {
 	Device         string
 	Platform       string
 	URL            string
+	UTMSource      string
+	UTMMedium      string
+	UTMCampaign    string
 }
 
 // AppendArgs returns promoted column values in EventsInsertPromotedColumns order.
@@ -104,6 +110,9 @@ func (r PromotedAutoRow) AppendArgs() []any {
 		r.Device,
 		r.Platform,
 		r.URL,
+		r.UTMSource,
+		r.UTMMedium,
+		r.UTMCampaign,
 	}
 }
 
@@ -123,6 +132,9 @@ func (r *PromotedAutoRow) ScanDest() []any {
 		&r.Device,
 		&r.Platform,
 		&r.URL,
+		&r.UTMSource,
+		&r.UTMMedium,
+		&r.UTMCampaign,
 	}
 }
 
@@ -160,6 +172,9 @@ func (r PromotedAutoRow) MergeIntoAutoProperties(m map[string]any) map[string]an
 	setString(useragent.PropDevice, r.Device)
 	setString("$platform", r.Platform)
 	setString("$url", r.URL)
+	setString("$utmSource", r.UTMSource)
+	setString("$utmMedium", r.UTMMedium)
+	setString("$utmCampaign", r.UTMCampaign)
 	return m
 }
 
@@ -251,6 +266,12 @@ func setPromotedString(row *PromotedAutoRow, property, value string) {
 		row.Platform = value
 	case "$url":
 		row.URL = value
+	case "$utmSource":
+		row.UTMSource = value
+	case "$utmMedium":
+		row.UTMMedium = value
+	case "$utmCampaign":
+		row.UTMCampaign = value
 	}
 }
 
