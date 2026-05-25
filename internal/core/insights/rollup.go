@@ -1,9 +1,11 @@
 package insights
 
 import (
+	"fmt"
 	"slices"
 	"time"
 
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
@@ -113,4 +115,100 @@ func rollupBreakdownLimit(limit int32) int64 {
 		return 10
 	}
 	return int64(limit)
+}
+
+// buildTrendsFromRollup builds a trends query against the dimensional rollup,
+// mirroring buildTrends' top_vals / $others structure. Caller must have checked
+// canUseEventRollup. Returns the same TrendsQuery type as the raw path.
+func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
+	granFn, err := granularityFunc(req.GetGranularity())
+	if err != nil {
+		return TrendsQuery{}, fmt.Errorf("trends rollup: %w", err)
+	}
+	// Bucket the Date column through the SAME granularity function the raw path
+	// uses (over toDateTime(day)) so week/month boundaries are byte-identical.
+	bucketExpr := fmt.Sprintf("%s(toDateTime(day))", granFn)
+
+	spec := req.GetSpec()
+	bds := spec.GetBreakdowns()
+	events := spec.GetEvents()
+	fromDay, toDay := rollupDayBounds(req)
+
+	dimName := totalDimName
+	if len(bds) == 1 {
+		dimName = bds[0].GetProperty()
+	}
+
+	// Shared top_vals CTE over all event kinds (only when a breakdown is present).
+	var topVals *chq.Query
+	if len(bds) == 1 {
+		kindConds := make([]chq.Condition, len(events))
+		for i, ev := range events {
+			kindConds[i] = chq.Eq("kind", ev.GetEvent().GetKind())
+		}
+		topVals = chq.NewQuery().
+			Select("dim_value").
+			From(rollupTable).
+			Where(
+				chq.Eq("project_id", projectID),
+				chq.Eq("dim_name", dimName),
+				chq.Gte("day", fromDay),
+				chq.Lte("day", toDay),
+				chq.Or(kindConds...),
+			).
+			GroupBy("dim_value").
+			OrderBy("sum(cnt) DESC").
+			Limit(rollupBreakdownLimit(spec.GetBreakdownLimit()))
+	}
+
+	queries := make([]*chq.Query, 0, len(events))
+	for i, ev := range events {
+		aggExpr, ok := rollupAggExpr(ev.GetAggregation())
+		if !ok {
+			return TrendsQuery{}, fmt.Errorf("trends rollup: events[%d]: unsupported aggregation %s", i, ev.GetAggregation())
+		}
+
+		selectExprs := []string{
+			bucketExpr + " AS t",
+			"kind AS event_kind",
+		}
+		if len(bds) == 1 {
+			selectExprs = append(selectExprs,
+				"if(dim_value IN (SELECT dim_value FROM top_vals), dim_value, '$others') AS breakdown_0")
+		}
+		selectExprs = append(selectExprs, aggExpr+" AS value")
+
+		q := chq.NewQuery().
+			Select(selectExprs...).
+			From(rollupTable).
+			Where(
+				chq.Eq("project_id", projectID),
+				chq.Eq("dim_name", dimName),
+				chq.Eq("kind", ev.GetEvent().GetKind()),
+				chq.Gte("day", fromDay),
+				chq.Lte("day", toDay),
+			)
+
+		groupBy := []string{"t", "event_kind"}
+		if len(bds) == 1 {
+			groupBy = append(groupBy, "breakdown_0")
+		}
+		q.GroupBy(groupBy...)
+
+		if i == 0 && topVals != nil {
+			q.With("top_vals", topVals)
+		}
+		queries = append(queries, q)
+	}
+
+	orderBy := []string{"t ASC", "event_kind ASC"}
+	if len(bds) == 1 {
+		orderBy = append(orderBy, "breakdown_0 ASC")
+	}
+
+	sql, args, err := chq.UnionAll(queries...).OrderBy(orderBy...).WithQueryCache(analyticsCacheTTL).Build()
+	if err != nil {
+		return TrendsQuery{}, fmt.Errorf("trends rollup: %w", err)
+	}
+	return TrendsQuery{sql: sql, args: args, properties: breakdownProps(bds)}, nil
 }

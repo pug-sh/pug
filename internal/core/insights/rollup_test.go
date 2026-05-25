@@ -1,9 +1,12 @@
 package insights
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
@@ -92,5 +95,89 @@ func TestCanUseEventRollup_RejectsFilters(t *testing.T) {
 	twoBreakdowns.Breakdowns = append(twoBreakdowns.Breakdowns, &insightsv1.Breakdown{Property: proto.String("$os")})
 	if canUseEventRollup(twoBreakdowns, day) {
 		t.Error("expected rollup rejected with two breakdowns")
+	}
+}
+
+// rollupTimeRange builds a TimeRange from RFC3339 strings. Local to this internal
+// test file (the timeRange helper in builder_test.go is in package insights_test
+// and is not visible here).
+func rollupTimeRange(fromRFC, toRFC string) *commonv1.TimeRange {
+	from, err := time.Parse(time.RFC3339, fromRFC)
+	if err != nil {
+		panic(err)
+	}
+	to, err := time.Parse(time.RFC3339, toRFC)
+	if err != nil {
+		panic(err)
+	}
+	return &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)}
+}
+
+func rollupDayReq(spec *insightsv1.InsightQuerySpec) *insightsv1.QueryRequest {
+	return &insightsv1.QueryRequest{
+		Spec:        spec,
+		TimeRange:   rollupTimeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}
+}
+
+func TestBuildTrendsFromRollup_Breakdown(t *testing.T) {
+	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"))
+	q, err := buildTrendsFromRollup(req, "proj_123")
+	if err != nil {
+		t.Fatalf("buildTrendsFromRollup: %v", err)
+	}
+	sql := q.SQL()
+	for _, want := range []string{
+		"FROM dashboard_event_rollup_daily",
+		"top_vals",
+		"dim_name",
+		"if(dim_value IN (SELECT dim_value FROM top_vals), dim_value, '$others') AS breakdown_0",
+		"toFloat64(sum(cnt)) AS value",
+		"toStartOfDay(toDateTime(day)) AS t",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("expected SQL to contain %q\nSQL:\n%s", want, sql)
+		}
+	}
+	if len(q.Properties()) != 1 || q.Properties()[0] != "$country" {
+		t.Errorf("expected properties [$country], got %v", q.Properties())
+	}
+}
+
+func TestBuildTrendsFromRollup_NoBreakdownUsesTotal(t *testing.T) {
+	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", ""))
+	q, err := buildTrendsFromRollup(req, "proj_123")
+	if err != nil {
+		t.Fatalf("buildTrendsFromRollup: %v", err)
+	}
+	sql := q.SQL()
+	if strings.Contains(sql, "top_vals") {
+		t.Errorf("no-breakdown trends must not emit a top_vals CTE\nSQL:\n%s", sql)
+	}
+	if strings.Contains(sql, "breakdown_0") {
+		t.Errorf("no-breakdown trends must not select a breakdown column\nSQL:\n%s", sql)
+	}
+	// dim_name is filtered to the synthetic total dimension; the value is a bound
+	// parameter (dim_name = ?), so assert on the args rather than the SQL text.
+	found := false
+	for _, a := range q.Args() {
+		if a == "$__total__" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no-breakdown trends must filter dim_name = $__total__; args = %v", q.Args())
+	}
+}
+
+func TestBuildTrendsFromRollup_UniqueUsers(t *testing.T) {
+	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS, "page_view", "$country"))
+	q, err := buildTrendsFromRollup(req, "proj_123")
+	if err != nil {
+		t.Fatalf("buildTrendsFromRollup: %v", err)
+	}
+	if !strings.Contains(q.SQL(), "toFloat64(uniqMerge(uniq_state)) AS value") {
+		t.Errorf("unique-users trends must use uniqMerge\nSQL:\n%s", q.SQL())
 	}
 }
