@@ -15,7 +15,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
 	github.com/a-h/templ v0.3.1020
 	github.com/aws/aws-sdk-go-v2/config v1.32.17
-	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.60.5
+	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.61.0
 	github.com/aws/smithy-go v1.25.1
 	github.com/exaring/otelpgx v0.11.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
