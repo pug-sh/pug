@@ -22,6 +22,10 @@ ORDER BY (project_id, kind, dim_name, day, dim_value);
 -- bounded inaccuracy for dashboard visualization. If exact reconciliation with
 -- the raw insights path is ever required, switch to a refreshable APPEND MV with
 -- FROM events FINAL + a closed-bucket watermark (see docs/architecture/clickhouse.md).
+--
+-- Dimension value expressions MUST read promoted auto-property columns (not
+-- auto_properties map keys) — ingest strips promoted keys into dedicated columns.
+-- Keep in sync with PropertyExpr / TestMigration006PromotedDimExprsMatch.
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS dashboard_event_rollup_daily_mv
 TO dashboard_event_rollup_daily AS
@@ -36,16 +40,16 @@ SELECT
 FROM events
 ARRAY JOIN [
     ('$__total__', ''),
-    ('$country',     coalesce(nullIf(CAST(auto_properties['$country']     AS Nullable(String)), ''), CAST(custom_properties['$country']     AS Nullable(String)), '')),
-    ('$region',      coalesce(nullIf(CAST(auto_properties['$region']      AS Nullable(String)), ''), CAST(custom_properties['$region']      AS Nullable(String)), '')),
-    ('$city',        coalesce(nullIf(CAST(auto_properties['$city']        AS Nullable(String)), ''), CAST(custom_properties['$city']        AS Nullable(String)), '')),
-    ('$os',          coalesce(nullIf(CAST(auto_properties['$os']          AS Nullable(String)), ''), CAST(custom_properties['$os']          AS Nullable(String)), '')),
-    ('$browser',     coalesce(nullIf(CAST(auto_properties['$browser']     AS Nullable(String)), ''), CAST(custom_properties['$browser']     AS Nullable(String)), '')),
-    ('$device',      coalesce(nullIf(CAST(auto_properties['$device']      AS Nullable(String)), ''), CAST(custom_properties['$device']      AS Nullable(String)), '')),
-    ('$platform',    coalesce(nullIf(CAST(auto_properties['$platform']    AS Nullable(String)), ''), CAST(custom_properties['$platform']    AS Nullable(String)), '')),
-    ('$utmSource',   coalesce(nullIf(CAST(auto_properties['$utmSource']   AS Nullable(String)), ''), CAST(custom_properties['$utmSource']   AS Nullable(String)), '')),
-    ('$utmMedium',   coalesce(nullIf(CAST(auto_properties['$utmMedium']   AS Nullable(String)), ''), CAST(custom_properties['$utmMedium']   AS Nullable(String)), '')),
-    ('$utmCampaign', coalesce(nullIf(CAST(auto_properties['$utmCampaign'] AS Nullable(String)), ''), CAST(custom_properties['$utmCampaign'] AS Nullable(String)), ''))
+    ('$country',     coalesce(country, '')),
+    ('$region',      coalesce(region, '')),
+    ('$city',        coalesce(city, '')),
+    ('$os',          coalesce(os, '')),
+    ('$browser',     coalesce(browser, '')),
+    ('$device',      coalesce(device, '')),
+    ('$platform',    coalesce(platform, '')),
+    ('$utmSource',   coalesce(utm_source, '')),
+    ('$utmMedium',   coalesce(utm_medium, '')),
+    ('$utmCampaign', coalesce(utm_campaign, ''))
 ] AS dim
 GROUP BY project_id, day, kind, dim_name, dim_value;
 
@@ -65,16 +69,16 @@ SELECT
 FROM events
 ARRAY JOIN [
     ('$__total__', ''),
-    ('$country',     coalesce(nullIf(CAST(auto_properties['$country']     AS Nullable(String)), ''), CAST(custom_properties['$country']     AS Nullable(String)), '')),
-    ('$region',      coalesce(nullIf(CAST(auto_properties['$region']      AS Nullable(String)), ''), CAST(custom_properties['$region']      AS Nullable(String)), '')),
-    ('$city',        coalesce(nullIf(CAST(auto_properties['$city']        AS Nullable(String)), ''), CAST(custom_properties['$city']        AS Nullable(String)), '')),
-    ('$os',          coalesce(nullIf(CAST(auto_properties['$os']          AS Nullable(String)), ''), CAST(custom_properties['$os']          AS Nullable(String)), '')),
-    ('$browser',     coalesce(nullIf(CAST(auto_properties['$browser']     AS Nullable(String)), ''), CAST(custom_properties['$browser']     AS Nullable(String)), '')),
-    ('$device',      coalesce(nullIf(CAST(auto_properties['$device']      AS Nullable(String)), ''), CAST(custom_properties['$device']      AS Nullable(String)), '')),
-    ('$platform',    coalesce(nullIf(CAST(auto_properties['$platform']    AS Nullable(String)), ''), CAST(custom_properties['$platform']    AS Nullable(String)), '')),
-    ('$utmSource',   coalesce(nullIf(CAST(auto_properties['$utmSource']   AS Nullable(String)), ''), CAST(custom_properties['$utmSource']   AS Nullable(String)), '')),
-    ('$utmMedium',   coalesce(nullIf(CAST(auto_properties['$utmMedium']   AS Nullable(String)), ''), CAST(custom_properties['$utmMedium']   AS Nullable(String)), '')),
-    ('$utmCampaign', coalesce(nullIf(CAST(auto_properties['$utmCampaign'] AS Nullable(String)), ''), CAST(custom_properties['$utmCampaign'] AS Nullable(String)), ''))
+    ('$country',     coalesce(country, '')),
+    ('$region',      coalesce(region, '')),
+    ('$city',        coalesce(city, '')),
+    ('$os',          coalesce(os, '')),
+    ('$browser',     coalesce(browser, '')),
+    ('$device',      coalesce(device, '')),
+    ('$platform',    coalesce(platform, '')),
+    ('$utmSource',   coalesce(utm_source, '')),
+    ('$utmMedium',   coalesce(utm_medium, '')),
+    ('$utmCampaign', coalesce(utm_campaign, ''))
 ] AS dim
 GROUP BY project_id, day, kind, dim_name, dim_value;
 

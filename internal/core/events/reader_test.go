@@ -38,17 +38,11 @@ func TestGetActivityFeed(t *testing.T) {
 	}
 	for _, se := range seedEvents {
 		eid := uuid.NewString()
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			eid, "proj-1", "user-1", se.kind,
+		testutil.InsertEvent(ctx, t, ch.Conn, eid, "proj-1", "user-1", se.kind, se.sessionID,
 			map[string]string{"$country": "US"},
 			map[string]string{"plan": "pro"},
 			now.Add(se.offset),
-			se.sessionID,
 		)
-		if err != nil {
-			t.Fatalf("seed event %s: %v", se.kind, err)
-		}
 	}
 
 	err := ch.Conn.Exec(ctx,
@@ -68,42 +62,24 @@ func TestGetActivityFeed(t *testing.T) {
 	}
 
 	anonEID := uuid.NewString()
-	err = ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		anonEID, "proj-1", "anon-1", "anon_action",
+	testutil.InsertEvent(ctx, t, ch.Conn, anonEID, "proj-1", "anon-1", "anon_action", sessionB,
 		map[string]string{},
 		map[string]string{},
 		now.Add(-5*time.Minute),
-		sessionB,
 	)
-	if err != nil {
-		t.Fatalf("seed anon event: %v", err)
-	}
 
-	err = ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "ext-1", "identified_action",
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "ext-1", "identified_action", sessionB,
 		map[string]string{},
 		map[string]string{},
 		now.Add(-6*time.Minute),
-		sessionB,
 	)
-	if err != nil {
-		t.Fatalf("seed external-id event: %v", err)
-	}
 
 	// Seed event for different project (should not appear in proj-1 queries).
-	err = ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-2", "user-1", "other_project_event",
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-2", "user-1", "other_project_event", uuid.NewString(),
 		map[string]string{},
 		map[string]string{},
 		now,
-		uuid.NewString(),
 	)
-	if err != nil {
-		t.Fatalf("seed other project event: %v", err)
-	}
 
 	reader := events.NewReader(ch.Conn)
 
@@ -167,15 +143,11 @@ func TestGetActivityFeed(t *testing.T) {
 		}
 
 		anonOnlyEID := uuid.NewString()
-		if err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			anonOnlyEID, "proj-1", "anon-only", "anon_only_event",
-			map[string]string{}, map[string]string{},
+		testutil.InsertEvent(ctx, t, ch.Conn, anonOnlyEID, "proj-1", "anon-only", "anon_only_event", uuid.NewString(),
+			map[string]string{},
+			map[string]string{},
 			now.Add(-10*time.Minute),
-			uuid.NewString(),
-		); err != nil {
-			t.Fatalf("seed anon-only event: %v", err)
-		}
+		)
 
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
 			ProjectID:  "proj-1",
@@ -201,15 +173,11 @@ func TestGetActivityFeed(t *testing.T) {
 			t.Fatalf("seed u-shared profile: %v", err)
 		}
 
-		if err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), "proj-1", "u-shared", "shared_event",
-			map[string]string{}, map[string]string{},
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "u-shared", "shared_event", uuid.NewString(),
+			map[string]string{},
+			map[string]string{},
 			now.Add(-11*time.Minute),
-			uuid.NewString(),
-		); err != nil {
-			t.Fatalf("seed u-shared event: %v", err)
-		}
+		)
 
 		evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
 			ProjectID:  "proj-1",
@@ -675,16 +643,11 @@ func TestActivityFeed_MergedAnonymousProfile(t *testing.T) {
 		{distinctID: "ext-merged", kind: "merged_profile_external", offset: -8 * time.Minute},
 		{distinctID: "anon-merged", kind: "merged_profile_alias", offset: -9 * time.Minute},
 	} {
-		if err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), "proj-1", seed.distinctID, seed.kind,
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", seed.distinctID, seed.kind, uuid.NewString(),
 			map[string]string{},
 			map[string]string{},
 			now.Add(seed.offset),
-			uuid.NewString(),
-		); err != nil {
-			t.Fatalf("seed merged profile event %s: %v", seed.kind, err)
-		}
+		)
 	}
 
 	reader := events.NewReader(ch.Conn)
@@ -758,35 +721,23 @@ func TestActivityFeed_AliasReassignment(t *testing.T) {
 		t.Fatalf("seed latest alias mapping: %v", err)
 	}
 
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "user-1", "user_1_direct",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", "user_1_direct", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-5*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed user-1 direct event: %v", err)
-	}
+	)
 
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "user-2", "user_2_direct",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-2", "user_2_direct", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-6*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed user-2 direct event: %v", err)
-	}
+	)
 
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "moved-alias", "moved_alias_event",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "moved-alias", "moved_alias_event", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-7*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed moved alias event: %v", err)
-	}
+	)
 
 	reader := events.NewReader(ch.Conn)
 
@@ -900,35 +851,23 @@ func TestActivityFeed_LookupPrecedence(t *testing.T) {
 	}
 
 	aEID := uuid.NewString()
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		aEID, "proj-1", "shared", "profile_A_event",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, aEID, "proj-1", "shared", "profile_A_event", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-1*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed profile A event: %v", err)
-	}
+	)
 
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "user-B", "profile_B_event",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-B", "profile_B_event", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-2*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed profile B event: %v", err)
-	}
+	)
 
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "user-C", "profile_C_event",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-C", "profile_C_event", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-3*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed profile C event: %v", err)
-	}
+	)
 
 	reader := events.NewReader(ch.Conn)
 	evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
@@ -993,28 +932,20 @@ func TestActivityFeed_AliasToTombstoneExternalIDGuard(t *testing.T) {
 
 	// Event keyed by the stale external_id. With the guard, this should NOT
 	// surface because the soft-deleted profile's external_id is excluded.
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "ext-stale", "stale_external_event",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "ext-stale", "stale_external_event", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-30*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed stale external event: %v", err)
-	}
+	)
 
 	// Event keyed by the alias itself. This SHOULD surface — alias resolution
 	// doesn't filter by profile-alive status (only the external-id lookup does).
 	aliasEID := uuid.NewString()
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		aliasEID, "proj-1", "alias-X", "alias_event",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, aliasEID, "proj-1", "alias-X", "alias_event", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-20*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed alias event: %v", err)
-	}
+	)
 
 	reader := events.NewReader(ch.Conn)
 	evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
@@ -1091,49 +1022,33 @@ func TestActivityFeed_CrossProjectIdentifierCollision(t *testing.T) {
 	// proj1-user and proj1-ext events, and surfaces the unrelated proj2-ext
 	// event that doesn't belong to proj1-user.
 	directEID := uuid.NewString()
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		directEID, "proj-1", "proj1-user", "proj1_direct_event",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, directEID, "proj-1", "proj1-user", "proj1_direct_event", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-1*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed proj-1 direct event: %v", err)
-	}
+	)
 
 	externalEID := uuid.NewString()
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		externalEID, "proj-1", "proj1-ext", "proj1_external_event",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, externalEID, "proj-1", "proj1-ext", "proj1_external_event", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-2*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed proj-1 external event: %v", err)
-	}
+	)
 
 	aliasEID := uuid.NewString()
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		aliasEID, "proj-1", "shared-id", "proj1_alias_event",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, aliasEID, "proj-1", "shared-id", "proj1_alias_event", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-3*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed proj-1 alias event: %v", err)
-	}
+	)
 
 	// Unrelated proj-1 event keyed by proj-2's external_id. Belongs to some
 	// other proj-1 user; must not surface in proj1-user's feed.
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "proj2-ext", "unrelated_proj1_event",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "proj2-ext", "unrelated_proj1_event", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now.Add(-4*time.Minute),
-		uuid.NewString(),
-	); err != nil {
-		t.Fatalf("seed unrelated proj-1 event: %v", err)
-	}
+	)
 
 	reader := events.NewReader(ch.Conn)
 	evts, _, err := reader.GetActivityFeed(ctx, events.ActivityFeedParams{
@@ -1192,17 +1107,11 @@ func TestGetEventExplorer(t *testing.T) {
 		{"user-3", "page_view", -4 * time.Minute, sessionA, "US"},
 	}
 	for _, se := range seedData {
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), "proj-1", se.distinctID, se.kind,
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", se.distinctID, se.kind, se.sessionID,
 			map[string]string{"$country": se.country},
 			map[string]string{},
 			now.Add(se.offset),
-			se.sessionID,
 		)
-		if err != nil {
-			t.Fatalf("seed event: %v", err)
-		}
 	}
 
 	// Seed alias: anon-1 → user-1 (should NOT be resolved by event explorer).
@@ -1215,30 +1124,18 @@ func TestGetEventExplorer(t *testing.T) {
 	}
 
 	// Seed event under anon-1.
-	err = ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "anon-1", "anon_action",
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "anon-1", "anon_action", sessionB,
 		map[string]string{},
 		map[string]string{},
 		now.Add(-5*time.Minute),
-		sessionB,
 	)
-	if err != nil {
-		t.Fatalf("seed anon event: %v", err)
-	}
 
 	// Seed event for different project.
-	err = ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-2", "user-1", "other_project",
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-2", "user-1", "other_project", uuid.NewString(),
 		map[string]string{},
 		map[string]string{},
 		now,
-		uuid.NewString(),
 	)
-	if err != nil {
-		t.Fatalf("seed other project event: %v", err)
-	}
 
 	reader := events.NewReader(ch.Conn)
 
@@ -1590,17 +1487,11 @@ func TestGetActivityHeatmap(t *testing.T) {
 	}
 	for _, se := range seedEvents {
 		for i := 0; i < se.count; i++ {
-			err := ch.Conn.Exec(ctx,
-				`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				uuid.NewString(), "proj-1", "user-1", se.kind,
+			testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", se.kind, uuid.NewString(),
 				map[string]string{},
 				map[string]string{},
 				se.day.Add(time.Duration(i)*time.Hour),
-				uuid.NewString(),
 			)
-			if err != nil {
-				t.Fatalf("seed event: %v", err)
-			}
 		}
 	}
 
@@ -1614,30 +1505,18 @@ func TestGetActivityHeatmap(t *testing.T) {
 	}
 
 	// Seed event under alias on day -1.
-	err = ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "anon-1", "anon_action",
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "anon-1", "anon_action", uuid.NewString(),
 		map[string]string{},
 		map[string]string{},
 		now.AddDate(0, 0, -1).Add(30*time.Minute),
-		uuid.NewString(),
 	)
-	if err != nil {
-		t.Fatalf("seed anon event: %v", err)
-	}
 
 	// Seed event in different project (should not appear in proj-1 queries).
-	err = ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-2", "user-1", "other_project",
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-2", "user-1", "other_project", uuid.NewString(),
 		map[string]string{},
 		map[string]string{},
 		now,
-		uuid.NewString(),
 	)
-	if err != nil {
-		t.Fatalf("seed other project event: %v", err)
-	}
 
 	reader := events.NewReader(ch.Conn)
 
@@ -1810,17 +1689,11 @@ func TestGetActivityHeatmap(t *testing.T) {
 		if err != nil {
 			t.Fatalf("seed alias: %v", err)
 		}
-		err = ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), "proj-1", "anon-alias-only", "page_view",
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "anon-alias-only", "page_view", uuid.NewString(),
 			map[string]string{},
 			map[string]string{},
 			now,
-			uuid.NewString(),
 		)
-		if err != nil {
-			t.Fatalf("seed alias event: %v", err)
-		}
 
 		days, err := reader.GetActivityHeatmap(ctx, events.ActivityHeatmapParams{
 			ProjectID:  "proj-1",
@@ -1873,33 +1746,23 @@ func TestGetProfileStats(t *testing.T) {
 	}
 
 	// Day -5: 1 event with old props.
-	err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "user-1", "signup",
-		oldProps, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", "signup", uuid.NewString(),
+		oldProps,
+		map[string]string{},
 		now.AddDate(0, 0, -5),
-		uuid.NewString(),
 	)
-	if err != nil {
-		t.Fatalf("seed old event: %v", err)
-	}
 
 	// Day 0: 2 events with latest props.
 	for i := 0; i < 2; i++ {
-		err = ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), "proj-1", "user-1", "page_view",
-			latestProps, map[string]string{},
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", "page_view", uuid.NewString(),
+			latestProps,
+			map[string]string{},
 			now.Add(time.Duration(i)*time.Hour),
-			uuid.NewString(),
 		)
-		if err != nil {
-			t.Fatalf("seed latest event: %v", err)
-		}
 	}
 
 	// Seed alias: anon-1 -> user-1.
-	err = ch.Conn.Exec(ctx,
+	err := ch.Conn.Exec(ctx,
 		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
 		"anon-1", "user-1", "ext-1", "proj-1",
 	)
@@ -1908,28 +1771,18 @@ func TestGetProfileStats(t *testing.T) {
 	}
 
 	// Day -2: 1 event under alias.
-	err = ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-1", "anon-1", "anon_action",
-		map[string]string{"$browser": "Safari"}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "anon-1", "anon_action", uuid.NewString(),
+		map[string]string{"$browser": "Safari"},
+		map[string]string{},
 		now.AddDate(0, 0, -2),
-		uuid.NewString(),
 	)
-	if err != nil {
-		t.Fatalf("seed alias event: %v", err)
-	}
 
 	// Seed event in different project (should not appear).
-	err = ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), "proj-2", "user-1", "other_project",
-		map[string]string{}, map[string]string{},
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-2", "user-1", "other_project", uuid.NewString(),
+		map[string]string{},
+		map[string]string{},
 		now,
-		uuid.NewString(),
 	)
-	if err != nil {
-		t.Fatalf("seed other project event: %v", err)
-	}
 
 	reader := events.NewReader(ch.Conn)
 
@@ -2023,16 +1876,11 @@ func TestGetProfileStats(t *testing.T) {
 
 	t.Run("heatmap covers last 60 days only", func(t *testing.T) {
 		// Seed an event older than 60 days — should appear in stats but not heatmap.
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), "proj-1", "user-1", "old_event",
-			map[string]string{}, map[string]string{},
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", "old_event", uuid.NewString(),
+			map[string]string{},
+			map[string]string{},
 			now.AddDate(0, 0, -90),
-			uuid.NewString(),
 		)
-		if err != nil {
-			t.Fatalf("seed old event: %v", err)
-		}
 
 		stats, heatmap, err := reader.GetProfileStats(ctx, "proj-1", "user-1")
 		if err != nil {
@@ -2062,16 +1910,11 @@ func TestGetProfileStats(t *testing.T) {
 			"$os":     "Android",
 			"$device": "Pixel 8",
 		}
-		err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), "proj-1", "user-1", "sparse_event",
-			sparseProps, map[string]string{},
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), "proj-1", "user-1", "sparse_event", uuid.NewString(),
+			sparseProps,
+			map[string]string{},
 			now.Add(10*time.Hour), // latest event
-			uuid.NewString(),
 		)
-		if err != nil {
-			t.Fatalf("seed sparse event: %v", err)
-		}
 
 		stats, _, err := reader.GetProfileStats(ctx, "proj-1", "user-1")
 		if err != nil {

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -52,7 +53,7 @@ func ExecuteQuery(
 		if err != nil {
 			return nil, queryFailed(err)
 		}
-		series, err := GroupSeries(ctx, rows, q.Properties())
+		series, err := GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			return nil, queryFailed(err)
 		}
@@ -76,22 +77,58 @@ func ExecuteQuery(
 	case insightsv1.InsightType_INSIGHT_TYPE_FUNNEL:
 		var funnelRows []FunnelRow
 		var funnelProperties []string
+		var funnelBreakdownLimit int
 		if req.GetSpec().GetIncludeStepTiming() {
-			q, err := BuildFunnelTimingQuery(req, projectID)
+			// Run windowFunnel counts and per-user timing in parallel:
+			// counts are fast (single-pass windowFunnel), timing is heavier
+			// (pre-filtered groupArray). Merging takes counts from windowFunnel
+			// and timing stats from ComputeFunnelTiming.
+			countsQ, err := BuildFunnelCountsQuery(req, projectID)
+			if err != nil {
+				slog.WarnContext(ctx, "failed to build funnel counts query", slogx.Error(err),
+					slog.String("project_id", projectID))
+				return nil, &InvalidQueryError{Message: err.Error(), err: err}
+			}
+			timingQ, err := BuildFunnelTimingQuery(req, projectID)
 			if err != nil {
 				slog.WarnContext(ctx, "failed to build funnel timing query", slogx.Error(err),
 					slog.String("project_id", projectID))
 				return nil, &InvalidQueryError{Message: err.Error(), err: err}
 			}
-			users, err := executor.QueryFunnelUserEvents(ctx, projectID, q)
-			if err != nil {
+
+			var countRows []FunnelRow
+			var timingRows []FunnelRow
+			eg, egCtx := errgroup.WithContext(ctx)
+
+			eg.Go(func() error {
+				rows, err := executor.QueryFunnel(egCtx, projectID, countsQ)
+				if err != nil {
+					return err
+				}
+				countRows = rows
+				return nil
+			})
+
+			eg.Go(func() error {
+				users, err := executor.QueryFunnelUserEvents(egCtx, projectID, timingQ)
+				if err != nil {
+					return err
+				}
+				rows, err := ComputeFunnelTiming(egCtx, projectID, users, timingQ.Kinds(), timingQ.WindowSec(), timingQ.NumBreakdowns())
+				if err != nil {
+					return err
+				}
+				timingRows = rows
+				return nil
+			})
+
+			if err := eg.Wait(); err != nil {
 				return nil, queryFailed(err)
 			}
-			funnelRows, err = ComputeFunnelTiming(ctx, projectID, users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
-			if err != nil {
-				return nil, queryFailed(err)
-			}
-			funnelProperties = q.Properties()
+
+			funnelRows = MergeFunnelCountsAndTiming(countRows, timingRows)
+			funnelProperties = countsQ.Properties()
+			funnelBreakdownLimit = countsQ.BreakdownLimit()
 		} else {
 			q, err := BuildFunnelCountsQuery(req, projectID)
 			if err != nil {
@@ -104,8 +141,9 @@ func ExecuteQuery(
 				return nil, queryFailed(err)
 			}
 			funnelProperties = q.Properties()
+			funnelBreakdownLimit = q.BreakdownLimit()
 		}
-		funnelSeries, err := GroupFunnelSeries(ctx, funnelRows, funnelProperties)
+		funnelSeries, err := GroupFunnelSeries(ctx, funnelRows, funnelProperties, funnelBreakdownLimit)
 		if err != nil {
 			return nil, queryFailed(err)
 		}
@@ -124,7 +162,7 @@ func ExecuteQuery(
 		if err != nil {
 			return nil, queryFailed(err)
 		}
-		retentionSeries, err := GroupRetentionSeries(ctx, rows, q.Properties())
+		retentionSeries, err := GroupRetentionSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			return nil, queryFailed(err)
 		}

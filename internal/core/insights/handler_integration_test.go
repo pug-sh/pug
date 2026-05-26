@@ -20,11 +20,12 @@ import (
 )
 
 // TestIntegration_FunnelHandlerIncludeStepTimingDispatch verifies the handler-level
-// dispatch at handler.go:116 — the `if req.Msg.GetIncludeStepTiming()` branch must
-// route to the timing-aware path. A regression that drops the check (or wires the
-// wrong builder) would silently downgrade timing requests to the counts-only path,
-// returning zero medians/p95s and an empty distribution. Earlier core-package
-// integration tests bypass the handler and so cannot catch such a dispatch error.
+// dispatch through ExecuteQuery — the `if req.GetSpec().GetIncludeStepTiming()` branch must
+// route to the timing-aware path (parallel windowFunnel counts + ComputeFunnelTiming merge).
+// A regression that drops the check (or wires the wrong builder) would silently downgrade
+// timing requests to the counts-only path, returning zero medians/p95s and an empty
+// distribution. Earlier core-package integration tests bypass the handler and so cannot
+// catch such a dispatch error.
 func TestIntegration_FunnelHandlerIncludeStepTimingDispatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")

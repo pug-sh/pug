@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/pug-sh/pug/internal/core/insights"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -139,7 +140,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -330,7 +331,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -378,7 +379,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -538,7 +539,8 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("funnel_timing", func(t *testing.T) {
-		// Uses same seed data from funnel_counts.
+		seedFunnelEvents(t, ctx, ch)
+
 		req := &insightsv1.QueryRequest{
 			Spec: &insightsv1.InsightQuerySpec{
 				InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
@@ -555,20 +557,31 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		q, err := insights.BuildFunnelTimingQuery(req, testProjectID)
+		countsQ, err := insights.BuildFunnelCountsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelCountsQuery: %v", err)
+		}
+		countRows, err := executor.QueryFunnel(ctx, testProjectID, countsQ)
+		if err != nil {
+			t.Fatalf("QueryFunnel: %v", err)
+		}
+
+		timingQ, err := insights.BuildFunnelTimingQuery(req, testProjectID)
 		if err != nil {
 			t.Fatalf("BuildFunnelTimingQuery: %v", err)
 		}
 
-		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, q)
+		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, timingQ)
 		if err != nil {
 			t.Fatalf("QueryFunnelUserEvents: %v", err)
 		}
 
-		rows, err := insights.ComputeFunnelTiming(ctx, "", users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
+		timingRows, err := insights.ComputeFunnelTiming(ctx, "", users, timingQ.Kinds(), timingQ.WindowSec(), timingQ.NumBreakdowns())
 		if err != nil {
 			t.Fatalf("ComputeFunnelTiming: %v", err)
 		}
+
+		rows := insights.MergeFunnelCountsAndTiming(countRows, timingRows)
 
 		if len(rows) != 3 {
 			t.Fatalf("expected 3 funnel steps, got %d", len(rows))
@@ -639,7 +652,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		series, err := insights.GroupRetentionSeries(ctx, rows, nil)
+		series, err := insights.GroupRetentionSeries(ctx, rows, nil, 0)
 		if err != nil {
 			t.Fatalf("GroupRetentionSeries: %v", err)
 		}
@@ -691,7 +704,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryFunnel: %v", err)
 		}
 
-		series, err := insights.GroupFunnelSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupFunnelSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupFunnelSeries: %v", err)
 		}
@@ -740,7 +753,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		series, err := insights.GroupRetentionSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupRetentionSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupRetentionSeries: %v", err)
 		}
@@ -785,7 +798,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryFunnel: %v", err)
 		}
 
-		series, err := insights.GroupFunnelSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupFunnelSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupFunnelSeries: %v", err)
 		}
@@ -812,7 +825,8 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("funnel_timing_with_breakdown", func(t *testing.T) {
-		// Uses same seed data from funnel_counts_with_breakdown.
+		seedFunnelEventsWithCountry(t, ctx, ch)
+
 		req := &insightsv1.QueryRequest{
 			Spec: &insightsv1.InsightQuerySpec{
 				InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
@@ -830,22 +844,33 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		q, err := insights.BuildFunnelTimingQuery(req, testProjectID)
+		countsQ, err := insights.BuildFunnelCountsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelCountsQuery: %v", err)
+		}
+		countRows, err := executor.QueryFunnel(ctx, testProjectID, countsQ)
+		if err != nil {
+			t.Fatalf("QueryFunnel: %v", err)
+		}
+
+		timingQ, err := insights.BuildFunnelTimingQuery(req, testProjectID)
 		if err != nil {
 			t.Fatalf("BuildFunnelTimingQuery: %v", err)
 		}
 
-		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, q)
+		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, timingQ)
 		if err != nil {
 			t.Fatalf("QueryFunnelUserEvents: %v", err)
 		}
 
-		funnelRows, err := insights.ComputeFunnelTiming(ctx, "", users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
+		timingRows, err := insights.ComputeFunnelTiming(ctx, "", users, timingQ.Kinds(), timingQ.WindowSec(), timingQ.NumBreakdowns())
 		if err != nil {
 			t.Fatalf("ComputeFunnelTiming: %v", err)
 		}
 
-		series, err := insights.GroupFunnelSeries(ctx, funnelRows, q.Properties())
+		funnelRows := insights.MergeFunnelCountsAndTiming(countRows, timingRows)
+
+		series, err := insights.GroupFunnelSeries(ctx, funnelRows, countsQ.Properties(), countsQ.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupFunnelSeries: %v", err)
 		}
@@ -906,7 +931,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		series, err := insights.GroupRetentionSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupRetentionSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupRetentionSeries: %v", err)
 		}
@@ -1183,11 +1208,8 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("rollup_parity_trends_multi_event_breakdown", func(t *testing.T) {
-		// Two event kinds + a breakdown exercises the shared top_vals CTE,
-		// which is built over Or(kind...) for all kinds and attached to only the
-		// first UNION ALL branch yet referenced by every branch. Parity with the raw
-		// builder proves the cross-branch CTE reference and per-kind grouping are
-		// correct — the case single-event parity tests never reach.
+		// Two event kinds + a breakdown exercises rollup top_vals over Or(kind...)
+		// and parity with the raw multi-event trends builder (Go-side top-N).
 		const projectID = "proj_rollup_multi"
 		seed := []struct {
 			day            int
@@ -1241,10 +1263,9 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("rollup_parity_trends_others_bucket", func(t *testing.T) {
-		// More breakdown values than breakdown_limit forces the rollup's top-N
-		// + '$others' collapse (top_vals ... LIMIT n, then if(dim_value IN top_vals,
-		// dim_value, '$others')). The rollup picks top-N from pre-summed daily cnt
-		// while raw picks from rows; parity proves they bucket identically.
+		// More breakdown values than breakdown_limit forces top-N + '$others'
+		// collapse. Rollup applies it in SQL; raw applies it in GroupSeries.
+		// Parity proves they bucket identically (including tie-break on value ASC).
 		const projectID = "proj_rollup_others"
 		// US=3, GB=2, FR=1 on day 1. With breakdown_limit=2, FR collapses to $others.
 		seed := []struct{ user, cc string }{
@@ -1875,12 +1896,15 @@ func insertAutoEvent(
 	occurTime time.Time,
 	autoProps map[string]chcol.Variant,
 ) error {
-	batch, err := conn.PrepareBatch(ctx,
-		"INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties)")
+	batch, err := conn.PrepareBatch(ctx, chq.EventsInsertStmt)
 	if err != nil {
 		return err
 	}
-	if err := batch.Append(projectID, eventID, kind, distinctID, occurTime, autoProps); err != nil {
+	if err := batch.Append(chq.PrepareEventInsertArgs(
+		eventID, projectID, distinctID, kind,
+		autoProps, nil,
+		occurTime, uuid.NewString(),
+	)...); err != nil {
 		return err
 	}
 	return batch.Send()

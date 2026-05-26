@@ -8,13 +8,8 @@ Breakdowns are supported for trends, funnel, and retention. Segmentation does no
 
 - `QueryRequest.spec.breakdowns` (on the nested `InsightQuerySpec`) is `repeated Breakdown` — list of property keys to break down by (e.g. `[{property: "$country"}, {property: "$browser"}]`).
 - **Attribution:** first-touch — each user is assigned the breakdown value(s) from their earliest matching event (`argMin(property, occur_time)`). This keeps funnel and retention per-user logic correct by not splitting a user across multiple groups.
-- **Top-N bucketing:** the query builds a `top_vals` CTE and groups values outside the top N into `'$others'` to keep result sets bounded. The event scope of `top_vals` matches the query's aggregation scope:
-  - Trends: `top_vals` covers all events matching any query event kind in the time range.
-  - Funnel (counts and timing): `top_vals` is filtered to step-matching events.
-  - Retention: `top_vals` is filtered to start-event rows only.
-- **Two-phase aggregation pattern:** funnel (counts, timing) and retention breakdown queries avoid evaluating `argMin` twice by splitting into:
-  1. An aggregation CTE that computes `argMin(expr, occur_time) AS raw_bd_N` once.
-  2. A downstream CTE or SELECT that buckets `raw_bd_N` against `top_vals` as a plain scalar expression.
+- **Top-N bucketing:** raw-events queries return all breakdown values from ClickHouse; top-N collapse into `'$others'` happens in Go via `GroupSeries` / `GroupFunnelSeries` / `GroupRetentionSeries` using `QueryRequest.spec.breakdown_limit` (default 10). Tie-breaking on equal totals uses breakdown value ascending so bucketing matches the rollup fast path. The rollup path (`buildTrendsFromRollup`) applies top-N in SQL instead — see [Rollup Fast Path](#rollup-fast-path) below.
+- **Funnel/retention builders** compute breakdown values with first-touch `argMin(property, occur_time)` in a single aggregation pass (no separate top_vals CTE).
 - **Response shape:** funnel and retention responses wrap their results in series objects keyed by breakdown combination:
   - `FunnelResult.series` → `repeated FunnelSeries` with `breakdown map<string,string>` + `steps repeated FunnelStep`
   - `RetentionResult.series` → `repeated RetentionSeries` with `breakdown map<string,string>` + `cohorts repeated RetentionCohort`

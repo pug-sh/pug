@@ -17,7 +17,8 @@ import (
 var profilePropertyNamePattern = regexp.MustCompile(`^\$?[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 
 // PropertyExpr returns the ClickHouse string expression to resolve an event property.
-// It reads auto_properties first and falls back to custom_properties only when
+// Auto-property keys ($prefix) delegate to AutoPropertyProjectionFor; other keys
+// read auto_properties first and fall back to custom_properties only when
 // auto's String representation is genuinely empty (i.e. the auto Variant is an
 // empty String slot, OR auto is fully absent). Non-empty stringifications of
 // typed auto slots (e.g. Int64 0 → '0', Bool false → 'false') BLOCK the
@@ -59,6 +60,9 @@ func PropertyExpr(name string) string {
 }
 
 func propertyExpr(name, alias string) string {
+	if strings.HasPrefix(name, "$") {
+		return AutoPropertyProjectionFor(name, alias).StringSQL
+	}
 	prefix := ""
 	if alias != "" {
 		prefix = alias + "."
@@ -67,10 +71,13 @@ func propertyExpr(name, alias string) string {
 }
 
 // propertyNumericExpr returns a Nullable(Float64) expression for numeric event
-// property operators. It reads Int64/Float64 Variant slots directly and only
-// falls back to string re-parsing for string-typed values, preserving the
-// existing "auto first unless empty" precedence.
+// property operators. Auto-property keys delegate to AutoPropertyProjectionFor;
+// custom keys use Int64/Float64 Variant slots with string re-parsing fallback.
 func propertyNumericExpr(name, alias string) string {
+	if proj := AutoPropertyProjectionFor(name, alias); proj.NumericSQL != "" {
+		return proj.NumericSQL
+	}
+
 	prefix := ""
 	if alias != "" {
 		prefix = alias + "."

@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
@@ -382,8 +383,7 @@ func TestSegmentationExecution_RoutesToRollup(t *testing.T) {
 // the MV and backfill copies diverging from each other. A whole-file substring
 // check cannot catch either, because the two copies share the same tokens.
 func checkMaterializedDimsMatch(sql string, goDims []string, total string) error {
-	// `] AS dim` (whitespace-tolerant) terminates each list — a bare `]` would
-	// stop early on the `auto_properties['$country']` subscripts inside the list.
+	// `] AS dim` (whitespace-tolerant) terminates each list.
 	blockRe := regexp.MustCompile(`(?s)ARRAY JOIN \[(.*?)\]\s+AS\s+dim`)
 	blocks := blockRe.FindAllStringSubmatch(sql, -1)
 	if len(blocks) != 2 {
@@ -444,6 +444,49 @@ func TestMaterializedDimsMatchMigration(t *testing.T) {
 		t.Fatalf("read migration: %v", err)
 	}
 	if err := checkMaterializedDimsMatch(string(data), materializedDims, totalDimName); err != nil {
+		t.Error(err)
+	}
+}
+
+// checkMaterializedDimExprsMatch verifies that both ARRAY JOIN blocks in migration
+// 006 use PropertyExpr-compatible promoted-column expressions for each materialized
+// breakdown dimension (not auto_properties map lookups).
+func checkMaterializedDimExprsMatch(sql string, goDims []string) error {
+	blockRe := regexp.MustCompile(`(?s)ARRAY JOIN \[(.*?)\]\s+AS\s+dim`)
+	blocks := blockRe.FindAllStringSubmatch(sql, -1)
+	if len(blocks) != 2 {
+		return fmt.Errorf("expected 2 ARRAY JOIN blocks (MV + backfill), found %d", len(blocks))
+	}
+	for _, prop := range goDims {
+		expr := chq.AutoPropertyProjectionFor(prop, "").StringSQL
+		if expr == "" || strings.Contains(expr, "auto_properties") {
+			return fmt.Errorf("property %q has no promoted-column SQL projection", prop)
+		}
+		// Allow flexible whitespace in the migration SQL formatting.
+		tupleRe := regexp.MustCompile(
+			fmt.Sprintf(`\(\s*'%s'\s*,\s*%s\s*\)`, regexp.QuoteMeta(prop), regexp.QuoteMeta(expr)),
+		)
+		for i, block := range blocks {
+			if !tupleRe.MatchString(block[1]) {
+				return fmt.Errorf("ARRAY JOIN block %d missing tuple ('%s', %s)", i, prop, expr)
+			}
+		}
+	}
+	if strings.Contains(sql, "auto_properties['$") {
+		return fmt.Errorf("migration still reads promoted keys from auto_properties map")
+	}
+	return nil
+}
+
+// TestMigration006PromotedDimExprsMatch pins migration 006 dim_value expressions to
+// AutoPropertyProjectionFor — the same SQL raw insights queries use via PropertyExpr.
+func TestMigration006PromotedDimExprsMatch(t *testing.T) {
+	const path = "../../../schema/clickhouse/migrations/006_create_dashboard_event_rollup.sql"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	if err := checkMaterializedDimExprsMatch(string(data), materializedDims); err != nil {
 		t.Error(err)
 	}
 }

@@ -20,7 +20,6 @@ import (
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	"github.com/pug-sh/pug/internal/geo"
 	"github.com/pug-sh/pug/internal/slogx"
-	"github.com/pug-sh/pug/internal/useragent"
 )
 
 var unrecognisedVariantSlotCounter metric.Int64Counter
@@ -52,15 +51,19 @@ type Event struct {
 
 // eventColumns is the SELECT column list for the events table.
 // Order must match scanEvent.
-const eventColumns = `auto_properties, custom_properties, distinct_id, event_id, insert_time, kind, occur_time, project_id, session_id`
+const eventColumns = `auto_properties, custom_properties, ` + chq.EventsInsertPromotedColumns + `, distinct_id, event_id, insert_time, kind, occur_time, project_id, session_id`
 
 func scanEvent(ctx context.Context, rows driver.Rows) (Event, error) {
 	var e Event
 	var rawAuto map[string]chcol.Variant
 	var rawCustom map[string]chcol.Variant
-	if err := rows.Scan(
+	var promoted chq.PromotedAutoRow
+	dest := []any{
 		&rawAuto,
 		&rawCustom,
+	}
+	dest = append(dest, promoted.ScanDest()...)
+	dest = append(dest,
 		&e.DistinctID,
 		&e.EventID,
 		&e.InsertTime,
@@ -68,10 +71,11 @@ func scanEvent(ctx context.Context, rows driver.Rows) (Event, error) {
 		&e.OccurTime,
 		&e.ProjectID,
 		&e.SessionID,
-	); err != nil {
+	)
+	if err := rows.Scan(dest...); err != nil {
 		return Event{}, err
 	}
-	e.AutoProperties = unwrapPropertyMap(ctx, rawAuto)
+	e.AutoProperties = promoted.MergeIntoAutoProperties(unwrapPropertyMap(ctx, rawAuto))
 	e.CustomProperties = unwrapCustomProperties(ctx, rawCustom)
 	return e, nil
 }
@@ -838,6 +842,13 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 			"min(occur_time) AS first_seen",
 			"max(occur_time) AS last_seen",
 			"count() AS total_events",
+			"argMax(browser, occur_time) AS latest_browser",
+			"argMax(browser_version, occur_time) AS latest_browser_version",
+			"argMax(os, occur_time) AS latest_os",
+			"argMax(os_version, occur_time) AS latest_os_version",
+			"argMax(device, occur_time) AS latest_device",
+			"argMax(country, occur_time) AS latest_country",
+			"argMax(city, occur_time) AS latest_city",
 			"argMax(auto_properties, occur_time) AS latest_props",
 		).
 		From("events").
@@ -885,8 +896,21 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 
 	var stats ProfileStats
 	var totalEvents uint64
+	var latestBrowser, latestBrowserVersion, latestOS, latestOSVersion, latestDevice, latestCountry, latestCity string
 	var rawLatestProps map[string]chcol.Variant
-	if err := rows.Scan(&stats.FirstSeen, &stats.LastSeen, &totalEvents, &rawLatestProps); err != nil {
+	if err := rows.Scan(
+		&stats.FirstSeen,
+		&stats.LastSeen,
+		&totalEvents,
+		&latestBrowser,
+		&latestBrowserVersion,
+		&latestOS,
+		&latestOSVersion,
+		&latestDevice,
+		&latestCountry,
+		&latestCity,
+		&rawLatestProps,
+	); err != nil {
 		slog.ErrorContext(ctx, "queryProfileStats: scan failed", slogx.Error(err),
 			slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
@@ -906,13 +930,13 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 
 	latestProps := unwrapPropertyMap(ctx, rawLatestProps)
 
-	stats.Browser = stringProp(latestProps, useragent.PropBrowser)
-	stats.BrowserVersion = stringProp(latestProps, useragent.PropBrowserVersion)
-	stats.OS = stringProp(latestProps, useragent.PropOS)
-	stats.OSVersion = stringProp(latestProps, useragent.PropOSVersion)
-	stats.Device = stringProp(latestProps, useragent.PropDevice)
-	stats.Country = stringProp(latestProps, geo.PropCountry)
-	stats.City = stringProp(latestProps, geo.PropCity)
+	stats.Browser = latestBrowser
+	stats.BrowserVersion = latestBrowserVersion
+	stats.OS = latestOS
+	stats.OSVersion = latestOSVersion
+	stats.Device = latestDevice
+	stats.Country = latestCountry
+	stats.City = latestCity
 	stats.IP = stringProp(latestProps, geo.PropIP)
 
 	return &stats, nil

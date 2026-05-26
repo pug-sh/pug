@@ -21,7 +21,7 @@ const totalDimName = "$__total__"
 // materializedDims are the auto-property breakdown dimensions backed by the
 // rollup. This MUST stay in sync with the ARRAY JOIN list in migration
 // 006_create_dashboard_event_rollup.sql — TestMaterializedDimsMatchMigration
-// enforces it.
+// checks dim names; TestMigration006PromotedDimExprsMatch checks value expressions.
 var materializedDims = []string{
 	"$country", "$region", "$city",
 	"$os", "$browser", "$device", "$platform",
@@ -152,7 +152,7 @@ func rollupWindowAligned(tr *commonv1.TimeRange, now time.Time) bool {
 	return !to.Before(now)
 }
 
-// rollupBreakdownLimit mirrors buildTopValsCTE's default of top-10.
+// rollupBreakdownLimit mirrors the default top-N of 10 used by effectiveBreakdownLimit.
 func rollupBreakdownLimit(limit int32) int64 {
 	if limit == 0 {
 		return 10
@@ -160,9 +160,10 @@ func rollupBreakdownLimit(limit int32) int64 {
 	return int64(limit)
 }
 
-// buildTrendsFromRollup builds a trends query against the dimensional rollup,
-// mirroring buildTrends' top_vals / $others structure. Caller must have checked
-// canUseEventRollup. Returns the same TrendsQuery type as the raw path.
+// buildTrendsFromRollup builds a trends query against the dimensional rollup.
+// Breakdown top-N bucketing happens in SQL (top_vals CTE + $others); the returned
+// TrendsQuery carries breakdownLimit=0 so GroupSeries does not re-bucket.
+// Caller must have checked canUseEventRollup.
 func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
 	granFn, err := granularityFunc(req.GetGranularity())
 	if err != nil {
@@ -200,8 +201,8 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 				chq.Or(kindConds...),
 			).
 			GroupBy("dim_value").
-			// Tie-break on dim_value so the top-N matches the raw buildTopValsCTE
-			// (count DESC, value ASC) and $others bucketing is deterministic.
+			// Tie-break on dim_value so the top-N matches the raw Group*Series
+			// top-N (total DESC, breakdown value ASC) and $others is deterministic.
 			OrderBy("sum(cnt) DESC", "dim_value ASC").
 			Limit(rollupBreakdownLimit(spec.GetBreakdownLimit()))
 	}

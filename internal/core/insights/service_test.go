@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/core/insights"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -268,7 +269,7 @@ func TestGroupSeriesBoundsCheck(t *testing.T) {
 	rows := []insights.TrendRow{
 		{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EventKind: "pv", Breakdowns: []string{}, Value: 10},
 	}
-	if _, err := insights.GroupSeries(t.Context(), rows, []string{"$country"}); err == nil {
+	if _, err := insights.GroupSeries(t.Context(), rows, []string{"$country"}, 0); err == nil {
 		t.Error("expected error for mismatched breakdowns/properties")
 	}
 }
@@ -350,14 +351,17 @@ func seedServiceEvents(t *testing.T, ctx context.Context, ch *testutil.TestClick
 	// Use PrepareBatch (binary native protocol) for Map(String, Variant(...))
 	// to ensure the typed Variant branches land correctly. Exec (HTTP) does
 	// not reliably carry Variant type discriminators for map values.
-	batch, err := ch.Conn.PrepareBatch(ctx,
-		"INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties, custom_properties)")
+	batch, err := ch.Conn.PrepareBatch(ctx, chq.EventsInsertStmt)
 	if err != nil {
 		t.Fatalf("prepare batch: %v", err)
 	}
 
 	for _, e := range events {
-		if err := batch.Append(projectID, uuid.New().String(), e.kind, e.user, now, e.auto, e.custom); err != nil {
+		promoted, restAuto := chq.SplitPromotedAutoVariantMap(e.auto)
+		args := []any{uuid.New().String(), projectID, e.user, e.kind, restAuto, e.custom}
+		args = append(args, promoted.AppendArgs()...)
+		args = append(args, now, uuid.New().String())
+		if err := batch.Append(args...); err != nil {
 			t.Fatalf("append event: %v", err)
 		}
 	}

@@ -37,16 +37,11 @@ func TestProfilesList_AggregatesAcrossIdentifierKinds(t *testing.T) {
 	// One event per distinct_id kind: canonical id, external_id, alias_id. The
 	// activity summary should aggregate all three into the profile's row.
 	for _, distinctID := range []string{"user-1", "ext-1", "anon-1"} {
-		if err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), projectID, distinctID, "page_view",
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, distinctID, "page_view", uuid.NewString(),
 			map[string]string{},
 			map[string]string{},
 			now,
-			uuid.NewString(),
-		); err != nil {
-			t.Fatalf("seed event for distinct_id %q: %v", distinctID, err)
-		}
+		)
 	}
 
 	service := profiles.NewService(nil, ch.Conn, nil)
@@ -95,17 +90,12 @@ func TestProfilesList_NoDoubleCountWhenIDEqualsExternalID(t *testing.T) {
 		t.Fatalf("seed profile: %v", err)
 	}
 
-	for i := range 2 {
-		if err := ch.Conn.Exec(ctx,
-			`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), projectID, id, "page_view",
+	for range 2 {
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, id, "page_view", uuid.NewString(),
 			map[string]string{},
 			map[string]string{},
 			now,
-			uuid.NewString(),
-		); err != nil {
-			t.Fatalf("seed event %d: %v", i, err)
-		}
+		)
 	}
 
 	service := profiles.NewService(nil, ch.Conn, nil)
@@ -166,16 +156,11 @@ func TestProfilesList_DocumentedInflationWhenExternalIDEqualsAliasID(t *testing.
 	// branch and alias branch both emit (project, profile, "shared-id"),
 	// joining the same states row twice.
 	sessionID := uuid.NewString()
-	if err := ch.Conn.Exec(ctx,
-		`INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), projectID, "shared-id", "page_view",
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "shared-id", "page_view", sessionID,
 		map[string]string{"$browser": "Chrome", "$country": "US"},
 		map[string]string{},
 		now,
-		sessionID,
-	); err != nil {
-		t.Fatalf("seed event: %v", err)
-	}
+	)
 
 	service := profiles.NewService(nil, ch.Conn, nil)
 	got, err := service.List(ctx, profiles.ListParams{

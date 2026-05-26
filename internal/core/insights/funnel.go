@@ -193,6 +193,36 @@ func ComputeFunnelTiming(ctx context.Context, projectID string, users []FunnelUs
 	return rows, nil
 }
 
+// MergeFunnelCountsAndTiming combines step counts from a windowFunnel query with
+// timing statistics from ComputeFunnelTiming. Counts (Value) come from countRows
+// (accurate, from all users). Timing comes from timingRows (computed from the
+// pre-filtered set of users who actually progressed).
+//
+// Matching is by (step_index, breakdown_key). Count rows without timing keep nil Timing.
+// Timing rows without a corresponding count row are dropped (shouldn't happen in practice).
+func MergeFunnelCountsAndTiming(countRows, timingRows []FunnelRow) []FunnelRow {
+	type key struct {
+		stepIndex int64
+		breakdown string
+	}
+	timingByKey := make(map[key]*StepTiming, len(timingRows))
+	for i := range timingRows {
+		r := &timingRows[i]
+		if r.Timing != nil {
+			timingByKey[key{r.StepIndex, breakdownKey(r.Breakdowns)}] = r.Timing
+		}
+	}
+
+	merged := make([]FunnelRow, len(countRows))
+	for i, cr := range countRows {
+		merged[i] = cr
+		if t, ok := timingByKey[key{cr.StepIndex, breakdownKey(cr.Breakdowns)}]; ok {
+			merged[i].Timing = t
+		}
+	}
+	return merged
+}
+
 // EffectiveWindowSec returns the conversion window in seconds for funnel queries.
 // If the request specifies a positive Duration, it is used directly.
 // Otherwise (absent, zero, or negative), defaults to the full time range duration.
