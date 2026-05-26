@@ -75,6 +75,8 @@ func promotedAutoStringSQL(col PromotedAutoColumn, alias string) string {
 		return fmt.Sprintf("coalesce(%s%s, '')", prefix, col.Column)
 	case PromotedBool:
 		return fmt.Sprintf("if(%s%s, 'true', 'false')", prefix, col.Column)
+	case PromotedNullableBool:
+		return fmt.Sprintf("if(%s%s IS NOT NULL, if(%s%s, 'true', 'false'), '')", prefix, col.Column, prefix, col.Column)
 	case PromotedNullableUInt8:
 		return fmt.Sprintf("if(%s%s IS NOT NULL, toString(%s%s), '')", prefix, col.Column, prefix, col.Column)
 	default:
@@ -126,6 +128,11 @@ func promotedAutoDistinctValues(col PromotedAutoColumn) AutoPropertyDistinctValu
 		return AutoPropertyDistinctValues{
 			SelectExpr:     fmt.Sprintf("if(%s, 'true', 'false') AS value", col.Column),
 			NotEmptyClause: "1",
+		}
+	case PromotedNullableBool:
+		return AutoPropertyDistinctValues{
+			SelectExpr:     fmt.Sprintf("if(%s, 'true', 'false') AS value", col.Column),
+			NotEmptyClause: fmt.Sprintf("%s IS NOT NULL", col.Column),
 		}
 	case PromotedNullableUInt8:
 		return AutoPropertyDistinctValues{

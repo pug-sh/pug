@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS events (
     auto_properties   Map(String, Variant(String, Int64, Float64, Bool, DateTime64(3))),
     custom_properties Map(String, Variant(String, Int64, Float64, Bool, DateTime64(3))),
     bot_score         Nullable(UInt8),
-    verified_bot      Bool DEFAULT false,
+    verified_bot      Nullable(Bool),
     mobile            Bool DEFAULT false,
     country           LowCardinality(String) DEFAULT '',
     region            LowCardinality(String) DEFAULT '',

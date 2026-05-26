@@ -42,7 +42,7 @@ func TestPromotedAutoRowMergeSkipsZeroBools(t *testing.T) {
 	}
 	m := row.MergeIntoAutoProperties(nil)
 	if _, ok := m["$verified_bot"]; ok {
-		t.Fatalf("expected $verified_bot absent for zero-valued bool, got %#v", m)
+		t.Fatalf("expected $verified_bot absent for nil pointer, got %#v", m)
 	}
 	if _, ok := m["$mobile"]; ok {
 		t.Fatalf("expected $mobile absent for zero-valued bool, got %#v", m)
@@ -50,4 +50,23 @@ func TestPromotedAutoRowMergeSkipsZeroBools(t *testing.T) {
 	if m["$country"] != "US" {
 		t.Fatalf("expected $country=US, got %#v", m)
 	}
+}
+
+func TestPromotedAutoRowMergeEmitsKnownVerifiedBot(t *testing.T) {
+	t.Run("known false", func(t *testing.T) {
+		f := false
+		row := clickhouse.PromotedAutoRow{VerifiedBot: &f}
+		m := row.MergeIntoAutoProperties(nil)
+		if m["$verified_bot"] != "false" {
+			t.Fatalf("expected $verified_bot=\"false\", got %#v", m["$verified_bot"])
+		}
+	})
+	t.Run("known true", func(t *testing.T) {
+		tr := true
+		row := clickhouse.PromotedAutoRow{VerifiedBot: &tr}
+		m := row.MergeIntoAutoProperties(nil)
+		if m["$verified_bot"] != "true" {
+			t.Fatalf("expected $verified_bot=\"true\", got %#v", m["$verified_bot"])
+		}
+	})
 }

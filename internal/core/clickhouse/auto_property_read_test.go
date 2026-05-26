@@ -77,7 +77,7 @@ func TestAutoPropertyDistinctValuesForPromotedString(t *testing.T) {
 	}
 }
 
-func TestAutoPropertyDistinctValuesForPromotedBool(t *testing.T) {
+func TestAutoPropertyDistinctValuesForPromotedNullableBool(t *testing.T) {
 	dv, ok := clickhouse.AutoPropertyDistinctValuesFor("$verified_bot")
 	if !ok {
 		t.Fatal("expected ok")
@@ -85,8 +85,8 @@ func TestAutoPropertyDistinctValuesForPromotedBool(t *testing.T) {
 	if dv.SelectExpr != "if(verified_bot, 'true', 'false') AS value" {
 		t.Fatalf("SelectExpr = %q", dv.SelectExpr)
 	}
-	if dv.NotEmptyClause != "1" {
-		t.Fatalf("NotEmptyClause = %q, want literal 1 for bool", dv.NotEmptyClause)
+	if dv.NotEmptyClause != "verified_bot IS NOT NULL" {
+		t.Fatalf("NotEmptyClause = %q, want IS NOT NULL guard for nullable bool", dv.NotEmptyClause)
 	}
 }
 

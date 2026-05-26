@@ -18,6 +18,7 @@ type PromotedAutoColumnKind int
 const (
 	PromotedString PromotedAutoColumnKind = iota
 	PromotedBool
+	PromotedNullableBool
 	PromotedNullableUInt8
 )
 
@@ -34,7 +35,7 @@ type PromotedAutoColumn struct {
 // schema/clickhouse/migrations/001_create_events_table.sql.
 var promotedAutoColumns = []PromotedAutoColumn{
 	{Property: autoprop.PropBotScore, Column: "bot_score", Kind: PromotedNullableUInt8},
-	{Property: autoprop.PropVerifiedBot, Column: "verified_bot", Kind: PromotedBool},
+	{Property: autoprop.PropVerifiedBot, Column: "verified_bot", Kind: PromotedNullableBool},
 	{Property: autoprop.PropMobile, Column: "mobile", Kind: PromotedBool},
 	{Property: geo.PropCountry, Column: "country", Kind: PromotedString},
 	{Property: geo.PropRegion, Column: "region", Kind: PromotedString},
@@ -77,7 +78,7 @@ const EventsInsertStmt = `INSERT INTO events (` + EventsInsertColumns + `)`
 // NULL bot_score).
 type PromotedAutoRow struct {
 	BotScore       *uint8
-	VerifiedBot    bool
+	VerifiedBot    *bool
 	Mobile         bool
 	Country        string
 	Region         string
@@ -140,8 +141,9 @@ func (r *PromotedAutoRow) ScanDest() []any {
 
 // MergeIntoAutoProperties overlays promoted column values onto m using the
 // canonical auto-property keys. Existing map entries win when non-empty.
-// Zero-valued bools (false) and nil bot_score are skipped to match the
-// pre-promotion behavior where absent map keys did not appear.
+// Nil nullable fields (BotScore, VerifiedBot) and zero-valued non-nullable
+// bools (Mobile=false) are skipped to match the pre-promotion behavior where
+// absent map keys did not appear.
 func (r PromotedAutoRow) MergeIntoAutoProperties(m map[string]any) map[string]any {
 	if m == nil {
 		m = make(map[string]any, len(promotedAutoColumns))
@@ -156,8 +158,8 @@ func (r PromotedAutoRow) MergeIntoAutoProperties(m map[string]any) map[string]an
 		m[key] = val
 	}
 	setString(autoprop.PropBotScore, botScoreString(r.BotScore))
-	if r.VerifiedBot {
-		setString(autoprop.PropVerifiedBot, "true")
+	if r.VerifiedBot != nil {
+		setString(autoprop.PropVerifiedBot, boolString(*r.VerifiedBot))
 	}
 	if r.Mobile {
 		setString(autoprop.PropMobile, "true")
@@ -233,6 +235,12 @@ func applyPromotedPropertyValue(row *PromotedAutoRow, col PromotedAutoColumn, pv
 			return false
 		}
 		setPromotedBool(row, col.Property, b)
+	case PromotedNullableBool:
+		b, ok := boolFromPropertyValue(pv)
+		if !ok {
+			return false
+		}
+		setPromotedNullableBool(row, col.Property, b)
 	case PromotedNullableUInt8:
 		n, ok := intFromPropertyValue(pv)
 		if !ok || n < 0 || n > 255 {
@@ -276,11 +284,14 @@ func setPromotedString(row *PromotedAutoRow, property, value string) {
 }
 
 func setPromotedBool(row *PromotedAutoRow, property string, value bool) {
-	switch property {
-	case autoprop.PropVerifiedBot:
-		row.VerifiedBot = value
-	case autoprop.PropMobile:
+	if property == autoprop.PropMobile {
 		row.Mobile = value
+	}
+}
+
+func setPromotedNullableBool(row *PromotedAutoRow, property string, value bool) {
+	if property == autoprop.PropVerifiedBot {
+		row.VerifiedBot = &value
 	}
 }
 
@@ -317,18 +328,17 @@ func applyPromotedAnyValue(row *PromotedAutoRow, col PromotedAutoColumn, v any) 
 		}
 		setPromotedString(row, col.Property, s)
 	case PromotedBool:
-		switch x := v.(type) {
-		case bool:
-			setPromotedBool(row, col.Property, x)
-		case string:
-			b, err := parseBoolString(x)
-			if err != nil {
-				return false
-			}
-			setPromotedBool(row, col.Property, b)
-		default:
+		b, ok := anyToBool(v)
+		if !ok {
 			return false
 		}
+		setPromotedBool(row, col.Property, b)
+	case PromotedNullableBool:
+		b, ok := anyToBool(v)
+		if !ok {
+			return false
+		}
+		setPromotedNullableBool(row, col.Property, b)
 	case PromotedNullableUInt8:
 		n, ok := anyToInt64(v)
 		if !ok || n < 0 || n > 255 {
@@ -378,6 +388,12 @@ func applyPromotedVariantValue(row *PromotedAutoRow, col PromotedAutoColumn, v c
 			return false
 		}
 		setPromotedBool(row, col.Property, b)
+	case PromotedNullableBool:
+		b, ok := v.Any().(bool)
+		if !ok {
+			return false
+		}
+		setPromotedNullableBool(row, col.Property, b)
 	case PromotedNullableUInt8:
 		n, ok := v.Any().(int64)
 		if !ok || n < 0 || n > 255 {
@@ -437,6 +453,18 @@ func anyToString(v any) (string, bool) {
 		return x.String(), true
 	default:
 		return "", false
+	}
+}
+
+func anyToBool(v any) (bool, bool) {
+	switch x := v.(type) {
+	case bool:
+		return x, true
+	case string:
+		b, err := parseBoolString(x)
+		return b, err == nil
+	default:
+		return false, false
 	}
 }
 
