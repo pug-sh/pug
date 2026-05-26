@@ -517,7 +517,8 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("funnel_timing", func(t *testing.T) {
-		// Uses same seed data from funnel_counts.
+		seedFunnelEvents(t, ctx, ch)
+
 		req := &insightsv1.QueryRequest{
 			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
 			IncludeStepTiming: proto.Bool(true),
@@ -532,20 +533,31 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		q, err := insights.BuildFunnelTimingQuery(req, testProjectID)
+		countsQ, err := insights.BuildFunnelCountsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelCountsQuery: %v", err)
+		}
+		countRows, err := executor.QueryFunnel(ctx, testProjectID, countsQ)
+		if err != nil {
+			t.Fatalf("QueryFunnel: %v", err)
+		}
+
+		timingQ, err := insights.BuildFunnelTimingQuery(req, testProjectID)
 		if err != nil {
 			t.Fatalf("BuildFunnelTimingQuery: %v", err)
 		}
 
-		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, q)
+		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, timingQ)
 		if err != nil {
 			t.Fatalf("QueryFunnelUserEvents: %v", err)
 		}
 
-		rows, err := insights.ComputeFunnelTiming(ctx, "", users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
+		timingRows, err := insights.ComputeFunnelTiming(ctx, "", users, timingQ.Kinds(), timingQ.WindowSec(), timingQ.NumBreakdowns())
 		if err != nil {
 			t.Fatalf("ComputeFunnelTiming: %v", err)
 		}
+
+		rows := insights.MergeFunnelCountsAndTiming(countRows, timingRows)
 
 		if len(rows) != 3 {
 			t.Fatalf("expected 3 funnel steps, got %d", len(rows))
@@ -781,7 +793,8 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("funnel_timing_with_breakdown", func(t *testing.T) {
-		// Uses same seed data from funnel_counts_with_breakdown.
+		seedFunnelEventsWithCountry(t, ctx, ch)
+
 		req := &insightsv1.QueryRequest{
 			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
 			IncludeStepTiming: proto.Bool(true),
@@ -797,22 +810,33 @@ func TestIntegration(t *testing.T) {
 			BreakdownLimit: proto.Int32(10),
 		}
 
-		q, err := insights.BuildFunnelTimingQuery(req, testProjectID)
+		countsQ, err := insights.BuildFunnelCountsQuery(req, testProjectID)
+		if err != nil {
+			t.Fatalf("BuildFunnelCountsQuery: %v", err)
+		}
+		countRows, err := executor.QueryFunnel(ctx, testProjectID, countsQ)
+		if err != nil {
+			t.Fatalf("QueryFunnel: %v", err)
+		}
+
+		timingQ, err := insights.BuildFunnelTimingQuery(req, testProjectID)
 		if err != nil {
 			t.Fatalf("BuildFunnelTimingQuery: %v", err)
 		}
 
-		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, q)
+		users, err := executor.QueryFunnelUserEvents(ctx, testProjectID, timingQ)
 		if err != nil {
 			t.Fatalf("QueryFunnelUserEvents: %v", err)
 		}
 
-		funnelRows, err := insights.ComputeFunnelTiming(ctx, "", users, q.Kinds(), q.WindowSec(), q.NumBreakdowns())
+		timingRows, err := insights.ComputeFunnelTiming(ctx, "", users, timingQ.Kinds(), timingQ.WindowSec(), timingQ.NumBreakdowns())
 		if err != nil {
 			t.Fatalf("ComputeFunnelTiming: %v", err)
 		}
 
-		series, err := insights.GroupFunnelSeries(ctx, funnelRows, q.Properties(), q.BreakdownLimit())
+		funnelRows := insights.MergeFunnelCountsAndTiming(countRows, timingRows)
+
+		series, err := insights.GroupFunnelSeries(ctx, funnelRows, countsQ.Properties(), countsQ.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupFunnelSeries: %v", err)
 		}
