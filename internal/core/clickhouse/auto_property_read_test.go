@@ -43,6 +43,53 @@ func TestAutoPropertyProjectionForPromotedNullableUInt8(t *testing.T) {
 	}
 }
 
+func TestAutoPropertyProjectionForPromotedNullableBool(t *testing.T) {
+	proj := clickhouse.AutoPropertyProjectionFor("$verified_bot", "")
+	want := "if(verified_bot IS NOT NULL, if(verified_bot, 'true', 'false'), '')"
+	if proj.StringSQL != want {
+		t.Fatalf("StringSQL = %q, want %q", proj.StringSQL, want)
+	}
+	if proj.NumericSQL != "" {
+		t.Fatalf("NumericSQL = %q, want empty", proj.NumericSQL)
+	}
+
+	aliased := clickhouse.AutoPropertyProjectionFor("$verified_bot", "e")
+	wantAliased := "if(e.verified_bot IS NOT NULL, if(e.verified_bot, 'true', 'false'), '')"
+	if aliased.StringSQL != wantAliased {
+		t.Fatalf("aliased StringSQL = %q, want %q", aliased.StringSQL, wantAliased)
+	}
+}
+
+// TestPromotedAutoKindExhaustiveness asserts every PromotedAutoColumnKind has
+// a non-default branch in promotedAutoStringSQL and promotedAutoDistinctValues.
+// One representative auto-property per kind; add a new entry when
+// promotedAutoColumns gains a new Kind value, otherwise the default arm in the
+// switches would silently return empty SQL.
+func TestPromotedAutoKindExhaustiveness(t *testing.T) {
+	representatives := []string{
+		"$country",      // PromotedString
+		"$mobile",       // PromotedBool
+		"$verified_bot", // PromotedNullableBool
+		"$bot_score",    // PromotedNullableUInt8
+	}
+	for _, key := range representatives {
+		t.Run(key, func(t *testing.T) {
+			proj := clickhouse.AutoPropertyProjectionFor(key, "")
+			if proj.StringSQL == "" {
+				t.Errorf("AutoPropertyProjectionFor(%q).StringSQL empty — missing kind branch in promotedAutoStringSQL", key)
+			}
+			dv, ok := clickhouse.AutoPropertyDistinctValuesFor(key)
+			if !ok {
+				t.Errorf("AutoPropertyDistinctValuesFor(%q): ok=false", key)
+				return
+			}
+			if dv.SelectExpr == "" {
+				t.Errorf("AutoPropertyDistinctValuesFor(%q).SelectExpr empty — missing kind branch in promotedAutoDistinctValues", key)
+			}
+		})
+	}
+}
+
 func TestAutoPropertyProjectionForMapFallback(t *testing.T) {
 	proj := clickhouse.AutoPropertyProjectionFor("$ip", "")
 	wantString := "coalesce(nullIf(CAST(auto_properties['$ip'] AS Nullable(String)), ''), '')"

@@ -74,10 +74,14 @@ const EventsInsertColumns = `event_id, project_id, distinct_id, kind, auto_prope
 const EventsInsertStmt = `INSERT INTO events (` + EventsInsertColumns + `)`
 
 // PromotedAutoRow holds the typed values for promoted auto-property columns on
-// one events row. Zero values match ClickHouse DEFAULTs (empty string / false /
-// NULL bot_score).
+// one events row. Zero values match ClickHouse DEFAULTs (empty strings; false
+// for Mobile; nil for BotScore and VerifiedBot).
 type PromotedAutoRow struct {
-	BotScore       *uint8
+	BotScore *uint8
+	// VerifiedBot uses *bool because the CF-Verified-Bot header is opt-in:
+	// nil distinguishes "header absent" from "Cloudflare said not-verified".
+	// Mobile is plain bool because absence and false collapse to the same
+	// meaning ("not mobile") by convention.
 	VerifiedBot    *bool
 	Mobile         bool
 	Country        string
