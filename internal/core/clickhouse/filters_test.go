@@ -11,7 +11,7 @@ import (
 
 func TestPropertyExpr(t *testing.T) {
 	got := clickhouse.PropertyExpr("$country")
-	want := "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '')"
+	want := "coalesce(country, '')"
 	if got != want {
 		t.Errorf("PropertyExpr($country) = %q, want %q", got, want)
 	}
@@ -128,7 +128,7 @@ func TestPropertyCondition_Equals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '') = ?"
+	want := "coalesce(country, '') = ?"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -214,7 +214,7 @@ func TestPropertyCondition_In(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '') IN (?, ?, ?)"
+	want := "coalesce(country, '') IN (?, ?, ?)"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -343,7 +343,7 @@ func TestPropertyCondition_NotIn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "coalesce(nullIf(CAST(auto_properties['$country'] AS Nullable(String)), ''), CAST(custom_properties['$country'] AS Nullable(String)), '') NOT IN (?, ?)"
+	want := "coalesce(country, '') NOT IN (?, ?)"
 	if cond.SQL() != want {
 		t.Errorf("unexpected SQL: %s", cond.SQL())
 	}
@@ -629,8 +629,8 @@ func TestPropertyConditionAliased(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(cond.SQL(), "e.auto_properties[") {
-		t.Errorf("expected aliased property, got: %s", cond.SQL())
+	if !strings.Contains(cond.SQL(), "e.country") {
+		t.Errorf("expected aliased promoted column, got: %s", cond.SQL())
 	}
 	if len(cond.Args()) != 1 || cond.Args()[0] != "US" {
 		t.Errorf("unexpected args: %v", cond.Args())
@@ -724,11 +724,8 @@ func TestEventConditionAliased(t *testing.T) {
 	if !strings.Contains(sql, "e.kind = ?") {
 		t.Errorf("expected aliased kind 'e.kind = ?', got: %s", sql)
 	}
-	if !strings.Contains(sql, "e.auto_properties[") {
-		t.Errorf("expected aliased auto_properties 'e.auto_properties[', got: %s", sql)
-	}
-	if !strings.Contains(sql, "e.custom_properties[") {
-		t.Errorf("expected aliased custom_properties 'e.custom_properties[', got: %s", sql)
+	if !strings.Contains(sql, "e.country") {
+		t.Errorf("expected aliased promoted column 'e.country', got: %s", sql)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/pug-sh/pug/internal/core/insights"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -131,7 +132,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -314,7 +315,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -360,7 +361,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryTrends: %v", err)
 		}
 
-		series, err := insights.GroupSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupSeries: %v", err)
 		}
@@ -613,7 +614,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		series, err := insights.GroupRetentionSeries(ctx, rows, nil)
+		series, err := insights.GroupRetentionSeries(ctx, rows, nil, 0)
 		if err != nil {
 			t.Fatalf("GroupRetentionSeries: %v", err)
 		}
@@ -663,7 +664,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryFunnel: %v", err)
 		}
 
-		series, err := insights.GroupFunnelSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupFunnelSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupFunnelSeries: %v", err)
 		}
@@ -710,7 +711,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		series, err := insights.GroupRetentionSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupRetentionSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupRetentionSeries: %v", err)
 		}
@@ -753,7 +754,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryFunnel: %v", err)
 		}
 
-		series, err := insights.GroupFunnelSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupFunnelSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupFunnelSeries: %v", err)
 		}
@@ -811,7 +812,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("ComputeFunnelTiming: %v", err)
 		}
 
-		series, err := insights.GroupFunnelSeries(ctx, funnelRows, q.Properties())
+		series, err := insights.GroupFunnelSeries(ctx, funnelRows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupFunnelSeries: %v", err)
 		}
@@ -870,7 +871,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("QueryRetention: %v", err)
 		}
 
-		series, err := insights.GroupRetentionSeries(ctx, rows, q.Properties())
+		series, err := insights.GroupRetentionSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			t.Fatalf("GroupRetentionSeries: %v", err)
 		}
@@ -1264,12 +1265,15 @@ func insertAutoEvent(
 	occurTime time.Time,
 	autoProps map[string]chcol.Variant,
 ) error {
-	batch, err := conn.PrepareBatch(ctx,
-		"INSERT INTO events (project_id, event_id, kind, distinct_id, occur_time, auto_properties)")
+	batch, err := conn.PrepareBatch(ctx, chq.EventsInsertStmt)
 	if err != nil {
 		return err
 	}
-	if err := batch.Append(projectID, eventID, kind, distinctID, occurTime, autoProps); err != nil {
+	if err := batch.Append(chq.PrepareEventInsertArgs(
+		eventID, projectID, distinctID, kind,
+		autoProps, nil,
+		occurTime, uuid.NewString(),
+	)...); err != nil {
 		return err
 	}
 	return batch.Send()

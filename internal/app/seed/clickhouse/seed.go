@@ -13,6 +13,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/google/uuid"
 	"github.com/pug-sh/pug/internal/autoprop"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
@@ -127,8 +128,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 }
 
 func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]event, size int, start, end time.Time, tracker *userSessionTracker) (int, error) {
-	batch, err := s.deps.ch.PrepareBatch(ctx,
-		"INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id)")
+	batch, err := s.deps.ch.PrepareBatch(ctx, chq.EventsInsertStmt)
 	if err != nil {
 		return 0, err
 	}
@@ -139,16 +139,18 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]eve
 			if inserted >= size {
 				break
 			}
-			if err := batch.Append(
+			promoted, restAuto := chq.SplitPromotedAutoAnyProperties(e.autoProperties)
+			args := []any{
 				e.eventID,
 				projectID,
 				e.distinctID,
 				e.kind,
-				autoAnyMapToVariantMap(ctx, projectID, e.autoProperties),
+				autoAnyMapToVariantMap(ctx, projectID, restAuto),
 				autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
-				e.occurTime,
-				e.sessionID,
-			); err != nil {
+			}
+			args = append(args, promoted.AppendArgs()...)
+			args = append(args, e.occurTime, e.sessionID)
+			if err := batch.Append(args...); err != nil {
 				return 0, err
 			}
 			inserted++
@@ -270,8 +272,7 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 		default:
 		}
 
-		batch, err := s.deps.ch.PrepareBatch(ctx,
-			"INSERT INTO events (event_id, project_id, distinct_id, kind, auto_properties, custom_properties, occur_time, session_id)")
+		batch, err := s.deps.ch.PrepareBatch(ctx, chq.EventsInsertStmt)
 		if err != nil {
 			return err
 		}
@@ -289,16 +290,18 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 				return fmt.Errorf("read record: %w", err)
 			}
 
-			if err := batch.Append(
+			promoted, restAuto := chq.SplitPromotedAutoAnyProperties(e.autoProperties)
+			args := []any{
 				e.eventID,
 				projectID,
 				e.distinctID,
 				e.kind,
-				autoAnyMapToVariantMap(ctx, projectID, e.autoProperties),
+				autoAnyMapToVariantMap(ctx, projectID, restAuto),
 				autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
-				e.occurTime,
-				uuid.NewString(),
-			); err != nil {
+			}
+			args = append(args, promoted.AppendArgs()...)
+			args = append(args, e.occurTime, uuid.NewString())
+			if err := batch.Append(args...); err != nil {
 				return err
 			}
 			inserted++

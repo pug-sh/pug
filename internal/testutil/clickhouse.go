@@ -8,11 +8,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/pressly/goose/v3"
 	tcclickhouse "github.com/testcontainers/testcontainers-go/modules/clickhouse"
 
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	chdep "github.com/pug-sh/pug/internal/deps/clickhouse"
 )
 
@@ -121,4 +125,61 @@ func migrateClickHouse(ctx context.Context, connStr string) error {
 
 	_, err = provider.Up(ctx)
 	return err
+}
+
+// InsertEvent inserts one row into the ClickHouse events table, routing
+// promoted auto-properties to dedicated columns and storing the remainder in
+// auto_properties.
+func InsertEvent(
+	ctx context.Context,
+	t *testing.T,
+	conn driver.Conn,
+	eventID, projectID, distinctID, kind, sessionID string,
+	auto, custom map[string]string,
+	occurTime time.Time,
+) {
+	t.Helper()
+
+	autoAny := make(map[string]any, len(auto))
+	for k, v := range auto {
+		autoAny[k] = v
+	}
+	customAny := make(map[string]any, len(custom))
+	for k, v := range custom {
+		customAny[k] = v
+	}
+
+	promoted, restAuto := chq.SplitPromotedAutoAnyProperties(autoAny)
+	autoVariants := stringMapToVariantMap(restAuto)
+	customVariants := stringMapToVariantMap(customAny)
+
+	batch, err := conn.PrepareBatch(ctx, chq.EventsInsertStmt)
+	if err != nil {
+		t.Fatalf("prepare event insert batch: %v", err)
+	}
+
+	args := []any{eventID, projectID, distinctID, kind, autoVariants, customVariants}
+	args = append(args, promoted.AppendArgs()...)
+	args = append(args, occurTime, sessionID)
+	if err := batch.Append(args...); err != nil {
+		t.Fatalf("append event insert batch: %v", err)
+	}
+	if err := batch.Send(); err != nil {
+		t.Fatalf("send event insert batch: %v", err)
+	}
+}
+
+func stringMapToVariantMap(src map[string]any) map[string]chcol.Variant {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]chcol.Variant, len(src))
+	for k, v := range src {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		out[k] = chcol.NewVariantWithType(s, "String")
+	}
+	return out
 }

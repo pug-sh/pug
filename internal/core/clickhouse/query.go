@@ -165,6 +165,8 @@ type Query struct {
 	from       string
 	wheres     []Condition
 	groupBy    []string
+	havings    []string
+	havingArgs []any
 	orderBy    []string
 	limit      *int64
 	ctes       []cte
@@ -211,6 +213,19 @@ func (q *Query) Where(conds ...Condition) *Query {
 // GroupBy appends GROUP BY columns.
 func (q *Query) GroupBy(cols ...string) *Query {
 	q.groupBy = append(q.groupBy, cols...)
+	return q
+}
+
+// Having appends a HAVING expression without positional args.
+func (q *Query) Having(expr string) *Query {
+	q.havings = append(q.havings, expr)
+	return q
+}
+
+// HavingExpr appends a HAVING expression with positional ? args.
+func (q *Query) HavingExpr(expr string, args ...any) *Query {
+	q.havings = append(q.havings, expr)
+	q.havingArgs = append(q.havingArgs, args...)
 	return q
 }
 
@@ -325,6 +340,14 @@ func (q *Query) Build() (string, []any, error) {
 		sb.WriteString("GROUP BY ")
 		sb.WriteString(strings.Join(q.groupBy, ", "))
 		sb.WriteString("\n")
+	}
+
+	// HAVING
+	if len(q.havings) > 0 {
+		sb.WriteString("HAVING ")
+		sb.WriteString(strings.Join(q.havings, " AND "))
+		sb.WriteString("\n")
+		args = append(args, q.havingArgs...)
 	}
 
 	// ORDER BY
