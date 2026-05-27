@@ -182,6 +182,42 @@ func TestBuildTrendsFromRollup_Breakdown(t *testing.T) {
 	}
 }
 
+func TestFillMultiEventTrendZeros(t *testing.T) {
+	t1 := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+	rows := []TrendRow{
+		{Time: t1, EventKind: "page_view", Value: 2},
+		{Time: t1, EventKind: "signup", Value: 1},
+		{Time: t2, EventKind: "page_view", Value: 1},
+	}
+	got := fillMultiEventTrendZeros(rows, []string{"page_view", "signup"})
+	flat := map[string]float64{}
+	for _, r := range got {
+		bd := ""
+		if len(r.Breakdowns) > 0 {
+			bd = r.Breakdowns[0]
+		}
+		flat[r.EventKind+"|"+bd+"|"+r.Time.Format("2006-01-02")] = r.Value
+	}
+	want := map[string]float64{
+		"page_view||2024-01-01": 2,
+		"signup||2024-01-01":    1,
+		"page_view||2024-01-02": 1,
+		"signup||2024-01-02":    0,
+	}
+	for k, v := range want {
+		if flat[k] != v {
+			t.Errorf("key %q = %v, want %v (all: %v)", k, flat[k], v, flat)
+		}
+	}
+	if len(flat) != len(want) {
+		t.Errorf("got %d rows, want %d: %v", len(flat), len(want), flat)
+	}
+	if got := fillMultiEventTrendZeros(rows, []string{"page_view"}); len(got) != len(rows) {
+		t.Error("single event should be unchanged")
+	}
+}
+
 func TestBuildTrendsFromRollup_NoBreakdownUsesTotal(t *testing.T) {
 	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", ""))
 	q, err := buildTrendsFromRollup(req, "proj_123")

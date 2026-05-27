@@ -53,6 +53,13 @@ func ExecuteQuery(
 		if err != nil {
 			return nil, queryFailed(err)
 		}
+		if usedRollup && len(req.GetSpec().GetEvents()) > 1 {
+			kinds := make([]string, len(req.GetSpec().GetEvents()))
+			for i, ev := range req.GetSpec().GetEvents() {
+				kinds[i] = ev.GetEvent().GetKind()
+			}
+			rows = fillMultiEventTrendZeros(rows, kinds)
+		}
 		series, err := GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
 		if err != nil {
 			return nil, queryFailed(err)

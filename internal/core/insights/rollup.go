@@ -3,6 +3,7 @@ package insights
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
@@ -257,6 +258,51 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 		return TrendsQuery{}, fmt.Errorf("trends rollup: %w", err)
 	}
 	return TrendsQuery{sql: sql, args: args, properties: breakdownProps(bds)}, nil
+}
+
+// fillMultiEventTrendZeros adds zero-value rows for (time bucket, breakdown, event_kind)
+// combinations absent from rollup output. Multi-event raw trends achieve the same via
+// CROSS JOIN unpivot; rollup uses per-kind UNION ALL which omits empty cells.
+func fillMultiEventTrendZeros(rows []TrendRow, eventKinds []string) []TrendRow {
+	if len(eventKinds) <= 1 || len(rows) == 0 {
+		return rows
+	}
+
+	type gridKey struct {
+		t          time.Time
+		breakdowns string
+	}
+	grid := make(map[gridKey]struct{})
+	existing := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		grid[gridKey{t: r.Time, breakdowns: breakdownKey(r.Breakdowns)}] = struct{}{}
+		existing[trendRowIdentityKey(r)] = struct{}{}
+	}
+
+	out := append([]TrendRow(nil), rows...)
+	for gk := range grid {
+		bdVals := breakdownValues(gk.breakdowns)
+		for _, kind := range eventKinds {
+			r := TrendRow{Time: gk.t, EventKind: kind, Breakdowns: bdVals, Value: 0}
+			if _, ok := existing[trendRowIdentityKey(r)]; ok {
+				continue
+			}
+			out = append(out, r)
+			existing[trendRowIdentityKey(r)] = struct{}{}
+		}
+	}
+	return out
+}
+
+func trendRowIdentityKey(r TrendRow) string {
+	return r.EventKind + "\x00" + breakdownKey(r.Breakdowns) + "\x00" + r.Time.Format(time.RFC3339Nano)
+}
+
+func breakdownValues(key string) []string {
+	if key == "" {
+		return nil
+	}
+	return strings.Split(key, "\x00")
 }
 
 // buildSegmentationFromRollup builds a scalar segmentation query against the
