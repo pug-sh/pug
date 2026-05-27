@@ -982,7 +982,10 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("QueryTrends (raw): %v", err)
 		}
-		raw := flattenTrendsRows(rawRows)
+		raw, err := flattenTrendsFromRaw(ctx, rawRows, rawQ)
+		if err != nil {
+			t.Fatalf("flattenTrendsFromRaw: %v", err)
+		}
 
 		if !reflect.DeepEqual(rollup, raw) {
 			t.Errorf("rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
@@ -1008,7 +1011,10 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("QueryTrends (raw): %v", err)
 		}
-		raw := flattenTrendsRows(rawRows)
+		raw, err := flattenTrendsFromRaw(ctx, rawRows, rawQ)
+		if err != nil {
+			t.Fatalf("flattenTrendsFromRaw: %v", err)
+		}
 
 		if !reflect.DeepEqual(rollup, raw) {
 			t.Errorf("unique-users rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
@@ -1090,7 +1096,10 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("QueryTrends (raw): %v", err)
 		}
-		raw := flattenTrendsRows(rawRows)
+		raw, err := flattenTrendsFromRaw(ctx, rawRows, rawQ)
+		if err != nil {
+			t.Fatalf("flattenTrendsFromRaw: %v", err)
+		}
 
 		if !reflect.DeepEqual(rollup, raw) {
 			t.Errorf("week unique-users rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
@@ -1251,7 +1260,10 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("QueryTrends (raw): %v", err)
 		}
-		raw := flattenTrendsRows(rawRows)
+		raw, err := flattenTrendsFromRaw(ctx, rawRows, rawQ)
+		if err != nil {
+			t.Fatalf("flattenTrendsFromRaw: %v", err)
+		}
 
 		if !reflect.DeepEqual(rollup, raw) {
 			t.Errorf("multi-event breakdown rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
@@ -1304,7 +1316,10 @@ func TestIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("QueryTrends (raw): %v", err)
 		}
-		raw := flattenTrendsRows(rawRows)
+		raw, err := flattenTrendsFromRaw(ctx, rawRows, rawQ)
+		if err != nil {
+			t.Fatalf("flattenTrendsFromRaw: %v", err)
+		}
 
 		if !reflect.DeepEqual(rollup, raw) {
 			t.Errorf("$others rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
@@ -1414,6 +1429,18 @@ func flattenTrendsResp(resp *insightsv1.QueryResponse) map[string]float64 {
 	return out
 }
 
+func flattenTrendsFromRaw(ctx context.Context, rows []insights.TrendRow, q insights.TrendsQuery) (map[string]float64, error) {
+	series, err := insights.GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
+	if err != nil {
+		return nil, err
+	}
+	return flattenTrendsResp(&insightsv1.QueryResponse{
+		Result: &insightsv1.QueryResponse_Trends{
+			Trends: &insightsv1.TrendsResult{Series: series},
+		},
+	}), nil
+}
+
 func flattenTrendsRows(rows []insights.TrendRow) map[string]float64 {
 	out := map[string]float64{}
 	for _, r := range rows {
@@ -1495,7 +1522,10 @@ func assertTrendsParity(t *testing.T, ctx context.Context, executor *insights.Ex
 	if err != nil {
 		t.Fatalf("raw QueryTrends: %v", err)
 	}
-	raw := flattenTrendsRows(rawRows)
+	raw, err := flattenTrendsFromRaw(ctx, rawRows, rawQ)
+	if err != nil {
+		t.Fatalf("flattenTrendsFromRaw: %v", err)
+	}
 
 	if !reflect.DeepEqual(rollup, raw) {
 		t.Errorf("rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
