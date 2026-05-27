@@ -1552,7 +1552,10 @@ func (x *DashboardsServiceUpsertRequest) GetTiles() []*DashboardTileInput {
 // fields (no dashboard_id / create_time / update_time). Within an Upsert call,
 // an empty id means "insert new tile" (server assigns one); a populated id that
 // matches an existing tile means "update"; existing tiles whose id is absent
-// from the request are deleted.
+// from the request are deleted. A populated id that does NOT match any
+// existing tile on the dashboard is rejected with CodeNotFound (no
+// insert-as-new fallback). Duplicate non-empty ids within a single request are
+// rejected with CodeInvalidArgument.
 type DashboardTileInput struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Id          *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
