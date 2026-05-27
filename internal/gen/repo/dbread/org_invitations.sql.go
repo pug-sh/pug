@@ -10,7 +10,7 @@ import (
 )
 
 const getOrgInvitationByToken = `-- name: GetOrgInvitationByToken :one
-select create_time, email, expires_at, id, inviter_id, org_id, status, token, role from org_invitations where token = $1
+select create_time, email, expires_at, id, inviter_id, org_id, role, status, token from org_invitations where token = $1
 `
 
 func (q *Queries) GetOrgInvitationByToken(ctx context.Context, token string) (OrgInvitation, error) {
@@ -23,9 +23,9 @@ func (q *Queries) GetOrgInvitationByToken(ctx context.Context, token string) (Or
 		&i.ID,
 		&i.InviterID,
 		&i.OrgID,
+		&i.Role,
 		&i.Status,
 		&i.Token,
-		&i.Role,
 	)
 	return i, err
 }
@@ -65,7 +65,7 @@ func (q *Queries) GetOrgInvitationEmailContextByID(ctx context.Context, id strin
 }
 
 const getOrgInvitationsByOrgID = `-- name: GetOrgInvitationsByOrgID :many
-select create_time, email, expires_at, id, inviter_id, org_id, status, token, role from org_invitations
+select create_time, email, expires_at, id, inviter_id, org_id, role, status, token from org_invitations
 where org_id = $1
 order by create_time desc
 `
@@ -86,9 +86,9 @@ func (q *Queries) GetOrgInvitationsByOrgID(ctx context.Context, orgID string) ([
 			&i.ID,
 			&i.InviterID,
 			&i.OrgID,
+			&i.Role,
 			&i.Status,
 			&i.Token,
-			&i.Role,
 		); err != nil {
 			return nil, err
 		}

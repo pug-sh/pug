@@ -71,7 +71,7 @@ func (q *Queries) ListDashboardTileIDsByDashboardIDAndProjectID(ctx context.Cont
 }
 
 const listDashboardTilesByDashboardIDAndProjectID = `-- name: ListDashboardTilesByDashboardIDAndProjectID :many
-select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time, dt.compare, dt.thresholds, dt.header, dt.visualization, dt.payload_hash
+select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.compare, dt.thresholds, dt.header, dt.visualization, dt.payload_hash, dt.create_time, dt.update_time
 from dashboard_tiles dt
 join dashboards d on d.id = dt.dashboard_id
 where dt.dashboard_id = $1 and d.project_id = $2
@@ -102,13 +102,13 @@ func (q *Queries) ListDashboardTilesByDashboardIDAndProjectID(ctx context.Contex
 			&i.InsightQuery,
 			&i.MarkdownBody,
 			&i.Layouts,
-			&i.CreateTime,
-			&i.UpdateTime,
 			&i.Compare,
 			&i.Thresholds,
 			&i.Header,
 			&i.Visualization,
 			&i.PayloadHash,
+			&i.CreateTime,
+			&i.UpdateTime,
 		); err != nil {
 			return nil, err
 		}
@@ -121,7 +121,7 @@ func (q *Queries) ListDashboardTilesByDashboardIDAndProjectID(ctx context.Contex
 }
 
 const listDashboardTilesByProjectID = `-- name: ListDashboardTilesByProjectID :many
-select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time, dt.compare, dt.thresholds, dt.header, dt.visualization, dt.payload_hash
+select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.compare, dt.thresholds, dt.header, dt.visualization, dt.payload_hash, dt.create_time, dt.update_time
 from dashboard_tiles dt
 join dashboards d on d.id = dt.dashboard_id
 where d.project_id = $1
@@ -147,13 +147,13 @@ func (q *Queries) ListDashboardTilesByProjectID(ctx context.Context, projectID s
 			&i.InsightQuery,
 			&i.MarkdownBody,
 			&i.Layouts,
-			&i.CreateTime,
-			&i.UpdateTime,
 			&i.Compare,
 			&i.Thresholds,
 			&i.Header,
 			&i.Visualization,
 			&i.PayloadHash,
+			&i.CreateTime,
+			&i.UpdateTime,
 		); err != nil {
 			return nil, err
 		}

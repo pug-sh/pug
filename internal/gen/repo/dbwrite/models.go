@@ -53,13 +53,13 @@ type DashboardTile struct {
 	InsightQuery  map[string]any
 	MarkdownBody  pgtype.Text
 	Layouts       map[string]any
-	CreateTime    pgtype.Timestamptz
-	UpdateTime    pgtype.Timestamptz
 	Compare       string
 	Thresholds    []byte
 	Header        map[string]any
 	Visualization map[string]any
 	PayloadHash   []byte
+	CreateTime    pgtype.Timestamptz
+	UpdateTime    pgtype.Timestamptz
 }
 
 type EmailActionToken struct {
@@ -98,9 +98,9 @@ type OrgInvitation struct {
 	ID         string
 	InviterID  pgtype.Text
 	OrgID      string
+	Role       string
 	Status     string
 	Token      string
-	Role       string
 }
 
 type OrgMember struct {

@@ -60,7 +60,7 @@ select $1, d.id, $2, $3, $4, $5,
        $9, $10, $11, $12, $13
 from dashboards d
 where d.id = $14 and d.project_id = $15
-returning id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, layouts, create_time, update_time, compare, thresholds, header, visualization, payload_hash
+returning id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, layouts, compare, thresholds, header, visualization, payload_hash, create_time, update_time
 `
 
 type CreateDashboardTileParams struct {
@@ -110,13 +110,13 @@ func (q *Queries) CreateDashboardTile(ctx context.Context, arg CreateDashboardTi
 		&i.InsightQuery,
 		&i.MarkdownBody,
 		&i.Layouts,
-		&i.CreateTime,
-		&i.UpdateTime,
 		&i.Compare,
 		&i.Thresholds,
 		&i.Header,
 		&i.Visualization,
 		&i.PayloadHash,
+		&i.CreateTime,
+		&i.UpdateTime,
 	)
 	return i, err
 }
