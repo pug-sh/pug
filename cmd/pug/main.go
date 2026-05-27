@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -273,17 +274,17 @@ var devCmd = &cobra.Command{
 		fmt.Println()
 
 		fmt.Println(bold + "Infrastructure:" + reset)
-		if url := os.Getenv("DATABASE_URL"); url != "" {
-			fmt.Println("  "+green+"PostgreSQL:"+reset, url)
+		if u := os.Getenv("DATABASE_URL"); u != "" {
+			fmt.Println("  "+green+"PostgreSQL:"+reset, redactURL(u))
 		}
-		if url := os.Getenv("CLICKHOUSE_URL"); url != "" {
-			fmt.Println("  "+green+"ClickHouse:"+reset, url)
+		if u := os.Getenv("CLICKHOUSE_URL"); u != "" {
+			fmt.Println("  "+green+"ClickHouse:"+reset, redactURL(u))
 		}
-		if url := os.Getenv("NATS_URL"); url != "" {
-			fmt.Println("  "+green+"NATS:"+reset, url)
+		if u := os.Getenv("NATS_URL"); u != "" {
+			fmt.Println("  "+green+"NATS:"+reset, redactURL(u))
 		}
-		if url := os.Getenv("REDIS_URL"); url != "" {
-			fmt.Println("  "+green+"Redis:"+reset, url)
+		if u := os.Getenv("REDIS_URL"); u != "" {
+			fmt.Println("  "+green+"Redis:"+reset, redactURL(u))
 		}
 		fmt.Println()
 
@@ -464,6 +465,17 @@ func init() {
 	rootCmd.AddCommand(postgresCmd)
 	rootCmd.AddCommand(natsCmd)
 	rootCmd.AddCommand(clickhouseCmd)
+}
+
+// redactURL replaces the user:password@ portion of a URL with xxxxx:xxxxx@.
+// URLs without userinfo and URLs that fail to parse are returned unchanged.
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	u.User = url.UserPassword("xxxxx", "xxxxx")
+	return u.String()
 }
 
 func main() {
