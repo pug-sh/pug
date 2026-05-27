@@ -3,6 +3,7 @@ package dashboards
 import (
 	"context"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -213,6 +214,234 @@ func TestHandler_Upsert_HashShortCircuit(t *testing.T) {
 
 	if !t1.Equal(t2) {
 		t.Errorf("tile update_time bumped on byte-equal upsert: %v -> %v", t1, t2)
+	}
+}
+
+// TestHandler_Upsert_EmptyTilesClearsDashboard verifies the omit-all case:
+// a dashboard with tiles upserted with an empty tile list ends up with zero
+// tiles and no error (spec §5 row "Replace omits all tiles").
+func TestHandler_Upsert_EmptyTilesClearsDashboard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+	upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "first", "x")
+	upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "second", "y")
+
+	resp, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Board"),
+		Tiles:       nil,
+	}))
+	if err != nil {
+		t.Fatalf("Upsert with empty tiles: %v", err)
+	}
+	if got := resp.Msg.GetDashboard().GetTiles(); len(got) != 0 {
+		t.Errorf("response tiles = %d, want 0", len(got))
+	}
+
+	getResp, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
+		Id: proto.String(dash.ID),
+	}))
+	if err != nil {
+		t.Fatalf("Get after empty upsert: %v", err)
+	}
+	if got := getResp.Msg.GetDashboard().GetTiles(); len(got) != 0 {
+		t.Errorf("post-upsert Get tiles = %d, want 0", len(got))
+	}
+}
+
+// TestHandler_Upsert_OnlyChangedTileBumpsUpdateTime is the granular cousin of
+// the hash short-circuit test: Upsert two tiles, change only one, and assert
+// the unchanged tile's update_time is preserved while the changed one's bumps
+// (spec §5 row "one tile's content changed").
+func TestHandler_Upsert_OnlyChangedTileBumpsUpdateTime(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+	idStable := upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "stable", "still")
+	idChanged := upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "changed", "old body")
+
+	initial, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
+		Id: proto.String(dash.ID),
+	}))
+	if err != nil {
+		t.Fatalf("initial Get: %v", err)
+	}
+	initialTimes := map[string]time.Time{}
+	for _, tile := range initial.Msg.GetDashboard().GetTiles() {
+		initialTimes[tile.GetId()] = tile.GetUpdateTime().AsTime()
+	}
+
+	resp, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Board"),
+		Tiles: []*dashboardsv1.DashboardTileInput{
+			// Identical payload — hash matches stored, no UPDATE.
+			{
+				Id:          proto.String(idStable),
+				DisplayName: proto.String("stable"),
+				Content: &dashboardsv1.DashboardTileInput_Markdown{
+					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("still")},
+				},
+			},
+			// New body — hash differs, UPDATE fires.
+			{
+				Id:          proto.String(idChanged),
+				DisplayName: proto.String("changed"),
+				Content: &dashboardsv1.DashboardTileInput_Markdown{
+					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("new body")},
+				},
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	gotTimes := map[string]time.Time{}
+	for _, tile := range resp.Msg.GetDashboard().GetTiles() {
+		gotTimes[tile.GetId()] = tile.GetUpdateTime().AsTime()
+	}
+	if !initialTimes[idStable].Equal(gotTimes[idStable]) {
+		t.Errorf("stable tile update_time bumped: %v -> %v", initialTimes[idStable], gotTimes[idStable])
+	}
+	if !gotTimes[idChanged].After(initialTimes[idChanged]) {
+		t.Errorf("changed tile update_time did not bump: %v -> %v", initialTimes[idChanged], gotTimes[idChanged])
+	}
+}
+
+// TestHandler_Upsert_DuplicateNameRollsBack verifies that a mid-transaction
+// failure (here, a unique-violation on display_name during an INSERT) undoes
+// the UPDATE that happened earlier in the same Upsert call (spec §5 row
+// "mid-transaction failure"). The earlier-updated tile must end up with its
+// pre-Upsert content.
+func TestHandler_Upsert_DuplicateNameRollsBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+	alpha := upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "alpha", "original alpha")
+	upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "beta", "original beta")
+
+	// First request slot updates alpha (would succeed in isolation); second
+	// slot is a new tile claiming the name "beta" — collides with the seeded
+	// row mid-tx. Failure must roll alpha's update back.
+	_, err = s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Board"),
+		Tiles: []*dashboardsv1.DashboardTileInput{
+			{
+				Id:          proto.String(alpha),
+				DisplayName: proto.String("alpha"),
+				Content: &dashboardsv1.DashboardTileInput_Markdown{
+					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("MUTATED ALPHA")},
+				},
+			},
+			{
+				// New tile, but display_name collides with the still-present beta.
+				DisplayName: proto.String("beta"),
+				Content: &dashboardsv1.DashboardTileInput_Markdown{
+					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("conflicting")},
+				},
+			},
+		},
+	}))
+	assertCode(t, err, connect.CodeAlreadyExists)
+	assertReason(t, err, apperr.ReasonDashboardTileNameConflict)
+
+	getResp, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
+		Id: proto.String(dash.ID),
+	}))
+	if err != nil {
+		t.Fatalf("Get after rolled-back upsert: %v", err)
+	}
+	var alphaBody string
+	for _, tile := range getResp.Msg.GetDashboard().GetTiles() {
+		if tile.GetId() == alpha {
+			alphaBody = tile.GetMarkdown().GetBody()
+		}
+	}
+	if alphaBody != "original alpha" {
+		t.Errorf("alpha body after rollback = %q, want %q (tx rollback did not undo the update)", alphaBody, "original alpha")
+	}
+	if got := len(getResp.Msg.GetDashboard().GetTiles()); got != 2 {
+		t.Errorf("tile count after rollback = %d, want 2 (no inserts should have stuck)", got)
+	}
+}
+
+// TestHandler_Upsert_KpiUnspecifiedComparePersists pins the spec §5 row
+// "compare = COMPARE_PERIOD_UNSPECIFIED on KPI tile → Saved as-is": KPI tiles
+// don't require a compare period, and UNSPECIFIED must round-trip rather than
+// being rejected or normalized away into something else.
+func TestHandler_Upsert_KpiUnspecifiedComparePersists(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "KPIs", "",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+
+	resp, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("KPIs"),
+		Tiles: []*dashboardsv1.DashboardTileInput{
+			{
+				DisplayName: proto.String("Signups"),
+				Content: &dashboardsv1.DashboardTileInput_Insight{
+					Insight: &dashboardsv1.InsightTileContent{Spec: &insightsv1.InsightQuerySpec{
+						InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+						Events: []*insightsv1.EventQuery{
+							{
+								Event:       &commonv1.EventFilter{Kind: proto.String("signup")},
+								Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+							},
+						},
+					}},
+				},
+				ViewMode: dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI.Enum(),
+				Compare:  dashboardsv1.ComparePeriod_COMPARE_PERIOD_UNSPECIFIED.Enum(),
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("Upsert KPI tile: %v", err)
+	}
+	tiles := resp.Msg.GetDashboard().GetTiles()
+	if len(tiles) != 1 {
+		t.Fatalf("response tiles = %d, want 1", len(tiles))
+	}
+	if got := tiles[0].GetViewMode(); got != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI {
+		t.Errorf("view_mode = %v, want KPI", got)
+	}
+	if got := tiles[0].GetCompare(); got != dashboardsv1.ComparePeriod_COMPARE_PERIOD_UNSPECIFIED {
+		t.Errorf("compare = %v, want COMPARE_PERIOD_UNSPECIFIED", got)
 	}
 }
 

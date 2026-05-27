@@ -575,3 +575,173 @@ func validSpec() *insightsv1.InsightQuerySpec {
 		},
 	}
 }
+
+// ----- Upsert request & DashboardTileInput validation -------------------
+//
+// These cases pin the spec §3 validation summary at the proto level. They run
+// in unit tests (no DB) — protovalidate alone rejects the bad shapes before
+// they ever reach the handler.
+
+func validTileInput() *dashboardsv1.DashboardTileInput {
+	return &dashboardsv1.DashboardTileInput{
+		DisplayName: proto.String("ok"),
+		Content: &dashboardsv1.DashboardTileInput_Markdown{
+			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("body")},
+		},
+	}
+}
+
+func TestUpsertRequest_AcceptsValidPayload(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String("dash_123"),
+		DisplayName: proto.String("Board"),
+		Tiles:       []*dashboardsv1.DashboardTileInput{validTileInput()},
+	}
+	if err := protovalidate.Validate(req); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestUpsertRequest_RejectsMissingID(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpsertRequest{
+		DisplayName: proto.String("Board"),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for missing id")
+	}
+}
+
+func TestUpsertRequest_RejectsMissingDisplayName(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpsertRequest{
+		Id: proto.String("dash_123"),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for missing display_name")
+	}
+}
+
+func TestUpsertRequest_RejectsOverMaxTiles(t *testing.T) {
+	tiles := make([]*dashboardsv1.DashboardTileInput, 101)
+	for i := range tiles {
+		tiles[i] = validTileInput()
+	}
+	req := &dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String("dash_123"),
+		DisplayName: proto.String("Board"),
+		Tiles:       tiles,
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for 101 tiles")
+	}
+}
+
+func TestDashboardTileInput_RejectsOverMaxThresholds(t *testing.T) {
+	tile := validTileInput()
+	tile.Thresholds = make([]*dashboardsv1.ThresholdRule, 6)
+	for i := range tile.Thresholds {
+		tile.Thresholds[i] = &dashboardsv1.ThresholdRule{
+			Operator: dashboardsv1.ThresholdRule_OPERATOR_GT.Enum(),
+			Value:    proto.Float64(float64(i)),
+			Tone:     dashboardsv1.ThresholdRule_TONE_GOOD.Enum(),
+		}
+	}
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for 6 thresholds (max 5)")
+	}
+}
+
+func TestDashboardTileInput_AcceptsMaxThresholds(t *testing.T) {
+	tile := validTileInput()
+	tile.Thresholds = make([]*dashboardsv1.ThresholdRule, 5)
+	for i := range tile.Thresholds {
+		tile.Thresholds[i] = &dashboardsv1.ThresholdRule{
+			Operator: dashboardsv1.ThresholdRule_OPERATOR_GTE.Enum(),
+			Value:    proto.Float64(float64(i)),
+			Tone:     dashboardsv1.ThresholdRule_TONE_NEUTRAL.Enum(),
+		}
+	}
+	if err := protovalidate.Validate(tile); err != nil {
+		t.Fatalf("unexpected validation error at max threshold count: %v", err)
+	}
+}
+
+func TestThresholdRule_RejectsUndefinedOperator(t *testing.T) {
+	rule := &dashboardsv1.ThresholdRule{
+		Operator: dashboardsv1.ThresholdRule_Operator(99).Enum(),
+		Value:    proto.Float64(1),
+		Tone:     dashboardsv1.ThresholdRule_TONE_GOOD.Enum(),
+	}
+	if err := protovalidate.Validate(rule); err == nil {
+		t.Fatal("expected validation error for undefined operator")
+	}
+}
+
+func TestThresholdRule_RejectsUndefinedTone(t *testing.T) {
+	rule := &dashboardsv1.ThresholdRule{
+		Operator: dashboardsv1.ThresholdRule_OPERATOR_LT.Enum(),
+		Value:    proto.Float64(1),
+		Tone:     dashboardsv1.ThresholdRule_Tone(99).Enum(),
+	}
+	if err := protovalidate.Validate(rule); err == nil {
+		t.Fatal("expected validation error for undefined tone")
+	}
+}
+
+func TestTileHeader_RejectsDisallowedAccentColor(t *testing.T) {
+	tile := validTileInput()
+	tile.Header = &dashboardsv1.TileHeader{AccentColor: proto.String("neon")}
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for accent_color = neon")
+	}
+}
+
+func TestTileHeader_AcceptsAllowedAccentColors(t *testing.T) {
+	allowed := []string{"", "blue", "green", "red", "amber", "purple", "gray"}
+	for _, color := range allowed {
+		t.Run(color, func(t *testing.T) {
+			tile := validTileInput()
+			tile.Header = &dashboardsv1.TileHeader{AccentColor: proto.String(color)}
+			if err := protovalidate.Validate(tile); err != nil {
+				t.Fatalf("unexpected validation error for accent_color = %q: %v", color, err)
+			}
+		})
+	}
+}
+
+func TestTileHeader_RejectsOverlongIcon(t *testing.T) {
+	tile := validTileInput()
+	// 9 bytes — one over the max_len = 8 cap.
+	tile.Header = &dashboardsv1.TileHeader{Icon: proto.String(strings.Repeat("a", 9))}
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for 9-byte icon")
+	}
+}
+
+func TestComparePeriod_RejectsUndefined(t *testing.T) {
+	tile := validTileInput()
+	tile.Compare = dashboardsv1.ComparePeriod(99).Enum()
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for undefined compare period")
+	}
+}
+
+func TestVisualizationOptions_RejectsUndefinedYAxisFormat(t *testing.T) {
+	tile := validTileInput()
+	tile.Visualization = &dashboardsv1.VisualizationOptions{
+		YAxisFormat: dashboardsv1.VisualizationOptions_YAxisFormat(99).Enum(),
+	}
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for undefined y_axis_format")
+	}
+}
+
+func TestDashboardTileInput_RejectsDuplicateBreakpoints(t *testing.T) {
+	tile := validTileInput()
+	tile.Layouts = []*dashboardsv1.ResponsiveGridLayout{
+		{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
+		{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(4), W: proto.Int32(6), H: proto.Int32(4)},
+	}
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for duplicate layout breakpoint on DashboardTileInput")
+	}
+}
