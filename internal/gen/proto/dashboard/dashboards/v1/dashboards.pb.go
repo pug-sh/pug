@@ -317,8 +317,10 @@ type Dashboard struct {
 	// Dashboard-level time window applied to every insight tile at render time.
 	DefaultTimeRange   *v1.TimeRangePreset `protobuf:"varint,8,opt,name=default_time_range,json=defaultTimeRange,enum=common.v1.TimeRangePreset" json:"default_time_range,omitempty"`
 	DefaultGranularity *v11.Granularity    `protobuf:"varint,9,opt,name=default_granularity,json=defaultGranularity,enum=shared.insights.v1.Granularity" json:"default_granularity,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// share_id is the public share token. Empty when the dashboard is private.
+	ShareId       *string `protobuf:"bytes,10,opt,name=share_id,json=shareId" json:"share_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Dashboard) Reset() {
@@ -412,6 +414,13 @@ func (x *Dashboard) GetDefaultGranularity() v11.Granularity {
 		return *x.DefaultGranularity
 	}
 	return v11.Granularity(0)
+}
+
+func (x *Dashboard) GetShareId() string {
+	if x != nil && x.ShareId != nil {
+		return *x.ShareId
+	}
+	return ""
 }
 
 type DashboardTile struct {
@@ -1339,8 +1348,10 @@ type DashboardsServiceUpdateRequest struct {
 	Description        *string                `protobuf:"bytes,3,opt,name=description" json:"description,omitempty"`
 	DefaultTimeRange   *v1.TimeRangePreset    `protobuf:"varint,4,opt,name=default_time_range,json=defaultTimeRange,enum=common.v1.TimeRangePreset" json:"default_time_range,omitempty"`
 	DefaultGranularity *v11.Granularity       `protobuf:"varint,5,opt,name=default_granularity,json=defaultGranularity,enum=shared.insights.v1.Granularity" json:"default_granularity,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Toggles public sharing for this dashboard.
+	IsPublic      *bool `protobuf:"varint,6,opt,name=is_public,json=isPublic" json:"is_public,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DashboardsServiceUpdateRequest) Reset() {
@@ -1406,6 +1417,13 @@ func (x *DashboardsServiceUpdateRequest) GetDefaultGranularity() v11.Granularity
 		return *x.DefaultGranularity
 	}
 	return v11.Granularity(0)
+}
+
+func (x *DashboardsServiceUpdateRequest) GetIsPublic() bool {
+	if x != nil && x.IsPublic != nil {
+		return *x.IsPublic
+	}
+	return false
 }
 
 type DashboardsServiceUpdateResponse struct {
@@ -2043,7 +2061,7 @@ var File_dashboard_dashboards_v1_dashboards_proto protoreflect.FileDescriptor
 
 const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\n" +
-	"(dashboard/dashboards/v1/dashboards.proto\x12\x17dashboard.dashboards.v1\x1a\x1bbuf/validate/validate.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a!shared/insights/v1/insights.proto\"\xe7\x03\n" +
+	"(dashboard/dashboards/v1/dashboards.proto\x12\x17dashboard.dashboards.v1\x1a\x1bbuf/validate/validate.proto\x1a\x14common/v1/time.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a!shared/insights/v1/insights.proto\"\x82\x04\n" +
 	"\tDashboard\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -2056,7 +2074,9 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"updateTime\x12<\n" +
 	"\x05tiles\x18\a \x03(\v2&.dashboard.dashboards.v1.DashboardTileR\x05tiles\x12R\n" +
 	"\x12default_time_range\x18\b \x01(\x0e2\x1a.common.v1.TimeRangePresetB\b\xbaH\x05\x82\x01\x02\x10\x01R\x10defaultTimeRange\x12Z\n" +
-	"\x13default_granularity\x18\t \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\x12defaultGranularity\"\x86\a\n" +
+	"\x13default_granularity\x18\t \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\x12defaultGranularity\x12\x19\n" +
+	"\bshare_id\x18\n" +
+	" \x01(\tR\ashareId\"\x86\a\n" +
 	"\rDashboardTile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdashboard_id\x18\x02 \x01(\tR\vdashboardId\x12+\n" +
@@ -2148,13 +2168,14 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\x1dDashboardsServiceListResponse\x12B\n" +
 	"\n" +
 	"dashboards\x18\x01 \x03(\v2\".dashboard.dashboards.v1.DashboardR\n" +
-	"dashboards\"\xc4\x02\n" +
+	"dashboards\"\xe1\x02\n" +
 	"\x1eDashboardsServiceUpdateRequest\x12\x16\n" +
 	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\x12.\n" +
 	"\fdisplay_name\x18\x02 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
 	"\vdescription\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12R\n" +
 	"\x12default_time_range\x18\x04 \x01(\x0e2\x1a.common.v1.TimeRangePresetB\b\xbaH\x05\x82\x01\x02\x10\x01R\x10defaultTimeRange\x12Z\n" +
-	"\x13default_granularity\x18\x05 \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\x12defaultGranularity\"c\n" +
+	"\x13default_granularity\x18\x05 \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\x12defaultGranularity\x12\x1b\n" +
+	"\tis_public\x18\x06 \x01(\bR\bisPublic\"c\n" +
 	"\x1fDashboardsServiceUpdateResponse\x12@\n" +
 	"\tdashboard\x18\x01 \x01(\v2\".dashboard.dashboards.v1.DashboardR\tdashboard\"\x91\x03\n" +
 	"\x1eDashboardsServiceUpsertRequest\x12\x16\n" +

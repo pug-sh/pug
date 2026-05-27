@@ -41,3 +41,19 @@ select *
 from dashboards
 where id = @id and project_id = @project_id
 for update;
+
+-- name: ListDashboardTilesByDashboardID :many
+select *
+from dashboard_tiles
+where dashboard_id = @dashboard_id
+order by create_time asc;
+
+-- name: GetDashboardShareByDashboardID :one
+select *
+from dashboard_shares
+where dashboard_id = @dashboard_id;
+
+-- name: GetEnabledDashboardShareByID :one
+select *
+from dashboard_shares
+where id = @id and enabled = true;

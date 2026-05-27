@@ -40,6 +40,8 @@ message Dashboard {
   // Dashboard-level time window applied to every insight tile at render time.
   common.v1.TimeRangePreset default_time_range = 8 [(buf.validate.field).enum.defined_only = true];
   shared.insights.v1.Granularity default_granularity = 9 [(buf.validate.field).enum.defined_only = true];
+  // share_id is the public share token. Empty when the dashboard is private.
+  string share_id = 10;
 }
 
 message DashboardTile {
@@ -226,6 +228,8 @@ message DashboardsServiceUpdateRequest {
   string description = 3 [(buf.validate.field).string.max_len = 2000];
   common.v1.TimeRangePreset default_time_range = 4 [(buf.validate.field).enum.defined_only = true];
   shared.insights.v1.Granularity default_granularity = 5 [(buf.validate.field).enum.defined_only = true];
+  // Toggles public sharing for this dashboard.
+  bool is_public = 6;
 }
 
 message DashboardsServiceUpdateResponse {

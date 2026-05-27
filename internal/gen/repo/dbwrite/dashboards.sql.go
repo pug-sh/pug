@@ -260,6 +260,44 @@ func (q *Queries) UpsertDashboardMetadata(ctx context.Context, arg UpsertDashboa
 	return result.RowsAffected(), nil
 }
 
+const upsertDashboardShare = `-- name: UpsertDashboardShare :one
+insert into dashboard_shares (id, dashboard_id, project_id, enabled)
+select $1, d.id, d.project_id, $2
+from dashboards d
+where d.id = $3 and d.project_id = $4
+on conflict (dashboard_id)
+do update set enabled = $2
+returning id, dashboard_id, project_id, enabled, create_time, update_time
+`
+
+type UpsertDashboardShareParams struct {
+	ID          string
+	Enabled     bool
+	DashboardID string
+	ProjectID   string
+}
+
+// Inserts a new share row or toggles `enabled` on the existing one. The
+// ON CONFLICT clause preserves the original share id across disable/re-enable.
+func (q *Queries) UpsertDashboardShare(ctx context.Context, arg UpsertDashboardShareParams) (DashboardShare, error) {
+	row := q.db.QueryRow(ctx, upsertDashboardShare,
+		arg.ID,
+		arg.Enabled,
+		arg.DashboardID,
+		arg.ProjectID,
+	)
+	var i DashboardShare
+	err := row.Scan(
+		&i.ID,
+		&i.DashboardID,
+		&i.ProjectID,
+		&i.Enabled,
+		&i.CreateTime,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const upsertDashboardTileUpdate = `-- name: UpsertDashboardTileUpdate :execrows
 update dashboard_tiles dt
 set

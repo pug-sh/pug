@@ -27,7 +27,7 @@ func roDashboardToRPC(ctx context.Context, dashboard coredashboards.DashboardWit
 		}
 		tiles = append(tiles, msg)
 	}
-	return &dashboardsv1.Dashboard{
+	out := &dashboardsv1.Dashboard{
 		Id:                 proto.String(dashboard.Dashboard.ID),
 		ProjectId:          proto.String(dashboard.Dashboard.ProjectID),
 		DisplayName:        proto.String(dashboard.Dashboard.DisplayName),
@@ -37,7 +37,11 @@ func roDashboardToRPC(ctx context.Context, dashboard coredashboards.DashboardWit
 		Tiles:              tiles,
 		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(ctx, dashboard.Dashboard.DefaultTimeRange).Enum(),
 		DefaultGranularity: coredashboards.DashboardGranularityFromDB(ctx, dashboard.Dashboard.DefaultGranularity).Enum(),
-	}, nil
+	}
+	if dashboard.Share != nil && dashboard.Share.Enabled {
+		out.ShareId = proto.String(dashboard.Share.ID)
+	}
+	return out, nil
 }
 
 // wDashboardToRPC encodes a freshly-created dashboard. The Tiles slice is

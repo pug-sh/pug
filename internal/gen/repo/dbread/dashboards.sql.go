@@ -36,6 +36,46 @@ func (q *Queries) GetDashboardByIDAndProjectID(ctx context.Context, arg GetDashb
 	return i, err
 }
 
+const getDashboardShareByDashboardID = `-- name: GetDashboardShareByDashboardID :one
+select id, dashboard_id, project_id, enabled, create_time, update_time
+from dashboard_shares
+where dashboard_id = $1
+`
+
+func (q *Queries) GetDashboardShareByDashboardID(ctx context.Context, dashboardID string) (DashboardShare, error) {
+	row := q.db.QueryRow(ctx, getDashboardShareByDashboardID, dashboardID)
+	var i DashboardShare
+	err := row.Scan(
+		&i.ID,
+		&i.DashboardID,
+		&i.ProjectID,
+		&i.Enabled,
+		&i.CreateTime,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const getEnabledDashboardShareByID = `-- name: GetEnabledDashboardShareByID :one
+select id, dashboard_id, project_id, enabled, create_time, update_time
+from dashboard_shares
+where id = $1 and enabled = true
+`
+
+func (q *Queries) GetEnabledDashboardShareByID(ctx context.Context, id string) (DashboardShare, error) {
+	row := q.db.QueryRow(ctx, getEnabledDashboardShareByID, id)
+	var i DashboardShare
+	err := row.Scan(
+		&i.ID,
+		&i.DashboardID,
+		&i.ProjectID,
+		&i.Enabled,
+		&i.CreateTime,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const listDashboardTileIDsByDashboardIDAndProjectID = `-- name: ListDashboardTileIDsByDashboardIDAndProjectID :many
 select dt.id
 from dashboard_tiles dt
@@ -63,6 +103,50 @@ func (q *Queries) ListDashboardTileIDsByDashboardIDAndProjectID(ctx context.Cont
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDashboardTilesByDashboardID = `-- name: ListDashboardTilesByDashboardID :many
+select id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, layouts, compare, thresholds, header, visualization, payload_hash, create_time, update_time
+from dashboard_tiles
+where dashboard_id = $1
+order by create_time asc
+`
+
+func (q *Queries) ListDashboardTilesByDashboardID(ctx context.Context, dashboardID string) ([]DashboardTile, error) {
+	rows, err := q.db.Query(ctx, listDashboardTilesByDashboardID, dashboardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DashboardTile
+	for rows.Next() {
+		var i DashboardTile
+		if err := rows.Scan(
+			&i.ID,
+			&i.DashboardID,
+			&i.Kind,
+			&i.ViewMode,
+			&i.DisplayName,
+			&i.Description,
+			&i.InsightQuery,
+			&i.MarkdownBody,
+			&i.Layouts,
+			&i.Compare,
+			&i.Thresholds,
+			&i.Header,
+			&i.Visualization,
+			&i.PayloadHash,
+			&i.CreateTime,
+			&i.UpdateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

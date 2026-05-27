@@ -143,7 +143,7 @@ func (s *Server) Update(
 		return nil, err
 	}
 
-	dashboard, err := s.service.UpdateDashboard(ctx, principal.Project.ID, req.Msg.GetId(), req.Msg.GetDisplayName(), req.Msg.GetDescription(), req.Msg.GetDefaultTimeRange(), req.Msg.GetDefaultGranularity())
+	dashboard, err := s.service.UpdateDashboard(ctx, principal.Project.ID, req.Msg.GetId(), req.Msg.GetDisplayName(), req.Msg.GetDescription(), req.Msg.GetDefaultTimeRange(), req.Msg.GetDefaultGranularity(), req.Msg.GetIsPublic())
 	if err != nil {
 		if errors.Is(err, coredashboards.ErrDashboardNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetId()))

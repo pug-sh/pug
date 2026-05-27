@@ -89,10 +89,11 @@ type EncodedTileContent struct {
 	MarkdownBody pgtype.Text
 }
 
-// DashboardWithTiles bundles a dashboard with its ordered tiles.
+// DashboardWithTiles bundles a dashboard with its ordered tiles and optional share.
 type DashboardWithTiles struct {
 	Dashboard dbread.Dashboard
 	Tiles     []dbread.DashboardTile
+	Share     *dbread.DashboardShare
 }
 
 // recordServiceError logs + records a service-layer error at the layer that detects
@@ -189,20 +190,26 @@ func (s *Service) GetDashboard(ctx context.Context, projectID, dashboardID strin
 			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
+	share, err := s.lookupShare(ctx, dashboardID)
+	if err != nil {
+		return DashboardWithTiles{}, err
+	}
+
 	return DashboardWithTiles{
 		Dashboard: dashboard,
 		Tiles:     tiles,
+		Share:     share,
 	}, nil
 }
 
-// UpdateDashboard updates the dashboard's display name, description, and
-// dashboard-level window (default time range + granularity), and returns the
-// updated row alongside the dashboard's existing tiles so the handler can
-// serialize a complete Dashboard without a follow-up read. Description is
-// updated with partial-update semantics (empty string preserves the existing
+// UpdateDashboard updates the dashboard's display name, description,
+// dashboard-level window (default time range + granularity), and public sharing
+// state. Returns the updated row alongside the dashboard's existing tiles so the
+// handler can serialize a complete Dashboard without a follow-up read. Description
+// is updated with partial-update semantics (empty string preserves the existing
 // value); display_name, default_time_range, and default_granularity are
 // full-replaced on every call.
-func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, displayName, description string, defaultTimeRange commonv1.TimeRangePreset, defaultGranularity insightsv1.Granularity) (DashboardWithTiles, error) {
+func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, displayName, description string, defaultTimeRange commonv1.TimeRangePreset, defaultGranularity insightsv1.Granularity, isPublic bool) (DashboardWithTiles, error) {
 	dashboard, err := s.write.UpdateDashboard(ctx, dbwrite.UpdateDashboardParams{
 		Description:        description,
 		ID:                 dashboardID,
@@ -213,13 +220,13 @@ func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, d
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.DebugContext(ctx, "update dashboard display name: not found",
+			slog.DebugContext(ctx, "update dashboard: not found",
 				slog.String("project_id", projectID),
 				slog.String("dashboard_id", dashboardID),
 			)
 			return DashboardWithTiles{}, ErrDashboardNotFound
 		}
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to update dashboard display name", err,
+		return DashboardWithTiles{}, recordServiceError(ctx, "failed to update dashboard", err,
 			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
@@ -228,13 +235,25 @@ func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, d
 		ProjectID:   projectID,
 	})
 	if err != nil {
-		return DashboardWithTiles{}, recordServiceError(ctx, "failed to list dashboard tiles after rename", err,
+		return DashboardWithTiles{}, recordServiceError(ctx, "failed to list dashboard tiles after update", err,
 			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+	}
+
+	share, err := s.setShare(ctx, projectID, dashboardID, isPublic)
+	if err != nil {
+		return DashboardWithTiles{}, err
+	}
+
+	var sharePtr *dbread.DashboardShare
+	if share.Enabled {
+		rs := dbwriteShareToDbread(share)
+		sharePtr = &rs
 	}
 
 	return DashboardWithTiles{
 		Dashboard: dbwriteToDbread(dashboard),
 		Tiles:     tiles,
+		Share:     sharePtr,
 	}, nil
 }
 
