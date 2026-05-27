@@ -520,7 +520,7 @@ func TestInviteMemberRejectsSecondPendingInvite(t *testing.T) {
 }
 
 // TestGetMemberRoleRejectsDriftedDBValue pins the safety net at the boundary:
-// if migration 013's CHECK constraint were ever dropped and a drifted role
+// if the org_members role CHECK constraint were ever dropped and a drifted role
 // landed in the DB, GetMemberRole's ParseRole must surface an error rather
 // than letting Role("ORG_ROLE_OWNER") (or similar) flow through equality
 // checks downstream. Setup drops the constraint inside the test's fresh DB.
@@ -556,11 +556,10 @@ func TestGetMemberRoleRejectsDriftedDBValue(t *testing.T) {
 	}
 }
 
-// TestMigration013RejectsInvalidRole pins the DB-side CHECK constraint
-// from migration 013 directly: any attempt to insert a role outside the
-// recognized set must fail at the database level, regardless of what the
-// application thinks.
-func TestMigration013RejectsInvalidRole(t *testing.T) {
+// TestOrgMembersRoleCheckRejectsInvalidRole pins the DB-side CHECK constraint
+// on org_members directly: any attempt to insert a role outside the recognized
+// set must fail at the database level, regardless of what the application thinks.
+func TestOrgMembersRoleCheckRejectsInvalidRole(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
