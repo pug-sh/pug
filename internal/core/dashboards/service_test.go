@@ -89,7 +89,7 @@ func TestDashboardsService(t *testing.T) {
 			t.Fatalf("dashboard.DefaultGranularity = %q, want GRANULARITY_DAY", dashboard.DefaultGranularity)
 		}
 
-		createdInsight, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Signups", "Tracks signup volume",
+		createdInsight, err := createTileLegacy(ctx, svc, projectID, dashboard.ID, "Signups", "Tracks signup volume",
 			dashboards.InsightTile{Spec: insightSpec("signup")},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
 			[]*dashboardsv1.ResponsiveGridLayout{
@@ -110,7 +110,7 @@ func TestDashboardsService(t *testing.T) {
 		}
 
 		markdownBody := "# Note\n\nSee chart above. ![logo](https://example.com/logo.png)"
-		createdMarkdown, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Context", "",
+		createdMarkdown, err := createTileLegacy(ctx, svc, projectID, dashboard.ID, "Context", "",
 			dashboards.MarkdownTile{Body: markdownBody},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			[]*dashboardsv1.ResponsiveGridLayout{
@@ -184,7 +184,7 @@ func TestDashboardsService(t *testing.T) {
 			t.Fatalf("Insight layout width = %v, want %v", layout["w"], float64(6))
 		}
 
-		updatedInsight, err := svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, createdInsight.ID, "Activated Users", "Tracks activation volume",
+		updatedInsight, err := updateTileLegacy(ctx, svc, projectID, dashboard.ID, createdInsight.ID, "Activated Users", "Tracks activation volume",
 			dashboards.InsightTile{Spec: insightSpec("activated")},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA,
 			[]*dashboardsv1.ResponsiveGridLayout{
@@ -239,7 +239,7 @@ func TestDashboardsService(t *testing.T) {
 			_ = svc.DeleteDashboard(ctx, projectID, dashboard.ID)
 		})
 
-		tile, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Initially Insight", "",
+		tile, err := createTileLegacy(ctx, svc, projectID, dashboard.ID, "Initially Insight", "",
 			dashboards.InsightTile{Spec: insightSpec("signup")},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
 			nil,
@@ -249,7 +249,7 @@ func TestDashboardsService(t *testing.T) {
 		}
 
 		body := "Now I'm markdown"
-		swapped, err := svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, tile.ID, "Now Markdown", "",
+		swapped, err := updateTileLegacy(ctx, svc, projectID, dashboard.ID, tile.ID, "Now Markdown", "",
 			dashboards.MarkdownTile{Body: body},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED,
 			nil,
@@ -322,7 +322,7 @@ func TestDashboardsService(t *testing.T) {
 		t.Cleanup(func() { _ = svc.DeleteDashboard(ctx, projectID, dashboard.ID) })
 
 		body := "tile body"
-		tile, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Tile", "",
+		tile, err := createTileLegacy(ctx, svc, projectID, dashboard.ID, "Tile", "",
 			dashboards.MarkdownTile{Body: body},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil)
@@ -387,7 +387,7 @@ func TestDashboardsService(t *testing.T) {
 		t.Cleanup(func() { _ = svc.DeleteDashboard(ctx, projectID, dashboardA.ID) })
 
 		body := "tile in A"
-		tileA, err := svc.CreateDashboardTile(ctx, projectID, dashboardA.ID, "Tile A", "",
+		tileA, err := createTileLegacy(ctx, svc, projectID, dashboardA.ID, "Tile A", "",
 			dashboards.MarkdownTile{Body: body},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil)
@@ -413,7 +413,7 @@ func TestDashboardsService(t *testing.T) {
 		// fail with ErrDashboardNotFound — the insert's WHERE clause depends on
 		// the project_id filter joining dashboards.
 		body2 := "hijack body"
-		if _, err := svc.CreateDashboardTile(ctx, projB.ID, dashboardA.ID, "Hijack", "",
+		if _, err := createTileLegacy(ctx, svc, projB.ID, dashboardA.ID, "Hijack", "",
 			dashboards.MarkdownTile{Body: body2},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil); !errors.Is(err, dashboards.ErrDashboardNotFound) {
@@ -424,7 +424,7 @@ func TestDashboardsService(t *testing.T) {
 		// ErrDashboardTileNotFound (the join on dashboards.project_id eliminates
 		// the row in the update's FROM clause).
 		hijackBody := "hijack rename"
-		if _, err := svc.UpdateDashboardTile(ctx, projB.ID, dashboardA.ID, tileA.ID, "hijack", "",
+		if _, err := updateTileLegacy(ctx, svc, projB.ID, dashboardA.ID, tileA.ID, "hijack", "",
 			dashboards.MarkdownTile{Body: hijackBody},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil); !errors.Is(err, dashboards.ErrDashboardTileNotFound) {
@@ -465,13 +465,13 @@ func TestDashboardsService(t *testing.T) {
 		bodyD := "d"
 
 		// Two titled tiles with the same display name (case-insensitive) — second should conflict.
-		if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Notes", "",
+		if _, err := createTileLegacy(ctx, svc, projectID, dashboard.ID, "Notes", "",
 			dashboards.MarkdownTile{Body: bodyA},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil); err != nil {
 			t.Fatalf("first titled tile: %v", err)
 		}
-		_, err = svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "notes", "",
+		_, err = createTileLegacy(ctx, svc, projectID, dashboard.ID, "notes", "",
 			dashboards.MarkdownTile{Body: bodyB},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil)
@@ -480,13 +480,13 @@ func TestDashboardsService(t *testing.T) {
 		}
 
 		// Two untitled tiles in the same dashboard — both should succeed (partial-index exemption).
-		if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "", "",
+		if _, err := createTileLegacy(ctx, svc, projectID, dashboard.ID, "", "",
 			dashboards.MarkdownTile{Body: bodyC},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil); err != nil {
 			t.Fatalf("first untitled tile: %v", err)
 		}
-		if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "", "",
+		if _, err := createTileLegacy(ctx, svc, projectID, dashboard.ID, "", "",
 			dashboards.MarkdownTile{Body: bodyD},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil); err != nil {
@@ -508,7 +508,7 @@ func TestDashboardsService(t *testing.T) {
 		if untitledID == "" {
 			t.Fatal("could not find the second untitled tile")
 		}
-		_, err = svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, untitledID, "Notes", "",
+		_, err = updateTileLegacy(ctx, svc, projectID, dashboard.ID, untitledID, "Notes", "",
 			dashboards.MarkdownTile{Body: bodyD},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil)
@@ -533,7 +533,7 @@ func TestDashboardsService(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = svc.DeleteDashboard(ctx, projectID, dashboard.ID) })
 
-		tile, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Original Title", "original desc",
+		tile, err := createTileLegacy(ctx, svc, projectID, dashboard.ID, "Original Title", "original desc",
 			dashboards.MarkdownTile{Body: "body"},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil)
@@ -542,7 +542,7 @@ func TestDashboardsService(t *testing.T) {
 		}
 
 		// Update with empty DisplayName and Description — both must be preserved.
-		preserved, err := svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, tile.ID, "", "",
+		preserved, err := updateTileLegacy(ctx, svc, projectID, dashboard.ID, tile.ID, "", "",
 			dashboards.MarkdownTile{Body: "body"},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil)
@@ -557,7 +557,7 @@ func TestDashboardsService(t *testing.T) {
 		}
 
 		// Update with non-empty values — both must be overwritten.
-		updated, err := svc.UpdateDashboardTile(ctx, projectID, dashboard.ID, tile.ID, "New Title", "new desc",
+		updated, err := updateTileLegacy(ctx, svc, projectID, dashboard.ID, tile.ID, "New Title", "new desc",
 			dashboards.MarkdownTile{Body: "body"},
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
 			nil)

@@ -98,29 +98,30 @@ func TestNormalizedDashboardDefaultTimeRange_AllPresets(t *testing.T) {
 	}
 }
 
-func TestNormalizedTileViewMode(t *testing.T) {
+func TestNormalizedTileViewModeProto(t *testing.T) {
 	cases := []struct {
 		name string
 		kind TileKind
 		in   dashboardsv1.DashboardTileViewMode
-		want TileViewMode
+		want dashboardsv1.DashboardTileViewMode
 	}{
-		{"insight_line", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE, TileViewModeLine},
-		{"insight_area", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA, TileViewModeArea},
-		{"insight_bar_grouped", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED, TileViewModeBarGrouped},
-		{"insight_bar_stacked", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED, TileViewModeBarStacked},
-		{"insight_table", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE, TileViewModeTable},
-		{"insight_unspecified_defaults_line", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED, TileViewModeLine},
-		{"insight_unknown_defaults_line", TileKindInsight, dashboardsv1.DashboardTileViewMode(99), TileViewModeLine},
-		{"markdown_coerces_unspecified", TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED, TileViewModeUnspecified},
-		{"markdown_unspecified", TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED, TileViewModeUnspecified},
+		{"insight_line", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE},
+		{"insight_area", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA},
+		{"insight_bar_grouped", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED},
+		{"insight_bar_stacked", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED},
+		{"insight_table", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE},
+		{"insight_kpi", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI},
+		{"insight_unspecified_defaults_line", TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE},
+		{"insight_unknown_defaults_line", TileKindInsight, dashboardsv1.DashboardTileViewMode(99), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE},
+		{"markdown_coerces_unspecified", TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED},
+		{"markdown_unspecified", TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := normalizedTileViewMode(tc.kind, tc.in)
+			got := normalizedTileViewModeProto(tc.kind, tc.in)
 			if got != tc.want {
-				t.Fatalf("normalizedTileViewMode(%v, %v) = %d, want %d", tc.kind, tc.in, got, tc.want)
+				t.Fatalf("normalizedTileViewModeProto(%v, %v) = %v, want %v", tc.kind, tc.in, got, tc.want)
 			}
 		})
 	}

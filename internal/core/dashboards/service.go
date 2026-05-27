@@ -9,11 +9,13 @@ import (
 type Service struct {
 	read  *dbread.Queries
 	write *dbwrite.Queries
+	pgW   *pgxpool.Pool // retained for transactional Upsert; reads/writes outside Upsert use the typed handles
 }
 
 func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool) *Service {
 	return &Service{
 		read:  dbread.New(pgRO),
 		write: dbwrite.New(pgW),
+		pgW:   pgW,
 	}
 }

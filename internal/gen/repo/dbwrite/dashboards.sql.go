@@ -50,24 +50,35 @@ func (q *Queries) CreateDashboard(ctx context.Context, arg CreateDashboardParams
 }
 
 const createDashboardTile = `-- name: CreateDashboardTile :one
-insert into dashboard_tiles (id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, layouts)
-select $1, d.id, $2, $3, $4, $5, $6, $7, $8
+insert into dashboard_tiles (
+  id, dashboard_id, kind, view_mode, display_name, description,
+  insight_query, markdown_body, layouts,
+  compare, thresholds, header, visualization, payload_hash
+)
+select $1, d.id, $2, $3, $4, $5,
+       $6, $7, $8,
+       $9, $10, $11, $12, $13
 from dashboards d
-where d.id = $9 and d.project_id = $10
-returning id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, layouts, create_time, update_time
+where d.id = $14 and d.project_id = $15
+returning id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, layouts, create_time, update_time, compare, thresholds, header, visualization, payload_hash
 `
 
 type CreateDashboardTileParams struct {
-	ID           string
-	Kind         int16
-	ViewMode     string
-	DisplayName  string
-	Description  string
-	InsightQuery map[string]any
-	MarkdownBody pgtype.Text
-	Layouts      map[string]any
-	DashboardID  string
-	ProjectID    string
+	ID            string
+	Kind          int16
+	ViewMode      string
+	DisplayName   string
+	Description   string
+	InsightQuery  map[string]any
+	MarkdownBody  pgtype.Text
+	Layouts       map[string]any
+	Compare       string
+	Thresholds    []byte
+	Header        map[string]any
+	Visualization map[string]any
+	PayloadHash   []byte
+	DashboardID   string
+	ProjectID     string
 }
 
 func (q *Queries) CreateDashboardTile(ctx context.Context, arg CreateDashboardTileParams) (DashboardTile, error) {
@@ -80,6 +91,11 @@ func (q *Queries) CreateDashboardTile(ctx context.Context, arg CreateDashboardTi
 		arg.InsightQuery,
 		arg.MarkdownBody,
 		arg.Layouts,
+		arg.Compare,
+		arg.Thresholds,
+		arg.Header,
+		arg.Visualization,
+		arg.PayloadHash,
 		arg.DashboardID,
 		arg.ProjectID,
 	)
@@ -96,6 +112,11 @@ func (q *Queries) CreateDashboardTile(ctx context.Context, arg CreateDashboardTi
 		&i.Layouts,
 		&i.CreateTime,
 		&i.UpdateTime,
+		&i.Compare,
+		&i.Thresholds,
+		&i.Header,
+		&i.Visualization,
+		&i.PayloadHash,
 	)
 	return i, err
 }
@@ -134,7 +155,7 @@ where dt.id = $1
   and dt.dashboard_id = $2
   and d.id = dt.dashboard_id
   and d.project_id = $3
-returning dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
+returning dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time, dt.compare, dt.thresholds, dt.header, dt.visualization, dt.payload_hash
 `
 
 type DeleteDashboardTileParams struct {
@@ -158,8 +179,38 @@ func (q *Queries) DeleteDashboardTile(ctx context.Context, arg DeleteDashboardTi
 		&i.Layouts,
 		&i.CreateTime,
 		&i.UpdateTime,
+		&i.Compare,
+		&i.Thresholds,
+		&i.Header,
+		&i.Visualization,
+		&i.PayloadHash,
 	)
 	return i, err
+}
+
+const deleteDashboardTilesNotIn = `-- name: DeleteDashboardTilesNotIn :execrows
+delete from dashboard_tiles dt
+using dashboards d
+where dt.dashboard_id = $1
+  and d.id = dt.dashboard_id
+  and d.project_id = $2
+  and dt.id <> all($3::char(20)[])
+`
+
+type DeleteDashboardTilesNotInParams struct {
+	DashboardID string
+	ProjectID   string
+	KeepIds     []string
+}
+
+// Deletes every tile on the dashboard whose id is not in keep_ids. Used by
+// Upsert to remove tiles the client dropped from its draft.
+func (q *Queries) DeleteDashboardTilesNotIn(ctx context.Context, arg DeleteDashboardTilesNotInParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDashboardTilesNotIn, arg.DashboardID, arg.ProjectID, arg.KeepIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateDashboard = `-- name: UpdateDashboard :one
@@ -213,26 +264,36 @@ set
   view_mode     = $4,
   insight_query = $5,
   markdown_body = $6,
-  layouts       = $7
+  layouts       = $7,
+  compare       = $8,
+  thresholds    = $9,
+  header        = $10,
+  visualization = $11,
+  payload_hash  = $12
 from dashboards d
-where dt.id = $8
-  and dt.dashboard_id = $9
+where dt.id = $13
+  and dt.dashboard_id = $14
   and d.id = dt.dashboard_id
-  and d.project_id = $10
-returning dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
+  and d.project_id = $15
+returning dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time, dt.compare, dt.thresholds, dt.header, dt.visualization, dt.payload_hash
 `
 
 type UpdateDashboardTileParams struct {
-	DisplayName  interface{}
-	Description  interface{}
-	Kind         int16
-	ViewMode     string
-	InsightQuery map[string]any
-	MarkdownBody pgtype.Text
-	Layouts      map[string]any
-	ID           string
-	DashboardID  string
-	ProjectID    string
+	DisplayName   interface{}
+	Description   interface{}
+	Kind          int16
+	ViewMode      string
+	InsightQuery  map[string]any
+	MarkdownBody  pgtype.Text
+	Layouts       map[string]any
+	Compare       string
+	Thresholds    []byte
+	Header        map[string]any
+	Visualization map[string]any
+	PayloadHash   []byte
+	ID            string
+	DashboardID   string
+	ProjectID     string
 }
 
 func (q *Queries) UpdateDashboardTile(ctx context.Context, arg UpdateDashboardTileParams) (DashboardTile, error) {
@@ -244,6 +305,11 @@ func (q *Queries) UpdateDashboardTile(ctx context.Context, arg UpdateDashboardTi
 		arg.InsightQuery,
 		arg.MarkdownBody,
 		arg.Layouts,
+		arg.Compare,
+		arg.Thresholds,
+		arg.Header,
+		arg.Visualization,
+		arg.PayloadHash,
 		arg.ID,
 		arg.DashboardID,
 		arg.ProjectID,
@@ -261,6 +327,125 @@ func (q *Queries) UpdateDashboardTile(ctx context.Context, arg UpdateDashboardTi
 		&i.Layouts,
 		&i.CreateTime,
 		&i.UpdateTime,
+		&i.Compare,
+		&i.Thresholds,
+		&i.Header,
+		&i.Visualization,
+		&i.PayloadHash,
 	)
 	return i, err
+}
+
+const upsertDashboardMetadata = `-- name: UpsertDashboardMetadata :execrows
+update dashboards
+set display_name        = $1,
+    description         = $2,
+    default_time_range  = $3,
+    default_granularity = $4
+where id = $5 and project_id = $6
+  and (
+    $7::bool
+    or (display_name, description, default_time_range, default_granularity)
+       is distinct from
+       ($1::varchar(150), $2::text, $3::text, $4::text)
+  )
+`
+
+type UpsertDashboardMetadataParams struct {
+	DisplayName        string
+	Description        string
+	DefaultTimeRange   string
+	DefaultGranularity string
+	ID                 string
+	ProjectID          string
+	TilesChanged       bool
+}
+
+// Full-replace metadata write gated on (tiles_changed OR metadata changed).
+// If neither, zero rows are touched and update_time stays put. If tiles_changed
+// is true but metadata is identical, the row is still UPDATEd (with the same
+// values) so the moddatetime trigger bumps dashboard.update_time.
+func (q *Queries) UpsertDashboardMetadata(ctx context.Context, arg UpsertDashboardMetadataParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertDashboardMetadata,
+		arg.DisplayName,
+		arg.Description,
+		arg.DefaultTimeRange,
+		arg.DefaultGranularity,
+		arg.ID,
+		arg.ProjectID,
+		arg.TilesChanged,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const upsertDashboardTileUpdate = `-- name: UpsertDashboardTileUpdate :execrows
+update dashboard_tiles dt
+set
+  display_name  = $1,
+  description   = $2,
+  kind          = $3,
+  view_mode     = $4,
+  insight_query = $5,
+  markdown_body = $6,
+  layouts       = $7,
+  compare       = $8,
+  thresholds    = $9,
+  header        = $10,
+  visualization = $11,
+  payload_hash  = $12
+from dashboards d
+where dt.id = $13
+  and dt.dashboard_id = $14
+  and d.id = dt.dashboard_id
+  and d.project_id = $15
+  and dt.payload_hash <> $12
+`
+
+type UpsertDashboardTileUpdateParams struct {
+	DisplayName   string
+	Description   string
+	Kind          int16
+	ViewMode      string
+	InsightQuery  map[string]any
+	MarkdownBody  pgtype.Text
+	Layouts       map[string]any
+	Compare       string
+	Thresholds    []byte
+	Header        map[string]any
+	Visualization map[string]any
+	PayloadHash   []byte
+	ID            string
+	DashboardID   string
+	ProjectID     string
+}
+
+// Full-replace update gated on payload_hash. If the stored hash matches the
+// caller's hash, zero rows are touched and update_time stays put. Existence /
+// ownership is validated by the caller via the prior tile-id load; the join
+// onto dashboards is defense-in-depth.
+func (q *Queries) UpsertDashboardTileUpdate(ctx context.Context, arg UpsertDashboardTileUpdateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertDashboardTileUpdate,
+		arg.DisplayName,
+		arg.Description,
+		arg.Kind,
+		arg.ViewMode,
+		arg.InsightQuery,
+		arg.MarkdownBody,
+		arg.Layouts,
+		arg.Compare,
+		arg.Thresholds,
+		arg.Header,
+		arg.Visualization,
+		arg.PayloadHash,
+		arg.ID,
+		arg.DashboardID,
+		arg.ProjectID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

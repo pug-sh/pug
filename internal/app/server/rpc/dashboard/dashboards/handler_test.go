@@ -192,8 +192,9 @@ func TestHandler_QueryDashboard_ReturnsTrendResults(t *testing.T) {
 
 	// The tile stores only what to measure; the window comes from the request
 	// override (the seeded events are in 2024, outside any "last N days" preset).
-	if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, "Page views", "",
-		coredashboards.InsightTile{Spec: &insightsv1.InsightQuerySpec{
+	if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, coredashboards.TilePayload{
+		DisplayName: "Page views",
+		Content: coredashboards.InsightTile{Spec: &insightsv1.InsightQuerySpec{
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 			Events: []*insightsv1.EventQuery{
 				{
@@ -202,9 +203,8 @@ func TestHandler_QueryDashboard_ReturnsTrendResults(t *testing.T) {
 				},
 			},
 		}},
-		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
-		nil,
-	); err != nil {
+		ViewMode: dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
+	}); err != nil {
 		t.Fatalf("CreateDashboardTile: %v", err)
 	}
 
@@ -293,10 +293,11 @@ func TestHandler_CreateTile_DisplayNameConflict_MapsToCodeAlreadyExists(t *testi
 	}
 	t.Cleanup(func() { _ = svc.DeleteDashboard(context.Background(), projectID, dashboard.ID) })
 
-	if _, err := svc.CreateDashboardTile(context.Background(), projectID, dashboard.ID, "Same Name", "",
-		coredashboards.MarkdownTile{Body: "first"},
-		dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-		nil); err != nil {
+	if _, err := svc.CreateDashboardTile(context.Background(), projectID, dashboard.ID, coredashboards.TilePayload{
+		DisplayName: "Same Name",
+		Content:     coredashboards.MarkdownTile{Body: "first"},
+		ViewMode:    dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
+	}); err != nil {
 		t.Fatalf("first tile: %v", err)
 	}
 

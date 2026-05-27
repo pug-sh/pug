@@ -143,6 +143,9 @@ func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error)
 	if err := setTileContent(msg, tile.ID, coredashboards.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
 	}
+	if err := setTileCustomization(msg, tile.Compare, tile.Thresholds, tile.Header, tile.Visualization); err != nil {
+		return nil, err
+	}
 	return msg, nil
 }
 
@@ -164,7 +167,41 @@ func wTileToRPC(tile dbwrite.DashboardTile) (*dashboardsv1.DashboardTile, error)
 	if err := setTileContent(msg, tile.ID, coredashboards.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
 	}
+	if err := setTileCustomization(msg, tile.Compare, tile.Thresholds, tile.Header, tile.Visualization); err != nil {
+		return nil, err
+	}
 	return msg, nil
+}
+
+// setTileCustomization populates compare / thresholds / header / visualization
+// on the response from the DB row's stored columns. Errors propagate proto
+// decoding failures (data corruption / schema drift); the renderedTileToRPC
+// degraded path catches them and surfaces a per-tile error_message instead of
+// failing the whole list.
+func setTileCustomization(msg *dashboardsv1.DashboardTile, compare string, thresholds []byte, header, visualization map[string]any) error {
+	msg.Compare = coredashboards.ComparePeriodFromDB(compare).Enum()
+
+	rules, err := coredashboards.UnmarshalThresholds(thresholds)
+	if err != nil {
+		return err
+	}
+	msg.Thresholds = rules
+
+	if len(header) > 0 {
+		var h dashboardsv1.TileHeader
+		if err := coredashboards.MapToMessage(header, &h); err != nil {
+			return err
+		}
+		msg.Header = &h
+	}
+	if len(visualization) > 0 {
+		var v dashboardsv1.VisualizationOptions
+		if err := coredashboards.MapToMessage(visualization, &v); err != nil {
+			return err
+		}
+		msg.Visualization = &v
+	}
+	return nil
 }
 
 // setTileContent populates the tile's content oneof from the raw DB columns,
@@ -247,6 +284,40 @@ func tileContentFromUpdateRPC(c any) (coredashboards.TileContent, error) {
 	default:
 		return nil, errors.New("unknown tile content")
 	}
+}
+
+// upsertTileInputFromRPC translates a single proto DashboardTileInput to its
+// service-layer counterpart. The content oneof discriminator drives the
+// TileContent variant; protovalidate has already enforced oneof.required, so
+// the default branch only trips on schema drift (a new content kind added to
+// proto without an update here).
+func upsertTileInputFromRPC(in *dashboardsv1.DashboardTileInput) (coredashboards.UpsertTileInput, error) {
+	if in == nil {
+		return coredashboards.UpsertTileInput{}, errors.New("nil tile input")
+	}
+	var content coredashboards.TileContent
+	switch v := in.GetContent().(type) {
+	case *dashboardsv1.DashboardTileInput_Insight:
+		content = coredashboards.InsightTile{Spec: v.Insight.GetSpec()}
+	case *dashboardsv1.DashboardTileInput_Markdown:
+		content = coredashboards.MarkdownTile{Body: v.Markdown.GetBody()}
+	default:
+		return coredashboards.UpsertTileInput{}, errors.New("unknown tile content")
+	}
+	return coredashboards.UpsertTileInput{
+		ID: in.GetId(),
+		Payload: coredashboards.TilePayload{
+			DisplayName:   in.GetDisplayName(),
+			Description:   in.GetDescription(),
+			Content:       content,
+			ViewMode:      in.GetViewMode(),
+			Layouts:       in.GetLayouts(),
+			Compare:       in.GetCompare(),
+			Thresholds:    in.GetThresholds(),
+			Header:        in.GetHeader(),
+			Visualization: in.GetVisualization(),
+		},
+	}, nil
 }
 
 func toTimestamp(t time.Time) *timestamppb.Timestamp {

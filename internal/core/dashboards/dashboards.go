@@ -38,19 +38,6 @@ const (
 	TileKindMarkdown TileKind = 2
 )
 
-// TileViewMode mirrors DashboardTileViewMode in the proto. The DB stores the
-// corresponding proto enum name.
-type TileViewMode int16
-
-const (
-	TileViewModeUnspecified TileViewMode = 0
-	TileViewModeLine        TileViewMode = 1
-	TileViewModeArea        TileViewMode = 2
-	TileViewModeBarGrouped  TileViewMode = 3
-	TileViewModeBarStacked  TileViewMode = 4
-	TileViewModeTable       TileViewMode = 5
-)
-
 // TileContent is a sealed sum type for tile payloads. Encode() returns the
 // DB-shaped tuple; every variant must implement it, so adding a new variant
 // without wiring it into the storage layer is a compile error rather than
@@ -289,16 +276,10 @@ func dbwriteToDbread(d dbwrite.Dashboard) dbread.Dashboard {
 	}
 }
 
-func (s *Service) CreateDashboardTile(
-	ctx context.Context,
-	projectID, dashboardID, displayName, description string,
-	content TileContent,
-	viewMode dashboardsv1.DashboardTileViewMode,
-	layouts []*dashboardsv1.ResponsiveGridLayout,
-) (dbwrite.DashboardTile, error) {
-	enc, err := content.Encode()
+func (s *Service) CreateDashboardTile(ctx context.Context, projectID, dashboardID string, payload TilePayload) (dbwrite.DashboardTile, error) {
+	enc, err := payload.Encode()
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to encode dashboard tile content",
+		slog.ErrorContext(ctx, "failed to encode dashboard tile payload",
 			slogx.Error(err),
 			slog.String("project_id", projectID),
 			slog.String("dashboard_id", dashboardID),
@@ -306,20 +287,23 @@ func (s *Service) CreateDashboardTile(
 		telemetry.RecordError(ctx, err)
 		return dbwrite.DashboardTile{}, err
 	}
-	layoutsMap := LayoutsToMap(layouts)
-	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
 
 	tile, err := s.write.CreateDashboardTile(ctx, dbwrite.CreateDashboardTileParams{
-		ID:           xid.New().String(),
-		DashboardID:  dashboardID,
-		ProjectID:    projectID,
-		Kind:         int16(enc.Kind),
-		ViewMode:     tileViewModeDBName(normalizedViewMode),
-		DisplayName:  displayName,
-		Description:  description,
-		InsightQuery: enc.InsightQuery,
-		MarkdownBody: enc.MarkdownBody,
-		Layouts:      layoutsMap,
+		ID:            xid.New().String(),
+		DashboardID:   dashboardID,
+		ProjectID:     projectID,
+		Kind:          int16(enc.Kind),
+		ViewMode:      enc.ViewMode,
+		DisplayName:   payload.DisplayName,
+		Description:   payload.Description,
+		InsightQuery:  enc.InsightQuery,
+		MarkdownBody:  enc.MarkdownBody,
+		Layouts:       enc.Layouts,
+		Compare:       enc.Compare,
+		Thresholds:    enc.Thresholds,
+		Header:        enc.Header,
+		Visualization: enc.Visualization,
+		PayloadHash:   enc.PayloadHash,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -338,16 +322,10 @@ func (s *Service) CreateDashboardTile(
 	return tile, nil
 }
 
-func (s *Service) UpdateDashboardTile(
-	ctx context.Context,
-	projectID, dashboardID, tileID, displayName, description string,
-	content TileContent,
-	viewMode dashboardsv1.DashboardTileViewMode,
-	layouts []*dashboardsv1.ResponsiveGridLayout,
-) (dbwrite.DashboardTile, error) {
-	enc, err := content.Encode()
+func (s *Service) UpdateDashboardTile(ctx context.Context, projectID, dashboardID, tileID string, payload TilePayload) (dbwrite.DashboardTile, error) {
+	enc, err := payload.Encode()
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to encode dashboard tile content",
+		slog.ErrorContext(ctx, "failed to encode dashboard tile payload",
 			slogx.Error(err),
 			slog.String("project_id", projectID),
 			slog.String("dashboard_id", dashboardID),
@@ -356,20 +334,23 @@ func (s *Service) UpdateDashboardTile(
 		telemetry.RecordError(ctx, err)
 		return dbwrite.DashboardTile{}, err
 	}
-	layoutsMap := LayoutsToMap(layouts)
-	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
 
 	tile, err := s.write.UpdateDashboardTile(ctx, dbwrite.UpdateDashboardTileParams{
-		ID:           tileID,
-		DashboardID:  dashboardID,
-		ProjectID:    projectID,
-		Kind:         int16(enc.Kind),
-		ViewMode:     tileViewModeDBName(normalizedViewMode),
-		DisplayName:  displayName,
-		Description:  description,
-		InsightQuery: enc.InsightQuery,
-		MarkdownBody: enc.MarkdownBody,
-		Layouts:      layoutsMap,
+		ID:            tileID,
+		DashboardID:   dashboardID,
+		ProjectID:     projectID,
+		Kind:          int16(enc.Kind),
+		ViewMode:      enc.ViewMode,
+		DisplayName:   payload.DisplayName,
+		Description:   payload.Description,
+		InsightQuery:  enc.InsightQuery,
+		MarkdownBody:  enc.MarkdownBody,
+		Layouts:       enc.Layouts,
+		Compare:       enc.Compare,
+		Thresholds:    enc.Thresholds,
+		Header:        enc.Header,
+		Visualization: enc.Visualization,
+		PayloadHash:   enc.PayloadHash,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -455,30 +436,6 @@ func MapToSpecMessage(data map[string]any) (*insightsv1.InsightQuerySpec, error)
 	return &out, nil
 }
 
-func normalizedTileViewMode(kind TileKind, viewMode dashboardsv1.DashboardTileViewMode) TileViewMode {
-	switch kind {
-	case TileKindInsight:
-		switch viewMode {
-		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA:
-			return TileViewModeArea
-		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED:
-			return TileViewModeBarGrouped
-		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED:
-			return TileViewModeBarStacked
-		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE:
-			return TileViewModeTable
-		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE:
-			return TileViewModeLine
-		default:
-			return TileViewModeLine
-		}
-	case TileKindMarkdown:
-		return TileViewModeUnspecified
-	default:
-		return TileViewModeUnspecified
-	}
-}
-
 // normalizedDashboardDefaultTimeRange returns the preset unchanged for a known
 // value, defaulting unknown/UNSPECIFIED to LAST_30_DAYS. Mirrors
 // normalizedDashboardGranularity — no parallel enum, so nothing to keep in sync.
@@ -496,23 +453,6 @@ func normalizedDashboardDefaultTimeRange(tr commonv1.TimeRangePreset) commonv1.T
 		return tr
 	default:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-	}
-}
-
-func tileViewModeDBName(viewMode TileViewMode) string {
-	switch viewMode {
-	case TileViewModeLine:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.String()
-	case TileViewModeArea:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.String()
-	case TileViewModeBarGrouped:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED.String()
-	case TileViewModeBarStacked:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED.String()
-	case TileViewModeTable:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE.String()
-	default:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String()
 	}
 }
 
