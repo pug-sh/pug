@@ -55,6 +55,9 @@ const (
 	// DashboardsServiceDeleteTileProcedure is the fully-qualified name of the DashboardsService's
 	// DeleteTile RPC.
 	DashboardsServiceDeleteTileProcedure = "/dashboard.dashboards.v1.DashboardsService/DeleteTile"
+	// DashboardsServiceUpsertProcedure is the fully-qualified name of the DashboardsService's Upsert
+	// RPC.
+	DashboardsServiceUpsertProcedure = "/dashboard.dashboards.v1.DashboardsService/Upsert"
 	// DashboardsServiceQueryDashboardProcedure is the fully-qualified name of the DashboardsService's
 	// QueryDashboard RPC.
 	DashboardsServiceQueryDashboardProcedure = "/dashboard.dashboards.v1.DashboardsService/QueryDashboard"
@@ -70,6 +73,13 @@ type DashboardsServiceClient interface {
 	CreateTile(context.Context, *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error)
 	UpdateTile(context.Context, *connect.Request[v1.DashboardsServiceUpdateTileRequest]) (*connect.Response[v1.DashboardsServiceUpdateTileResponse], error)
 	DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error)
+	// Upsert applies an atomic dashboard edit: it replaces dashboard-level metadata
+	// and reconciles the tile set in a single transaction. Tiles with empty id are
+	// inserted; tiles whose id matches an existing row are updated (or skipped when
+	// byte-equivalent); existing tiles whose id is absent from the request are
+	// deleted. The returned tiles are in request order so clients can map back to
+	// their local draft.
+	Upsert(context.Context, *connect.Request[v1.DashboardsServiceUpsertRequest]) (*connect.Response[v1.DashboardsServiceUpsertResponse], error)
 	QueryDashboard(context.Context, *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error)
 }
 
@@ -132,6 +142,12 @@ func NewDashboardsServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(dashboardsServiceMethods.ByName("DeleteTile")),
 			connect.WithClientOptions(opts...),
 		),
+		upsert: connect.NewClient[v1.DashboardsServiceUpsertRequest, v1.DashboardsServiceUpsertResponse](
+			httpClient,
+			baseURL+DashboardsServiceUpsertProcedure,
+			connect.WithSchema(dashboardsServiceMethods.ByName("Upsert")),
+			connect.WithClientOptions(opts...),
+		),
 		queryDashboard: connect.NewClient[v1.DashboardsServiceQueryDashboardRequest, v1.DashboardsServiceQueryDashboardResponse](
 			httpClient,
 			baseURL+DashboardsServiceQueryDashboardProcedure,
@@ -151,6 +167,7 @@ type dashboardsServiceClient struct {
 	createTile     *connect.Client[v1.DashboardsServiceCreateTileRequest, v1.DashboardsServiceCreateTileResponse]
 	updateTile     *connect.Client[v1.DashboardsServiceUpdateTileRequest, v1.DashboardsServiceUpdateTileResponse]
 	deleteTile     *connect.Client[v1.DashboardsServiceDeleteTileRequest, v1.DashboardsServiceDeleteTileResponse]
+	upsert         *connect.Client[v1.DashboardsServiceUpsertRequest, v1.DashboardsServiceUpsertResponse]
 	queryDashboard *connect.Client[v1.DashboardsServiceQueryDashboardRequest, v1.DashboardsServiceQueryDashboardResponse]
 }
 
@@ -194,6 +211,11 @@ func (c *dashboardsServiceClient) DeleteTile(ctx context.Context, req *connect.R
 	return c.deleteTile.CallUnary(ctx, req)
 }
 
+// Upsert calls dashboard.dashboards.v1.DashboardsService.Upsert.
+func (c *dashboardsServiceClient) Upsert(ctx context.Context, req *connect.Request[v1.DashboardsServiceUpsertRequest]) (*connect.Response[v1.DashboardsServiceUpsertResponse], error) {
+	return c.upsert.CallUnary(ctx, req)
+}
+
 // QueryDashboard calls dashboard.dashboards.v1.DashboardsService.QueryDashboard.
 func (c *dashboardsServiceClient) QueryDashboard(ctx context.Context, req *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error) {
 	return c.queryDashboard.CallUnary(ctx, req)
@@ -210,6 +232,13 @@ type DashboardsServiceHandler interface {
 	CreateTile(context.Context, *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error)
 	UpdateTile(context.Context, *connect.Request[v1.DashboardsServiceUpdateTileRequest]) (*connect.Response[v1.DashboardsServiceUpdateTileResponse], error)
 	DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error)
+	// Upsert applies an atomic dashboard edit: it replaces dashboard-level metadata
+	// and reconciles the tile set in a single transaction. Tiles with empty id are
+	// inserted; tiles whose id matches an existing row are updated (or skipped when
+	// byte-equivalent); existing tiles whose id is absent from the request are
+	// deleted. The returned tiles are in request order so clients can map back to
+	// their local draft.
+	Upsert(context.Context, *connect.Request[v1.DashboardsServiceUpsertRequest]) (*connect.Response[v1.DashboardsServiceUpsertResponse], error)
 	QueryDashboard(context.Context, *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error)
 }
 
@@ -268,6 +297,12 @@ func NewDashboardsServiceHandler(svc DashboardsServiceHandler, opts ...connect.H
 		connect.WithSchema(dashboardsServiceMethods.ByName("DeleteTile")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dashboardsServiceUpsertHandler := connect.NewUnaryHandler(
+		DashboardsServiceUpsertProcedure,
+		svc.Upsert,
+		connect.WithSchema(dashboardsServiceMethods.ByName("Upsert")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dashboardsServiceQueryDashboardHandler := connect.NewUnaryHandler(
 		DashboardsServiceQueryDashboardProcedure,
 		svc.QueryDashboard,
@@ -292,6 +327,8 @@ func NewDashboardsServiceHandler(svc DashboardsServiceHandler, opts ...connect.H
 			dashboardsServiceUpdateTileHandler.ServeHTTP(w, r)
 		case DashboardsServiceDeleteTileProcedure:
 			dashboardsServiceDeleteTileHandler.ServeHTTP(w, r)
+		case DashboardsServiceUpsertProcedure:
+			dashboardsServiceUpsertHandler.ServeHTTP(w, r)
 		case DashboardsServiceQueryDashboardProcedure:
 			dashboardsServiceQueryDashboardHandler.ServeHTTP(w, r)
 		default:
@@ -333,6 +370,10 @@ func (UnimplementedDashboardsServiceHandler) UpdateTile(context.Context, *connec
 
 func (UnimplementedDashboardsServiceHandler) DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.DeleteTile is not implemented"))
+}
+
+func (UnimplementedDashboardsServiceHandler) Upsert(context.Context, *connect.Request[v1.DashboardsServiceUpsertRequest]) (*connect.Response[v1.DashboardsServiceUpsertResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.Upsert is not implemented"))
 }
 
 func (UnimplementedDashboardsServiceHandler) QueryDashboard(context.Context, *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error) {
