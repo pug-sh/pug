@@ -240,6 +240,52 @@ func TestHandler_Update_NotFound_MapsToCodeNotFound(t *testing.T) {
 	assertCode(t, err, connect.CodeNotFound)
 }
 
+// TestHandler_Update_EmptyDescriptionPreservesExisting pins the partial-update
+// semantics encoded in UpdateDashboard's SQL: when the request sends an empty
+// description, the existing one is preserved (`coalesce(nullif(...), description)`).
+// This is the documented divergence from Upsert (which full-replaces); a future
+// SQL refactor that drops the coalesce would silently start clearing
+// descriptions on every name-only update.
+func TestHandler_Update_EmptyDescriptionPreservesExisting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "original description",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+
+	// Empty description → existing preserved.
+	updateResp, err := s.Update(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Renamed"),
+		Description: proto.String(""),
+	}))
+	if err != nil {
+		t.Fatalf("Update with empty description: %v", err)
+	}
+	if got := updateResp.Msg.GetDashboard().GetDescription(); got != "original description" {
+		t.Errorf("description after empty-update = %q, want %q (preserve)", got, "original description")
+	}
+
+	// Non-empty description → overwritten.
+	updateResp, err = s.Update(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Renamed"),
+		Description: proto.String("rewritten"),
+	}))
+	if err != nil {
+		t.Fatalf("Update with new description: %v", err)
+	}
+	if got := updateResp.Msg.GetDashboard().GetDescription(); got != "rewritten" {
+		t.Errorf("description after non-empty-update = %q, want %q (overwrite)", got, "rewritten")
+	}
+}
+
 
 // ----- Helpers -----------------------------------------------------------
 
