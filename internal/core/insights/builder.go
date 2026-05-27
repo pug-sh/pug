@@ -115,7 +115,7 @@ func (q RetentionQuery) Properties() []string { return q.properties }
 func (q RetentionQuery) BreakdownLimit() int  { return q.breakdownLimit }
 
 func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
-	events := normalizeTrendsEvents(req.GetEvents())
+	events := normalizeTrendsEvents(req.GetSpec().GetEvents())
 	var sql string
 	var args []any
 	var err error
@@ -139,8 +139,8 @@ func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQue
 	return TrendsQuery{
 		sql:            sql,
 		args:           args,
-		properties:     breakdownProps(req.GetBreakdowns()),
-		breakdownLimit: effectiveBreakdownLimit(req.GetBreakdownLimit()),
+		properties:     breakdownProps(req.GetSpec().GetBreakdowns()),
+		breakdownLimit: effectiveBreakdownLimit(req.GetSpec().GetBreakdownLimit()),
 	}, nil
 }
 
@@ -168,8 +168,8 @@ func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	return FunnelQuery{
 		sql:            sql,
 		args:           args,
-		properties:     breakdownProps(req.GetBreakdowns()),
-		breakdownLimit: effectiveBreakdownLimit(req.GetBreakdownLimit()),
+		properties:     breakdownProps(req.GetSpec().GetBreakdowns()),
+		breakdownLimit: effectiveBreakdownLimit(req.GetSpec().GetBreakdownLimit()),
 	}, nil
 }
 
@@ -189,7 +189,7 @@ func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	if err != nil {
 		return FunnelTimingQuery{}, err
 	}
-	steps := req.GetEvents()
+	steps := req.GetSpec().GetEvents()
 	kinds := make([]string, len(steps))
 	for i, s := range steps {
 		kinds[i] = s.GetEvent().GetKind()
@@ -199,8 +199,8 @@ func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 		args:           args,
 		kinds:          kinds,
 		windowSec:      windowSec,
-		properties:     breakdownProps(req.GetBreakdowns()),
-		breakdownLimit: effectiveBreakdownLimit(req.GetBreakdownLimit()),
+		properties:     breakdownProps(req.GetSpec().GetBreakdowns()),
+		breakdownLimit: effectiveBreakdownLimit(req.GetSpec().GetBreakdownLimit()),
 	}, nil
 }
 
@@ -216,8 +216,8 @@ func BuildRetentionQuery(req *insightsv1.QueryRequest, projectID string) (Retent
 	return RetentionQuery{
 		sql:            sql,
 		args:           args,
-		properties:     breakdownProps(req.GetBreakdowns()),
-		breakdownLimit: effectiveBreakdownLimit(req.GetBreakdownLimit()),
+		properties:     breakdownProps(req.GetSpec().GetBreakdowns()),
+		breakdownLimit: effectiveBreakdownLimit(req.GetSpec().GetBreakdownLimit()),
 	}, nil
 }
 
@@ -250,7 +250,7 @@ func rawArgMinExpr(colExpr string, i int) string {
 }
 
 func buildTrends(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
-	events := normalizeTrendsEvents(req.GetEvents())
+	events := normalizeTrendsEvents(req.GetSpec().GetEvents())
 	if len(events) == 1 {
 		return buildTrendsSingleBranch(req, projectID, events[0], 0)
 	}
@@ -277,7 +277,7 @@ func trendsNeedsUnionFallback(events []*insightsv1.EventQuery) bool {
 }
 
 func buildTrendsUnion(req *insightsv1.QueryRequest, projectID string, events []*insightsv1.EventQuery) (*chq.UnionQuery, error) {
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
 		return nil, fmt.Errorf("trends: %w", err)
 	}
@@ -291,12 +291,12 @@ func buildTrendsUnion(req *insightsv1.QueryRequest, projectID string, events []*
 		queries = append(queries, q)
 	}
 
-	orderBy := trendsOrderBy(req.GetBreakdowns())
+	orderBy := trendsOrderBy(req.GetSpec().GetBreakdowns())
 	return chq.UnionAll(queries...).OrderBy(orderBy...), nil
 }
 
 func buildTrendsSingleBranch(req *insightsv1.QueryRequest, projectID string, ev *insightsv1.EventQuery, idx int) (*chq.Query, error) {
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
 		return nil, fmt.Errorf("trends: %w", err)
 	}
@@ -304,7 +304,7 @@ func buildTrendsSingleBranch(req *insightsv1.QueryRequest, projectID string, ev 
 	if err != nil {
 		return nil, err
 	}
-	return q.OrderBy(trendsOrderBy(req.GetBreakdowns())...), nil
+	return q.OrderBy(trendsOrderBy(req.GetSpec().GetBreakdowns())...), nil
 }
 
 func buildTrendsBranchQuery(
@@ -318,7 +318,7 @@ func buildTrendsBranchQuery(
 	if err != nil {
 		return nil, fmt.Errorf("trends: %w", err)
 	}
-	breakdowns := req.GetBreakdowns()
+	breakdowns := req.GetSpec().GetBreakdowns()
 
 	agg := ev.GetAggregation()
 	if agg == insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED {
@@ -373,11 +373,11 @@ func buildTrendsMultiEvent(req *insightsv1.QueryRequest, projectID string, event
 	if err != nil {
 		return nil, fmt.Errorf("trends: %w", err)
 	}
-	breakdowns := req.GetBreakdowns()
+	breakdowns := req.GetSpec().GetBreakdowns()
 	from := req.GetTimeRange().GetFrom().AsTime()
 	to := req.GetTimeRange().GetTo().AsTime()
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
 		return nil, fmt.Errorf("trends: %w", err)
 	}
@@ -463,8 +463,8 @@ func trendsOrderBy(breakdowns []*insightsv1.Breakdown) []string {
 
 func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	firstEvent := func() *insightsv1.EventQuery {
-		if len(req.GetEvents()) > 0 {
-			return req.GetEvents()[0]
+		if len(req.GetSpec().GetEvents()) > 0 {
+			return req.GetSpec().GetEvents()[0]
 		}
 		return nil
 	}()
@@ -477,12 +477,12 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Que
 		return nil, fmt.Errorf("segmentation: %w", err)
 	}
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
 		return nil, fmt.Errorf("segmentation: %w", err)
 	}
 
-	eventCond, err := buildEventCondition(req.GetEvents(), projectID)
+	eventCond, err := buildEventCondition(req.GetSpec().GetEvents(), projectID)
 	if err != nil {
 		return nil, fmt.Errorf("segmentation: %w", err)
 	}
@@ -508,13 +508,13 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Que
 // value from their earliest step-matching event in the time range (first-touch attribution). windowFunnel
 // then runs over the step-filtered events, and results are grouped by breakdown value.
 func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
-	steps := req.GetEvents()
+	steps := req.GetSpec().GetEvents()
 	if len(steps) == 0 {
 		return nil, fmt.Errorf("funnel: at least one step required")
 	}
-	breakdowns := req.GetBreakdowns()
+	breakdowns := req.GetSpec().GetBreakdowns()
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
 		return nil, fmt.Errorf("funnel: %w", err)
 	}
@@ -623,13 +623,13 @@ func sqlStringLiteral(s string) string {
 // Breakdown attribution: when breakdowns are requested, each user's breakdown value is taken
 // from their earliest step-matching event (first-touch attribution).
 func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
-	steps := req.GetEvents()
+	steps := req.GetSpec().GetEvents()
 	if len(steps) == 0 {
 		return nil, fmt.Errorf("funnel: at least one step required")
 	}
-	breakdowns := req.GetBreakdowns()
+	breakdowns := req.GetSpec().GetBreakdowns()
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
 		return nil, fmt.Errorf("funnel: %w", err)
 	}
@@ -690,7 +690,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 		)
 
 		pfTopLevel, _ := buildTopLevelFilterCondition(
-			req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+			req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
 		pfQuery := chq.NewQuery().
 			Select("distinct_id").
 			From("events").
@@ -749,8 +749,8 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 }
 
 func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
-	events := req.GetEvents()
-	breakdowns := req.GetBreakdowns()
+	events := req.GetSpec().GetEvents()
+	breakdowns := req.GetSpec().GetBreakdowns()
 
 	if len(events) == 0 {
 		return nil, fmt.Errorf("retention: requires at least one event")
@@ -762,7 +762,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 		returnEvent = events[1]
 	}
 
-	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
+	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
 		return nil, fmt.Errorf("retention: %w", err)
 	}
@@ -784,7 +784,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 		return nil, fmt.Errorf("retention return event: empty event filter")
 	}
 
-	topLevelFilterCondAliased, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "e")
+	topLevelFilterCondAliased, err := buildTopLevelFilterCondition(req.GetSpec().GetFilterGroups(), req.GetSpec().GetFilterGroupsOperator(), projectID, "e")
 	if err != nil {
 		return nil, fmt.Errorf("retention: %w", err)
 	}
@@ -1178,8 +1178,8 @@ func granularityFunc(g insightsv1.Granularity) (string, error) {
 
 // aggregationType returns the AggregationType for the request, preferring the first event's type.
 func aggregationType(req *insightsv1.QueryRequest) insightsv1.AggregationType {
-	if len(req.GetEvents()) > 0 {
-		agg := req.GetEvents()[0].GetAggregation()
+	if len(req.GetSpec().GetEvents()) > 0 {
+		agg := req.GetSpec().GetEvents()[0].GetAggregation()
 		if agg != insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED {
 			return agg
 		}

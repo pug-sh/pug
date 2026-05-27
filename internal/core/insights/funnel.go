@@ -229,7 +229,7 @@ func MergeFunnelCountsAndTiming(countRows, timingRows []FunnelRow) []FunnelRow {
 // Returns an error if no usable conversion_window is set and the time range is empty or inverted —
 // this surfaces what would otherwise silently degrade to "no window constraint".
 func EffectiveWindowSec(req *insightsv1.QueryRequest) (int64, error) {
-	if d := req.GetConversionWindow().AsDuration(); d > 0 {
+	if d := req.GetSpec().GetConversionWindow().AsDuration(); d > 0 {
 		s := int64(d.Seconds())
 		if s <= 0 {
 			// Defense in depth for non-RPC callers: protovalidate's gte: 1s + whole_seconds CEL

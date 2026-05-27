@@ -20,11 +20,12 @@ import (
 )
 
 // TestIntegration_FunnelHandlerIncludeStepTimingDispatch verifies the handler-level
-// dispatch at handler.go:116 — the `if req.Msg.GetIncludeStepTiming()` branch must
-// route to the timing-aware path. A regression that drops the check (or wires the
-// wrong builder) would silently downgrade timing requests to the counts-only path,
-// returning zero medians/p95s and an empty distribution. Earlier core-package
-// integration tests bypass the handler and so cannot catch such a dispatch error.
+// dispatch through ExecuteQuery — the `if req.GetSpec().GetIncludeStepTiming()` branch must
+// route to the timing-aware path (parallel windowFunnel counts + ComputeFunnelTiming merge).
+// A regression that drops the check (or wires the wrong builder) would silently downgrade
+// timing requests to the counts-only path, returning zero medians/p95s and an empty
+// distribution. Earlier core-package integration tests bypass the handler and so cannot
+// catch such a dispatch error.
 func TestIntegration_FunnelHandlerIncludeStepTimingDispatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -45,16 +46,18 @@ func TestIntegration_FunnelHandlerIncludeStepTimingDispatch(t *testing.T) {
 
 	makeReq := func(includeTiming bool) *connect.Request[insightsv1.QueryRequest] {
 		return connect.NewRequest(&insightsv1.QueryRequest{
-			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-			IncludeStepTiming: proto.Bool(includeTiming),
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+				IncludeStepTiming: proto.Bool(includeTiming),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					{Event: &commonv1.EventFilter{Kind: proto.String("add_to_cart")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				},
+			},
 			TimeRange: &commonv1.TimeRange{
 				From: timestamppb.New(time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)),
 				To:   timestamppb.New(time.Date(2024, 2, 8, 0, 0, 0, 0, time.UTC)),
-			},
-			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				{Event: &commonv1.EventFilter{Kind: proto.String("add_to_cart")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
 			},
 		})
 	}

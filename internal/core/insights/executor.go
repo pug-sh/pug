@@ -3,6 +3,7 @@ package insights
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -69,6 +70,26 @@ func truncateSQL(sql string) string {
 	return sql[:maxLoggedSQLLen] + "...[truncated]"
 }
 
+// isContextError reports whether err is a context cancellation or deadline — a
+// client/request-lifecycle condition, not a ClickHouse fault. Such errors are
+// not logged or recorded (a disconnected or timed-out caller would otherwise
+// manufacture error-rate noise); the wrapped error still propagates so the
+// caller can map it to the right status.
+func isContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// recordQueryError logs and records a failed query execution at the layer that
+// detects it (per telemetry.md), skipping client context cancellation/deadline.
+func recordQueryError(ctx context.Context, msg, projectID, sql string, argCount int, err error) {
+	if isContextError(err) {
+		return
+	}
+	slog.ErrorContext(ctx, msg, slogx.Error(err),
+		slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", argCount))
+	telemetry.RecordError(ctx, err)
+}
+
 // Executor runs pre-built ClickHouse queries and scans the results.
 type Executor struct {
 	ch driver.Conn
@@ -88,9 +109,7 @@ func (e *Executor) QueryTrends(ctx context.Context, projectID string, q TrendsQu
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "clickhouse: query trends failed", slogx.Error(err),
-			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
-		telemetry.RecordError(ctx, err)
+		recordQueryError(ctx, "clickhouse: query trends failed", projectID, sql, len(args), err)
 		return nil, fmt.Errorf("QueryTrends: %w", err)
 	}
 	defer func() {
@@ -133,9 +152,7 @@ func (e *Executor) QueryScalar(ctx context.Context, projectID string, q ScalarQu
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "clickhouse: query scalar failed", slogx.Error(err),
-			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
-		telemetry.RecordError(ctx, err)
+		recordQueryError(ctx, "clickhouse: query scalar failed", projectID, sql, len(args), err)
 		return 0, fmt.Errorf("QueryScalar: %w", err)
 	}
 	defer func() {
@@ -180,9 +197,7 @@ type AggregateKeyMeta struct {
 func (e *Executor) QueryAggregateKeys(ctx context.Context, projectID string, sql string, args []any) ([]AggregateKeyMeta, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "clickhouse: query aggregate keys failed", slogx.Error(err),
-			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
-		telemetry.RecordError(ctx, err)
+		recordQueryError(ctx, "clickhouse: query aggregate keys failed", projectID, sql, len(args), err)
 		return nil, fmt.Errorf("QueryAggregateKeys: %w", err)
 	}
 	defer func() {
@@ -227,9 +242,7 @@ func (e *Executor) QueryAggregateKeys(ctx context.Context, projectID string, sql
 func (e *Executor) QueryStringColumn(ctx context.Context, projectID string, sql string, args []any) ([]string, error) {
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "clickhouse: query string column failed", slogx.Error(err),
-			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
-		telemetry.RecordError(ctx, err)
+		recordQueryError(ctx, "clickhouse: query string column failed", projectID, sql, len(args), err)
 		return nil, fmt.Errorf("QueryStringColumn: %w", err)
 	}
 	defer func() {
@@ -267,9 +280,7 @@ func (e *Executor) QueryFunnel(ctx context.Context, projectID string, q FunnelQu
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "clickhouse: query funnel failed", slogx.Error(err),
-			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
-		telemetry.RecordError(ctx, err)
+		recordQueryError(ctx, "clickhouse: query funnel failed", projectID, sql, len(args), err)
 		return nil, fmt.Errorf("QueryFunnel: %w", err)
 	}
 	defer func() {
@@ -331,9 +342,7 @@ func (e *Executor) QueryFunnelUserEvents(ctx context.Context, projectID string, 
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "clickhouse: query funnel user events failed", slogx.Error(err),
-			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
-		telemetry.RecordError(ctx, err)
+		recordQueryError(ctx, "clickhouse: query funnel user events failed", projectID, sql, len(args), err)
 		return nil, fmt.Errorf("QueryFunnelUserEvents: %w", err)
 	}
 	defer func() {
@@ -376,9 +385,7 @@ func (e *Executor) QueryRetention(ctx context.Context, projectID string, q Reten
 	args := q.Args()
 	rows, err := e.ch.Query(ctx, sql, args...)
 	if err != nil {
-		slog.ErrorContext(ctx, "clickhouse: query retention failed", slogx.Error(err),
-			slog.String("project_id", projectID), slog.String("sql", truncateSQL(sql)), slog.Int("arg_count", len(args)))
-		telemetry.RecordError(ctx, err)
+		recordQueryError(ctx, "clickhouse: query retention failed", projectID, sql, len(args), err)
 		return nil, fmt.Errorf("QueryRetention: %w", err)
 	}
 	defer func() {
@@ -521,7 +528,12 @@ func applyTrendsTopN(
 	for _, eventKind := range eventKinds {
 		keys := byEventKind[eventKind]
 		slices.SortFunc(keys, func(a, b trendSeriesKey) int {
-			return cmp.Compare(entriesByKey[b].total, entriesByKey[a].total)
+			if c := cmp.Compare(entriesByKey[b].total, entriesByKey[a].total); c != 0 {
+				return c
+			}
+			// Tie-break on breakdown value ascending — matches rollup SQL
+			// (sum(cnt) DESC, dim_value ASC) so $others bucketing is identical.
+			return cmp.Compare(a.breakdown, b.breakdown)
 		})
 
 		if len(keys) <= limit {
@@ -666,7 +678,10 @@ func applyFunnelTopN(rows []FunnelRow, properties []string, limit int) []FunnelR
 		sorted = append(sorted, bdTotal{k, v})
 	}
 	slices.SortFunc(sorted, func(a, b bdTotal) int {
-		return cmp.Compare(b.total, a.total)
+		if c := cmp.Compare(b.total, a.total); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.key, b.key)
 	})
 
 	topSet := make(map[string]bool, limit)
@@ -818,7 +833,10 @@ func applyRetentionTopN(rows []RetentionRow, properties []string, limit int) []R
 		sorted = append(sorted, bdTotal{k, v})
 	}
 	slices.SortFunc(sorted, func(a, b bdTotal) int {
-		return cmp.Compare(b.cohortSum, a.cohortSum)
+		if c := cmp.Compare(b.cohortSum, a.cohortSum); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.key, b.key)
 	})
 
 	topSet := make(map[string]bool, limit)

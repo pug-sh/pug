@@ -33,12 +33,14 @@ func timeRange(from, to string) *commonv1.TimeRange {
 // TestBasicTrends verifies the SQL structure for a simple daily trends query.
 func TestBasicTrends(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			},
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-		},
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -73,24 +75,26 @@ func TestBasicTrends(t *testing.T) {
 // TestTrendsWithFilters verifies DISTINCT and filter args for unique users + country filter.
 func TestTrendsWithFilters(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
-		},
-		FilterGroups: []*insightsv1.FilterGroup{
-			{
-				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
-				Filters: []*commonv1.PropertyFilter{
-					{
-						Property: proto.String("$country"),
-						Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
-						Value:    proto.String("US"),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
+			},
+			FilterGroups: []*insightsv1.FilterGroup{
+				{
+					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
+					Filters: []*commonv1.PropertyFilter{
+						{
+							Property: proto.String("$country"),
+							Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+							Value:    proto.String("US"),
+						},
 					},
 				},
 			},
 		},
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -118,11 +122,13 @@ func TestTrendsWithFilters(t *testing.T) {
 // TestSegmentation verifies segmentation queries have no GROUP BY time bucket.
 func TestSegmentation(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			},
 		},
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 	}
 
 	q, err := insights.BuildSegmentationQuery(req, "proj_123")
@@ -149,12 +155,14 @@ func TestSegmentation(t *testing.T) {
 
 func TestFunnel(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+			},
 		},
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 	}
 
 	q, err := insights.BuildFunnelCountsQuery(req, "proj_123")
@@ -189,13 +197,15 @@ func TestFunnel(t *testing.T) {
 
 func TestFunnelWithConversionWindow(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+			},
+			ConversionWindow: durationpb.New(24 * time.Hour),
 		},
-		ConversionWindow: durationpb.New(24 * time.Hour),
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 	}
 
 	q, err := insights.BuildFunnelCountsQuery(req, "proj_123")
@@ -211,13 +221,15 @@ func TestFunnelWithConversionWindow(t *testing.T) {
 
 func TestFunnelDefaultWindowIsTimeRange(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"), // 7 days = 604800 seconds
-		// ConversionWindow absent → should default to time range
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("a")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("b")}},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			// ConversionWindow absent → should default to time range
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("a")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("b")}},
+			},
 		},
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"), // 7 days = 604800 seconds
 	}
 
 	q, err := insights.BuildFunnelCountsQuery(req, "proj_123")
@@ -233,14 +245,16 @@ func TestFunnelDefaultWindowIsTimeRange(t *testing.T) {
 
 func TestFunnelWithStepTiming(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:         timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		IncludeStepTiming: proto.Bool(true),
-		ConversionWindow:  durationpb.New(2 * time.Hour),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			IncludeStepTiming: proto.Bool(true),
+			ConversionWindow:  durationpb.New(2 * time.Hour),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+			},
 		},
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 	}
 
 	q, err := insights.BuildFunnelTimingQuery(req, "proj_123")
@@ -283,19 +297,21 @@ func TestFunnelWithStepTiming(t *testing.T) {
 
 func TestFunnelWithFilterGroups(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
-		},
-		FilterGroups: []*insightsv1.FilterGroup{
-			{
-				Filters: []*commonv1.PropertyFilter{
-					{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+			},
+			FilterGroups: []*insightsv1.FilterGroup{
+				{
+					Filters: []*commonv1.PropertyFilter{
+						{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
+					},
 				},
 			},
 		},
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 	}
 
 	q, err := insights.BuildFunnelCountsQuery(req, "proj_123")
@@ -312,13 +328,15 @@ func TestFunnelWithFilterGroups(t *testing.T) {
 
 func TestRetention(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("session")}},
+			},
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("session")}},
-		},
 	}
 
 	q, err := insights.BuildRetentionQuery(req, "proj_123")
@@ -368,10 +386,12 @@ func TestRetention(t *testing.T) {
 // TestAllEvents verifies that an empty events list generates no kind filter (3 args).
 func TestAllEvents(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events:      []*insightsv1.EventQuery{}, // empty = all events
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events:      []*insightsv1.EventQuery{}, // empty = all events
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -393,13 +413,15 @@ func TestAllEvents(t *testing.T) {
 // TestMultiEventTrends verifies single-scan SQL for multiple events with conditional aggregates.
 func TestMultiEventTrends(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
+			},
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
-		},
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -442,12 +464,14 @@ func TestMultiEventTrends(t *testing.T) {
 // TestPerUserAvg verifies the toFloat64 division expression is used.
 func TestPerUserAvg(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("add_to_cart")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG.Enum()},
+			},
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_WEEK.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("add_to_cart")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG.Enum()},
-		},
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -472,14 +496,16 @@ func TestPerUserAvg(t *testing.T) {
 // TestBuildTrendsQuery_WithBreakdown verifies single breakdown generates CTE + conditional bucketing.
 func TestBuildTrendsQuery_WithBreakdown(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(3),
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-		},
-		Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
-		BreakdownLimit: proto.Int32(3),
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -518,17 +544,19 @@ func TestBuildTrendsQuery_WithBreakdown(t *testing.T) {
 // TestBuildTrendsQuery_MultipleBreakdowns verifies two breakdowns produce breakdown_0 and breakdown_1.
 func TestBuildTrendsQuery_MultipleBreakdowns(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			},
+			Breakdowns: []*insightsv1.Breakdown{
+				{Property: proto.String("$country")},
+				{Property: proto.String("$city")},
+			},
+			BreakdownLimit: proto.Int32(5),
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-		},
-		Breakdowns: []*insightsv1.Breakdown{
-			{Property: proto.String("$country")},
-			{Property: proto.String("$city")},
-		},
-		BreakdownLimit: proto.Int32(5),
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -548,14 +576,16 @@ func TestBuildTrendsQuery_MultipleBreakdowns(t *testing.T) {
 // TestBuildTrendsQuery_DefaultBreakdownLimit verifies BreakdownLimit=0 defaults to 10 on the query struct.
 func TestBuildTrendsQuery_DefaultBreakdownLimit(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(0),
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-		},
-		Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
-		BreakdownLimit: proto.Int32(0),
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -571,19 +601,21 @@ func TestBuildTrendsQuery_DefaultBreakdownLimit(t *testing.T) {
 func TestFilterOperators(t *testing.T) {
 	baseReq := func(op commonv1.FilterOperator, val string) *insightsv1.QueryRequest {
 		return &insightsv1.QueryRequest{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-			TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-			Events: []*insightsv1.EventQuery{
-				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-			},
-			FilterGroups: []*insightsv1.FilterGroup{
-				{
-					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
-					Filters: []*commonv1.PropertyFilter{
-						{Property: proto.String("$browser"), Operator: op.Enum(), Value: proto.String(val)},
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				},
+				FilterGroups: []*insightsv1.FilterGroup{
+					{
+						Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
+						Filters: []*commonv1.PropertyFilter{
+							{Property: proto.String("$browser"), Operator: op.Enum(), Value: proto.String(val)},
+						},
 					},
 				},
 			},
+			TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		}
 	}
 
@@ -714,19 +746,21 @@ func TestFilterOperators(t *testing.T) {
 	for _, tc := range inTests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-				Events: []*insightsv1.EventQuery{
-					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				},
-				FilterGroups: []*insightsv1.FilterGroup{
-					{
-						Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
-						Filters: []*commonv1.PropertyFilter{
-							{Property: proto.String("$country"), Operator: tc.op.Enum(), Values: tc.values},
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					},
+					FilterGroups: []*insightsv1.FilterGroup{
+						{
+							Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
+							Filters: []*commonv1.PropertyFilter{
+								{Property: proto.String("$country"), Operator: tc.op.Enum(), Values: tc.values},
+							},
 						},
 					},
 				},
+				TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 			}
 			q, err := insights.BuildSegmentationQuery(req, "proj_123")
 			if err != nil {
@@ -895,28 +929,30 @@ func TestBuildSegmentUsersQuery_WithPageToken(t *testing.T) {
 
 func TestFilterGroups_Query_ORBetween_ANDWithin(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-		},
-		FilterGroupsOperator: commonv1.LogicalOperator_LOGICAL_OPERATOR_OR.Enum(),
-		FilterGroups: []*insightsv1.FilterGroup{
-			{
-				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
-				Filters: []*commonv1.PropertyFilter{
-					{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
-					{Property: proto.String("$browser"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("Chrome")},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			},
+			FilterGroupsOperator: commonv1.LogicalOperator_LOGICAL_OPERATOR_OR.Enum(),
+			FilterGroups: []*insightsv1.FilterGroup{
+				{
+					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
+					Filters: []*commonv1.PropertyFilter{
+						{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
+						{Property: proto.String("$browser"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("Chrome")},
+					},
+				},
+				{
+					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
+					Filters: []*commonv1.PropertyFilter{
+						{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("IN")},
+						{Property: proto.String("$browser"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("Safari")},
+					},
 				},
 			},
-			{
-				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
-				Filters: []*commonv1.PropertyFilter{
-					{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("IN")},
-					{Property: proto.String("$browser"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("Safari")},
-				},
-			},
 		},
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 	}
 
 	q, err := insights.BuildSegmentationQuery(req, "proj_123")
@@ -969,14 +1005,16 @@ func TestFilterGroups_SegmentUsers_ORWithinGroup(t *testing.T) {
 
 func TestFilterGroups_EmptyGroupReturnsError(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			},
+			FilterGroups: []*insightsv1.FilterGroup{
+				{},
+			},
 		},
-		FilterGroups: []*insightsv1.FilterGroup{
-			{},
-		},
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 	}
 
 	if _, err := insights.BuildSegmentationQuery(req, "proj_123"); err == nil {
@@ -996,19 +1034,21 @@ func TestNumericFilterRejectsNonNumericValue(t *testing.T) {
 	for _, op := range operators {
 		t.Run(op.String(), func(t *testing.T) {
 			req := &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-				Events: []*insightsv1.EventQuery{
-					{Event: &commonv1.EventFilter{Kind: proto.String("click")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				},
-				FilterGroups: []*insightsv1.FilterGroup{
-					{
-						Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
-						Filters: []*commonv1.PropertyFilter{
-							{Property: proto.String("score"), Operator: op.Enum(), Value: proto.String("not-a-number")},
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{Event: &commonv1.EventFilter{Kind: proto.String("click")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					},
+					FilterGroups: []*insightsv1.FilterGroup{
+						{
+							Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
+							Filters: []*commonv1.PropertyFilter{
+								{Property: proto.String("score"), Operator: op.Enum(), Value: proto.String("not-a-number")},
+							},
 						},
 					},
 				},
+				TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 			}
 			if _, err := insights.BuildSegmentationQuery(req, "proj_123"); err == nil {
 				t.Fatal("expected error for non-numeric value, got nil")
@@ -1021,22 +1061,24 @@ func TestNumericFilterRejectsNonNumericValue(t *testing.T) {
 
 func TestMultipleCombinedFilters(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-		},
-		FilterGroups: []*insightsv1.FilterGroup{
-			{
-				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
-				Filters: []*commonv1.PropertyFilter{
-					{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
-					{Property: proto.String("$browser"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS.Enum(), Value: proto.String("Chrome")},
-					{Property: proto.String("age"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(), Value: proto.String("18")},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+			},
+			FilterGroups: []*insightsv1.FilterGroup{
+				{
+					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
+					Filters: []*commonv1.PropertyFilter{
+						{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
+						{Property: proto.String("$browser"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS.Enum(), Value: proto.String("Chrome")},
+						{Property: proto.String("age"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(), Value: proto.String("18")},
+					},
 				},
 			},
 		},
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -1090,12 +1132,14 @@ func TestGranularityFunc(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					},
+				},
 				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 				Granularity: tc.granularity.Enum(),
-				Events: []*insightsv1.EventQuery{
-					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				},
 			}
 
 			q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -1136,13 +1180,15 @@ func TestGranularityFunc_Retention(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
+						{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
+					},
+				},
 				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 				Granularity: tc.granularity.Enum(),
-				Events: []*insightsv1.EventQuery{
-					{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
-					{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
-				},
 			}
 
 			q, err := insights.BuildRetentionQuery(req, "proj_123")
@@ -1214,19 +1260,21 @@ func TestContainsEscapesLIKEMetacharacters(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-				Events: []*insightsv1.EventQuery{
-					{Event: &commonv1.EventFilter{Kind: proto.String("click")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-				},
-				FilterGroups: []*insightsv1.FilterGroup{
-					{
-						Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
-						Filters: []*commonv1.PropertyFilter{
-							{Property: proto.String("url"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS.Enum(), Value: proto.String(tc.val)},
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{Event: &commonv1.EventFilter{Kind: proto.String("click")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					},
+					FilterGroups: []*insightsv1.FilterGroup{
+						{
+							Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
+							Filters: []*commonv1.PropertyFilter{
+								{Property: proto.String("url"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS.Enum(), Value: proto.String(tc.val)},
+							},
 						},
 					},
 				},
+				TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 			}
 
 			q, err := insights.BuildSegmentationQuery(req, "proj_123")
@@ -1664,29 +1712,31 @@ func TestGroupRetentionSeries(t *testing.T) {
 
 func TestMultiEventTrendsWithFilters(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		FilterGroups: []*insightsv1.FilterGroup{
-			{
-				Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
-				Filters: []*commonv1.PropertyFilter{
-					{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
-				},
-			},
-		},
-		Events: []*insightsv1.EventQuery{
-			{
-				Event: &commonv1.EventFilter{
-					Kind: proto.String("page_view"),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			FilterGroups: []*insightsv1.FilterGroup{
+				{
+					Operator: commonv1.LogicalOperator_LOGICAL_OPERATOR_AND.Enum(),
 					Filters: []*commonv1.PropertyFilter{
-						{Property: proto.String("url"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS.Enum(), Value: proto.String("/blog")},
+						{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
 					},
 				},
-				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
 			},
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
+			Events: []*insightsv1.EventQuery{
+				{
+					Event: &commonv1.EventFilter{
+						Kind: proto.String("page_view"),
+						Filters: []*commonv1.PropertyFilter{
+							{Property: proto.String("url"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS.Enum(), Value: proto.String("/blog")},
+						},
+					},
+					Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+				},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
+			},
 		},
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -1718,20 +1768,22 @@ func TestMultiEventTrendsWithFilters(t *testing.T) {
 // properly parenthesized so that AND/OR precedence does not cause other event kinds to leak through.
 func TestNotBetweenEventFilterParenthesization(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{
-				Event: &commonv1.EventFilter{
-					Kind: proto.String("add_to_cart"),
-					Filters: []*commonv1.PropertyFilter{
-						{Property: proto.String("amount"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN.Enum(), Values: []string{"100", "200"}},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{
+					Event: &commonv1.EventFilter{
+						Kind: proto.String("add_to_cart"),
+						Filters: []*commonv1.PropertyFilter{
+							{Property: proto.String("amount"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_NOT_BETWEEN.Enum(), Values: []string{"100", "200"}},
+						},
 					},
+					Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
 				},
-				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
 			},
 		},
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -1751,15 +1803,17 @@ func TestNotBetweenEventFilterParenthesization(t *testing.T) {
 // TestMultiEventTrendsWithBreakdowns verifies single-scan SQL for multiple events with breakdowns.
 func TestMultiEventTrendsWithBreakdowns(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(5),
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()},
-		},
-		Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
-		BreakdownLimit: proto.Int32(5),
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -1795,12 +1849,14 @@ func TestMultiEventTrendsWithBreakdowns(t *testing.T) {
 // TestSingleEventRetention verifies retention with a single event used as both cohort and return.
 func TestSingleEventRetention(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
+			},
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_WEEK.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
-		},
 	}
 
 	q, err := insights.BuildRetentionQuery(req, "proj_123")
@@ -1869,20 +1925,22 @@ func TestGroupRetentionSeries_Empty(t *testing.T) {
 
 func TestRetentionWithFilterGroups(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
-		},
-		FilterGroups: []*insightsv1.FilterGroup{
-			{
-				Filters: []*commonv1.PropertyFilter{
-					{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
+			},
+			FilterGroups: []*insightsv1.FilterGroup{
+				{
+					Filters: []*commonv1.PropertyFilter{
+						{Property: proto.String("$country"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(), Value: proto.String("US")},
+					},
 				},
 			},
 		},
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 	}
 
 	q, err := insights.BuildRetentionQuery(req, "proj_123")
@@ -1902,28 +1960,30 @@ func TestRetentionWithFilterGroups(t *testing.T) {
 
 func TestFunnelWithPerStepFilters(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Events: []*insightsv1.EventQuery{
-			{
-				Event: &commonv1.EventFilter{
-					Kind: proto.String("page_view"),
-					Filters: []*commonv1.PropertyFilter{
-						{Property: proto.String("url"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS.Enum(), Value: proto.String("/pricing")},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{
+					Event: &commonv1.EventFilter{
+						Kind: proto.String("page_view"),
+						Filters: []*commonv1.PropertyFilter{
+							{Property: proto.String("url"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_CONTAINS.Enum(), Value: proto.String("/pricing")},
+						},
 					},
+					Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
 				},
-				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
-			},
-			{
-				Event: &commonv1.EventFilter{
-					Kind: proto.String("purchase"),
-					Filters: []*commonv1.PropertyFilter{
-						{Property: proto.String("$amount"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(), Value: proto.String("100")},
+				{
+					Event: &commonv1.EventFilter{
+						Kind: proto.String("purchase"),
+						Filters: []*commonv1.PropertyFilter{
+							{Property: proto.String("$amount"), Operator: commonv1.FilterOperator_FILTER_OPERATOR_GTE.Enum(), Value: proto.String("100")},
+						},
 					},
+					Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
 				},
-				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
 			},
 		},
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 	}
 
 	q, err := insights.BuildFunnelCountsQuery(req, "proj_123")
@@ -1964,14 +2024,16 @@ func TestGroupSeries_BreakdownMismatchError(t *testing.T) {
 // TestFunnelWithBreakdown verifies the SQL structure of a funnel query with a breakdown.
 func TestFunnelWithBreakdown(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$browser")}},
+			BreakdownLimit: proto.Int32(5),
 		},
-		Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$browser")}},
-		BreakdownLimit: proto.Int32(5),
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
 	}
 
 	q, err := insights.BuildFunnelCountsQuery(req, "proj_123")
@@ -2010,15 +2072,17 @@ func TestFunnelWithBreakdown(t *testing.T) {
 // and top_vals is filtered to step-matching events only.
 func TestFunnelTimingWithBreakdown(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:         timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
-		IncludeStepTiming: proto.Bool(true),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType:       insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			IncludeStepTiming: proto.Bool(true),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$browser")}},
+			BreakdownLimit: proto.Int32(5),
 		},
-		Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$browser")}},
-		BreakdownLimit: proto.Int32(5),
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
 	}
 
 	q, err := insights.BuildFunnelTimingQuery(req, "proj_123")
@@ -2058,15 +2122,17 @@ func TestFunnelTimingWithBreakdown(t *testing.T) {
 // TestRetentionWithBreakdown verifies the SQL structure of a retention query with a breakdown.
 func TestRetentionWithBreakdown(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
+			},
+			Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			BreakdownLimit: proto.Int32(10),
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
-		},
-		Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
-		BreakdownLimit: proto.Int32(10),
 	}
 
 	q, err := insights.BuildRetentionQuery(req, "proj_123")
@@ -2287,17 +2353,19 @@ func TestGroupRetentionSeries_BreakdownMismatchError(t *testing.T) {
 // TestBuildFunnelCountsQuery_MultiBreakdown verifies SQL structure with two breakdowns.
 func TestBuildFunnelCountsQuery_MultiBreakdown(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+			},
+			Breakdowns: []*insightsv1.Breakdown{
+				{Property: proto.String("$country")},
+				{Property: proto.String("$browser")},
+			},
+			BreakdownLimit: proto.Int32(5),
 		},
-		Breakdowns: []*insightsv1.Breakdown{
-			{Property: proto.String("$country")},
-			{Property: proto.String("$browser")},
-		},
-		BreakdownLimit: proto.Int32(5),
+		TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
 	}
 
 	q, err := insights.BuildFunnelCountsQuery(req, "proj_123")
@@ -2316,18 +2384,20 @@ func TestBuildFunnelCountsQuery_MultiBreakdown(t *testing.T) {
 // TestBuildRetentionQuery_MultiBreakdown verifies SQL structure with two breakdowns.
 func TestBuildRetentionQuery_MultiBreakdown(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
+			},
+			Breakdowns: []*insightsv1.Breakdown{
+				{Property: proto.String("$country")},
+				{Property: proto.String("$browser")},
+			},
+			BreakdownLimit: proto.Int32(5),
+		},
 		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z"),
 		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{Event: &commonv1.EventFilter{Kind: proto.String("sign_up")}},
-			{Event: &commonv1.EventFilter{Kind: proto.String("login")}},
-		},
-		Breakdowns: []*insightsv1.Breakdown{
-			{Property: proto.String("$country")},
-			{Property: proto.String("$browser")},
-		},
-		BreakdownLimit: proto.Int32(5),
 	}
 
 	q, err := insights.BuildRetentionQuery(req, "proj_123")
@@ -2639,16 +2709,18 @@ func TestPropertyAggregation_Trends(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-				Events: []*insightsv1.EventQuery{
-					{
-						Event:               &commonv1.EventFilter{Kind: proto.String("purchase")},
-						Aggregation:         tc.agg.Enum(),
-						AggregationProperty: proto.String(tc.property),
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{
+							Event:               &commonv1.EventFilter{Kind: proto.String("purchase")},
+							Aggregation:         tc.agg.Enum(),
+							AggregationProperty: proto.String(tc.property),
+						},
 					},
 				},
+				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			}
 
 			q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -2685,12 +2757,14 @@ func TestPropertyAggregation_BackwardCompat(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: tc.agg.Enum(), AggregationProperty: proto.String(tc.property)},
+					},
+				},
 				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-				Events: []*insightsv1.EventQuery{
-					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: tc.agg.Enum(), AggregationProperty: proto.String(tc.property)},
-				},
 			}
 
 			q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -2725,15 +2799,17 @@ func TestPropertyAggregation_Segmentation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &insightsv1.QueryRequest{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-				TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-				Events: []*insightsv1.EventQuery{
-					{
-						Event:               &commonv1.EventFilter{Kind: proto.String("purchase")},
-						Aggregation:         tc.agg.Enum(),
-						AggregationProperty: proto.String(tc.property),
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{
+							Event:               &commonv1.EventFilter{Kind: proto.String("purchase")},
+							Aggregation:         tc.agg.Enum(),
+							AggregationProperty: proto.String(tc.property),
+						},
 					},
 				},
+				TimeRange: timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
 			}
 
 			q, err := insights.BuildSegmentationQuery(req, "proj_123")
@@ -2756,20 +2832,22 @@ func TestPropertyAggregation_Segmentation(t *testing.T) {
 // using different aggregation types (one numeric, one count-based).
 func TestPropertyAggregation_MixedEventAggregations(t *testing.T) {
 	req := &insightsv1.QueryRequest{
-		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
-		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-		Events: []*insightsv1.EventQuery{
-			{
-				Event:               &commonv1.EventFilter{Kind: proto.String("purchase")},
-				Aggregation:         insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum(),
-				AggregationProperty: proto.String("revenue"),
-			},
-			{
-				Event:       &commonv1.EventFilter{Kind: proto.String("page_view")},
-				Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{
+					Event:               &commonv1.EventFilter{Kind: proto.String("purchase")},
+					Aggregation:         insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum(),
+					AggregationProperty: proto.String("revenue"),
+				},
+				{
+					Event:       &commonv1.EventFilter{Kind: proto.String("page_view")},
+					Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+				},
 			},
 		},
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 	}
 
 	q, err := insights.BuildTrendsQuery(req, "proj_123")
@@ -2807,10 +2885,12 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 			run: func(t *testing.T) (string, []any) {
 				t.Helper()
 				q, err := insights.BuildTrendsQuery(&insightsv1.QueryRequest{
-					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+					Spec: &insightsv1.InsightQuerySpec{
+						InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+						Events:      []*insightsv1.EventQuery{pageView},
+					},
 					TimeRange:   tr,
 					Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-					Events:      []*insightsv1.EventQuery{pageView},
 				}, "proj_test")
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -2824,9 +2904,11 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 			run: func(t *testing.T) (string, []any) {
 				t.Helper()
 				q, err := insights.BuildSegmentationQuery(&insightsv1.QueryRequest{
-					InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
-					TimeRange:   tr,
-					Events:      []*insightsv1.EventQuery{pageView},
+					Spec: &insightsv1.InsightQuerySpec{
+						InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+						Events:      []*insightsv1.EventQuery{pageView},
+					},
+					TimeRange: tr,
 				}, "proj_test")
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -2840,9 +2922,11 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 			run: func(t *testing.T) (string, []any) {
 				t.Helper()
 				q, err := insights.BuildFunnelCountsQuery(&insightsv1.QueryRequest{
-					InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-					TimeRange:   tr,
-					Events:      []*insightsv1.EventQuery{pageView, pageView},
+					Spec: &insightsv1.InsightQuerySpec{
+						InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+						Events:      []*insightsv1.EventQuery{pageView, pageView},
+					},
+					TimeRange: tr,
 				}, "proj_test")
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -2856,9 +2940,11 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 			run: func(t *testing.T) (string, []any) {
 				t.Helper()
 				q, err := insights.BuildFunnelTimingQuery(&insightsv1.QueryRequest{
-					InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
-					TimeRange:   tr,
-					Events:      []*insightsv1.EventQuery{pageView, pageView},
+					Spec: &insightsv1.InsightQuerySpec{
+						InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+						Events:      []*insightsv1.EventQuery{pageView, pageView},
+					},
+					TimeRange: tr,
 				}, "proj_test")
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -2872,10 +2958,12 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 			run: func(t *testing.T) (string, []any) {
 				t.Helper()
 				q, err := insights.BuildRetentionQuery(&insightsv1.QueryRequest{
-					InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+					Spec: &insightsv1.InsightQuerySpec{
+						InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+						Events:      []*insightsv1.EventQuery{pageView},
+					},
 					TimeRange:   tr,
 					Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
-					Events:      []*insightsv1.EventQuery{pageView},
 				}, "proj_test")
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -2957,8 +3045,10 @@ func TestEffectiveWindowSec(t *testing.T) {
 		{
 			name: "explicit conversion_window wins",
 			req: &insightsv1.QueryRequest{
-				TimeRange:        &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
-				ConversionWindow: durationpb.New(24 * time.Hour),
+				Spec: &insightsv1.InsightQuerySpec{
+					ConversionWindow: durationpb.New(24 * time.Hour),
+				},
+				TimeRange: &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
 			},
 			want: 86400,
 		},
@@ -2990,8 +3080,10 @@ func TestEffectiveWindowSec(t *testing.T) {
 			// the in-source `s <= 0` guard catches the sub-second case here.
 			name: "sub-second positive window errors (defends non-RPC callers)",
 			req: &insightsv1.QueryRequest{
-				TimeRange:        &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
-				ConversionWindow: durationpb.New(500 * time.Millisecond),
+				Spec: &insightsv1.InsightQuerySpec{
+					ConversionWindow: durationpb.New(500 * time.Millisecond),
+				},
+				TimeRange: &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
 			},
 			wantErr:     true,
 			errContains: "conversion_window",

@@ -1,4 +1,4 @@
-package projects
+package dashboards
 
 import (
 	"errors"
@@ -66,30 +66,33 @@ func TestTranslateUniqueViolation(t *testing.T) {
 	}
 }
 
-func TestNormalizedTileDefaultTimeRange_AllInsightPresets(t *testing.T) {
+func TestNormalizedDashboardDefaultTimeRange_AllPresets(t *testing.T) {
 	cases := []struct {
 		name string
 		in   commonv1.TimeRangePreset
-		want TileDefaultTimeRange
+		want commonv1.TimeRangePreset
 	}{
-		{"last_1_hour", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR, TileDefaultTimeRangeLast1Hour},
-		{"last_6_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS, TileDefaultTimeRangeLast6Hours},
-		{"last_24_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS, TileDefaultTimeRangeLast24Hours},
-		{"last_7_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, TileDefaultTimeRangeLast7Days},
-		{"last_14_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS, TileDefaultTimeRangeLast14Days},
-		{"last_30_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, TileDefaultTimeRangeLast30Days},
-		{"last_90_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS, TileDefaultTimeRangeLast90Days},
-		{"last_180_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS, TileDefaultTimeRangeLast180Days},
-		{"last_365_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS, TileDefaultTimeRangeLast365Days},
-		{"unspecified_defaults", commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, TileDefaultTimeRangeLast30Days},
-		{"unknown_defaults", commonv1.TimeRangePreset(99), TileDefaultTimeRangeLast30Days},
+		{"last_1_hour", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR},
+		{"last_6_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_6_HOURS},
+		{"last_24_hours", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS},
+		{"last_7_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS},
+		{"last_14_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS},
+		{"last_30_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS},
+		{"last_90_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS},
+		{"last_180_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS},
+		{"last_365_days", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS},
+		{"unspecified_defaults", commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS},
+		{"unknown_defaults", commonv1.TimeRangePreset(99), commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := normalizedTileDefaultTimeRange(TileKindInsight, tc.in)
-			if got != tc.want {
-				t.Fatalf("normalizedTileDefaultTimeRange(insight, %v) = %d, want %d", tc.in, got, tc.want)
+			if got := normalizedDashboardDefaultTimeRange(tc.in); got != tc.want {
+				t.Fatalf("normalizedDashboardDefaultTimeRange(%v) = %v, want %v", tc.in, got, tc.want)
+			}
+			// DB name must round-trip to the normalized preset's enum name.
+			if got := dashboardDefaultTimeRangeDBName(tc.in); got != tc.want.String() {
+				t.Fatalf("dashboardDefaultTimeRangeDBName(%v) = %q, want %q", tc.in, got, tc.want.String())
 			}
 		})
 	}
@@ -118,25 +121,6 @@ func TestNormalizedTileViewMode(t *testing.T) {
 			got := normalizedTileViewMode(tc.kind, tc.in)
 			if got != tc.want {
 				t.Fatalf("normalizedTileViewMode(%v, %v) = %d, want %d", tc.kind, tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestNormalizedTileDefaultTimeRange_CoercesMarkdownToUnspecified(t *testing.T) {
-	cases := []struct {
-		name string
-		in   commonv1.TimeRangePreset
-	}{
-		{"markdown_with_preset", commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS},
-		{"markdown_unspecified", commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := normalizedTileDefaultTimeRange(TileKindMarkdown, tc.in)
-			if got != TileDefaultTimeRangeUnspecified {
-				t.Fatalf("normalizedTileDefaultTimeRange(markdown, %v) = %d, want %d", tc.in, got, TileDefaultTimeRangeUnspecified)
 			}
 		})
 	}
