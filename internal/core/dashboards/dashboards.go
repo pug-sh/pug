@@ -28,6 +28,7 @@ var (
 	ErrDashboardNotFound                = errors.New("dashboard not found")
 	ErrDashboardTileNotFound            = errors.New("dashboard tile not found")
 	ErrDashboardTileDisplayNameConflict = errors.New("dashboard tile display name already in use")
+	ErrDuplicateUpsertTileID            = errors.New("duplicate tile id in upsert request")
 )
 
 // TileKind mirrors the proto oneof discriminator and the DB `kind` column.

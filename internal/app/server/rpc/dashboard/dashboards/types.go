@@ -23,7 +23,7 @@ func roDashboardToRPC(dashboard coredashboards.DashboardWithTiles) (*dashboardsv
 	for _, tile := range dashboard.Tiles {
 		msg, err := roTileToRPC(tile)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("tile %s: %w", tile.ID, err)
 		}
 		tiles = append(tiles, msg)
 	}
@@ -91,7 +91,7 @@ func renderedTileToRPC(ctx context.Context, rt coredashboards.RenderedTile) *das
 			errMsg = "tile could not be rendered"
 		}
 		return &dashboardsv1.RenderedTile{
-			Tile:    structuralTileToRPC(rt.Tile),
+			Tile:    structuralTileToRPC(ctx, rt.Tile),
 			Outcome: &dashboardsv1.RenderedTile_ErrorMessage{ErrorMessage: errMsg},
 		}
 	}
@@ -107,9 +107,10 @@ func renderedTileToRPC(ctx context.Context, rt coredashboards.RenderedTile) *das
 
 // structuralTileToRPC builds a tile message with identity, timestamps, and (best
 // effort) layout but no content oneof — for the degraded path where the content
-// payload can't be decoded. Layouts are attempted but omitted on their own failure
-// (the primary error is already recorded by the caller).
-func structuralTileToRPC(tile dbread.DashboardTile) *dashboardsv1.DashboardTile {
+// payload can't be decoded. The primary error is already recorded by the caller;
+// a secondary layouts decode failure is a distinct corruption and gets its own
+// log line so we don't lose the signal.
+func structuralTileToRPC(ctx context.Context, tile dbread.DashboardTile) *dashboardsv1.DashboardTile {
 	msg := &dashboardsv1.DashboardTile{
 		Id:          proto.String(tile.ID),
 		DashboardId: proto.String(tile.DashboardID),
@@ -119,9 +120,14 @@ func structuralTileToRPC(tile dbread.DashboardTile) *dashboardsv1.DashboardTile 
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
 		ViewMode:    tileViewModeToRPC(coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
 	}
-	if layouts, err := coredashboards.MapToLayouts(tile.Layouts); err == nil {
-		msg.Layouts = layouts
+	layouts, err := coredashboards.MapToLayouts(tile.Layouts)
+	if err != nil {
+		slog.WarnContext(ctx, "degraded tile: layouts also undecodable",
+			slogx.Error(err), slog.String("tile_id", tile.ID))
+		telemetry.RecordError(ctx, err)
+		return msg
 	}
+	msg.Layouts = layouts
 	return msg
 }
 
@@ -151,9 +157,11 @@ func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error)
 
 // setTileCustomization populates compare / thresholds / header / visualization
 // on the response from the DB row's stored columns. Errors propagate proto
-// decoding failures (data corruption / schema drift); the renderedTileToRPC
-// degraded path catches them and surfaces a per-tile error_message instead of
-// failing the whole list.
+// decoding failures (data corruption / schema drift). On the QueryDashboard
+// path, renderedTileToRPC catches the error and degrades to a per-tile
+// error_message; on Get / Update / Upsert (roDashboardToRPC), the error fails
+// the whole response with CodeInternal — the handler wraps the error with the
+// failing tile id so the operator has a starting point.
 func setTileCustomization(msg *dashboardsv1.DashboardTile, compare string, thresholds []byte, header, visualization map[string]any) error {
 	msg.Compare = coredashboards.ComparePeriodFromDB(compare).Enum()
 
@@ -217,6 +225,9 @@ func tileViewModeToRPC(kind coredashboards.TileKind, raw string) dashboardsv1.Da
 	case coredashboards.TileKindInsight:
 		value, ok := dashboardsv1.DashboardTileViewMode_value[raw]
 		if !ok {
+			if raw != "" {
+				coredashboards.LogUnknownEnumOnce("DashboardTileViewMode", "dashboard_tiles.view_mode", raw)
+			}
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
 		}
 		switch dashboardsv1.DashboardTileViewMode(value) {

@@ -1,21 +1,26 @@
 package dashboards
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"reflect"
+	"sort"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/pug-sh/pug/internal/deps/telemetry"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 )
 
 // TilePayload is the canonical input for a tile write — everything stored on a
-// dashboard_tiles row except identity (id) and timestamps. CreateDashboardTile,
-// UpdateDashboardTile, and Upsert all accept this. Encode() produces the
-// (DB columns, payload_hash) tuple.
+// dashboard_tiles row except identity (id) and timestamps. UpsertDashboard
+// accepts this. Encode() produces the (DB columns, payload_hash) tuple.
 type TilePayload struct {
 	DisplayName   string
 	Description   string
@@ -89,21 +94,40 @@ func (p TilePayload) Encode() (EncodedTilePayload, error) {
 }
 
 // computeTilePayloadHash returns sha256 of the deterministic-marshaled
-// DashboardTileInput built from the already-normalized payload. The id field
-// is left empty: the hash represents content, not identity, so a tile produces
-// the same hash whether it's being inserted (no id yet) or updated. Upsert's
-// short-circuit relies on this invariant — the hash on the stored row equals
-// the hash of any incoming payload that round-trips through Encode.
+// DashboardTileInput built from the normalized payload. The id field is left
+// empty: the hash represents content, not identity. Upsert's short-circuit
+// relies on this hash being a function of the *stored* form, not the input
+// form: layouts are sorted by breakpoint (storage is a keyed map, order
+// discarded on read), and zero-valued nested messages collapse to nil
+// (messageToMap maps both nil and &Empty{} to `{}` for storage, and the read
+// path returns nil for an empty map). Without these normalizations a client
+// echoing back what Get returned would compute a different hash than the one
+// stored, defeating the no-op short-circuit.
 func computeTilePayloadHash(p TilePayload, viewMode dashboardsv1.DashboardTileViewMode, compare dashboardsv1.ComparePeriod) ([]byte, error) {
+	sortedLayouts := make([]*dashboardsv1.ResponsiveGridLayout, len(p.Layouts))
+	copy(sortedLayouts, p.Layouts)
+	sort.SliceStable(sortedLayouts, func(i, j int) bool {
+		return sortedLayouts[i].GetBreakpoint() < sortedLayouts[j].GetBreakpoint()
+	})
+
+	header := p.Header
+	if header != nil && proto.Equal(header, &dashboardsv1.TileHeader{}) {
+		header = nil
+	}
+	visualization := p.Visualization
+	if visualization != nil && proto.Equal(visualization, &dashboardsv1.VisualizationOptions{}) {
+		visualization = nil
+	}
+
 	input := &dashboardsv1.DashboardTileInput{
 		DisplayName:   proto.String(p.DisplayName),
 		Description:   proto.String(p.Description),
-		Layouts:       p.Layouts,
+		Layouts:       sortedLayouts,
 		ViewMode:      viewMode.Enum(),
 		Compare:       compare.Enum(),
 		Thresholds:    p.Thresholds,
-		Header:        p.Header,
-		Visualization: p.Visualization,
+		Header:        header,
+		Visualization: visualization,
 	}
 	switch c := p.Content.(type) {
 	case InsightTile:
@@ -124,9 +148,9 @@ func computeTilePayloadHash(p TilePayload, viewMode dashboardsv1.DashboardTileVi
 	return sum[:], nil
 }
 
-// normalizedTileViewModeProto mirrors normalizedTileViewMode but stays in
-// proto-enum space. Markdown tiles always normalize to UNSPECIFIED; insight
-// tiles default unknown / UNSPECIFIED values to LINE.
+// normalizedTileViewModeProto is the view-mode normalizer used at write time.
+// Markdown tiles always normalize to UNSPECIFIED; insight tiles default
+// unknown / UNSPECIFIED values to LINE.
 func normalizedTileViewModeProto(kind TileKind, viewMode dashboardsv1.DashboardTileViewMode) dashboardsv1.DashboardTileViewMode {
 	switch kind {
 	case TileKindInsight:
@@ -160,20 +184,43 @@ func normalizedComparePeriod(c dashboardsv1.ComparePeriod) dashboardsv1.CompareP
 }
 
 // ComparePeriodFromDB returns the enum for a DB-stored proto enum name,
-// defaulting unknown / UNSPECIFIED back to UNSPECIFIED.
+// defaulting unknown / UNSPECIFIED back to UNSPECIFIED. Unknown non-empty names
+// (proto rename, manual DB edit, or schema drift) are logged once per process
+// so the silent fallback doesn't mask a deploy-time bug.
 func ComparePeriodFromDB(name string) dashboardsv1.ComparePeriod {
 	value, ok := dashboardsv1.ComparePeriod_value[name]
 	if !ok {
+		if name != "" {
+			LogUnknownEnumOnce("ComparePeriod", "dashboard_tiles.compare", name)
+		}
 		return dashboardsv1.ComparePeriod_COMPARE_PERIOD_UNSPECIFIED
 	}
 	return normalizedComparePeriod(dashboardsv1.ComparePeriod(value))
 }
 
-// MarshalThresholds is exported so the handler-side encoder can use the same
-// serialization path the service uses for storage. Empty input still produces
-// `[]` so the column always receives a valid JSON array (NOT NULL).
-func MarshalThresholds(rules []*dashboardsv1.ThresholdRule) ([]byte, error) {
-	return marshalThresholds(rules)
+// unknownEnumSeen dedups schema-drift warnings: once a given (enumType, column,
+// value) combination has been logged, subsequent reads of the same bad value
+// stay silent for the lifetime of the process. The bad value would otherwise
+// fire on every single dashboard read, flooding logs without adding signal.
+var unknownEnumSeen sync.Map
+
+// LogUnknownEnumOnce emits a single WARN per (enumType, column, value)
+// combination for the lifetime of the process. Used by FromDB-style normalizers
+// in this package and in the handler package when an unknown name is read from
+// a DB column that should hold a proto enum name — typically the symptom of a
+// proto rename / cross-deploy schema drift.
+func LogUnknownEnumOnce(enumType, column, value string) {
+	key := enumType + "|" + column + "|" + value
+	if _, loaded := unknownEnumSeen.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	err := fmt.Errorf("unknown %s enum name in %s: %q", enumType, column, value)
+	slog.WarnContext(context.Background(),
+		"unknown enum name in DB (schema drift?)",
+		slog.String("enum", enumType),
+		slog.String("column", column),
+		slog.String("value", value))
+	telemetry.RecordError(context.Background(), err)
 }
 
 func marshalThresholds(rules []*dashboardsv1.ThresholdRule) ([]byte, error) {
@@ -221,14 +268,10 @@ func UnmarshalThresholds(data []byte) ([]*dashboardsv1.ThresholdRule, error) {
 	return out, nil
 }
 
-// MessageToMap protojson-marshals msg, then unmarshals as map[string]any so
+// messageToMap protojson-marshals msg, then unmarshals as map[string]any so
 // the resulting value can be stored in a jsonb column via sqlc's default
 // mapping. Nil input (or a typed-nil pointer wrapped in the interface) maps
 // to an empty map — every NOT NULL jsonb column needs a non-nil value.
-func MessageToMap(msg proto.Message) (map[string]any, error) {
-	return messageToMap(msg)
-}
-
 func messageToMap(msg proto.Message) (map[string]any, error) {
 	if msg == nil {
 		return map[string]any{}, nil
@@ -247,8 +290,8 @@ func messageToMap(msg proto.Message) (map[string]any, error) {
 	return out, nil
 }
 
-// MapToMessage is the inverse of MessageToMap. dst must be a non-nil pointer
-// to a proto message; an empty map leaves dst at its zero value (proto3 default).
+// MapToMessage is the inverse of messageToMap. dst must be a non-nil pointer
+// to a proto message; an empty map leaves dst at its zero value.
 func MapToMessage(data map[string]any, dst proto.Message) error {
 	if len(data) == 0 {
 		return nil

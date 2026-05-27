@@ -199,12 +199,17 @@ func (s *Server) Upsert(
 	for i, t := range req.Msg.GetTiles() {
 		converted, err := upsertTileInputFromRPC(t)
 		if err != nil {
-			slog.WarnContext(ctx, "invalid tile content in upsert",
+			// protovalidate has already enforced oneof.required on the input;
+			// reaching this branch means a proto change added a new content
+			// kind without updating upsertTileInputFromRPC (schema drift), not
+			// a client input bug. Map to CodeInternal so the alarm fires.
+			slog.ErrorContext(ctx, "schema drift: unrecognized tile content in upsert",
 				slogx.Error(err),
 				slog.String("dashboard_id", req.Msg.GetId()),
 				slog.Int("tile_index", i),
 			)
-			return nil, apperr.Invalid(apperr.ReasonInvalidTileContent, "tile content required")
+			telemetry.RecordError(ctx, err)
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 		}
 		tiles = append(tiles, converted)
 	}
@@ -224,6 +229,8 @@ func (s *Server) Upsert(
 			return nil, apperr.NotFound(apperr.ReasonDashboardTileNotFound, "dashboard tile not found", apperr.Resource("dashboard", req.Msg.GetId()))
 		case errors.Is(err, coredashboards.ErrDashboardTileDisplayNameConflict):
 			return nil, apperr.AlreadyExists(apperr.ReasonDashboardTileNameConflict, "tile display name already in use")
+		case errors.Is(err, coredashboards.ErrDuplicateUpsertTileID):
+			return nil, apperr.Invalid(apperr.ReasonInvalidTileContent, "duplicate tile id in request")
 		}
 		return nil, serviceErrToConnect(err)
 	}

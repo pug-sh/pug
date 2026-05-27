@@ -43,18 +43,30 @@ func lastNDays(now time.Time, n int) *commonv1.TimeRange {
 
 // DashboardDefaultTimeRangePresetFromDB maps the stored dashboards.default_time_range
 // enum name to a preset, normalizing unknown/UNSPECIFIED to LAST_30_DAYS.
+// Unknown non-empty / non-UNSPECIFIED names (proto rename or DB corruption) are
+// logged once per process via LogUnknownEnumOnce so the silent fallback doesn't
+// mask a deploy-time bug.
 func DashboardDefaultTimeRangePresetFromDB(raw string) commonv1.TimeRangePreset {
-	if value, ok := commonv1.TimeRangePreset_value[raw]; ok && value != int32(commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED) {
+	value, ok := commonv1.TimeRangePreset_value[raw]
+	if ok && value != int32(commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED) {
 		return commonv1.TimeRangePreset(value)
+	}
+	if !ok && raw != "" {
+		LogUnknownEnumOnce("TimeRangePreset", "dashboards.default_time_range", raw)
 	}
 	return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
 }
 
 // DashboardGranularityFromDB maps the stored dashboards.default_granularity enum
-// name to a Granularity, normalizing unknown/UNSPECIFIED to DAY.
+// name to a Granularity, normalizing unknown/UNSPECIFIED to DAY. Unknown
+// non-empty / non-UNSPECIFIED names are logged once per process.
 func DashboardGranularityFromDB(raw string) insightsv1.Granularity {
-	if value, ok := insightsv1.Granularity_value[raw]; ok && value != int32(insightsv1.Granularity_GRANULARITY_UNSPECIFIED) {
+	value, ok := insightsv1.Granularity_value[raw]
+	if ok && value != int32(insightsv1.Granularity_GRANULARITY_UNSPECIFIED) {
 		return insightsv1.Granularity(value)
+	}
+	if !ok && raw != "" {
+		LogUnknownEnumOnce("Granularity", "dashboards.default_granularity", raw)
 	}
 	return insightsv1.Granularity_GRANULARITY_DAY
 }

@@ -48,9 +48,29 @@ type UpsertTileInput struct {
 // after commit (not inside the tx) — under last-write-wins semantics a
 // concurrent edit between commit and reload is observable in the result, but
 // the spec accepts that.
-func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID string, in UpsertDashboardInput) (DashboardWithTiles, error) {
-	// Pre-encode all tiles outside the transaction so payload errors don't roll
-	// back DB work that could otherwise have succeeded.
+func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID string, in UpsertDashboardInput) (result DashboardWithTiles, retErr error) {
+	// Reject duplicate non-empty tile ids in one request. Without this the loop
+	// would run UPDATE twice for the same row (last-write-wins silently) and
+	// the response would include the same tile twice. protovalidate can't
+	// express batch-level cross-element checks on a repeated field, so this is
+	// the CLAUDE.md-sanctioned Go-side exception.
+	seenIDs := make(map[string]struct{}, len(in.Tiles))
+	for i, t := range in.Tiles {
+		if t.ID == "" {
+			continue
+		}
+		if _, dup := seenIDs[t.ID]; dup {
+			return DashboardWithTiles{}, recordServiceError(ctx, "upsert tile ids must be unique", ErrDuplicateUpsertTileID,
+				slog.String("project_id", projectID),
+				slog.String("dashboard_id", dashboardID),
+				slog.String("tile_id", t.ID),
+				slog.Int("tile_index", i))
+		}
+		seenIDs[t.ID] = struct{}{}
+	}
+
+	// Pre-encode all tiles outside the transaction so we fail fast before
+	// opening a transaction we'd then have to roll back.
 	encoded := make([]EncodedTilePayload, len(in.Tiles))
 	for i, t := range in.Tiles {
 		enc, err := t.Payload.Encode()
@@ -74,10 +94,17 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 	}
 	defer func() {
 		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
-			slog.WarnContext(ctx, "failed to rollback upsert transaction",
-				slogx.Error(rbErr),
+			// Capture the function-level error so the rollback warning is
+			// triageable on its own — without this, an operator seeing the
+			// rollback log has to correlate by trace id to find the original
+			// failure.
+			attrs := []any{slogx.Error(rbErr),
 				slog.String("project_id", projectID),
-				slog.String("dashboard_id", dashboardID))
+				slog.String("dashboard_id", dashboardID)}
+			if retErr != nil {
+				attrs = append(attrs, slog.String("triggering_error", retErr.Error()))
+			}
+			slog.WarnContext(ctx, "failed to rollback upsert transaction", attrs...)
 		}
 	}()
 
@@ -116,8 +143,8 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 	tilesChanged := false
 	for i, tile := range in.Tiles {
 		enc := encoded[i]
-		switch {
-		case tile.ID == "":
+		switch tile.ID {
+		case "":
 			newID := xid.New().String()
 			if _, err := writeTx.CreateDashboardTile(ctx, dbwrite.CreateDashboardTileParams{
 				ID:            newID,
@@ -147,6 +174,12 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 
 		default:
 			if _, ok := existingSet[tile.ID]; !ok {
+				slog.WarnContext(ctx, "upsert rejected: tile id not on dashboard",
+					slog.String("project_id", projectID),
+					slog.String("dashboard_id", dashboardID),
+					slog.String("tile_id", tile.ID),
+					slog.Int("tile_index", i),
+				)
 				return DashboardWithTiles{}, ErrDashboardTileNotFound
 			}
 			rows, err := writeTx.UpsertDashboardTileUpdate(ctx, dbwrite.UpsertDashboardTileUpdateParams{
@@ -182,11 +215,10 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 
 	// finalIDs contains every tile that should remain on the dashboard
 	// (inserts + updates). DeleteDashboardTilesNotIn removes everything else.
-	keepIDs := append([]string{}, finalIDs...)
 	deleted, err := writeTx.DeleteDashboardTilesNotIn(ctx, dbwrite.DeleteDashboardTilesNotInParams{
 		DashboardID: dashboardID,
 		ProjectID:   projectID,
-		KeepIds:     keepIDs,
+		KeepIds:     finalIDs,
 	})
 	if err != nil {
 		return DashboardWithTiles{}, recordServiceError(ctx, "failed to delete tiles during upsert", err,
@@ -221,7 +253,16 @@ func (s *Service) UpsertDashboard(ctx context.Context, projectID, dashboardID st
 	if err != nil {
 		// GetDashboard already records / classifies the error. ErrDashboardNotFound
 		// shouldn't happen here (we just upserted into the same dashboard) but a
-		// concurrent DeleteDashboard could race; propagate verbatim.
+		// concurrent DeleteDashboard could race. The write is already committed,
+		// so the client will see 404 for a write that did succeed — log a
+		// distinct WARN so operators can tell this apart from a genuine "never
+		// existed" 404 in incident triage.
+		if errors.Is(err, ErrDashboardNotFound) {
+			slog.WarnContext(ctx, "upsert committed but post-reload missed dashboard (concurrent delete)",
+				slog.String("project_id", projectID),
+				slog.String("dashboard_id", dashboardID),
+			)
+		}
 		return DashboardWithTiles{}, err
 	}
 
