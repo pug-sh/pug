@@ -52,31 +52,32 @@ type EncodedTilePayload struct {
 // Encode prepares the payload for storage: normalizes view_mode + compare,
 // translates nested messages to their column-shaped forms, and computes the
 // content hash that Upsert uses to short-circuit no-op writes. All errors
-// come from proto marshaling.
+// come from proto marshaling; each is wrapped with the offending sub-field so
+// operators can triage without re-reading the diff.
 func (p TilePayload) Encode() (EncodedTilePayload, error) {
 	contentEnc, err := p.Content.Encode()
 	if err != nil {
-		return EncodedTilePayload{}, err
+		return EncodedTilePayload{}, fmt.Errorf("encode content: %w", err)
 	}
 	viewMode := normalizedTileViewModeProto(contentEnc.Kind, p.ViewMode)
 	compare := normalizedComparePeriod(p.Compare)
 
 	thresholdsBytes, err := marshalThresholds(p.Thresholds)
 	if err != nil {
-		return EncodedTilePayload{}, err
+		return EncodedTilePayload{}, fmt.Errorf("marshal thresholds: %w", err)
 	}
 	headerMap, err := messageToMap(p.Header)
 	if err != nil {
-		return EncodedTilePayload{}, err
+		return EncodedTilePayload{}, fmt.Errorf("marshal header: %w", err)
 	}
 	visualizationMap, err := messageToMap(p.Visualization)
 	if err != nil {
-		return EncodedTilePayload{}, err
+		return EncodedTilePayload{}, fmt.Errorf("marshal visualization: %w", err)
 	}
 
 	hash, err := computeTilePayloadHash(p, viewMode, compare)
 	if err != nil {
-		return EncodedTilePayload{}, err
+		return EncodedTilePayload{}, fmt.Errorf("compute payload hash: %w", err)
 	}
 
 	return EncodedTilePayload{
@@ -97,15 +98,37 @@ func (p TilePayload) Encode() (EncodedTilePayload, error) {
 // DashboardTileInput built from the normalized payload. The id field is left
 // empty: the hash represents content, not identity. Upsert's short-circuit
 // relies on this hash being a function of the *stored* form, not the input
-// form: layouts are sorted by breakpoint (storage is a keyed map, order
-// discarded on read), and zero-valued nested messages collapse to nil
-// (messageToMap maps both nil and &Empty{} to `{}` for storage, and the read
-// path returns nil for an empty map). Without these normalizations a client
-// echoing back what Get returned would compute a different hash than the one
-// stored, defeating the no-op short-circuit.
+// form:
+//   - layouts are sorted by breakpoint (storage is a keyed map, order discarded
+//     on read) and rebuilt with explicit-zero pointers for every numeric/bool
+//     field — LayoutsToMap stores zeros for any unset field via GetX() etc.,
+//     and MapToLayouts reads them back as proto.Int32(0) (non-nil). Under
+//     edition-2023 explicit presence those zeros serialize, so a client tile
+//     that left X/Y/MinW/etc unset would otherwise hash differently than the
+//     same tile echoed back from Get.
+//   - zero-valued nested messages collapse to nil (messageToMap maps both nil
+//     and &Empty{} to `{}` for storage, and the read path returns nil for an
+//     empty map).
+//
+// Without these normalizations a client echoing back what Get returned would
+// compute a different hash than the one stored, defeating the no-op
+// short-circuit.
 func computeTilePayloadHash(p TilePayload, viewMode dashboardsv1.DashboardTileViewMode, compare dashboardsv1.ComparePeriod) ([]byte, error) {
 	sortedLayouts := make([]*dashboardsv1.ResponsiveGridLayout, len(p.Layouts))
-	copy(sortedLayouts, p.Layouts)
+	for i, l := range p.Layouts {
+		sortedLayouts[i] = &dashboardsv1.ResponsiveGridLayout{
+			Breakpoint: proto.String(l.GetBreakpoint()),
+			X:          proto.Int32(l.GetX()),
+			Y:          proto.Int32(l.GetY()),
+			W:          proto.Int32(l.GetW()),
+			H:          proto.Int32(l.GetH()),
+			MinW:       proto.Int32(l.GetMinW()),
+			MaxW:       proto.Int32(l.GetMaxW()),
+			MinH:       proto.Int32(l.GetMinH()),
+			MaxH:       proto.Int32(l.GetMaxH()),
+			Static:     proto.Bool(l.GetStatic()),
+		}
+	}
 	sort.SliceStable(sortedLayouts, func(i, j int) bool {
 		return sortedLayouts[i].GetBreakpoint() < sortedLayouts[j].GetBreakpoint()
 	})
@@ -187,11 +210,11 @@ func normalizedComparePeriod(c dashboardsv1.ComparePeriod) dashboardsv1.CompareP
 // defaulting unknown / UNSPECIFIED back to UNSPECIFIED. Unknown non-empty names
 // (proto rename, manual DB edit, or schema drift) are logged once per process
 // so the silent fallback doesn't mask a deploy-time bug.
-func ComparePeriodFromDB(name string) dashboardsv1.ComparePeriod {
+func ComparePeriodFromDB(ctx context.Context, name string) dashboardsv1.ComparePeriod {
 	value, ok := dashboardsv1.ComparePeriod_value[name]
 	if !ok {
 		if name != "" {
-			LogUnknownEnumOnce("ComparePeriod", "dashboard_tiles.compare", name)
+			LogUnknownEnumOnce(ctx, "ComparePeriod", "dashboard_tiles.compare", name)
 		}
 		return dashboardsv1.ComparePeriod_COMPARE_PERIOD_UNSPECIFIED
 	}
@@ -208,19 +231,21 @@ var unknownEnumSeen sync.Map
 // combination for the lifetime of the process. Used by FromDB-style normalizers
 // in this package and in the handler package when an unknown name is read from
 // a DB column that should hold a proto enum name — typically the symptom of a
-// proto rename / cross-deploy schema drift.
-func LogUnknownEnumOnce(enumType, column, value string) {
+// proto rename / cross-deploy schema drift. ctx is threaded through to
+// telemetry so the error is recorded on the originating request's span and the
+// log line carries request correlation.
+func LogUnknownEnumOnce(ctx context.Context, enumType, column, value string) {
 	key := enumType + "|" + column + "|" + value
 	if _, loaded := unknownEnumSeen.LoadOrStore(key, struct{}{}); loaded {
 		return
 	}
 	err := fmt.Errorf("unknown %s enum name in %s: %q", enumType, column, value)
-	slog.WarnContext(context.Background(),
+	slog.WarnContext(ctx,
 		"unknown enum name in DB (schema drift?)",
 		slog.String("enum", enumType),
 		slog.String("column", column),
 		slog.String("value", value))
-	telemetry.RecordError(context.Background(), err)
+	telemetry.RecordError(ctx, err)
 }
 
 func marshalThresholds(rules []*dashboardsv1.ThresholdRule) ([]byte, error) {

@@ -285,9 +285,8 @@ func validSpec() *insightsv1.InsightQuerySpec {
 
 // ----- Upsert request & DashboardTileInput validation -------------------
 //
-// These cases pin the spec §3 validation summary at the proto level. They run
-// in unit tests (no DB) — protovalidate alone rejects the bad shapes before
-// they ever reach the handler.
+// These cases pin Upsert request validation at the proto level — protovalidate
+// alone rejects the bad shapes before they ever reach the handler.
 
 func validTileInput() *dashboardsv1.DashboardTileInput {
 	return &dashboardsv1.DashboardTileInput{

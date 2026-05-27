@@ -30,3 +30,14 @@ select dt.id
 from dashboard_tiles dt
 join dashboards d on d.id = dt.dashboard_id
 where dt.dashboard_id = @dashboard_id and d.project_id = @project_id;
+
+-- name: LockDashboardByIDAndProjectID :one
+-- Acquires a row lock on the dashboard for the duration of the calling tx —
+-- used by Upsert to serialize concurrent edits to the same dashboard so the
+-- documented last-write-wins contract holds (two interleaved transactions
+-- without the lock can both insert and commit their own tile, producing a
+-- merge rather than one tile from one of the inputs).
+select *
+from dashboards
+where id = @id and project_id = @project_id
+for update;

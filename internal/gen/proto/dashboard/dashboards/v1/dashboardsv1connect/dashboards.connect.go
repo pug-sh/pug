@@ -63,9 +63,14 @@ type DashboardsServiceClient interface {
 	Update(context.Context, *connect.Request[v1.DashboardsServiceUpdateRequest]) (*connect.Response[v1.DashboardsServiceUpdateResponse], error)
 	// Upsert is the only mutation path for dashboard tiles. It applies an atomic
 	// edit: dashboard metadata is replaced and the tile set is reconciled in a
-	// single transaction. Tiles with empty id are inserted; tiles whose id matches
-	// an existing row are updated (or skipped when byte-equivalent); existing tiles
-	// whose id is absent from the request are deleted. The returned tiles are in
+	// single transaction. Reconciliation has four branches: tiles with empty id
+	// are inserted; tiles whose id matches an existing row are updated (or
+	// skipped when byte-equivalent); existing tiles whose id is absent from the
+	// request are deleted; a populated id that does NOT match any existing tile
+	// is rejected with CodeNotFound (no insert-as-new fallback). Duplicate
+	// non-empty ids within one request are rejected with CodeInvalidArgument.
+	// Last-write-wins under concurrent edits (the server acquires a row lock on
+	// the dashboard for the duration of the tx). The returned tiles are in
 	// request order so clients can map back to their local draft.
 	Upsert(context.Context, *connect.Request[v1.DashboardsServiceUpsertRequest]) (*connect.Response[v1.DashboardsServiceUpsertResponse], error)
 	QueryDashboard(context.Context, *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error)
@@ -183,9 +188,14 @@ type DashboardsServiceHandler interface {
 	Update(context.Context, *connect.Request[v1.DashboardsServiceUpdateRequest]) (*connect.Response[v1.DashboardsServiceUpdateResponse], error)
 	// Upsert is the only mutation path for dashboard tiles. It applies an atomic
 	// edit: dashboard metadata is replaced and the tile set is reconciled in a
-	// single transaction. Tiles with empty id are inserted; tiles whose id matches
-	// an existing row are updated (or skipped when byte-equivalent); existing tiles
-	// whose id is absent from the request are deleted. The returned tiles are in
+	// single transaction. Reconciliation has four branches: tiles with empty id
+	// are inserted; tiles whose id matches an existing row are updated (or
+	// skipped when byte-equivalent); existing tiles whose id is absent from the
+	// request are deleted; a populated id that does NOT match any existing tile
+	// is rejected with CodeNotFound (no insert-as-new fallback). Duplicate
+	// non-empty ids within one request are rejected with CodeInvalidArgument.
+	// Last-write-wins under concurrent edits (the server acquires a row lock on
+	// the dashboard for the duration of the tx). The returned tiles are in
 	// request order so clients can map back to their local draft.
 	Upsert(context.Context, *connect.Request[v1.DashboardsServiceUpsertRequest]) (*connect.Response[v1.DashboardsServiceUpsertResponse], error)
 	QueryDashboard(context.Context, *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error)

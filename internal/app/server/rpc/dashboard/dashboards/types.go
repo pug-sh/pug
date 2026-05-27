@@ -18,10 +18,10 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-func roDashboardToRPC(dashboard coredashboards.DashboardWithTiles) (*dashboardsv1.Dashboard, error) {
+func roDashboardToRPC(ctx context.Context, dashboard coredashboards.DashboardWithTiles) (*dashboardsv1.Dashboard, error) {
 	tiles := make([]*dashboardsv1.DashboardTile, 0, len(dashboard.Tiles))
 	for _, tile := range dashboard.Tiles {
-		msg, err := roTileToRPC(tile)
+		msg, err := roTileToRPC(ctx, tile)
 		if err != nil {
 			return nil, fmt.Errorf("tile %s: %w", tile.ID, err)
 		}
@@ -35,14 +35,14 @@ func roDashboardToRPC(dashboard coredashboards.DashboardWithTiles) (*dashboardsv
 		CreateTime:         toTimestamp(dashboard.Dashboard.CreateTime.Time),
 		UpdateTime:         toTimestamp(dashboard.Dashboard.UpdateTime.Time),
 		Tiles:              tiles,
-		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(dashboard.Dashboard.DefaultTimeRange).Enum(),
-		DefaultGranularity: coredashboards.DashboardGranularityFromDB(dashboard.Dashboard.DefaultGranularity).Enum(),
+		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(ctx, dashboard.Dashboard.DefaultTimeRange).Enum(),
+		DefaultGranularity: coredashboards.DashboardGranularityFromDB(ctx, dashboard.Dashboard.DefaultGranularity).Enum(),
 	}, nil
 }
 
 // wDashboardToRPC encodes a freshly-created dashboard. The Tiles slice is
 // intentionally absent — a brand-new dashboard has no tiles.
-func wDashboardToRPC(dashboard dbwrite.Dashboard) *dashboardsv1.Dashboard {
+func wDashboardToRPC(ctx context.Context, dashboard dbwrite.Dashboard) *dashboardsv1.Dashboard {
 	return &dashboardsv1.Dashboard{
 		Id:                 proto.String(dashboard.ID),
 		ProjectId:          proto.String(dashboard.ProjectID),
@@ -50,8 +50,8 @@ func wDashboardToRPC(dashboard dbwrite.Dashboard) *dashboardsv1.Dashboard {
 		Description:        proto.String(dashboard.Description),
 		CreateTime:         toTimestamp(dashboard.CreateTime.Time),
 		UpdateTime:         toTimestamp(dashboard.UpdateTime.Time),
-		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(dashboard.DefaultTimeRange).Enum(),
-		DefaultGranularity: coredashboards.DashboardGranularityFromDB(dashboard.DefaultGranularity).Enum(),
+		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(ctx, dashboard.DefaultTimeRange).Enum(),
+		DefaultGranularity: coredashboards.DashboardGranularityFromDB(ctx, dashboard.DefaultGranularity).Enum(),
 	}
 }
 
@@ -64,8 +64,8 @@ func renderedDashboardToRPC(ctx context.Context, rd coredashboards.RenderedDashb
 		Id:                 proto.String(rd.Dashboard.ID),
 		DisplayName:        proto.String(rd.Dashboard.DisplayName),
 		Description:        proto.String(rd.Dashboard.Description),
-		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(rd.Dashboard.DefaultTimeRange).Enum(),
-		DefaultGranularity: coredashboards.DashboardGranularityFromDB(rd.Dashboard.DefaultGranularity).Enum(),
+		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(ctx, rd.Dashboard.DefaultTimeRange).Enum(),
+		DefaultGranularity: coredashboards.DashboardGranularityFromDB(ctx, rd.Dashboard.DefaultGranularity).Enum(),
 		CreateTime:         toTimestamp(rd.Dashboard.CreateTime.Time),
 		UpdateTime:         toTimestamp(rd.Dashboard.UpdateTime.Time),
 		Tiles:              tiles,
@@ -78,7 +78,7 @@ func renderedDashboardToRPC(ctx context.Context, rd coredashboards.RenderedDashb
 // error_message outcome — a corrupt tile must not fail the whole QueryDashboard, the
 // same per-tile contract renderInsightTile upholds at execution time.
 func renderedTileToRPC(ctx context.Context, rt coredashboards.RenderedTile) *dashboardsv1.RenderedTile {
-	tileMsg, err := roTileToRPC(rt.Tile)
+	tileMsg, err := roTileToRPC(ctx, rt.Tile)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to encode rendered dashboard tile",
 			slogx.Error(err), slog.String("tile_id", rt.Tile.ID))
@@ -118,7 +118,7 @@ func structuralTileToRPC(ctx context.Context, tile dbread.DashboardTile) *dashbo
 		Description: proto.String(tile.Description),
 		CreateTime:  toTimestamp(tile.CreateTime.Time),
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
-		ViewMode:    tileViewModeToRPC(coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
+		ViewMode:    tileViewModeToRPC(ctx, coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
 	}
 	layouts, err := coredashboards.MapToLayouts(tile.Layouts)
 	if err != nil {
@@ -131,7 +131,7 @@ func structuralTileToRPC(ctx context.Context, tile dbread.DashboardTile) *dashbo
 	return msg
 }
 
-func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error) {
+func roTileToRPC(ctx context.Context, tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error) {
 	layouts, err := coredashboards.MapToLayouts(tile.Layouts)
 	if err != nil {
 		return nil, err
@@ -144,12 +144,12 @@ func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error)
 		Layouts:     layouts,
 		CreateTime:  toTimestamp(tile.CreateTime.Time),
 		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
-		ViewMode:    tileViewModeToRPC(coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
+		ViewMode:    tileViewModeToRPC(ctx, coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
 	}
 	if err := setTileContent(msg, tile.ID, coredashboards.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
 		return nil, err
 	}
-	if err := setTileCustomization(msg, tile.Compare, tile.Thresholds, tile.Header, tile.Visualization); err != nil {
+	if err := setTileCustomization(ctx, msg, tile.Compare, tile.Thresholds, tile.Header, tile.Visualization); err != nil {
 		return nil, err
 	}
 	return msg, nil
@@ -159,29 +159,30 @@ func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error)
 // on the response from the DB row's stored columns. Errors propagate proto
 // decoding failures (data corruption / schema drift). On the QueryDashboard
 // path, renderedTileToRPC catches the error and degrades to a per-tile
-// error_message; on Get / Update / Upsert (roDashboardToRPC), the error fails
-// the whole response with CodeInternal — the handler wraps the error with the
-// failing tile id so the operator has a starting point.
-func setTileCustomization(msg *dashboardsv1.DashboardTile, compare string, thresholds []byte, header, visualization map[string]any) error {
-	msg.Compare = coredashboards.ComparePeriodFromDB(compare).Enum()
+// error_message; on Get / Update / Upsert / List (roDashboardToRPC), the error
+// fails the whole response with CodeInternal — roDashboardToRPC wraps it with
+// the failing tile id (fmt.Errorf "tile %s: %w") so the operator has a
+// starting point in the recorded telemetry.
+func setTileCustomization(ctx context.Context, msg *dashboardsv1.DashboardTile, compare string, thresholds []byte, header, visualization map[string]any) error {
+	msg.Compare = coredashboards.ComparePeriodFromDB(ctx, compare).Enum()
 
 	rules, err := coredashboards.UnmarshalThresholds(thresholds)
 	if err != nil {
-		return err
+		return fmt.Errorf("unmarshal thresholds: %w", err)
 	}
 	msg.Thresholds = rules
 
 	if len(header) > 0 {
 		var h dashboardsv1.TileHeader
 		if err := coredashboards.MapToMessage(header, &h); err != nil {
-			return err
+			return fmt.Errorf("decode header: %w", err)
 		}
 		msg.Header = &h
 	}
 	if len(visualization) > 0 {
 		var v dashboardsv1.VisualizationOptions
 		if err := coredashboards.MapToMessage(visualization, &v); err != nil {
-			return err
+			return fmt.Errorf("decode visualization: %w", err)
 		}
 		msg.Visualization = &v
 	}
@@ -220,13 +221,13 @@ func setTileContent(msg *dashboardsv1.DashboardTile, tileID string, kind coredas
 	}
 }
 
-func tileViewModeToRPC(kind coredashboards.TileKind, raw string) dashboardsv1.DashboardTileViewMode {
+func tileViewModeToRPC(ctx context.Context, kind coredashboards.TileKind, raw string) dashboardsv1.DashboardTileViewMode {
 	switch kind {
 	case coredashboards.TileKindInsight:
 		value, ok := dashboardsv1.DashboardTileViewMode_value[raw]
 		if !ok {
 			if raw != "" {
-				coredashboards.LogUnknownEnumOnce("DashboardTileViewMode", "dashboard_tiles.view_mode", raw)
+				coredashboards.LogUnknownEnumOnce(ctx, "DashboardTileViewMode", "dashboard_tiles.view_mode", raw)
 			}
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
 		}

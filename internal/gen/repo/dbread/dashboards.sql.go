@@ -200,3 +200,36 @@ func (q *Queries) ListDashboardsByProjectID(ctx context.Context, projectID strin
 	}
 	return items, nil
 }
+
+const lockDashboardByIDAndProjectID = `-- name: LockDashboardByIDAndProjectID :one
+select id, project_id, display_name, description, default_time_range, default_granularity, create_time, update_time
+from dashboards
+where id = $1 and project_id = $2
+for update
+`
+
+type LockDashboardByIDAndProjectIDParams struct {
+	ID        string
+	ProjectID string
+}
+
+// Acquires a row lock on the dashboard for the duration of the calling tx —
+// used by Upsert to serialize concurrent edits to the same dashboard so the
+// documented last-write-wins contract holds (two interleaved transactions
+// without the lock can both insert and commit their own tile, producing a
+// merge rather than one tile from one of the inputs).
+func (q *Queries) LockDashboardByIDAndProjectID(ctx context.Context, arg LockDashboardByIDAndProjectIDParams) (Dashboard, error) {
+	row := q.db.QueryRow(ctx, lockDashboardByIDAndProjectID, arg.ID, arg.ProjectID)
+	var i Dashboard
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.DisplayName,
+		&i.Description,
+		&i.DefaultTimeRange,
+		&i.DefaultGranularity,
+		&i.CreateTime,
+		&i.UpdateTime,
+	)
+	return i, err
+}

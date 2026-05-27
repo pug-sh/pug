@@ -231,7 +231,7 @@ func TestHandler_Upsert_HashShortCircuit(t *testing.T) {
 
 // TestHandler_Upsert_EmptyTilesClearsDashboard verifies the omit-all case:
 // a dashboard with tiles upserted with an empty tile list ends up with zero
-// tiles and no error (spec §5 row "Replace omits all tiles").
+// tiles and no error.
 func TestHandler_Upsert_EmptyTilesClearsDashboard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -274,8 +274,7 @@ func TestHandler_Upsert_EmptyTilesClearsDashboard(t *testing.T) {
 
 // TestHandler_Upsert_OnlyChangedTileBumpsUpdateTime is the granular cousin of
 // the hash short-circuit test: Upsert two tiles, change only one, and assert
-// the unchanged tile's update_time is preserved while the changed one's bumps
-// (spec §5 row "one tile's content changed").
+// the unchanged tile's update_time is preserved while the changed one's bumps.
 func TestHandler_Upsert_OnlyChangedTileBumpsUpdateTime(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -344,9 +343,10 @@ func TestHandler_Upsert_OnlyChangedTileBumpsUpdateTime(t *testing.T) {
 
 // TestHandler_Upsert_DuplicateNameRollsBack verifies that a mid-transaction
 // failure (here, a unique-violation on display_name during an INSERT) undoes
-// the UPDATE that happened earlier in the same Upsert call (spec §5 row
-// "mid-transaction failure"). The earlier-updated tile must end up with its
-// pre-Upsert content.
+// updates that happened earlier in the same Upsert call. To force the
+// collision under the delete-first ordering, the new tile claims the name
+// of a tile that's also being kept (so the conflict can't be resolved by an
+// earlier DELETE).
 func TestHandler_Upsert_DuplicateNameRollsBack(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -363,11 +363,11 @@ func TestHandler_Upsert_DuplicateNameRollsBack(t *testing.T) {
 		seedTile{name: "alpha", body: "original alpha"},
 		seedTile{name: "beta", body: "original beta"},
 	)
-	alpha := seeded[0]
+	alpha, beta := seeded[0], seeded[1]
 
-	// First request slot updates alpha (would succeed in isolation); second
-	// slot is a new tile claiming the name "beta" — collides with the seeded
-	// row mid-tx. Failure must roll alpha's update back.
+	// Keep both seeded tiles in the request (alpha gets a body change so its
+	// update is observable on rollback). The third slot is a new tile claiming
+	// alpha's name — collides with the kept alpha row mid-tx.
 	_, err = s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
 		Id:          proto.String(dash.ID),
 		DisplayName: proto.String("Board"),
@@ -380,8 +380,15 @@ func TestHandler_Upsert_DuplicateNameRollsBack(t *testing.T) {
 				},
 			},
 			{
-				// New tile, but display_name collides with the still-present beta.
+				Id:          proto.String(beta),
 				DisplayName: proto.String("beta"),
+				Content: &dashboardsv1.DashboardTileInput_Markdown{
+					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("original beta")},
+				},
+			},
+			{
+				// New tile, display_name collides with the kept alpha row.
+				DisplayName: proto.String("alpha"),
 				Content: &dashboardsv1.DashboardTileInput_Markdown{
 					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("conflicting")},
 				},
@@ -411,10 +418,9 @@ func TestHandler_Upsert_DuplicateNameRollsBack(t *testing.T) {
 	}
 }
 
-// TestHandler_Upsert_KpiUnspecifiedComparePersists pins the spec §5 row
-// "compare = COMPARE_PERIOD_UNSPECIFIED on KPI tile → Saved as-is": KPI tiles
-// don't require a compare period, and UNSPECIFIED must round-trip rather than
-// being rejected or normalized away into something else.
+// TestHandler_Upsert_KpiUnspecifiedComparePersists pins that KPI tiles don't
+// require a compare period — COMPARE_PERIOD_UNSPECIFIED must round-trip rather
+// than being rejected or normalized away into something else.
 func TestHandler_Upsert_KpiUnspecifiedComparePersists(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -573,7 +579,7 @@ func TestHandler_Upsert_TileCustomizationRoundTrip(t *testing.T) {
 			YAxisFormat:  dashboardsv1.VisualizationOptions_Y_AXIS_FORMAT_PERCENT.Enum(),
 			LogScale:     proto.Bool(true),
 			HideLegend:   proto.Bool(true),
-			ZeroBaseline: proto.Bool(true),
+			ZeroBaseline: proto.Bool(false),
 		},
 	}
 
@@ -665,8 +671,6 @@ func TestHandler_Upsert_CaseInsensitiveDisplayNameConflict(t *testing.T) {
 
 // TestHandler_Upsert_RenameIntoExistingConflict pins that renaming an existing
 // tile to collide with another existing tile's name fails the whole Upsert.
-// (The original DashboardTileDisplayNameConflict service test covered this
-// for the deleted UpdateDashboardTile RPC; this is the Upsert equivalent.)
 func TestHandler_Upsert_RenameIntoExistingConflict(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -1041,6 +1045,307 @@ func TestHandler_Upsert_LastWriteWins(t *testing.T) {
 	}
 	t.Errorf("final state matches neither input verbatim: dashboard=%q, tile=%q, body=%q",
 		dashGot.GetDisplayName(), tile.GetDisplayName(), tile.GetMarkdown().GetBody())
+}
+
+// TestHandler_Upsert_LayoutsRoundTripHashStable pins the headline payload_hash
+// invariant for layout-bearing tiles: a tile sent with only the required layout
+// fields (Breakpoint/W/H), fetched, then re-upserted verbatim must NOT bump
+// update_time. The hash function and storage round-trip must agree on the
+// presence semantics of unset numeric fields.
+func TestHandler_Upsert_LayoutsRoundTripHashStable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+
+	// Seed with multiple breakpoints, each setting only Breakpoint/W/H — the
+	// realistic FE shape. X/Y/MinW/MaxW/MinH/MaxH/Static are unset (nil),
+	// which after Get→Upsert round-trip come back as proto.Int32(0)/Bool(false).
+	initialResp, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Board"),
+		Tiles: []*dashboardsv1.DashboardTileInput{
+			{
+				DisplayName: proto.String("with-layouts"),
+				Content: &dashboardsv1.DashboardTileInput_Markdown{
+					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("body")},
+				},
+				Layouts: []*dashboardsv1.ResponsiveGridLayout{
+					{Breakpoint: proto.String("lg"), W: proto.Int32(6), H: proto.Int32(3)},
+					{Breakpoint: proto.String("md"), W: proto.Int32(4), H: proto.Int32(2)},
+					{Breakpoint: proto.String("sm"), W: proto.Int32(2), H: proto.Int32(2)},
+				},
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("initial Upsert: %v", err)
+	}
+	insertedTile := initialResp.Msg.GetDashboard().GetTiles()[0]
+	t0 := insertedTile.GetUpdateTime().AsTime()
+
+	// Get the dashboard, copy the returned tile verbatim into a new Upsert.
+	// If hash(input) == hash(GetThenUpsert(input)) doesn't hold, the second
+	// Upsert will fire an UPDATE and bump update_time.
+	getResp, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
+		Id: proto.String(dash.ID),
+	}))
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	fetched := getResp.Msg.GetDashboard().GetTiles()[0]
+
+	echoed := &dashboardsv1.DashboardTileInput{
+		Id:          proto.String(fetched.GetId()),
+		DisplayName: proto.String(fetched.GetDisplayName()),
+		Description: proto.String(fetched.GetDescription()),
+		Content: &dashboardsv1.DashboardTileInput_Markdown{
+			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String(fetched.GetMarkdown().GetBody())},
+		},
+		Layouts:  fetched.GetLayouts(),
+		ViewMode: fetched.ViewMode,
+		Compare:  fetched.Compare,
+	}
+	resp2, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Board"),
+		Tiles:       []*dashboardsv1.DashboardTileInput{echoed},
+	}))
+	if err != nil {
+		t.Fatalf("echo Upsert: %v", err)
+	}
+	t1 := resp2.Msg.GetDashboard().GetTiles()[0].GetUpdateTime().AsTime()
+	if !t0.Equal(t1) {
+		t.Errorf("tile update_time bumped on Get→Upsert echo of layout-bearing tile: %v -> %v", t0, t1)
+	}
+}
+
+// TestHandler_Upsert_EmptyDescriptionFullReplaces pins the documented Upsert
+// asymmetry vs Update: Upsert is full-replace, so sending an empty description
+// clears any previously-stored description. Companion to
+// TestHandler_Update_EmptyDescriptionPreservesExisting in handler_test.go,
+// which pins the inverse Update semantics.
+func TestHandler_Upsert_EmptyDescriptionFullReplaces(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "original description",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+
+	if _, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Board"),
+		Description: proto.String(""),
+	})); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	getResp, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
+		Id: proto.String(dash.ID),
+	}))
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got := getResp.Msg.GetDashboard().GetDescription(); got != "" {
+		t.Errorf("description after empty-Upsert = %q, want empty (full-replace)", got)
+	}
+}
+
+// TestHandler_Upsert_NoChangeKeepsDashboardUpdateTime pins one of the three
+// branches of UpsertDashboardMetadata's gating predicate: when neither tiles
+// nor metadata changed, the dashboard's update_time must stay put (the SQL
+// WHERE makes the UPDATE a zero-row no-op so moddatetime doesn't fire).
+func TestHandler_Upsert_NoChangeKeepsDashboardUpdateTime(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "desc",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+
+	// Establish a known baseline via Upsert so the byte-identical re-upsert
+	// below truly matches every metadata column (the seed-helper would clear
+	// description and leave other fields at zero-defaults).
+	baseline := &dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:                 proto.String(dash.ID),
+		DisplayName:        proto.String("Board"),
+		Description:        proto.String("desc"),
+		DefaultTimeRange:   commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS.Enum(),
+		DefaultGranularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		Tiles: []*dashboardsv1.DashboardTileInput{
+			{
+				DisplayName: proto.String("card"),
+				Content: &dashboardsv1.DashboardTileInput_Markdown{
+					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("body")},
+				},
+			},
+		},
+	}
+	seeded, err := s.Upsert(authCtx(projectID), connect.NewRequest(baseline))
+	if err != nil {
+		t.Fatalf("baseline Upsert: %v", err)
+	}
+	tileID := seeded.Msg.GetDashboard().GetTiles()[0].GetId()
+	t0 := seeded.Msg.GetDashboard().GetUpdateTime().AsTime()
+
+	// Byte-identical re-upsert: same metadata, same tile content (now with
+	// the assigned tile id).
+	baseline.Tiles[0].Id = proto.String(tileID)
+	if _, err := s.Upsert(authCtx(projectID), connect.NewRequest(baseline)); err != nil {
+		t.Fatalf("re-Upsert: %v", err)
+	}
+
+	after, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
+		Id: proto.String(dash.ID),
+	}))
+	if err != nil {
+		t.Fatalf("after Get: %v", err)
+	}
+	t1 := after.Msg.GetDashboard().GetUpdateTime().AsTime()
+	if !t0.Equal(t1) {
+		t.Errorf("dashboard update_time bumped on byte-identical re-Upsert: %v -> %v", t0, t1)
+	}
+}
+
+// TestHandler_Upsert_OnlyTileEditBumpsDashboardUpdateTime pins the gating
+// predicate's tiles_changed branch: a tile edit with identical dashboard
+// metadata must still bump the dashboard's update_time (the row gets re-UPDATEd
+// with identical values so the moddatetime trigger fires).
+func TestHandler_Upsert_OnlyTileEditBumpsDashboardUpdateTime(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "desc",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+
+	baseline := &dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:                 proto.String(dash.ID),
+		DisplayName:        proto.String("Board"),
+		Description:        proto.String("desc"),
+		DefaultTimeRange:   commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS.Enum(),
+		DefaultGranularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		Tiles: []*dashboardsv1.DashboardTileInput{
+			{
+				DisplayName: proto.String("card"),
+				Content: &dashboardsv1.DashboardTileInput_Markdown{
+					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("body")},
+				},
+			},
+		},
+	}
+	seeded, err := s.Upsert(authCtx(projectID), connect.NewRequest(baseline))
+	if err != nil {
+		t.Fatalf("baseline Upsert: %v", err)
+	}
+	tileID := seeded.Msg.GetDashboard().GetTiles()[0].GetId()
+	t0 := seeded.Msg.GetDashboard().GetUpdateTime().AsTime()
+
+	// Tile body changes; metadata byte-identical.
+	baseline.Tiles[0].Id = proto.String(tileID)
+	baseline.Tiles[0].Content = &dashboardsv1.DashboardTileInput_Markdown{
+		Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("new body")},
+	}
+	if _, err := s.Upsert(authCtx(projectID), connect.NewRequest(baseline)); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	after, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
+		Id: proto.String(dash.ID),
+	}))
+	if err != nil {
+		t.Fatalf("after Get: %v", err)
+	}
+	t1 := after.Msg.GetDashboard().GetUpdateTime().AsTime()
+	if t1.Equal(t0) || t1.Before(t0) {
+		t.Errorf("dashboard update_time did not bump on tile edit: %v -> %v", t0, t1)
+	}
+}
+
+// TestHandler_Upsert_OnlyMetadataEditBumpsDashboardUpdateTime pins the gating
+// predicate's metadata-changed branch: a metadata edit with byte-identical
+// tiles must bump the dashboard's update_time and must NOT bump any tile's
+// update_time.
+func TestHandler_Upsert_OnlyMetadataEditBumpsDashboardUpdateTime(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "desc",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+
+	baseline := &dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:                 proto.String(dash.ID),
+		DisplayName:        proto.String("Board"),
+		Description:        proto.String("desc"),
+		DefaultTimeRange:   commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS.Enum(),
+		DefaultGranularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		Tiles: []*dashboardsv1.DashboardTileInput{
+			{
+				DisplayName: proto.String("card"),
+				Content: &dashboardsv1.DashboardTileInput_Markdown{
+					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("body")},
+				},
+			},
+		},
+	}
+	seeded, err := s.Upsert(authCtx(projectID), connect.NewRequest(baseline))
+	if err != nil {
+		t.Fatalf("baseline Upsert: %v", err)
+	}
+	tileID := seeded.Msg.GetDashboard().GetTiles()[0].GetId()
+	dt0 := seeded.Msg.GetDashboard().GetUpdateTime().AsTime()
+	tt0 := seeded.Msg.GetDashboard().GetTiles()[0].GetUpdateTime().AsTime()
+
+	// Display name changes; tile content byte-identical.
+	baseline.DisplayName = proto.String("Board renamed")
+	baseline.Tiles[0].Id = proto.String(tileID)
+	if _, err := s.Upsert(authCtx(projectID), connect.NewRequest(baseline)); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	after, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
+		Id: proto.String(dash.ID),
+	}))
+	if err != nil {
+		t.Fatalf("after Get: %v", err)
+	}
+	dt1 := after.Msg.GetDashboard().GetUpdateTime().AsTime()
+	tt1 := after.Msg.GetDashboard().GetTiles()[0].GetUpdateTime().AsTime()
+	if dt1.Equal(dt0) || dt1.Before(dt0) {
+		t.Errorf("dashboard update_time did not bump on metadata-only edit: %v -> %v", dt0, dt1)
+	}
+	if !tt0.Equal(tt1) {
+		t.Errorf("tile update_time bumped on metadata-only edit (payload_hash short-circuit failed): %v -> %v", tt0, tt1)
+	}
 }
 
 // newIntegrationServerTwoProjects sets up Postgres + service + handler with

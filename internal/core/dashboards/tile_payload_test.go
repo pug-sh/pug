@@ -210,3 +210,77 @@ func TestUnmarshalThresholds_MalformedJSON(t *testing.T) {
 		})
 	}
 }
+
+// TestTilePayload_HashContractCoversEveryInputField is a contract test for the
+// hash-subject double-duty risk: computeTilePayloadHash builds a
+// DashboardTileInput explicitly, so a field added to that message in proto
+// without a corresponding addition here would be silently excluded from the
+// hash domain. For each currently-known field on DashboardTileInput, this test
+// asserts that populating only that field (and leaving the rest zero) produces
+// a hash distinct from the all-zero payload's hash. If the test starts failing
+// after a proto edit because a new field is added with no hash coverage, that
+// is the contract regression.
+func TestTilePayload_HashContractCoversEveryInputField(t *testing.T) {
+	zero := TilePayload{Content: MarkdownTile{Body: "x"}}
+	zeroHash := mustEncode(t, zero).PayloadHash
+
+	cases := []struct {
+		name   string
+		mut    func(*TilePayload)
+		fields []string // proto fields that this case exercises
+	}{
+		{"display_name", func(p *TilePayload) { p.DisplayName = "name" }, []string{"display_name"}},
+		{"description", func(p *TilePayload) { p.Description = "desc" }, []string{"description"}},
+		{"content/markdown", func(p *TilePayload) { p.Content = MarkdownTile{Body: "different"} }, []string{"markdown"}},
+		{"content/insight", func(p *TilePayload) {
+			p.Content = InsightTile{Spec: &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum()}}
+		}, []string{"insight"}},
+		{"layouts", func(p *TilePayload) {
+			p.Layouts = []*dashboardsv1.ResponsiveGridLayout{{Breakpoint: proto.String("lg"), W: proto.Int32(2), H: proto.Int32(2)}}
+		}, []string{"layouts"}},
+		{"view_mode", func(p *TilePayload) {
+			p.Content = InsightTile{Spec: &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum()}}
+			p.ViewMode = dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA
+		}, []string{"view_mode"}},
+		{"compare", func(p *TilePayload) { p.Compare = dashboardsv1.ComparePeriod_COMPARE_PERIOD_PRIOR }, []string{"compare"}},
+		{"thresholds", func(p *TilePayload) {
+			p.Thresholds = []*dashboardsv1.ThresholdRule{{Operator: dashboardsv1.ThresholdRule_OPERATOR_GT.Enum(), Value: proto.Float64(1), Tone: dashboardsv1.ThresholdRule_TONE_GOOD.Enum()}}
+		}, []string{"thresholds"}},
+		{"header", func(p *TilePayload) { p.Header = &dashboardsv1.TileHeader{Icon: proto.String("📈")} }, []string{"header"}},
+		{"visualization", func(p *TilePayload) {
+			p.Visualization = &dashboardsv1.VisualizationOptions{LogScale: proto.Bool(true)}
+		}, []string{"visualization"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := TilePayload{Content: MarkdownTile{Body: "x"}}
+			tc.mut(&p)
+			got := mustEncode(t, p).PayloadHash
+			if bytes.Equal(got, zeroHash) {
+				t.Errorf("populating %q produced the zero-payload hash — field is not in the hash domain", tc.fields)
+			}
+		})
+	}
+
+	// Sentinel: enumerate the proto descriptor's top-level fields and report
+	// any that don't appear in the case list above. Catches drift the other
+	// direction — a new proto field whose hash status nobody decided.
+	desc := (&dashboardsv1.DashboardTileInput{}).ProtoReflect().Descriptor()
+	covered := map[string]bool{
+		// id is intentionally excluded — hash represents content, not identity.
+		"id": true,
+	}
+	for _, tc := range cases {
+		for _, f := range tc.fields {
+			covered[f] = true
+		}
+	}
+	fields := desc.Fields()
+	for i := 0; i < fields.Len(); i++ {
+		name := string(fields.Get(i).Name())
+		if !covered[name] {
+			t.Errorf("DashboardTileInput field %q is not covered by the hash contract test — decide whether it should affect the hash and update either computeTilePayloadHash or this test", name)
+		}
+	}
+}

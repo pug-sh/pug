@@ -66,7 +66,7 @@ func (s *Server) Create(
 	}
 
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceCreateResponse{
-		Dashboard: wDashboardToRPC(dashboard),
+		Dashboard: wDashboardToRPC(ctx, dashboard),
 	}), nil
 }
 
@@ -89,7 +89,7 @@ func (s *Server) List(
 
 	result := make([]*dashboardsv1.Dashboard, 0, len(dashboards))
 	for _, dashboard := range dashboards {
-		msg, err := roDashboardToRPC(dashboard)
+		msg, err := roDashboardToRPC(ctx, dashboard)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to encode dashboard", slogx.Error(err), slog.String("dashboard_id", dashboard.Dashboard.ID))
 			telemetry.RecordError(ctx, err)
@@ -121,7 +121,7 @@ func (s *Server) Get(
 		return nil, serviceErrToConnect(err)
 	}
 
-	msg, err := roDashboardToRPC(dashboard)
+	msg, err := roDashboardToRPC(ctx, dashboard)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to encode dashboard", slogx.Error(err), slog.String("dashboard_id", dashboard.Dashboard.ID))
 		telemetry.RecordError(ctx, err)
@@ -151,7 +151,7 @@ func (s *Server) Update(
 		return nil, serviceErrToConnect(err)
 	}
 
-	msg, err := roDashboardToRPC(dashboard)
+	msg, err := roDashboardToRPC(ctx, dashboard)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to encode dashboard", slogx.Error(err), slog.String("dashboard_id", dashboard.Dashboard.ID))
 		telemetry.RecordError(ctx, err)
@@ -235,7 +235,7 @@ func (s *Server) Upsert(
 		return nil, serviceErrToConnect(err)
 	}
 
-	msg, err := roDashboardToRPC(dashboard)
+	msg, err := roDashboardToRPC(ctx, dashboard)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to encode upserted dashboard",
 			slogx.Error(err),

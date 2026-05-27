@@ -250,7 +250,7 @@ func (ThresholdRule_Tone) EnumDescriptor() ([]byte, []int) {
 type VisualizationOptions_YAxisFormat int32
 
 const (
-	VisualizationOptions_Y_AXIS_FORMAT_UNSPECIFIED VisualizationOptions_YAxisFormat = 0 // number, plain
+	VisualizationOptions_Y_AXIS_FORMAT_UNSPECIFIED VisualizationOptions_YAxisFormat = 0 // client default: NUMBER
 	VisualizationOptions_Y_AXIS_FORMAT_NUMBER      VisualizationOptions_YAxisFormat = 1
 	VisualizationOptions_Y_AXIS_FORMAT_PERCENT     VisualizationOptions_YAxisFormat = 2
 	VisualizationOptions_Y_AXIS_FORMAT_DURATION_MS VisualizationOptions_YAxisFormat = 3
@@ -677,7 +677,9 @@ func (x *MarkdownTileContent) GetBody() string {
 // ThresholdRule colors a KPI value based on a comparison against `value`.
 // Evaluation is client-side; the server only stores and returns the rule.
 type ThresholdRule struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// operator and tone are required so an UNSPECIFIED rule (which would match
+	// every value or apply no tone) can't be persisted as a wire-valid no-op.
 	Operator      *ThresholdRule_Operator `protobuf:"varint,1,opt,name=operator,enum=dashboard.dashboards.v1.ThresholdRule_Operator" json:"operator,omitempty"`
 	Value         *float64                `protobuf:"fixed64,2,opt,name=value" json:"value,omitempty"`
 	Tone          *ThresholdRule_Tone     `protobuf:"varint,3,opt,name=tone,enum=dashboard.dashboards.v1.ThresholdRule_Tone" json:"tone,omitempty"`
@@ -739,7 +741,10 @@ func (x *ThresholdRule) GetTone() ThresholdRule_Tone {
 // TileHeader customizes the tile's header rendering. All fields are optional.
 type TileHeader struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Single grapheme cluster (one emoji or one character) or empty.
+	// Short label rendered in the tile header — typically a single grapheme
+	// cluster (one emoji or character). Capped at 8 bytes, so multi-codepoint
+	// emoji (flags, ZWJ-joined family sequences) may not fit; the FE should
+	// fall back to no icon when the client-side grapheme count exceeds 1.
 	Icon *string `protobuf:"bytes,1,opt,name=icon" json:"icon,omitempty"`
 	// Semantic accent token. Empty means "no accent".
 	AccentColor   *string `protobuf:"bytes,2,opt,name=accent_color,json=accentColor" json:"accent_color,omitempty"`
@@ -2093,11 +2098,13 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\x12InsightTileContent\x12@\n" +
 	"\x04spec\x18\x01 \x01(\v2$.shared.insights.v1.InsightQuerySpecB\x06\xbaH\x03\xc8\x01\x01R\x04spec\"6\n" +
 	"\x13MarkdownTileContent\x12\x1f\n" +
-	"\x04body\x18\x01 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xa0\x8d\x06R\x04body\"\x8f\x03\n" +
-	"\rThresholdRule\x12U\n" +
-	"\boperator\x18\x01 \x01(\x0e2/.dashboard.dashboards.v1.ThresholdRule.OperatorB\b\xbaH\x05\x82\x01\x02\x10\x01R\boperator\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\x12I\n" +
-	"\x04tone\x18\x03 \x01(\x0e2+.dashboard.dashboards.v1.ThresholdRule.ToneB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04tone\"j\n" +
+	"\x04body\x18\x01 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xa0\x8d\x06R\x04body\"\x99\x03\n" +
+	"\rThresholdRule\x12Z\n" +
+	"\boperator\x18\x01 \x01(\x0e2/.dashboard.dashboards.v1.ThresholdRule.OperatorB\r\xbaH\n" +
+	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\boperator\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\x12N\n" +
+	"\x04tone\x18\x03 \x01(\x0e2+.dashboard.dashboards.v1.ThresholdRule.ToneB\r\xbaH\n" +
+	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x04tone\"j\n" +
 	"\bOperator\x12\x18\n" +
 	"\x14OPERATOR_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vOPERATOR_LT\x10\x01\x12\x10\n" +
@@ -2115,7 +2122,7 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\x04icon\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18\bR\x04icon\x12Q\n" +
 	"\faccent_color\x18\x02 \x01(\tB.\xbaH+r)R\x00R\x04blueR\x05greenR\x03redR\x05amberR\x06purpleR\x04grayR\vaccentColor\x12\x1d\n" +
 	"\n" +
-	"hide_title\x18\x03 \x01(\bR\thideTitle\"\xe5\x02\n" +
+	"hide_title\x18\x03 \x01(\bR\thideTitle\"\x81\x04\n" +
 	"\x14VisualizationOptions\x12g\n" +
 	"\ry_axis_format\x18\x01 \x01(\x0e29.dashboard.dashboards.v1.VisualizationOptions.YAxisFormatB\b\xbaH\x05\x82\x01\x02\x10\x01R\vyAxisFormat\x12\x1b\n" +
 	"\tlog_scale\x18\x02 \x01(\bR\blogScale\x12\x1f\n" +
@@ -2126,7 +2133,8 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\x19Y_AXIS_FORMAT_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14Y_AXIS_FORMAT_NUMBER\x10\x01\x12\x19\n" +
 	"\x15Y_AXIS_FORMAT_PERCENT\x10\x02\x12\x1d\n" +
-	"\x19Y_AXIS_FORMAT_DURATION_MS\x10\x03\"\xc4\x02\n" +
+	"\x19Y_AXIS_FORMAT_DURATION_MS\x10\x03:\x99\x01\xbaH\x95\x01\x1a\x92\x01\n" +
+	"6visualization_options.log_scale_excludes_zero_baseline\x12/log_scale cannot be combined with zero_baseline\x1a'!(this.log_scale && this.zero_baseline)\"\xc4\x02\n" +
 	"\x14ResponsiveGridLayout\x12<\n" +
 	"\n" +
 	"breakpoint\x18\x01 \x01(\tB\x1c\xbaH\x19\xc8\x01\x01r\x14\x18 2\x10^[a-zA-Z0-9_-]+$R\n" +

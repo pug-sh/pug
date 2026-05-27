@@ -62,7 +62,7 @@ func RenderDashboard(
 	overrides DashboardQueryOverrides,
 ) (RenderedDashboard, error) {
 	now := time.Now()
-	timeRange, granularity := resolveEffectiveWindow(dashboard.Dashboard, overrides, now)
+	timeRange, granularity := resolveEffectiveWindow(ctx, dashboard.Dashboard, overrides, now)
 
 	rendered := make([]RenderedTile, len(dashboard.Tiles))
 	group, groupCtx := errgroup.WithContext(ctx)
@@ -93,15 +93,15 @@ func RenderDashboard(
 // resolveEffectiveWindow picks the time range and granularity applied to every
 // insight tile: request override wins, else the dashboard's stored default
 // (normalized to LAST_30_DAYS / DAY when unset).
-func resolveEffectiveWindow(dash dbread.Dashboard, overrides DashboardQueryOverrides, now time.Time) (*commonv1.TimeRange, insightsv1.Granularity) {
+func resolveEffectiveWindow(ctx context.Context, dash dbread.Dashboard, overrides DashboardQueryOverrides, now time.Time) (*commonv1.TimeRange, insightsv1.Granularity) {
 	timeRange := overrides.TimeRange
 	if timeRange == nil {
-		preset := DashboardDefaultTimeRangePresetFromDB(dash.DefaultTimeRange)
+		preset := DashboardDefaultTimeRangePresetFromDB(ctx, dash.DefaultTimeRange)
 		timeRange = ResolveDashboardTimeRangePreset(preset, nil, now)
 	}
 	granularity := overrides.Granularity
 	if granularity == insightsv1.Granularity_GRANULARITY_UNSPECIFIED {
-		granularity = DashboardGranularityFromDB(dash.DefaultGranularity)
+		granularity = DashboardGranularityFromDB(ctx, dash.DefaultGranularity)
 	}
 	return timeRange, granularity
 }
