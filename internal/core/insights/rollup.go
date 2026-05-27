@@ -3,7 +3,7 @@ package insights
 import (
 	"fmt"
 	"slices"
-	"strings"
+	"strconv"
 	"time"
 
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
@@ -260,49 +260,61 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 	return TrendsQuery{sql: sql, args: args, properties: breakdownProps(bds)}, nil
 }
 
+// trendGridKey identifies a (time-bucket, breakdown-tuple) cell. unixNano is taken
+// in UTC so two equal instants with different Location values key identically.
+type trendGridKey struct {
+	unixNano   int64
+	breakdowns string
+}
+
+func newTrendGridKey(t time.Time, breakdowns []string) trendGridKey {
+	return trendGridKey{
+		unixNano:   t.UTC().UnixNano(),
+		breakdowns: breakdownKey(breakdowns),
+	}
+}
+
+func trendRowIdentityKey(kind string, gk trendGridKey) string {
+	return kind + "\x00" + gk.breakdowns + "\x00" + strconv.FormatInt(gk.unixNano, 10)
+}
+
 // fillMultiEventTrendZeros adds zero-value rows for (time bucket, breakdown, event_kind)
 // combinations absent from rollup output. Multi-event raw trends achieve the same via
 // CROSS JOIN unpivot; rollup uses per-kind UNION ALL which omits empty cells.
+//
+// Breakdown slices observed on input rows are preserved verbatim on synthesized rows —
+// reconstructing them from a joined-string key would collapse a single empty-string
+// breakdown value ([]string{""}) to nil and trip GroupSeries' length check.
 func fillMultiEventTrendZeros(rows []TrendRow, eventKinds []string) []TrendRow {
 	if len(eventKinds) <= 1 || len(rows) == 0 {
 		return rows
 	}
 
-	type gridKey struct {
-		t          time.Time
-		breakdowns string
-	}
-	grid := make(map[gridKey]struct{})
+	// grid maps each cell to the breakdown slice from the first row observed there.
+	// The slice is cloned so synthesized rows don't alias caller storage.
+	grid := make(map[trendGridKey][]string)
 	existing := make(map[string]struct{}, len(rows))
 	for _, r := range rows {
-		grid[gridKey{t: r.Time, breakdowns: breakdownKey(r.Breakdowns)}] = struct{}{}
-		existing[trendRowIdentityKey(r)] = struct{}{}
+		gk := newTrendGridKey(r.Time, r.Breakdowns)
+		if _, ok := grid[gk]; !ok {
+			grid[gk] = append([]string(nil), r.Breakdowns...)
+		}
+		existing[trendRowIdentityKey(r.EventKind, gk)] = struct{}{}
 	}
 
 	out := append([]TrendRow(nil), rows...)
-	for gk := range grid {
-		bdVals := breakdownValues(gk.breakdowns)
+	for gk, bdVals := range grid {
+		t := time.Unix(0, gk.unixNano).UTC()
 		for _, kind := range eventKinds {
-			r := TrendRow{Time: gk.t, EventKind: kind, Breakdowns: bdVals, Value: 0}
-			if _, ok := existing[trendRowIdentityKey(r)]; ok {
+			id := trendRowIdentityKey(kind, gk)
+			if _, ok := existing[id]; ok {
 				continue
 			}
-			out = append(out, r)
-			existing[trendRowIdentityKey(r)] = struct{}{}
+			out = append(out, TrendRow{Time: t, EventKind: kind, Breakdowns: bdVals, Value: 0})
+			existing[id] = struct{}{}
 		}
 	}
 	return out
-}
-
-func trendRowIdentityKey(r TrendRow) string {
-	return r.EventKind + "\x00" + breakdownKey(r.Breakdowns) + "\x00" + r.Time.Format(time.RFC3339Nano)
-}
-
-func breakdownValues(key string) []string {
-	if key == "" {
-		return nil
-	}
-	return strings.Split(key, "\x00")
 }
 
 // buildSegmentationFromRollup builds a scalar segmentation query against the
