@@ -260,8 +260,8 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 	return TrendsQuery{sql: sql, args: args, properties: breakdownProps(bds)}, nil
 }
 
-// trendGridKey identifies a (time-bucket, breakdown-tuple) cell. unixNano is taken
-// in UTC so two equal instants with different Location values key identically.
+// trendGridKey identifies a (time-bucket, breakdown-tuple) cell. UnixNano is
+// Location-independent, so the int64 keys equal instants from any zone identically.
 type trendGridKey struct {
 	unixNano   int64
 	breakdowns string
@@ -269,7 +269,7 @@ type trendGridKey struct {
 
 func newTrendGridKey(t time.Time, breakdowns []string) trendGridKey {
 	return trendGridKey{
-		unixNano:   t.UTC().UnixNano(),
+		unixNano:   t.UnixNano(),
 		breakdowns: breakdownKey(breakdowns),
 	}
 }
@@ -282,9 +282,10 @@ func trendRowIdentityKey(kind string, gk trendGridKey) string {
 // combinations absent from rollup output. Multi-event raw trends achieve the same via
 // CROSS JOIN unpivot; rollup uses per-kind UNION ALL which omits empty cells.
 //
-// Breakdown slices observed on input rows are preserved verbatim on synthesized rows —
-// reconstructing them from a joined-string key would collapse a single empty-string
-// breakdown value ([]string{""}) to nil and trip GroupSeries' length check.
+// Breakdown slices observed on input rows are preserved verbatim on synthesized rows:
+// breakdownKey(nil) == breakdownKey([]string{""}) == "", so reconstructing from the
+// joined-string key would lose the arity needed by GroupSeries' length check against
+// properties.
 func fillMultiEventTrendZeros(rows []TrendRow, eventKinds []string) []TrendRow {
 	if len(eventKinds) <= 1 || len(rows) == 0 {
 		return rows
@@ -304,6 +305,8 @@ func fillMultiEventTrendZeros(rows []TrendRow, eventKinds []string) []TrendRow {
 
 	out := append([]TrendRow(nil), rows...)
 	for gk, bdVals := range grid {
+		// time.Unix returns Local; force UTC so synthesized rows match the zone
+		// of rollup-returned rows.
 		t := time.Unix(0, gk.unixNano).UTC()
 		for _, kind := range eventKinds {
 			id := trendRowIdentityKey(kind, gk)

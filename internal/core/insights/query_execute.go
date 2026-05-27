@@ -53,9 +53,12 @@ func ExecuteQuery(
 		if err != nil {
 			return nil, queryFailed(err)
 		}
-		if usedRollup && len(req.GetSpec().GetEvents()) > 1 {
-			kinds := make([]string, len(req.GetSpec().GetEvents()))
-			for i, ev := range req.GetSpec().GetEvents() {
+		if usedRollup {
+			// fillMultiEventTrendZeros self-guards on len(kinds) <= 1, so single-
+			// event rollup queries pass through unchanged.
+			events := req.GetSpec().GetEvents()
+			kinds := make([]string, len(events))
+			for i, ev := range events {
 				kinds[i] = ev.GetEvent().GetKind()
 			}
 			rows = fillMultiEventTrendZeros(rows, kinds)

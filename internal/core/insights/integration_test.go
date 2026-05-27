@@ -1330,6 +1330,67 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("rollup_parity_trends_multi_event_others_bucket", func(t *testing.T) {
+		// Multi-event + breakdown + breakdown_limit forcing $others. Seed is shaped
+		// so per-kind counts have no ties and the per-kind top-N ordering
+		// (US > GB > FR for both kinds) matches the shared-across-kinds ordering
+		// (rollup top_vals sums cnt over both kinds: US=9, GB=5, FR=2). Both
+		// strategies pick {US, GB} so parity holds AND zero-fill on $others cells
+		// is exercised end-to-end. A seed with ties or with per-kind orderings
+		// that diverge from the cross-kind ordering would surface a pre-existing
+		// rollup-vs-raw top-N strategy difference (rollup uses one shared top_vals
+		// over OR(kinds); raw uses per-kind top-N) — out of scope here.
+		const projectID = "proj_rollup_multi_others"
+		seed := []struct{ kind, user, cc string }{
+			{"page_view", "u1", "US"}, {"page_view", "u2", "US"}, {"page_view", "u3", "US"},
+			{"page_view", "u4", "US"}, {"page_view", "u5", "US"},
+			{"page_view", "u6", "GB"}, {"page_view", "u7", "GB"}, {"page_view", "u8", "GB"},
+			{"page_view", "u9", "FR"},
+			{"signup", "u10", "US"}, {"signup", "u11", "US"}, {"signup", "u12", "US"}, {"signup", "u13", "US"},
+			{"signup", "u14", "GB"}, {"signup", "u15", "GB"},
+			{"signup", "u16", "FR"},
+		}
+		for _, e := range seed {
+			if err := insertAutoEvent(ctx, ch.Conn, projectID, uuid.New().String(), e.kind, e.user,
+				time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+				variantStringMap(map[string]string{"$country": e.cc})); err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+		}
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+					{Event: &commonv1.EventFilter{Kind: proto.String("signup")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()},
+				},
+				Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+				BreakdownLimit: proto.Int32(2),
+			},
+			TimeRange:   &commonv1.TimeRange{From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), To: timestamppb.New(time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC))},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+		assertTrendsParity(t, ctx, executor, projectID, req)
+
+		// Sanity-pin the rollup output: both kinds keep US+GB, FR collapses to $others.
+		resp, err := insights.ExecuteQuery(ctx, executor, projectID, req, time.Now())
+		if err != nil {
+			t.Fatalf("ExecuteQuery: %v", err)
+		}
+		rollup := flattenTrendsResp(resp)
+		want := map[string]float64{
+			"page_view|US|2024-01-01":      5,
+			"page_view|GB|2024-01-01":      3,
+			"page_view|$others|2024-01-01": 1,
+			"signup|US|2024-01-01":         4,
+			"signup|GB|2024-01-01":         2,
+			"signup|$others|2024-01-01":    1,
+		}
+		if !reflect.DeepEqual(rollup, want) {
+			t.Errorf("multi-event $others rollup mismatch:\nwant=%v\ngot =%v", want, rollup)
+		}
+	})
+
 	t.Run("rollup_parity_matrix", func(t *testing.T) {
 		// Exhaustive rollup == raw across the eligible grid: trends over
 		// {TOTAL, UNIQUE_USERS, PER_USER_AVG} × {DAY, WEEK, MONTH} × {no-breakdown,
@@ -1439,18 +1500,6 @@ func flattenTrendsFromRaw(ctx context.Context, rows []insights.TrendRow, q insig
 			Trends: &insightsv1.TrendsResult{Series: series},
 		},
 	}), nil
-}
-
-func flattenTrendsRows(rows []insights.TrendRow) map[string]float64 {
-	out := map[string]float64{}
-	for _, r := range rows {
-		bd := ""
-		if len(r.Breakdowns) > 0 {
-			bd = r.Breakdowns[0]
-		}
-		out[r.EventKind+"|"+bd+"|"+r.Time.Format("2006-01-02")] = r.Value
-	}
-	return out
 }
 
 // seedRollupEvents inserts a fixed set of page_view events under a dedicated
