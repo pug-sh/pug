@@ -3,6 +3,7 @@ package insights
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -180,6 +181,109 @@ func TestBuildTrendsFromRollup_Breakdown(t *testing.T) {
 	if len(q.Properties()) != 1 || q.Properties()[0] != "$country" {
 		t.Errorf("expected properties [$country], got %v", q.Properties())
 	}
+}
+
+func TestFillMultiEventTrendZeros(t *testing.T) {
+	t1 := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+
+	flatten := func(rows []TrendRow) map[string]float64 {
+		out := map[string]float64{}
+		for _, r := range rows {
+			bd := ""
+			if len(r.Breakdowns) > 0 {
+				bd = strings.Join(r.Breakdowns, ",")
+			}
+			out[r.EventKind+"|"+bd+"|"+r.Time.Format("2006-01-02")] = r.Value
+		}
+		return out
+	}
+
+	t.Run("no_breakdown", func(t *testing.T) {
+		rows := []TrendRow{
+			{Time: t1, EventKind: "page_view", Value: 2},
+			{Time: t1, EventKind: "signup", Value: 1},
+			{Time: t2, EventKind: "page_view", Value: 1},
+		}
+		got := flatten(fillMultiEventTrendZeros(rows, []string{"page_view", "signup"}))
+		want := map[string]float64{
+			"page_view||2024-01-01": 2,
+			"signup||2024-01-01":    1,
+			"page_view||2024-01-02": 1,
+			"signup||2024-01-02":    0,
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("with_breakdown_fills_missing_kind", func(t *testing.T) {
+		// Grid cells: (t1,US), (t1,GB), (t2,US). For each, both kinds must appear.
+		rows := []TrendRow{
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{"US"}, Value: 5},
+			{Time: t1, EventKind: "signup", Breakdowns: []string{"US"}, Value: 1},
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{"GB"}, Value: 2},
+			// signup|GB|t1 missing
+			{Time: t2, EventKind: "page_view", Breakdowns: []string{"US"}, Value: 3},
+			// signup|US|t2 missing
+		}
+		got := flatten(fillMultiEventTrendZeros(rows, []string{"page_view", "signup"}))
+		want := map[string]float64{
+			"page_view|US|2024-01-01": 5,
+			"signup|US|2024-01-01":    1,
+			"page_view|GB|2024-01-01": 2,
+			"signup|GB|2024-01-01":    0,
+			"page_view|US|2024-01-02": 3,
+			"signup|US|2024-01-02":    0,
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("preserves_empty_string_breakdown_value", func(t *testing.T) {
+		// A breakdown column whose value is the empty string is a legitimate, single-
+		// element slice ([]string{""}). It must NOT be collapsed to a nil breakdown
+		// slice on the synthesized zero row — GroupSeries fails the length check
+		// against properties otherwise.
+		rows := []TrendRow{
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{""}, Value: 1},
+		}
+		got := fillMultiEventTrendZeros(rows, []string{"page_view", "signup"})
+		var synthSignup *TrendRow
+		for i := range got {
+			if got[i].EventKind == "signup" {
+				synthSignup = &got[i]
+			}
+		}
+		if synthSignup == nil {
+			t.Fatalf("expected synthesized signup row, got: %v", got)
+		}
+		if len(synthSignup.Breakdowns) != 1 || synthSignup.Breakdowns[0] != "" {
+			t.Errorf("synthesized row Breakdowns = %v, want []string{\"\"}", synthSignup.Breakdowns)
+		}
+	})
+
+	t.Run("non_utc_input_time_keys_consistently", func(t *testing.T) {
+		// Same instant in two zones must collide on one grid cell.
+		ist := time.FixedZone("IST", 5*3600+30*60)
+		t1IST := t1.In(ist) // same UnixNano as t1
+		rows := []TrendRow{
+			{Time: t1, EventKind: "page_view", Value: 2},
+			{Time: t1IST, EventKind: "signup", Value: 1},
+		}
+		got := fillMultiEventTrendZeros(rows, []string{"page_view", "signup"})
+		if len(got) != 2 {
+			t.Errorf("expected no synthesized rows (both cells already present in UTC), got %d: %v", len(got), got)
+		}
+	})
+
+	t.Run("single_event_unchanged", func(t *testing.T) {
+		rows := []TrendRow{{Time: t1, EventKind: "page_view", Value: 1}}
+		if got := fillMultiEventTrendZeros(rows, []string{"page_view"}); len(got) != len(rows) {
+			t.Errorf("single event should be unchanged, got %v", got)
+		}
+	})
 }
 
 func TestBuildTrendsFromRollup_NoBreakdownUsesTotal(t *testing.T) {
