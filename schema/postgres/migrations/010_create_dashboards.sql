@@ -21,6 +21,17 @@ update on dashboards for each row execute procedure moddatetime(update_time);
 --   1 = TileKindInsight  (insight_query payload)
 --   2 = TileKindMarkdown (markdown_body payload)
 -- view_mode stores DashboardTileViewMode proto enum names.
+-- Tile customization columns extend dashboard_tiles with per-tile presentation
+-- options. Storage mirrors the existing dashboard_tiles pattern: text for proto
+-- enum names (compare), jsonb for nested / repeated messages
+-- (thresholds, header, visualization).
+--
+-- payload_hash is a sha256 of the deterministic-marshaled DashboardTileInput
+-- (id cleared), maintained by the application on every write. Upsert uses it
+-- to short-circuit no-op tile UPDATEs in SQL via a `where payload_hash <> $1`
+-- predicate, which keeps update_time meaningful (the moddatetime trigger only
+-- fires when the row is actually updated). An empty bytea default forces the
+-- first write to any existing row through, since no sha256 can match it.
 create table dashboard_tiles (
   id            char(20) primary key,
   dashboard_id  char(20) not null references dashboards(id) on delete cascade,
@@ -31,6 +42,11 @@ create table dashboard_tiles (
   insight_query jsonb,
   markdown_body text,
   layouts       jsonb not null default '{}'::jsonb,
+  compare       text  not null default 'COMPARE_PERIOD_UNSPECIFIED',
+  thresholds    jsonb not null default '[]'::jsonb,
+  header        jsonb not null default '{}'::jsonb,
+  visualization jsonb not null default '{}'::jsonb,
+  payload_hash  bytea not null default ''::bytea,
   create_time   timestamptz not null default now(),
   update_time   timestamptz not null default now(),
   constraint dashboard_tiles_kind_payload check (
