@@ -44,17 +44,22 @@ type Dashboard struct {
 }
 
 type DashboardTile struct {
-	ID           string
-	DashboardID  string
-	Kind         int16
-	ViewMode     string
-	DisplayName  string
-	Description  string
-	InsightQuery map[string]any
-	MarkdownBody pgtype.Text
-	Layouts      map[string]any
-	CreateTime   pgtype.Timestamptz
-	UpdateTime   pgtype.Timestamptz
+	ID            string
+	DashboardID   string
+	Kind          int16
+	ViewMode      string
+	DisplayName   string
+	Description   string
+	InsightQuery  map[string]any
+	MarkdownBody  pgtype.Text
+	Layouts       map[string]any
+	CreateTime    pgtype.Timestamptz
+	UpdateTime    pgtype.Timestamptz
+	Compare       string
+	Thresholds    []byte
+	Header        map[string]any
+	Visualization map[string]any
+	PayloadHash   []byte
 }
 
 type EmailActionToken struct {

@@ -66,7 +66,7 @@ func (s *Server) Create(
 	}
 
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceCreateResponse{
-		Dashboard: wDashboardToRPC(dashboard),
+		Dashboard: wDashboardToRPC(ctx, dashboard),
 	}), nil
 }
 
@@ -89,7 +89,7 @@ func (s *Server) List(
 
 	result := make([]*dashboardsv1.Dashboard, 0, len(dashboards))
 	for _, dashboard := range dashboards {
-		msg, err := roDashboardToRPC(dashboard)
+		msg, err := roDashboardToRPC(ctx, dashboard)
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to encode dashboard", slogx.Error(err), slog.String("dashboard_id", dashboard.Dashboard.ID))
 			telemetry.RecordError(ctx, err)
@@ -121,7 +121,7 @@ func (s *Server) Get(
 		return nil, serviceErrToConnect(err)
 	}
 
-	msg, err := roDashboardToRPC(dashboard)
+	msg, err := roDashboardToRPC(ctx, dashboard)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to encode dashboard", slogx.Error(err), slog.String("dashboard_id", dashboard.Dashboard.ID))
 		telemetry.RecordError(ctx, err)
@@ -151,7 +151,7 @@ func (s *Server) Update(
 		return nil, serviceErrToConnect(err)
 	}
 
-	msg, err := roDashboardToRPC(dashboard)
+	msg, err := roDashboardToRPC(ctx, dashboard)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to encode dashboard", slogx.Error(err), slog.String("dashboard_id", dashboard.Dashboard.ID))
 		telemetry.RecordError(ctx, err)
@@ -183,10 +183,10 @@ func (s *Server) Delete(
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceDeleteResponse{}), nil
 }
 
-func (s *Server) CreateTile(
+func (s *Server) Upsert(
 	ctx context.Context,
-	req *connect.Request[dashboardsv1.DashboardsServiceCreateTileRequest],
-) (*connect.Response[dashboardsv1.DashboardsServiceCreateTileResponse], error) {
+	req *connect.Request[dashboardsv1.DashboardsServiceUpsertRequest],
+) (*connect.Response[dashboardsv1.DashboardsServiceUpsertResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, rpc.ConnectCtxErr(err)
 	}
@@ -195,121 +195,57 @@ func (s *Server) CreateTile(
 		return nil, err
 	}
 
-	content, err := tileContentFromCreateRPC(req.Msg.GetContent())
-	if err != nil {
-		slog.WarnContext(ctx, "invalid tile content", slogx.Error(err), slog.String("dashboard_id", req.Msg.GetDashboardId()))
-		return nil, apperr.Invalid(apperr.ReasonInvalidTileContent, "tile content required")
+	tiles := make([]coredashboards.UpsertTileInput, 0, len(req.Msg.GetTiles()))
+	for i, t := range req.Msg.GetTiles() {
+		converted, err := upsertTileInputFromRPC(t)
+		if err != nil {
+			// protovalidate has already enforced oneof.required on the input;
+			// reaching this branch means a proto change added a new content
+			// kind without updating upsertTileInputFromRPC (schema drift), not
+			// a client input bug. Map to CodeInternal so the alarm fires.
+			slog.ErrorContext(ctx, "schema drift: unrecognized tile content in upsert",
+				slogx.Error(err),
+				slog.String("dashboard_id", req.Msg.GetId()),
+				slog.Int("tile_index", i),
+			)
+			telemetry.RecordError(ctx, err)
+			return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+		}
+		tiles = append(tiles, converted)
 	}
 
-	tile, err := s.service.CreateDashboardTile(
-		ctx,
-		principal.Project.ID,
-		req.Msg.GetDashboardId(),
-		req.Msg.GetDisplayName(),
-		req.Msg.GetDescription(),
-		content,
-		req.Msg.GetViewMode(),
-		req.Msg.GetLayouts(),
-	)
+	dashboard, err := s.service.UpsertDashboard(ctx, principal.Project.ID, req.Msg.GetId(), coredashboards.UpsertDashboardInput{
+		DisplayName:        req.Msg.GetDisplayName(),
+		Description:        req.Msg.GetDescription(),
+		DefaultTimeRange:   req.Msg.GetDefaultTimeRange(),
+		DefaultGranularity: req.Msg.GetDefaultGranularity(),
+		Tiles:              tiles,
+	})
 	if err != nil {
 		switch {
 		case errors.Is(err, coredashboards.ErrDashboardNotFound):
-			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetDashboardId()))
-		case errors.Is(err, coredashboards.ErrDashboardTileDisplayNameConflict):
-			return nil, apperr.AlreadyExists(apperr.ReasonDashboardTileNameConflict, "tile display name already in use")
-		}
-		// Service already logged + recorded; do not duplicate.
-		return nil, serviceErrToConnect(err)
-	}
-
-	msg, err := wTileToRPC(tile)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to encode dashboard tile",
-			slogx.Error(err),
-			slog.String("dashboard_id", req.Msg.GetDashboardId()),
-			slog.String("tile_id", tile.ID),
-		)
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-
-	return connect.NewResponse(&dashboardsv1.DashboardsServiceCreateTileResponse{Tile: msg}), nil
-}
-
-func (s *Server) UpdateTile(
-	ctx context.Context,
-	req *connect.Request[dashboardsv1.DashboardsServiceUpdateTileRequest],
-) (*connect.Response[dashboardsv1.DashboardsServiceUpdateTileResponse], error) {
-	if err := ctx.Err(); err != nil {
-		return nil, rpc.ConnectCtxErr(err)
-	}
-	principal, err := rpc.MustGetPrincipalWithProject(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	content, err := tileContentFromUpdateRPC(req.Msg.GetContent())
-	if err != nil {
-		slog.WarnContext(ctx, "invalid tile content", slogx.Error(err), slog.String("tile_id", req.Msg.GetId()))
-		return nil, apperr.Invalid(apperr.ReasonInvalidTileContent, "tile content required")
-	}
-
-	tile, err := s.service.UpdateDashboardTile(
-		ctx,
-		principal.Project.ID,
-		req.Msg.GetDashboardId(),
-		req.Msg.GetId(),
-		req.Msg.GetDisplayName(),
-		req.Msg.GetDescription(),
-		content,
-		req.Msg.GetViewMode(),
-		req.Msg.GetLayouts(),
-	)
-	if err != nil {
-		switch {
+			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetId()))
 		case errors.Is(err, coredashboards.ErrDashboardTileNotFound):
-			return nil, apperr.NotFound(apperr.ReasonDashboardTileNotFound, "dashboard tile not found", apperr.Resource("dashboard_tile", req.Msg.GetId()))
+			return nil, apperr.NotFound(apperr.ReasonDashboardTileNotFound, "dashboard tile not found", apperr.Resource("dashboard", req.Msg.GetId()))
 		case errors.Is(err, coredashboards.ErrDashboardTileDisplayNameConflict):
 			return nil, apperr.AlreadyExists(apperr.ReasonDashboardTileNameConflict, "tile display name already in use")
+		case errors.Is(err, coredashboards.ErrDuplicateUpsertTileID):
+			return nil, apperr.Invalid(apperr.ReasonInvalidTileContent, "duplicate tile id in request")
 		}
-		// Service already logged + recorded; do not duplicate.
 		return nil, serviceErrToConnect(err)
 	}
 
-	msg, err := wTileToRPC(tile)
+	msg, err := roDashboardToRPC(ctx, dashboard)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to encode dashboard tile",
+		slog.ErrorContext(ctx, "failed to encode upserted dashboard",
 			slogx.Error(err),
-			slog.String("dashboard_id", req.Msg.GetDashboardId()),
-			slog.String("tile_id", req.Msg.GetId()),
+			slog.String("dashboard_id", req.Msg.GetId()),
 		)
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&dashboardsv1.DashboardsServiceUpdateTileResponse{Tile: msg}), nil
-}
-
-func (s *Server) DeleteTile(
-	ctx context.Context,
-	req *connect.Request[dashboardsv1.DashboardsServiceDeleteTileRequest],
-) (*connect.Response[dashboardsv1.DashboardsServiceDeleteTileResponse], error) {
-	if err := ctx.Err(); err != nil {
-		return nil, rpc.ConnectCtxErr(err)
-	}
-	principal, err := rpc.MustGetPrincipalWithProject(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.service.DeleteDashboardTile(ctx, principal.Project.ID, req.Msg.GetDashboardId(), req.Msg.GetId()); err != nil {
-		if errors.Is(err, coredashboards.ErrDashboardTileNotFound) {
-			return nil, apperr.NotFound(apperr.ReasonDashboardTileNotFound, "dashboard tile not found", apperr.Resource("dashboard_tile", req.Msg.GetId()))
-		}
-		return nil, serviceErrToConnect(err)
-	}
-
-	return connect.NewResponse(&dashboardsv1.DashboardsServiceDeleteTileResponse{}), nil
+	return connect.NewResponse(&dashboardsv1.DashboardsServiceUpsertResponse{Dashboard: msg}), nil
 }
 
 func (s *Server) QueryDashboard(

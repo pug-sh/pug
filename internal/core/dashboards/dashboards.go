@@ -28,6 +28,7 @@ var (
 	ErrDashboardNotFound                = errors.New("dashboard not found")
 	ErrDashboardTileNotFound            = errors.New("dashboard tile not found")
 	ErrDashboardTileDisplayNameConflict = errors.New("dashboard tile display name already in use")
+	ErrDuplicateUpsertTileID            = errors.New("duplicate tile id in upsert request")
 )
 
 // TileKind mirrors the proto oneof discriminator and the DB `kind` column.
@@ -36,19 +37,6 @@ type TileKind int16
 const (
 	TileKindInsight  TileKind = 1
 	TileKindMarkdown TileKind = 2
-)
-
-// TileViewMode mirrors DashboardTileViewMode in the proto. The DB stores the
-// corresponding proto enum name.
-type TileViewMode int16
-
-const (
-	TileViewModeUnspecified TileViewMode = 0
-	TileViewModeLine        TileViewMode = 1
-	TileViewModeArea        TileViewMode = 2
-	TileViewModeBarGrouped  TileViewMode = 3
-	TileViewModeBarStacked  TileViewMode = 4
-	TileViewModeTable       TileViewMode = 5
 )
 
 // TileContent is a sealed sum type for tile payloads. Encode() returns the
@@ -289,131 +277,10 @@ func dbwriteToDbread(d dbwrite.Dashboard) dbread.Dashboard {
 	}
 }
 
-func (s *Service) CreateDashboardTile(
-	ctx context.Context,
-	projectID, dashboardID, displayName, description string,
-	content TileContent,
-	viewMode dashboardsv1.DashboardTileViewMode,
-	layouts []*dashboardsv1.ResponsiveGridLayout,
-) (dbwrite.DashboardTile, error) {
-	enc, err := content.Encode()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to encode dashboard tile content",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-			slog.String("dashboard_id", dashboardID),
-		)
-		telemetry.RecordError(ctx, err)
-		return dbwrite.DashboardTile{}, err
-	}
-	layoutsMap := LayoutsToMap(layouts)
-	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
-
-	tile, err := s.write.CreateDashboardTile(ctx, dbwrite.CreateDashboardTileParams{
-		ID:           xid.New().String(),
-		DashboardID:  dashboardID,
-		ProjectID:    projectID,
-		Kind:         int16(enc.Kind),
-		ViewMode:     tileViewModeDBName(normalizedViewMode),
-		DisplayName:  displayName,
-		Description:  description,
-		InsightQuery: enc.InsightQuery,
-		MarkdownBody: enc.MarkdownBody,
-		Layouts:      layoutsMap,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			slog.DebugContext(ctx, "create dashboard tile: dashboard not found",
-				slog.String("project_id", projectID),
-				slog.String("dashboard_id", dashboardID),
-			)
-			return dbwrite.DashboardTile{}, ErrDashboardNotFound
-		}
-		if conflict := translateUniqueViolation(err); conflict != nil {
-			return dbwrite.DashboardTile{}, conflict
-		}
-		return dbwrite.DashboardTile{}, recordServiceError(ctx, "failed to create dashboard tile", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
-	}
-	return tile, nil
-}
-
-func (s *Service) UpdateDashboardTile(
-	ctx context.Context,
-	projectID, dashboardID, tileID, displayName, description string,
-	content TileContent,
-	viewMode dashboardsv1.DashboardTileViewMode,
-	layouts []*dashboardsv1.ResponsiveGridLayout,
-) (dbwrite.DashboardTile, error) {
-	enc, err := content.Encode()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to encode dashboard tile content",
-			slogx.Error(err),
-			slog.String("project_id", projectID),
-			slog.String("dashboard_id", dashboardID),
-			slog.String("tile_id", tileID),
-		)
-		telemetry.RecordError(ctx, err)
-		return dbwrite.DashboardTile{}, err
-	}
-	layoutsMap := LayoutsToMap(layouts)
-	normalizedViewMode := normalizedTileViewMode(enc.Kind, viewMode)
-
-	tile, err := s.write.UpdateDashboardTile(ctx, dbwrite.UpdateDashboardTileParams{
-		ID:           tileID,
-		DashboardID:  dashboardID,
-		ProjectID:    projectID,
-		Kind:         int16(enc.Kind),
-		ViewMode:     tileViewModeDBName(normalizedViewMode),
-		DisplayName:  displayName,
-		Description:  description,
-		InsightQuery: enc.InsightQuery,
-		MarkdownBody: enc.MarkdownBody,
-		Layouts:      layoutsMap,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			slog.DebugContext(ctx, "update dashboard tile: tile not found",
-				slog.String("project_id", projectID),
-				slog.String("dashboard_id", dashboardID),
-				slog.String("tile_id", tileID),
-			)
-			return dbwrite.DashboardTile{}, ErrDashboardTileNotFound
-		}
-		if conflict := translateUniqueViolation(err); conflict != nil {
-			return dbwrite.DashboardTile{}, conflict
-		}
-		return dbwrite.DashboardTile{}, recordServiceError(ctx, "failed to update dashboard tile", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID), slog.String("tile_id", tileID))
-	}
-	return tile, nil
-}
-
-func (s *Service) DeleteDashboardTile(ctx context.Context, projectID, dashboardID, tileID string) error {
-	if _, err := s.write.DeleteDashboardTile(ctx, dbwrite.DeleteDashboardTileParams{
-		ID:          tileID,
-		DashboardID: dashboardID,
-		ProjectID:   projectID,
-	}); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			slog.DebugContext(ctx, "delete dashboard tile: tile not found",
-				slog.String("project_id", projectID),
-				slog.String("dashboard_id", dashboardID),
-				slog.String("tile_id", tileID),
-			)
-			return ErrDashboardTileNotFound
-		}
-		return recordServiceError(ctx, "failed to delete dashboard tile", err,
-			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID), slog.String("tile_id", tileID))
-	}
-	return nil
-}
-
 // translateUniqueViolation returns ErrDashboardTileDisplayNameConflict if err is a
 // Postgres unique-violation, or nil otherwise. The dashboard_tiles table has exactly
 // one unique constraint (the partial display-name index), so any 23505 on it is the
-// display-name conflict. Called from both CreateDashboardTile and UpdateDashboardTile
-// error paths.
+// display-name conflict. Called from the Upsert flow's insert/update branches.
 func translateUniqueViolation(err error) error {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
@@ -455,30 +322,6 @@ func MapToSpecMessage(data map[string]any) (*insightsv1.InsightQuerySpec, error)
 	return &out, nil
 }
 
-func normalizedTileViewMode(kind TileKind, viewMode dashboardsv1.DashboardTileViewMode) TileViewMode {
-	switch kind {
-	case TileKindInsight:
-		switch viewMode {
-		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA:
-			return TileViewModeArea
-		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED:
-			return TileViewModeBarGrouped
-		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED:
-			return TileViewModeBarStacked
-		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE:
-			return TileViewModeTable
-		case dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE:
-			return TileViewModeLine
-		default:
-			return TileViewModeLine
-		}
-	case TileKindMarkdown:
-		return TileViewModeUnspecified
-	default:
-		return TileViewModeUnspecified
-	}
-}
-
 // normalizedDashboardDefaultTimeRange returns the preset unchanged for a known
 // value, defaulting unknown/UNSPECIFIED to LAST_30_DAYS. Mirrors
 // normalizedDashboardGranularity — no parallel enum, so nothing to keep in sync.
@@ -496,23 +339,6 @@ func normalizedDashboardDefaultTimeRange(tr commonv1.TimeRangePreset) commonv1.T
 		return tr
 	default:
 		return commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS
-	}
-}
-
-func tileViewModeDBName(viewMode TileViewMode) string {
-	switch viewMode {
-	case TileViewModeLine:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.String()
-	case TileViewModeArea:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.String()
-	case TileViewModeBarGrouped:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED.String()
-	case TileViewModeBarStacked:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED.String()
-	case TileViewModeTable:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE.String()
-	default:
-		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String()
 	}
 }
 

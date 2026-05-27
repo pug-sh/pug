@@ -36,8 +36,42 @@ func (q *Queries) GetDashboardByIDAndProjectID(ctx context.Context, arg GetDashb
 	return i, err
 }
 
+const listDashboardTileIDsByDashboardIDAndProjectID = `-- name: ListDashboardTileIDsByDashboardIDAndProjectID :many
+select dt.id
+from dashboard_tiles dt
+join dashboards d on d.id = dt.dashboard_id
+where dt.dashboard_id = $1 and d.project_id = $2
+`
+
+type ListDashboardTileIDsByDashboardIDAndProjectIDParams struct {
+	DashboardID string
+	ProjectID   string
+}
+
+// ID-only variant used by Upsert to plan the reconcile without paying for the
+// full row payloads. The dashboard join enforces project ownership.
+func (q *Queries) ListDashboardTileIDsByDashboardIDAndProjectID(ctx context.Context, arg ListDashboardTileIDsByDashboardIDAndProjectIDParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listDashboardTileIDsByDashboardIDAndProjectID, arg.DashboardID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDashboardTilesByDashboardIDAndProjectID = `-- name: ListDashboardTilesByDashboardIDAndProjectID :many
-select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
+select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time, dt.compare, dt.thresholds, dt.header, dt.visualization, dt.payload_hash
 from dashboard_tiles dt
 join dashboards d on d.id = dt.dashboard_id
 where dt.dashboard_id = $1 and d.project_id = $2
@@ -70,6 +104,11 @@ func (q *Queries) ListDashboardTilesByDashboardIDAndProjectID(ctx context.Contex
 			&i.Layouts,
 			&i.CreateTime,
 			&i.UpdateTime,
+			&i.Compare,
+			&i.Thresholds,
+			&i.Header,
+			&i.Visualization,
+			&i.PayloadHash,
 		); err != nil {
 			return nil, err
 		}
@@ -82,7 +121,7 @@ func (q *Queries) ListDashboardTilesByDashboardIDAndProjectID(ctx context.Contex
 }
 
 const listDashboardTilesByProjectID = `-- name: ListDashboardTilesByProjectID :many
-select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time
+select dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time, dt.compare, dt.thresholds, dt.header, dt.visualization, dt.payload_hash
 from dashboard_tiles dt
 join dashboards d on d.id = dt.dashboard_id
 where d.project_id = $1
@@ -110,6 +149,11 @@ func (q *Queries) ListDashboardTilesByProjectID(ctx context.Context, projectID s
 			&i.Layouts,
 			&i.CreateTime,
 			&i.UpdateTime,
+			&i.Compare,
+			&i.Thresholds,
+			&i.Header,
+			&i.Visualization,
+			&i.PayloadHash,
 		); err != nil {
 			return nil, err
 		}
@@ -155,4 +199,37 @@ func (q *Queries) ListDashboardsByProjectID(ctx context.Context, projectID strin
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockDashboardByIDAndProjectID = `-- name: LockDashboardByIDAndProjectID :one
+select id, project_id, display_name, description, default_time_range, default_granularity, create_time, update_time
+from dashboards
+where id = $1 and project_id = $2
+for update
+`
+
+type LockDashboardByIDAndProjectIDParams struct {
+	ID        string
+	ProjectID string
+}
+
+// Acquires a row lock on the dashboard for the duration of the calling tx —
+// used by Upsert to serialize concurrent edits to the same dashboard so the
+// documented last-write-wins contract holds (two interleaved transactions
+// without the lock can both insert and commit their own tile, producing a
+// merge rather than one tile from one of the inputs).
+func (q *Queries) LockDashboardByIDAndProjectID(ctx context.Context, arg LockDashboardByIDAndProjectIDParams) (Dashboard, error) {
+	row := q.db.QueryRow(ctx, lockDashboardByIDAndProjectID, arg.ID, arg.ProjectID)
+	var i Dashboard
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.DisplayName,
+		&i.Description,
+		&i.DefaultTimeRange,
+		&i.DefaultGranularity,
+		&i.CreateTime,
+		&i.UpdateTime,
+	)
+	return i, err
 }

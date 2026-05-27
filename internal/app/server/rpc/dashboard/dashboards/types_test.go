@@ -10,7 +10,6 @@ import (
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
-	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
 // TestRenderedDashboardToRPC_CorruptTileDegradesGracefully pins that a tile whose
@@ -158,14 +157,14 @@ func TestSetTileContent_MarkdownEmptyBodyValid(t *testing.T) {
 }
 
 func TestTileViewModeToRPC_DefaultsInsightToLine(t *testing.T) {
-	got := tileViewModeToRPC(coredashboards.TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String())
+	got := tileViewModeToRPC(context.Background(), coredashboards.TileKindInsight, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED.String())
 	if got != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE {
 		t.Fatalf("tileViewModeToRPC(insight, unspecified) = %v, want LINE", got)
 	}
 }
 
 func TestTileViewModeToRPC_CoercesMarkdownToUnspecified(t *testing.T) {
-	got := tileViewModeToRPC(coredashboards.TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED.String())
+	got := tileViewModeToRPC(context.Background(), coredashboards.TileKindMarkdown, dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED.String())
 	if got != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED {
 		t.Fatalf("tileViewModeToRPC(markdown, bar) = %v, want UNSPECIFIED", got)
 	}
@@ -186,7 +185,7 @@ func TestTileViewModeToRPC_AllInsightModes(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tileViewModeToRPC(coredashboards.TileKindInsight, tc.raw)
+			got := tileViewModeToRPC(context.Background(), coredashboards.TileKindInsight, tc.raw)
 			if got != tc.want {
 				t.Fatalf("tileViewModeToRPC(insight, %q) = %v, want %v", tc.raw, got, tc.want)
 			}
@@ -206,7 +205,7 @@ func TestRoTileToRPC_EmitsViewMode(t *testing.T) {
 		InsightQuery: map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"},
 		Layouts:      map[string]any{},
 	}
-	msg, err := roTileToRPC(tile)
+	msg, err := roTileToRPC(context.Background(), tile)
 	if err != nil {
 		t.Fatalf("roTileToRPC: %v", err)
 	}
@@ -215,20 +214,3 @@ func TestRoTileToRPC_EmitsViewMode(t *testing.T) {
 	}
 }
 
-func TestWTileToRPC_EmitsViewMode(t *testing.T) {
-	tile := dbwrite.DashboardTile{
-		ID:           "tile_1",
-		DashboardID:  "dash_1",
-		Kind:         int16(coredashboards.TileKindInsight),
-		ViewMode:     dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED.String(),
-		InsightQuery: map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"},
-		Layouts:      map[string]any{},
-	}
-	msg, err := wTileToRPC(tile)
-	if err != nil {
-		t.Fatalf("wTileToRPC: %v", err)
-	}
-	if msg.GetViewMode() != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED {
-		t.Errorf("ViewMode = %v, want BAR_STACKED", msg.GetViewMode())
-	}
-}

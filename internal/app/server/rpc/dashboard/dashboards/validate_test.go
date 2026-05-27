@@ -14,144 +14,6 @@ import (
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
-func TestCreateDashboardTileRequest_RejectsMissingContent(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		DisplayName: proto.String("Signups"),
-		// no content oneof set
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for missing content oneof")
-	}
-}
-
-func TestCreateDashboardTileRequest_RejectsInsightMissingQuery(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		DisplayName: proto.String("Signups"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{}, // query unset
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for insight without query")
-	}
-}
-
-func TestCreateDashboardTileRequest_AcceptsInsightArm(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		DisplayName: proto.String("Signups"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
-		},
-		ViewMode: dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE.Enum(),
-		Layouts: []*dashboardsv1.ResponsiveGridLayout{
-			{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
-			{Breakpoint: proto.String("md"), X: proto.Int32(0), Y: proto.Int32(4), W: proto.Int32(10), H: proto.Int32(5)},
-		},
-	}
-	if err := protovalidate.Validate(req); err != nil {
-		t.Fatalf("unexpected validation error: %v", err)
-	}
-}
-
-func TestCreateDashboardTileRequest_RejectsUnknownViewMode(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		DisplayName: proto.String("Signups"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
-		},
-		ViewMode: dashboardsv1.DashboardTileViewMode(99).Enum(),
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for unknown view_mode")
-	}
-}
-
-func TestCreateDashboardTileRequest_AcceptsMarkdownArm(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("Hello")},
-		},
-	}
-	if err := protovalidate.Validate(req); err != nil {
-		t.Fatalf("unexpected validation error: %v", err)
-	}
-}
-
-func TestCreateDashboardTileRequest_RejectsEmptyMarkdownBody(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("")},
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for empty markdown body")
-	}
-}
-
-func TestCreateDashboardTileRequest_AcceptsMaxMarkdownBody(t *testing.T) {
-	body := strings.Repeat("a", 100000)
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String(body)},
-		},
-	}
-	if err := protovalidate.Validate(req); err != nil {
-		t.Fatalf("unexpected validation error at exactly 100000 bytes: %v", err)
-	}
-}
-
-func TestCreateDashboardTileRequest_RejectsOverMaxMarkdownBody(t *testing.T) {
-	body := strings.Repeat("a", 100001)
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String(body)},
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for markdown body over 100000 bytes")
-	}
-}
-
-func TestCreateDashboardTileRequest_RejectsDuplicateBreakpoints(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		DisplayName: proto.String("Signups"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
-		},
-		Layouts: []*dashboardsv1.ResponsiveGridLayout{
-			{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
-			{Breakpoint: proto.String("lg"), X: proto.Int32(6), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for duplicate breakpoints on insight arm")
-	}
-}
-
-func TestCreateDashboardTileRequest_RejectsDuplicateBreakpointsOnMarkdown(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("x")},
-		},
-		Layouts: []*dashboardsv1.ResponsiveGridLayout{
-			{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
-			{Breakpoint: proto.String("lg"), X: proto.Int32(6), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for duplicate breakpoints on markdown arm")
-	}
-}
 
 // ----- ResponsiveGridLayout bounds (T6) ---------------------------------
 
@@ -256,9 +118,8 @@ func TestLayout_RejectsMoreThanEightLayouts(t *testing.T) {
 			W: proto.Int32(4), H: proto.Int32(4),
 		})
 	}
-	req := &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
+	req := &dashboardsv1.DashboardTileInput{
+		Content: &dashboardsv1.DashboardTileInput_Markdown{
 			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("x")},
 		},
 		Layouts: layouts,
@@ -268,13 +129,13 @@ func TestLayout_RejectsMoreThanEightLayouts(t *testing.T) {
 	}
 }
 
-// requestWithLayout returns a minimal valid CreateTile request carrying the
-// single supplied layout. Use this to isolate layout-level validation rules
-// from request-level shape requirements.
-func requestWithLayout(layout *dashboardsv1.ResponsiveGridLayout) *dashboardsv1.DashboardsServiceCreateTileRequest {
-	return &dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
+// requestWithLayout builds a minimal DashboardTileInput wrapping a single
+// layout so the TestLayout_* cases can pin ResponsiveGridLayout-level
+// constraints (width, height, position, breakpoint pattern) without
+// duplicating the message shape across every test.
+func requestWithLayout(layout *dashboardsv1.ResponsiveGridLayout) *dashboardsv1.DashboardTileInput {
+	return &dashboardsv1.DashboardTileInput{
+		Content: &dashboardsv1.DashboardTileInput_Markdown{
 			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("x")},
 		},
 		Layouts: []*dashboardsv1.ResponsiveGridLayout{layout},
@@ -361,160 +222,6 @@ func TestUpdateRequest_RejectsOverMaxDescription(t *testing.T) {
 	}
 }
 
-// ----- UpdateTileRequest (T8) ------------------------------------------
-//
-// UpdateTileRequest shares the oneof.required, body bounds, breakpoint
-// uniqueness, and layouts max_items rules with CreateTileRequest. These
-// tests pin the same rules on the Update variant so a future divergence
-// (e.g. dropping oneof.required from one side only) fails loudly.
-
-func TestUpdateTileRequest_RejectsMissingID(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("x")},
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for missing id")
-	}
-}
-
-func TestUpdateTileRequest_RejectsMissingDashboardID(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id: proto.String("tile_123"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("x")},
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for missing dashboard_id")
-	}
-}
-
-func TestUpdateTileRequest_RejectsMissingContent(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("tile_123"),
-		DashboardId: proto.String("dash_123"),
-		// no content oneof set
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for missing content oneof")
-	}
-}
-
-func TestUpdateTileRequest_RejectsInsightMissingQuery(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("tile_123"),
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{}, // query unset
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for insight without query")
-	}
-}
-
-func TestUpdateTileRequest_AcceptsInsightArm(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("tile_123"),
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
-		},
-		ViewMode: dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.Enum(),
-	}
-	if err := protovalidate.Validate(req); err != nil {
-		t.Fatalf("unexpected validation error: %v", err)
-	}
-}
-
-func TestUpdateTileRequest_RejectsUnknownViewMode(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("tile_123"),
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
-		},
-		ViewMode: dashboardsv1.DashboardTileViewMode(99).Enum(),
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for unknown view_mode")
-	}
-}
-
-func TestUpdateTileRequest_AcceptsMarkdownArm(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("tile_123"),
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("Hello")},
-		},
-	}
-	if err := protovalidate.Validate(req); err != nil {
-		t.Fatalf("unexpected validation error: %v", err)
-	}
-}
-
-func TestUpdateTileRequest_RejectsEmptyMarkdownBody(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("tile_123"),
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("")},
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for empty markdown body")
-	}
-}
-
-func TestUpdateTileRequest_RejectsOverMaxMarkdownBody(t *testing.T) {
-	body := strings.Repeat("a", 100001)
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("tile_123"),
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String(body)},
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for markdown body over 100000 bytes")
-	}
-}
-
-func TestUpdateTileRequest_RejectsDuplicateBreakpoints(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("tile_123"),
-		DashboardId: proto.String("dash_123"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Insight{
-			Insight: &dashboardsv1.InsightTileContent{Spec: validSpec()},
-		},
-		Layouts: []*dashboardsv1.ResponsiveGridLayout{
-			{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
-			{Breakpoint: proto.String("lg"), X: proto.Int32(6), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for duplicate breakpoints")
-	}
-}
-
-func TestUpdateTileRequest_RejectsOverMaxDisplayName(t *testing.T) {
-	req := &dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("tile_123"),
-		DashboardId: proto.String("dash_123"),
-		DisplayName: proto.String(strings.Repeat("a", 151)),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("x")},
-		},
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for display_name over 150 chars")
-	}
-}
-
 func TestQueryDashboardRequest_AcceptsOverrides(t *testing.T) {
 	req := &dashboardsv1.DashboardsServiceQueryDashboardRequest{
 		DashboardId: proto.String("dash_123"),
@@ -573,5 +280,174 @@ func validSpec() *insightsv1.InsightQuerySpec {
 		Events: []*insightsv1.EventQuery{
 			{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
 		},
+	}
+}
+
+// ----- Upsert request & DashboardTileInput validation -------------------
+//
+// These cases pin Upsert request validation at the proto level — protovalidate
+// alone rejects the bad shapes before they ever reach the handler.
+
+func validTileInput() *dashboardsv1.DashboardTileInput {
+	return &dashboardsv1.DashboardTileInput{
+		DisplayName: proto.String("ok"),
+		Content: &dashboardsv1.DashboardTileInput_Markdown{
+			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("body")},
+		},
+	}
+}
+
+func TestUpsertRequest_AcceptsValidPayload(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String("dash_123"),
+		DisplayName: proto.String("Board"),
+		Tiles:       []*dashboardsv1.DashboardTileInput{validTileInput()},
+	}
+	if err := protovalidate.Validate(req); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestUpsertRequest_RejectsMissingID(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpsertRequest{
+		DisplayName: proto.String("Board"),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for missing id")
+	}
+}
+
+func TestUpsertRequest_RejectsMissingDisplayName(t *testing.T) {
+	req := &dashboardsv1.DashboardsServiceUpsertRequest{
+		Id: proto.String("dash_123"),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for missing display_name")
+	}
+}
+
+func TestUpsertRequest_RejectsOverMaxTiles(t *testing.T) {
+	tiles := make([]*dashboardsv1.DashboardTileInput, 101)
+	for i := range tiles {
+		tiles[i] = validTileInput()
+	}
+	req := &dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String("dash_123"),
+		DisplayName: proto.String("Board"),
+		Tiles:       tiles,
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("expected validation error for 101 tiles")
+	}
+}
+
+func TestDashboardTileInput_RejectsOverMaxThresholds(t *testing.T) {
+	tile := validTileInput()
+	tile.Thresholds = make([]*dashboardsv1.ThresholdRule, 6)
+	for i := range tile.Thresholds {
+		tile.Thresholds[i] = &dashboardsv1.ThresholdRule{
+			Operator: dashboardsv1.ThresholdRule_OPERATOR_GT.Enum(),
+			Value:    proto.Float64(float64(i)),
+			Tone:     dashboardsv1.ThresholdRule_TONE_GOOD.Enum(),
+		}
+	}
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for 6 thresholds (max 5)")
+	}
+}
+
+func TestDashboardTileInput_AcceptsMaxThresholds(t *testing.T) {
+	tile := validTileInput()
+	tile.Thresholds = make([]*dashboardsv1.ThresholdRule, 5)
+	for i := range tile.Thresholds {
+		tile.Thresholds[i] = &dashboardsv1.ThresholdRule{
+			Operator: dashboardsv1.ThresholdRule_OPERATOR_GTE.Enum(),
+			Value:    proto.Float64(float64(i)),
+			Tone:     dashboardsv1.ThresholdRule_TONE_NEUTRAL.Enum(),
+		}
+	}
+	if err := protovalidate.Validate(tile); err != nil {
+		t.Fatalf("unexpected validation error at max threshold count: %v", err)
+	}
+}
+
+func TestThresholdRule_RejectsUndefinedOperator(t *testing.T) {
+	rule := &dashboardsv1.ThresholdRule{
+		Operator: dashboardsv1.ThresholdRule_Operator(99).Enum(),
+		Value:    proto.Float64(1),
+		Tone:     dashboardsv1.ThresholdRule_TONE_GOOD.Enum(),
+	}
+	if err := protovalidate.Validate(rule); err == nil {
+		t.Fatal("expected validation error for undefined operator")
+	}
+}
+
+func TestThresholdRule_RejectsUndefinedTone(t *testing.T) {
+	rule := &dashboardsv1.ThresholdRule{
+		Operator: dashboardsv1.ThresholdRule_OPERATOR_LT.Enum(),
+		Value:    proto.Float64(1),
+		Tone:     dashboardsv1.ThresholdRule_Tone(99).Enum(),
+	}
+	if err := protovalidate.Validate(rule); err == nil {
+		t.Fatal("expected validation error for undefined tone")
+	}
+}
+
+func TestTileHeader_RejectsDisallowedAccentColor(t *testing.T) {
+	tile := validTileInput()
+	tile.Header = &dashboardsv1.TileHeader{AccentColor: proto.String("neon")}
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for accent_color = neon")
+	}
+}
+
+func TestTileHeader_AcceptsAllowedAccentColors(t *testing.T) {
+	allowed := []string{"", "blue", "green", "red", "amber", "purple", "gray"}
+	for _, color := range allowed {
+		t.Run(color, func(t *testing.T) {
+			tile := validTileInput()
+			tile.Header = &dashboardsv1.TileHeader{AccentColor: proto.String(color)}
+			if err := protovalidate.Validate(tile); err != nil {
+				t.Fatalf("unexpected validation error for accent_color = %q: %v", color, err)
+			}
+		})
+	}
+}
+
+func TestTileHeader_RejectsOverlongIcon(t *testing.T) {
+	tile := validTileInput()
+	// 9 bytes — one over the max_len = 8 cap.
+	tile.Header = &dashboardsv1.TileHeader{Icon: proto.String(strings.Repeat("a", 9))}
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for 9-byte icon")
+	}
+}
+
+func TestComparePeriod_RejectsUndefined(t *testing.T) {
+	tile := validTileInput()
+	tile.Compare = dashboardsv1.ComparePeriod(99).Enum()
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for undefined compare period")
+	}
+}
+
+func TestVisualizationOptions_RejectsUndefinedYAxisFormat(t *testing.T) {
+	tile := validTileInput()
+	tile.Visualization = &dashboardsv1.VisualizationOptions{
+		YAxisFormat: dashboardsv1.VisualizationOptions_YAxisFormat(99).Enum(),
+	}
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for undefined y_axis_format")
+	}
+}
+
+func TestDashboardTileInput_RejectsDuplicateBreakpoints(t *testing.T) {
+	tile := validTileInput()
+	tile.Layouts = []*dashboardsv1.ResponsiveGridLayout{
+		{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
+		{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(4), W: proto.Int32(6), H: proto.Int32(4)},
+	}
+	if err := protovalidate.Validate(tile); err == nil {
+		t.Fatal("expected validation error for duplicate layout breakpoint on DashboardTileInput")
 	}
 }

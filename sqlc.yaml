@@ -15,6 +15,11 @@ sql:
             nullable: true
             go_type:
               type: "map[string]any"
+          # thresholds is a JSON array, not an object — return raw bytes so the
+          # service layer can marshal proto repeated fields via protojson.
+          - column: "dashboard_tiles.thresholds"
+            go_type:
+              type: "[]byte"
   - engine: 'postgresql'
     queries: 'schema/postgres/queries/write/*.sql'
     schema: 'schema/postgres/migrations'
@@ -30,3 +35,8 @@ sql:
             nullable: true
             go_type:
               type: "map[string]any"
+          # thresholds is a JSON array, not an object — return raw bytes so the
+          # service layer can marshal proto repeated fields via protojson.
+          - column: "dashboard_tiles.thresholds"
+            go_type:
+              type: "[]byte"

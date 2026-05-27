@@ -14,9 +14,18 @@ service DashboardsService {
   rpc Get(DashboardsServiceGetRequest) returns (DashboardsServiceGetResponse) {}
   rpc List(DashboardsServiceListRequest) returns (DashboardsServiceListResponse) {}
   rpc Update(DashboardsServiceUpdateRequest) returns (DashboardsServiceUpdateResponse) {}
-  rpc CreateTile(DashboardsServiceCreateTileRequest) returns (DashboardsServiceCreateTileResponse) {}
-  rpc UpdateTile(DashboardsServiceUpdateTileRequest) returns (DashboardsServiceUpdateTileResponse) {}
-  rpc DeleteTile(DashboardsServiceDeleteTileRequest) returns (DashboardsServiceDeleteTileResponse) {}
+  // Upsert is the only mutation path for dashboard tiles. It applies an atomic
+  // edit: dashboard metadata is replaced and the tile set is reconciled in a
+  // single transaction. Reconciliation has four branches: tiles with empty id
+  // are inserted; tiles whose id matches an existing row are updated (or
+  // skipped when byte-equivalent); existing tiles whose id is absent from the
+  // request are deleted; a populated id that does NOT match any existing tile
+  // is rejected with CodeNotFound (no insert-as-new fallback). Duplicate
+  // non-empty ids within one request are rejected with CodeInvalidArgument.
+  // Last-write-wins under concurrent edits (the server acquires a row lock on
+  // the dashboard for the duration of the tx). The returned tiles are in
+  // request order so clients can map back to their local draft.
+  rpc Upsert(DashboardsServiceUpsertRequest) returns (DashboardsServiceUpsertResponse) {}
   rpc QueryDashboard(DashboardsServiceQueryDashboardRequest) returns (DashboardsServiceQueryDashboardResponse) {}
 }
 
@@ -56,7 +65,10 @@ message DashboardTile {
   google.protobuf.Timestamp create_time = 8;
   google.protobuf.Timestamp update_time = 9;
   DashboardTileViewMode view_mode = 10 [(buf.validate.field).enum.defined_only = true];
-  reserved 11; // was default_time_range (moved to dashboard level)
+  ComparePeriod compare = 11 [(buf.validate.field).enum.defined_only = true];
+  repeated ThresholdRule thresholds = 12 [(buf.validate.field).repeated.max_items = 5];
+  TileHeader header = 13;
+  VisualizationOptions visualization = 14;
 }
 
 enum DashboardTileViewMode {
@@ -66,6 +78,17 @@ enum DashboardTileViewMode {
   DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED = 3;
   DASHBOARD_TILE_VIEW_MODE_BAR_STACKED = 4;
   DASHBOARD_TILE_VIEW_MODE_TABLE = 5;
+  // KPI is a render variant of an insight tile, not a new content kind.
+  // The tile still holds an InsightTileContent; only the visualization changes.
+  DASHBOARD_TILE_VIEW_MODE_KPI = 6;
+}
+
+// ComparePeriod selects an automatic comparison window for KPI / trend tiles.
+// Comparison itself is computed client-side (the FE issues a second Query with
+// a shifted time range); the server only stores and returns the selected period.
+enum ComparePeriod {
+  COMPARE_PERIOD_UNSPECIFIED = 0; // no comparison
+  COMPARE_PERIOD_PRIOR = 1;       // equal-length window immediately before
 }
 
 message InsightTileContent {
@@ -74,6 +97,70 @@ message InsightTileContent {
 
 message MarkdownTileContent {
   string body = 1 [(buf.validate.field).string = {min_len: 1, max_len: 100000}];
+}
+
+// ThresholdRule colors a KPI value based on a comparison against `value`.
+// Evaluation is client-side; the server only stores and returns the rule.
+message ThresholdRule {
+  enum Operator {
+    OPERATOR_UNSPECIFIED = 0;
+    OPERATOR_LT = 1;
+    OPERATOR_LTE = 2;
+    OPERATOR_GT = 3;
+    OPERATOR_GTE = 4;
+  }
+  // operator and tone are required so an UNSPECIFIED rule (which would match
+  // every value or apply no tone) can't be persisted as a wire-valid no-op.
+  Operator operator = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum = {defined_only: true, not_in: [0]}
+  ];
+  double value = 2;
+  enum Tone {
+    TONE_UNSPECIFIED = 0;
+    TONE_GOOD = 1;
+    TONE_WARN = 2;
+    TONE_BAD = 3;
+    TONE_NEUTRAL = 4;
+  }
+  Tone tone = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum = {defined_only: true, not_in: [0]}
+  ];
+}
+
+// TileHeader customizes the tile's header rendering. All fields are optional.
+message TileHeader {
+  // Short label rendered in the tile header — typically a single grapheme
+  // cluster (one emoji or character). Capped at 8 bytes, so multi-codepoint
+  // emoji (flags, ZWJ-joined family sequences) may not fit; the FE should
+  // fall back to no icon when the client-side grapheme count exceeds 1.
+  string icon = 1 [(buf.validate.field).string.max_len = 8];
+  // Semantic accent token. Empty means "no accent".
+  string accent_color = 2 [(buf.validate.field).string = {
+    in: ["", "blue", "green", "red", "amber", "purple", "gray"]
+  }];
+  bool hide_title = 3;
+}
+
+// VisualizationOptions tunes chart rendering. All fields apply client-side only.
+message VisualizationOptions {
+  option (buf.validate.message).cel = {
+    id: "visualization_options.log_scale_excludes_zero_baseline"
+    message: "log_scale cannot be combined with zero_baseline"
+    expression: "!(this.log_scale && this.zero_baseline)"
+  };
+
+  enum YAxisFormat {
+    Y_AXIS_FORMAT_UNSPECIFIED = 0; // client default: NUMBER
+    Y_AXIS_FORMAT_NUMBER = 1;
+    Y_AXIS_FORMAT_PERCENT = 2;
+    Y_AXIS_FORMAT_DURATION_MS = 3;
+  }
+  YAxisFormat y_axis_format = 1 [(buf.validate.field).enum.defined_only = true];
+  bool log_scale = 2;
+  bool hide_legend = 3;
+  bool zero_baseline = 4; // force Y axis to start at zero
 }
 
 message ResponsiveGridLayout {
@@ -126,68 +213,6 @@ message DashboardsServiceListResponse {
   repeated Dashboard dashboards = 1;
 }
 
-message DashboardsServiceCreateTileRequest {
-  option (buf.validate.message).cel = {
-    id: "create_dashboard_tile_request.unique_breakpoints"
-    message: "layout breakpoints must be unique"
-    expression:
-      "this.layouts.size() <= 1"
-      "|| !this.layouts.exists(l,"
-      "     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)"
-  };
-
-  string dashboard_id = 1 [(buf.validate.field).required = true];
-  string display_name = 2 [(buf.validate.field).string.max_len = 150];
-  string description = 3 [(buf.validate.field).string.max_len = 2000];
-  oneof content {
-    option (buf.validate.oneof).required = true;
-    InsightTileContent insight = 4;
-    MarkdownTileContent markdown = 5;
-  }
-  repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
-  DashboardTileViewMode view_mode = 7 [(buf.validate.field).enum.defined_only = true];
-  reserved 8; // was default_time_range (moved to dashboard level)
-}
-
-message DashboardsServiceCreateTileResponse {
-  DashboardTile tile = 1;
-}
-
-message DashboardsServiceUpdateTileRequest {
-  option (buf.validate.message).cel = {
-    id: "update_dashboard_tile_request.unique_breakpoints"
-    message: "layout breakpoints must be unique"
-    expression:
-      "this.layouts.size() <= 1"
-      "|| !this.layouts.exists(l,"
-      "     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)"
-  };
-
-  string id = 1 [(buf.validate.field).required = true];
-  string dashboard_id = 2 [(buf.validate.field).required = true];
-  string display_name = 3 [(buf.validate.field).string.max_len = 150];
-  string description = 4 [(buf.validate.field).string.max_len = 2000];
-  oneof content {
-    option (buf.validate.oneof).required = true;
-    InsightTileContent insight = 5;
-    MarkdownTileContent markdown = 6;
-  }
-  repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
-  DashboardTileViewMode view_mode = 8 [(buf.validate.field).enum.defined_only = true];
-  reserved 9; // was default_time_range (moved to dashboard level)
-}
-
-message DashboardsServiceUpdateTileResponse {
-  DashboardTile tile = 1;
-}
-
-message DashboardsServiceDeleteTileRequest {
-  string id = 1 [(buf.validate.field).required = true];
-  string dashboard_id = 2 [(buf.validate.field).required = true];
-}
-
-message DashboardsServiceDeleteTileResponse {}
-
 message DashboardsServiceUpdateRequest {
   string id = 1 [(buf.validate.field).required = true];
   string display_name = 2 [
@@ -200,6 +225,56 @@ message DashboardsServiceUpdateRequest {
 }
 
 message DashboardsServiceUpdateResponse {
+  Dashboard dashboard = 1;
+}
+
+message DashboardsServiceUpsertRequest {
+  string id = 1 [(buf.validate.field).required = true];
+  string display_name = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 150
+  ];
+  string description = 3 [(buf.validate.field).string.max_len = 2000];
+  common.v1.TimeRangePreset default_time_range = 4 [(buf.validate.field).enum.defined_only = true];
+  shared.insights.v1.Granularity default_granularity = 5 [(buf.validate.field).enum.defined_only = true];
+  repeated DashboardTileInput tiles = 6 [(buf.validate.field).repeated.max_items = 100];
+}
+
+// DashboardTileInput is the same shape as DashboardTile minus server-assigned
+// fields (no dashboard_id / create_time / update_time). Within an Upsert call,
+// an empty id means "insert new tile" (server assigns one); a populated id that
+// matches an existing tile means "update"; existing tiles whose id is absent
+// from the request are deleted. A populated id that does NOT match any
+// existing tile on the dashboard is rejected with CodeNotFound (no
+// insert-as-new fallback). Duplicate non-empty ids within a single request are
+// rejected with CodeInvalidArgument.
+message DashboardTileInput {
+  option (buf.validate.message).cel = {
+    id: "dashboard_tile_input.unique_breakpoints"
+    message: "layout breakpoints must be unique"
+    expression:
+      "this.layouts.size() <= 1"
+      "|| !this.layouts.exists(l,"
+      "     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)"
+  };
+
+  string id = 1;
+  string display_name = 2 [(buf.validate.field).string.max_len = 150];
+  string description = 3 [(buf.validate.field).string.max_len = 2000];
+  oneof content {
+    option (buf.validate.oneof).required = true;
+    InsightTileContent insight = 4;
+    MarkdownTileContent markdown = 5;
+  }
+  repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
+  DashboardTileViewMode view_mode = 7 [(buf.validate.field).enum.defined_only = true];
+  ComparePeriod compare = 8 [(buf.validate.field).enum.defined_only = true];
+  repeated ThresholdRule thresholds = 9 [(buf.validate.field).repeated.max_items = 5];
+  TileHeader header = 10;
+  VisualizationOptions visualization = 11;
+}
+
+message DashboardsServiceUpsertResponse {
   Dashboard dashboard = 1;
 }
 
