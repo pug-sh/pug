@@ -79,37 +79,6 @@ func TestHandler_Delete_Unauthenticated(t *testing.T) {
 	assertCode(t, err, connect.CodeUnauthenticated)
 }
 
-func TestHandler_CreateTile_Unauthenticated(t *testing.T) {
-	s := &Server{}
-	_, err := s.CreateTile(context.Background(), connect.NewRequest(&dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("x"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("y")},
-		},
-	}))
-	assertCode(t, err, connect.CodeUnauthenticated)
-}
-
-func TestHandler_UpdateTile_Unauthenticated(t *testing.T) {
-	s := &Server{}
-	_, err := s.UpdateTile(context.Background(), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("x"),
-		DashboardId: proto.String("d"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("y")},
-		},
-	}))
-	assertCode(t, err, connect.CodeUnauthenticated)
-}
-
-func TestHandler_DeleteTile_Unauthenticated(t *testing.T) {
-	s := &Server{}
-	_, err := s.DeleteTile(context.Background(), connect.NewRequest(&dashboardsv1.DashboardsServiceDeleteTileRequest{
-		Id:          proto.String("x"),
-		DashboardId: proto.String("d"),
-	}))
-	assertCode(t, err, connect.CodeUnauthenticated)
-}
 
 func TestHandler_QueryDashboard_Unauthenticated(t *testing.T) {
 	s := &Server{}
@@ -192,20 +161,27 @@ func TestHandler_QueryDashboard_ReturnsTrendResults(t *testing.T) {
 
 	// The tile stores only what to measure; the window comes from the request
 	// override (the seeded events are in 2024, outside any "last N days" preset).
-	if _, err := svc.CreateDashboardTile(ctx, projectID, dashboard.ID, coredashboards.TilePayload{
-		DisplayName: "Page views",
-		Content: coredashboards.InsightTile{Spec: &insightsv1.InsightQuerySpec{
-			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
-			Events: []*insightsv1.EventQuery{
-				{
-					Event:       &commonv1.EventFilter{Kind: proto.String("page_view")},
-					Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
-				},
-			},
-		}},
-		ViewMode: dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
+	if _, err := svc.UpsertDashboard(ctx, projectID, dashboard.ID, coredashboards.UpsertDashboardInput{
+		DisplayName:        "Overview",
+		DefaultTimeRange:   commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS,
+		DefaultGranularity: insightsv1.Granularity_GRANULARITY_DAY,
+		Tiles: []coredashboards.UpsertTileInput{
+			{Payload: coredashboards.TilePayload{
+				DisplayName: "Page views",
+				Content: coredashboards.InsightTile{Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+					Events: []*insightsv1.EventQuery{
+						{
+							Event:       &commonv1.EventFilter{Kind: proto.String("page_view")},
+							Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+						},
+					},
+				}},
+				ViewMode: dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
+			}},
+		},
 	}); err != nil {
-		t.Fatalf("CreateDashboardTile: %v", err)
+		t.Fatalf("UpsertDashboard: %v", err)
 	}
 
 	queryFrom := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -264,83 +240,6 @@ func TestHandler_Update_NotFound_MapsToCodeNotFound(t *testing.T) {
 	assertCode(t, err, connect.CodeNotFound)
 }
 
-func TestHandler_CreateTile_DashboardNotFound_MapsToCodeNotFound(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-	s, projectID, _ := newIntegrationServer(t)
-
-	_, err := s.CreateTile(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String("nonexistent_dashboard"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("body")},
-		},
-	}))
-	assertCode(t, err, connect.CodeNotFound)
-	assertReason(t, err, apperr.ReasonDashboardNotFound)
-}
-
-func TestHandler_CreateTile_DisplayNameConflict_MapsToCodeAlreadyExists(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-	s, projectID, svc := newIntegrationServer(t)
-
-	dashboard, err := svc.CreateDashboard(context.Background(), projectID, "Conflict Dashboard", "",
-		commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, insightsv1.Granularity_GRANULARITY_UNSPECIFIED)
-	if err != nil {
-		t.Fatalf("CreateDashboard: %v", err)
-	}
-	t.Cleanup(func() { _ = svc.DeleteDashboard(context.Background(), projectID, dashboard.ID) })
-
-	if _, err := svc.CreateDashboardTile(context.Background(), projectID, dashboard.ID, coredashboards.TilePayload{
-		DisplayName: "Same Name",
-		Content:     coredashboards.MarkdownTile{Body: "first"},
-		ViewMode:    dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED,
-	}); err != nil {
-		t.Fatalf("first tile: %v", err)
-	}
-
-	_, err = s.CreateTile(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String(dashboard.ID),
-		DisplayName: proto.String("Same Name"),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("second")},
-		},
-	}))
-	assertCode(t, err, connect.CodeAlreadyExists)
-	assertReason(t, err, apperr.ReasonDashboardTileNameConflict)
-}
-
-func TestHandler_UpdateTile_NotFound_MapsToCodeNotFound(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-	s, projectID, _ := newIntegrationServer(t)
-
-	_, err := s.UpdateTile(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateTileRequest{
-		Id:          proto.String("nonexistent_tile"),
-		DashboardId: proto.String("nonexistent_dashboard"),
-		Content: &dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("body")},
-		},
-	}))
-	assertCode(t, err, connect.CodeNotFound)
-	assertReason(t, err, apperr.ReasonDashboardTileNotFound)
-}
-
-func TestHandler_DeleteTile_NotFound_MapsToCodeNotFound(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-	s, projectID, _ := newIntegrationServer(t)
-
-	_, err := s.DeleteTile(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceDeleteTileRequest{
-		Id:          proto.String("nonexistent_tile"),
-		DashboardId: proto.String("nonexistent_dashboard"),
-	}))
-	assertCode(t, err, connect.CodeNotFound)
-}
 
 // ----- Helpers -----------------------------------------------------------
 

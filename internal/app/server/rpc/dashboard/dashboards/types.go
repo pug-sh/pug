@@ -149,30 +149,6 @@ func roTileToRPC(tile dbread.DashboardTile) (*dashboardsv1.DashboardTile, error)
 	return msg, nil
 }
 
-func wTileToRPC(tile dbwrite.DashboardTile) (*dashboardsv1.DashboardTile, error) {
-	layouts, err := coredashboards.MapToLayouts(tile.Layouts)
-	if err != nil {
-		return nil, err
-	}
-	msg := &dashboardsv1.DashboardTile{
-		Id:          proto.String(tile.ID),
-		DashboardId: proto.String(tile.DashboardID),
-		DisplayName: proto.String(tile.DisplayName),
-		Description: proto.String(tile.Description),
-		Layouts:     layouts,
-		CreateTime:  toTimestamp(tile.CreateTime.Time),
-		UpdateTime:  toTimestamp(tile.UpdateTime.Time),
-		ViewMode:    tileViewModeToRPC(coredashboards.TileKind(tile.Kind), tile.ViewMode).Enum(),
-	}
-	if err := setTileContent(msg, tile.ID, coredashboards.TileKind(tile.Kind), tile.InsightQuery, tile.MarkdownBody.String, tile.MarkdownBody.Valid); err != nil {
-		return nil, err
-	}
-	if err := setTileCustomization(msg, tile.Compare, tile.Thresholds, tile.Header, tile.Visualization); err != nil {
-		return nil, err
-	}
-	return msg, nil
-}
-
 // setTileCustomization populates compare / thresholds / header / visualization
 // on the response from the DB row's stored columns. Errors propagate proto
 // decoding failures (data corruption / schema drift); the renderedTileToRPC
@@ -263,28 +239,6 @@ func tileViewModeToRPC(kind coredashboards.TileKind, raw string) dashboardsv1.Da
 		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED
 	default:
 		return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED
-	}
-}
-
-func tileContentFromCreateRPC(c any) (coredashboards.TileContent, error) {
-	switch v := c.(type) {
-	case *dashboardsv1.DashboardsServiceCreateTileRequest_Insight:
-		return coredashboards.InsightTile{Spec: v.Insight.GetSpec()}, nil
-	case *dashboardsv1.DashboardsServiceCreateTileRequest_Markdown:
-		return coredashboards.MarkdownTile{Body: v.Markdown.GetBody()}, nil
-	default:
-		return nil, errors.New("unknown tile content")
-	}
-}
-
-func tileContentFromUpdateRPC(c any) (coredashboards.TileContent, error) {
-	switch v := c.(type) {
-	case *dashboardsv1.DashboardsServiceUpdateTileRequest_Insight:
-		return coredashboards.InsightTile{Spec: v.Insight.GetSpec()}, nil
-	case *dashboardsv1.DashboardsServiceUpdateTileRequest_Markdown:
-		return coredashboards.MarkdownTile{Body: v.Markdown.GetBody()}, nil
-	default:
-		return nil, errors.New("unknown tile content")
 	}
 }
 

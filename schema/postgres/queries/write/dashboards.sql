@@ -30,37 +30,6 @@ from dashboards d
 where d.id = @dashboard_id and d.project_id = @project_id
 returning *;
 
--- name: UpdateDashboardTile :one
-update dashboard_tiles dt
-set
-  display_name  = coalesce(nullif(@display_name, ''), dt.display_name),
-  description   = coalesce(nullif(@description, ''), dt.description),
-  kind          = @kind,
-  view_mode     = @view_mode,
-  insight_query = @insight_query,
-  markdown_body = @markdown_body,
-  layouts       = @layouts,
-  compare       = @compare,
-  thresholds    = @thresholds,
-  header        = @header,
-  visualization = @visualization,
-  payload_hash  = @payload_hash
-from dashboards d
-where dt.id = @id
-  and dt.dashboard_id = @dashboard_id
-  and d.id = dt.dashboard_id
-  and d.project_id = @project_id
-returning dt.*;
-
--- name: DeleteDashboardTile :one
-delete from dashboard_tiles dt
-using dashboards d
-where dt.id = @id
-  and dt.dashboard_id = @dashboard_id
-  and d.id = dt.dashboard_id
-  and d.project_id = @project_id
-returning dt.*;
-
 -- name: UpsertDashboardTileUpdate :execrows
 -- Full-replace update gated on payload_hash. If the stored hash matches the
 -- caller's hash, zero rows are touched and update_time stays put. Existence /

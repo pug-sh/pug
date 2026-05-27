@@ -84,8 +84,11 @@ func TestHandler_Upsert_InsertUpdateDeleteRoundTrip(t *testing.T) {
 	}
 
 	// Seed: two tiles. One will be updated, one will be deleted.
-	keep := upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "keep", "before")
-	toDelete := upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "drop", "doomed")
+	seeded := upsertSeedTiles(t, s, projectID, dash.ID,
+		seedTile{name: "keep", body: "before"},
+		seedTile{name: "drop", body: "doomed"},
+	)
+	keep, toDelete := seeded[0], seeded[1]
 
 	resp, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
 		Id:                 proto.String(dash.ID),
@@ -182,7 +185,7 @@ func TestHandler_Upsert_HashShortCircuit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateDashboard: %v", err)
 	}
-	tileID := upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "card", "body")
+	tileID := upsertSeedTiles(t, s, projectID, dash.ID, seedTile{name: "card", body: "body"})[0]
 
 	// First Upsert with content matching the seeded tile. After this, the
 	// stored payload_hash matches what this exact payload would produce.
@@ -232,8 +235,10 @@ func TestHandler_Upsert_EmptyTilesClearsDashboard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateDashboard: %v", err)
 	}
-	upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "first", "x")
-	upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "second", "y")
+	upsertSeedTiles(t, s, projectID, dash.ID,
+		seedTile{name: "first", body: "x"},
+		seedTile{name: "second", body: "y"},
+	)
 
 	resp, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
 		Id:          proto.String(dash.ID),
@@ -274,8 +279,11 @@ func TestHandler_Upsert_OnlyChangedTileBumpsUpdateTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateDashboard: %v", err)
 	}
-	idStable := upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "stable", "still")
-	idChanged := upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "changed", "old body")
+	seeded := upsertSeedTiles(t, s, projectID, dash.ID,
+		seedTile{name: "stable", body: "still"},
+		seedTile{name: "changed", body: "old body"},
+	)
+	idStable, idChanged := seeded[0], seeded[1]
 
 	initial, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
 		Id: proto.String(dash.ID),
@@ -342,8 +350,11 @@ func TestHandler_Upsert_DuplicateNameRollsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateDashboard: %v", err)
 	}
-	alpha := upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "alpha", "original alpha")
-	upsertSeedMarkdownTile(t, ctx, s, projectID, dash.ID, "beta", "original beta")
+	seeded := upsertSeedTiles(t, s, projectID, dash.ID,
+		seedTile{name: "alpha", body: "original alpha"},
+		seedTile{name: "beta", body: "original beta"},
+	)
+	alpha := seeded[0]
 
 	// First request slot updates alpha (would succeed in isolation); second
 	// slot is a new tile claiming the name "beta" — collides with the seeded
@@ -445,21 +456,38 @@ func TestHandler_Upsert_KpiUnspecifiedComparePersists(t *testing.T) {
 	}
 }
 
-// upsertSeedMarkdownTile creates a markdown tile via the existing CreateTile
-// RPC (not the Upsert flow) so the seeded row has a stable hash and a known
-// id. Returns the assigned tile id.
-func upsertSeedMarkdownTile(t *testing.T, ctx context.Context, s *Server, projectID, dashboardID, name, body string) string {
+type seedTile struct {
+	name string
+	body string
+}
+
+// upsertSeedTiles replaces the dashboard's tile set with the given markdown
+// tiles in one Upsert call and returns the assigned ids in input order. The
+// dashboard display_name is preserved (passed back as "Board" since that's
+// what most tests create with) — callers that need a different name should
+// follow up with their own Upsert.
+func upsertSeedTiles(t *testing.T, s *Server, projectID, dashboardID string, tiles ...seedTile) []string {
 	t.Helper()
-	resp, err := s.CreateTile(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceCreateTileRequest{
-		DashboardId: proto.String(dashboardID),
-		DisplayName: proto.String(name),
-		Content: &dashboardsv1.DashboardsServiceCreateTileRequest_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String(body)},
-		},
+	inputs := make([]*dashboardsv1.DashboardTileInput, len(tiles))
+	for i, tile := range tiles {
+		inputs[i] = &dashboardsv1.DashboardTileInput{
+			DisplayName: proto.String(tile.name),
+			Content: &dashboardsv1.DashboardTileInput_Markdown{
+				Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String(tile.body)},
+			},
+		}
+	}
+	resp, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
+		Id:          proto.String(dashboardID),
+		DisplayName: proto.String("Board"),
+		Tiles:       inputs,
 	}))
 	if err != nil {
-		t.Fatalf("seed CreateTile %q: %v", name, err)
+		t.Fatalf("seed Upsert: %v", err)
 	}
-	_ = ctx
-	return resp.Msg.GetTile().GetId()
+	ids := make([]string, len(resp.Msg.GetDashboard().GetTiles()))
+	for i, tile := range resp.Msg.GetDashboard().GetTiles() {
+		ids[i] = tile.GetId()
+	}
+	return ids
 }

@@ -46,15 +46,6 @@ const (
 	// DashboardsServiceUpdateProcedure is the fully-qualified name of the DashboardsService's Update
 	// RPC.
 	DashboardsServiceUpdateProcedure = "/dashboard.dashboards.v1.DashboardsService/Update"
-	// DashboardsServiceCreateTileProcedure is the fully-qualified name of the DashboardsService's
-	// CreateTile RPC.
-	DashboardsServiceCreateTileProcedure = "/dashboard.dashboards.v1.DashboardsService/CreateTile"
-	// DashboardsServiceUpdateTileProcedure is the fully-qualified name of the DashboardsService's
-	// UpdateTile RPC.
-	DashboardsServiceUpdateTileProcedure = "/dashboard.dashboards.v1.DashboardsService/UpdateTile"
-	// DashboardsServiceDeleteTileProcedure is the fully-qualified name of the DashboardsService's
-	// DeleteTile RPC.
-	DashboardsServiceDeleteTileProcedure = "/dashboard.dashboards.v1.DashboardsService/DeleteTile"
 	// DashboardsServiceUpsertProcedure is the fully-qualified name of the DashboardsService's Upsert
 	// RPC.
 	DashboardsServiceUpsertProcedure = "/dashboard.dashboards.v1.DashboardsService/Upsert"
@@ -70,15 +61,12 @@ type DashboardsServiceClient interface {
 	Get(context.Context, *connect.Request[v1.DashboardsServiceGetRequest]) (*connect.Response[v1.DashboardsServiceGetResponse], error)
 	List(context.Context, *connect.Request[v1.DashboardsServiceListRequest]) (*connect.Response[v1.DashboardsServiceListResponse], error)
 	Update(context.Context, *connect.Request[v1.DashboardsServiceUpdateRequest]) (*connect.Response[v1.DashboardsServiceUpdateResponse], error)
-	CreateTile(context.Context, *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error)
-	UpdateTile(context.Context, *connect.Request[v1.DashboardsServiceUpdateTileRequest]) (*connect.Response[v1.DashboardsServiceUpdateTileResponse], error)
-	DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error)
-	// Upsert applies an atomic dashboard edit: it replaces dashboard-level metadata
-	// and reconciles the tile set in a single transaction. Tiles with empty id are
-	// inserted; tiles whose id matches an existing row are updated (or skipped when
-	// byte-equivalent); existing tiles whose id is absent from the request are
-	// deleted. The returned tiles are in request order so clients can map back to
-	// their local draft.
+	// Upsert is the only mutation path for dashboard tiles. It applies an atomic
+	// edit: dashboard metadata is replaced and the tile set is reconciled in a
+	// single transaction. Tiles with empty id are inserted; tiles whose id matches
+	// an existing row are updated (or skipped when byte-equivalent); existing tiles
+	// whose id is absent from the request are deleted. The returned tiles are in
+	// request order so clients can map back to their local draft.
 	Upsert(context.Context, *connect.Request[v1.DashboardsServiceUpsertRequest]) (*connect.Response[v1.DashboardsServiceUpsertResponse], error)
 	QueryDashboard(context.Context, *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error)
 }
@@ -124,24 +112,6 @@ func NewDashboardsServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(dashboardsServiceMethods.ByName("Update")),
 			connect.WithClientOptions(opts...),
 		),
-		createTile: connect.NewClient[v1.DashboardsServiceCreateTileRequest, v1.DashboardsServiceCreateTileResponse](
-			httpClient,
-			baseURL+DashboardsServiceCreateTileProcedure,
-			connect.WithSchema(dashboardsServiceMethods.ByName("CreateTile")),
-			connect.WithClientOptions(opts...),
-		),
-		updateTile: connect.NewClient[v1.DashboardsServiceUpdateTileRequest, v1.DashboardsServiceUpdateTileResponse](
-			httpClient,
-			baseURL+DashboardsServiceUpdateTileProcedure,
-			connect.WithSchema(dashboardsServiceMethods.ByName("UpdateTile")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteTile: connect.NewClient[v1.DashboardsServiceDeleteTileRequest, v1.DashboardsServiceDeleteTileResponse](
-			httpClient,
-			baseURL+DashboardsServiceDeleteTileProcedure,
-			connect.WithSchema(dashboardsServiceMethods.ByName("DeleteTile")),
-			connect.WithClientOptions(opts...),
-		),
 		upsert: connect.NewClient[v1.DashboardsServiceUpsertRequest, v1.DashboardsServiceUpsertResponse](
 			httpClient,
 			baseURL+DashboardsServiceUpsertProcedure,
@@ -164,9 +134,6 @@ type dashboardsServiceClient struct {
 	get            *connect.Client[v1.DashboardsServiceGetRequest, v1.DashboardsServiceGetResponse]
 	list           *connect.Client[v1.DashboardsServiceListRequest, v1.DashboardsServiceListResponse]
 	update         *connect.Client[v1.DashboardsServiceUpdateRequest, v1.DashboardsServiceUpdateResponse]
-	createTile     *connect.Client[v1.DashboardsServiceCreateTileRequest, v1.DashboardsServiceCreateTileResponse]
-	updateTile     *connect.Client[v1.DashboardsServiceUpdateTileRequest, v1.DashboardsServiceUpdateTileResponse]
-	deleteTile     *connect.Client[v1.DashboardsServiceDeleteTileRequest, v1.DashboardsServiceDeleteTileResponse]
 	upsert         *connect.Client[v1.DashboardsServiceUpsertRequest, v1.DashboardsServiceUpsertResponse]
 	queryDashboard *connect.Client[v1.DashboardsServiceQueryDashboardRequest, v1.DashboardsServiceQueryDashboardResponse]
 }
@@ -196,21 +163,6 @@ func (c *dashboardsServiceClient) Update(ctx context.Context, req *connect.Reque
 	return c.update.CallUnary(ctx, req)
 }
 
-// CreateTile calls dashboard.dashboards.v1.DashboardsService.CreateTile.
-func (c *dashboardsServiceClient) CreateTile(ctx context.Context, req *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error) {
-	return c.createTile.CallUnary(ctx, req)
-}
-
-// UpdateTile calls dashboard.dashboards.v1.DashboardsService.UpdateTile.
-func (c *dashboardsServiceClient) UpdateTile(ctx context.Context, req *connect.Request[v1.DashboardsServiceUpdateTileRequest]) (*connect.Response[v1.DashboardsServiceUpdateTileResponse], error) {
-	return c.updateTile.CallUnary(ctx, req)
-}
-
-// DeleteTile calls dashboard.dashboards.v1.DashboardsService.DeleteTile.
-func (c *dashboardsServiceClient) DeleteTile(ctx context.Context, req *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error) {
-	return c.deleteTile.CallUnary(ctx, req)
-}
-
 // Upsert calls dashboard.dashboards.v1.DashboardsService.Upsert.
 func (c *dashboardsServiceClient) Upsert(ctx context.Context, req *connect.Request[v1.DashboardsServiceUpsertRequest]) (*connect.Response[v1.DashboardsServiceUpsertResponse], error) {
 	return c.upsert.CallUnary(ctx, req)
@@ -229,15 +181,12 @@ type DashboardsServiceHandler interface {
 	Get(context.Context, *connect.Request[v1.DashboardsServiceGetRequest]) (*connect.Response[v1.DashboardsServiceGetResponse], error)
 	List(context.Context, *connect.Request[v1.DashboardsServiceListRequest]) (*connect.Response[v1.DashboardsServiceListResponse], error)
 	Update(context.Context, *connect.Request[v1.DashboardsServiceUpdateRequest]) (*connect.Response[v1.DashboardsServiceUpdateResponse], error)
-	CreateTile(context.Context, *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error)
-	UpdateTile(context.Context, *connect.Request[v1.DashboardsServiceUpdateTileRequest]) (*connect.Response[v1.DashboardsServiceUpdateTileResponse], error)
-	DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error)
-	// Upsert applies an atomic dashboard edit: it replaces dashboard-level metadata
-	// and reconciles the tile set in a single transaction. Tiles with empty id are
-	// inserted; tiles whose id matches an existing row are updated (or skipped when
-	// byte-equivalent); existing tiles whose id is absent from the request are
-	// deleted. The returned tiles are in request order so clients can map back to
-	// their local draft.
+	// Upsert is the only mutation path for dashboard tiles. It applies an atomic
+	// edit: dashboard metadata is replaced and the tile set is reconciled in a
+	// single transaction. Tiles with empty id are inserted; tiles whose id matches
+	// an existing row are updated (or skipped when byte-equivalent); existing tiles
+	// whose id is absent from the request are deleted. The returned tiles are in
+	// request order so clients can map back to their local draft.
 	Upsert(context.Context, *connect.Request[v1.DashboardsServiceUpsertRequest]) (*connect.Response[v1.DashboardsServiceUpsertResponse], error)
 	QueryDashboard(context.Context, *connect.Request[v1.DashboardsServiceQueryDashboardRequest]) (*connect.Response[v1.DashboardsServiceQueryDashboardResponse], error)
 }
@@ -279,24 +228,6 @@ func NewDashboardsServiceHandler(svc DashboardsServiceHandler, opts ...connect.H
 		connect.WithSchema(dashboardsServiceMethods.ByName("Update")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dashboardsServiceCreateTileHandler := connect.NewUnaryHandler(
-		DashboardsServiceCreateTileProcedure,
-		svc.CreateTile,
-		connect.WithSchema(dashboardsServiceMethods.ByName("CreateTile")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardsServiceUpdateTileHandler := connect.NewUnaryHandler(
-		DashboardsServiceUpdateTileProcedure,
-		svc.UpdateTile,
-		connect.WithSchema(dashboardsServiceMethods.ByName("UpdateTile")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dashboardsServiceDeleteTileHandler := connect.NewUnaryHandler(
-		DashboardsServiceDeleteTileProcedure,
-		svc.DeleteTile,
-		connect.WithSchema(dashboardsServiceMethods.ByName("DeleteTile")),
-		connect.WithHandlerOptions(opts...),
-	)
 	dashboardsServiceUpsertHandler := connect.NewUnaryHandler(
 		DashboardsServiceUpsertProcedure,
 		svc.Upsert,
@@ -321,12 +252,6 @@ func NewDashboardsServiceHandler(svc DashboardsServiceHandler, opts ...connect.H
 			dashboardsServiceListHandler.ServeHTTP(w, r)
 		case DashboardsServiceUpdateProcedure:
 			dashboardsServiceUpdateHandler.ServeHTTP(w, r)
-		case DashboardsServiceCreateTileProcedure:
-			dashboardsServiceCreateTileHandler.ServeHTTP(w, r)
-		case DashboardsServiceUpdateTileProcedure:
-			dashboardsServiceUpdateTileHandler.ServeHTTP(w, r)
-		case DashboardsServiceDeleteTileProcedure:
-			dashboardsServiceDeleteTileHandler.ServeHTTP(w, r)
 		case DashboardsServiceUpsertProcedure:
 			dashboardsServiceUpsertHandler.ServeHTTP(w, r)
 		case DashboardsServiceQueryDashboardProcedure:
@@ -358,18 +283,6 @@ func (UnimplementedDashboardsServiceHandler) List(context.Context, *connect.Requ
 
 func (UnimplementedDashboardsServiceHandler) Update(context.Context, *connect.Request[v1.DashboardsServiceUpdateRequest]) (*connect.Response[v1.DashboardsServiceUpdateResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.Update is not implemented"))
-}
-
-func (UnimplementedDashboardsServiceHandler) CreateTile(context.Context, *connect.Request[v1.DashboardsServiceCreateTileRequest]) (*connect.Response[v1.DashboardsServiceCreateTileResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.CreateTile is not implemented"))
-}
-
-func (UnimplementedDashboardsServiceHandler) UpdateTile(context.Context, *connect.Request[v1.DashboardsServiceUpdateTileRequest]) (*connect.Response[v1.DashboardsServiceUpdateTileResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.UpdateTile is not implemented"))
-}
-
-func (UnimplementedDashboardsServiceHandler) DeleteTile(context.Context, *connect.Request[v1.DashboardsServiceDeleteTileRequest]) (*connect.Response[v1.DashboardsServiceDeleteTileResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.dashboards.v1.DashboardsService.DeleteTile is not implemented"))
 }
 
 func (UnimplementedDashboardsServiceHandler) Upsert(context.Context, *connect.Request[v1.DashboardsServiceUpsertRequest]) (*connect.Response[v1.DashboardsServiceUpsertResponse], error) {

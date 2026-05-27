@@ -148,46 +148,6 @@ func (q *Queries) DeleteDashboard(ctx context.Context, arg DeleteDashboardParams
 	return i, err
 }
 
-const deleteDashboardTile = `-- name: DeleteDashboardTile :one
-delete from dashboard_tiles dt
-using dashboards d
-where dt.id = $1
-  and dt.dashboard_id = $2
-  and d.id = dt.dashboard_id
-  and d.project_id = $3
-returning dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time, dt.compare, dt.thresholds, dt.header, dt.visualization, dt.payload_hash
-`
-
-type DeleteDashboardTileParams struct {
-	ID          string
-	DashboardID string
-	ProjectID   string
-}
-
-func (q *Queries) DeleteDashboardTile(ctx context.Context, arg DeleteDashboardTileParams) (DashboardTile, error) {
-	row := q.db.QueryRow(ctx, deleteDashboardTile, arg.ID, arg.DashboardID, arg.ProjectID)
-	var i DashboardTile
-	err := row.Scan(
-		&i.ID,
-		&i.DashboardID,
-		&i.Kind,
-		&i.ViewMode,
-		&i.DisplayName,
-		&i.Description,
-		&i.InsightQuery,
-		&i.MarkdownBody,
-		&i.Layouts,
-		&i.CreateTime,
-		&i.UpdateTime,
-		&i.Compare,
-		&i.Thresholds,
-		&i.Header,
-		&i.Visualization,
-		&i.PayloadHash,
-	)
-	return i, err
-}
-
 const deleteDashboardTilesNotIn = `-- name: DeleteDashboardTilesNotIn :execrows
 delete from dashboard_tiles dt
 using dashboards d
@@ -251,87 +211,6 @@ func (q *Queries) UpdateDashboard(ctx context.Context, arg UpdateDashboardParams
 		&i.DefaultGranularity,
 		&i.CreateTime,
 		&i.UpdateTime,
-	)
-	return i, err
-}
-
-const updateDashboardTile = `-- name: UpdateDashboardTile :one
-update dashboard_tiles dt
-set
-  display_name  = coalesce(nullif($1, ''), dt.display_name),
-  description   = coalesce(nullif($2, ''), dt.description),
-  kind          = $3,
-  view_mode     = $4,
-  insight_query = $5,
-  markdown_body = $6,
-  layouts       = $7,
-  compare       = $8,
-  thresholds    = $9,
-  header        = $10,
-  visualization = $11,
-  payload_hash  = $12
-from dashboards d
-where dt.id = $13
-  and dt.dashboard_id = $14
-  and d.id = dt.dashboard_id
-  and d.project_id = $15
-returning dt.id, dt.dashboard_id, dt.kind, dt.view_mode, dt.display_name, dt.description, dt.insight_query, dt.markdown_body, dt.layouts, dt.create_time, dt.update_time, dt.compare, dt.thresholds, dt.header, dt.visualization, dt.payload_hash
-`
-
-type UpdateDashboardTileParams struct {
-	DisplayName   interface{}
-	Description   interface{}
-	Kind          int16
-	ViewMode      string
-	InsightQuery  map[string]any
-	MarkdownBody  pgtype.Text
-	Layouts       map[string]any
-	Compare       string
-	Thresholds    []byte
-	Header        map[string]any
-	Visualization map[string]any
-	PayloadHash   []byte
-	ID            string
-	DashboardID   string
-	ProjectID     string
-}
-
-func (q *Queries) UpdateDashboardTile(ctx context.Context, arg UpdateDashboardTileParams) (DashboardTile, error) {
-	row := q.db.QueryRow(ctx, updateDashboardTile,
-		arg.DisplayName,
-		arg.Description,
-		arg.Kind,
-		arg.ViewMode,
-		arg.InsightQuery,
-		arg.MarkdownBody,
-		arg.Layouts,
-		arg.Compare,
-		arg.Thresholds,
-		arg.Header,
-		arg.Visualization,
-		arg.PayloadHash,
-		arg.ID,
-		arg.DashboardID,
-		arg.ProjectID,
-	)
-	var i DashboardTile
-	err := row.Scan(
-		&i.ID,
-		&i.DashboardID,
-		&i.Kind,
-		&i.ViewMode,
-		&i.DisplayName,
-		&i.Description,
-		&i.InsightQuery,
-		&i.MarkdownBody,
-		&i.Layouts,
-		&i.CreateTime,
-		&i.UpdateTime,
-		&i.Compare,
-		&i.Thresholds,
-		&i.Header,
-		&i.Visualization,
-		&i.PayloadHash,
 	)
 	return i, err
 }

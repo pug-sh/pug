@@ -10,7 +10,6 @@ import (
 	coredashboards "github.com/pug-sh/pug/internal/core/dashboards"
 	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
-	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
 // TestRenderedDashboardToRPC_CorruptTileDegradesGracefully pins that a tile whose
@@ -215,20 +214,3 @@ func TestRoTileToRPC_EmitsViewMode(t *testing.T) {
 	}
 }
 
-func TestWTileToRPC_EmitsViewMode(t *testing.T) {
-	tile := dbwrite.DashboardTile{
-		ID:           "tile_1",
-		DashboardID:  "dash_1",
-		Kind:         int16(coredashboards.TileKindInsight),
-		ViewMode:     dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED.String(),
-		InsightQuery: map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"},
-		Layouts:      map[string]any{},
-	}
-	msg, err := wTileToRPC(tile)
-	if err != nil {
-		t.Fatalf("wTileToRPC: %v", err)
-	}
-	if msg.GetViewMode() != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED {
-		t.Errorf("ViewMode = %v, want BAR_STACKED", msg.GetViewMode())
-	}
-}

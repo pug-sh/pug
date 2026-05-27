@@ -14,15 +14,12 @@ service DashboardsService {
   rpc Get(DashboardsServiceGetRequest) returns (DashboardsServiceGetResponse) {}
   rpc List(DashboardsServiceListRequest) returns (DashboardsServiceListResponse) {}
   rpc Update(DashboardsServiceUpdateRequest) returns (DashboardsServiceUpdateResponse) {}
-  rpc CreateTile(DashboardsServiceCreateTileRequest) returns (DashboardsServiceCreateTileResponse) {}
-  rpc UpdateTile(DashboardsServiceUpdateTileRequest) returns (DashboardsServiceUpdateTileResponse) {}
-  rpc DeleteTile(DashboardsServiceDeleteTileRequest) returns (DashboardsServiceDeleteTileResponse) {}
-  // Upsert applies an atomic dashboard edit: it replaces dashboard-level metadata
-  // and reconciles the tile set in a single transaction. Tiles with empty id are
-  // inserted; tiles whose id matches an existing row are updated (or skipped when
-  // byte-equivalent); existing tiles whose id is absent from the request are
-  // deleted. The returned tiles are in request order so clients can map back to
-  // their local draft.
+  // Upsert is the only mutation path for dashboard tiles. It applies an atomic
+  // edit: dashboard metadata is replaced and the tile set is reconciled in a
+  // single transaction. Tiles with empty id are inserted; tiles whose id matches
+  // an existing row are updated (or skipped when byte-equivalent); existing tiles
+  // whose id is absent from the request are deleted. The returned tiles are in
+  // request order so clients can map back to their local draft.
   rpc Upsert(DashboardsServiceUpsertRequest) returns (DashboardsServiceUpsertResponse) {}
   rpc QueryDashboard(DashboardsServiceQueryDashboardRequest) returns (DashboardsServiceQueryDashboardResponse) {}
 }
@@ -193,76 +190,6 @@ message DashboardsServiceListRequest {}
 message DashboardsServiceListResponse {
   repeated Dashboard dashboards = 1;
 }
-
-message DashboardsServiceCreateTileRequest {
-  option (buf.validate.message).cel = {
-    id: "create_dashboard_tile_request.unique_breakpoints"
-    message: "layout breakpoints must be unique"
-    expression:
-      "this.layouts.size() <= 1"
-      "|| !this.layouts.exists(l,"
-      "     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)"
-  };
-
-  string dashboard_id = 1 [(buf.validate.field).required = true];
-  string display_name = 2 [(buf.validate.field).string.max_len = 150];
-  string description = 3 [(buf.validate.field).string.max_len = 2000];
-  oneof content {
-    option (buf.validate.oneof).required = true;
-    InsightTileContent insight = 4;
-    MarkdownTileContent markdown = 5;
-  }
-  repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
-  DashboardTileViewMode view_mode = 7 [(buf.validate.field).enum.defined_only = true];
-  reserved 8; // was default_time_range (moved to dashboard level)
-  ComparePeriod compare = 11 [(buf.validate.field).enum.defined_only = true];
-  repeated ThresholdRule thresholds = 12 [(buf.validate.field).repeated.max_items = 5];
-  TileHeader header = 13;
-  VisualizationOptions visualization = 14;
-}
-
-message DashboardsServiceCreateTileResponse {
-  DashboardTile tile = 1;
-}
-
-message DashboardsServiceUpdateTileRequest {
-  option (buf.validate.message).cel = {
-    id: "update_dashboard_tile_request.unique_breakpoints"
-    message: "layout breakpoints must be unique"
-    expression:
-      "this.layouts.size() <= 1"
-      "|| !this.layouts.exists(l,"
-      "     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)"
-  };
-
-  string id = 1 [(buf.validate.field).required = true];
-  string dashboard_id = 2 [(buf.validate.field).required = true];
-  string display_name = 3 [(buf.validate.field).string.max_len = 150];
-  string description = 4 [(buf.validate.field).string.max_len = 2000];
-  oneof content {
-    option (buf.validate.oneof).required = true;
-    InsightTileContent insight = 5;
-    MarkdownTileContent markdown = 6;
-  }
-  repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
-  DashboardTileViewMode view_mode = 8 [(buf.validate.field).enum.defined_only = true];
-  reserved 9; // was default_time_range (moved to dashboard level)
-  ComparePeriod compare = 11 [(buf.validate.field).enum.defined_only = true];
-  repeated ThresholdRule thresholds = 12 [(buf.validate.field).repeated.max_items = 5];
-  TileHeader header = 13;
-  VisualizationOptions visualization = 14;
-}
-
-message DashboardsServiceUpdateTileResponse {
-  DashboardTile tile = 1;
-}
-
-message DashboardsServiceDeleteTileRequest {
-  string id = 1 [(buf.validate.field).required = true];
-  string dashboard_id = 2 [(buf.validate.field).required = true];
-}
-
-message DashboardsServiceDeleteTileResponse {}
 
 message DashboardsServiceUpdateRequest {
   string id = 1 [(buf.validate.field).required = true];
