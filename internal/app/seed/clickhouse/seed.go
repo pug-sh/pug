@@ -83,7 +83,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
 	}
 
-	end := time.Now().AddDate(0, 1, 0)
+	end := time.Now()
 	start := end.AddDate(0, -4, 0)
 
 	slog.InfoContext(ctx, "building session pool")
@@ -149,7 +149,11 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]eve
 				autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
 			}
 			args = append(args, promoted.AppendArgs()...)
-			args = append(args, e.occurTime, e.sessionID)
+			occurTime := e.occurTime
+			if occurTime.After(end) {
+				occurTime = end
+			}
+			args = append(args, occurTime, e.sessionID)
 			if err := batch.Append(args...); err != nil {
 				return 0, err
 			}
@@ -300,7 +304,11 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 				autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
 			}
 			args = append(args, promoted.AppendArgs()...)
-			args = append(args, e.occurTime, uuid.NewString())
+			occurTime := e.occurTime
+			if occurTime.After(time.Now()) {
+				continue
+			}
+			args = append(args, occurTime, uuid.NewString())
 			if err := batch.Append(args...); err != nil {
 				return err
 			}

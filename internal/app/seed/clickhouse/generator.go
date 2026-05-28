@@ -288,12 +288,10 @@ func buildSession(distinctID, platform string, sessionStart, sessionEnd time.Tim
 }
 
 // randomSessionFromPool picks a random session from the pool and returns it
-// with a fresh session_id, fresh event_ids, and a new random start time so the
-// session fits within [start, end] when possible (if the session is longer than
-// the window it is pinned to start and may extend past end). Re-anchoring
-// prevents clustering when pool sessions are reused across many insertions
-// (same pool entry → same occur_times → same user gets N identical
-// notification_received at T, then N notification_clicked at T+step).
+// with a fresh session_id, fresh event_ids, and a new random start time anchored
+// within [start, end]. Re-anchoring prevents clustering when pool sessions are
+// reused across many insertions (same pool entry → same occur_times → same user
+// gets N identical notification_received at T, then N notification_clicked at T+step).
 // If the re-anchored session would overlap an existing session for the same user
 // on the same platform, the session is rebuilt on a different platform so
 // concurrent sessions represent different platforms. When all three platforms are
@@ -313,6 +311,13 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 		newStart = start
 	}
 	newEnd := newStart.Add(sessionDuration)
+	if newEnd.After(end) {
+		newEnd = end
+		newStart = newEnd.Add(-sessionDuration)
+		if newStart.Before(start) {
+			newStart = start
+		}
+	}
 	offset := newStart.Sub(firstTime)
 
 	distinctID := src[0].distinctID
@@ -351,6 +356,9 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 		e.eventID = uuid.New().String()
 		e.sessionID = sessionID
 		e.occurTime = e.occurTime.Add(offset)
+		if e.occurTime.After(end) {
+			e.occurTime = end
+		}
 		e.autoProperties = copyProps(e.autoProperties)
 		e.customProperties = customPropsForKind(e.kind)
 		out[i] = e
