@@ -2,10 +2,38 @@ package main
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 )
+
+func TestFormatInfraHealth(t *testing.T) {
+	if got := formatInfraHealth(nil); got != green+"connected"+reset {
+		t.Fatalf("connected status = %q", got)
+	}
+
+	errMsg := formatInfraHealth(errors.New("connection refused"))
+	if !strings.Contains(errMsg, red) || !strings.Contains(errMsg, "connection refused") {
+		t.Fatalf("error status = %q", errMsg)
+	}
+}
+
+func TestShortProbeError(t *testing.T) {
+	if got := shortProbeError(context.DeadlineExceeded); got != "timeout" {
+		t.Fatalf("deadline = %q, want timeout", got)
+	}
+
+	long := strings.Repeat("x", 100)
+	if got := shortProbeError(errors.New(long)); len(got) != 80 {
+		t.Fatalf("truncated length = %d, want 80", len(got))
+	}
+
+	if got := shortProbeError(errors.New("first line\nsecond line")); got != "first line" {
+		t.Fatalf("first line only = %q", got)
+	}
+}
 
 func TestEmailDevStatus(t *testing.T) {
 	t.Run("missing dashboard base URL", func(t *testing.T) {

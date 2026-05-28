@@ -37,6 +37,7 @@ var (
 	cyan   = "\033[36m"
 	green  = "\033[32m"
 	yellow = "\033[33m"
+	red    = "\033[31m"
 	bold   = "\033[1m"
 )
 
@@ -273,20 +274,7 @@ var devCmd = &cobra.Command{
 		fmt.Println(bold+"Server:"+reset, green+"http://localhost:"+port+reset)
 		fmt.Println()
 
-		fmt.Println(bold + "Infrastructure:" + reset)
-		if u := os.Getenv("DATABASE_URL"); u != "" {
-			fmt.Println("  "+green+"PostgreSQL:"+reset, redactURL(u))
-		}
-		if u := os.Getenv("CLICKHOUSE_URL"); u != "" {
-			fmt.Println("  "+green+"ClickHouse:"+reset, redactURL(u))
-		}
-		if u := os.Getenv("NATS_URL"); u != "" {
-			fmt.Println("  "+green+"NATS:"+reset, redactURL(u))
-		}
-		if u := os.Getenv("REDIS_URL"); u != "" {
-			fmt.Println("  "+green+"Redis:"+reset, redactURL(u))
-		}
-		fmt.Println()
+		printInfrastructure(sigCtx)
 
 		fmt.Println(bold + "Workers:" + reset)
 		fmt.Println("  "+yellow+"Profiles:"+reset, "identify, alias, upsert")
