@@ -190,6 +190,14 @@ type event struct {
 	customProperties map[string]any
 }
 
+// clampOccurTime caps t at max so seeded events never land in the future.
+func clampOccurTime(t, max time.Time) time.Time {
+	if t.After(max) {
+		return max
+	}
+	return t
+}
+
 // buildSessionPool pre-generates all sessions for the pool.
 // Each session gets a journey (ordered event sequence); events are spread
 // across the session window with jitter. Event IDs and session IDs are left
@@ -269,9 +277,7 @@ func buildSession(distinctID, platform string, sessionStart, sessionEnd time.Tim
 	sess := make([]event, 0, n)
 	for i, kind := range j.steps {
 		occurTime := sessionStart.Add(time.Duration(int64(i)*stepMs+rand.Int64N(max(stepMs, 1))) * time.Millisecond)
-		if occurTime.After(sessionEnd) {
-			occurTime = sessionEnd
-		}
+		occurTime = clampOccurTime(occurTime, sessionEnd)
 		autoProps := copyProps(stableProps)
 		if platform == "web" {
 			addPerEventWebProps(autoProps, i == 0)
@@ -341,6 +347,7 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 				for i := range sess {
 					sess[i].eventID = uuid.New().String()
 					sess[i].sessionID = sessionID
+					sess[i].occurTime = clampOccurTime(sess[i].occurTime, end)
 				}
 				tracker.register(distinctID, altPlatform, newStart, newEnd)
 				return sess
@@ -355,10 +362,7 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 	for i, e := range src {
 		e.eventID = uuid.New().String()
 		e.sessionID = sessionID
-		e.occurTime = e.occurTime.Add(offset)
-		if e.occurTime.After(end) {
-			e.occurTime = end
-		}
+		e.occurTime = clampOccurTime(e.occurTime.Add(offset), end)
 		e.autoProperties = copyProps(e.autoProperties)
 		e.customProperties = customPropsForKind(e.kind)
 		out[i] = e

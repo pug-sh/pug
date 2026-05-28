@@ -83,11 +83,11 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
 	}
 
-	end := time.Now()
-	start := end.AddDate(0, -4, 0)
+	seedStart := time.Now()
+	start := seedStart.AddDate(0, -4, 0)
 
 	slog.InfoContext(ctx, "building session pool")
-	sessionPool := buildSessionPool(start, end)
+	sessionPool := buildSessionPool(start, seedStart)
 	slog.InfoContext(ctx, "session pool ready", slog.Int("pool_size", len(sessionPool)))
 
 	tracker := newUserSessionTracker()
@@ -103,6 +103,9 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		}
 
 		size := min(int64(batchSize), count-inserted)
+		// Refresh each batch so re-anchoring and the insert clamp use live time, not
+		// a stale seed-start instant (long runs can otherwise leave a recent dead zone).
+		end := time.Now()
 
 		n, err := s.insertBatch(ctx, projectID, sessionPool, int(size), start, end, tracker)
 		if err != nil {
@@ -149,10 +152,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]eve
 				autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
 			}
 			args = append(args, promoted.AppendArgs()...)
-			occurTime := e.occurTime
-			if occurTime.After(end) {
-				occurTime = end
-			}
+			occurTime := clampOccurTime(e.occurTime, end)
 			args = append(args, occurTime, e.sessionID)
 			if err := batch.Append(args...); err != nil {
 				return 0, err
@@ -304,10 +304,7 @@ func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSi
 				autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
 			}
 			args = append(args, promoted.AppendArgs()...)
-			occurTime := e.occurTime
-			if occurTime.After(time.Now()) {
-				continue
-			}
+			occurTime := clampOccurTime(e.occurTime, time.Now())
 			args = append(args, occurTime, uuid.NewString())
 			if err := batch.Append(args...); err != nil {
 				return err
