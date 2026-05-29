@@ -123,6 +123,7 @@ func TestTilePayload_HashChangesPerField(t *testing.T) {
 			})
 		}},
 		{"Header.Icon", func(p *TilePayload) { p.Header.Icon = proto.String("🔥") }},
+		{"Header.Borderless", func(p *TilePayload) { p.Header.Borderless = proto.Bool(true) }},
 		{"Visualization.LogScale", func(p *TilePayload) { p.Visualization.LogScale = proto.Bool(false) }},
 		{"InsightSpec", func(p *TilePayload) {
 			p.Content = InsightTile{Spec: &insightsv1.InsightQuerySpec{

@@ -747,8 +747,12 @@ type TileHeader struct {
 	// fall back to no icon when the client-side grapheme count exceeds 1.
 	Icon *string `protobuf:"bytes,1,opt,name=icon" json:"icon,omitempty"`
 	// Semantic accent token. Empty means "no accent".
-	AccentColor   *string `protobuf:"bytes,2,opt,name=accent_color,json=accentColor" json:"accent_color,omitempty"`
-	HideTitle     *bool   `protobuf:"varint,3,opt,name=hide_title,json=hideTitle" json:"hide_title,omitempty"`
+	AccentColor *string `protobuf:"bytes,2,opt,name=accent_color,json=accentColor" json:"accent_color,omitempty"`
+	HideTitle   *bool   `protobuf:"varint,3,opt,name=hide_title,json=hideTitle" json:"hide_title,omitempty"`
+	// When true, the tile renders without its border and background (a transparent
+	// surface that blends into the dashboard canvas), keeping inner padding.
+	// Client-side rendering hint.
+	Borderless    *bool `protobuf:"varint,4,opt,name=borderless" json:"borderless,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -800,6 +804,13 @@ func (x *TileHeader) GetAccentColor() string {
 func (x *TileHeader) GetHideTitle() bool {
 	if x != nil && x.HideTitle != nil {
 		return *x.HideTitle
+	}
+	return false
+}
+
+func (x *TileHeader) GetBorderless() bool {
+	if x != nil && x.Borderless != nil {
+		return *x.Borderless
 	}
 	return false
 }
@@ -2116,13 +2127,16 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\tTONE_GOOD\x10\x01\x12\r\n" +
 	"\tTONE_WARN\x10\x02\x12\f\n" +
 	"\bTONE_BAD\x10\x03\x12\x10\n" +
-	"\fTONE_NEUTRAL\x10\x04\"\x9b\x01\n" +
+	"\fTONE_NEUTRAL\x10\x04\"\xbb\x01\n" +
 	"\n" +
 	"TileHeader\x12\x1b\n" +
 	"\x04icon\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18\bR\x04icon\x12Q\n" +
 	"\faccent_color\x18\x02 \x01(\tB.\xbaH+r)R\x00R\x04blueR\x05greenR\x03redR\x05amberR\x06purpleR\x04grayR\vaccentColor\x12\x1d\n" +
 	"\n" +
-	"hide_title\x18\x03 \x01(\bR\thideTitle\"\x81\x04\n" +
+	"hide_title\x18\x03 \x01(\bR\thideTitle\x12\x1e\n" +
+	"\n" +
+	"borderless\x18\x04 \x01(\bR\n" +
+	"borderless\"\x81\x04\n" +
 	"\x14VisualizationOptions\x12g\n" +
 	"\ry_axis_format\x18\x01 \x01(\x0e29.dashboard.dashboards.v1.VisualizationOptions.YAxisFormatB\b\xbaH\x05\x82\x01\x02\x10\x01R\vyAxisFormat\x12\x1b\n" +
 	"\tlog_scale\x18\x02 \x01(\bR\blogScale\x12\x1f\n" +
