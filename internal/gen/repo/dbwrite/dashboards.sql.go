@@ -52,7 +52,7 @@ func (q *Queries) CreateDashboard(ctx context.Context, arg CreateDashboardParams
 const createDashboardTile = `-- name: CreateDashboardTile :one
 insert into dashboard_tiles (
   id, dashboard_id, kind, view_mode, display_name, description,
-  insight_query, markdown_body, layouts,
+  insight_query, markdown_body, position,
   compare, thresholds, header, visualization, payload_hash
 )
 select $1, d.id, $2, $3, $4, $5,
@@ -60,7 +60,7 @@ select $1, d.id, $2, $3, $4, $5,
        $9, $10, $11, $12, $13
 from dashboards d
 where d.id = $14 and d.project_id = $15
-returning id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, layouts, compare, thresholds, header, visualization, payload_hash, create_time, update_time
+returning id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, position, compare, thresholds, header, visualization, payload_hash, create_time, update_time
 `
 
 type CreateDashboardTileParams struct {
@@ -71,7 +71,7 @@ type CreateDashboardTileParams struct {
 	Description   string
 	InsightQuery  map[string]any
 	MarkdownBody  pgtype.Text
-	Layouts       map[string]any
+	Position      map[string]any
 	Compare       string
 	Thresholds    []byte
 	Header        map[string]any
@@ -90,7 +90,7 @@ func (q *Queries) CreateDashboardTile(ctx context.Context, arg CreateDashboardTi
 		arg.Description,
 		arg.InsightQuery,
 		arg.MarkdownBody,
-		arg.Layouts,
+		arg.Position,
 		arg.Compare,
 		arg.Thresholds,
 		arg.Header,
@@ -109,7 +109,7 @@ func (q *Queries) CreateDashboardTile(ctx context.Context, arg CreateDashboardTi
 		&i.Description,
 		&i.InsightQuery,
 		&i.MarkdownBody,
-		&i.Layouts,
+		&i.Position,
 		&i.Compare,
 		&i.Thresholds,
 		&i.Header,
@@ -269,7 +269,7 @@ set
   view_mode     = $4,
   insight_query = $5,
   markdown_body = $6,
-  layouts       = $7,
+  position      = $7,
   compare       = $8,
   thresholds    = $9,
   header        = $10,
@@ -290,7 +290,7 @@ type UpsertDashboardTileUpdateParams struct {
 	ViewMode      string
 	InsightQuery  map[string]any
 	MarkdownBody  pgtype.Text
-	Layouts       map[string]any
+	Position      map[string]any
 	Compare       string
 	Thresholds    []byte
 	Header        map[string]any
@@ -313,7 +313,7 @@ func (q *Queries) UpsertDashboardTileUpdate(ctx context.Context, arg UpsertDashb
 		arg.ViewMode,
 		arg.InsightQuery,
 		arg.MarkdownBody,
-		arg.Layouts,
+		arg.Position,
 		arg.Compare,
 		arg.Thresholds,
 		arg.Header,

@@ -203,7 +203,6 @@ func TestRoTileToRPC_EmitsViewMode(t *testing.T) {
 		Kind:         int16(coredashboards.TileKindInsight),
 		ViewMode:     dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.String(),
 		InsightQuery: map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"},
-		Layouts:      map[string]any{},
 	}
 	msg, err := roTileToRPC(context.Background(), tile)
 	if err != nil {
@@ -213,4 +212,3 @@ func TestRoTileToRPC_EmitsViewMode(t *testing.T) {
 		t.Errorf("ViewMode = %v, want AREA", msg.GetViewMode())
 	}
 }
-

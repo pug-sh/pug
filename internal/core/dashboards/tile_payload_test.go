@@ -20,12 +20,7 @@ func fullPayload() TilePayload {
 			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
 		}},
 		ViewMode: dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE,
-		Layouts: []*dashboardsv1.ResponsiveGridLayout{
-			{Breakpoint: proto.String("md"), W: proto.Int32(2), H: proto.Int32(2)},
-			{Breakpoint: proto.String("lg"), W: proto.Int32(4), H: proto.Int32(3)},
-			{Breakpoint: proto.String("xl"), W: proto.Int32(6), H: proto.Int32(4)},
-		},
-		Compare: dashboardsv1.ComparePeriod_COMPARE_PERIOD_PRIOR,
+		Compare:  dashboardsv1.ComparePeriod_COMPARE_PERIOD_PRIOR,
 		Thresholds: []*dashboardsv1.ThresholdRule{
 			{Operator: dashboardsv1.ThresholdRule_OPERATOR_GTE.Enum(), Value: proto.Float64(0.5), Tone: dashboardsv1.ThresholdRule_TONE_GOOD.Enum()},
 		},
@@ -36,6 +31,10 @@ func fullPayload() TilePayload {
 		Visualization: &dashboardsv1.VisualizationOptions{
 			YAxisFormat: dashboardsv1.VisualizationOptions_Y_AXIS_FORMAT_PERCENT.Enum(),
 			LogScale:    proto.Bool(true),
+		},
+		Position: &dashboardsv1.GridPosition{
+			X: proto.Int32(1), Y: proto.Int32(2),
+			W: proto.Int32(4), H: proto.Int32(3),
 		},
 	}
 }
@@ -61,24 +60,6 @@ func TestTilePayload_HashStableAcrossRewrites(t *testing.T) {
 	}
 }
 
-// Regression for the bug where layouts were hashed in client-supplied order
-// while the read path returned them in alphabetical order — every echo-back
-// Upsert would then fire a spurious UPDATE. The normalization in
-// computeTilePayloadHash sorts before hashing, so input order must not matter.
-func TestTilePayload_HashStableAcrossLayoutOrdering(t *testing.T) {
-	p1 := fullPayload()
-	p2 := fullPayload()
-	// Reverse the layout order on p2.
-	p2.Layouts = []*dashboardsv1.ResponsiveGridLayout{
-		p1.Layouts[2], p1.Layouts[1], p1.Layouts[0],
-	}
-	h1 := mustEncode(t, p1).PayloadHash
-	h2 := mustEncode(t, p2).PayloadHash
-	if !bytes.Equal(h1, h2) {
-		t.Errorf("hash depends on layout order:\n  in-order=%x\n  reversed=%x", h1, h2)
-	}
-}
-
 // Regression for the bug where Header: nil and Header: &TileHeader{} produced
 // different hashes despite storing as identical `{}` bytes. The normalization
 // in computeTilePayloadHash collapses zero-valued nested messages to nil.
@@ -94,6 +75,42 @@ func TestTilePayload_HashStableAcrossNilVsEmptyHeader(t *testing.T) {
 
 	if !bytes.Equal(hNil, hEmpty) {
 		t.Errorf("hash distinguishes nil from zero-valued message:\n  nil=%x\n  empty=%x", hNil, hEmpty)
+	}
+}
+
+// Position: nil and Position: &GridPosition{} both store as `{}` bytes, so they
+// must hash identically — same nil-vs-empty contract as header/visualization.
+func TestTilePayload_HashStableAcrossNilVsEmptyPosition(t *testing.T) {
+	p := fullPayload()
+	p.Position = nil
+	hNil := mustEncode(t, p).PayloadHash
+
+	p.Position = &dashboardsv1.GridPosition{}
+	hEmpty := mustEncode(t, p).PayloadHash
+
+	if !bytes.Equal(hNil, hEmpty) {
+		t.Errorf("hash distinguishes nil from zero-valued position:\n  nil=%x\n  empty=%x", hNil, hEmpty)
+	}
+}
+
+// Encode must serialize position to the stored jsonb map, and a tile echoed back
+// from storage (map decoded via MapToMessage) must re-hash identically — the
+// Get→Upsert no-op short-circuit relies on it.
+func TestTilePayload_PositionEchoStableThroughStoredMap(t *testing.T) {
+	p := fullPayload()
+	enc := mustEncode(t, p)
+	if len(enc.Position) == 0 {
+		t.Fatal("Encode did not populate the Position map")
+	}
+
+	var readBack dashboardsv1.GridPosition
+	if err := MapToMessage(enc.Position, &readBack); err != nil {
+		t.Fatalf("MapToMessage: %v", err)
+	}
+	echoed := fullPayload()
+	echoed.Position = &readBack
+	if !bytes.Equal(enc.PayloadHash, mustEncode(t, echoed).PayloadHash) {
+		t.Error("position did not echo-stably round-trip through the stored map")
 	}
 }
 
@@ -133,10 +150,10 @@ func TestTilePayload_HashChangesPerField(t *testing.T) {
 		{"Markdown swap", func(p *TilePayload) {
 			p.Content = MarkdownTile{Body: "now markdown"}
 		}},
-		{"Layouts add", func(p *TilePayload) {
-			p.Layouts = append(p.Layouts, &dashboardsv1.ResponsiveGridLayout{
-				Breakpoint: proto.String("sm"), W: proto.Int32(1), H: proto.Int32(1),
-			})
+		{"Position move", func(p *TilePayload) {
+			p.Position = &dashboardsv1.GridPosition{
+				X: proto.Int32(9), Y: proto.Int32(9), W: proto.Int32(5), H: proto.Int32(5),
+			}
 		}},
 	}
 	for _, tc := range cases {
@@ -236,9 +253,6 @@ func TestTilePayload_HashContractCoversEveryInputField(t *testing.T) {
 		{"content/insight", func(p *TilePayload) {
 			p.Content = InsightTile{Spec: &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum()}}
 		}, []string{"insight"}},
-		{"layouts", func(p *TilePayload) {
-			p.Layouts = []*dashboardsv1.ResponsiveGridLayout{{Breakpoint: proto.String("lg"), W: proto.Int32(2), H: proto.Int32(2)}}
-		}, []string{"layouts"}},
 		{"view_mode", func(p *TilePayload) {
 			p.Content = InsightTile{Spec: &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum()}}
 			p.ViewMode = dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA
@@ -251,6 +265,9 @@ func TestTilePayload_HashContractCoversEveryInputField(t *testing.T) {
 		{"visualization", func(p *TilePayload) {
 			p.Visualization = &dashboardsv1.VisualizationOptions{LogScale: proto.Bool(true)}
 		}, []string{"visualization"}},
+		{"position", func(p *TilePayload) {
+			p.Position = &dashboardsv1.GridPosition{X: proto.Int32(1), Y: proto.Int32(1), W: proto.Int32(2), H: proto.Int32(2)}
+		}, []string{"position"}},
 	}
 
 	for _, tc := range cases {

@@ -20,11 +20,11 @@ returning *;
 -- name: CreateDashboardTile :one
 insert into dashboard_tiles (
   id, dashboard_id, kind, view_mode, display_name, description,
-  insight_query, markdown_body, layouts,
+  insight_query, markdown_body, position,
   compare, thresholds, header, visualization, payload_hash
 )
 select @id, d.id, @kind, @view_mode, @display_name, @description,
-       @insight_query, @markdown_body, @layouts,
+       @insight_query, @markdown_body, @position,
        @compare, @thresholds, @header, @visualization, @payload_hash
 from dashboards d
 where d.id = @dashboard_id and d.project_id = @project_id
@@ -43,7 +43,7 @@ set
   view_mode     = @view_mode,
   insight_query = @insight_query,
   markdown_body = @markdown_body,
-  layouts       = @layouts,
+  position      = @position,
   compare       = @compare,
   thresholds    = @thresholds,
   header        = @header,

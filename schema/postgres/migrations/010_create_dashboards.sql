@@ -41,7 +41,7 @@ create table dashboard_tiles (
   description   text not null default '',
   insight_query jsonb,
   markdown_body text,
-  layouts       jsonb not null default '{}'::jsonb,
+  position      jsonb not null default '{}'::jsonb,
   compare       text  not null default 'COMPARE_PERIOD_UNSPECIFIED',
   thresholds    jsonb not null default '[]'::jsonb,
   header        jsonb not null default '{}'::jsonb,

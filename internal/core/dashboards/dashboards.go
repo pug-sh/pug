@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"sort"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
@@ -13,11 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
-	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
@@ -366,70 +363,4 @@ func normalizedDashboardGranularity(g insightsv1.Granularity) insightsv1.Granula
 // dashboardGranularityDBName stores the granularity as its proto enum name.
 func dashboardGranularityDBName(g insightsv1.Granularity) string {
 	return normalizedDashboardGranularity(g).String()
-}
-
-func LayoutsToMap(layouts []*dashboardsv1.ResponsiveGridLayout) map[string]any {
-	out := make(map[string]any, len(layouts))
-	for _, layout := range layouts {
-		out[layout.GetBreakpoint()] = map[string]any{
-			"x":      layout.GetX(),
-			"y":      layout.GetY(),
-			"w":      layout.GetW(),
-			"h":      layout.GetH(),
-			"minW":   layout.GetMinW(),
-			"maxW":   layout.GetMaxW(),
-			"minH":   layout.GetMinH(),
-			"maxH":   layout.GetMaxH(),
-			"static": layout.GetStatic(),
-		}
-	}
-	return out
-}
-
-func MapToLayouts(data map[string]any) ([]*dashboardsv1.ResponsiveGridLayout, error) {
-	if len(data) == 0 {
-		return nil, nil
-	}
-
-	breakpoints := make([]string, 0, len(data))
-	for breakpoint := range data {
-		breakpoints = append(breakpoints, breakpoint)
-	}
-	sort.Strings(breakpoints)
-
-	out := make([]*dashboardsv1.ResponsiveGridLayout, 0, len(data))
-	for _, breakpoint := range breakpoints {
-		raw, err := json.Marshal(data[breakpoint])
-		if err != nil {
-			return nil, err
-		}
-		var item struct {
-			X      int32 `json:"x"`
-			Y      int32 `json:"y"`
-			W      int32 `json:"w"`
-			H      int32 `json:"h"`
-			MinW   int32 `json:"minW"`
-			MaxW   int32 `json:"maxW"`
-			MinH   int32 `json:"minH"`
-			MaxH   int32 `json:"maxH"`
-			Static bool  `json:"static"`
-		}
-		if err := json.Unmarshal(raw, &item); err != nil {
-			return nil, err
-		}
-		out = append(out, &dashboardsv1.ResponsiveGridLayout{
-			Breakpoint: proto.String(breakpoint),
-			X:          proto.Int32(item.X),
-			Y:          proto.Int32(item.Y),
-			W:          proto.Int32(item.W),
-			H:          proto.Int32(item.H),
-			MinW:       proto.Int32(item.MinW),
-			MaxW:       proto.Int32(item.MaxW),
-			MinH:       proto.Int32(item.MinH),
-			MaxH:       proto.Int32(item.MaxH),
-			Static:     proto.Bool(item.Static),
-		})
-	}
-
-	return out, nil
 }

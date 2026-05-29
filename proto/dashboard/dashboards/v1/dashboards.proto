@@ -43,15 +43,6 @@ message Dashboard {
 }
 
 message DashboardTile {
-  option (buf.validate.message).cel = {
-    id: "dashboard_tile.unique_breakpoints"
-    message: "layout breakpoints must be unique"
-    expression:
-      "this.layouts.size() <= 1"
-      "|| !this.layouts.exists(l,"
-      "     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)"
-  };
-
   string id = 1;
   string dashboard_id = 2;
   string display_name = 3 [(buf.validate.field).string.max_len = 150];
@@ -61,7 +52,8 @@ message DashboardTile {
     InsightTileContent insight = 5;
     MarkdownTileContent markdown = 6;
   }
-  repeated ResponsiveGridLayout layouts = 7 [(buf.validate.field).repeated.max_items = 8];
+  // Single grid position on the uniform dashboard grid. Source of truth going forward.
+  GridPosition position = 15;
   google.protobuf.Timestamp create_time = 8;
   google.protobuf.Timestamp update_time = 9;
   DashboardTileViewMode view_mode = 10 [(buf.validate.field).enum.defined_only = true];
@@ -160,6 +152,7 @@ message VisualizationOptions {
     Y_AXIS_FORMAT_NUMBER = 1;
     Y_AXIS_FORMAT_PERCENT = 2;
     Y_AXIS_FORMAT_DURATION_MS = 3;
+    Y_AXIS_FORMAT_COMPACT = 4; // abbreviated, e.g. 27K / 1.5M
   }
   YAxisFormat y_axis_format = 1 [(buf.validate.field).enum.defined_only = true];
   bool log_scale = 2;
@@ -169,20 +162,13 @@ message VisualizationOptions {
   bool hide_sparkline = 5;
 }
 
-message ResponsiveGridLayout {
-  string breakpoint = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string = {pattern: "^[a-zA-Z0-9_-]+$", max_len: 32}
-  ];
-  int32 x = 2 [(buf.validate.field).int32.gte = 0];
-  int32 y = 3 [(buf.validate.field).int32.gte = 0];
-  int32 w = 4 [(buf.validate.field).int32 = {gte: 1, lte: 24}];
-  int32 h = 5 [(buf.validate.field).int32 = {gte: 1, lte: 100}];
-  int32 min_w = 6 [(buf.validate.field).int32.gte = 0];
-  int32 max_w = 7 [(buf.validate.field).int32.gte = 0];
-  int32 min_h = 8 [(buf.validate.field).int32.gte = 0];
-  int32 max_h = 9 [(buf.validate.field).int32.gte = 0];
-  bool static = 10;
+// GridPosition is the single source of truth for a tile's placement on the
+// uniform dashboard grid: integer column/row coordinates and span.
+message GridPosition {
+  int32 x = 1 [(buf.validate.field).int32.gte = 0];
+  int32 y = 2 [(buf.validate.field).int32.gte = 0];
+  int32 w = 3 [(buf.validate.field).int32 = {gte: 1, lte: 24}];
+  int32 h = 4 [(buf.validate.field).int32 = {gte: 1, lte: 100}];
 }
 
 message DashboardsServiceCreateRequest {
@@ -255,15 +241,6 @@ message DashboardsServiceUpsertRequest {
 // insert-as-new fallback). Duplicate non-empty ids within a single request are
 // rejected with CodeInvalidArgument.
 message DashboardTileInput {
-  option (buf.validate.message).cel = {
-    id: "dashboard_tile_input.unique_breakpoints"
-    message: "layout breakpoints must be unique"
-    expression:
-      "this.layouts.size() <= 1"
-      "|| !this.layouts.exists(l,"
-      "     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)"
-  };
-
   string id = 1;
   string display_name = 2 [(buf.validate.field).string.max_len = 150];
   string description = 3 [(buf.validate.field).string.max_len = 2000];
@@ -272,7 +249,7 @@ message DashboardTileInput {
     InsightTileContent insight = 4;
     MarkdownTileContent markdown = 5;
   }
-  repeated ResponsiveGridLayout layouts = 6 [(buf.validate.field).repeated.max_items = 8];
+  GridPosition position = 12;
   DashboardTileViewMode view_mode = 7 [(buf.validate.field).enum.defined_only = true];
   ComparePeriod compare = 8 [(buf.validate.field).enum.defined_only = true];
   repeated ThresholdRule thresholds = 9 [(buf.validate.field).repeated.max_items = 5];

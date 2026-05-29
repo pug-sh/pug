@@ -526,9 +526,10 @@ func TestHandler_Upsert_CrossProjectIsolation(t *testing.T) {
 
 // TestHandler_Upsert_TileCustomizationRoundTrip pins that every per-tile
 // customization field — Compare (non-default), Thresholds (populated), Header
-// (populated), Visualization (populated) — survives Upsert→Postgres→Get with
-// byte-identical content. This is the headline feature of the PR and the only
-// test that exercises non-zero values across the whole pipeline.
+// (populated), Visualization (populated), Position (populated) — survives
+// Upsert→Postgres→Get with byte-identical content. This is the headline feature
+// of the PR and the only test that exercises non-zero values across the whole
+// pipeline.
 func TestHandler_Upsert_TileCustomizationRoundTrip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -581,6 +582,10 @@ func TestHandler_Upsert_TileCustomizationRoundTrip(t *testing.T) {
 			HideLegend:   proto.Bool(true),
 			ZeroBaseline: proto.Bool(false),
 		},
+		Position: &dashboardsv1.GridPosition{
+			X: proto.Int32(2), Y: proto.Int32(4),
+			W: proto.Int32(6), H: proto.Int32(3),
+		},
 	}
 
 	upsertResp, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
@@ -627,6 +632,9 @@ func TestHandler_Upsert_TileCustomizationRoundTrip(t *testing.T) {
 	}
 	if !proto.Equal(got.GetVisualization(), want.GetVisualization()) {
 		t.Errorf("Visualization: got %v, want %v", got.GetVisualization(), want.GetVisualization())
+	}
+	if !proto.Equal(got.GetPosition(), want.GetPosition()) {
+		t.Errorf("Position: got %v, want %v", got.GetPosition(), want.GetPosition())
 	}
 }
 
@@ -1047,12 +1055,13 @@ func TestHandler_Upsert_LastWriteWins(t *testing.T) {
 		dashGot.GetDisplayName(), tile.GetDisplayName(), tile.GetMarkdown().GetBody())
 }
 
-// TestHandler_Upsert_LayoutsRoundTripHashStable pins the headline payload_hash
-// invariant for layout-bearing tiles: a tile sent with only the required layout
-// fields (Breakpoint/W/H), fetched, then re-upserted verbatim must NOT bump
+// TestHandler_Upsert_PositionRoundTripHashStable pins the headline payload_hash
+// invariant for positioned tiles: a tile sent with only some GridPosition fields
+// (W/H set, X/Y unset), fetched, then re-upserted verbatim must NOT bump
 // update_time. The hash function and storage round-trip must agree on the
-// presence semantics of unset numeric fields.
-func TestHandler_Upsert_LayoutsRoundTripHashStable(t *testing.T) {
+// presence semantics of the position message — protojson omits the unset X/Y on
+// both the store and the read, so the echoed tile hashes identically.
+func TestHandler_Upsert_PositionRoundTripHashStable(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -1065,23 +1074,19 @@ func TestHandler_Upsert_LayoutsRoundTripHashStable(t *testing.T) {
 		t.Fatalf("CreateDashboard: %v", err)
 	}
 
-	// Seed with multiple breakpoints, each setting only Breakpoint/W/H — the
-	// realistic FE shape. X/Y/MinW/MaxW/MinH/MaxH/Static are unset (nil),
-	// which after Get→Upsert round-trip come back as proto.Int32(0)/Bool(false).
+	// Seed a position that sets only W/H (X/Y unset, nil) — a realistic FE shape.
+	// The hash + storage round-trip must treat the echoed-back tile as
+	// byte-identical so the no-op short-circuit holds.
 	initialResp, err := s.Upsert(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpsertRequest{
 		Id:          proto.String(dash.ID),
 		DisplayName: proto.String("Board"),
 		Tiles: []*dashboardsv1.DashboardTileInput{
 			{
-				DisplayName: proto.String("with-layouts"),
+				DisplayName: proto.String("with-position"),
 				Content: &dashboardsv1.DashboardTileInput_Markdown{
 					Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("body")},
 				},
-				Layouts: []*dashboardsv1.ResponsiveGridLayout{
-					{Breakpoint: proto.String("lg"), W: proto.Int32(6), H: proto.Int32(3)},
-					{Breakpoint: proto.String("md"), W: proto.Int32(4), H: proto.Int32(2)},
-					{Breakpoint: proto.String("sm"), W: proto.Int32(2), H: proto.Int32(2)},
-				},
+				Position: &dashboardsv1.GridPosition{W: proto.Int32(6), H: proto.Int32(3)},
 			},
 		},
 	}))
@@ -1109,7 +1114,7 @@ func TestHandler_Upsert_LayoutsRoundTripHashStable(t *testing.T) {
 		Content: &dashboardsv1.DashboardTileInput_Markdown{
 			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String(fetched.GetMarkdown().GetBody())},
 		},
-		Layouts:  fetched.GetLayouts(),
+		Position: fetched.GetPosition(),
 		ViewMode: fetched.ViewMode,
 		Compare:  fetched.Compare,
 	}
@@ -1123,7 +1128,7 @@ func TestHandler_Upsert_LayoutsRoundTripHashStable(t *testing.T) {
 	}
 	t1 := resp2.Msg.GetDashboard().GetTiles()[0].GetUpdateTime().AsTime()
 	if !t0.Equal(t1) {
-		t.Errorf("tile update_time bumped on Get→Upsert echo of layout-bearing tile: %v -> %v", t0, t1)
+		t.Errorf("tile update_time bumped on Get→Upsert echo of positioned tile: %v -> %v", t0, t1)
 	}
 }
 
