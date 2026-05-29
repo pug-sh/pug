@@ -163,7 +163,9 @@ message VisualizationOptions {
 }
 
 // GridPosition is the single source of truth for a tile's placement on the
-// uniform dashboard grid: integer column/row coordinates and span.
+// uniform dashboard grid: integer column/row coordinates and span. The grid is
+// fine-grained (72 columns; one column/row ≈ the ~18px visual gap), so a tile
+// may span the full 72-column width.
 message GridPosition {
   // A position is optional, but when set it must be fully specified. A per-field
   // floor (w/h >= 1) can't fire on an unset field under edition-2023 explicit
@@ -171,13 +173,13 @@ message GridPosition {
   // position (x/y only) would store as a zero-size tile.
   option (buf.validate.message).cel = {
     id: "grid_position.complete"
-    message: "position requires both w (1..24) and h (1..100)"
+    message: "position requires both w (1..72) and h (1..800)"
     expression: "has(this.w) && has(this.h)"
   };
   int32 x = 1 [(buf.validate.field).int32.gte = 0];
   int32 y = 2 [(buf.validate.field).int32.gte = 0];
-  int32 w = 3 [(buf.validate.field).int32 = {gte: 1, lte: 24}];
-  int32 h = 4 [(buf.validate.field).int32 = {gte: 1, lte: 100}];
+  int32 w = 3 [(buf.validate.field).int32 = {gte: 1, lte: 72}];
+  int32 h = 4 [(buf.validate.field).int32 = {gte: 1, lte: 800}];
 }
 
 message DashboardsServiceCreateRequest {
