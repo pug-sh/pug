@@ -141,6 +141,10 @@ message TileHeader {
     in: ["", "blue", "green", "red", "amber", "purple", "gray"]
   }];
   bool hide_title = 3;
+  // When true, the tile renders without its border and background (a transparent
+  // surface that blends into the dashboard canvas), keeping inner padding.
+  // Client-side rendering hint.
+  bool borderless = 4;
 }
 
 // VisualizationOptions tunes chart rendering. All fields apply client-side only.
