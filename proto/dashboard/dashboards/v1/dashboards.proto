@@ -165,6 +165,8 @@ message VisualizationOptions {
   bool log_scale = 2;
   bool hide_legend = 3;
   bool zero_baseline = 4; // force Y axis to start at zero
+  // KPI tiles only: hide the trend sparkline, leaving just the value + delta.
+  bool hide_sparkline = 5;
 }
 
 message ResponsiveGridLayout {

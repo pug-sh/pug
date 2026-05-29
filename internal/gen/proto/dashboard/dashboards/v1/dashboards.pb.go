@@ -817,11 +817,13 @@ func (x *TileHeader) GetBorderless() bool {
 
 // VisualizationOptions tunes chart rendering. All fields apply client-side only.
 type VisualizationOptions struct {
-	state         protoimpl.MessageState            `protogen:"open.v1"`
-	YAxisFormat   *VisualizationOptions_YAxisFormat `protobuf:"varint,1,opt,name=y_axis_format,json=yAxisFormat,enum=dashboard.dashboards.v1.VisualizationOptions_YAxisFormat" json:"y_axis_format,omitempty"`
-	LogScale      *bool                             `protobuf:"varint,2,opt,name=log_scale,json=logScale" json:"log_scale,omitempty"`
-	HideLegend    *bool                             `protobuf:"varint,3,opt,name=hide_legend,json=hideLegend" json:"hide_legend,omitempty"`
-	ZeroBaseline  *bool                             `protobuf:"varint,4,opt,name=zero_baseline,json=zeroBaseline" json:"zero_baseline,omitempty"` // force Y axis to start at zero
+	state        protoimpl.MessageState            `protogen:"open.v1"`
+	YAxisFormat  *VisualizationOptions_YAxisFormat `protobuf:"varint,1,opt,name=y_axis_format,json=yAxisFormat,enum=dashboard.dashboards.v1.VisualizationOptions_YAxisFormat" json:"y_axis_format,omitempty"`
+	LogScale     *bool                             `protobuf:"varint,2,opt,name=log_scale,json=logScale" json:"log_scale,omitempty"`
+	HideLegend   *bool                             `protobuf:"varint,3,opt,name=hide_legend,json=hideLegend" json:"hide_legend,omitempty"`
+	ZeroBaseline *bool                             `protobuf:"varint,4,opt,name=zero_baseline,json=zeroBaseline" json:"zero_baseline,omitempty"` // force Y axis to start at zero
+	// KPI tiles only: hide the trend sparkline, leaving just the value + delta.
+	HideSparkline *bool `protobuf:"varint,5,opt,name=hide_sparkline,json=hideSparkline" json:"hide_sparkline,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -880,6 +882,13 @@ func (x *VisualizationOptions) GetHideLegend() bool {
 func (x *VisualizationOptions) GetZeroBaseline() bool {
 	if x != nil && x.ZeroBaseline != nil {
 		return *x.ZeroBaseline
+	}
+	return false
+}
+
+func (x *VisualizationOptions) GetHideSparkline() bool {
+	if x != nil && x.HideSparkline != nil {
+		return *x.HideSparkline
 	}
 	return false
 }
@@ -2136,13 +2145,14 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"hide_title\x18\x03 \x01(\bR\thideTitle\x12\x1e\n" +
 	"\n" +
 	"borderless\x18\x04 \x01(\bR\n" +
-	"borderless\"\x81\x04\n" +
+	"borderless\"\xa8\x04\n" +
 	"\x14VisualizationOptions\x12g\n" +
 	"\ry_axis_format\x18\x01 \x01(\x0e29.dashboard.dashboards.v1.VisualizationOptions.YAxisFormatB\b\xbaH\x05\x82\x01\x02\x10\x01R\vyAxisFormat\x12\x1b\n" +
 	"\tlog_scale\x18\x02 \x01(\bR\blogScale\x12\x1f\n" +
 	"\vhide_legend\x18\x03 \x01(\bR\n" +
 	"hideLegend\x12#\n" +
-	"\rzero_baseline\x18\x04 \x01(\bR\fzeroBaseline\"\x80\x01\n" +
+	"\rzero_baseline\x18\x04 \x01(\bR\fzeroBaseline\x12%\n" +
+	"\x0ehide_sparkline\x18\x05 \x01(\bR\rhideSparkline\"\x80\x01\n" +
 	"\vYAxisFormat\x12\x1d\n" +
 	"\x19Y_AXIS_FORMAT_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14Y_AXIS_FORMAT_NUMBER\x10\x01\x12\x19\n" +
