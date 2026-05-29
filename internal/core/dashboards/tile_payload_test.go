@@ -2,6 +2,9 @@ package dashboards
 
 import (
 	"bytes"
+	"context"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -114,6 +117,51 @@ func TestTilePayload_PositionEchoStableThroughStoredMap(t *testing.T) {
 	}
 }
 
+// MapStoredMessage surfaces schema drift: a non-empty stored map whose keys
+// don't match the target message decodes to a zero value (DiscardUnknown), and
+// must warn once per column rather than silently zeroing the field on read.
+func TestMapStoredMessage_SurfacesSchemaDrift(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	var pos dashboardsv1.GridPosition
+	// "breakpoint" is a stale layouts-shaped key — unknown to GridPosition.
+	if err := MapStoredMessage(context.Background(), "test.drift_surfaces", map[string]any{"breakpoint": "lg"}, &pos); err != nil {
+		t.Fatalf("MapStoredMessage: %v", err)
+	}
+	if !proto.Equal(&pos, &dashboardsv1.GridPosition{}) {
+		t.Errorf("expected zero position from all-unknown map, got %v", &pos)
+	}
+	if !strings.Contains(buf.String(), "schema drift") {
+		t.Errorf("expected schema-drift warning, got log: %q", buf.String())
+	}
+}
+
+func TestMapStoredMessage_NoDriftForValidOrEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	var pos dashboardsv1.GridPosition
+	if err := MapStoredMessage(context.Background(), "test.drift_valid", map[string]any{"w": 4, "h": 3}, &pos); err != nil {
+		t.Fatalf("MapStoredMessage valid: %v", err)
+	}
+	if pos.GetW() != 4 || pos.GetH() != 3 {
+		t.Errorf("valid message did not decode: %v", &pos)
+	}
+	// Empty input is the legitimate "absent" case, not drift.
+	var empty dashboardsv1.GridPosition
+	if err := MapStoredMessage(context.Background(), "test.drift_empty", map[string]any{}, &empty); err != nil {
+		t.Fatalf("MapStoredMessage empty: %v", err)
+	}
+	if strings.Contains(buf.String(), "schema drift") {
+		t.Errorf("unexpected drift warning for valid/empty input: %q", buf.String())
+	}
+}
+
 // Each customization field is part of the hash domain; mutating any of them
 // must produce a different hash. Without this, a future refactor that drops a
 // field from the hash input would silently break the short-circuit invariant
@@ -142,6 +190,7 @@ func TestTilePayload_HashChangesPerField(t *testing.T) {
 		{"Header.Icon", func(p *TilePayload) { p.Header.Icon = proto.String("🔥") }},
 		{"Header.Borderless", func(p *TilePayload) { p.Header.Borderless = proto.Bool(true) }},
 		{"Visualization.LogScale", func(p *TilePayload) { p.Visualization.LogScale = proto.Bool(false) }},
+		{"Visualization.HideSparkline", func(p *TilePayload) { p.Visualization.HideSparkline = proto.Bool(true) }},
 		{"InsightSpec", func(p *TilePayload) {
 			p.Content = InsightTile{Spec: &insightsv1.InsightQuerySpec{
 				InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),

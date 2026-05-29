@@ -171,21 +171,21 @@ func setTileCustomization(ctx context.Context, msg *dashboardsv1.DashboardTile, 
 
 	if len(header) > 0 {
 		var h dashboardsv1.TileHeader
-		if err := coredashboards.MapToMessage(header, &h); err != nil {
+		if err := coredashboards.MapStoredMessage(ctx, "dashboard_tiles.header", header, &h); err != nil {
 			return fmt.Errorf("decode header: %w", err)
 		}
 		msg.Header = &h
 	}
 	if len(visualization) > 0 {
 		var v dashboardsv1.VisualizationOptions
-		if err := coredashboards.MapToMessage(visualization, &v); err != nil {
+		if err := coredashboards.MapStoredMessage(ctx, "dashboard_tiles.visualization", visualization, &v); err != nil {
 			return fmt.Errorf("decode visualization: %w", err)
 		}
 		msg.Visualization = &v
 	}
 	if len(position) > 0 {
 		var pos dashboardsv1.GridPosition
-		if err := coredashboards.MapToMessage(position, &pos); err != nil {
+		if err := coredashboards.MapStoredMessage(ctx, "dashboard_tiles.position", position, &pos); err != nil {
 			return fmt.Errorf("decode position: %w", err)
 		}
 		msg.Position = &pos

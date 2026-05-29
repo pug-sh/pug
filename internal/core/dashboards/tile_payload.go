@@ -306,3 +306,35 @@ func MapToMessage(data map[string]any, dst proto.Message) error {
 	}
 	return protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(raw, dst)
 }
+
+// MapStoredMessage decodes a stored jsonb message column into dst like
+// MapToMessage, but additionally surfaces schema drift: when a non-empty stored
+// map decodes to a zero-valued message (every key was discarded as unknown —
+// the symptom of a proto field rename or cross-deploy drift on a message
+// column), it logs once per column. Decode uses DiscardUnknown, so without this
+// such drift would silently zero the field on read; this is the message-column
+// analog of LogUnknownEnumOnce for enum columns.
+func MapStoredMessage(ctx context.Context, column string, data map[string]any, dst proto.Message) error {
+	if err := MapToMessage(data, dst); err != nil {
+		return err
+	}
+	if len(data) > 0 && proto.Equal(dst, dst.ProtoReflect().New().Interface()) {
+		logEmptyMessageDecodeOnce(ctx, column)
+	}
+	return nil
+}
+
+// emptyDecodeSeen dedups MapStoredMessage's drift warning so a drifted column
+// doesn't fire on every dashboard read for the process lifetime — same
+// rationale as unknownEnumSeen.
+var emptyDecodeSeen sync.Map
+
+func logEmptyMessageDecodeOnce(ctx context.Context, column string) {
+	if _, loaded := emptyDecodeSeen.LoadOrStore(column, struct{}{}); loaded {
+		return
+	}
+	err := fmt.Errorf("stored jsonb message in %s decoded to empty (all keys unknown)", column)
+	slog.WarnContext(ctx, "stored jsonb message decoded to empty (schema drift?)",
+		slog.String("column", column))
+	telemetry.RecordError(ctx, err)
+}
