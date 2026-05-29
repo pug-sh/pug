@@ -190,6 +190,14 @@ type event struct {
 	customProperties map[string]any
 }
 
+// clampOccurTime caps t at max so seeded events never land in the future.
+func clampOccurTime(t, max time.Time) time.Time {
+	if t.After(max) {
+		return max
+	}
+	return t
+}
+
 // buildSessionPool pre-generates all sessions for the pool.
 // Each session gets a journey (ordered event sequence); events are spread
 // across the session window with jitter. Event IDs and session IDs are left
@@ -269,9 +277,7 @@ func buildSession(distinctID, platform string, sessionStart, sessionEnd time.Tim
 	sess := make([]event, 0, n)
 	for i, kind := range j.steps {
 		occurTime := sessionStart.Add(time.Duration(int64(i)*stepMs+rand.Int64N(max(stepMs, 1))) * time.Millisecond)
-		if occurTime.After(sessionEnd) {
-			occurTime = sessionEnd
-		}
+		occurTime = clampOccurTime(occurTime, sessionEnd)
 		autoProps := copyProps(stableProps)
 		if platform == "web" {
 			addPerEventWebProps(autoProps, i == 0)
@@ -288,12 +294,10 @@ func buildSession(distinctID, platform string, sessionStart, sessionEnd time.Tim
 }
 
 // randomSessionFromPool picks a random session from the pool and returns it
-// with a fresh session_id, fresh event_ids, and a new random start time so the
-// session fits within [start, end] when possible (if the session is longer than
-// the window it is pinned to start and may extend past end). Re-anchoring
-// prevents clustering when pool sessions are reused across many insertions
-// (same pool entry → same occur_times → same user gets N identical
-// notification_received at T, then N notification_clicked at T+step).
+// with a fresh session_id, fresh event_ids, and a new random start time anchored
+// within [start, end]. Re-anchoring prevents clustering when pool sessions are
+// reused across many insertions (same pool entry → same occur_times → same user
+// gets N identical notification_received at T, then N notification_clicked at T+step).
 // If the re-anchored session would overlap an existing session for the same user
 // on the same platform, the session is rebuilt on a different platform so
 // concurrent sessions represent different platforms. When all three platforms are
@@ -313,6 +317,13 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 		newStart = start
 	}
 	newEnd := newStart.Add(sessionDuration)
+	if newEnd.After(end) {
+		newEnd = end
+		newStart = newEnd.Add(-sessionDuration)
+		if newStart.Before(start) {
+			newStart = start
+		}
+	}
 	offset := newStart.Sub(firstTime)
 
 	distinctID := src[0].distinctID
@@ -336,6 +347,7 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 				for i := range sess {
 					sess[i].eventID = uuid.New().String()
 					sess[i].sessionID = sessionID
+					sess[i].occurTime = clampOccurTime(sess[i].occurTime, end)
 				}
 				tracker.register(distinctID, altPlatform, newStart, newEnd)
 				return sess
@@ -350,7 +362,7 @@ func randomSessionFromPool(pool [][]event, start, end time.Time, tracker *userSe
 	for i, e := range src {
 		e.eventID = uuid.New().String()
 		e.sessionID = sessionID
-		e.occurTime = e.occurTime.Add(offset)
+		e.occurTime = clampOccurTime(e.occurTime.Add(offset), end)
 		e.autoProperties = copyProps(e.autoProperties)
 		e.customProperties = customPropsForKind(e.kind)
 		out[i] = e

@@ -217,7 +217,7 @@ func randomProperties(i int) map[string]any {
 
 	if rand.Float32() < 0.70 {
 		props["email"] = fmt.Sprintf("%s.%s%d@%s",
-			strings.ToLower(first), strings.ToLower(last), i%1000,
+			strings.ToLower(first), strings.ToLower(last), i,
 			emailDomains[rand.IntN(len(emailDomains))],
 		)
 	}
@@ -391,13 +391,12 @@ func randomPushToken(platform string) string {
 	}
 }
 
-// externalIDForProfile returns an external ID for an identified profile.
-// If the profile already has an email property, reuse it — otherwise use a
-// numeric customer ID, matching what a typical identify() call looks like.
-func externalIDForProfile(props map[string]any, i int) string {
-	if email, ok := props["email"].(string); ok && email != "" {
-		return email
-	}
+// externalIDForProfile returns a unique external ID per seed index.
+// Properties may include an email for realism, but external_id must stay unique:
+// UpsertProfileByExternalID conflicts on (project_id, external_id) and updates
+// the existing row without creating the requested profile id, which breaks the
+// seeder's fixed user-%05d ids when attaching devices.
+func externalIDForProfile(_ map[string]any, i int) string {
 	return fmt.Sprintf("cust_%06d", i)
 }
 
