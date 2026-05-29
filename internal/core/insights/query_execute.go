@@ -53,7 +53,7 @@ func ExecuteQuery(
 		if err != nil {
 			return nil, queryFailed(err)
 		}
-		if usedRollup {
+		if usedRollup && req.GetSpec().GetSession() == nil {
 			// fillMultiEventTrendZeros self-guards on len(kinds) <= 1, so single-
 			// event rollup queries pass through unchanged.
 			events := req.GetSpec().GetEvents()

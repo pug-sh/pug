@@ -18,11 +18,13 @@ const PropertyValuesLimit = 100
 // analyticsCacheTTL bounds how long a cached insight result may lag fresh writes.
 // 60s balances query latency reduction against dashboard freshness.
 //
-// Applied to all five cacheable public builders: BuildTrendsQuery, BuildSegmentationQuery,
-// BuildFunnelCountsQuery, BuildFunnelTimingQuery, BuildRetentionQuery. Other public builders
-// in this package (property keys/values, segment users, event names) intentionally omit
-// WithQueryCache — they either include `now()` (BuildAutoPropertyValuesQuery) or back
-// dashboard typeahead where freshness matters more than the saved compute.
+// Applied to all cacheable public insight builders: BuildTrendsQuery,
+// BuildSegmentationQuery, BuildSessionTrendsQuery, BuildSessionSegmentationQuery,
+// BuildFunnelCountsQuery, BuildFunnelTimingQuery, BuildRetentionQuery. Other public
+// builders in this package (property keys/values, segment users, event names)
+// intentionally omit WithQueryCache — they either include `now()`
+// (BuildAutoPropertyValuesQuery) or back dashboard typeahead where freshness matters
+// more than the saved compute.
 //
 // Cache isolation: ClickHouse keys the query cache by query text + parameters. Pug binds
 // project_id as a positional parameter on every cached builder, so per-project isolation
@@ -156,6 +158,35 @@ func BuildSegmentationQuery(req *insightsv1.QueryRequest, projectID string) (Sca
 	return ScalarQuery{sql: sql, args: args}, nil
 }
 
+func BuildSessionTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
+	q, err := buildSessionTrends(req, projectID)
+	if err != nil {
+		return TrendsQuery{}, err
+	}
+	sql, args, err := q.WithQueryCache(analyticsCacheTTL).Build()
+	if err != nil {
+		return TrendsQuery{}, fmt.Errorf("session trends: %w", err)
+	}
+	return TrendsQuery{
+		sql:            sql,
+		args:           args,
+		properties:     breakdownProps(req.GetSpec().GetBreakdowns()),
+		breakdownLimit: effectiveBreakdownLimit(req.GetSpec().GetBreakdownLimit()),
+	}, nil
+}
+
+func BuildSessionSegmentationQuery(req *insightsv1.QueryRequest, projectID string) (ScalarQuery, error) {
+	q, err := buildSessionSegmentation(req, projectID)
+	if err != nil {
+		return ScalarQuery{}, err
+	}
+	sql, args, err := q.WithQueryCache(analyticsCacheTTL).Build()
+	if err != nil {
+		return ScalarQuery{}, fmt.Errorf("session segmentation: %w", err)
+	}
+	return ScalarQuery{sql: sql, args: args}, nil
+}
+
 func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (FunnelQuery, error) {
 	q, err := buildFunnelWindowFunnel(req, projectID)
 	if err != nil {
@@ -172,7 +203,6 @@ func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 		breakdownLimit: effectiveBreakdownLimit(req.GetSpec().GetBreakdownLimit()),
 	}, nil
 }
-
 
 // BuildFunnelTimingQuery returns SQL plus per-user event arrays + the kinds and conversion
 // window needed by ComputeFunnelTiming downstream.
@@ -497,6 +527,141 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Que
 			topLevelFilterCond,
 			eventCond,
 		), nil
+}
+
+func buildSessionTrends(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
+	session := req.GetSpec().GetSession()
+	if session == nil {
+		return nil, fmt.Errorf("session trends: session is required")
+	}
+	granFn, err := granularityFunc(req.GetGranularity())
+	if err != nil {
+		return nil, fmt.Errorf("session trends: %w", err)
+	}
+	sessionsCTE, err := buildSessionRowsCTE(req, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("session trends: %w", err)
+	}
+
+	metricExpr, err := sessionMetricAggExpr(session.GetMetric())
+	if err != nil {
+		return nil, fmt.Errorf("session trends: %w", err)
+	}
+
+	breakdowns := req.GetSpec().GetBreakdowns()
+	selectExprs := []string{
+		fmt.Sprintf("%s(start_time) AS t", granFn),
+		sqlStringLiteral(sessionEventKind(session)) + " AS event_kind",
+	}
+	groupByCols := []string{"t"}
+	orderByCols := []string{"t ASC", "event_kind ASC"}
+	for j := range breakdowns {
+		selectExprs = append(selectExprs, fmt.Sprintf("breakdown_%d", j))
+		groupByCols = append(groupByCols, fmt.Sprintf("breakdown_%d", j))
+		orderByCols = append(orderByCols, fmt.Sprintf("breakdown_%d ASC", j))
+	}
+	selectExprs = append(selectExprs, metricExpr+" AS value")
+
+	return chq.NewQuery().
+		With("sessions", sessionsCTE).
+		Select(selectExprs...).
+		From("sessions").
+		GroupBy(groupByCols...).
+		OrderBy(orderByCols...), nil
+}
+
+func buildSessionSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
+	session := req.GetSpec().GetSession()
+	if session == nil {
+		return nil, fmt.Errorf("session segmentation: session is required")
+	}
+
+	sessionsCTE, err := buildSessionRowsCTE(req, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("session segmentation: %w", err)
+	}
+	metricExpr, err := sessionMetricAggExpr(session.GetMetric())
+	if err != nil {
+		return nil, fmt.Errorf("session segmentation: %w", err)
+	}
+
+	return chq.NewQuery().
+		With("sessions", sessionsCTE).
+		Select(metricExpr + " AS value").
+		From("sessions"), nil
+}
+
+func buildSessionRowsCTE(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
+	spec := req.GetSpec()
+	session := spec.GetSession()
+	if session == nil {
+		return nil, fmt.Errorf("session is required")
+	}
+
+	topLevelFilterCond, err := buildTopLevelFilterCondition(spec.GetFilterGroups(), spec.GetFilterGroupsOperator(), projectID, "")
+	if err != nil {
+		return nil, err
+	}
+	scopeCond, err := buildSessionScopeCondition(session, projectID, "")
+	if err != nil {
+		return nil, err
+	}
+
+	attrFn := "argMin"
+	if session.GetMetric() == insightsv1.SessionMetric_SESSION_METRIC_EXIT {
+		attrFn = "argMax"
+	}
+
+	q := chq.NewQuery().
+		Select(
+			"session_id",
+			"min(occur_time) AS start_time",
+			"max(occur_time) AS end_time",
+			"count() AS event_count",
+		).
+		From("events").
+		Where(
+			chq.Eq("project_id", projectID),
+			chq.Gte("occur_time", req.GetTimeRange().GetFrom().AsTime()),
+			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
+			topLevelFilterCond,
+			scopeCond,
+		).
+		GroupBy("session_id")
+
+	for j, bd := range spec.GetBreakdowns() {
+		q.Select(fmt.Sprintf("%s(%s, occur_time) AS breakdown_%d", attrFn, chq.PropertyExpr(bd.GetProperty()), j))
+	}
+	return q, nil
+}
+
+func buildSessionScopeCondition(session *insightsv1.SessionQuery, projectID, alias string) (chq.Condition, error) {
+	if session == nil || session.GetScope() == nil {
+		return chq.Condition{}, nil
+	}
+	return chq.EventConditionAliased([]*commonv1.EventFilter{session.GetScope()}, projectID, alias)
+}
+
+func sessionEventKind(session *insightsv1.SessionQuery) string {
+	if session == nil || session.GetScope() == nil || session.GetScope().GetKind() == "" {
+		return "$session"
+	}
+	return session.GetScope().GetKind()
+}
+
+func sessionMetricAggExpr(metric insightsv1.SessionMetric) (string, error) {
+	switch metric {
+	case insightsv1.SessionMetric_SESSION_METRIC_SESSIONS,
+		insightsv1.SessionMetric_SESSION_METRIC_ENTRY,
+		insightsv1.SessionMetric_SESSION_METRIC_EXIT:
+		return "toFloat64(count())", nil
+	case insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION:
+		return "if(count() = 0, 0, avg(dateDiff('second', start_time, end_time)))", nil
+	case insightsv1.SessionMetric_SESSION_METRIC_BOUNCE_RATE:
+		return "if(count() = 0, 0, toFloat64(countIf(event_count = 1)) * 100.0 / toFloat64(count()))", nil
+	default:
+		return "", fmt.Errorf("unsupported session metric %s", metric)
+	}
 }
 
 // buildFunnelWindowFunnel generates a funnel counts query using ClickHouse's windowFunnel() aggregate.
@@ -1095,7 +1260,7 @@ func BuildProfilePropertyKeysQuery(projectID string) (string, []any, error) {
 // until ReplacingMergeTree background merges complete. Acceptable for typeahead
 // (showing the user every value they've ever stored) but worth knowing.
 //
-// The `!= ''` filter collapses two cases that the underlying JSON column can
+// The `!= ”` filter collapses two cases that the underlying JSON column can
 // distinguish but the string projection cannot: properties absent from a
 // profile and properties stored as the literal empty string both surface as
 // "" after the coalesce. Both are excluded from the returned distinct-values

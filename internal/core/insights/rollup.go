@@ -363,6 +363,9 @@ func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string)
 // whether the rollup builder was used, so the caller classifies a build failure
 // correctly without re-evaluating eligibility.
 func trendsQueryForExecution(req *insightsv1.QueryRequest, projectID string, now time.Time) (TrendsQuery, bool, error) {
+	if req.GetSpec().GetSession() != nil {
+		return sessionTrendsQueryForExecution(req, projectID, now)
+	}
 	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
 		q, err := buildTrendsFromRollup(req, projectID)
 		return q, true, err
@@ -373,6 +376,9 @@ func trendsQueryForExecution(req *insightsv1.QueryRequest, projectID string, now
 
 // segmentationQueryForExecution mirrors trendsQueryForExecution for segmentation.
 func segmentationQueryForExecution(req *insightsv1.QueryRequest, projectID string, now time.Time) (ScalarQuery, bool, error) {
+	if req.GetSpec().GetSession() != nil {
+		return sessionSegmentationQueryForExecution(req, projectID, now)
+	}
 	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
 		q, err := buildSegmentationFromRollup(req, projectID)
 		return q, true, err
