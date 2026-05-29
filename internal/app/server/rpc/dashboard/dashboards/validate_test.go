@@ -81,6 +81,48 @@ func TestPosition_RejectsNegativeCoordinates(t *testing.T) {
 	}
 }
 
+func TestPosition_RejectsMissingWidthHeight(t *testing.T) {
+	// w/h carry a floor of 1, but under edition-2023 explicit presence a
+	// per-field rule fires only when the field is set. A present-but-partial
+	// position (x/y given, w/h omitted) would otherwise slip through as a
+	// zero-size tile; the message-level CEL requires both w and h whenever a
+	// position is set.
+	cases := []struct {
+		name string
+		pos  *dashboardsv1.GridPosition
+	}{
+		{"x/y only", &dashboardsv1.GridPosition{X: proto.Int32(1), Y: proto.Int32(2)}},
+		{"w only", &dashboardsv1.GridPosition{W: proto.Int32(4)}},
+		{"h only", &dashboardsv1.GridPosition{H: proto.Int32(4)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := protovalidate.Validate(requestWithPosition(tc.pos)); err == nil {
+				t.Fatalf("expected validation error for partial position (%s)", tc.name)
+			}
+		})
+	}
+}
+
+func TestPosition_AcceptsBoundaryValues(t *testing.T) {
+	// Guards the bounds annotations against an lt-vs-lte slip: the inclusive
+	// edges (w 1/24, h 1/100, x/y 0) must validate.
+	cases := []struct {
+		name string
+		pos  *dashboardsv1.GridPosition
+	}{
+		{"min", &dashboardsv1.GridPosition{X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(1), H: proto.Int32(1)}},
+		{"max", &dashboardsv1.GridPosition{X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(24), H: proto.Int32(100)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := protovalidate.Validate(requestWithPosition(tc.pos)); err != nil {
+				t.Fatalf("unexpected validation error at boundary (%s): %v", tc.name, err)
+			}
+		})
+	}
+}
+
 // requestWithPosition builds a minimal DashboardTileInput wrapping a single
 // position so the TestPosition_* cases can pin GridPosition-level constraints
 // (width, height, non-negative coordinates) without duplicating the message

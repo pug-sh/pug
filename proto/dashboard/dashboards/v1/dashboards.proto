@@ -52,7 +52,7 @@ message DashboardTile {
     InsightTileContent insight = 5;
     MarkdownTileContent markdown = 6;
   }
-  // Single grid position on the uniform dashboard grid. Source of truth going forward.
+  // The tile's placement on the uniform dashboard grid.
   GridPosition position = 15;
   google.protobuf.Timestamp create_time = 8;
   google.protobuf.Timestamp update_time = 9;
@@ -165,6 +165,15 @@ message VisualizationOptions {
 // GridPosition is the single source of truth for a tile's placement on the
 // uniform dashboard grid: integer column/row coordinates and span.
 message GridPosition {
+  // A position is optional, but when set it must be fully specified. A per-field
+  // floor (w/h >= 1) can't fire on an unset field under edition-2023 explicit
+  // presence, so require both via message-level CEL — otherwise a partial
+  // position (x/y only) would store as a zero-size tile.
+  option (buf.validate.message).cel = {
+    id: "grid_position.complete"
+    message: "position requires both w (1..24) and h (1..100)"
+    expression: "has(this.w) && has(this.h)"
+  };
   int32 x = 1 [(buf.validate.field).int32.gte = 0];
   int32 y = 2 [(buf.validate.field).int32.gte = 0];
   int32 w = 3 [(buf.validate.field).int32 = {gte: 1, lte: 24}];
@@ -249,6 +258,7 @@ message DashboardTileInput {
     InsightTileContent insight = 4;
     MarkdownTileContent markdown = 5;
   }
+  // The tile's placement on the uniform dashboard grid.
   GridPosition position = 12;
   DashboardTileViewMode view_mode = 7 [(buf.validate.field).enum.defined_only = true];
   ComparePeriod compare = 8 [(buf.validate.field).enum.defined_only = true];
