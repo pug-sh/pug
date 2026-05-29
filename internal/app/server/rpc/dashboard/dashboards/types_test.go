@@ -48,6 +48,40 @@ func TestRenderedDashboardToRPC_CorruptTileDegradesGracefully(t *testing.T) {
 	}
 }
 
+// structuralTileToRPC is the degraded encoder for a tile whose content can't be
+// decoded; it still carries best-effort grid position so the FE can place the
+// broken tile, and a malformed position degrades to nil rather than failing.
+func TestStructuralTileToRPC_PositionBestEffort(t *testing.T) {
+	t.Run("valid position carried through", func(t *testing.T) {
+		tile := dbread.DashboardTile{
+			ID:          "bad",
+			DashboardID: "dash",
+			Kind:        int16(coredashboards.TileKindInsight),
+			Position:    map[string]any{"x": 1, "y": 2, "w": 6, "h": 3},
+		}
+		msg := structuralTileToRPC(context.Background(), tile)
+		if msg.GetPosition().GetW() != 6 || msg.GetPosition().GetH() != 3 {
+			t.Errorf("position not carried through on degraded tile: got %v", msg.GetPosition())
+		}
+	})
+
+	t.Run("malformed position degrades to nil", func(t *testing.T) {
+		tile := dbread.DashboardTile{
+			ID:          "bad",
+			DashboardID: "dash",
+			Kind:        int16(coredashboards.TileKindInsight),
+			Position:    map[string]any{"w": "not-an-int"},
+		}
+		msg := structuralTileToRPC(context.Background(), tile)
+		if msg.GetPosition() != nil {
+			t.Errorf("malformed position should degrade to nil, got %v", msg.GetPosition())
+		}
+		if msg.GetId() != "bad" {
+			t.Errorf("structural tile id not preserved: %q", msg.GetId())
+		}
+	})
+}
+
 func TestSetTileContent_InsightHappyPath(t *testing.T) {
 	msg := &dashboardsv1.DashboardTile{}
 	q := map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"}
@@ -203,7 +237,6 @@ func TestRoTileToRPC_EmitsViewMode(t *testing.T) {
 		Kind:         int16(coredashboards.TileKindInsight),
 		ViewMode:     dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_AREA.String(),
 		InsightQuery: map[string]any{"insightType": "INSIGHT_TYPE_TRENDS"},
-		Layouts:      map[string]any{},
 	}
 	msg, err := roTileToRPC(context.Background(), tile)
 	if err != nil {
@@ -213,4 +246,3 @@ func TestRoTileToRPC_EmitsViewMode(t *testing.T) {
 		t.Errorf("ViewMode = %v, want AREA", msg.GetViewMode())
 	}
 }
-

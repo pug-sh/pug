@@ -14,10 +14,9 @@ import (
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
+// ----- GridPosition bounds (T6) ------------------------------------------
 
-// ----- ResponsiveGridLayout bounds (T6) ---------------------------------
-
-func TestLayout_RejectsWidthOutOfBounds(t *testing.T) {
+func TestPosition_RejectsWidthOutOfBounds(t *testing.T) {
 	cases := []struct {
 		name string
 		w    int32
@@ -27,9 +26,8 @@ func TestLayout_RejectsWidthOutOfBounds(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := requestWithLayout(&dashboardsv1.ResponsiveGridLayout{
-				Breakpoint: proto.String("lg"),
-				X:          proto.Int32(0), Y: proto.Int32(0),
+			req := requestWithPosition(&dashboardsv1.GridPosition{
+				X: proto.Int32(0), Y: proto.Int32(0),
 				W: proto.Int32(tc.w), H: proto.Int32(4),
 			})
 			if err := protovalidate.Validate(req); err == nil {
@@ -39,7 +37,7 @@ func TestLayout_RejectsWidthOutOfBounds(t *testing.T) {
 	}
 }
 
-func TestLayout_RejectsHeightOutOfBounds(t *testing.T) {
+func TestPosition_RejectsHeightOutOfBounds(t *testing.T) {
 	cases := []struct {
 		name string
 		h    int32
@@ -49,9 +47,8 @@ func TestLayout_RejectsHeightOutOfBounds(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := requestWithLayout(&dashboardsv1.ResponsiveGridLayout{
-				Breakpoint: proto.String("lg"),
-				X:          proto.Int32(0), Y: proto.Int32(0),
+			req := requestWithPosition(&dashboardsv1.GridPosition{
+				X: proto.Int32(0), Y: proto.Int32(0),
 				W: proto.Int32(4), H: proto.Int32(tc.h),
 			})
 			if err := protovalidate.Validate(req); err == nil {
@@ -61,84 +58,81 @@ func TestLayout_RejectsHeightOutOfBounds(t *testing.T) {
 	}
 }
 
-func TestLayout_RejectsNegativePositionAndBounds(t *testing.T) {
+func TestPosition_RejectsNegativeCoordinates(t *testing.T) {
 	cases := []struct {
 		name  string
-		mut   func(l *dashboardsv1.ResponsiveGridLayout)
+		mut   func(p *dashboardsv1.GridPosition)
 		field string
 	}{
-		{"x", func(l *dashboardsv1.ResponsiveGridLayout) { l.X = proto.Int32(-1) }, "x"},
-		{"y", func(l *dashboardsv1.ResponsiveGridLayout) { l.Y = proto.Int32(-1) }, "y"},
-		{"min_w", func(l *dashboardsv1.ResponsiveGridLayout) { l.MinW = proto.Int32(-1) }, "min_w"},
-		{"max_w", func(l *dashboardsv1.ResponsiveGridLayout) { l.MaxW = proto.Int32(-1) }, "max_w"},
-		{"min_h", func(l *dashboardsv1.ResponsiveGridLayout) { l.MinH = proto.Int32(-1) }, "min_h"},
-		{"max_h", func(l *dashboardsv1.ResponsiveGridLayout) { l.MaxH = proto.Int32(-1) }, "max_h"},
+		{"x", func(p *dashboardsv1.GridPosition) { p.X = proto.Int32(-1) }, "x"},
+		{"y", func(p *dashboardsv1.GridPosition) { p.Y = proto.Int32(-1) }, "y"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			layout := &dashboardsv1.ResponsiveGridLayout{
-				Breakpoint: proto.String("lg"),
-				X:          proto.Int32(0), Y: proto.Int32(0),
+			pos := &dashboardsv1.GridPosition{
+				X: proto.Int32(0), Y: proto.Int32(0),
 				W: proto.Int32(4), H: proto.Int32(4),
 			}
-			tc.mut(layout)
-			if err := protovalidate.Validate(requestWithLayout(layout)); err == nil {
+			tc.mut(pos)
+			if err := protovalidate.Validate(requestWithPosition(pos)); err == nil {
 				t.Fatalf("expected validation error for negative %s", tc.field)
 			}
 		})
 	}
 }
 
-func TestLayout_RejectsInvalidBreakpointPattern(t *testing.T) {
-	// Pattern ^[a-zA-Z0-9_-]+$ — reject space, dot, slash, empty.
-	cases := []string{" ", "a b", "a.b", "a/b"}
-	for _, bp := range cases {
-		t.Run(bp, func(t *testing.T) {
-			req := requestWithLayout(&dashboardsv1.ResponsiveGridLayout{
-				Breakpoint: proto.String(bp),
-				X:          proto.Int32(0), Y: proto.Int32(0),
-				W: proto.Int32(4), H: proto.Int32(4),
-			})
-			if err := protovalidate.Validate(req); err == nil {
-				t.Fatalf("expected validation error for breakpoint %q", bp)
+func TestPosition_RejectsMissingWidthHeight(t *testing.T) {
+	// w/h carry a floor of 1, but under edition-2023 explicit presence a
+	// per-field rule fires only when the field is set. A present-but-partial
+	// position (x/y given, w/h omitted) would otherwise slip through as a
+	// zero-size tile; the message-level CEL requires both w and h whenever a
+	// position is set.
+	cases := []struct {
+		name string
+		pos  *dashboardsv1.GridPosition
+	}{
+		{"x/y only", &dashboardsv1.GridPosition{X: proto.Int32(1), Y: proto.Int32(2)}},
+		{"w only", &dashboardsv1.GridPosition{W: proto.Int32(4)}},
+		{"h only", &dashboardsv1.GridPosition{H: proto.Int32(4)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := protovalidate.Validate(requestWithPosition(tc.pos)); err == nil {
+				t.Fatalf("expected validation error for partial position (%s)", tc.name)
 			}
 		})
 	}
 }
 
-func TestLayout_RejectsMoreThanEightLayouts(t *testing.T) {
-	layouts := make([]*dashboardsv1.ResponsiveGridLayout, 0, 9)
-	// Use distinct breakpoint strings to avoid the unique-breakpoints CEL
-	// kicking in before max_items — the test must fail specifically on the
-	// max_items=8 rule, not on uniqueness.
-	for i := 0; i < 9; i++ {
-		layouts = append(layouts, &dashboardsv1.ResponsiveGridLayout{
-			Breakpoint: proto.String(string(rune('a' + i))),
-			X:          proto.Int32(0), Y: proto.Int32(0),
-			W: proto.Int32(4), H: proto.Int32(4),
+func TestPosition_AcceptsBoundaryValues(t *testing.T) {
+	// Guards the bounds annotations against an lt-vs-lte slip: the inclusive
+	// edges (w 1/24, h 1/100, x/y 0) must validate.
+	cases := []struct {
+		name string
+		pos  *dashboardsv1.GridPosition
+	}{
+		{"min", &dashboardsv1.GridPosition{X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(1), H: proto.Int32(1)}},
+		{"max", &dashboardsv1.GridPosition{X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(24), H: proto.Int32(100)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := protovalidate.Validate(requestWithPosition(tc.pos)); err != nil {
+				t.Fatalf("unexpected validation error at boundary (%s): %v", tc.name, err)
+			}
 		})
-	}
-	req := &dashboardsv1.DashboardTileInput{
-		Content: &dashboardsv1.DashboardTileInput_Markdown{
-			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("x")},
-		},
-		Layouts: layouts,
-	}
-	if err := protovalidate.Validate(req); err == nil {
-		t.Fatal("expected validation error for 9 layouts (max 8)")
 	}
 }
 
-// requestWithLayout builds a minimal DashboardTileInput wrapping a single
-// layout so the TestLayout_* cases can pin ResponsiveGridLayout-level
-// constraints (width, height, position, breakpoint pattern) without
-// duplicating the message shape across every test.
-func requestWithLayout(layout *dashboardsv1.ResponsiveGridLayout) *dashboardsv1.DashboardTileInput {
+// requestWithPosition builds a minimal DashboardTileInput wrapping a single
+// position so the TestPosition_* cases can pin GridPosition-level constraints
+// (width, height, non-negative coordinates) without duplicating the message
+// shape across every test.
+func requestWithPosition(position *dashboardsv1.GridPosition) *dashboardsv1.DashboardTileInput {
 	return &dashboardsv1.DashboardTileInput{
 		Content: &dashboardsv1.DashboardTileInput_Markdown{
 			Markdown: &dashboardsv1.MarkdownTileContent{Body: proto.String("x")},
 		},
-		Layouts: []*dashboardsv1.ResponsiveGridLayout{layout},
+		Position: position,
 	}
 }
 
@@ -438,16 +432,5 @@ func TestVisualizationOptions_RejectsUndefinedYAxisFormat(t *testing.T) {
 	}
 	if err := protovalidate.Validate(tile); err == nil {
 		t.Fatal("expected validation error for undefined y_axis_format")
-	}
-}
-
-func TestDashboardTileInput_RejectsDuplicateBreakpoints(t *testing.T) {
-	tile := validTileInput()
-	tile.Layouts = []*dashboardsv1.ResponsiveGridLayout{
-		{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(6), H: proto.Int32(4)},
-		{Breakpoint: proto.String("lg"), X: proto.Int32(0), Y: proto.Int32(4), W: proto.Int32(6), H: proto.Int32(4)},
-	}
-	if err := protovalidate.Validate(tile); err == nil {
-		t.Fatal("expected validation error for duplicate layout breakpoint on DashboardTileInput")
 	}
 }

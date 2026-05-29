@@ -7,7 +7,6 @@ import (
 
 	"github.com/pug-sh/pug/internal/core/dashboards"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
-	dashboardsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
@@ -56,77 +55,6 @@ func TestEncodeTileContent_Markdown(t *testing.T) {
 	}
 	if enc.MarkdownBody.String != body {
 		t.Errorf("MarkdownBody.String = %q, want %q", enc.MarkdownBody.String, body)
-	}
-}
-
-func TestLayoutsRoundTrip_AllFields(t *testing.T) {
-	// Pin all nine numeric fields plus static=true through a full round-trip
-	// LayoutsToMap → MapToLayouts. A typo in any of the JSON key spellings
-	// (minW, maxW, minH, maxH) on either side would silently drop the value
-	// to zero — this test exercises every field so such a typo fails loudly.
-	// Also pins the deterministic breakpoint ordering (sort.Strings).
-	in := []*dashboardsv1.ResponsiveGridLayout{
-		{
-			Breakpoint: proto.String("md"),
-			X:          proto.Int32(1),
-			Y:          proto.Int32(2),
-			W:          proto.Int32(3),
-			H:          proto.Int32(4),
-			MinW:       proto.Int32(5),
-			MaxW:       proto.Int32(6),
-			MinH:       proto.Int32(7),
-			MaxH:       proto.Int32(8),
-			Static:     proto.Bool(false),
-		},
-		{
-			Breakpoint: proto.String("lg"),
-			X:          proto.Int32(9),
-			Y:          proto.Int32(10),
-			W:          proto.Int32(11),
-			H:          proto.Int32(12),
-			MinW:       proto.Int32(13),
-			MaxW:       proto.Int32(14),
-			MinH:       proto.Int32(15),
-			MaxH:       proto.Int32(16),
-			Static:     proto.Bool(true),
-		},
-	}
-
-	encoded := dashboards.LayoutsToMap(in)
-	out, err := dashboards.MapToLayouts(encoded)
-	if err != nil {
-		t.Fatalf("MapToLayouts: %v", err)
-	}
-
-	// Sorted ascending by breakpoint string: "lg" < "md".
-	want := []string{"lg", "md"}
-	got := []string{out[0].GetBreakpoint(), out[1].GetBreakpoint()}
-	if got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("breakpoint order = %v, want %v", got, want)
-	}
-
-	lg := out[0]
-	if lg.GetX() != 9 || lg.GetY() != 10 || lg.GetW() != 11 || lg.GetH() != 12 {
-		t.Errorf("lg x/y/w/h = %d/%d/%d/%d, want 9/10/11/12", lg.GetX(), lg.GetY(), lg.GetW(), lg.GetH())
-	}
-	if lg.GetMinW() != 13 || lg.GetMaxW() != 14 || lg.GetMinH() != 15 || lg.GetMaxH() != 16 {
-		t.Errorf("lg minW/maxW/minH/maxH = %d/%d/%d/%d, want 13/14/15/16",
-			lg.GetMinW(), lg.GetMaxW(), lg.GetMinH(), lg.GetMaxH())
-	}
-	if !lg.GetStatic() {
-		t.Error("lg.Static = false, want true")
-	}
-
-	md := out[1]
-	if md.GetX() != 1 || md.GetY() != 2 || md.GetW() != 3 || md.GetH() != 4 {
-		t.Errorf("md x/y/w/h = %d/%d/%d/%d, want 1/2/3/4", md.GetX(), md.GetY(), md.GetW(), md.GetH())
-	}
-	if md.GetMinW() != 5 || md.GetMaxW() != 6 || md.GetMinH() != 7 || md.GetMaxH() != 8 {
-		t.Errorf("md minW/maxW/minH/maxH = %d/%d/%d/%d, want 5/6/7/8",
-			md.GetMinW(), md.GetMaxW(), md.GetMinH(), md.GetMaxH())
-	}
-	if md.GetStatic() {
-		t.Error("md.Static = true, want false")
 	}
 }
 

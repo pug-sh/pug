@@ -52,7 +52,7 @@ type DashboardTile struct {
 	Description   string
 	InsightQuery  map[string]any
 	MarkdownBody  pgtype.Text
-	Layouts       map[string]any
+	Position      map[string]any
 	Compare       string
 	Thresholds    []byte
 	Header        map[string]any

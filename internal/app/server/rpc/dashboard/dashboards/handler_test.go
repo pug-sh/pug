@@ -79,7 +79,6 @@ func TestHandler_Delete_Unauthenticated(t *testing.T) {
 	assertCode(t, err, connect.CodeUnauthenticated)
 }
 
-
 func TestHandler_QueryDashboard_Unauthenticated(t *testing.T) {
 	s := &Server{}
 	_, err := s.QueryDashboard(context.Background(), connect.NewRequest(&dashboardsv1.DashboardsServiceQueryDashboardRequest{
@@ -285,7 +284,6 @@ func TestHandler_Update_EmptyDescriptionPreservesExisting(t *testing.T) {
 		t.Errorf("description after non-empty-update = %q, want %q (overwrite)", got, "rewritten")
 	}
 }
-
 
 // ----- Helpers -----------------------------------------------------------
 

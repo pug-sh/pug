@@ -254,6 +254,7 @@ const (
 	VisualizationOptions_Y_AXIS_FORMAT_NUMBER      VisualizationOptions_YAxisFormat = 1
 	VisualizationOptions_Y_AXIS_FORMAT_PERCENT     VisualizationOptions_YAxisFormat = 2
 	VisualizationOptions_Y_AXIS_FORMAT_DURATION_MS VisualizationOptions_YAxisFormat = 3
+	VisualizationOptions_Y_AXIS_FORMAT_COMPACT     VisualizationOptions_YAxisFormat = 4 // abbreviated, e.g. 27K / 1.5M
 )
 
 // Enum value maps for VisualizationOptions_YAxisFormat.
@@ -263,12 +264,14 @@ var (
 		1: "Y_AXIS_FORMAT_NUMBER",
 		2: "Y_AXIS_FORMAT_PERCENT",
 		3: "Y_AXIS_FORMAT_DURATION_MS",
+		4: "Y_AXIS_FORMAT_COMPACT",
 	}
 	VisualizationOptions_YAxisFormat_value = map[string]int32{
 		"Y_AXIS_FORMAT_UNSPECIFIED": 0,
 		"Y_AXIS_FORMAT_NUMBER":      1,
 		"Y_AXIS_FORMAT_PERCENT":     2,
 		"Y_AXIS_FORMAT_DURATION_MS": 3,
+		"Y_AXIS_FORMAT_COMPACT":     4,
 	}
 )
 
@@ -418,15 +421,16 @@ type DashboardTile struct {
 	//
 	//	*DashboardTile_Insight
 	//	*DashboardTile_Markdown
-	Content       isDashboardTile_Content `protobuf_oneof:"content"`
-	Layouts       []*ResponsiveGridLayout `protobuf:"bytes,7,rep,name=layouts" json:"layouts,omitempty"`
-	CreateTime    *timestamppb.Timestamp  `protobuf:"bytes,8,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
-	UpdateTime    *timestamppb.Timestamp  `protobuf:"bytes,9,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
-	ViewMode      *DashboardTileViewMode  `protobuf:"varint,10,opt,name=view_mode,json=viewMode,enum=dashboard.dashboards.v1.DashboardTileViewMode" json:"view_mode,omitempty"`
-	Compare       *ComparePeriod          `protobuf:"varint,11,opt,name=compare,enum=dashboard.dashboards.v1.ComparePeriod" json:"compare,omitempty"`
-	Thresholds    []*ThresholdRule        `protobuf:"bytes,12,rep,name=thresholds" json:"thresholds,omitempty"`
-	Header        *TileHeader             `protobuf:"bytes,13,opt,name=header" json:"header,omitempty"`
-	Visualization *VisualizationOptions   `protobuf:"bytes,14,opt,name=visualization" json:"visualization,omitempty"`
+	Content isDashboardTile_Content `protobuf_oneof:"content"`
+	// The tile's placement on the uniform dashboard grid.
+	Position      *GridPosition          `protobuf:"bytes,15,opt,name=position" json:"position,omitempty"`
+	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=create_time,json=createTime" json:"create_time,omitempty"`
+	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
+	ViewMode      *DashboardTileViewMode `protobuf:"varint,10,opt,name=view_mode,json=viewMode,enum=dashboard.dashboards.v1.DashboardTileViewMode" json:"view_mode,omitempty"`
+	Compare       *ComparePeriod         `protobuf:"varint,11,opt,name=compare,enum=dashboard.dashboards.v1.ComparePeriod" json:"compare,omitempty"`
+	Thresholds    []*ThresholdRule       `protobuf:"bytes,12,rep,name=thresholds" json:"thresholds,omitempty"`
+	Header        *TileHeader            `protobuf:"bytes,13,opt,name=header" json:"header,omitempty"`
+	Visualization *VisualizationOptions  `protobuf:"bytes,14,opt,name=visualization" json:"visualization,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -514,9 +518,9 @@ func (x *DashboardTile) GetMarkdown() *MarkdownTileContent {
 	return nil
 }
 
-func (x *DashboardTile) GetLayouts() []*ResponsiveGridLayout {
+func (x *DashboardTile) GetPosition() *GridPosition {
 	if x != nil {
-		return x.Layouts
+		return x.Position
 	}
 	return nil
 }
@@ -817,11 +821,13 @@ func (x *TileHeader) GetBorderless() bool {
 
 // VisualizationOptions tunes chart rendering. All fields apply client-side only.
 type VisualizationOptions struct {
-	state         protoimpl.MessageState            `protogen:"open.v1"`
-	YAxisFormat   *VisualizationOptions_YAxisFormat `protobuf:"varint,1,opt,name=y_axis_format,json=yAxisFormat,enum=dashboard.dashboards.v1.VisualizationOptions_YAxisFormat" json:"y_axis_format,omitempty"`
-	LogScale      *bool                             `protobuf:"varint,2,opt,name=log_scale,json=logScale" json:"log_scale,omitempty"`
-	HideLegend    *bool                             `protobuf:"varint,3,opt,name=hide_legend,json=hideLegend" json:"hide_legend,omitempty"`
-	ZeroBaseline  *bool                             `protobuf:"varint,4,opt,name=zero_baseline,json=zeroBaseline" json:"zero_baseline,omitempty"` // force Y axis to start at zero
+	state        protoimpl.MessageState            `protogen:"open.v1"`
+	YAxisFormat  *VisualizationOptions_YAxisFormat `protobuf:"varint,1,opt,name=y_axis_format,json=yAxisFormat,enum=dashboard.dashboards.v1.VisualizationOptions_YAxisFormat" json:"y_axis_format,omitempty"`
+	LogScale     *bool                             `protobuf:"varint,2,opt,name=log_scale,json=logScale" json:"log_scale,omitempty"`
+	HideLegend   *bool                             `protobuf:"varint,3,opt,name=hide_legend,json=hideLegend" json:"hide_legend,omitempty"`
+	ZeroBaseline *bool                             `protobuf:"varint,4,opt,name=zero_baseline,json=zeroBaseline" json:"zero_baseline,omitempty"` // force Y axis to start at zero
+	// KPI tiles only: hide the trend sparkline, leaving just the value + delta.
+	HideSparkline *bool `protobuf:"varint,5,opt,name=hide_sparkline,json=hideSparkline" json:"hide_sparkline,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -884,36 +890,39 @@ func (x *VisualizationOptions) GetZeroBaseline() bool {
 	return false
 }
 
-type ResponsiveGridLayout struct {
+func (x *VisualizationOptions) GetHideSparkline() bool {
+	if x != nil && x.HideSparkline != nil {
+		return *x.HideSparkline
+	}
+	return false
+}
+
+// GridPosition is the single source of truth for a tile's placement on the
+// uniform dashboard grid: integer column/row coordinates and span.
+type GridPosition struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Breakpoint    *string                `protobuf:"bytes,1,opt,name=breakpoint" json:"breakpoint,omitempty"`
-	X             *int32                 `protobuf:"varint,2,opt,name=x" json:"x,omitempty"`
-	Y             *int32                 `protobuf:"varint,3,opt,name=y" json:"y,omitempty"`
-	W             *int32                 `protobuf:"varint,4,opt,name=w" json:"w,omitempty"`
-	H             *int32                 `protobuf:"varint,5,opt,name=h" json:"h,omitempty"`
-	MinW          *int32                 `protobuf:"varint,6,opt,name=min_w,json=minW" json:"min_w,omitempty"`
-	MaxW          *int32                 `protobuf:"varint,7,opt,name=max_w,json=maxW" json:"max_w,omitempty"`
-	MinH          *int32                 `protobuf:"varint,8,opt,name=min_h,json=minH" json:"min_h,omitempty"`
-	MaxH          *int32                 `protobuf:"varint,9,opt,name=max_h,json=maxH" json:"max_h,omitempty"`
-	Static        *bool                  `protobuf:"varint,10,opt,name=static" json:"static,omitempty"`
+	X             *int32                 `protobuf:"varint,1,opt,name=x" json:"x,omitempty"`
+	Y             *int32                 `protobuf:"varint,2,opt,name=y" json:"y,omitempty"`
+	W             *int32                 `protobuf:"varint,3,opt,name=w" json:"w,omitempty"`
+	H             *int32                 `protobuf:"varint,4,opt,name=h" json:"h,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ResponsiveGridLayout) Reset() {
-	*x = ResponsiveGridLayout{}
+func (x *GridPosition) Reset() {
+	*x = GridPosition{}
 	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ResponsiveGridLayout) String() string {
+func (x *GridPosition) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ResponsiveGridLayout) ProtoMessage() {}
+func (*GridPosition) ProtoMessage() {}
 
-func (x *ResponsiveGridLayout) ProtoReflect() protoreflect.Message {
+func (x *GridPosition) ProtoReflect() protoreflect.Message {
 	mi := &file_dashboard_dashboards_v1_dashboards_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -925,79 +934,37 @@ func (x *ResponsiveGridLayout) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ResponsiveGridLayout.ProtoReflect.Descriptor instead.
-func (*ResponsiveGridLayout) Descriptor() ([]byte, []int) {
+// Deprecated: Use GridPosition.ProtoReflect.Descriptor instead.
+func (*GridPosition) Descriptor() ([]byte, []int) {
 	return file_dashboard_dashboards_v1_dashboards_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *ResponsiveGridLayout) GetBreakpoint() string {
-	if x != nil && x.Breakpoint != nil {
-		return *x.Breakpoint
-	}
-	return ""
-}
-
-func (x *ResponsiveGridLayout) GetX() int32 {
+func (x *GridPosition) GetX() int32 {
 	if x != nil && x.X != nil {
 		return *x.X
 	}
 	return 0
 }
 
-func (x *ResponsiveGridLayout) GetY() int32 {
+func (x *GridPosition) GetY() int32 {
 	if x != nil && x.Y != nil {
 		return *x.Y
 	}
 	return 0
 }
 
-func (x *ResponsiveGridLayout) GetW() int32 {
+func (x *GridPosition) GetW() int32 {
 	if x != nil && x.W != nil {
 		return *x.W
 	}
 	return 0
 }
 
-func (x *ResponsiveGridLayout) GetH() int32 {
+func (x *GridPosition) GetH() int32 {
 	if x != nil && x.H != nil {
 		return *x.H
 	}
 	return 0
-}
-
-func (x *ResponsiveGridLayout) GetMinW() int32 {
-	if x != nil && x.MinW != nil {
-		return *x.MinW
-	}
-	return 0
-}
-
-func (x *ResponsiveGridLayout) GetMaxW() int32 {
-	if x != nil && x.MaxW != nil {
-		return *x.MaxW
-	}
-	return 0
-}
-
-func (x *ResponsiveGridLayout) GetMinH() int32 {
-	if x != nil && x.MinH != nil {
-		return *x.MinH
-	}
-	return 0
-}
-
-func (x *ResponsiveGridLayout) GetMaxH() int32 {
-	if x != nil && x.MaxH != nil {
-		return *x.MaxH
-	}
-	return 0
-}
-
-func (x *ResponsiveGridLayout) GetStatic() bool {
-	if x != nil && x.Static != nil {
-		return *x.Static
-	}
-	return false
 }
 
 type DashboardsServiceCreateRequest struct {
@@ -1581,13 +1548,14 @@ type DashboardTileInput struct {
 	//
 	//	*DashboardTileInput_Insight
 	//	*DashboardTileInput_Markdown
-	Content       isDashboardTileInput_Content `protobuf_oneof:"content"`
-	Layouts       []*ResponsiveGridLayout      `protobuf:"bytes,6,rep,name=layouts" json:"layouts,omitempty"`
-	ViewMode      *DashboardTileViewMode       `protobuf:"varint,7,opt,name=view_mode,json=viewMode,enum=dashboard.dashboards.v1.DashboardTileViewMode" json:"view_mode,omitempty"`
-	Compare       *ComparePeriod               `protobuf:"varint,8,opt,name=compare,enum=dashboard.dashboards.v1.ComparePeriod" json:"compare,omitempty"`
-	Thresholds    []*ThresholdRule             `protobuf:"bytes,9,rep,name=thresholds" json:"thresholds,omitempty"`
-	Header        *TileHeader                  `protobuf:"bytes,10,opt,name=header" json:"header,omitempty"`
-	Visualization *VisualizationOptions        `protobuf:"bytes,11,opt,name=visualization" json:"visualization,omitempty"`
+	Content isDashboardTileInput_Content `protobuf_oneof:"content"`
+	// The tile's placement on the uniform dashboard grid.
+	Position      *GridPosition          `protobuf:"bytes,12,opt,name=position" json:"position,omitempty"`
+	ViewMode      *DashboardTileViewMode `protobuf:"varint,7,opt,name=view_mode,json=viewMode,enum=dashboard.dashboards.v1.DashboardTileViewMode" json:"view_mode,omitempty"`
+	Compare       *ComparePeriod         `protobuf:"varint,8,opt,name=compare,enum=dashboard.dashboards.v1.ComparePeriod" json:"compare,omitempty"`
+	Thresholds    []*ThresholdRule       `protobuf:"bytes,9,rep,name=thresholds" json:"thresholds,omitempty"`
+	Header        *TileHeader            `protobuf:"bytes,10,opt,name=header" json:"header,omitempty"`
+	Visualization *VisualizationOptions  `protobuf:"bytes,11,opt,name=visualization" json:"visualization,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1668,9 +1636,9 @@ func (x *DashboardTileInput) GetMarkdown() *MarkdownTileContent {
 	return nil
 }
 
-func (x *DashboardTileInput) GetLayouts() []*ResponsiveGridLayout {
+func (x *DashboardTileInput) GetPosition() *GridPosition {
 	if x != nil {
-		return x.Layouts
+		return x.Position
 	}
 	return nil
 }
@@ -2083,15 +2051,15 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"updateTime\x12<\n" +
 	"\x05tiles\x18\a \x03(\v2&.dashboard.dashboards.v1.DashboardTileR\x05tiles\x12R\n" +
 	"\x12default_time_range\x18\b \x01(\x0e2\x1a.common.v1.TimeRangePresetB\b\xbaH\x05\x82\x01\x02\x10\x01R\x10defaultTimeRange\x12Z\n" +
-	"\x13default_granularity\x18\t \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\x12defaultGranularity\"\xdf\b\n" +
+	"\x13default_granularity\x18\t \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\x12defaultGranularity\"\x86\a\n" +
 	"\rDashboardTile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdashboard_id\x18\x02 \x01(\tR\vdashboardId\x12+\n" +
 	"\fdisplay_name\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
 	"\vdescription\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12G\n" +
 	"\ainsight\x18\x05 \x01(\v2+.dashboard.dashboards.v1.InsightTileContentH\x00R\ainsight\x12J\n" +
-	"\bmarkdown\x18\x06 \x01(\v2,.dashboard.dashboards.v1.MarkdownTileContentH\x00R\bmarkdown\x12Q\n" +
-	"\alayouts\x18\a \x03(\v2-.dashboard.dashboards.v1.ResponsiveGridLayoutB\b\xbaH\x05\x92\x01\x02\x10\bR\alayouts\x12;\n" +
+	"\bmarkdown\x18\x06 \x01(\v2,.dashboard.dashboards.v1.MarkdownTileContentH\x00R\bmarkdown\x12A\n" +
+	"\bposition\x18\x0f \x01(\v2%.dashboard.dashboards.v1.GridPositionR\bposition\x12;\n" +
 	"\vcreate_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12;\n" +
 	"\vupdate_time\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
@@ -2103,8 +2071,7 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"thresholds\x18\f \x03(\v2&.dashboard.dashboards.v1.ThresholdRuleB\b\xbaH\x05\x92\x01\x02\x10\x05R\n" +
 	"thresholds\x12;\n" +
 	"\x06header\x18\r \x01(\v2#.dashboard.dashboards.v1.TileHeaderR\x06header\x12S\n" +
-	"\rvisualization\x18\x0e \x01(\v2-.dashboard.dashboards.v1.VisualizationOptionsR\rvisualization:\xc6\x01\xbaH\xc2\x01\x1a\xbf\x01\n" +
-	"!dashboard_tile.unique_breakpoints\x12!layout breakpoints must be unique\x1awthis.layouts.size() <= 1|| !this.layouts.exists(l,     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)B\x10\n" +
+	"\rvisualization\x18\x0e \x01(\v2-.dashboard.dashboards.v1.VisualizationOptionsR\rvisualizationB\x10\n" +
 	"\acontent\x12\x05\xbaH\x02\b\x01\"V\n" +
 	"\x12InsightTileContent\x12@\n" +
 	"\x04spec\x18\x01 \x01(\v2$.shared.insights.v1.InsightQuerySpecB\x06\xbaH\x03\xc8\x01\x01R\x04spec\"6\n" +
@@ -2136,33 +2103,27 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"hide_title\x18\x03 \x01(\bR\thideTitle\x12\x1e\n" +
 	"\n" +
 	"borderless\x18\x04 \x01(\bR\n" +
-	"borderless\"\x81\x04\n" +
+	"borderless\"\xc3\x04\n" +
 	"\x14VisualizationOptions\x12g\n" +
 	"\ry_axis_format\x18\x01 \x01(\x0e29.dashboard.dashboards.v1.VisualizationOptions.YAxisFormatB\b\xbaH\x05\x82\x01\x02\x10\x01R\vyAxisFormat\x12\x1b\n" +
 	"\tlog_scale\x18\x02 \x01(\bR\blogScale\x12\x1f\n" +
 	"\vhide_legend\x18\x03 \x01(\bR\n" +
 	"hideLegend\x12#\n" +
-	"\rzero_baseline\x18\x04 \x01(\bR\fzeroBaseline\"\x80\x01\n" +
+	"\rzero_baseline\x18\x04 \x01(\bR\fzeroBaseline\x12%\n" +
+	"\x0ehide_sparkline\x18\x05 \x01(\bR\rhideSparkline\"\x9b\x01\n" +
 	"\vYAxisFormat\x12\x1d\n" +
 	"\x19Y_AXIS_FORMAT_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14Y_AXIS_FORMAT_NUMBER\x10\x01\x12\x19\n" +
 	"\x15Y_AXIS_FORMAT_PERCENT\x10\x02\x12\x1d\n" +
-	"\x19Y_AXIS_FORMAT_DURATION_MS\x10\x03:\x99\x01\xbaH\x95\x01\x1a\x92\x01\n" +
-	"6visualization_options.log_scale_excludes_zero_baseline\x12/log_scale cannot be combined with zero_baseline\x1a'!(this.log_scale && this.zero_baseline)\"\xc4\x02\n" +
-	"\x14ResponsiveGridLayout\x12<\n" +
-	"\n" +
-	"breakpoint\x18\x01 \x01(\tB\x1c\xbaH\x19\xc8\x01\x01r\x14\x18 2\x10^[a-zA-Z0-9_-]+$R\n" +
-	"breakpoint\x12\x15\n" +
-	"\x01x\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x01x\x12\x15\n" +
-	"\x01y\x18\x03 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x01y\x12\x17\n" +
-	"\x01w\x18\x04 \x01(\x05B\t\xbaH\x06\x1a\x04\x18\x18(\x01R\x01w\x12\x17\n" +
-	"\x01h\x18\x05 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x01R\x01h\x12\x1c\n" +
-	"\x05min_w\x18\x06 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x04minW\x12\x1c\n" +
-	"\x05max_w\x18\a \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x04maxW\x12\x1c\n" +
-	"\x05min_h\x18\b \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x04minH\x12\x1c\n" +
-	"\x05max_h\x18\t \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x04maxH\x12\x16\n" +
-	"\x06static\x18\n" +
-	" \x01(\bR\x06static\"\xac\x02\n" +
+	"\x19Y_AXIS_FORMAT_DURATION_MS\x10\x03\x12\x19\n" +
+	"\x15Y_AXIS_FORMAT_COMPACT\x10\x04:\x99\x01\xbaH\x95\x01\x1a\x92\x01\n" +
+	"6visualization_options.log_scale_excludes_zero_baseline\x12/log_scale cannot be combined with zero_baseline\x1a'!(this.log_scale && this.zero_baseline)\"\xda\x01\n" +
+	"\fGridPosition\x12\x15\n" +
+	"\x01x\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x01x\x12\x15\n" +
+	"\x01y\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x01y\x12\x17\n" +
+	"\x01w\x18\x03 \x01(\x05B\t\xbaH\x06\x1a\x04\x18\x18(\x01R\x01w\x12\x17\n" +
+	"\x01h\x18\x04 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x01R\x01h:j\xbaHg\x1ae\n" +
+	"\x16grid_position.complete\x12/position requires both w (1..24) and h (1..100)\x1a\x1ahas(this.w) && has(this.h)\"\xac\x02\n" +
 	"\x1eDashboardsServiceCreateRequest\x12.\n" +
 	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
 	"\vdescription\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12R\n" +
@@ -2196,14 +2157,14 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\vdescription\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12R\n" +
 	"\x12default_time_range\x18\x04 \x01(\x0e2\x1a.common.v1.TimeRangePresetB\b\xbaH\x05\x82\x01\x02\x10\x01R\x10defaultTimeRange\x12Z\n" +
 	"\x13default_granularity\x18\x05 \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\x12defaultGranularity\x12K\n" +
-	"\x05tiles\x18\x06 \x03(\v2+.dashboard.dashboards.v1.DashboardTileInputB\b\xbaH\x05\x92\x01\x02\x10dR\x05tiles\"\xcd\a\n" +
+	"\x05tiles\x18\x06 \x03(\v2+.dashboard.dashboards.v1.DashboardTileInputB\b\xbaH\x05\x92\x01\x02\x10dR\x05tiles\"\xee\x05\n" +
 	"\x12DashboardTileInput\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12+\n" +
 	"\fdisplay_name\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
 	"\vdescription\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12G\n" +
 	"\ainsight\x18\x04 \x01(\v2+.dashboard.dashboards.v1.InsightTileContentH\x00R\ainsight\x12J\n" +
-	"\bmarkdown\x18\x05 \x01(\v2,.dashboard.dashboards.v1.MarkdownTileContentH\x00R\bmarkdown\x12Q\n" +
-	"\alayouts\x18\x06 \x03(\v2-.dashboard.dashboards.v1.ResponsiveGridLayoutB\b\xbaH\x05\x92\x01\x02\x10\bR\alayouts\x12U\n" +
+	"\bmarkdown\x18\x05 \x01(\v2,.dashboard.dashboards.v1.MarkdownTileContentH\x00R\bmarkdown\x12A\n" +
+	"\bposition\x18\f \x01(\v2%.dashboard.dashboards.v1.GridPositionR\bposition\x12U\n" +
 	"\tview_mode\x18\a \x01(\x0e2..dashboard.dashboards.v1.DashboardTileViewModeB\b\xbaH\x05\x82\x01\x02\x10\x01R\bviewMode\x12J\n" +
 	"\acompare\x18\b \x01(\x0e2&.dashboard.dashboards.v1.ComparePeriodB\b\xbaH\x05\x82\x01\x02\x10\x01R\acompare\x12P\n" +
 	"\n" +
@@ -2211,8 +2172,7 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"thresholds\x12;\n" +
 	"\x06header\x18\n" +
 	" \x01(\v2#.dashboard.dashboards.v1.TileHeaderR\x06header\x12S\n" +
-	"\rvisualization\x18\v \x01(\v2-.dashboard.dashboards.v1.VisualizationOptionsR\rvisualization:\xcc\x01\xbaH\xc8\x01\x1a\xc5\x01\n" +
-	"'dashboard_tile_input.unique_breakpoints\x12!layout breakpoints must be unique\x1awthis.layouts.size() <= 1|| !this.layouts.exists(l,     this.layouts.filter(x, x.breakpoint == l.breakpoint).size() > 1)B\x10\n" +
+	"\rvisualization\x18\v \x01(\v2-.dashboard.dashboards.v1.VisualizationOptionsR\rvisualizationB\x10\n" +
 	"\acontent\x12\x05\xbaH\x02\b\x01\"c\n" +
 	"\x1fDashboardsServiceUpsertResponse\x12@\n" +
 	"\tdashboard\x18\x01 \x01(\v2\".dashboard.dashboards.v1.DashboardR\tdashboard\"\xff\x02\n" +
@@ -2289,7 +2249,7 @@ var file_dashboard_dashboards_v1_dashboards_proto_goTypes = []any{
 	(*ThresholdRule)(nil),                           // 9: dashboard.dashboards.v1.ThresholdRule
 	(*TileHeader)(nil),                              // 10: dashboard.dashboards.v1.TileHeader
 	(*VisualizationOptions)(nil),                    // 11: dashboard.dashboards.v1.VisualizationOptions
-	(*ResponsiveGridLayout)(nil),                    // 12: dashboard.dashboards.v1.ResponsiveGridLayout
+	(*GridPosition)(nil),                            // 12: dashboard.dashboards.v1.GridPosition
 	(*DashboardsServiceCreateRequest)(nil),          // 13: dashboard.dashboards.v1.DashboardsServiceCreateRequest
 	(*DashboardsServiceCreateResponse)(nil),         // 14: dashboard.dashboards.v1.DashboardsServiceCreateResponse
 	(*DashboardsServiceDeleteRequest)(nil),          // 15: dashboard.dashboards.v1.DashboardsServiceDeleteRequest
@@ -2322,7 +2282,7 @@ var file_dashboard_dashboards_v1_dashboards_proto_depIdxs = []int32{
 	32, // 4: dashboard.dashboards.v1.Dashboard.default_granularity:type_name -> shared.insights.v1.Granularity
 	7,  // 5: dashboard.dashboards.v1.DashboardTile.insight:type_name -> dashboard.dashboards.v1.InsightTileContent
 	8,  // 6: dashboard.dashboards.v1.DashboardTile.markdown:type_name -> dashboard.dashboards.v1.MarkdownTileContent
-	12, // 7: dashboard.dashboards.v1.DashboardTile.layouts:type_name -> dashboard.dashboards.v1.ResponsiveGridLayout
+	12, // 7: dashboard.dashboards.v1.DashboardTile.position:type_name -> dashboard.dashboards.v1.GridPosition
 	30, // 8: dashboard.dashboards.v1.DashboardTile.create_time:type_name -> google.protobuf.Timestamp
 	30, // 9: dashboard.dashboards.v1.DashboardTile.update_time:type_name -> google.protobuf.Timestamp
 	0,  // 10: dashboard.dashboards.v1.DashboardTile.view_mode:type_name -> dashboard.dashboards.v1.DashboardTileViewMode
@@ -2347,7 +2307,7 @@ var file_dashboard_dashboards_v1_dashboards_proto_depIdxs = []int32{
 	24, // 29: dashboard.dashboards.v1.DashboardsServiceUpsertRequest.tiles:type_name -> dashboard.dashboards.v1.DashboardTileInput
 	7,  // 30: dashboard.dashboards.v1.DashboardTileInput.insight:type_name -> dashboard.dashboards.v1.InsightTileContent
 	8,  // 31: dashboard.dashboards.v1.DashboardTileInput.markdown:type_name -> dashboard.dashboards.v1.MarkdownTileContent
-	12, // 32: dashboard.dashboards.v1.DashboardTileInput.layouts:type_name -> dashboard.dashboards.v1.ResponsiveGridLayout
+	12, // 32: dashboard.dashboards.v1.DashboardTileInput.position:type_name -> dashboard.dashboards.v1.GridPosition
 	0,  // 33: dashboard.dashboards.v1.DashboardTileInput.view_mode:type_name -> dashboard.dashboards.v1.DashboardTileViewMode
 	1,  // 34: dashboard.dashboards.v1.DashboardTileInput.compare:type_name -> dashboard.dashboards.v1.ComparePeriod
 	9,  // 35: dashboard.dashboards.v1.DashboardTileInput.thresholds:type_name -> dashboard.dashboards.v1.ThresholdRule

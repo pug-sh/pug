@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
-	"sort"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -26,11 +25,11 @@ type TilePayload struct {
 	Description   string
 	Content       TileContent
 	ViewMode      dashboardsv1.DashboardTileViewMode
-	Layouts       []*dashboardsv1.ResponsiveGridLayout
 	Compare       dashboardsv1.ComparePeriod
 	Thresholds    []*dashboardsv1.ThresholdRule
 	Header        *dashboardsv1.TileHeader
 	Visualization *dashboardsv1.VisualizationOptions
+	Position      *dashboardsv1.GridPosition
 }
 
 // EncodedTilePayload is the DB-ready projection of a TilePayload. All map and
@@ -41,11 +40,11 @@ type EncodedTilePayload struct {
 	ViewMode      string
 	InsightQuery  map[string]any
 	MarkdownBody  pgtype.Text
-	Layouts       map[string]any
 	Compare       string
 	Thresholds    []byte
 	Header        map[string]any
 	Visualization map[string]any
+	Position      map[string]any
 	PayloadHash   []byte
 }
 
@@ -74,6 +73,10 @@ func (p TilePayload) Encode() (EncodedTilePayload, error) {
 	if err != nil {
 		return EncodedTilePayload{}, fmt.Errorf("marshal visualization: %w", err)
 	}
+	positionMap, err := messageToMap(p.Position)
+	if err != nil {
+		return EncodedTilePayload{}, fmt.Errorf("marshal position: %w", err)
+	}
 
 	hash, err := computeTilePayloadHash(p, viewMode, compare)
 	if err != nil {
@@ -85,11 +88,11 @@ func (p TilePayload) Encode() (EncodedTilePayload, error) {
 		ViewMode:      viewMode.String(),
 		InsightQuery:  contentEnc.InsightQuery,
 		MarkdownBody:  contentEnc.MarkdownBody,
-		Layouts:       LayoutsToMap(p.Layouts),
 		Compare:       compare.String(),
 		Thresholds:    thresholdsBytes,
 		Header:        headerMap,
 		Visualization: visualizationMap,
+		Position:      positionMap,
 		PayloadHash:   hash,
 	}, nil
 }
@@ -98,41 +101,13 @@ func (p TilePayload) Encode() (EncodedTilePayload, error) {
 // DashboardTileInput built from the normalized payload. The id field is left
 // empty: the hash represents content, not identity. Upsert's short-circuit
 // relies on this hash being a function of the *stored* form, not the input
-// form:
-//   - layouts are sorted by breakpoint (storage is a keyed map, order discarded
-//     on read) and rebuilt with explicit-zero pointers for every numeric/bool
-//     field — LayoutsToMap stores zeros for any unset field via GetX() etc.,
-//     and MapToLayouts reads them back as proto.Int32(0) (non-nil). Under
-//     edition-2023 explicit presence those zeros serialize, so a client tile
-//     that left X/Y/MinW/etc unset would otherwise hash differently than the
-//     same tile echoed back from Get.
-//   - zero-valued nested messages collapse to nil (messageToMap maps both nil
-//     and &Empty{} to `{}` for storage, and the read path returns nil for an
-//     empty map).
-//
-// Without these normalizations a client echoing back what Get returned would
-// compute a different hash than the one stored, defeating the no-op
-// short-circuit.
+// form: zero-valued nested messages (header, visualization, position) collapse
+// to nil. messageToMap maps both nil and &Empty{} to `{}` for storage, and the
+// read path returns nil for an empty map, so a client echoing back what Get
+// returned computes the same hash that was stored — preserving the no-op
+// short-circuit. Hashing each nested message whole (rather than field-by-field)
+// also means new sub-fields are covered automatically.
 func computeTilePayloadHash(p TilePayload, viewMode dashboardsv1.DashboardTileViewMode, compare dashboardsv1.ComparePeriod) ([]byte, error) {
-	sortedLayouts := make([]*dashboardsv1.ResponsiveGridLayout, len(p.Layouts))
-	for i, l := range p.Layouts {
-		sortedLayouts[i] = &dashboardsv1.ResponsiveGridLayout{
-			Breakpoint: proto.String(l.GetBreakpoint()),
-			X:          proto.Int32(l.GetX()),
-			Y:          proto.Int32(l.GetY()),
-			W:          proto.Int32(l.GetW()),
-			H:          proto.Int32(l.GetH()),
-			MinW:       proto.Int32(l.GetMinW()),
-			MaxW:       proto.Int32(l.GetMaxW()),
-			MinH:       proto.Int32(l.GetMinH()),
-			MaxH:       proto.Int32(l.GetMaxH()),
-			Static:     proto.Bool(l.GetStatic()),
-		}
-	}
-	sort.SliceStable(sortedLayouts, func(i, j int) bool {
-		return sortedLayouts[i].GetBreakpoint() < sortedLayouts[j].GetBreakpoint()
-	})
-
 	header := p.Header
 	if header != nil && proto.Equal(header, &dashboardsv1.TileHeader{}) {
 		header = nil
@@ -141,11 +116,15 @@ func computeTilePayloadHash(p TilePayload, viewMode dashboardsv1.DashboardTileVi
 	if visualization != nil && proto.Equal(visualization, &dashboardsv1.VisualizationOptions{}) {
 		visualization = nil
 	}
+	position := p.Position
+	if position != nil && proto.Equal(position, &dashboardsv1.GridPosition{}) {
+		position = nil
+	}
 
 	input := &dashboardsv1.DashboardTileInput{
 		DisplayName:   proto.String(p.DisplayName),
 		Description:   proto.String(p.Description),
-		Layouts:       sortedLayouts,
+		Position:      position,
 		ViewMode:      viewMode.Enum(),
 		Compare:       compare.Enum(),
 		Thresholds:    p.Thresholds,
@@ -326,4 +305,36 @@ func MapToMessage(data map[string]any, dst proto.Message) error {
 		return err
 	}
 	return protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(raw, dst)
+}
+
+// MapStoredMessage decodes a stored jsonb message column into dst like
+// MapToMessage, but additionally surfaces schema drift: when a non-empty stored
+// map decodes to a zero-valued message (every key was discarded as unknown —
+// the symptom of a proto field rename or cross-deploy drift on a message
+// column), it logs once per column. Decode uses DiscardUnknown, so without this
+// such drift would silently zero the field on read; this is the message-column
+// analog of LogUnknownEnumOnce for enum columns.
+func MapStoredMessage(ctx context.Context, column string, data map[string]any, dst proto.Message) error {
+	if err := MapToMessage(data, dst); err != nil {
+		return err
+	}
+	if len(data) > 0 && proto.Equal(dst, dst.ProtoReflect().New().Interface()) {
+		logEmptyMessageDecodeOnce(ctx, column)
+	}
+	return nil
+}
+
+// emptyDecodeSeen dedups MapStoredMessage's drift warning so a drifted column
+// doesn't fire on every dashboard read for the process lifetime — same
+// rationale as unknownEnumSeen.
+var emptyDecodeSeen sync.Map
+
+func logEmptyMessageDecodeOnce(ctx context.Context, column string) {
+	if _, loaded := emptyDecodeSeen.LoadOrStore(column, struct{}{}); loaded {
+		return
+	}
+	err := fmt.Errorf("stored jsonb message in %s decoded to empty (all keys unknown)", column)
+	slog.WarnContext(ctx, "stored jsonb message decoded to empty (schema drift?)",
+		slog.String("column", column))
+	telemetry.RecordError(ctx, err)
 }
