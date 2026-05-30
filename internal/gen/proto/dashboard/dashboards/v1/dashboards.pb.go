@@ -898,7 +898,9 @@ func (x *VisualizationOptions) GetHideSparkline() bool {
 }
 
 // GridPosition is the single source of truth for a tile's placement on the
-// uniform dashboard grid: integer column/row coordinates and span.
+// uniform dashboard grid: integer column/row coordinates and span. The grid is
+// fine-grained (72 columns; one column/row ≈ the ~18px visual gap), so a tile
+// may span the full 72-column width.
 type GridPosition struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	X             *int32                 `protobuf:"varint,1,opt,name=x" json:"x,omitempty"`
@@ -2117,13 +2119,14 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\x15Y_AXIS_FORMAT_PERCENT\x10\x02\x12\x1d\n" +
 	"\x19Y_AXIS_FORMAT_DURATION_MS\x10\x03\x12\x19\n" +
 	"\x15Y_AXIS_FORMAT_COMPACT\x10\x04:\x99\x01\xbaH\x95\x01\x1a\x92\x01\n" +
-	"6visualization_options.log_scale_excludes_zero_baseline\x12/log_scale cannot be combined with zero_baseline\x1a'!(this.log_scale && this.zero_baseline)\"\xda\x01\n" +
+	"6visualization_options.log_scale_excludes_zero_baseline\x12/log_scale cannot be combined with zero_baseline\x1a'!(this.log_scale && this.zero_baseline)\"\xdb\x01\n" +
 	"\fGridPosition\x12\x15\n" +
 	"\x01x\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x01x\x12\x15\n" +
 	"\x01y\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x01y\x12\x17\n" +
-	"\x01w\x18\x03 \x01(\x05B\t\xbaH\x06\x1a\x04\x18\x18(\x01R\x01w\x12\x17\n" +
-	"\x01h\x18\x04 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x01R\x01h:j\xbaHg\x1ae\n" +
-	"\x16grid_position.complete\x12/position requires both w (1..24) and h (1..100)\x1a\x1ahas(this.w) && has(this.h)\"\xac\x02\n" +
+	"\x01w\x18\x03 \x01(\x05B\t\xbaH\x06\x1a\x04\x18H(\x01R\x01w\x12\x18\n" +
+	"\x01h\x18\x04 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xa0\x06(\x01R\x01h:j\xbaHg\x1ae\n" +
+	"\x16grid_position.complete\x12/position requires both w (1..72) and h (1..800)\x1a\x1ahas(this.w) && has(this.h)\"\xac\x02\n" +
 	"\x1eDashboardsServiceCreateRequest\x12.\n" +
 	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12*\n" +
 	"\vdescription\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\vdescription\x12R\n" +

@@ -22,7 +22,7 @@ func TestPosition_RejectsWidthOutOfBounds(t *testing.T) {
 		w    int32
 	}{
 		{"zero", 0},
-		{"over", 25},
+		{"over", 73},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -31,7 +31,7 @@ func TestPosition_RejectsWidthOutOfBounds(t *testing.T) {
 				W: proto.Int32(tc.w), H: proto.Int32(4),
 			})
 			if err := protovalidate.Validate(req); err == nil {
-				t.Fatalf("expected validation error for w=%d (allowed range 1..24)", tc.w)
+				t.Fatalf("expected validation error for w=%d (allowed range 1..72)", tc.w)
 			}
 		})
 	}
@@ -43,7 +43,7 @@ func TestPosition_RejectsHeightOutOfBounds(t *testing.T) {
 		h    int32
 	}{
 		{"zero", 0},
-		{"over", 101},
+		{"over", 801},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -52,7 +52,7 @@ func TestPosition_RejectsHeightOutOfBounds(t *testing.T) {
 				W: proto.Int32(4), H: proto.Int32(tc.h),
 			})
 			if err := protovalidate.Validate(req); err == nil {
-				t.Fatalf("expected validation error for h=%d (allowed range 1..100)", tc.h)
+				t.Fatalf("expected validation error for h=%d (allowed range 1..800)", tc.h)
 			}
 		})
 	}
@@ -106,13 +106,13 @@ func TestPosition_RejectsMissingWidthHeight(t *testing.T) {
 
 func TestPosition_AcceptsBoundaryValues(t *testing.T) {
 	// Guards the bounds annotations against an lt-vs-lte slip: the inclusive
-	// edges (w 1/24, h 1/100, x/y 0) must validate.
+	// edges (w 1/72, h 1/800, x/y 0) must validate.
 	cases := []struct {
 		name string
 		pos  *dashboardsv1.GridPosition
 	}{
 		{"min", &dashboardsv1.GridPosition{X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(1), H: proto.Int32(1)}},
-		{"max", &dashboardsv1.GridPosition{X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(24), H: proto.Int32(100)}},
+		{"max", &dashboardsv1.GridPosition{X: proto.Int32(0), Y: proto.Int32(0), W: proto.Int32(72), H: proto.Int32(800)}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
