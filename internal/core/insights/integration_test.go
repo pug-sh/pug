@@ -13,8 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/pug-sh/pug/internal/core/insights"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	"github.com/pug-sh/pug/internal/core/insights"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/testutil"
@@ -1216,6 +1216,180 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	// ---- Session insights (issue #161) ----------------------------------------
+	// One shared seed across the session subtests; D straddles the Jan1/Jan2 boundary.
+	const sessionProjectID = "proj_session_rollup"
+	seedSessionEvents(t, ctx, ch, sessionProjectID)
+	fullFrom := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	fullTo := time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC)
+
+	t.Run("session_rollup_parity_all_metrics", func(t *testing.T) {
+		// The load-bearing check: every metric returns identical numbers from the
+		// rollup fast path and the raw builder over the same data + window.
+		for _, m := range []insightsv1.SessionMetric{
+			insightsv1.SessionMetric_SESSION_METRIC_SESSIONS,
+			insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION,
+			insightsv1.SessionMetric_SESSION_METRIC_BOUNCE_RATE,
+		} {
+			assertSessionTrendsParity(t, ctx, executor, sessionProjectID, sessionTrendsReq(m, "", fullFrom, fullTo))
+			assertSessionSegParity(t, ctx, executor, sessionProjectID, sessionSegReq(m, fullFrom, fullTo))
+		}
+		// ENTRY/EXIT are trends + one breakdown only.
+		assertSessionTrendsParity(t, ctx, executor, sessionProjectID,
+			sessionTrendsReq(insightsv1.SessionMetric_SESSION_METRIC_ENTRY, "$url", fullFrom, fullTo))
+		assertSessionTrendsParity(t, ctx, executor, sessionProjectID,
+			sessionTrendsReq(insightsv1.SessionMetric_SESSION_METRIC_EXIT, "$url", fullFrom, fullTo))
+	})
+
+	t.Run("session_scalar_numeric", func(t *testing.T) {
+		// SESSIONS: A,B,C,D all start in [Jan1,Jan3) → 4.
+		if got := assertSessionSegParity(t, ctx, executor, sessionProjectID,
+			sessionSegReq(insightsv1.SessionMetric_SESSION_METRIC_SESSIONS, fullFrom, fullTo)); got != 4 {
+			t.Errorf("SESSIONS = %v, want 4", got)
+		}
+		// AVG_DURATION: (300 + 0 + 1800 + 3600) / 4 = 1425s.
+		if got := assertSessionSegParity(t, ctx, executor, sessionProjectID,
+			sessionSegReq(insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION, fullFrom, fullTo)); got != 1425 {
+			t.Errorf("AVG_DURATION = %v, want 1425", got)
+		}
+		// BOUNCE_RATE: only B is single-event → 1/4 = 25%.
+		if got := assertSessionSegParity(t, ctx, executor, sessionProjectID,
+			sessionSegReq(insightsv1.SessionMetric_SESSION_METRIC_BOUNCE_RATE, fullFrom, fullTo)); got != 25 {
+			t.Errorf("BOUNCE_RATE = %v, want 25", got)
+		}
+	})
+
+	t.Run("session_entry_exit_differ", func(t *testing.T) {
+		// ENTRY uses argMin(url, occur_time); EXIT uses argMax. A and D have distinct
+		// first/last pages, so the two metrics must produce different buckets — the
+		// check that proves entry/exit attribution isn't swapped.
+		entryResp, err := insights.ExecuteQuery(ctx, executor, sessionProjectID,
+			sessionTrendsReq(insightsv1.SessionMetric_SESSION_METRIC_ENTRY, "$url", fullFrom, fullTo), time.Now())
+		if err != nil {
+			t.Fatalf("entry ExecuteQuery: %v", err)
+		}
+		exitResp, err := insights.ExecuteQuery(ctx, executor, sessionProjectID,
+			sessionTrendsReq(insightsv1.SessionMetric_SESSION_METRIC_EXIT, "$url", fullFrom, fullTo), time.Now())
+		if err != nil {
+			t.Fatalf("exit ExecuteQuery: %v", err)
+		}
+		entry := flattenSessionTrends(entryResp)
+		exit := flattenSessionTrends(exitResp)
+
+		// Sessions are bucketed by START day: A,B,D start Jan1; C starts Jan2.
+		wantEntry := map[string]float64{
+			"/landing|2024-01-01": 1, "/home|2024-01-01": 1, "/x|2024-01-01": 1, "/a|2024-01-02": 1,
+		}
+		wantExit := map[string]float64{
+			"/checkout|2024-01-01": 1, "/home|2024-01-01": 1, "/y|2024-01-01": 1, "/c|2024-01-02": 1,
+		}
+		if !reflect.DeepEqual(entry, wantEntry) {
+			t.Errorf("ENTRY = %v, want %v", entry, wantEntry)
+		}
+		if !reflect.DeepEqual(exit, wantExit) {
+			t.Errorf("EXIT = %v, want %v", exit, wantExit)
+		}
+		if reflect.DeepEqual(entry, exit) {
+			t.Error("ENTRY and EXIT identical — argMin/argMax attribution not exercised")
+		}
+	})
+
+	t.Run("session_boundary_straddle", func(t *testing.T) {
+		// Window [Jan2,Jan3): session D started Jan1 23:30, so it must be EXCLUDED
+		// even though its second event (/y) is at Jan2 00:30 — full-session semantics
+		// key on start, they do not clip a session's events to the window. Only C
+		// (started Jan2 09:00) qualifies. This is the exact case the old raw builder
+		// (occur_time WHERE clip) got wrong; rollup and raw must now agree.
+		from := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+		to := time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC)
+		req := sessionSegReq(insightsv1.SessionMetric_SESSION_METRIC_SESSIONS, from, to)
+		if got := assertSessionSegParity(t, ctx, executor, sessionProjectID, req); got != 1 {
+			t.Errorf("SESSIONS in [Jan2,Jan3) = %v, want 1 (only C; D excluded by start)", got)
+		}
+		// Entry pages: only C's /a, on Jan2. D's /x and /y must be absent.
+		entryResp, err := insights.ExecuteQuery(ctx, executor, sessionProjectID,
+			sessionTrendsReq(insightsv1.SessionMetric_SESSION_METRIC_ENTRY, "$url", from, to), time.Now())
+		if err != nil {
+			t.Fatalf("entry ExecuteQuery: %v", err)
+		}
+		entry := flattenSessionTrends(entryResp)
+		want := map[string]float64{"/a|2024-01-02": 1}
+		if !reflect.DeepEqual(entry, want) {
+			t.Errorf("boundary entry = %v, want %v (D's /x,/y excluded)", entry, want)
+		}
+		assertSessionTrendsParity(t, ctx, executor, sessionProjectID,
+			sessionTrendsReq(insightsv1.SessionMetric_SESSION_METRIC_ENTRY, "$url", from, to))
+	})
+
+	t.Run("session_empty_window", func(t *testing.T) {
+		// No sessions start in [Jan5,Jan6): scalar metrics must return 0, not NULL/NaN
+		// (the if(count()=0,0,…) guards in sessionMetricAggExpr).
+		from := time.Date(2024, 1, 5, 0, 0, 0, 0, time.UTC)
+		to := time.Date(2024, 1, 6, 0, 0, 0, 0, time.UTC)
+		for _, m := range []insightsv1.SessionMetric{
+			insightsv1.SessionMetric_SESSION_METRIC_SESSIONS,
+			insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION,
+			insightsv1.SessionMetric_SESSION_METRIC_BOUNCE_RATE,
+		} {
+			req := sessionSegReq(m, from, to)
+			resp, err := insights.ExecuteQuery(ctx, executor, sessionProjectID, req, time.Now())
+			if err != nil {
+				t.Fatalf("metric %v ExecuteQuery: %v", m, err)
+			}
+			if got := resp.GetSegmentation().GetTotal(); got != 0 {
+				t.Errorf("metric %v on empty window = %v, want 0", m, got)
+			}
+		}
+	})
+
+	t.Run("session_rollup_bounce_duplicate_overcount_documented", func(t *testing.T) {
+		// Pins the accepted session-rollup tradeoff (see canUseSessionRollup): a
+		// duplicate delivery inflates the rollup's event_count_state (countState
+		// without event_id), so a genuinely single-event session reads event_count>1
+		// and is no longer counted as a bounce — the rollup UNDER-reports bounce rate.
+		// The raw path's count() self-corrects once ReplacingMergeTree merges.
+		const dupProjectID = "proj_session_bounce_dup"
+		occur := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		sessionID := "00000000-0000-0000-0000-0000000000e5"
+		eventID := uuid.New().String()
+		// Same event_id twice = an at-least-once redelivery of a one-event session.
+		for i := 0; i < 2; i++ {
+			if err := insertSessionEvent(ctx, ch.Conn, dupProjectID, eventID,
+				"page_view", "alice", sessionID, occur, "/only", "US"); err != nil {
+				t.Fatalf("seed dup session event %d: %v", i, err)
+			}
+		}
+		if err := ch.Conn.Exec(ctx, "OPTIMIZE TABLE events FINAL"); err != nil {
+			t.Fatalf("optimize events: %v", err)
+		}
+		from := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		to := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+		req := sessionSegReq(insightsv1.SessionMetric_SESSION_METRIC_BOUNCE_RATE, from, to)
+
+		resp, err := insights.ExecuteQuery(ctx, executor, dupProjectID, req, time.Now())
+		if err != nil {
+			t.Fatalf("rollup ExecuteQuery: %v", err)
+		}
+		rollupBounce := resp.GetSegmentation().GetTotal()
+
+		rawQ, err := insights.BuildSessionSegmentationQuery(req, dupProjectID)
+		if err != nil {
+			t.Fatalf("BuildSessionSegmentationQuery: %v", err)
+		}
+		rawBounce, err := executor.QueryScalar(ctx, dupProjectID, rawQ)
+		if err != nil {
+			t.Fatalf("QueryScalar: %v", err)
+		}
+		// Documented drift: raw sees a 1-event session (100% bounce); the rollup's
+		// duplicate-inflated event_count=2 drops it below the bounce threshold (0%).
+		if rawBounce != 100 {
+			t.Errorf("raw BOUNCE_RATE = %v, want 100 (single-event session after dedup)", rawBounce)
+		}
+		if rollupBounce != 0 {
+			t.Errorf("rollup BOUNCE_RATE = %v, want 0 (duplicate inflates event_count past the bounce test; see canUseSessionRollup)", rollupBounce)
+		}
+	})
+
 	t.Run("rollup_parity_trends_multi_event_breakdown", func(t *testing.T) {
 		// Two event kinds + a breakdown exercises rollup top_vals over Or(kind...)
 		// and parity with the raw multi-event trends builder (Go-side top-N).
@@ -1987,4 +2161,190 @@ func insertAutoEvent(
 		return err
 	}
 	return batch.Send()
+}
+
+// insertSessionEvent inserts one event with an explicit session_id and $url, so
+// session integration tests can group multiple events into one session (the
+// insertAutoEvent helper randomizes session_id per event and can't). occurTime is
+// passed through; $url and $country are set as promoted auto-properties.
+func insertSessionEvent(
+	ctx context.Context,
+	conn driver.Conn,
+	projectID, eventID, kind, distinctID, sessionID string,
+	occurTime time.Time,
+	url, country string,
+) error {
+	batch, err := conn.PrepareBatch(ctx, chq.EventsInsertStmt)
+	if err != nil {
+		return err
+	}
+	props := map[string]string{"$url": url}
+	if country != "" {
+		props["$country"] = country
+	}
+	if err := batch.Append(chq.PrepareEventInsertArgs(
+		eventID, projectID, distinctID, kind,
+		variantStringMap(props), nil,
+		occurTime, sessionID,
+	)...); err != nil {
+		return err
+	}
+	return batch.Send()
+}
+
+// sessionSeed is one event row for seedSessionEvents.
+type sessionSeed struct {
+	session string
+	user    string
+	url     string
+	country string
+	at      time.Time
+}
+
+// seedSessionEvents inserts a fixed set of sessions under a dedicated project so
+// session parity assertions are deterministic. Layout (all "page_view", Jan 2024):
+//
+//	A (alice, US): /landing @ Jan1 10:00 → /checkout @ Jan1 10:05  (2 ev, dur 300s, start Jan1)
+//	B (bob, GB):   /home    @ Jan1 11:00                            (1 ev, bounce, start Jan1)
+//	C (carol, US): /a @ Jan2 09:00 → /b @ Jan2 09:10 → /c @ Jan2 09:30 (3 ev, dur 1800s, start Jan2)
+//	D (dave, US):  /x @ Jan1 23:30 → /y @ Jan2 00:30                (2 ev, dur 3600s, start Jan1)
+//
+// D straddles the Jan1/Jan2 boundary: it starts Jan1 23:30, so a [Jan2,Jan3) window
+// must EXCLUDE it entirely (keyed on start, not clipped) even though it has a Jan2
+// event — the property that distinguishes full-session semantics from event clipping.
+// Entry≠exit for A (/landing vs /checkout) and D (/x vs /y) exercises argMin vs argMax.
+func seedSessionEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string) {
+	t.Helper()
+	jan := func(day, hour, min int) time.Time {
+		return time.Date(2024, 1, day, hour, min, 0, 0, time.UTC)
+	}
+	seed := []sessionSeed{
+		{"A", "alice", "/landing", "US", jan(1, 10, 0)},
+		{"A", "alice", "/checkout", "US", jan(1, 10, 5)},
+		{"B", "bob", "/home", "GB", jan(1, 11, 0)},
+		{"C", "carol", "/a", "US", jan(2, 9, 0)},
+		{"C", "carol", "/b", "US", jan(2, 9, 10)},
+		{"C", "carol", "/c", "US", jan(2, 9, 30)},
+		{"D", "dave", "/x", "US", jan(1, 23, 30)},
+		{"D", "dave", "/y", "US", jan(2, 0, 30)},
+	}
+	// Stable session UUIDs derived from the label so re-seeds are deterministic.
+	sessionID := map[string]string{
+		"A": "00000000-0000-0000-0000-0000000000a1",
+		"B": "00000000-0000-0000-0000-0000000000b2",
+		"C": "00000000-0000-0000-0000-0000000000c3",
+		"D": "00000000-0000-0000-0000-0000000000d4",
+	}
+	for _, e := range seed {
+		if err := insertSessionEvent(ctx, ch.Conn, projectID, uuid.New().String(),
+			"page_view", e.user, sessionID[e.session], e.at, e.url, e.country); err != nil {
+			t.Fatalf("seed session event: %v", err)
+		}
+	}
+}
+
+// sessionTrendsReq builds a session trends request over [from, to) at day granularity.
+func sessionTrendsReq(metric insightsv1.SessionMetric, breakdown string, from, to time.Time) *insightsv1.QueryRequest {
+	spec := &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+		Session:     &insightsv1.SessionQuery{Metric: metric.Enum()},
+	}
+	if breakdown != "" {
+		spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String(breakdown)}}
+	}
+	return &insightsv1.QueryRequest{
+		Spec:        spec,
+		TimeRange:   &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}
+}
+
+// sessionSegReq builds a session segmentation (scalar) request over [from, to).
+func sessionSegReq(metric insightsv1.SessionMetric, from, to time.Time) *insightsv1.QueryRequest {
+	return &insightsv1.QueryRequest{
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum(),
+			Session:     &insightsv1.SessionQuery{Metric: metric.Enum()},
+		},
+		TimeRange:   &commonv1.TimeRange{From: timestamppb.New(from), To: timestamppb.New(to)},
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}
+}
+
+// flattenSessionTrends keys a session trends response by "url|date" using the $url
+// breakdown (empty when the request has no breakdown).
+func flattenSessionTrends(resp *insightsv1.QueryResponse) map[string]float64 {
+	out := map[string]float64{}
+	for _, s := range resp.GetTrends().GetSeries() {
+		bd := s.GetBreakdown()["$url"]
+		for _, p := range s.GetPoints() {
+			out[bd+"|"+p.GetTime().AsTime().Format("2006-01-02")] = p.GetValue()
+		}
+	}
+	return out
+}
+
+// assertSessionTrendsParity runs a session trends req through ExecuteQuery (rollup
+// when eligible) and the raw builder, asserting identical flattened output. This is
+// the load-bearing check that the rollup and raw paths agree numerically.
+func assertSessionTrendsParity(t *testing.T, ctx context.Context, executor *insights.Executor, projectID string, req *insightsv1.QueryRequest) {
+	t.Helper()
+	resp, err := insights.ExecuteQuery(ctx, executor, projectID, req, time.Now())
+	if err != nil {
+		t.Fatalf("rollup ExecuteQuery: %v", err)
+	}
+	rollup := flattenSessionTrends(resp)
+
+	rawQ, err := insights.BuildSessionTrendsQuery(req, projectID)
+	if err != nil {
+		t.Fatalf("raw BuildSessionTrendsQuery: %v", err)
+	}
+	rawRows, err := executor.QueryTrends(ctx, projectID, rawQ)
+	if err != nil {
+		t.Fatalf("raw QueryTrends: %v", err)
+	}
+	raw, err := flattenSessionTrendsFromRaw(ctx, rawRows, rawQ)
+	if err != nil {
+		t.Fatalf("flattenSessionTrendsFromRaw: %v", err)
+	}
+	if !reflect.DeepEqual(rollup, raw) {
+		t.Errorf("session trends rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
+	}
+	if len(rollup) == 0 {
+		t.Error("empty result — seed/window mismatch would make this parity check vacuous")
+	}
+}
+
+// flattenSessionTrendsFromRaw mirrors flattenTrendsFromRaw but keys on $url.
+func flattenSessionTrendsFromRaw(ctx context.Context, rows []insights.TrendRow, q insights.TrendsQuery) (map[string]float64, error) {
+	series, err := insights.GroupSeries(ctx, rows, q.Properties(), q.BreakdownLimit())
+	if err != nil {
+		return nil, err
+	}
+	return flattenSessionTrends(&insightsv1.QueryResponse{
+		Result: &insightsv1.QueryResponse_Trends{Trends: &insightsv1.TrendsResult{Series: series}},
+	}), nil
+}
+
+// assertSessionSegParity mirrors assertSessionTrendsParity for the scalar total.
+func assertSessionSegParity(t *testing.T, ctx context.Context, executor *insights.Executor, projectID string, req *insightsv1.QueryRequest) float64 {
+	t.Helper()
+	resp, err := insights.ExecuteQuery(ctx, executor, projectID, req, time.Now())
+	if err != nil {
+		t.Fatalf("rollup ExecuteQuery: %v", err)
+	}
+	rollup := resp.GetSegmentation().GetTotal()
+
+	rawQ, err := insights.BuildSessionSegmentationQuery(req, projectID)
+	if err != nil {
+		t.Fatalf("raw BuildSessionSegmentationQuery: %v", err)
+	}
+	raw, err := executor.QueryScalar(ctx, projectID, rawQ)
+	if err != nil {
+		t.Fatalf("raw QueryScalar: %v", err)
+	}
+	if rollup != raw {
+		t.Errorf("session seg rollup=%v raw=%v", rollup, raw)
+	}
+	return rollup
 }

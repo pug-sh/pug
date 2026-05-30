@@ -1,7 +1,9 @@
 package insights
 
 import (
+	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -119,23 +121,67 @@ func TestCanUseSessionRollup(t *testing.T) {
 	day := insightsv1.Granularity_GRANULARITY_DAY
 	cases := []struct {
 		name string
-		req  *insightsv1.QueryRequest
-		want bool
+		gran insightsv1.Granularity
+		// mutate adjusts the base request (entry/$url trends) into the case under test.
+		mutate func(*insightsv1.QueryRequest)
+		want   bool
 	}{
-		{"entry url trends", sessionReq(insightsv1.SessionMetric_SESSION_METRIC_ENTRY, "page_view", "$url"), true},
-		{"avg duration trends no breakdown", sessionReq(insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION, "", ""), true},
-		{"custom breakdown rejected", sessionReq(insightsv1.SessionMetric_SESSION_METRIC_ENTRY, "page_view", "plan"), false},
+		{"entry url trends", day, nil, true},
+		{"avg duration no breakdown", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION.Enum()
+			r.Spec.Breakdowns = nil
+		}, true},
+		{"sessions metric trends", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_SESSIONS.Enum()
+			r.Spec.Breakdowns = nil
+		}, true},
+		{"avg duration segmentation", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.InsightType = insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum()
+			r.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION.Enum()
+			r.Spec.Breakdowns = nil
+		}, true},
+		// --- disqualifiers ---
+		{"custom breakdown rejected", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("plan")}}
+		}, false},
+		{"funnel insight rejected", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.InsightType = insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum()
+		}, false},
+		{"hour granularity rejected", insightsv1.Granularity_GRANULARITY_HOUR, nil, false},
+		{"unspecified granularity rejected", insightsv1.Granularity_GRANULARITY_UNSPECIFIED, nil, false},
+		{"filter_groups rejected", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.FilterGroups = []*insightsv1.FilterGroup{{
+				Filters: []*commonv1.PropertyFilter{{Property: proto.String("$os")}},
+			}}
+		}, false},
+		{"events rejected", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.Events = []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}}}
+		}, false},
+		{"two breakdowns rejected", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.Breakdowns = []*insightsv1.Breakdown{
+				{Property: proto.String("$url")}, {Property: proto.String("$country")},
+			}
+		}, false},
+		{"scope filters rejected", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.Session.Scope.Filters = []*commonv1.PropertyFilter{{Property: proto.String("$os")}}
+		}, false},
+		{"entry without breakdown rejected", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.Breakdowns = nil
+		}, false},
+		{"entry segmentation rejected", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.InsightType = insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum()
+		}, false},
 	}
 	for _, c := range cases {
-		if got := canUseSessionRollup(c.req.GetSpec(), day); got != c.want {
-			t.Errorf("%s: canUseSessionRollup = %v, want %v", c.name, got, c.want)
-		}
-	}
-
-	filtered := sessionReq(insightsv1.SessionMetric_SESSION_METRIC_ENTRY, "page_view", "$url")
-	filtered.Spec.Session.Scope.Filters = []*commonv1.PropertyFilter{{Property: proto.String("$os")}}
-	if canUseSessionRollup(filtered.GetSpec(), day) {
-		t.Error("expected scoped filters to reject session rollup")
+		t.Run(c.name, func(t *testing.T) {
+			req := sessionReq(insightsv1.SessionMetric_SESSION_METRIC_ENTRY, "page_view", "$url")
+			if c.mutate != nil {
+				c.mutate(req)
+			}
+			if got := canUseSessionRollup(req.GetSpec(), c.gran); got != c.want {
+				t.Errorf("canUseSessionRollup = %v, want %v", got, c.want)
+			}
+		})
 	}
 }
 
@@ -155,6 +201,57 @@ func TestMigration007SessionRollupColumnsMatchDims(t *testing.T) {
 			want := prefix + "_" + suffix + "_state"
 			if !strings.Contains(sql, want) {
 				t.Errorf("migration missing %s", want)
+			}
+		}
+	}
+}
+
+// sessionRollupDimSourceExpr returns the inner ClickHouse expression the MV is
+// expected to aggregate for a given breakdown dim: bare column for String dims,
+// toString(col) for LowCardinality(String) dims (matching events table column
+// types in migration 001). Hand-coupled to the migration intent on purpose.
+func sessionRollupDimSourceExpr(suffix string) string {
+	switch suffix {
+	case "url", "city": // String columns
+		return suffix
+	default: // LowCardinality(String) columns
+		return "toString(" + suffix + ")"
+	}
+}
+
+// TestMigration007SessionRollupDimExprsMatch pins, per dimension, BOTH the source
+// column expression AND the merge direction (entry=argMinState, exit=argMaxState)
+// in migration 007. TestMigration007SessionRollupColumnsMatchDims only checks
+// column names exist; this catches a state wired to the wrong source column (e.g.
+// region built from city) or a swapped entry/exit aggregate — drift the name check
+// cannot see. The raw builder projects coalesce(col,”) vs the MV's bare/toString
+// column, which agree only because every dim column is DEFAULT ” (never NULL); this
+// test pins the source side of that equivalence.
+func TestMigration007SessionRollupDimExprsMatch(t *testing.T) {
+	const path = "../../../schema/clickhouse/migrations/007_create_dashboard_session_rollup.sql"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	sql := string(data)
+	for _, dim := range sessionMaterializedDims {
+		suffix, ok := sessionRollupDimSuffix(dim)
+		if !ok {
+			t.Fatalf("missing suffix for %q", dim)
+		}
+		inner := sessionRollupDimSourceExpr(suffix)
+		for _, d := range []struct{ prefix, fn string }{
+			{"entry", "argMinState"},
+			{"exit", "argMaxState"},
+		} {
+			// e.g. argMinState(toString(country), occur_time) AS entry_country_state
+			pat := fmt.Sprintf(`%s\(\s*%s\s*,\s*occur_time\s*\)\s+AS\s+%s_%s_state`,
+				d.fn, regexp.QuoteMeta(inner), d.prefix, suffix)
+			matches := regexp.MustCompile(pat).FindAllString(sql, -1)
+			// MV + backfill = two occurrences expected.
+			if len(matches) < 2 {
+				t.Errorf("dim %s: expected MV+backfill %s_%s_state = %s(%s, occur_time); found %d match(es)",
+					dim, d.prefix, suffix, d.fn, inner, len(matches))
 			}
 		}
 	}

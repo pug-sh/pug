@@ -928,6 +928,18 @@ func TestSessionQueryValidation(t *testing.T) {
 			req.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_ENTRY.Enum()
 			req.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$url")}}
 		}, ""},
+		{"entry_rejects_two_breakdowns", func(req *insightsv1.QueryRequest) {
+			req.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_ENTRY.Enum()
+			req.Spec.Breakdowns = []*insightsv1.Breakdown{
+				{Property: proto.String("$url")},
+				{Property: proto.String("$country")},
+			}
+		}, "session_page_metrics_require_trends_breakdown"},
+		{"exit_rejects_segmentation", func(req *insightsv1.QueryRequest) {
+			req.Spec.InsightType = insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum()
+			req.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_EXIT.Enum()
+			req.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$url")}}
+		}, "session_page_metrics_require_trends_breakdown"},
 	}
 
 	for _, c := range cases {

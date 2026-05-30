@@ -13,7 +13,10 @@ const sessionRollupTable = "dashboard_session_rollup"
 
 // sessionMaterializedDims are entry/exit breakdown dimensions backed by the
 // session-grain rollup MV. Keep in sync with migration
-// 007_create_dashboard_session_rollup.sql.
+// 007_create_dashboard_session_rollup.sql: column NAMES are pinned by
+// TestMigration007SessionRollupColumnsMatchDims, and the MV's argMin/argMaxState
+// value expressions are pinned against the raw builder's projection by
+// TestMigration007SessionRollupDimExprsMatch.
 var sessionMaterializedDims = []string{
 	"$url",
 	"$country", "$region", "$city",
@@ -25,6 +28,24 @@ func isSessionMaterializedDim(prop string) bool {
 	return slices.Contains(sessionMaterializedDims, prop)
 }
 
+// canUseSessionRollup reports whether a session trends/segmentation query can be
+// served from the session-grain rollup. Conservative by construction: anything it
+// rejects falls back to BuildSessionTrendsQuery/BuildSessionSegmentationQuery,
+// which compute the same full-session, keyed-on-start metric over raw events with
+// identical results.
+//
+// Accepted accuracy caveat for the rollup-served path: BOUNCE_RATE can under-report
+// bounces relative to the raw builders under duplicate event delivery. The events
+// table is ReplacingMergeTree and collapses redeliveries on merge, so the raw path's
+// count() per session self-corrects; the rollup's event_count_state is countState()
+// keyed on (project_id, kind, session_id) WITHOUT event_id (migration 007), so a
+// duplicate insert is retained permanently and a genuinely single-event session can
+// read event_count > 1 — i.e. no longer counted as a bounce. The drift equals the
+// pipeline's redelivery rate (monotonic, never self-correcting). SESSIONS, ENTRY,
+// and EXIT are immune (they count session-id groups, not events); AVG_DURATION is
+// immune (min/max occur_time are idempotent under duplicates). This is an accepted,
+// bounded inaccuracy for dashboard visualization — see docs/architecture/clickhouse.md;
+// pinned by TestIntegration/session_rollup_bounce_duplicate_overcount_documented.
 func canUseSessionRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Granularity) bool {
 	session := spec.GetSession()
 	if session == nil {
@@ -49,6 +70,10 @@ func canUseSessionRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Gran
 	if len(spec.GetFilterGroups()) != 0 || len(spec.GetEvents()) != 0 {
 		return false
 	}
+	// The rollup is keyed only on `kind` (the MV stores an all-events row with
+	// kind='' plus one row per kind). A scope carrying property filters can't be
+	// satisfied from those pre-aggregated states, so fall back to the raw builder,
+	// which applies the filters per event. Same result, no fast path.
 	if session.GetScope() != nil && len(session.GetScope().GetFilters()) != 0 {
 		return false
 	}

@@ -210,15 +210,17 @@ type SessionMetric int32
 
 const (
 	SessionMetric_SESSION_METRIC_UNSPECIFIED SessionMetric = 0
-	// Number of unique sessions in the window.
+	// Number of distinct sessions started in the window.
 	SessionMetric_SESSION_METRIC_SESSIONS SessionMetric = 1
-	// Average session duration in seconds.
+	// Average session duration in seconds (last event minus first event per session).
 	SessionMetric_SESSION_METRIC_AVG_DURATION SessionMetric = 2
 	// Percentage of sessions with exactly one event after the optional scope is applied.
 	SessionMetric_SESSION_METRIC_BOUNCE_RATE SessionMetric = 3
-	// Count sessions by their first matching event's breakdown value.
+	// Count sessions by their first matching event's breakdown value (entry page).
+	// Requires TRENDS with exactly one breakdown.
 	SessionMetric_SESSION_METRIC_ENTRY SessionMetric = 4
-	// Count sessions by their last matching event's breakdown value.
+	// Count sessions by their last matching event's breakdown value (exit page).
+	// Requires TRENDS with exactly one breakdown.
 	SessionMetric_SESSION_METRIC_EXIT SessionMetric = 5
 )
 
@@ -293,7 +295,12 @@ type InsightQuerySpec struct {
 	IncludeStepTiming *bool `protobuf:"varint,8,opt,name=include_step_timing,json=includeStepTiming" json:"include_step_timing,omitempty"`
 	// Session-level metric. When present, events must be empty and the existing
 	// insight_type decides the response shape: TRENDS returns a time series,
-	// SEGMENTATION returns a scalar.
+	// SEGMENTATION returns a scalar. ENTRY and EXIT additionally require TRENDS
+	// with exactly one breakdown (they bucket sessions by an entry/exit attribute);
+	// SESSIONS, AVG_DURATION, and BOUNCE_RATE work with either insight_type and
+	// any breakdown count. Each session is measured over its full set of (scoped)
+	// events and attributed to its start instant — the time window selects sessions
+	// by start time, it does not clip a session's events.
 	Session       *SessionQuery `protobuf:"bytes,9,opt,name=session" json:"session,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1721,7 +1728,7 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"*insight_query_spec.funnel_only_step_timing\x129include_step_timing is only valid for funnel insight type\x1acthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| !this.include_step_timing\x1a\x95\x02\n" +
 	"3insight_query_spec.session_only_trends_segmentation\x12?session is only valid for trends and segmentation insight types\x1a\x9c\x01!has(this.session) || this.insight_type in [  shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS,  shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION]\x1a\x82\x01\n" +
 	"$insight_query_spec.session_no_events\x12+session insights cannot also specify events\x1a-!has(this.session) || this.events.size() == 0\x1a\x9c\x03\n" +
-	"@insight_query_spec.session_page_metrics_require_trends_breakdown\x12Isession entry and exit metrics require trends with at least one breakdown\x1a\x8c\x02!has(this.session)|| !(this.session.metric in [  shared.insights.v1.SessionMetric.SESSION_METRIC_ENTRY,  shared.insights.v1.SessionMetric.SESSION_METRIC_EXIT])|| (this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS    && this.breakdowns.size() > 0)\x1a\xd8\x01\n" +
+	"@insight_query_spec.session_page_metrics_require_trends_breakdown\x12Hsession entry and exit metrics require trends with exactly one breakdown\x1a\x8d\x02!has(this.session)|| !(this.session.metric in [  shared.insights.v1.SessionMetric.SESSION_METRIC_ENTRY,  shared.insights.v1.SessionMetric.SESSION_METRIC_EXIT])|| (this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS    && this.breakdowns.size() == 1)\x1a\xd8\x01\n" +
 	"-insight_query_spec.segmentation_no_breakdowns\x12:breakdowns are not supported for segmentation insight type\x1akthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_SEGMENTATION|| this.breakdowns.size() == 0\x1a\xd3\x01\n" +
 	".insight_query_spec.unique_breakdown_properties\x12#breakdown properties must be unique\x1a|this.breakdowns.size() <= 1|| !this.breakdowns.exists(b,     this.breakdowns.filter(x, x.property == b.property).size() > 1)\x1a\xa2\x01\n" +
 	"6insight_query_spec.breakdown_limit_requires_breakdowns\x12/breakdown_limit requires at least one breakdown\x1a7this.breakdown_limit == 0 || this.breakdowns.size() > 0\x1a\xdc\x01\n" +

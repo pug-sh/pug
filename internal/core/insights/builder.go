@@ -529,6 +529,10 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Que
 		), nil
 }
 
+// buildSessionTrends builds the raw-events session trends query: the per-session
+// CTE (buildSessionRowsCTE) bucketed by start_time at the requested granularity,
+// emitting one series per breakdown value. The metric aggregate (sessionMetricAggExpr)
+// is applied across the sessions in each bucket. Mirrors buildSessionTrendsFromRollup.
 func buildSessionTrends(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	session := req.GetSpec().GetSession()
 	if session == nil {
@@ -570,6 +574,9 @@ func buildSessionTrends(req *insightsv1.QueryRequest, projectID string) (*chq.Qu
 		OrderBy(orderByCols...), nil
 }
 
+// buildSessionSegmentation builds the raw-events session segmentation query: the
+// per-session CTE (buildSessionRowsCTE) collapsed to a single scalar via the metric
+// aggregate. Mirrors buildSessionSegmentationFromRollup.
 func buildSessionSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	session := req.GetSpec().GetSession()
 	if session == nil {
@@ -591,6 +598,29 @@ func buildSessionSegmentation(req *insightsv1.QueryRequest, projectID string) (*
 		From("sessions"), nil
 }
 
+// buildSessionRowsCTE builds the per-session aggregation CTE shared by the raw
+// session trends and segmentation builders. Each row is one session: its start
+// (min occur_time), end (max occur_time), scoped event_count, and — when a
+// breakdown is requested — the entry (argMin) or exit (argMax) attribute keyed on
+// occur_time.
+//
+// Full-session window semantics: a session is measured over its ENTIRE set of
+// (scoped) events and bucketed by its start instant, NOT clipped to the query
+// window. The window is therefore applied as a HAVING on the computed start_time
+// (`start_time >= from AND start_time < to`), not as a WHERE on occur_time. This
+// is what keeps the raw path numerically identical to the session rollup
+// (buildSessionRollupRowsCTE), whose merged per-session states span the session's
+// whole lifetime. Clipping events to the window in WHERE instead would truncate a
+// session straddling the boundary — changing its duration, entry/exit page, and
+// bounce classification — and diverge from the rollup. The cost is that the scan
+// is not partition-pruned by occur_time; acceptable because this is the fallback
+// path (the rollup serves the common day-aligned case) and correctness outranks
+// the wider scan. See docs/architecture/insights.md (Session insights).
+//
+// `scope` (kind + optional filters) and any top-level filter_groups stay as
+// row-level WHERE conditions: they decide which events PARTICIPATE in the session
+// measurement, mirroring the rollup's per-kind partition. Only the time window
+// moves to HAVING.
 func buildSessionRowsCTE(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
 	spec := req.GetSpec()
 	session := spec.GetSession()
@@ -622,12 +652,13 @@ func buildSessionRowsCTE(req *insightsv1.QueryRequest, projectID string) (*chq.Q
 		From("events").
 		Where(
 			chq.Eq("project_id", projectID),
-			chq.Gte("occur_time", req.GetTimeRange().GetFrom().AsTime()),
-			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
 			topLevelFilterCond,
 			scopeCond,
 		).
-		GroupBy("session_id")
+		GroupBy("session_id").
+		HavingExpr("start_time >= ? AND start_time < ?",
+			req.GetTimeRange().GetFrom().AsTime(),
+			req.GetTimeRange().GetTo().AsTime())
 
 	for j, bd := range spec.GetBreakdowns() {
 		q.Select(fmt.Sprintf("%s(%s, occur_time) AS breakdown_%d", attrFn, chq.PropertyExpr(bd.GetProperty()), j))
@@ -642,6 +673,12 @@ func buildSessionScopeCondition(session *insightsv1.SessionQuery, projectID, ali
 	return chq.EventConditionAliased([]*commonv1.EventFilter{session.GetScope()}, projectID, alias)
 }
 
+// sessionEventKind returns the label projected as the trends series `event_kind`
+// for a session query. With no scope kind, sessions span all event kinds, so there
+// is no real kind to report — the synthetic literal "$session" labels that series
+// (the leading "$" matches the reserved-property convention and can't collide with a
+// customer event kind). With a scope kind, that kind is the label. Segmentation
+// (scalar) does not project a series and ignores this.
 func sessionEventKind(session *insightsv1.SessionQuery) string {
 	if session == nil || session.GetScope() == nil || session.GetScope().GetKind() == "" {
 		return "$session"
@@ -649,6 +686,12 @@ func sessionEventKind(session *insightsv1.SessionQuery) string {
 	return session.GetScope().GetKind()
 }
 
+// sessionMetricAggExpr returns the aggregate applied over the per-session CTE rows
+// (one row per session) to produce the metric value. SESSIONS/ENTRY/EXIT all reduce
+// to count() of sessions — ENTRY/EXIT differ only in the breakdown attribute the CTE
+// already resolved (argMin vs argMax), not in this aggregate. AVG_DURATION and
+// BOUNCE_RATE guard count()=0 so an empty bucket yields 0 rather than NULL/NaN.
+// Identical between the raw and rollup paths so their numbers match.
 func sessionMetricAggExpr(metric insightsv1.SessionMetric) (string, error) {
 	switch metric {
 	case insightsv1.SessionMetric_SESSION_METRIC_SESSIONS,

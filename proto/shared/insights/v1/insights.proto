@@ -61,7 +61,7 @@ message InsightQuerySpec {
   };
   option (buf.validate.message).cel = {
     id: "insight_query_spec.session_page_metrics_require_trends_breakdown"
-    message: "session entry and exit metrics require trends with at least one breakdown"
+    message: "session entry and exit metrics require trends with exactly one breakdown"
     expression:
       "!has(this.session)"
       "|| !(this.session.metric in ["
@@ -69,7 +69,7 @@ message InsightQuerySpec {
       "  shared.insights.v1.SessionMetric.SESSION_METRIC_EXIT"
       "])"
       "|| (this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_TRENDS"
-      "    && this.breakdowns.size() > 0)"
+      "    && this.breakdowns.size() == 1)"
   };
 
   // Breakdowns are supported for trends, funnel, and retention.
@@ -176,7 +176,12 @@ message InsightQuerySpec {
 
   // Session-level metric. When present, events must be empty and the existing
   // insight_type decides the response shape: TRENDS returns a time series,
-  // SEGMENTATION returns a scalar.
+  // SEGMENTATION returns a scalar. ENTRY and EXIT additionally require TRENDS
+  // with exactly one breakdown (they bucket sessions by an entry/exit attribute);
+  // SESSIONS, AVG_DURATION, and BOUNCE_RATE work with either insight_type and
+  // any breakdown count. Each session is measured over its full set of (scoped)
+  // events and attributed to its start instant — the time window selects sessions
+  // by start time, it does not clip a session's events.
   SessionQuery session = 9;
 }
 
@@ -295,15 +300,17 @@ enum AggregationType {
 
 enum SessionMetric {
   SESSION_METRIC_UNSPECIFIED = 0;
-  // Number of unique sessions in the window.
+  // Number of distinct sessions started in the window.
   SESSION_METRIC_SESSIONS = 1;
-  // Average session duration in seconds.
+  // Average session duration in seconds (last event minus first event per session).
   SESSION_METRIC_AVG_DURATION = 2;
   // Percentage of sessions with exactly one event after the optional scope is applied.
   SESSION_METRIC_BOUNCE_RATE = 3;
-  // Count sessions by their first matching event's breakdown value.
+  // Count sessions by their first matching event's breakdown value (entry page).
+  // Requires TRENDS with exactly one breakdown.
   SESSION_METRIC_ENTRY = 4;
-  // Count sessions by their last matching event's breakdown value.
+  // Count sessions by their last matching event's breakdown value (exit page).
+  // Requires TRENDS with exactly one breakdown.
   SESSION_METRIC_EXIT = 5;
 }
 
