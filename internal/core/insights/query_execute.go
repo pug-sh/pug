@@ -53,7 +53,10 @@ func ExecuteQuery(
 		if err != nil {
 			return nil, queryFailed(err)
 		}
-		if usedRollup {
+		if usedRollup && req.GetSpec().GetSession() == nil {
+			// Session rollup queries carry no event list and emit a single
+			// synthetic series kind ($session), so multi-event-kind zero-filling
+			// doesn't apply — skip it for them.
 			// fillMultiEventTrendZeros self-guards on len(kinds) <= 1, so single-
 			// event rollup queries pass through unchanged.
 			events := req.GetSpec().GetEvents()

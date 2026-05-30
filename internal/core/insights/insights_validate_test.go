@@ -894,3 +894,71 @@ func TestNumericAggOnlyTrendsSegmentation(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionQueryValidation(t *testing.T) {
+	validSessionReq := func() *insightsv1.QueryRequest {
+		req := validQueryRequest()
+		req.Spec.Events = nil
+		req.Spec.Session = &insightsv1.SessionQuery{
+			Metric: insightsv1.SessionMetric_SESSION_METRIC_SESSIONS.Enum(),
+		}
+		return req
+	}
+
+	cases := []struct {
+		name     string
+		mutate   func(*insightsv1.QueryRequest)
+		wantRule string
+	}{
+		{"valid_trends_sessions", func(*insightsv1.QueryRequest) {}, ""},
+		{"valid_segmentation_avg_duration", func(req *insightsv1.QueryRequest) {
+			req.Spec.InsightType = insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum()
+			req.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION.Enum()
+		}, ""},
+		{"session_rejects_events", func(req *insightsv1.QueryRequest) {
+			req.Spec.Events = []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}}}
+		}, "session_no_events"},
+		{"session_rejects_funnel", func(req *insightsv1.QueryRequest) {
+			req.Spec.InsightType = insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum()
+		}, "session_only_trends_segmentation"},
+		{"entry_requires_breakdown", func(req *insightsv1.QueryRequest) {
+			req.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_ENTRY.Enum()
+		}, "session_page_metrics_require_trends_breakdown"},
+		{"entry_accepts_trends_breakdown", func(req *insightsv1.QueryRequest) {
+			req.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_ENTRY.Enum()
+			req.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$url")}}
+		}, ""},
+		{"entry_rejects_two_breakdowns", func(req *insightsv1.QueryRequest) {
+			req.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_ENTRY.Enum()
+			req.Spec.Breakdowns = []*insightsv1.Breakdown{
+				{Property: proto.String("$url")},
+				{Property: proto.String("$country")},
+			}
+		}, "session_page_metrics_require_trends_breakdown"},
+		{"exit_rejects_segmentation", func(req *insightsv1.QueryRequest) {
+			req.Spec.InsightType = insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum()
+			req.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_EXIT.Enum()
+			req.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$url")}}
+		}, "session_page_metrics_require_trends_breakdown"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := validSessionReq()
+			c.mutate(req)
+			err := protovalidate.Validate(req)
+			if c.wantRule == "" {
+				if err != nil {
+					t.Fatalf("expected valid, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if !hasRule(err, c.wantRule) {
+				t.Fatalf("expected rule %q, got %v", c.wantRule, err)
+			}
+		})
+	}
+}
