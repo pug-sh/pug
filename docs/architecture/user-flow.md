@@ -85,8 +85,7 @@ message UserFlowQuery {
   // via the defaultUserFlowGroupBy constant — not a silent fallback.
   enum GroupBy {
     GROUP_BY_UNSPECIFIED = 0;
-    GROUP_BY_SESSION     = 1;  // session_id
-    GROUP_BY_USER        = 2;  // distinct_id
+    GROUP_BY_SESSION     = 1;  // session_id — v1 default
   }
   GroupBy group_by = 3;
 
@@ -154,9 +153,8 @@ All rules added to `InsightQuerySpec`. Update any existing rules that assume all
 | `user_flow_no_events` | `USER_FLOW` → `events.size() == 0` |
 | `user_flow_no_session` | `USER_FLOW` → `!has(session)` |
 | `user_flow_no_breakdowns` | `USER_FLOW` → `breakdowns.size() == 0` |
-| `user_flow_no_funnel_fields` | `USER_FLOW` → `!has(conversion_window) && !include_step_timing` |
 | `user_flow_no_breakdown_limit` | `USER_FLOW` → `breakdown_limit == 0` |
-| `user_flow_property_required` | `node_kind == PROPERTY` → `node_property` matches `^\$?[a-zA-Z0-9_.-]+$` and `size() > 0` |
+| `user_flow_property_required` | `node_kind == PROPERTY` → `node_property.size() > 0` and matches `^\$?[a-zA-Z0-9_.-]+$` |
 | `user_flow_max_hops_range` | `max_hops != 0` → `max_hops >= 1 && max_hops <= 10` |
 | `user_flow_max_nodes_range` | `max_nodes != 0` → `max_nodes >= 2 && max_nodes <= 50` |
 | `user_flow_max_links_range` | `max_links != 0` → `max_links >= 1 && max_links <= 500` |
@@ -236,7 +234,7 @@ Implementation uses three `*chq.Query` values composed with `With`:
 ```go
 func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string) (*chq.Query, error) {
     // Resolve defaults (group_by, node_kind, max_hops, …) at top — see §4.1, §14.3.
-    groupKeyCol := userFlowGroupKeyColumn(groupBy)       // "session_id" | "distinct_id"
+    groupKeyCol := userFlowGroupKeyColumn(groupBy)       // always "session_id" in v1
     nodeExpr := userFlowNodeExpr(nodeKind, nodeProperty) // "kind" | chq.PropertyExpr(...)
 
     topLevelFilterCond, err := buildTopLevelFilterCondition(
@@ -315,11 +313,11 @@ func userFlowNodesArrayExpr(nodeExpr string, maxHopsP1 int) string {
 
 **`userFlowGroupKeyColumn` / `userFlowNodeExpr`:**
 
-| Helper | SESSION | USER |
-| --- | --- | --- |
-| `userFlowGroupKeyColumn` | `"session_id"` | `"distinct_id"` |
-| `userFlowNodeExpr` (EVENT_KIND) | `"kind"` | `"kind"` |
-| `userFlowNodeExpr` (PROPERTY) | `chq.PropertyExpr(key)` | `chq.PropertyExpr(key)` |
+| Helper | v1 |
+| --- | --- |
+| `userFlowGroupKeyColumn` | `"session_id"` |
+| `userFlowNodeExpr` (EVENT_KIND) | `"kind"` |
+| `userFlowNodeExpr` (PROPERTY) | `chq.PropertyExpr(key)` |
 
 **`userFlowNonEmptyGroupKeyCond`** — exclude empty keys (§14.4):
 
@@ -327,8 +325,8 @@ func userFlowNodesArrayExpr(nodeExpr string, maxHopsP1 int) string {
 // session_id is UUID; distinct_id is String (migration 001).
 func userFlowNonEmptyGroupKeyCond(groupBy insightsv1.UserFlowQuery_GroupBy) chq.Condition {
     switch groupBy {
-    case insightsv1.UserFlowQuery_GROUP_BY_USER:
-        return chq.Neq("distinct_id", "")
+    case insightsv1.UserFlowQuery_GROUP_BY_SESSION:
+        return chq.Neq("session_id", "00000000-0000-0000-0000-000000000000")
     default:
         return chq.Neq("session_id", "00000000-0000-0000-0000-000000000000")
     }
@@ -622,7 +620,7 @@ result: empty nodes, empty links
 - [ ] `UserFlowRow.Value` is `int64`, not `float64`
 - [ ] Sort-then-slice SQL confirmed (no `groupArray(N)` before `arraySort`) — §4.2, §14.6
 - [ ] `arraySlice` 1-indexed offset confirmed correct with a call-site comment — §4.2
-- [ ] `GROUP_BY_USER` decision made and documented (§14.2) — defer or document cross-session edges
+- [x] Session-only grouping in v1; cross-session `GroupBy` deferred (§14.2)
 - [ ] Empty group key predicate uses correct type for schema (§14.4) — `String` vs `UUID`
 - [ ] No rollup wiring — `ExecuteQuery` has no `canUseEventRollup` / `canUseSessionRollup` branch (§15)
 - [ ] Window clipping documented in `insights.md` (§14.1)
@@ -647,18 +645,11 @@ The query filters `occur_time ∈ [from, to)` and builds paths from **only event
 
 Document this in the user-flow section of [`insights.md`](insights.md) when implementation lands. Callers expecting "full session if it started in window" will see a different graph.
 
-### 14.2 `GROUP_BY_USER` crosses session boundaries
+### 14.2 Cross-session user grouping (deferred)
 
-Grouping by `distinct_id` merges all in-window events for a user into one ordered list, producing transitions such as last-event-of-session-1 → first-event-of-session-2. Those edges are not within a single visit.
+Grouping by `distinct_id` would merge in-window events across sessions into one ordered list, producing transitions such as last-event-of-session-1 → first-event-of-session-2. Those edges are not within a single visit.
 
-**Decision required before PR 2:**
-
-| Option | Tradeoff |
-| --- | --- |
-| Ship USER in v1 with documented cross-session edges | More flexible; semantics must be obvious in UI copy |
-| **Defer USER to v2; session-only in v1** | Safer default; matches "flow within a visit" intuition |
-
-Recommendation: session-only in v1 unless product explicitly wants cross-session user journeys.
+**v1 decision:** `GROUP_BY_USER` is not in the proto. Ship session-only (`GROUP_BY_SESSION` / `UNSPECIFIED`). Add a new `GroupBy` enum value when cross-session semantics and UI copy are defined.
 
 ### 14.3 Builder defaults (mirror `group_by`)
 
@@ -705,7 +696,7 @@ In addition to ReplacingMergeTree duplicate-delivery inflation (no `FINAL`):
 
 - Window clipping (§14.1)
 - Same-timestamp tie order (§14.5)
-- Cross-session edges if `GROUP_BY_USER` ships (§14.2)
+- Cross-session user grouping when a new `GroupBy` value ships (§14.2)
 
 ### 14.11 PR test scope
 
@@ -748,7 +739,7 @@ Additionally, typical user-flow queries **fail rollup eligibility anyway**:
 
 - `scope` and `filter_groups` (session rollup rejects scoped/filtered queries)
 - `NODE_KIND_PROPERTY` / custom property breakdowns (event rollup limited to materialized dims)
-- `GROUP_BY_USER` (cross-session merge — session rollup is session-grain)
+- Cross-session user `GroupBy` (session rollup is session-grain)
 - `max_hops` truncation (path-dependent — not reconstructible from day-level kind counts)
 
 ### 15.3 Cost controls without rollup

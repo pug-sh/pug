@@ -325,12 +325,13 @@ func (UserFlowQuery_NodeKind) EnumDescriptor() ([]byte, []int) {
 }
 
 // Traversal unit. UNSPECIFIED resolves to SESSION in the builder.
+// Per-user (cross-session) grouping is not in the API yet — add a new enum
+// value when semantics are defined.
 type UserFlowQuery_GroupBy int32
 
 const (
 	UserFlowQuery_GROUP_BY_UNSPECIFIED UserFlowQuery_GroupBy = 0
 	UserFlowQuery_GROUP_BY_SESSION     UserFlowQuery_GroupBy = 1
-	UserFlowQuery_GROUP_BY_USER        UserFlowQuery_GroupBy = 2
 )
 
 // Enum value maps for UserFlowQuery_GroupBy.
@@ -338,12 +339,10 @@ var (
 	UserFlowQuery_GroupBy_name = map[int32]string{
 		0: "GROUP_BY_UNSPECIFIED",
 		1: "GROUP_BY_SESSION",
-		2: "GROUP_BY_USER",
 	}
 	UserFlowQuery_GroupBy_value = map[string]int32{
 		"GROUP_BY_UNSPECIFIED": 0,
 		"GROUP_BY_SESSION":     1,
-		"GROUP_BY_USER":        2,
 	}
 )
 
@@ -2100,7 +2099,7 @@ var File_shared_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbc3\n" +
+	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe01\n" +
 	"\x10InsightQuerySpec\x12Q\n" +
 	"\finsight_type\x18\x01 \x01(\x0e2\x1f.shared.insights.v1.InsightTypeB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\vinsightType\x126\n" +
@@ -2116,7 +2115,7 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x13include_step_timing\x18\b \x01(\bR\x11includeStepTiming\x12:\n" +
 	"\asession\x18\t \x01(\v2 .shared.insights.v1.SessionQueryR\asession\x12>\n" +
 	"\tuser_flow\x18\n" +
-	" \x01(\v2!.shared.insights.v1.UserFlowQueryR\buserFlow:\xd0,\xbaH\xcc,\x1a\xa5\x02\n" +
+	" \x01(\v2!.shared.insights.v1.UserFlowQueryR\buserFlow:\xf4*\xbaH\xf0*\x1a\xa5\x02\n" +
 	"2insight_query_spec.funnel_retention_require_events\x12=funnel and retention insight types require at least one event\x1a\xaf\x01(this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL&& this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION)|| this.events.size() > 0\x1a\xd3\x01\n" +
 	"0insight_query_spec.funnel_only_conversion_window\x127conversion_window is only valid for funnel insight type\x1afthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| !has(this.conversion_window)\x1a\xcc\x01\n" +
 	"*insight_query_spec.funnel_only_step_timing\x129include_step_timing is only valid for funnel insight type\x1acthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| !this.include_step_timing\x1a\x95\x02\n" +
@@ -2133,10 +2132,9 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"%insight_query_spec.user_flow_required\x12)user flow insight type requires user_flow\x1a`this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| has(this.user_flow)\x1a\xb8\x01\n" +
 	"&insight_query_spec.user_flow_no_events\x12(user flow insights cannot specify events\x1adthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.events.size() == 0\x1a\xb5\x01\n" +
 	"'insight_query_spec.user_flow_no_session\x12)user flow insights cannot specify session\x1a_this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| !has(this.session)\x1a\xcf\x01\n" +
-	"*insight_query_spec.user_flow_no_breakdowns\x127breakdowns are not supported for user flow insight type\x1ahthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.breakdowns.size() == 0\x1a\x89\x02\n" +
-	"-insight_query_spec.user_flow_no_funnel_fields\x12Pconversion_window and include_step_timing are only valid for funnel insight type\x1a\x85\x01this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| (!has(this.conversion_window) && !this.include_step_timing)\x1a\xd6\x01\n" +
-	"/insight_query_spec.user_flow_no_breakdown_limit\x12;breakdown_limit is not supported for user flow insight type\x1afthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.breakdown_limit == 0\x1a\xd0\x02\n" +
-	".insight_query_spec.user_flow_property_required\x124node_property is required when node_kind is PROPERTY\x1a\xe7\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.user_flow.node_kind   != shared.insights.v1.UserFlowQuery.NodeKind.NODE_KIND_PROPERTY|| this.user_flow.node_property.matches('^\\\\$?[a-zA-Z0-9_.-]+$')\x1a\x87\x02\n" +
+	"*insight_query_spec.user_flow_no_breakdowns\x127breakdowns are not supported for user flow insight type\x1ahthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.breakdowns.size() == 0\x1a\xd6\x01\n" +
+	"/insight_query_spec.user_flow_no_breakdown_limit\x12;breakdown_limit is not supported for user flow insight type\x1afthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.breakdown_limit == 0\x1a\x80\x03\n" +
+	".insight_query_spec.user_flow_property_required\x124node_property is required when node_kind is PROPERTY\x1a\x97\x02this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.user_flow.node_kind   != shared.insights.v1.UserFlowQuery.NodeKind.NODE_KIND_PROPERTY|| (this.user_flow.node_property.size() > 0    && this.user_flow.node_property.matches('^\\\\$?[a-zA-Z0-9_.-]+$'))\x1a\x87\x02\n" +
 	"+insight_query_spec.user_flow_max_hops_range\x12*max_hops must be between 1 and 10 when set\x1a\xab\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.user_flow.max_hops == 0|| (this.user_flow.max_hops >= 1 && this.user_flow.max_hops <= 10)\x1a\x8c\x02\n" +
 	",insight_query_spec.user_flow_max_nodes_range\x12+max_nodes must be between 2 and 50 when set\x1a\xae\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.user_flow.max_nodes == 0|| (this.user_flow.max_nodes >= 2 && this.user_flow.max_nodes <= 50)\x1a\x8e\x02\n" +
 	",insight_query_spec.user_flow_max_links_range\x12,max_links must be between 1 and 500 when set\x1a\xaf\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.user_flow.max_links == 0|| (this.user_flow.max_links >= 1 && this.user_flow.max_links <= 500)\"\xe3\f\n" +
@@ -2177,7 +2175,7 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\fSessionQuery\x12H\n" +
 	"\x06metric\x18\x01 \x01(\x0e2!.shared.insights.v1.SessionMetricB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x06metric\x12,\n" +
-	"\x05scope\x18\x02 \x01(\v2\x16.common.v1.EventFilterR\x05scope\"\x8a\x04\n" +
+	"\x05scope\x18\x02 \x01(\v2\x16.common.v1.EventFilterR\x05scope\"\xf7\x03\n" +
 	"\rUserFlowQuery\x12G\n" +
 	"\tnode_kind\x18\x01 \x01(\x0e2*.shared.insights.v1.UserFlowQuery.NodeKindR\bnodeKind\x12@\n" +
 	"\rnode_property\x18\x02 \x01(\tB\x1b\xbaH\x18r\x162\x14^\\$?[a-zA-Z0-9_.-]*$R\fnodeProperty\x12D\n" +
@@ -2189,11 +2187,10 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\bNodeKind\x12\x19\n" +
 	"\x15NODE_KIND_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14NODE_KIND_EVENT_KIND\x10\x01\x12\x16\n" +
-	"\x12NODE_KIND_PROPERTY\x10\x02\"L\n" +
+	"\x12NODE_KIND_PROPERTY\x10\x02\"9\n" +
 	"\aGroupBy\x12\x18\n" +
 	"\x14GROUP_BY_UNSPECIFIED\x10\x00\x12\x14\n" +
-	"\x10GROUP_BY_SESSION\x10\x01\x12\x11\n" +
-	"\rGROUP_BY_USER\x10\x02\"4\n" +
+	"\x10GROUP_BY_SESSION\x10\x01\"4\n" +
 	"\fUserFlowNode\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\"]\n" +

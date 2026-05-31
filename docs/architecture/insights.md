@@ -38,6 +38,7 @@ User flow is a **graph insight** (Sankey): discovered session/user transitions a
 
 - **Builder:** `BuildUserFlowQuery` — two CTEs (`session_nodes`, `pairs`) over raw `events`; sort-then-slice node arrays (`groupArray` → `arraySort` → `arraySlice`), never `groupArray(N)` before sort.
 - **Grouping:** `GroupUserFlowResult` — top-N node retention, `$others` collapse, post-remap self-loop removal, link truncation. Pure Go; no error return.
+- **Group by:** session-only (`GROUP_BY_SESSION` / `UNSPECIFIED` → session in builder). Cross-session user grouping is not in the proto yet.
 - **No rollup in v1** — always scans raw events (see [`user-flow.md`](user-flow.md) §15).
 - **Accuracy:** queries omit `FINAL`; ReplacingMergeTree duplicate delivery may slightly inflate edge counts (same tradeoff as other raw-event insights).
 

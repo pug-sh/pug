@@ -905,43 +905,103 @@ func TestIntegration(t *testing.T) {
 		const userFlowProjectID = "proj_user_flow"
 		seedUserFlowEvents(t, ctx, ch, userFlowProjectID)
 
-		req := &insightsv1.QueryRequest{
-			Spec: &insightsv1.InsightQuerySpec{
-				InsightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW.Enum(),
-				UserFlow:    &insightsv1.UserFlowQuery{},
-			},
-			TimeRange: &commonv1.TimeRange{
-				From: timestamppb.New(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)),
-				To:   timestamppb.New(time.Date(2024, 3, 2, 0, 0, 0, 0, time.UTC)),
-			},
-			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		window := &commonv1.TimeRange{
+			From: timestamppb.New(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)),
+			To:   timestamppb.New(time.Date(2024, 3, 2, 0, 0, 0, 0, time.UTC)),
 		}
-
-		resp, err := insights.ExecuteQuery(ctx, executor, userFlowProjectID, req, time.Now())
-		if err != nil {
-			t.Fatalf("ExecuteQuery: %v", err)
-		}
-		result := resp.GetUserFlow()
-		if result == nil {
-			t.Fatal("expected UserFlow result")
-		}
-
-		linkMap := map[[2]string]int64{}
-		for _, l := range result.GetLinks() {
-			linkMap[[2]string{l.GetSource(), l.GetTarget()}] = l.GetValue()
-		}
-		want := map[[2]string]int64{
-			{"login", "dashboard"}:    2,
-			{"login", "logout"}:       1,
-			{"dashboard", "settings"}: 1,
-			{"dashboard", "logout"}:   1,
-			{"settings", "logout"}:    1,
-		}
-		for k, v := range want {
-			if linkMap[k] != v {
-				t.Errorf("link %v: got %d want %d", k, linkMap[k], v)
+		userFlowReq := func(uf *insightsv1.UserFlowQuery) *insightsv1.QueryRequest {
+			return &insightsv1.QueryRequest{
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW.Enum(),
+					UserFlow:    uf,
+				},
+				TimeRange:   window,
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
 			}
 		}
+
+		t.Run("event_kind_default", func(t *testing.T) {
+			resp, err := insights.ExecuteQuery(ctx, executor, userFlowProjectID, userFlowReq(&insightsv1.UserFlowQuery{}), time.Now())
+			if err != nil {
+				t.Fatalf("ExecuteQuery: %v", err)
+			}
+			result := resp.GetUserFlow()
+			if result == nil {
+				t.Fatal("expected UserFlow result")
+			}
+			linkMap := userFlowLinkMap(result)
+			want := map[[2]string]int64{
+				{"login", "dashboard"}:    2,
+				{"login", "logout"}:       1,
+				{"dashboard", "settings"}: 1,
+				{"dashboard", "logout"}:   1,
+				{"settings", "logout"}:    1,
+			}
+			for k, v := range want {
+				if linkMap[k] != v {
+					t.Errorf("link %v: got %d want %d", k, linkMap[k], v)
+				}
+			}
+		})
+
+		t.Run("scope_restricts_eligible_events", func(t *testing.T) {
+			const scopeProjectID = "proj_user_flow_scope"
+			seedUserFlowEventsWithNoise(t, ctx, ch, scopeProjectID)
+
+			resp, err := insights.ExecuteQuery(ctx, executor, scopeProjectID, userFlowReq(&insightsv1.UserFlowQuery{
+				Scope: &commonv1.EventFilter{Kind: proto.String("login")},
+			}), time.Now())
+			if err != nil {
+				t.Fatalf("ExecuteQuery: %v", err)
+			}
+			if len(resp.GetUserFlow().GetLinks()) != 0 {
+				t.Fatalf("scope kind=login should yield no transitions (single-node sessions), got %d links",
+					len(resp.GetUserFlow().GetLinks()))
+			}
+		})
+
+		t.Run("property_url_nodes", func(t *testing.T) {
+			const urlProjectID = "proj_user_flow_url"
+			seedUserFlowURLEvents(t, ctx, ch, urlProjectID)
+
+			resp, err := insights.ExecuteQuery(ctx, executor, urlProjectID, userFlowReq(&insightsv1.UserFlowQuery{
+				NodeKind:     insightsv1.UserFlowQuery_NODE_KIND_PROPERTY.Enum(),
+				NodeProperty: proto.String("$url"),
+				Scope:        &commonv1.EventFilter{Kind: proto.String("page_view")},
+			}), time.Now())
+			if err != nil {
+				t.Fatalf("ExecuteQuery: %v", err)
+			}
+			linkMap := userFlowLinkMap(resp.GetUserFlow())
+			want := map[[2]string]int64{
+				{"/login", "/dashboard"}:    2,
+				{"/login", "/logout"}:       1,
+				{"/dashboard", "/settings"}: 1,
+				{"/dashboard", "/logout"}:   1,
+				{"/settings", "/logout"}:    1,
+			}
+			for k, v := range want {
+				if linkMap[k] != v {
+					t.Errorf("link %v: got %d want %d", k, linkMap[k], v)
+				}
+			}
+		})
+
+		t.Run("max_hops_truncates_paths", func(t *testing.T) {
+			resp, err := insights.ExecuteQuery(ctx, executor, userFlowProjectID, userFlowReq(&insightsv1.UserFlowQuery{
+				MaxHops: proto.Int32(2),
+			}), time.Now())
+			if err != nil {
+				t.Fatalf("ExecuteQuery: %v", err)
+			}
+			linkMap := userFlowLinkMap(resp.GetUserFlow())
+			if v := linkMap[[2]string{"settings", "logout"}]; v != 0 {
+				t.Errorf("settings->logout should be truncated by max_hops=2, got %d", v)
+			}
+			if linkMap[[2]string{"login", "dashboard"}] != 2 {
+				t.Errorf("login->dashboard: got %d want 2", linkMap[[2]string{"login", "dashboard"}])
+			}
+		})
 	})
 
 	t.Run("retention_with_breakdown", func(t *testing.T) {
@@ -2239,6 +2299,46 @@ func insertSessionEvent(
 // user-flow integration tests (see docs/architecture/user-flow.md §9).
 func seedUserFlowEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string) {
 	t.Helper()
+	seedUserFlowKindSequences(t, ctx, ch, projectID, map[string][]string{
+		"A": {"login", "dashboard", "settings", "logout"},
+		"B": {"login", "dashboard", "logout"},
+		"C": {"login", "logout"},
+		"D": {"login"},
+	})
+}
+
+// seedUserFlowEventsWithNoise inserts the default sequences with a heartbeat event
+// after login in session A to exercise scope filtering.
+func seedUserFlowEventsWithNoise(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string) {
+	t.Helper()
+	base := time.Date(2024, 3, 1, 10, 0, 0, 0, time.UTC)
+	sessionA := "00000000-0000-0000-0000-0000000000a1"
+	steps := []struct {
+		kind string
+		at   time.Duration
+	}{
+		{"login", 0},
+		{"heartbeat", time.Minute},
+		{"dashboard", 2 * time.Minute},
+		{"settings", 3 * time.Minute},
+		{"logout", 4 * time.Minute},
+	}
+	for _, step := range steps {
+		if err := insertSessionEvent(ctx, ch.Conn, projectID, uuid.New().String(),
+			step.kind, "user_A", sessionA, base.Add(step.at), "", ""); err != nil {
+			t.Fatalf("seed user flow noise event: %v", err)
+		}
+	}
+	seedUserFlowKindSequences(t, ctx, ch, projectID, map[string][]string{
+		"B": {"login", "dashboard", "logout"},
+		"C": {"login", "logout"},
+		"D": {"login"},
+	})
+}
+
+// seedUserFlowURLEvents inserts page_view events whose $url property encodes the path.
+func seedUserFlowURLEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string) {
+	t.Helper()
 	base := time.Date(2024, 3, 1, 10, 0, 0, 0, time.UTC)
 	sessionIDs := map[string]string{
 		"A": "00000000-0000-0000-0000-0000000000a1",
@@ -2246,11 +2346,31 @@ func seedUserFlowEvents(t *testing.T, ctx context.Context, ch *testutil.TestClic
 		"C": "00000000-0000-0000-0000-0000000000c3",
 		"D": "00000000-0000-0000-0000-0000000000d4",
 	}
-	sequences := map[string][]string{
-		"A": {"login", "dashboard", "settings", "logout"},
-		"B": {"login", "dashboard", "logout"},
-		"C": {"login", "logout"},
-		"D": {"login"},
+	urlSequences := map[string][]string{
+		"A": {"/login", "/dashboard", "/settings", "/logout"},
+		"B": {"/login", "/dashboard", "/logout"},
+		"C": {"/login", "/logout"},
+		"D": {"/login"},
+	}
+	for label, urls := range urlSequences {
+		for i, url := range urls {
+			if err := insertSessionEvent(ctx, ch.Conn, projectID, uuid.New().String(),
+				"page_view", "user_"+label, sessionIDs[label],
+				base.Add(time.Duration(i)*time.Minute), url, ""); err != nil {
+				t.Fatalf("seed user flow url event: %v", err)
+			}
+		}
+	}
+}
+
+func seedUserFlowKindSequences(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string, sequences map[string][]string) {
+	t.Helper()
+	base := time.Date(2024, 3, 1, 10, 0, 0, 0, time.UTC)
+	sessionIDs := map[string]string{
+		"A": "00000000-0000-0000-0000-0000000000a1",
+		"B": "00000000-0000-0000-0000-0000000000b2",
+		"C": "00000000-0000-0000-0000-0000000000c3",
+		"D": "00000000-0000-0000-0000-0000000000d4",
 	}
 	for label, kinds := range sequences {
 		for i, kind := range kinds {
@@ -2261,6 +2381,17 @@ func seedUserFlowEvents(t *testing.T, ctx context.Context, ch *testutil.TestClic
 			}
 		}
 	}
+}
+
+func userFlowLinkMap(result *insightsv1.UserFlowResult) map[[2]string]int64 {
+	out := map[[2]string]int64{}
+	if result == nil {
+		return out
+	}
+	for _, l := range result.GetLinks() {
+		out[[2]string{l.GetSource(), l.GetTarget()}] = l.GetValue()
+	}
+	return out
 }
 
 // sessionSeed is one event row for seedSessionEvents.

@@ -135,10 +135,7 @@ func userFlowNodesArrayExpr(nodeExpr string, maxHopsP1 int) string {
 	)
 }
 
-func userFlowGroupKeyColumn(groupBy insightsv1.UserFlowQuery_GroupBy) string {
-	if groupBy == insightsv1.UserFlowQuery_GROUP_BY_USER {
-		return "distinct_id"
-	}
+func userFlowGroupKeyColumn(_ insightsv1.UserFlowQuery_GroupBy) string {
 	return "session_id"
 }
 
@@ -149,11 +146,8 @@ func userFlowNodeExpr(nodeKind insightsv1.UserFlowQuery_NodeKind, nodeProperty s
 	return "kind"
 }
 
-// userFlowNonEmptyGroupKeyCond excludes empty keys (session_id is UUID; distinct_id is String).
-func userFlowNonEmptyGroupKeyCond(groupBy insightsv1.UserFlowQuery_GroupBy) chq.Condition {
-	if groupBy == insightsv1.UserFlowQuery_GROUP_BY_USER {
-		return chq.Neq("distinct_id", "")
-	}
+// userFlowNonEmptyGroupKeyCond excludes the nil UUID session_id.
+func userFlowNonEmptyGroupKeyCond(_ insightsv1.UserFlowQuery_GroupBy) chq.Condition {
 	return chq.Neq("session_id", "00000000-0000-0000-0000-000000000000")
 }
 

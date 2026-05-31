@@ -223,13 +223,6 @@ message InsightQuerySpec {
       "|| this.breakdowns.size() == 0"
   };
   option (buf.validate.message).cel = {
-    id: "insight_query_spec.user_flow_no_funnel_fields"
-    message: "conversion_window and include_step_timing are only valid for funnel insight type"
-    expression:
-      "this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL"
-      "|| (!has(this.conversion_window) && !this.include_step_timing)"
-  };
-  option (buf.validate.message).cel = {
     id: "insight_query_spec.user_flow_no_breakdown_limit"
     message: "breakdown_limit is not supported for user flow insight type"
     expression:
@@ -243,7 +236,8 @@ message InsightQuerySpec {
       "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
       "|| this.user_flow.node_kind"
       "   != shared.insights.v1.UserFlowQuery.NodeKind.NODE_KIND_PROPERTY"
-      "|| this.user_flow.node_property.matches('^\\\\$?[a-zA-Z0-9_.-]+$')"
+      "|| (this.user_flow.node_property.size() > 0"
+      "    && this.user_flow.node_property.matches('^\\\\$?[a-zA-Z0-9_.-]+$'))"
   };
   option (buf.validate.message).cel = {
     id: "insight_query_spec.user_flow_max_hops_range"
@@ -428,10 +422,11 @@ message UserFlowQuery {
   string node_property = 2 [(buf.validate.field).string.pattern = "^\\$?[a-zA-Z0-9_.-]*$"];
 
   // Traversal unit. UNSPECIFIED resolves to SESSION in the builder.
+  // Per-user (cross-session) grouping is not in the API yet — add a new enum
+  // value when semantics are defined.
   enum GroupBy {
     GROUP_BY_UNSPECIFIED = 0;
     GROUP_BY_SESSION = 1;
-    GROUP_BY_USER = 2;
   }
   GroupBy group_by = 3;
 
