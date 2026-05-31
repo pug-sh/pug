@@ -361,12 +361,14 @@ func (e *Executor) QueryUserFlow(ctx context.Context, projectID string, q UserFl
 	var result []UserFlowRow
 	for rows.Next() {
 		var row UserFlowRow
-		if err := rows.Scan(&row.Source, &row.Target, &row.Value); err != nil {
+		var value uint64
+		if err := rows.Scan(&row.Source, &row.Target, &value); err != nil {
 			slog.ErrorContext(ctx, "clickhouse: query user flow scan failed", slogx.Error(err),
 				slog.String("project_id", projectID))
 			telemetry.RecordError(ctx, err)
 			return nil, fmt.Errorf("QueryUserFlow: scan: %w", err)
 		}
+		row.Value = int64(value)
 		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
