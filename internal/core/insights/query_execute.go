@@ -183,6 +183,20 @@ func ExecuteQuery(
 			Retention: &insightsv1.RetentionResult{Series: retentionSeries},
 		}
 
+	case insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW:
+		q, err := BuildUserFlowQuery(req, projectID)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to build user flow query", slogx.Error(err),
+				slog.String("project_id", projectID))
+			return nil, &InvalidQueryError{Message: err.Error(), err: err}
+		}
+		rows, err := executor.QueryUserFlow(ctx, projectID, q)
+		if err != nil {
+			return nil, queryFailed(err)
+		}
+		result := GroupUserFlowResult(ctx, rows, q.MaxNodes(), q.MaxLinks())
+		resp.Result = &insightsv1.QueryResponse_UserFlow{UserFlow: result}
+
 	default:
 		err := fmt.Errorf("unsupported insight type %s", req.GetSpec().GetInsightType().String())
 		slog.ErrorContext(ctx, "unsupported insight type reached ExecuteQuery default",

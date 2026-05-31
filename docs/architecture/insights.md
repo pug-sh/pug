@@ -2,6 +2,8 @@
 
 Detailed reference for the insights subsystem (`internal/core/insights`, `proto/shared/insights`). Linked from the root [`CLAUDE.md`](../../CLAUDE.md) — read this when working on insights queries (trends, funnel, retention, segmentation).
 
+Planned: **User flow** (Sankey graph insight) — implemented; see [User Flow](#user-flow) and [`user-flow.md`](user-flow.md).
+
 ## Insights Breakdown
 
 Breakdowns are supported for trends, funnel, and retention. Segmentation does not support breakdowns.
@@ -29,6 +31,17 @@ When `include_step_timing` is true, each `FunnelStep` includes a `StepTiming` su
 The request-side `QueryRequest.spec.conversion_window` is also a `google.protobuf.Duration`. Validated by two rules at the interceptor: a field-level `gte: 1s` rejects sub-second values (e.g. `500ms`), and a CEL `whole_seconds` rule rejects fractional-second values (e.g. `2.5s`, `1s + 1ns`) — `windowFunnel` accepts only integer-second windows, so anything else would silently truncate. When absent, the conversion window defaults to the full time range.
 
 **Implementation:** `internal/core/insights/funnel_buckets.go` holds the bucket table (`funnelBucket` struct: `upper time.Duration`, `label string`, `openEnded bool`) and three pure helpers for median, percentile, and bucketing a pre-sorted slice. The funnel-timing compute function collects raw per-user deltas (`time.Duration`), sorts once, and calls the helpers; the proto-translation layer wraps the `time.Duration` results in `*durationpb.Duration` at the package boundary. Tests pin both the structural bucket invariants (strictly ascending bounds, `time.Duration(math.MaxInt64)` sentinel for the open-ended last bucket, exactly one open-ended bucket) and the user-visible nil-vs-zero-filled distribution distinction.
+
+## User Flow
+
+User flow is a **graph insight** (Sankey): discovered session/user transitions as explicit `UserFlowNode` + `UserFlowLink` pairs — not funnel stage counts. Edge weight = distinct sessions/users traversing each source→target edge at least once in the window.
+
+- **Builder:** `BuildUserFlowQuery` — two CTEs (`session_nodes`, `pairs`) over raw `events`; sort-then-slice node arrays (`groupArray` → `arraySort` → `arraySlice`), never `groupArray(N)` before sort.
+- **Grouping:** `GroupUserFlowResult` — top-N node retention, `$others` collapse, post-remap self-loop removal, link truncation. Pure Go; no error return.
+- **No rollup in v1** — always scans raw events (see [`user-flow.md`](user-flow.md) §15).
+- **Accuracy:** queries omit `FINAL`; ReplacingMergeTree duplicate delivery may slightly inflate edge counts (same tradeoff as other raw-event insights).
+
+Dashboard tiles use `DASHBOARD_TILE_VIEW_MODE_SANKEY`; the server stores and echoes view mode but does not enforce insight ↔ view_mode pairing.
 
 ## Insights Granularity
 
@@ -93,10 +106,11 @@ Always use the type-specific builders — they provide compile-time safety betwe
 | Funnel (counts)      | `BuildFunnelCountsQuery` | `FunnelQuery`       |
 | Funnel (with timing) | `BuildFunnelTimingQuery` | `FunnelTimingQuery` |
 | Retention            | `BuildRetentionQuery`    | `RetentionQuery`    |
+| User flow            | `BuildUserFlowQuery`     | `UserFlowQuery`     |
 
-All query types expose `.SQL()` and `.Args()`. All types except `ScalarQuery` also expose `.Properties()` and `.NumBreakdowns()`. `FunnelTimingQuery` also exposes `.Kinds()` and `.WindowSec()`.
+All query types expose `.SQL()` and `.Args()`. All types except `ScalarQuery` and `UserFlowQuery` also expose `.Properties()` and `.NumBreakdowns()`. `FunnelTimingQuery` also exposes `.Kinds()` and `.WindowSec()`. `UserFlowQuery` also exposes `.MaxNodes()` and `.MaxLinks()`.
 
-All five emit `SETTINGS use_query_cache = 1, query_cache_ttl = 60` via `WithQueryCache(analyticsCacheTTL)` on the outermost query. Cache isolation between projects relies on `project_id` being a positional parameter on every cached builder; a builder that interpolates `project_id` into raw SQL would silently break tenant isolation. Property keys/values (including profile property keys/values), segment-users, and event-names builders intentionally omit the cache. See `analyticsCacheTTL` in `internal/core/insights/builder.go` for staleness mechanics with ReplacingMergeTree.
+All six cached insight builders emit `SETTINGS use_query_cache = 1, query_cache_ttl = 60` via `WithQueryCache(analyticsCacheTTL)` on the outermost query. Cache isolation between projects relies on `project_id` being a positional parameter on every cached builder; a builder that interpolates `project_id` into raw SQL would silently break tenant isolation. Property keys/values (including profile property keys/values), segment-users, and event-names builders intentionally omit the cache. See `analyticsCacheTTL` in `internal/core/insights/builder.go` for staleness mechanics with ReplacingMergeTree.
 
 ## Rollup Fast Path
 

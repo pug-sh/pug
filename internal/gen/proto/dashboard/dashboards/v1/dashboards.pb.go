@@ -36,7 +36,8 @@ const (
 	DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE       DashboardTileViewMode = 5
 	// KPI is a render variant of an insight tile, not a new content kind.
 	// The tile still holds an InsightTileContent; only the visualization changes.
-	DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI DashboardTileViewMode = 6
+	DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI    DashboardTileViewMode = 6
+	DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY DashboardTileViewMode = 7
 )
 
 // Enum value maps for DashboardTileViewMode.
@@ -49,6 +50,7 @@ var (
 		4: "DASHBOARD_TILE_VIEW_MODE_BAR_STACKED",
 		5: "DASHBOARD_TILE_VIEW_MODE_TABLE",
 		6: "DASHBOARD_TILE_VIEW_MODE_KPI",
+		7: "DASHBOARD_TILE_VIEW_MODE_SANKEY",
 	}
 	DashboardTileViewMode_value = map[string]int32{
 		"DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED": 0,
@@ -58,6 +60,7 @@ var (
 		"DASHBOARD_TILE_VIEW_MODE_BAR_STACKED": 4,
 		"DASHBOARD_TILE_VIEW_MODE_TABLE":       5,
 		"DASHBOARD_TILE_VIEW_MODE_KPI":         6,
+		"DASHBOARD_TILE_VIEW_MODE_SANKEY":      7,
 	}
 )
 
@@ -2204,7 +2207,7 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"updateTime\x12;\n" +
 	"\x05tiles\x18\b \x03(\v2%.dashboard.dashboards.v1.RenderedTileR\x05tiles\"s\n" +
 	"'DashboardsServiceQueryDashboardResponse\x12H\n" +
-	"\tdashboard\x18\x01 \x01(\v2*.dashboard.dashboards.v1.RenderedDashboardR\tdashboard*\xa1\x02\n" +
+	"\tdashboard\x18\x01 \x01(\v2*.dashboard.dashboards.v1.RenderedDashboardR\tdashboard*\xc6\x02\n" +
 	"\x15DashboardTileViewMode\x12(\n" +
 	"$DASHBOARD_TILE_VIEW_MODE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dDASHBOARD_TILE_VIEW_MODE_LINE\x10\x01\x12!\n" +
@@ -2212,7 +2215,8 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"$DASHBOARD_TILE_VIEW_MODE_BAR_GROUPED\x10\x03\x12(\n" +
 	"$DASHBOARD_TILE_VIEW_MODE_BAR_STACKED\x10\x04\x12\"\n" +
 	"\x1eDASHBOARD_TILE_VIEW_MODE_TABLE\x10\x05\x12 \n" +
-	"\x1cDASHBOARD_TILE_VIEW_MODE_KPI\x10\x06*I\n" +
+	"\x1cDASHBOARD_TILE_VIEW_MODE_KPI\x10\x06\x12#\n" +
+	"\x1fDASHBOARD_TILE_VIEW_MODE_SANKEY\x10\a*I\n" +
 	"\rComparePeriod\x12\x1e\n" +
 	"\x1aCOMPARE_PERIOD_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14COMPARE_PERIOD_PRIOR\x10\x012\x96\a\n" +

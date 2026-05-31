@@ -901,6 +901,49 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("user_flow", func(t *testing.T) {
+		const userFlowProjectID = "proj_user_flow"
+		seedUserFlowEvents(t, ctx, ch, userFlowProjectID)
+
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW.Enum(),
+				UserFlow:    &insightsv1.UserFlowQuery{},
+			},
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 3, 2, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+
+		resp, err := insights.ExecuteQuery(ctx, executor, userFlowProjectID, req, time.Now())
+		if err != nil {
+			t.Fatalf("ExecuteQuery: %v", err)
+		}
+		result := resp.GetUserFlow()
+		if result == nil {
+			t.Fatal("expected UserFlow result")
+		}
+
+		linkMap := map[[2]string]int64{}
+		for _, l := range result.GetLinks() {
+			linkMap[[2]string{l.GetSource(), l.GetTarget()}] = l.GetValue()
+		}
+		want := map[[2]string]int64{
+			{"login", "dashboard"}:    2,
+			{"login", "logout"}:       1,
+			{"dashboard", "settings"}: 1,
+			{"dashboard", "logout"}:   1,
+			{"settings", "logout"}:    1,
+		}
+		for k, v := range want {
+			if linkMap[k] != v {
+				t.Errorf("link %v: got %d want %d", k, linkMap[k], v)
+			}
+		}
+	})
+
 	t.Run("retention_with_breakdown", func(t *testing.T) {
 		seedRetentionEventsWithCountry(t, ctx, ch)
 
@@ -2190,6 +2233,34 @@ func insertSessionEvent(
 		return err
 	}
 	return batch.Send()
+}
+
+// seedUserFlowEvents inserts four sessions with known event-kind sequences for
+// user-flow integration tests (see docs/architecture/user-flow.md §9).
+func seedUserFlowEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, projectID string) {
+	t.Helper()
+	base := time.Date(2024, 3, 1, 10, 0, 0, 0, time.UTC)
+	sessionIDs := map[string]string{
+		"A": "00000000-0000-0000-0000-0000000000a1",
+		"B": "00000000-0000-0000-0000-0000000000b2",
+		"C": "00000000-0000-0000-0000-0000000000c3",
+		"D": "00000000-0000-0000-0000-0000000000d4",
+	}
+	sequences := map[string][]string{
+		"A": {"login", "dashboard", "settings", "logout"},
+		"B": {"login", "dashboard", "logout"},
+		"C": {"login", "logout"},
+		"D": {"login"},
+	}
+	for label, kinds := range sequences {
+		for i, kind := range kinds {
+			if err := insertSessionEvent(ctx, ch.Conn, projectID, uuid.New().String(),
+				kind, "user_"+label, sessionIDs[label],
+				base.Add(time.Duration(i)*time.Minute), "", ""); err != nil {
+				t.Fatalf("seed user flow event: %v", err)
+			}
+		}
+	}
 }
 
 // sessionSeed is one event row for seedSessionEvents.

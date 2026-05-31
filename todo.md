@@ -20,7 +20,7 @@
 - [x] Funnels — windowFunnel() for counts, array-based single-scan for timing
 - [x] Retention — cohort-based return analysis
 - [ ] Funnel timing statistics — median, p95, distribution (just change Go aggregation in `ComputeFunnelTiming`)
-- [ ] User paths/flows — exploratory sequence analysis
+- [x] User flow (Sankey) — sequence graph insight → [`docs/architecture/user-flow.md`](docs/architecture/user-flow.md)
 
 ## Performance
 
