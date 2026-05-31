@@ -90,7 +90,7 @@ message ChatMemberRoleChangedProperties {
 message ChatMessageSentProperties {
   option (common.events.v1.kind) = "chat_message_sent";
   string conversation_id = 1 [(buf.validate.field).required = true];
-  string message_id = 2 [(buf.validate.field).required = true];
+  string message_id = 2;
   string conversation_type = 3;
   string message_type = 4;
   int32 character_count = 5 [(buf.validate.field).int32.gte = 0];
@@ -102,7 +102,7 @@ message ChatMessageSentProperties {
 message ChatMessageReceivedProperties {
   option (common.events.v1.kind) = "chat_message_received";
   string conversation_id = 1 [(buf.validate.field).required = true];
-  string message_id = 2 [(buf.validate.field).required = true];
+  string message_id = 2;
   string conversation_type = 3;
   string message_type = 4;
   int32 character_count = 5 [(buf.validate.field).int32.gte = 0];
@@ -123,7 +123,7 @@ message ChatMessageFailedProperties {
 message ChatMessageReadProperties {
   option (common.events.v1.kind) = "chat_message_read";
   string conversation_id = 1 [(buf.validate.field).required = true];
-  string message_id = 2 [(buf.validate.field).required = true];
+  string message_id = 2;
   string conversation_type = 3;
   string thread_id = 4;
 }
@@ -131,7 +131,7 @@ message ChatMessageReadProperties {
 message ChatMessageDeletedProperties {
   option (common.events.v1.kind) = "chat_message_deleted";
   string conversation_id = 1 [(buf.validate.field).required = true];
-  string message_id = 2 [(buf.validate.field).required = true];
+  string message_id = 2;
   string conversation_type = 3;
   string reason = 4;
   string thread_id = 5;
@@ -140,7 +140,7 @@ message ChatMessageDeletedProperties {
 message ChatMessageEditedProperties {
   option (common.events.v1.kind) = "chat_message_edited";
   string conversation_id = 1 [(buf.validate.field).required = true];
-  string message_id = 2 [(buf.validate.field).required = true];
+  string message_id = 2;
   string conversation_type = 3;
   string thread_id = 4;
 }
@@ -148,7 +148,7 @@ message ChatMessageEditedProperties {
 message ChatMessagePinnedProperties {
   option (common.events.v1.kind) = "chat_message_pinned";
   string conversation_id = 1 [(buf.validate.field).required = true];
-  string message_id = 2 [(buf.validate.field).required = true];
+  string message_id = 2;
   string conversation_type = 3;
   string thread_id = 4;
 }
@@ -156,7 +156,7 @@ message ChatMessagePinnedProperties {
 message ChatMessageUnpinnedProperties {
   option (common.events.v1.kind) = "chat_message_unpinned";
   string conversation_id = 1 [(buf.validate.field).required = true];
-  string message_id = 2 [(buf.validate.field).required = true];
+  string message_id = 2;
   string conversation_type = 3;
   string thread_id = 4;
 }
@@ -248,7 +248,7 @@ message ChatUserBlockedProperties {
 message ChatReactionAddedProperties {
   option (common.events.v1.kind) = "chat_reaction_added";
   string conversation_id = 1 [(buf.validate.field).required = true];
-  string message_id = 2 [(buf.validate.field).required = true];
+  string message_id = 2;
   string reaction = 3 [(buf.validate.field).required = true];
   string thread_id = 4;
 }
@@ -258,7 +258,7 @@ message ChatReactionAddedProperties {
 message ChatReactionRemovedProperties {
   option (common.events.v1.kind) = "chat_reaction_removed";
   string conversation_id = 1 [(buf.validate.field).required = true];
-  string message_id = 2 [(buf.validate.field).required = true];
+  string message_id = 2;
   string reaction = 3 [(buf.validate.field).required = true];
   string thread_id = 4;
 }
