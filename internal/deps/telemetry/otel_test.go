@@ -2,9 +2,26 @@ package telemetry
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 )
+
+func TestErrInvalidOtelMode(t *testing.T) {
+	err := errors.Join(ErrInvalidOtelMode, fmt.Errorf("invalid PUG_OTEL %q: want otlp or stdout", "bad"))
+	if !errors.Is(err, ErrInvalidOtelMode) {
+		t.Fatal("expected errors.Is(err, ErrInvalidOtelMode)")
+	}
+}
+
+func TestInstallStdoutLogHandler_wrapsCorrelationHandler(t *testing.T) {
+	installStdoutLogHandler()
+	if _, ok := slog.Default().Handler().(*correlationHandler); !ok {
+		t.Fatalf("handler type = %T, want *correlationHandler", slog.Default().Handler())
+	}
+}
 
 func TestShutdownContextPreservesDeadline(t *testing.T) {
 	parent := context.Background()

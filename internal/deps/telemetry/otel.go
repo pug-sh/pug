@@ -34,9 +34,28 @@ var (
 // shutdown succeeded. The first caller's context governs the shutdown, so pass a
 // context with a live deadline; the cached result is reused for the rest of the
 // process lifetime.
+//
+// On failure (including invalid PUG_OTEL), returns a non-nil error and a nil
+// shutdown function — do not invoke shutdown when err != nil.
+//
+// PUG_OTEL is read only on the first call (sync.Once); set it in the process
+// environment before starting the server or any worker.
 func SetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	setupOnce.Do(func() {
-		setupResult, setupErr = doSetupSDK(ctx)
+		mode, err := parseOtelMode()
+		if err != nil {
+			setupErr = errors.Join(ErrInvalidOtelMode, err)
+			return
+		}
+		switch mode {
+		case "stdout":
+			setupResult, setupErr = doSetupWithoutExport(ctx)
+		case "otlp":
+			setupResult, setupErr = doSetupSDK(ctx)
+		default:
+			// parseOtelMode only returns "otlp" or "stdout"; unreachable.
+			setupErr = errors.Join(ErrInvalidOtelMode, errors.New("unsupported telemetry mode"))
+		}
 	})
 	return setupResult, setupErr
 }

@@ -13,13 +13,22 @@ All telemetry is bootstrapped in `internal/deps/telemetry/`. The server initiali
 | Component      | Status                                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Connect RPC    | ✅ — `otelconnect.Interceptor` on all handlers                                                                           |
-| slog → OTel    | ✅ — `otelslog` bridge replaces default logger                                                                           |
+| slog → OTel    | ✅ — `otelslog` bridge replaces default logger; with `PUG_OTEL=stdout`, text logs to stdout instead                        |
 | PostgreSQL     | ✅ — `otelpgx` tracer on all connections                                                                                 |
 | Redis          | ✅ — `redisotel` tracing + metrics on the client                                                                         |
 | NATS/JetStream | Custom — `tracedJetStream` wrapper in `internal/deps/nats/otel.go`, W3C trace context propagation on publish/consume     |
 | ClickHouse     | Custom — `Conn` wrapper in `internal/deps/clickhouse/clickhouse.go`, spans on Query/Exec/Select/PrepareBatch/AsyncInsert |
 
 **Configuration:** Set `OTEL_SERVICE_NAME` (strongly recommended — telemetry data will lack a service identifier without it) and `OTEL_EXPORTER_OTLP_ENDPOINT` (default `localhost:4317`). TLS is disabled by default (`OTEL_EXPORTER_OTLP_INSECURE` defaults to `true` when unset); set `OTEL_EXPORTER_OTLP_INSECURE=false` to enable TLS for production OTLP endpoints.
+
+**`PUG_OTEL` modes:**
+
+| Value | Behavior |
+| ----- | -------- |
+| *(unset)* or `otlp` | OTLP export via `otelslog` (requires a collector; dev default endpoint `localhost:4317`) |
+| `stdout` | Noop providers; text logs on stdout (no collector required) |
+
+`PUG_OTEL` is evaluated once per process on the first `SetupSDK` call — set it before starting the server or workers. Any other value fails startup (`ErrInvalidOtelMode`). For local dev with only `make infra`, set `PUG_OTEL=stdout`; run `make clickstack` and use `otlp` (or unset) when exporting to HyperDX.
 
 **Recording errors in spans:** Use `telemetry.RecordError(ctx, err)` to record an error on the current span, set the span status to `Error`, and attach stack traces.
 

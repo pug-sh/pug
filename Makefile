@@ -102,6 +102,7 @@ infra: infra-up
 
 infra-up:
 	docker compose -f infra/dev/docker-compose.yaml up -d
+	@echo "Infra is up. For OTLP/HyperDX: make clickstack. Without a collector, set PUG_OTEL=stdout in .env."
 
 infra-up-fg:
 	docker compose -f infra/dev/docker-compose.yaml up
