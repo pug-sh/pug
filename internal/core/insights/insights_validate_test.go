@@ -56,6 +56,20 @@ func validQueryRequest() *insightsv1.QueryRequest {
 	}
 }
 
+func validUserFlowQueryRequest() *insightsv1.QueryRequest {
+	return &insightsv1.QueryRequest{
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW.Enum(),
+			UserFlow:    &insightsv1.UserFlowQuery{},
+		},
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		TimeRange: &commonv1.TimeRange{
+			From: timestamppb.New(validQueryAnchor),
+			To:   timestamppb.New(validQueryAnchor.Add(24 * time.Hour)),
+		},
+	}
+}
+
 // TestInsightTypeValidation exercises the required + defined_only constraints on InsightType.
 func TestInsightTypeValidation(t *testing.T) {
 	tests := []struct {
@@ -67,12 +81,16 @@ func TestInsightTypeValidation(t *testing.T) {
 		{name: "valid_funnel", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, wantErr: false},
 		{name: "valid_retention", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, wantErr: false},
 		{name: "valid_segmentation", insightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION, wantErr: false},
+		{name: "valid_user_flow", insightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW, wantErr: false},
 		{name: "unspecified_rejected", insightType: insightsv1.InsightType_INSIGHT_TYPE_UNSPECIFIED, wantErr: true},
 		{name: "undefined_value_rejected", insightType: 999, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
+			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW {
+				req = validUserFlowQueryRequest()
+			}
 			req.Spec.InsightType = tt.insightType.Enum()
 			err := protovalidate.Validate(req)
 			if tt.wantErr && err == nil {
@@ -98,12 +116,16 @@ func TestQueryRequest_FunnelRetentionRequireEvents(t *testing.T) {
 		{name: "funnel_zero_events_rejected", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, events: nil, wantErr: true},
 		{name: "retention_zero_events_rejected", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, events: nil, wantErr: true},
 		{name: "trends_zero_events_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS, events: nil, wantErr: false},
+		{name: "user_flow_zero_events_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW, events: nil, wantErr: false},
 		{name: "funnel_one_event_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, events: []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("signup")}}}, wantErr: false},
 		{name: "retention_one_event_accepted", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, events: []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("signup")}}}, wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
+			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW {
+				req = validUserFlowQueryRequest()
+			}
 			req.Spec.InsightType = tt.insightType.Enum()
 			req.Spec.Events = tt.events
 			err := protovalidate.Validate(req)
@@ -118,6 +140,130 @@ func TestQueryRequest_FunnelRetentionRequireEvents(t *testing.T) {
 			}
 			if err != nil {
 				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
+// TestUserFlowQueryValidation exercises user-flow-specific CEL rules on InsightQuerySpec.
+func TestUserFlowQueryValidation(t *testing.T) {
+	t.Run("property_requires_node_property", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.UserFlow = &insightsv1.UserFlowQuery{
+			NodeKind: insightsv1.UserFlowQuery_NODE_KIND_PROPERTY.Enum(),
+		}
+		err := protovalidate.Validate(req)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+		if !hasRule(err, "user_flow_property_required") {
+			t.Errorf("expected rule user_flow_property_required, got: %v", err)
+		}
+	})
+
+	t.Run("empty_user_flow_valid", func(t *testing.T) {
+		if err := protovalidate.Validate(validUserFlowQueryRequest()); err != nil {
+			t.Fatalf("expected valid, got error: %v", err)
+		}
+	})
+
+	t.Run("user_flow_rejects_events", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.Events = []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}}}
+		err := protovalidate.Validate(req)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+		if !hasRule(err, "user_flow_no_events") {
+			t.Errorf("expected rule user_flow_no_events, got: %v", err)
+		}
+	})
+
+	t.Run("user_flow_required_when_insight_type_is_user_flow", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.UserFlow = nil
+		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_required") {
+			t.Errorf("expected user_flow_required, got: %v", err)
+		}
+	})
+
+	t.Run("user_flow_only_for_user_flow_insight_type", func(t *testing.T) {
+		req := validQueryRequest() // TRENDS with events — otherwise valid
+		req.Spec.UserFlow = &insightsv1.UserFlowQuery{}
+		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_only_for_user_flow") {
+			t.Errorf("expected user_flow_only_for_user_flow, got: %v", err)
+		}
+	})
+
+	t.Run("user_flow_rejects_session", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.Session = &insightsv1.SessionQuery{
+			Metric: insightsv1.SessionMetric_SESSION_METRIC_SESSIONS.Enum(),
+		}
+		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_no_session") {
+			t.Errorf("expected user_flow_no_session, got: %v", err)
+		}
+	})
+
+	t.Run("user_flow_rejects_breakdowns", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$url")}}
+		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_no_breakdowns") {
+			t.Errorf("expected user_flow_no_breakdowns, got: %v", err)
+		}
+	})
+
+	t.Run("user_flow_rejects_breakdown_limit", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.BreakdownLimit = proto.Int32(5)
+		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_no_breakdown_limit") {
+			t.Errorf("expected user_flow_no_breakdown_limit, got: %v", err)
+		}
+	})
+
+	t.Run("node_property_pattern_rejects_invalid_chars", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.UserFlow = &insightsv1.UserFlowQuery{
+			NodeKind:     insightsv1.UserFlowQuery_NODE_KIND_PROPERTY.Enum(),
+			NodeProperty: proto.String("bad prop"), // space is outside the field pattern
+		}
+		if err := protovalidate.Validate(req); err == nil {
+			t.Error("expected validation error for node_property containing a space")
+		}
+	})
+
+	// Range rules: 0 means unset (valid); the documented boundaries are valid;
+	// just-outside values are rejected by their dedicated rule.
+	rangeTests := []struct {
+		name string
+		mut  func(*insightsv1.UserFlowQuery)
+		rule string // "" => expect the request to be valid
+	}{
+		{"max_hops_unset_ok", func(q *insightsv1.UserFlowQuery) { q.MaxHops = proto.Int32(0) }, ""},
+		{"max_hops_min_ok", func(q *insightsv1.UserFlowQuery) { q.MaxHops = proto.Int32(1) }, ""},
+		{"max_hops_max_ok", func(q *insightsv1.UserFlowQuery) { q.MaxHops = proto.Int32(10) }, ""},
+		{"max_hops_over_max", func(q *insightsv1.UserFlowQuery) { q.MaxHops = proto.Int32(11) }, "user_flow_max_hops_range"},
+		{"max_nodes_under_min", func(q *insightsv1.UserFlowQuery) { q.MaxNodes = proto.Int32(1) }, "user_flow_max_nodes_range"},
+		{"max_nodes_min_ok", func(q *insightsv1.UserFlowQuery) { q.MaxNodes = proto.Int32(2) }, ""},
+		{"max_nodes_max_ok", func(q *insightsv1.UserFlowQuery) { q.MaxNodes = proto.Int32(50) }, ""},
+		{"max_nodes_over_max", func(q *insightsv1.UserFlowQuery) { q.MaxNodes = proto.Int32(51) }, "user_flow_max_nodes_range"},
+		{"max_links_min_ok", func(q *insightsv1.UserFlowQuery) { q.MaxLinks = proto.Int32(1) }, ""},
+		{"max_links_max_ok", func(q *insightsv1.UserFlowQuery) { q.MaxLinks = proto.Int32(500) }, ""},
+		{"max_links_over_max", func(q *insightsv1.UserFlowQuery) { q.MaxLinks = proto.Int32(501) }, "user_flow_max_links_range"},
+	}
+	for _, tt := range rangeTests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validUserFlowQueryRequest()
+			tt.mut(req.Spec.UserFlow)
+			err := protovalidate.Validate(req)
+			if tt.rule == "" {
+				if err != nil {
+					t.Errorf("expected valid, got: %v", err)
+				}
+				return
+			}
+			if !hasRule(err, tt.rule) {
+				t.Errorf("expected rule %s, got: %v", tt.rule, err)
 			}
 		})
 	}

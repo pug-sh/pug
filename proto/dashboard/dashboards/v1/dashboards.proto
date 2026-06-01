@@ -73,6 +73,7 @@ enum DashboardTileViewMode {
   // KPI is a render variant of an insight tile, not a new content kind.
   // The tile still holds an InsightTileContent; only the visualization changes.
   DASHBOARD_TILE_VIEW_MODE_KPI = 6;
+  DASHBOARD_TILE_VIEW_MODE_SANKEY = 7;
 }
 
 // ComparePeriod selects an automatic comparison window for KPI / trend tiles.

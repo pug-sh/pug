@@ -183,6 +183,86 @@ message InsightQuerySpec {
   // events and attributed to its start instant — the time window selects sessions
   // by start time, it does not clip a session's events.
   SessionQuery session = 9;
+
+  // User-flow graph query. Only valid when insight_type == USER_FLOW.
+  UserFlowQuery user_flow = 10;
+
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.user_flow_only_for_user_flow"
+    message: "user_flow is only valid for user flow insight type"
+    expression:
+      "!has(this.user_flow)"
+      "|| this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.user_flow_required"
+    message: "user flow insight type requires user_flow"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
+      "|| has(this.user_flow)"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.user_flow_no_events"
+    message: "user flow insights cannot specify events"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
+      "|| this.events.size() == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.user_flow_no_session"
+    message: "user flow insights cannot specify session"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
+      "|| !has(this.session)"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.user_flow_no_breakdowns"
+    message: "breakdowns are not supported for user flow insight type"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
+      "|| this.breakdowns.size() == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.user_flow_no_breakdown_limit"
+    message: "breakdown_limit is not supported for user flow insight type"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
+      "|| this.breakdown_limit == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.user_flow_property_required"
+    message: "node_property is required when node_kind is PROPERTY"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
+      "|| this.user_flow.node_kind"
+      "   != shared.insights.v1.UserFlowQuery.NodeKind.NODE_KIND_PROPERTY"
+      "|| (this.user_flow.node_property.size() > 0"
+      "    && this.user_flow.node_property.matches('^\\\\$?[a-zA-Z0-9_.-]+$'))"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.user_flow_max_hops_range"
+    message: "max_hops must be between 1 and 10 when set"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
+      "|| this.user_flow.max_hops == 0"
+      "|| (this.user_flow.max_hops >= 1 && this.user_flow.max_hops <= 10)"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.user_flow_max_nodes_range"
+    message: "max_nodes must be between 2 and 50 when set"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
+      "|| this.user_flow.max_nodes == 0"
+      "|| (this.user_flow.max_nodes >= 2 && this.user_flow.max_nodes <= 50)"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.user_flow_max_links_range"
+    message: "max_links must be between 1 and 500 when set"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
+      "|| this.user_flow.max_links == 0"
+      "|| (this.user_flow.max_links >= 1 && this.user_flow.max_links <= 500)"
+  };
 }
 
 message QueryRequest {
@@ -242,6 +322,7 @@ message QueryResponse {
     SegmentationResult segmentation = 3;
     FunnelResult funnel = 4;
     RetentionResult retention = 5;
+    UserFlowResult user_flow = 6;
   }
   reserved 1; // was: repeated Series series
 }
@@ -272,6 +353,7 @@ enum InsightType {
   INSIGHT_TYPE_SEGMENTATION = 2;
   INSIGHT_TYPE_FUNNEL = 3;
   INSIGHT_TYPE_RETENTION = 4;
+  INSIGHT_TYPE_USER_FLOW = 5;
 }
 
 // Granularity values are listed finest → coarsest by source-order convention.
@@ -324,6 +406,63 @@ message SessionQuery {
   // metric. Empty scope means all events in the session; a kind/filters scope
   // measures only matching events inside each session.
   common.v1.EventFilter scope = 2;
+}
+
+// UserFlowQuery configures a user-flow (Sankey) graph insight.
+message UserFlowQuery {
+  // Which attribute names each node.
+  enum NodeKind {
+    NODE_KIND_UNSPECIFIED = 0;
+    NODE_KIND_EVENT_KIND = 1;
+    NODE_KIND_PROPERTY = 2;
+  }
+  NodeKind node_kind = 1;
+
+  // Required when node_kind == NODE_KIND_PROPERTY.
+  string node_property = 2 [(buf.validate.field).string.pattern = "^\\$?[a-zA-Z0-9_.-]*$"];
+
+  // Traversal unit. UNSPECIFIED resolves to SESSION in the builder.
+  // Per-user (cross-session) grouping is not in the API yet — add a new enum
+  // value when semantics are defined.
+  enum GroupBy {
+    GROUP_BY_UNSPECIFIED = 0;
+    GROUP_BY_SESSION = 1;
+  }
+  GroupBy group_by = 3;
+
+  // Event-level filter: restricts which events are eligible to become nodes.
+  // Not a session filter — sessions with no eligible events emit no transitions.
+  common.v1.EventFilter scope = 4;
+
+  // Maximum transitions (edges) per session/user. A max_hops = N flow touches at most N+1 nodes.
+  // Default 5 in builder. CEL max: 10.
+  int32 max_hops = 5;
+
+  // Top-N nodes before $others collapse. Default 20. CEL min 2, max 50 when set.
+  int32 max_nodes = 6;
+
+  // Maximum links in response after $others collapse. Default 100. CEL max 500 when set.
+  int32 max_links = 7;
+}
+
+message UserFlowNode {
+  string id = 1;
+  // is_others marks the synthetic overflow bucket that aggregates the nodes
+  // pruned by max_nodes. Real nodes have is_others=false. Clients must identify
+  // the bucket by this flag, NOT by matching id against "$others" — a real event
+  // kind or property value can legitimately be the literal string "$others".
+  bool is_others = 2;
+}
+
+message UserFlowLink {
+  string source = 1;
+  string target = 2;
+  int64 value = 3 [(buf.validate.field).int64.gte = 1];
+}
+
+message UserFlowResult {
+  repeated UserFlowNode nodes = 1;
+  repeated UserFlowLink links = 2;
 }
 
 message FilterGroup {

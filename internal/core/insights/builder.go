@@ -20,7 +20,8 @@ const PropertyValuesLimit = 100
 //
 // Applied to all cacheable public insight builders: BuildTrendsQuery,
 // BuildSegmentationQuery, BuildSessionTrendsQuery, BuildSessionSegmentationQuery,
-// BuildFunnelCountsQuery, BuildFunnelTimingQuery, BuildRetentionQuery. Other public
+// BuildFunnelCountsQuery, BuildFunnelTimingQuery, BuildRetentionQuery,
+// BuildUserFlowQuery. Other public
 // builders in this package (property keys/values, segment users, event names)
 // intentionally omit WithQueryCache — they either include `now()`
 // (BuildAutoPropertyValuesQuery) or back dashboard typeahead where freshness matters
@@ -115,6 +116,37 @@ func (q RetentionQuery) Args() []any          { return q.args }
 func (q RetentionQuery) NumBreakdowns() int   { return len(q.properties) }
 func (q RetentionQuery) Properties() []string { return q.properties }
 func (q RetentionQuery) BreakdownLimit() int  { return q.breakdownLimit }
+
+// UserFlowQuery is the compiled SQL for a user-flow (Sankey) graph insight.
+type UserFlowQuery struct {
+	sql      string
+	args     []any
+	maxNodes int
+	maxLinks int
+}
+
+func (q UserFlowQuery) SQL() string   { return q.sql }
+func (q UserFlowQuery) Args() []any   { return q.args }
+func (q UserFlowQuery) MaxNodes() int { return q.maxNodes }
+func (q UserFlowQuery) MaxLinks() int { return q.maxLinks }
+
+func BuildUserFlowQuery(req *insightsv1.QueryRequest, projectID string) (UserFlowQuery, error) {
+	resolved := resolveUserFlowParams(req.GetSpec().GetUserFlow())
+	q, err := buildUserFlowQuery(req, projectID, resolved)
+	if err != nil {
+		return UserFlowQuery{}, err
+	}
+	sql, args, err := q.WithQueryCache(analyticsCacheTTL).Build()
+	if err != nil {
+		return UserFlowQuery{}, fmt.Errorf("user flow: %w", err)
+	}
+	return UserFlowQuery{
+		sql:      sql,
+		args:     args,
+		maxNodes: int(resolved.maxNodes),
+		maxLinks: int(resolved.maxLinks),
+	}, nil
+}
 
 func BuildTrendsQuery(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
 	events := normalizeTrendsEvents(req.GetSpec().GetEvents())

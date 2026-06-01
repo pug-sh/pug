@@ -195,6 +195,78 @@ func TestFunnel(t *testing.T) {
 	}
 }
 
+func TestBuildUserFlowQuery(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW.Enum(),
+			UserFlow:    &insightsv1.UserFlowQuery{},
+		},
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}
+
+	q, err := insights.BuildUserFlowQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql, args := q.SQL(), q.Args()
+
+	if !strings.Contains(sql, "WITH session_nodes AS") {
+		t.Errorf("expected session_nodes CTE, got: %s", sql)
+	}
+	if !strings.Contains(sql, "pairs AS") {
+		t.Errorf("expected pairs CTE, got: %s", sql)
+	}
+	if !strings.Contains(sql, "groupArray((occur_time, kind))") {
+		t.Errorf("expected groupArray((occur_time, kind)) in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "count(DISTINCT group_key)") {
+		t.Errorf("expected count(DISTINCT group_key), got: %s", sql)
+	}
+	if q.MaxNodes() != 20 || q.MaxLinks() != 100 {
+		t.Errorf("defaults: maxNodes=%d maxLinks=%d", q.MaxNodes(), q.MaxLinks())
+	}
+	// The default max_hops (5) is baked into the SQL as the arraySlice node cap
+	// max_hops+1 = 6; it has no accessor, so pin it via the generated SQL.
+	if !strings.Contains(sql, ", 1, 6)") {
+		t.Errorf("expected arraySlice cap of 6 (default max_hops=5 +1), got: %s", sql)
+	}
+	foundProject := false
+	for _, a := range args {
+		if a == "proj_123" {
+			foundProject = true
+			break
+		}
+	}
+	if !foundProject {
+		t.Errorf("expected proj_123 in args, got: %v", args)
+	}
+}
+
+func TestBuildUserFlowQuery_PropertyNodeAndScope(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW.Enum(),
+			UserFlow: &insightsv1.UserFlowQuery{
+				NodeKind:     insightsv1.UserFlowQuery_NODE_KIND_PROPERTY.Enum(),
+				NodeProperty: proto.String("$url"),
+				Scope:        &commonv1.EventFilter{Kind: proto.String("page_view")},
+			},
+		},
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-08T00:00:00Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}
+
+	q, err := insights.BuildUserFlowQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := q.SQL()
+	if !strings.Contains(sql, "coalesce(url") && !strings.Contains(sql, "auto_properties") {
+		t.Errorf("expected property expression in SQL, got: %s", sql)
+	}
+}
+
 func TestFunnelWithConversionWindow(t *testing.T) {
 	req := &insightsv1.QueryRequest{
 		Spec: &insightsv1.InsightQuerySpec{
@@ -2961,6 +3033,25 @@ func TestAnalyticsCacheSettings(t *testing.T) {
 					Spec: &insightsv1.InsightQuerySpec{
 						InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
 						Events:      []*insightsv1.EventQuery{pageView},
+					},
+					TimeRange:   tr,
+					Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+				}, "proj_test")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return q.SQL(), q.Args()
+			},
+		},
+		{
+			name:      "BuildUserFlowQuery",
+			structure: "WITH session_nodes AS",
+			run: func(t *testing.T) (string, []any) {
+				t.Helper()
+				q, err := insights.BuildUserFlowQuery(&insightsv1.QueryRequest{
+					Spec: &insightsv1.InsightQuerySpec{
+						InsightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW.Enum(),
+						UserFlow:    &insightsv1.UserFlowQuery{},
 					},
 					TimeRange:   tr,
 					Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),

@@ -70,6 +70,42 @@ func (r *scalarRows) Scan(dest ...any) error {
 func (r *scalarRows) Err() error   { return nil }
 func (r *scalarRows) Close() error { return nil }
 
+type userFlowConn struct {
+	driver.Conn
+	rows [][3]any // source, target, value
+}
+
+func (c userFlowConn) Query(_ context.Context, _ string, _ ...any) (driver.Rows, error) {
+	return &userFlowRows{rows: c.rows}, nil
+}
+
+type userFlowRows struct {
+	driver.Rows
+	rows [][3]any
+	idx  int
+}
+
+func (r *userFlowRows) Next() bool {
+	return r.idx < len(r.rows)
+}
+
+func (r *userFlowRows) Scan(dest ...any) error {
+	if len(dest) != 3 {
+		return errors.New("userFlowRows: expected 3 scan destinations")
+	}
+	row := r.rows[r.idx]
+	r.idx++
+	*dest[0].(*string) = row[0].(string)
+	*dest[1].(*string) = row[1].(string)
+	// QueryUserFlow scans the count into a uint64 (ClickHouse count(DISTINCT) is
+	// UInt64) before narrowing to int64; the mock must match that destination type.
+	*dest[2].(*uint64) = uint64(row[2].(int64))
+	return nil
+}
+
+func (r *userFlowRows) Err() error   { return nil }
+func (r *userFlowRows) Close() error { return nil }
+
 func TestDashboardDefaultTimeRangePresetFromDB(t *testing.T) {
 	ctx := context.Background()
 	if got := DashboardDefaultTimeRangePresetFromDB(ctx, "TIME_RANGE_PRESET_LAST_7_DAYS"); got != commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS {
@@ -511,5 +547,45 @@ func TestRenderDashboard_PartialSuccessIsolatesFailure(t *testing.T) {
 	}
 	if ok.Result.GetSegmentation().GetTotal() != 42 {
 		t.Errorf("ok tile total = %v, want 42 (sibling failure must not poison it)", ok.Result.GetSegmentation().GetTotal())
+	}
+}
+
+func TestRenderDashboard_UserFlowTile(t *testing.T) {
+	spec := &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW.Enum(),
+		UserFlow:    &insightsv1.UserFlowQuery{},
+	}
+	queryJSON, err := SpecMessageToMap(spec)
+	if err != nil {
+		t.Fatalf("SpecMessageToMap: %v", err)
+	}
+	dashboard := DashboardWithTiles{
+		Dashboard: dbread.Dashboard{ProjectID: "proj", DefaultTimeRange: "TIME_RANGE_PRESET_LAST_7_DAYS", DefaultGranularity: "GRANULARITY_DAY"},
+		Tiles: []dbread.DashboardTile{
+			{ID: "uf", Kind: int16(TileKindInsight), InsightQuery: queryJSON},
+		},
+	}
+	executor := coreinsights.NewExecutor(userFlowConn{rows: [][3]any{
+		{"login", "dashboard", int64(2)},
+		{"login", "logout", int64(1)},
+	}})
+
+	rendered, err := RenderDashboard(context.Background(), executor, dashboard, DashboardQueryOverrides{})
+	if err != nil {
+		t.Fatalf("RenderDashboard returned error: %v", err)
+	}
+	if len(rendered.Tiles) != 1 {
+		t.Fatalf("tiles = %d, want 1", len(rendered.Tiles))
+	}
+	tile := rendered.Tiles[0]
+	if tile.ErrorMessage != "" {
+		t.Fatalf("unexpected error: %q", tile.ErrorMessage)
+	}
+	result := tile.Result.GetUserFlow()
+	if result == nil {
+		t.Fatal("expected UserFlow result")
+	}
+	if len(result.GetLinks()) != 2 {
+		t.Fatalf("links = %d, want 2", len(result.GetLinks()))
 	}
 }

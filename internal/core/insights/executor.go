@@ -48,6 +48,13 @@ type StepTiming struct {
 	Distribution []int64
 }
 
+// UserFlowRow is a single source→target edge aggregate from QueryUserFlow.
+type UserFlowRow struct {
+	Source string
+	Target string
+	Value  int64
+}
+
 // RetentionRow is a single retention aggregate for one cohort bucket, time bucket, and breakdown combination.
 type RetentionRow struct {
 	CohortTime time.Time
@@ -331,6 +338,49 @@ func (e *Executor) QueryFunnel(ctx context.Context, projectID string, q FunnelQu
 		}
 		return cmp.Compare(a.StepIndex, b.StepIndex)
 	})
+	return result, nil
+}
+
+// QueryUserFlow executes a user-flow query and returns rows of (source, target, value).
+func (e *Executor) QueryUserFlow(ctx context.Context, projectID string, q UserFlowQuery) ([]UserFlowRow, error) {
+	sql := q.SQL()
+	args := q.Args()
+	rows, err := e.ch.Query(ctx, sql, args...)
+	if err != nil {
+		recordQueryError(ctx, "clickhouse: query user flow failed", projectID, sql, len(args), err)
+		return nil, fmt.Errorf("QueryUserFlow: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
+		}
+	}()
+
+	var result []UserFlowRow
+	for rows.Next() {
+		var row UserFlowRow
+		// count(DISTINCT group_key) is UInt64 in ClickHouse; scan into uint64 then
+		// narrow to int64. A distinct-session count for a single edge cannot approach
+		// math.MaxInt64, so the conversion never wraps; UserFlowLink.value is int64
+		// (proto, gte=1) and GroupUserFlowResult drops value<=0 as a backstop.
+		var value uint64
+		if err := rows.Scan(&row.Source, &row.Target, &value); err != nil {
+			slog.ErrorContext(ctx, "clickhouse: query user flow scan failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
+			return nil, fmt.Errorf("QueryUserFlow: scan: %w", err)
+		}
+		row.Value = int64(value)
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query user flow iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return nil, fmt.Errorf("QueryUserFlow: %w", err)
+	}
 	return result, nil
 }
 

@@ -179,6 +179,9 @@ func TestTilePayload_HashChangesPerField(t *testing.T) {
 		{"ViewMode", func(p *TilePayload) {
 			p.ViewMode = dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED
 		}},
+		{"ViewModeSankey", func(p *TilePayload) {
+			p.ViewMode = dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY
+		}},
 		{"Compare", func(p *TilePayload) { p.Compare = dashboardsv1.ComparePeriod_COMPARE_PERIOD_UNSPECIFIED }},
 		{"Thresholds", func(p *TilePayload) {
 			p.Thresholds = append(p.Thresholds, &dashboardsv1.ThresholdRule{
@@ -230,6 +233,15 @@ func TestTilePayload_HashIgnoresUnknownViewMode(t *testing.T) {
 	// Both normalize to LINE for an insight tile, so hashes must match.
 	if !bytes.Equal(hLine, hUnknown) {
 		t.Errorf("unknown ViewMode did not normalize:\n  LINE=%x\n  unknown=%x", hLine, hUnknown)
+	}
+}
+
+func TestTilePayload_SankeyViewModePreservesOnEncode(t *testing.T) {
+	p := fullPayload()
+	p.ViewMode = dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY
+	enc := mustEncode(t, p)
+	if enc.ViewMode != dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY.String() {
+		t.Fatalf("ViewMode = %q, want SANKEY", enc.ViewMode)
 	}
 }
 

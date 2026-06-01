@@ -136,6 +136,63 @@ func TestIntegration_FunnelHandlerIncludeStepTimingDispatch(t *testing.T) {
 	})
 }
 
+func TestIntegration_UserFlowHandler(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	rd := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	const userFlowProjectID = "proj_user_flow_handler"
+	seedUserFlowEvents(t, ctx, ch, userFlowProjectID)
+
+	executor := insights.NewExecutor(ch.Conn)
+	service := insights.NewService(executor, rd.Client)
+	srv := insightshandler.NewServer(service, executor)
+
+	principal := &rpc.Principal{Project: &dbread.Project{ID: userFlowProjectID}}
+	authedCtx := authn.SetInfo(ctx, principal)
+
+	resp, err := srv.Query(authedCtx, connect.NewRequest(&insightsv1.QueryRequest{
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW.Enum(),
+			UserFlow:    &insightsv1.UserFlowQuery{},
+		},
+		TimeRange: &commonv1.TimeRange{
+			From: timestamppb.New(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)),
+			To:   timestamppb.New(time.Date(2024, 3, 2, 0, 0, 0, 0, time.UTC)),
+		},
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+	}))
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	result := resp.Msg.GetUserFlow()
+	if result == nil {
+		t.Fatal("expected UserFlow result")
+	}
+	if len(result.GetLinks()) != 5 {
+		t.Fatalf("expected 5 links, got %d", len(result.GetLinks()))
+	}
+	// Assert the link values end to end, not just the count, so a regression that
+	// returns the wrong weights through the full handler path is caught.
+	linkMap := userFlowLinkMap(result)
+	want := map[[2]string]int64{
+		{"login", "dashboard"}:    2,
+		{"login", "logout"}:       1,
+		{"dashboard", "settings"}: 1,
+		{"dashboard", "logout"}:   1,
+		{"settings", "logout"}:    1,
+	}
+	for k, v := range want {
+		if linkMap[k] != v {
+			t.Errorf("link %v: got %d want %d", k, linkMap[k], v)
+		}
+	}
+}
+
 // TestIntegration_GetFilterSchemaHandlerForwardsAllowedTypes verifies the
 // handler reads req.Msg.GetAllowedTypes() and forwards it to the service. The
 // service-level test (TestServiceGetFilterSchema/allowed_types_filters_custom_keys)
