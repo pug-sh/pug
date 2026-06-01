@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/core/emailaction"
-	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
+	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -22,6 +22,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/xid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -74,16 +75,24 @@ type Service struct {
 	pgW       *pgxpool.Pool
 	jwtKey    []byte
 	publisher JobPublisher
+	oauth     *coreoauth.Service
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher) *Service {
+func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, redisClient *redis.Client, oauthCfg coreoauth.Config) (*Service, error) {
+	registry, err := coreoauth.NewRegistryFromConfig(ctx, oauthCfg)
+	if err != nil {
+		return nil, err
+	}
+	oauthSvc := coreoauth.NewService(oauthCfg, registry, coreoauth.NewStateStore(redisClient))
+
 	return &Service{
 		read:      dbread.New(pgRO),
 		write:     dbwrite.New(pgW),
 		pgW:       pgW,
 		jwtKey:    jwtKey,
 		publisher: publisher,
-	}
+		oauth:     oauthSvc,
+	}, nil
 }
 
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (string, error) {
@@ -238,23 +247,18 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 	}
 
 	if isInvite {
-		// Invited user joins the invitation's org with its role; no default org.
-		if err := coreorgs.ApplyInviteAcceptanceInTx(ctx, w, emailToken.OrgInvitationID.String, customerID); err != nil {
-			switch {
-			case errors.Is(err, coreorgs.ErrAlreadyMember):
-				// Idempotent — already in the org; just sign in.
-			case errors.Is(err, coreorgs.ErrInviteNotFound),
-				errors.Is(err, coreorgs.ErrInviteNotPending),
-				errors.Is(err, coreorgs.ErrInviteExpired):
-				return "", ErrInvalidToken
-			default:
-				return "", err // logged + recorded at source in coreorgs
+		invite := &InviteContext{OrgInvitationID: emailToken.OrgInvitationID.String}
+		if err := FinishSignup(ctx, w, customerID, createdNew, invite); err != nil {
+			if !errors.Is(err, ErrInvalidToken) {
+				slog.ErrorContext(ctx, "failed to apply org invite on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
+				telemetry.RecordError(ctx, err)
 			}
+			return "", err
 		}
 	} else if createdNew {
-		// Plain passwordless signup: give the new account a default org + project.
-		if _, err := coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
+		if err := FinishSignup(ctx, w, customerID, true, nil); err != nil {
 			slog.ErrorContext(ctx, "failed to create default org for magic-link user", slogx.Error(err), slog.String("customer_id", customerID))
+			telemetry.RecordError(ctx, err)
 			return "", err
 		}
 	}
@@ -267,7 +271,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 		telemetry.RecordError(ctx, err)
 		return "", err
 	}
-	if _, err := w.MarkCustomerEmailVerified(ctx, customerID); err != nil {
+	if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {
 		slog.ErrorContext(ctx, "failed to mark email verified on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
 		return "", err
@@ -285,6 +289,56 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 		return "", err
 	}
 	return jwtToken, nil
+}
+
+func (s *Service) BeginOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, redirectURI string) (authorizationURL, state string, err error) {
+	result, err := s.oauth.Begin(ctx, provider, redirectURI)
+	if err != nil {
+		return "", "", mapOAuthError(err)
+	}
+	return result.AuthorizationURL, result.State, nil
+}
+
+func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, code, state string) (string, error) {
+	// ExchangeIdentity consumes Redis state and the single-use authorization code before any
+	// database work. If WithIdentityTx fails, the client must restart from BeginOAuthSignIn.
+	ident, err := s.oauth.ExchangeIdentity(ctx, provider, code, state)
+	if err != nil {
+		return "", mapOAuthError(err)
+	}
+
+	customerID, _, err := coreoauth.WithIdentityTx(ctx, s.pgW, provider, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
+		if err := FinishSignup(ctx, w, customerID, createdNew, nil); err != nil {
+			return err
+		}
+		return FinalizeVerifiedCustomer(ctx, w, customerID)
+	})
+	if err != nil {
+		if !isOAuthSignupClientError(err) {
+			slog.ErrorContext(ctx, "failed to complete oauth sign-in", slogx.Error(err), slog.String("provider", string(provider)))
+			telemetry.RecordError(ctx, err)
+		}
+		return "", mapOAuthError(err)
+	}
+
+	jwtToken, err := s.generateJWT(customerID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate JWT on oauth sign-in", slogx.Error(err), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	return jwtToken, nil
+}
+
+func mapOAuthError(err error) error {
+	if errors.Is(err, coreoauth.ErrInvalidState) {
+		return ErrInvalidToken
+	}
+	return err
+}
+
+func isOAuthSignupClientError(err error) bool {
+	return errors.Is(err, coreoauth.ErrUnverifiedEmail)
 }
 
 type issueActionTokenInput struct {

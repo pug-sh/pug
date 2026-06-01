@@ -107,8 +107,11 @@ func start(ctx context.Context, d *deps) error {
 	// Handlers — grouped by auth boundary
 
 	// Public
-	authPath, authHandler := authv1connect.NewAuthServiceHandler(
-		auth.NewServer(d.pgRo, d.pgW, d.jwtKey, d.nats), handlerOpts)
+	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats, d.redis.Unwrap())
+	if err != nil {
+		return fmt.Errorf("auth server: %w", err)
+	}
+	authPath, authHandler := authv1connect.NewAuthServiceHandler(authServer, handlerOpts)
 
 	// Dashboard
 	orgsPath, orgsHandler := orgsv1connect.NewOrgsServiceHandler(

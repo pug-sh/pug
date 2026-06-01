@@ -38,6 +38,16 @@ func (p *stubPublisher) Publish(_ context.Context, subject string, data []byte) 
 	return nil
 }
 
+func mustNewTestAuthService(t *testing.T, db *testutil.TestPostgres, pub auth.JobPublisher) *auth.Service {
+	t.Helper()
+	rd := testutil.SetupRedis(t)
+	svc, err := auth.NewServiceForTest(context.Background(), db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub, rd.Client)
+	if err != nil {
+		t.Fatalf("NewServiceForTest: %v", err)
+	}
+	return svc
+}
+
 func TestAuthService(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -45,7 +55,7 @@ func TestAuthService(t *testing.T) {
 
 	db := testutil.SetupPostgres(t)
 	jwtKey := []byte("test-secret-key-for-jwt")
-	svc := auth.NewService(db.PgRO, db.PgW, jwtKey, &stubPublisher{})
+	svc := mustNewTestAuthService(t, db, &stubPublisher{})
 	write := dbwrite.New(db.PgW)
 	ctx := context.Background()
 
@@ -164,7 +174,7 @@ func TestEmailPublishFailureCountersByKind(t *testing.T) {
 	t.Cleanup(func() { otel.SetMeterProvider(prevProvider) })
 
 	db := testutil.SetupPostgres(t)
-	svc := auth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), failingPublisher{})
+	svc := mustNewTestAuthService(t, db, failingPublisher{})
 	ctx := context.Background()
 
 	t.Run("magic_link", func(t *testing.T) {
