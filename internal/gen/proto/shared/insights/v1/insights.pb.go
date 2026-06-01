@@ -993,9 +993,13 @@ func (x *UserFlowQuery) GetMaxLinks() int32 {
 }
 
 type UserFlowNode struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	Label         *string                `protobuf:"bytes,2,opt,name=label" json:"label,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	// is_others marks the synthetic overflow bucket that aggregates the nodes
+	// pruned by max_nodes. Real nodes have is_others=false. Clients must identify
+	// the bucket by this flag, NOT by matching id against "$others" — a real event
+	// kind or property value can legitimately be the literal string "$others".
+	IsOthers      *bool `protobuf:"varint,2,opt,name=is_others,json=isOthers" json:"is_others,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1037,11 +1041,11 @@ func (x *UserFlowNode) GetId() string {
 	return ""
 }
 
-func (x *UserFlowNode) GetLabel() string {
-	if x != nil && x.Label != nil {
-		return *x.Label
+func (x *UserFlowNode) GetIsOthers() bool {
+	if x != nil && x.IsOthers != nil {
+		return *x.IsOthers
 	}
-	return ""
+	return false
 }
 
 type UserFlowLink struct {
@@ -2190,10 +2194,10 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x12NODE_KIND_PROPERTY\x10\x02\"9\n" +
 	"\aGroupBy\x12\x18\n" +
 	"\x14GROUP_BY_UNSPECIFIED\x10\x00\x12\x14\n" +
-	"\x10GROUP_BY_SESSION\x10\x01\"4\n" +
+	"\x10GROUP_BY_SESSION\x10\x01\";\n" +
 	"\fUserFlowNode\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
-	"\x05label\x18\x02 \x01(\tR\x05label\"]\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tis_others\x18\x02 \x01(\bR\bisOthers\"]\n" +
 	"\fUserFlowLink\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x1d\n" +

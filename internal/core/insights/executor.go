@@ -361,6 +361,10 @@ func (e *Executor) QueryUserFlow(ctx context.Context, projectID string, q UserFl
 	var result []UserFlowRow
 	for rows.Next() {
 		var row UserFlowRow
+		// count(DISTINCT group_key) is UInt64 in ClickHouse; scan into uint64 then
+		// narrow to int64. A distinct-session count for a single edge cannot approach
+		// math.MaxInt64, so the conversion never wraps; UserFlowLink.value is int64
+		// (proto, gte=1) and GroupUserFlowResult drops value<=0 as a backstop.
 		var value uint64
 		if err := rows.Scan(&row.Source, &row.Target, &value); err != nil {
 			slog.ErrorContext(ctx, "clickhouse: query user flow scan failed", slogx.Error(err),

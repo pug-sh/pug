@@ -176,6 +176,21 @@ func TestIntegration_UserFlowHandler(t *testing.T) {
 	if len(result.GetLinks()) != 5 {
 		t.Fatalf("expected 5 links, got %d", len(result.GetLinks()))
 	}
+	// Assert the link values end to end, not just the count, so a regression that
+	// returns the wrong weights through the full handler path is caught.
+	linkMap := userFlowLinkMap(result)
+	want := map[[2]string]int64{
+		{"login", "dashboard"}:    2,
+		{"login", "logout"}:       1,
+		{"dashboard", "settings"}: 1,
+		{"dashboard", "logout"}:   1,
+		{"settings", "logout"}:    1,
+	}
+	for k, v := range want {
+		if linkMap[k] != v {
+			t.Errorf("link %v: got %d want %d", k, linkMap[k], v)
+		}
+	}
 }
 
 // TestIntegration_GetFilterSchemaHandlerForwardsAllowedTypes verifies the

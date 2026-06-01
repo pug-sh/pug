@@ -178,6 +178,95 @@ func TestUserFlowQueryValidation(t *testing.T) {
 			t.Errorf("expected rule user_flow_no_events, got: %v", err)
 		}
 	})
+
+	t.Run("user_flow_required_when_insight_type_is_user_flow", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.UserFlow = nil
+		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_required") {
+			t.Errorf("expected user_flow_required, got: %v", err)
+		}
+	})
+
+	t.Run("user_flow_only_for_user_flow_insight_type", func(t *testing.T) {
+		req := validQueryRequest() // TRENDS with events — otherwise valid
+		req.Spec.UserFlow = &insightsv1.UserFlowQuery{}
+		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_only_for_user_flow") {
+			t.Errorf("expected user_flow_only_for_user_flow, got: %v", err)
+		}
+	})
+
+	t.Run("user_flow_rejects_session", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.Session = &insightsv1.SessionQuery{
+			Metric: insightsv1.SessionMetric_SESSION_METRIC_SESSIONS.Enum(),
+		}
+		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_no_session") {
+			t.Errorf("expected user_flow_no_session, got: %v", err)
+		}
+	})
+
+	t.Run("user_flow_rejects_breakdowns", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$url")}}
+		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_no_breakdowns") {
+			t.Errorf("expected user_flow_no_breakdowns, got: %v", err)
+		}
+	})
+
+	t.Run("user_flow_rejects_breakdown_limit", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.BreakdownLimit = proto.Int32(5)
+		if err := protovalidate.Validate(req); !hasRule(err, "user_flow_no_breakdown_limit") {
+			t.Errorf("expected user_flow_no_breakdown_limit, got: %v", err)
+		}
+	})
+
+	t.Run("node_property_pattern_rejects_invalid_chars", func(t *testing.T) {
+		req := validUserFlowQueryRequest()
+		req.Spec.UserFlow = &insightsv1.UserFlowQuery{
+			NodeKind:     insightsv1.UserFlowQuery_NODE_KIND_PROPERTY.Enum(),
+			NodeProperty: proto.String("bad prop"), // space is outside the field pattern
+		}
+		if err := protovalidate.Validate(req); err == nil {
+			t.Error("expected validation error for node_property containing a space")
+		}
+	})
+
+	// Range rules: 0 means unset (valid); the documented boundaries are valid;
+	// just-outside values are rejected by their dedicated rule.
+	rangeTests := []struct {
+		name string
+		mut  func(*insightsv1.UserFlowQuery)
+		rule string // "" => expect the request to be valid
+	}{
+		{"max_hops_unset_ok", func(q *insightsv1.UserFlowQuery) { q.MaxHops = proto.Int32(0) }, ""},
+		{"max_hops_min_ok", func(q *insightsv1.UserFlowQuery) { q.MaxHops = proto.Int32(1) }, ""},
+		{"max_hops_max_ok", func(q *insightsv1.UserFlowQuery) { q.MaxHops = proto.Int32(10) }, ""},
+		{"max_hops_over_max", func(q *insightsv1.UserFlowQuery) { q.MaxHops = proto.Int32(11) }, "user_flow_max_hops_range"},
+		{"max_nodes_under_min", func(q *insightsv1.UserFlowQuery) { q.MaxNodes = proto.Int32(1) }, "user_flow_max_nodes_range"},
+		{"max_nodes_min_ok", func(q *insightsv1.UserFlowQuery) { q.MaxNodes = proto.Int32(2) }, ""},
+		{"max_nodes_max_ok", func(q *insightsv1.UserFlowQuery) { q.MaxNodes = proto.Int32(50) }, ""},
+		{"max_nodes_over_max", func(q *insightsv1.UserFlowQuery) { q.MaxNodes = proto.Int32(51) }, "user_flow_max_nodes_range"},
+		{"max_links_min_ok", func(q *insightsv1.UserFlowQuery) { q.MaxLinks = proto.Int32(1) }, ""},
+		{"max_links_max_ok", func(q *insightsv1.UserFlowQuery) { q.MaxLinks = proto.Int32(500) }, ""},
+		{"max_links_over_max", func(q *insightsv1.UserFlowQuery) { q.MaxLinks = proto.Int32(501) }, "user_flow_max_links_range"},
+	}
+	for _, tt := range rangeTests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validUserFlowQueryRequest()
+			tt.mut(req.Spec.UserFlow)
+			err := protovalidate.Validate(req)
+			if tt.rule == "" {
+				if err != nil {
+					t.Errorf("expected valid, got: %v", err)
+				}
+				return
+			}
+			if !hasRule(err, tt.rule) {
+				t.Errorf("expected rule %s, got: %v", tt.rule, err)
+			}
+		})
+	}
 }
 
 // TestEventQuery_PropertyRequiredForNumericAgg exercises the

@@ -447,7 +447,11 @@ message UserFlowQuery {
 
 message UserFlowNode {
   string id = 1;
-  string label = 2;
+  // is_others marks the synthetic overflow bucket that aggregates the nodes
+  // pruned by max_nodes. Real nodes have is_others=false. Clients must identify
+  // the bucket by this flag, NOT by matching id against "$others" — a real event
+  // kind or property value can legitimately be the literal string "$others".
+  bool is_others = 2;
 }
 
 message UserFlowLink {

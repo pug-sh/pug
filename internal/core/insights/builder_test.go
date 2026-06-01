@@ -226,6 +226,11 @@ func TestBuildUserFlowQuery(t *testing.T) {
 	if q.MaxNodes() != 20 || q.MaxLinks() != 100 {
 		t.Errorf("defaults: maxNodes=%d maxLinks=%d", q.MaxNodes(), q.MaxLinks())
 	}
+	// The default max_hops (5) is baked into the SQL as the arraySlice node cap
+	// max_hops+1 = 6; it has no accessor, so pin it via the generated SQL.
+	if !strings.Contains(sql, ", 1, 6)") {
+		t.Errorf("expected arraySlice cap of 6 (default max_hops=5 +1), got: %s", sql)
+	}
 	foundProject := false
 	for _, a := range args {
 		if a == "proj_123" {

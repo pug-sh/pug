@@ -3,6 +3,23 @@
 Revised plan incorporating all review findings. Supersedes earlier drafts of this document.
 Linked from [`CLAUDE.md`](../../CLAUDE.md) and [`insights.md`](insights.md).
 
+> **Implementation status (shipped).** This document is the original plan; the
+> feature is implemented. Where the shipped code diverges from the pseudo-code
+> below, the code is authoritative. Notable divergences:
+> - **`UserFlowNode` carries `is_others` (bool), not `label`.** The redundant
+>   `label` (always equal to `id`) was dropped; the synthetic overflow bucket is
+>   identified structurally by `is_others`.
+> - **The overflow bucket is a distinct internal identity, not just the string
+>   `"$others"`.** `GroupUserFlowResult` keys nodes by an internal `nodeRef{id,
+>   others}` so a real node literally named `"$others"` never merges with the
+>   bucket; the bucket's emitted id is disambiguated if a real node already uses
+>   `"$others"`. See §4.3.
+> - **Default resolution lives in `resolveUserFlowParams`** (called at the top of
+>   `BuildUserFlowQuery`), which returns a `userFlowResolved`; `buildUserFlowQuery`
+>   takes that resolved struct. The session grouping helpers are parameterless and
+>   session-specific (`userFlowSessionGroupKeyColumn`, `userFlowNonEmptySessionKeyCond`)
+>   since only `GROUP_BY_SESSION` exists today.
+
 ---
 
 ## 1. Overview
@@ -33,7 +50,7 @@ Every item that was ambiguous or incorrect in the draft, resolved here with rati
 
 | Issue | Decision | Rationale |
 | --- | --- | --- |
-| `GROUP_BY_UNSPECIFIED` fallback | Named constant `defaultUserFlowGroupBy = GROUP_BY_SESSION` in builder | Prevents silent behaviour divergence when new code paths are added |
+| `GROUP_BY_UNSPECIFIED` fallback | Only `GROUP_BY_SESSION` exists; the builder always groups by session_id via the parameterless `userFlowSessionGroupKeyColumn` (shipped: no `defaultUserFlowGroupBy` constant) | A future `GROUP_BY_USER` must add its own grouping column, surfaced by the session-specific helper name |
 | `$others` self-loop after remap | Degenerate link removal runs **after** `$others` remapping | Remapping two low-volume nodes both to `$others` produces a `$others→$others` self-loop; only post-remap removal catches it |
 | `max_hops` = nodes or edges? | **Edges**. A `max_hops = 5` flow touches at most 6 nodes. Documented in proto comment. | Off-by-one here is consistent across all sessions; must be unambiguous |
 | `scope` filter semantics | Filters **which events are eligible to become nodes** (event-level), not which sessions are included (session-level). Sessions with zero eligible events emit no transitions and produce no rows. | The two interpretations give very different graphs; event-level is more useful |
@@ -81,8 +98,9 @@ message UserFlowQuery {
   // Validated pattern: ^\$?[a-zA-Z0-9_.-]+$
   string node_property = 2;
 
-  // Traversal unit. UNSPECIFIED resolves to SESSION in the builder
-  // via the defaultUserFlowGroupBy constant — not a silent fallback.
+  // Traversal unit. Only GROUP_BY_SESSION is implemented; the builder always
+  // groups by session_id (see userFlowSessionGroupKeyColumn). A future
+  // GROUP_BY_USER must add its own grouping column.
   enum GroupBy {
     GROUP_BY_UNSPECIFIED = 0;
     GROUP_BY_SESSION     = 1;  // session_id — v1 default
@@ -119,8 +137,12 @@ UserFlowQuery user_flow = 10;  // field 10; session = 9
 
 ```protobuf
 message UserFlowNode {
-  string id    = 1;  // stable key; used as source/target in links
-  string label = 2;  // display label; equals id except for "$others"
+  string id        = 1;  // stable key; used as source/target in links
+  // is_others marks the synthetic overflow bucket (the node pruned-away nodes
+  // collapse into). Real nodes have is_others=false. Clients identify the bucket
+  // by this flag, NOT by matching id against "$others" — a real event kind or
+  // property value can legitimately be the literal "$others".
+  bool   is_others = 2;
 }
 
 message UserFlowLink {
@@ -211,15 +233,15 @@ const (
     defaultUserFlowMaxNodes = 20
     defaultUserFlowMaxLinks = 100
 
-    // defaultUserFlowGroupBy is the resolved value when GroupBy is UNSPECIFIED.
-    // Not a silent fallback — used explicitly at the top of BuildUserFlowQuery.
-    defaultUserFlowGroupBy = insightsv1.UserFlowQuery_GROUP_BY_SESSION
-
     // defaultUserFlowNodeKind is the resolved value when NodeKind is UNSPECIFIED.
-    // Used explicitly at the top of BuildUserFlowQuery — not a switch fallthrough.
+    // Not a silent fallback — resolved explicitly in resolveUserFlowParams, not via
+    // a switch fallthrough.
     defaultUserFlowNodeKind = insightsv1.UserFlowQuery_NODE_KIND_EVENT_KIND
 )
 ```
+
+(Shipped: `group_by` has only `GROUP_BY_SESSION`, which has no effect on output, so the
+builder no longer resolves it — there is no `defaultUserFlowGroupBy` constant.)
 
 ### 4.2 Query structure (two CTEs + outer SELECT)
 
@@ -436,10 +458,16 @@ Nil or empty slice on no transitions is fine; `GroupUserFlowResult` handles it.
 9.  Truncate to max_links (lowest-value links dropped)
 
 10. Build node list from surviving link endpoints:
-      - Non-"$others" nodes: id == label, sorted by id asc
-      - "$others" node: id == "$others", label == "$others", always last
+      - Real nodes: is_others=false, sorted by id asc
+      - Overflow bucket: is_others=true, id "$others" (disambiguated if a real
+        surviving node already uses that id), always last
       - Nodes referenced only by truncated links are NOT included
 ```
+
+Shipped refinement (§4.3): steps 5–10 key nodes by an internal `nodeRef{id, others}`,
+so the overflow bucket is a distinct identity from a real node literally named
+`"$others"` — their traffic is never merged. The bucket is reported via the
+`is_others` flag rather than a `label`.
 
 ### 6.2 Signature
 
@@ -606,6 +634,10 @@ result: empty nodes, empty links
 
 ## 13. Pre-merge checklist
 
+> Historical (pre-merge planning). The feature is shipped and the items below are
+> satisfied by the implementation, subject to the divergences noted at the top of
+> this document (e.g. `is_others` replaced `label`; no `defaultUserFlowGroupBy`).
+
 - [ ] `make rpc && make lint-proto && make lint && make test`
 - [ ] Query assembled exclusively via `internal/core/clickhouse` query builder (§4) — no hand-built SQL strings
 - [ ] `project_id` never interpolated into SQL (tenant isolation)
@@ -615,8 +647,7 @@ result: empty nodes, empty links
 - [ ] Degenerate link removal confirmed to run **after** `$others` remapping (not before)
 - [ ] `max_hops` documented as **edges** in proto field comment
 - [ ] `scope` semantics (event-level, not session-level) documented in proto field comment
-- [ ] `defaultUserFlowGroupBy` constant used explicitly; no silent switch fallthrough
-- [ ] `defaultUserFlowNodeKind` constant used explicitly; no silent switch fallthrough
+- [x] `defaultUserFlowNodeKind` resolved explicitly in `resolveUserFlowParams`; no silent switch fallthrough (`group_by` has no `defaultUserFlowGroupBy` constant — only SESSION exists)
 - [ ] `UserFlowRow.Value` is `int64`, not `float64`
 - [ ] Sort-then-slice SQL confirmed (no `groupArray(N)` before `arraySort`) — §4.2, §14.6
 - [ ] `arraySlice` 1-indexed offset confirmed correct with a call-site comment — §4.2

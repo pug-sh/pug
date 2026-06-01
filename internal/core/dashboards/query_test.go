@@ -97,7 +97,9 @@ func (r *userFlowRows) Scan(dest ...any) error {
 	r.idx++
 	*dest[0].(*string) = row[0].(string)
 	*dest[1].(*string) = row[1].(string)
-	*dest[2].(*int64) = row[2].(int64)
+	// QueryUserFlow scans the count into a uint64 (ClickHouse count(DISTINCT) is
+	// UInt64) before narrowing to int64; the mock must match that destination type.
+	*dest[2].(*uint64) = uint64(row[2].(int64))
 	return nil
 }
 

@@ -18,19 +18,15 @@ const (
 	defaultUserFlowMaxNodes = 20
 	defaultUserFlowMaxLinks = 100
 
-	// defaultUserFlowGroupBy is the resolved value when GroupBy is UNSPECIFIED.
-	// Not a silent fallback — used explicitly at the top of BuildUserFlowQuery.
-	defaultUserFlowGroupBy = insightsv1.UserFlowQuery_GROUP_BY_SESSION
-
 	// defaultUserFlowNodeKind is the resolved value when NodeKind is UNSPECIFIED.
-	// Used explicitly at the top of BuildUserFlowQuery — not a switch fallthrough.
+	// Not a silent fallback — resolved explicitly in resolveUserFlowParams, not via
+	// a switch fallthrough.
 	defaultUserFlowNodeKind = insightsv1.UserFlowQuery_NODE_KIND_EVENT_KIND
 
 	userFlowOthersNodeID = "$others"
 )
 
 type userFlowResolved struct {
-	groupBy      insightsv1.UserFlowQuery_GroupBy
 	nodeKind     insightsv1.UserFlowQuery_NodeKind
 	nodeProperty string
 	maxHops      int32
@@ -40,15 +36,11 @@ type userFlowResolved struct {
 
 func resolveUserFlowParams(uf *insightsv1.UserFlowQuery) userFlowResolved {
 	r := userFlowResolved{
-		groupBy:      uf.GetGroupBy(),
 		nodeKind:     uf.GetNodeKind(),
 		nodeProperty: uf.GetNodeProperty(),
 		maxHops:      uf.GetMaxHops(),
 		maxNodes:     uf.GetMaxNodes(),
 		maxLinks:     uf.GetMaxLinks(),
-	}
-	if r.groupBy == insightsv1.UserFlowQuery_GROUP_BY_UNSPECIFIED {
-		r.groupBy = defaultUserFlowGroupBy
 	}
 	if r.nodeKind == insightsv1.UserFlowQuery_NODE_KIND_UNSPECIFIED {
 		r.nodeKind = defaultUserFlowNodeKind
@@ -66,7 +58,7 @@ func resolveUserFlowParams(uf *insightsv1.UserFlowQuery) userFlowResolved {
 }
 
 func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string, resolved userFlowResolved) (*chq.Query, error) {
-	groupKeyCol := userFlowGroupKeyColumn(resolved.groupBy)
+	groupKeyCol := userFlowSessionGroupKeyColumn()
 	nodeExpr := userFlowNodeExpr(resolved.nodeKind, resolved.nodeProperty)
 
 	topLevelFilterCond, err := buildTopLevelFilterCondition(
@@ -87,8 +79,8 @@ func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string, resolved
 	maxHopsP1 := int(resolved.maxHops) + 1
 
 	sessionNodesCTE := chq.NewQuery().
-		Select(groupKeyCol + " AS group_key").
-		SelectExpr(userFlowNodesArrayExpr(nodeExpr, maxHopsP1) + " AS nodes").
+		Select(groupKeyCol+" AS group_key").
+		SelectExpr(userFlowNodesArrayExpr(nodeExpr, maxHopsP1)+" AS nodes").
 		From("events").
 		Where(
 			chq.Eq("project_id", projectID),
@@ -96,7 +88,7 @@ func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string, resolved
 			chq.Lt("occur_time", to),
 			scopeCond,
 			topLevelFilterCond,
-			userFlowNonEmptyGroupKeyCond(resolved.groupBy),
+			userFlowNonEmptySessionKeyCond(),
 		).
 		GroupBy(groupKeyCol)
 
@@ -135,7 +127,10 @@ func userFlowNodesArrayExpr(nodeExpr string, maxHopsP1 int) string {
 	)
 }
 
-func userFlowGroupKeyColumn(_ insightsv1.UserFlowQuery_GroupBy) string {
+// userFlowSessionGroupKeyColumn returns the per-session grouping column. Only
+// GROUP_BY_SESSION is implemented today; a future GROUP_BY_USER must add its own
+// grouping column here (the proto enum already reserves the value).
+func userFlowSessionGroupKeyColumn() string {
 	return "session_id"
 }
 
@@ -146,8 +141,8 @@ func userFlowNodeExpr(nodeKind insightsv1.UserFlowQuery_NodeKind, nodeProperty s
 	return "kind"
 }
 
-// userFlowNonEmptyGroupKeyCond excludes the nil UUID session_id.
-func userFlowNonEmptyGroupKeyCond(_ insightsv1.UserFlowQuery_GroupBy) chq.Condition {
+// userFlowNonEmptySessionKeyCond excludes the nil UUID session_id.
+func userFlowNonEmptySessionKeyCond() chq.Condition {
 	return chq.Neq("session_id", "00000000-0000-0000-0000-000000000000")
 }
 
@@ -158,8 +153,23 @@ func userFlowScopeCondition(uf *insightsv1.UserFlowQuery, projectID string) (chq
 	return chq.EventConditionAliased([]*commonv1.EventFilter{uf.GetScope()}, projectID, "")
 }
 
+// nodeRef is the internal identity of a flow-graph node. The synthetic overflow
+// bucket (others=true) is a DISTINCT identity from every real node — including a
+// real node whose id is literally userFlowOthersNodeID — so collapsing pruned
+// nodes never merges their traffic into, or steals it from, a real "$others"
+// node. Real nodes carry others=false.
+type nodeRef struct {
+	id     string
+	others bool
+}
+
 // GroupUserFlowResult applies top-N pruning, $others collapse, and link truncation
 // to raw ClickHouse rows and returns a ready-to-serialize UserFlowResult.
+//
+// The overflow bucket is tracked as a distinct identity (see nodeRef) and reported
+// to clients via UserFlowNode.is_others — never by matching the id string. Its
+// emitted id is normally userFlowOthersNodeID, but is disambiguated when a real
+// surviving node already uses that id so emitted link endpoints stay unambiguous.
 //
 // No error return: this function is pure Go with no I/O. It always returns a
 // non-nil result. On empty input it returns an empty but valid UserFlowResult.
@@ -169,6 +179,8 @@ func GroupUserFlowResult(_ context.Context, rows []UserFlowRow, maxNodes, maxLin
 		return empty
 	}
 
+	// Weight each real node by total edge value touching it, from the raw rows
+	// (before any collapse). The bucket is synthetic and never weighted here.
 	nodeWeight := map[string]int64{}
 	for _, row := range rows {
 		nodeWeight[row.Source] += row.Value
@@ -195,45 +207,54 @@ func GroupUserFlowResult(_ context.Context, rows []UserFlowRow, maxNodes, maxLin
 		}
 	}
 
-	remap := func(id string) string {
+	// remap routes each raw id to a node identity: kept ids keep their own
+	// identity (others=false); pruned ids collapse into the single synthetic
+	// bucket, which stays distinct from a real node of the same id.
+	bucket := nodeRef{id: userFlowOthersNodeID, others: true}
+	remap := func(id string) nodeRef {
 		if _, ok := topSet[id]; ok {
-			return id
+			return nodeRef{id: id}
 		}
-		return userFlowOthersNodeID
+		return bucket
 	}
 
-	aggregated := map[[2]string]int64{}
+	aggregated := map[[2]nodeRef]int64{}
 	for _, row := range rows {
 		src := remap(row.Source)
 		tgt := remap(row.Target)
 		if src == tgt {
 			continue
 		}
-		key := [2]string{src, tgt}
-		aggregated[key] += row.Value
+		aggregated[[2]nodeRef{src, tgt}] += row.Value
 	}
 
-	type linkKey struct {
-		source string
-		target string
+	type flowLink struct {
+		source nodeRef
+		target nodeRef
 		value  int64
 	}
-	links := make([]linkKey, 0, len(aggregated))
+	links := make([]flowLink, 0, len(aggregated))
 	for key, value := range aggregated {
 		if value <= 0 {
 			continue
 		}
-		links = append(links, linkKey{source: key[0], target: key[1], value: value})
+		links = append(links, flowLink{source: key[0], target: key[1], value: value})
 	}
 
 	sort.Slice(links, func(i, j int) bool {
 		if links[i].value != links[j].value {
 			return links[i].value > links[j].value
 		}
-		if links[i].source != links[j].source {
-			return links[i].source < links[j].source
+		if links[i].source.id != links[j].source.id {
+			return links[i].source.id < links[j].source.id
 		}
-		return links[i].target < links[j].target
+		if links[i].source.others != links[j].source.others {
+			return !links[i].source.others // real before bucket
+		}
+		if links[i].target.id != links[j].target.id {
+			return links[i].target.id < links[j].target.id
+		}
+		return !links[i].target.others
 	})
 
 	if maxLinks > 0 && len(links) > maxLinks {
@@ -244,37 +265,68 @@ func GroupUserFlowResult(_ context.Context, rows []UserFlowRow, maxNodes, maxLin
 		return empty
 	}
 
-	nodeSet := map[string]struct{}{}
-	protoLinks := make([]*insightsv1.UserFlowLink, 0, len(links))
+	// Surviving node identities (after link truncation).
+	nodeSet := map[nodeRef]struct{}{}
 	for _, l := range links {
-		protoLinks = append(protoLinks, &insightsv1.UserFlowLink{
-			Source: proto.String(l.source),
-			Target: proto.String(l.target),
-			Value:  proto.Int64(l.value),
-		})
 		nodeSet[l.source] = struct{}{}
 		nodeSet[l.target] = struct{}{}
 	}
 
-	regularNodes := make([]string, 0, len(nodeSet))
+	// Resolve the bucket's emitted id. Normally userFlowOthersNodeID; if a real
+	// surviving node already uses that id, append separators until unique so
+	// emitted link endpoints stay unambiguous. is_others is the authoritative
+	// signal regardless of the id.
+	bucketID := userFlowOthersNodeID
+	if _, ok := nodeSet[bucket]; ok {
+		realIDs := map[string]struct{}{}
+		for ref := range nodeSet {
+			if !ref.others {
+				realIDs[ref.id] = struct{}{}
+			}
+		}
+		for {
+			if _, clash := realIDs[bucketID]; !clash {
+				break
+			}
+			bucketID += "_"
+		}
+	}
+	idOf := func(ref nodeRef) string {
+		if ref.others {
+			return bucketID
+		}
+		return ref.id
+	}
+
+	protoLinks := make([]*insightsv1.UserFlowLink, 0, len(links))
+	for _, l := range links {
+		protoLinks = append(protoLinks, &insightsv1.UserFlowLink{
+			Source: proto.String(idOf(l.source)),
+			Target: proto.String(idOf(l.target)),
+			Value:  proto.Int64(l.value),
+		})
+	}
+
+	// Emit real nodes sorted by id, then the bucket (if present) last.
+	regularIDs := make([]string, 0, len(nodeSet))
 	hasOthers := false
-	for id := range nodeSet {
-		if id == userFlowOthersNodeID {
+	for ref := range nodeSet {
+		if ref.others {
 			hasOthers = true
 			continue
 		}
-		regularNodes = append(regularNodes, id)
+		regularIDs = append(regularIDs, ref.id)
 	}
-	sort.Strings(regularNodes)
+	sort.Strings(regularIDs)
 
-	protoNodes := make([]*insightsv1.UserFlowNode, 0, len(regularNodes)+1)
-	for _, id := range regularNodes {
-		protoNodes = append(protoNodes, &insightsv1.UserFlowNode{Id: proto.String(id), Label: proto.String(id)})
+	protoNodes := make([]*insightsv1.UserFlowNode, 0, len(regularIDs)+1)
+	for _, id := range regularIDs {
+		protoNodes = append(protoNodes, &insightsv1.UserFlowNode{Id: proto.String(id)})
 	}
 	if hasOthers {
 		protoNodes = append(protoNodes, &insightsv1.UserFlowNode{
-			Id:    proto.String(userFlowOthersNodeID),
-			Label: proto.String(userFlowOthersNodeID),
+			Id:       proto.String(bucketID),
+			IsOthers: proto.Bool(true),
 		})
 	}
 

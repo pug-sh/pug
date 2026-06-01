@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/pug-sh/pug/internal/core/insights"
-	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 )
 
 func TestGroupUserFlowResult_Empty(t *testing.T) {
@@ -37,11 +36,11 @@ func TestGroupUserFlowResult_Passthrough(t *testing.T) {
 		linkMap[[2]string{l.GetSource(), l.GetTarget()}] = l.GetValue()
 	}
 	want := map[[2]string]int64{
-		{"login", "dashboard"}:     2,
-		{"login", "logout"}:        1,
-		{"dashboard", "settings"}:  1,
-		{"dashboard", "logout"}:    1,
-		{"settings", "logout"}:     1,
+		{"login", "dashboard"}:    2,
+		{"login", "logout"}:       1,
+		{"dashboard", "settings"}: 1,
+		{"dashboard", "logout"}:   1,
+		{"settings", "logout"}:    1,
 	}
 	for k, v := range want {
 		if linkMap[k] != v {
@@ -151,13 +150,85 @@ func TestGroupUserFlowResult_DeterministicOrdering(t *testing.T) {
 	}
 }
 
-func TestGroupUserFlowResult_ZeroValueDropped(t *testing.T) {
+// TestGroupUserFlowResult_RealOthersNodeDoesNotMergeWithBucket pins the structural
+// dedup: a real node whose id is literally "$others" must NOT have its traffic
+// merged into (or stolen by) the synthetic overflow bucket created when pruned
+// nodes collapse. The bucket is identified by is_others, and emitted links to the
+// real node and to the bucket stay distinct.
+func TestGroupUserFlowResult_RealOthersNodeDoesNotMergeWithBucket(t *testing.T) {
 	ctx := context.Background()
-	// GroupUserFlowResult operates on aggregated rows; zero values should not appear
-	// from ClickHouse, but defensive drop is tested via remap self-loop path.
-	got := insights.GroupUserFlowResult(ctx, []insights.UserFlowRow{}, 20, 100)
-	if got == nil {
-		t.Fatal("expected non-nil empty result")
+	rows := []insights.UserFlowRow{
+		{Source: "$others", Target: "home", Value: 50}, // real "$others" node
+		{Source: "rare1", Target: "home", Value: 1},    // pruned → bucket
+		{Source: "rare2", Target: "home", Value: 1},    // pruned → bucket
+		{Source: "home", Target: "end", Value: 40},
 	}
-	_ = insightsv1.UserFlowLink{}
+	// maxNodes=3 keeps {home, "$others"(real), end}; rare1/rare2 collapse to the bucket.
+	got := insights.GroupUserFlowResult(ctx, rows, 3, 100)
+
+	// Exactly one synthetic bucket (is_others=true) and one real "$others" (is_others=false).
+	var bucketID string
+	bucketCount, realOthersCount := 0, 0
+	for _, n := range got.GetNodes() {
+		if n.GetIsOthers() {
+			bucketCount++
+			bucketID = n.GetId()
+		} else if n.GetId() == "$others" {
+			realOthersCount++
+		}
+	}
+	if bucketCount != 1 {
+		t.Fatalf("expected exactly 1 is_others bucket node, got %d", bucketCount)
+	}
+	if realOthersCount != 1 {
+		t.Fatalf("expected the real \"$others\" node preserved (is_others=false), got %d", realOthersCount)
+	}
+
+	links := map[[2]string]int64{}
+	for _, l := range got.GetLinks() {
+		links[[2]string{l.GetSource(), l.GetTarget()}] = l.GetValue()
+	}
+	// The real node's edge keeps its own value — NOT summed with the pruned traffic.
+	if links[[2]string{"$others", "home"}] != 50 {
+		t.Errorf("real $others->home: got %d want 50 (must not absorb pruned traffic)", links[[2]string{"$others", "home"}])
+	}
+	// The bucket's edge carries the summed pruned traffic (1+1) under its own id.
+	if links[[2]string{bucketID, "home"}] != 2 {
+		t.Errorf("bucket(%q)->home: got %d want 2 (rare1+rare2)", bucketID, links[[2]string{bucketID, "home"}])
+	}
+	if bucketID == "$others" {
+		t.Errorf("bucket id should be disambiguated from the real $others node, got %q", bucketID)
+	}
+}
+
+// TestGroupUserFlowResult_OthersSummation pins that multiple pruned nodes pointing
+// at the same kept target sum into a single bucket link (the +=, not overwrite).
+func TestGroupUserFlowResult_OthersSummation(t *testing.T) {
+	ctx := context.Background()
+	rows := []insights.UserFlowRow{
+		{Source: "top", Target: "x", Value: 10},
+		{Source: "c", Target: "x", Value: 3}, // c, d pruned (maxNodes=2 keeps top, x)
+		{Source: "d", Target: "x", Value: 2},
+	}
+	got := insights.GroupUserFlowResult(ctx, rows, 2, 100)
+
+	var bucketID string
+	for _, n := range got.GetNodes() {
+		if n.GetIsOthers() {
+			bucketID = n.GetId()
+		}
+	}
+	if bucketID == "" {
+		t.Fatal("expected an is_others bucket node")
+	}
+	links := map[[2]string]int64{}
+	for _, l := range got.GetLinks() {
+		links[[2]string{l.GetSource(), l.GetTarget()}] = l.GetValue()
+	}
+	if got := links[[2]string{bucketID, "x"}]; got != 5 {
+		t.Errorf("bucket->x: got %d want 5 (3+2 summed)", got)
+	}
+	if got := links[[2]string{"top", "x"}]; got != 10 {
+		t.Errorf("top->x: got %d want 10", got)
+	}
 }

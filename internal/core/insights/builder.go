@@ -125,10 +125,10 @@ type UserFlowQuery struct {
 	maxLinks int
 }
 
-func (q UserFlowQuery) SQL() string     { return q.sql }
-func (q UserFlowQuery) Args() []any     { return q.args }
-func (q UserFlowQuery) MaxNodes() int   { return q.maxNodes }
-func (q UserFlowQuery) MaxLinks() int   { return q.maxLinks }
+func (q UserFlowQuery) SQL() string   { return q.sql }
+func (q UserFlowQuery) Args() []any   { return q.args }
+func (q UserFlowQuery) MaxNodes() int { return q.maxNodes }
+func (q UserFlowQuery) MaxLinks() int { return q.maxLinks }
 
 func BuildUserFlowQuery(req *insightsv1.QueryRequest, projectID string) (UserFlowQuery, error) {
 	resolved := resolveUserFlowParams(req.GetSpec().GetUserFlow())
