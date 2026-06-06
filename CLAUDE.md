@@ -33,13 +33,10 @@ make infra-down
 ./bin/pug server
 
 # Start individual workers
-./bin/pug worker device
-./bin/pug worker campaign
 ./bin/pug worker events
 ./bin/pug worker profile identify
 ./bin/pug worker profile alias
 ./bin/pug worker profile upsert
-./bin/pug worker scheduler
 ```
 
 ### Code Generation
