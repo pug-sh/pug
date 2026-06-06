@@ -6,7 +6,7 @@ The `delivery` domain currently handles both sending notifications and recording
 
 - Remove `DeliveryService.RecordEvent` RPC and related proto definitions
 - Remove the `deliveries` NATS stream (delivery events flow through `events` stream instead)
-- Delivery service only publishes `pug.*` events via the events `Publisher` interface
+- Delivery service publishes delivery lifecycle events via the events `Publisher` interface (same `Event` shape as SDK ingest; no reserved kind prefix)
 - Delivery domain becomes purely about routing and sending notifications (FCM, APN, email)
 - Delete `delivery/v1/delivery.proto` event-related messages (`DeliveryEvent`, `DeliveryEventMessage`, `BatchDeliveryEvents`, `RecordEventRequest/Response`)
 - Keep only delivery-specific messages (`BatchMulticastMessage`, `SubscriptionToken`, etc.)
