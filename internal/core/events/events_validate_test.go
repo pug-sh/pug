@@ -42,6 +42,39 @@ func validEvent() *eventsv1.Event {
 	}
 }
 
+// TestEventValidation_KindPattern exercises the kind string.pattern constraint (aligned with common.v1.EventFilter).
+func TestEventValidation_KindPattern(t *testing.T) {
+	tests := []struct {
+		name    string
+		kind    string
+		wantErr bool
+	}{
+		{name: "snake_case", kind: "page_view", wantErr: false},
+		{name: "hyphenated", kind: "sign-up", wantErr: false},
+		{name: "dotted", kind: "com.example.event", wantErr: false},
+		{name: "space_rejected", kind: "hello world", wantErr: true},
+		{name: "slash_rejected", kind: "foo/bar", wantErr: true},
+		{name: "unicode_rejected", kind: "café", wantErr: true},
+		{name: "empty_rejected", kind: "", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := validEvent()
+			e.Kind = proto.String(tt.kind)
+			err := protovalidate.Validate(e)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+		})
+	}
+}
+
 // TestEventValidation_AutoPropertiesDollarPrefix exercises the event.auto_properties_dollar_prefix CEL rule.
 func TestEventValidation_AutoPropertiesDollarPrefix(t *testing.T) {
 	tests := []struct {

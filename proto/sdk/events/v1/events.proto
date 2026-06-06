@@ -38,7 +38,11 @@ message Event {
   map<string, common.v1.PropertyValue> auto_properties   = 2;
   map<string, common.v1.PropertyValue> custom_properties = 3;
   string distinct_id = 4 [(buf.validate.field).required = true];
-  string kind = 5 [(buf.validate.field).required = true];
+  // Same character set as common.v1.EventFilter.kind (filters.proto); + requires non-empty at ingest.
+  string kind = 5 [(buf.validate.field) = {
+    required: true
+    string: {pattern: "^[a-zA-Z0-9_.-]+$"}
+  }];
   google.protobuf.Timestamp occur_time = 6 [(buf.validate.field).required = true];
   string session_id = 7 [
     (buf.validate.field).required = true,

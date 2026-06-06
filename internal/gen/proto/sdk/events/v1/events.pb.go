@@ -118,11 +118,12 @@ type Event struct {
 	AutoProperties   map[string]*v1.PropertyValue `protobuf:"bytes,2,rep,name=auto_properties,json=autoProperties" json:"auto_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	CustomProperties map[string]*v1.PropertyValue `protobuf:"bytes,3,rep,name=custom_properties,json=customProperties" json:"custom_properties,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	DistinctId       *string                      `protobuf:"bytes,4,opt,name=distinct_id,json=distinctId" json:"distinct_id,omitempty"`
-	Kind             *string                      `protobuf:"bytes,5,opt,name=kind" json:"kind,omitempty"`
-	OccurTime        *timestamppb.Timestamp       `protobuf:"bytes,6,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
-	SessionId        *string                      `protobuf:"bytes,7,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Same character set as common.v1.EventFilter.kind (filters.proto); + requires non-empty at ingest.
+	Kind          *string                `protobuf:"bytes,5,opt,name=kind" json:"kind,omitempty"`
+	OccurTime     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=occur_time,json=occurTime" json:"occur_time,omitempty"`
+	SessionId     *string                `protobuf:"bytes,7,opt,name=session_id,json=sessionId" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Event) Reset() {
@@ -264,14 +265,14 @@ const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"\x12BatchCreateRequest\x127\n" +
 	"\x06events\x18\x01 \x03(\v2\x14.sdk.events.v1.EventB\t\xbaH\x06\x92\x01\x03\x10\xe8\aR\x06events\"1\n" +
 	"\x13BatchCreateResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\rR\baccepted\"\x8b\a\n" +
+	"\baccepted\x18\x01 \x01(\rR\baccepted\"\xa0\a\n" +
 	"\x05Event\x12&\n" +
 	"\bevent_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\aeventId\x12Q\n" +
 	"\x0fauto_properties\x18\x02 \x03(\v2(.sdk.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12W\n" +
 	"\x11custom_properties\x18\x03 \x03(\v2*.sdk.events.v1.Event.CustomPropertiesEntryR\x10customProperties\x12'\n" +
 	"\vdistinct_id\x18\x04 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"distinctId\x12\x1a\n" +
-	"\x04kind\x18\x05 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x04kind\x12A\n" +
+	"distinctId\x12/\n" +
+	"\x04kind\x18\x05 \x01(\tB\x1b\xbaH\x18\xc8\x01\x01r\x132\x11^[a-zA-Z0-9_.-]+$R\x04kind\x12A\n" +
 	"\n" +
 	"occur_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\toccurTime\x12*\n" +
 	"\n" +
