@@ -8,8 +8,8 @@ import (
 	"syscall"
 
 	"github.com/joho/godotenv"
-	"github.com/pug-sh/pug/internal/app/workers/devices"
-	"github.com/pug-sh/pug/internal/slogx"
+	// "github.com/pug-sh/pug/internal/app/workers/devices"
+	// "github.com/pug-sh/pug/internal/slogx"
 )
 
 func main() {
@@ -20,8 +20,10 @@ func main() {
 		slog.DebugContext(ctx, "No .env file found, relying on environment variables")
 	}
 
-	if err := devices.Run(ctx); err != nil {
-		slog.ErrorContext(ctx, "error starting device worker", slogx.Error(err))
-		os.Exit(1)
-	}
+	// if err := devices.Run(ctx); err != nil {
+	// 	slog.ErrorContext(ctx, "error starting device worker", slogx.Error(err))
+	// 	os.Exit(1)
+	// }
+	slog.InfoContext(ctx, "device worker is disabled")
+	os.Exit(0)
 }

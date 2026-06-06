@@ -17,14 +17,14 @@ import (
 	chseed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
 	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
 	"github.com/pug-sh/pug/internal/app/server"
-	"github.com/pug-sh/pug/internal/app/workers/campaigns"
-	"github.com/pug-sh/pug/internal/app/workers/devices"
+	// "github.com/pug-sh/pug/internal/app/workers/campaigns"
+	// "github.com/pug-sh/pug/internal/app/workers/devices"
 	emailworker "github.com/pug-sh/pug/internal/app/workers/email"
 	eventsworker "github.com/pug-sh/pug/internal/app/workers/events"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/alias"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/identify"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/upsert"
-	"github.com/pug-sh/pug/internal/app/workers/scheduler"
+	// "github.com/pug-sh/pug/internal/app/workers/scheduler"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/templates"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -154,17 +154,17 @@ var profileUpsertCmd = &cobra.Command{
 	Run:   run(upsert.Run),
 }
 
-var deviceCmd = &cobra.Command{
-	Use:   "device",
-	Short: "Start the device worker",
-	Run:   run(devices.Run),
-}
+// var deviceCmd = &cobra.Command{
+// 	Use:   "device",
+// 	Short: "Start the device worker",
+// 	Run:   run(devices.Run),
+// }
 
-var campaignCmd = &cobra.Command{
-	Use:   "campaign",
-	Short: "Start the campaign worker",
-	Run:   run(campaigns.Run),
-}
+// var campaignCmd = &cobra.Command{
+// 	Use:   "campaign",
+// 	Short: "Start the campaign worker",
+// 	Run:   run(campaigns.Run),
+// }
 
 var eventsCmd = &cobra.Command{
 	Use:   "events",
@@ -239,11 +239,11 @@ func renderEmailPreview(ctx context.Context, r *coreemail.Renderer, kind, sample
 	}
 }
 
-var schedulerCmd = &cobra.Command{
-	Use:   "scheduler",
-	Short: "Start the scheduler worker",
-	Run:   run(scheduler.Run),
-}
+// var schedulerCmd = &cobra.Command{
+// 	Use:   "scheduler",
+// 	Short: "Start the scheduler worker",
+// 	Run:   run(scheduler.Run),
+// }
 
 var devCmd = &cobra.Command{
 	Use:   "dev",
@@ -279,19 +279,19 @@ var devCmd = &cobra.Command{
 		fmt.Println(bold + "Workers:" + reset)
 		fmt.Println("  "+yellow+"Profiles:"+reset, "identify, alias, upsert")
 		fmt.Println("  "+yellow+"Events:"+reset, "events")
-		fmt.Println("  "+yellow+"Campaigns:"+reset, "campaigns")
-		fmt.Println("  "+yellow+"Devices:"+reset, "devices")
+		// fmt.Println("  "+yellow+"Campaigns:"+reset, "campaigns")
+		// fmt.Println("  "+yellow+"Devices:"+reset, "devices")
 		emailEnabled, emailStatus := emailDevStatus()
 		fmt.Println("  "+yellow+"Email:"+reset, emailStatus)
-		fmt.Println("  "+yellow+"Scheduler:"+reset, "scheduler")
+		// fmt.Println("  "+yellow+"Scheduler:"+reset, "scheduler")
 		fmt.Println()
 
 		fmt.Println(green + "  Press Ctrl+C to stop" + reset)
 		fmt.Println()
 
 		g, ctx := errgroup.WithContext(sigCtx)
-		g.Go(func() error { return devices.Run(ctx) })
-		g.Go(func() error { return campaigns.Run(ctx) })
+		// g.Go(func() error { return devices.Run(ctx) })
+		// g.Go(func() error { return campaigns.Run(ctx) })
 		g.Go(func() error { return eventsworker.Run(ctx) })
 		if emailEnabled {
 			g.Go(func() error { return emailworker.Run(ctx) })
@@ -299,7 +299,7 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return identify.Run(ctx) })
 		g.Go(func() error { return alias.Run(ctx) })
 		g.Go(func() error { return upsert.Run(ctx) })
-		g.Go(func() error { return scheduler.Run(ctx) })
+		// g.Go(func() error { return scheduler.Run(ctx) })
 		g.Go(func() error { return server.Run(ctx) })
 
 		if err := g.Wait(); err != nil {
@@ -403,11 +403,11 @@ func init() {
 	profileCmd.AddCommand(profileAliasCmd)
 	profileCmd.AddCommand(profileUpsertCmd)
 	workerCmd.AddCommand(profileCmd)
-	workerCmd.AddCommand(deviceCmd)
-	workerCmd.AddCommand(campaignCmd)
+	// workerCmd.AddCommand(deviceCmd)
+	// workerCmd.AddCommand(campaignCmd)
 	workerCmd.AddCommand(eventsCmd)
 	workerCmd.AddCommand(emailCmd)
-	workerCmd.AddCommand(schedulerCmd)
+	// workerCmd.AddCommand(schedulerCmd)
 
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)
