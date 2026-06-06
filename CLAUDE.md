@@ -21,6 +21,9 @@ make infra
 # Stop infrastructure
 make infra-down
 
+# OTLP collector + HyperDX (optional; for telemetry export)
+make clickstack
+
 # Run database migrations
 ./bin/pug postgres migrate
 ./bin/pug nats migrate
@@ -41,6 +44,8 @@ make infra-down
 ./bin/pug worker profile upsert
 ./bin/pug worker scheduler
 ```
+
+Environment variables are documented in `.env.example`. **Telemetry export is auto-detected** (decided once on first `SetupSDK` in server/workers): if any standard OTLP endpoint var is set (`OTEL_EXPORTER_OTLP_ENDPOINT`, or a per-signal `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT`), pug exports via OTLP (`otelslog`; needs a collector, e.g. `make clickstack`); otherwise it falls back to application logs as text on stdout with noop trace/metric export (use for deploys without a collector). There is no `PUG_OTEL` switch, and a present-but-blank endpoint counts as unset. Set `OTEL_SERVICE_NAME` when exporting via OTLP.
 
 ### Code Generation
 
@@ -150,7 +155,7 @@ Deep per-subsystem documentation lives in [`docs/architecture/`](docs/architectu
 - **Profiles** — read API (ClickHouse-backed), activity summary, property model, soft-delete, device subscriptions → [`docs/architecture/profiles.md`](docs/architecture/profiles.md)
 - **Event ingestion enrichment** — geo, user-agent, and bot-management auto-properties → [`docs/architecture/ingestion.md`](docs/architecture/ingestion.md)
 - **Email templating** — templ + go-premailer rendering, frozen brand tokens, preview CLI → [`docs/architecture/email.md`](docs/architecture/email.md)
-- **OpenTelemetry** — provider bootstrap, per-component instrumentation status, the error-recording convention and its exceptions → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md)
+- **OpenTelemetry** — `internal/deps/telemetry/` (`SetupSDK`; OTLP-vs-stdout auto-detected from the `OTEL_EXPORTER_OTLP_*` endpoint vars, no `PUG_OTEL`), per-component instrumentation, slog bridge vs stdout handler, error-recording convention and exceptions → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md)
 
 ## Code Style
 

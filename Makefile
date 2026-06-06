@@ -102,6 +102,7 @@ infra: infra-up
 
 infra-up:
 	docker compose -f infra/dev/docker-compose.yaml up -d
+	@echo "Infra is up. Logs default to stdout. For OTLP/HyperDX: make clickstack, then set OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 in .env."
 
 infra-up-fg:
 	docker compose -f infra/dev/docker-compose.yaml up
