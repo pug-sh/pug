@@ -8,8 +8,6 @@ import (
 	"syscall"
 
 	"github.com/joho/godotenv"
-	// "github.com/pug-sh/pug/internal/app/workers/scheduler"
-	// "github.com/pug-sh/pug/internal/slogx"
 )
 
 func main() {
