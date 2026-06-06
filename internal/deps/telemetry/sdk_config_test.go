@@ -1,7 +1,12 @@
 package telemetry
 
 import (
+	"context"
+	"log/slog"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/log/global"
 )
 
 const (
@@ -32,6 +37,7 @@ func TestResolveOtelMode(t *testing.T) {
 		{name: "metrics endpoint only -> otlp", set: map[string]string{envOTLPMetricsEndpoint: "collector:4317"}, want: "otlp"},
 		{name: "logs endpoint only -> otlp", set: map[string]string{envOTLPLogsEndpoint: "collector:4317"}, want: "otlp"},
 		{name: "whitespace-only endpoint -> stdout", set: map[string]string{envOTLPEndpoint: "   "}, want: "stdout"},
+		{name: "blank general + set traces -> otlp", set: map[string]string{envOTLPEndpoint: "", envOTLPTracesEndpoint: "collector:4317"}, want: "otlp"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -54,5 +60,37 @@ func TestResolveOtelModeIgnoresPugOtel(t *testing.T) {
 	t.Setenv("PUG_OTEL", "stdout")
 	if got := resolveOtelMode(); got != "otlp" {
 		t.Fatalf("resolveOtelMode() = %q, want otlp (PUG_OTEL must be ignored)", got)
+	}
+}
+
+// TestDoSetupWithoutExport_installsNoopProviders pins the load-bearing guarantee
+// of the stdout branch: with no OTLP endpoint, the global providers are noop so a
+// collector-less deploy never attempts to export. Asserting the tracer does not
+// record (rather than its concrete type) keeps the check refactor-resilient.
+func TestDoSetupWithoutExport_installsNoopProviders(t *testing.T) {
+	prevTracer := otel.GetTracerProvider()
+	prevMeter := otel.GetMeterProvider()
+	prevLogger := global.GetLoggerProvider()
+	prevSlog := slog.Default()
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prevTracer)
+		otel.SetMeterProvider(prevMeter)
+		global.SetLoggerProvider(prevLogger)
+		slog.SetDefault(prevSlog)
+	})
+
+	shutdown, err := doSetupWithoutExport(context.Background())
+	if err != nil {
+		t.Fatalf("doSetupWithoutExport: %v", err)
+	}
+
+	_, span := otel.Tracer("test").Start(context.Background(), "s")
+	if span.IsRecording() {
+		t.Error("tracer provider is recording; want noop")
+	}
+	span.End()
+
+	if err := shutdown(context.Background()); err != nil {
+		t.Errorf("noop shutdown returned error: %v", err)
 	}
 }

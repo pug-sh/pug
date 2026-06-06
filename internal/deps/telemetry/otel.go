@@ -35,8 +35,9 @@ var (
 // context with a live deadline; the cached result is reused for the rest of the
 // process lifetime.
 //
-// On failure, returns a non-nil error and a nil shutdown function — do not
-// invoke shutdown when err != nil.
+// On failure (only the OTLP path can fail, during exporter/provider init; the
+// stdout path is infallible), returns a non-nil error and a nil shutdown
+// function — do not invoke shutdown when err != nil.
 //
 // The export mode is detected from the standard OTLP endpoint environment
 // variables on the first call only (sync.Once): a configured OTLP endpoint

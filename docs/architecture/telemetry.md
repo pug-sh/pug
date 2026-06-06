@@ -28,7 +28,7 @@ There is no `PUG_OTEL` switch. `SetupSDK` calls `resolveOtelMode()`, which retur
 | Condition | Behavior |
 | --------- | -------- |
 | Any of `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` / `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` set (non-blank) | OTLP export via `otelslog` (requires a collector) |
-| None set | Noop trace/metric providers; text logs on stdout (no collector required) |
+| None set | Noop trace/metric/log providers; application logs go to stdout as text via a slog handler (not the OTel log pipeline), no collector required |
 
 The mode is resolved once per process on the first `SetupSDK` call — set the endpoint var(s) before starting the server or workers. A present-but-blank endpoint (e.g. `OTEL_EXPORTER_OTLP_ENDPOINT=`) counts as unset, so a conditionally-templated empty value can't silently flip pug into exporting at a collector that isn't there. For local dev with only `make infra`, leave the endpoint unset (stdout); run `make clickstack` and set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` when exporting to HyperDX.
 
