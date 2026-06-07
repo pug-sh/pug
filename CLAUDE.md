@@ -36,13 +36,10 @@ make clickstack
 ./bin/pug server
 
 # Start individual workers
-./bin/pug worker device
-./bin/pug worker campaign
 ./bin/pug worker events
 ./bin/pug worker profile identify
 ./bin/pug worker profile alias
 ./bin/pug worker profile upsert
-./bin/pug worker scheduler
 ```
 
 Environment variables are documented in `.env.example`. **Telemetry export is auto-detected** (decided once on first `SetupSDK` in server/workers): if any standard OTLP endpoint var is set (`OTEL_EXPORTER_OTLP_ENDPOINT`, or a per-signal `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT`), pug exports via OTLP (`otelslog`; needs a collector, e.g. `make clickstack`); otherwise it falls back to application logs as text on stdout with noop trace/metric export (use for deploys without a collector). There is no `PUG_OTEL` switch, and a present-but-blank endpoint counts as unset. Set `OTEL_SERVICE_NAME` when exporting via OTLP.
