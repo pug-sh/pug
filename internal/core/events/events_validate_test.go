@@ -42,21 +42,20 @@ func validEvent() *eventsv1.Event {
 	}
 }
 
-// TestEventValidation_KindNoReservedPrefix exercises the event.kind_no_reserved_prefix CEL rule.
-func TestEventValidation_KindNoReservedPrefix(t *testing.T) {
+// TestEventValidation_KindPattern exercises the kind string.pattern constraint (aligned with common.v1.EventFilter).
+func TestEventValidation_KindPattern(t *testing.T) {
 	tests := []struct {
 		name    string
 		kind    string
 		wantErr bool
 	}{
-		{name: "valid_kind", kind: "page_view", wantErr: false},
-		{name: "reserved_prefix_rejected", kind: "pug.signup", wantErr: true},
-		{name: "prefix_not_substring", kind: "pugcandy", wantErr: false},
-		{name: "exact_prefix_rejected", kind: "pug.", wantErr: true},
-		// Case-sensitivity: startsWith is byte-exact, so upper/mixed-case variants must be accepted.
-		{name: "case_sensitive_upper_accepted", kind: "Pug.foo", wantErr: false},
-		{name: "case_sensitive_shouting_accepted", kind: "PUG.foo", wantErr: false},
-		{name: "case_sensitive_mixed_accepted", kind: "PuG.abc", wantErr: false},
+		{name: "snake_case", kind: "page_view", wantErr: false},
+		{name: "hyphenated", kind: "sign-up", wantErr: false},
+		{name: "dotted", kind: "com.example.event", wantErr: false},
+		{name: "space_rejected", kind: "hello world", wantErr: true},
+		{name: "slash_rejected", kind: "foo/bar", wantErr: true},
+		{name: "unicode_rejected", kind: "café", wantErr: true},
+		{name: "empty_rejected", kind: "", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -66,9 +65,6 @@ func TestEventValidation_KindNoReservedPrefix(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected validation error, got nil")
-				}
-				if !hasRule(err, "kind_no_reserved_prefix") {
-					t.Errorf("expected rule kind_no_reserved_prefix in violations, got: %v", err)
 				}
 				return
 			}
