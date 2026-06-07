@@ -111,7 +111,7 @@ func (q *Queries) ListDashboardTileIDsByDashboardIDAndProjectID(ctx context.Cont
 }
 
 const listDashboardTilesByDashboardID = `-- name: ListDashboardTilesByDashboardID :many
-select id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, layouts, compare, thresholds, header, visualization, payload_hash, create_time, update_time
+select id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, position, compare, thresholds, header, visualization, payload_hash, create_time, update_time
 from dashboard_tiles
 where dashboard_id = $1
 order by create_time asc
@@ -135,7 +135,7 @@ func (q *Queries) ListDashboardTilesByDashboardID(ctx context.Context, dashboard
 			&i.Description,
 			&i.InsightQuery,
 			&i.MarkdownBody,
-			&i.Layouts,
+			&i.Position,
 			&i.Compare,
 			&i.Thresholds,
 			&i.Header,

@@ -279,9 +279,9 @@ func (s *Server) QueryDashboard(
 		return nil, serviceErrToConnect(err)
 	}
 
-	// renderedDashboardToRPC degrades any undecodable tile to a per-tile error
+	// RenderedDashboardToRPC degrades any undecodable tile to a per-tile error
 	// outcome (recorded at source) rather than failing the whole response.
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceQueryDashboardResponse{
-		Dashboard: renderedDashboardToRPC(ctx, rendered),
+		Dashboard: coredashboards.RenderedDashboardToRPC(ctx, rendered),
 	}), nil
 }
