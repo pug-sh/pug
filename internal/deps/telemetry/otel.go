@@ -34,9 +34,23 @@ var (
 // shutdown succeeded. The first caller's context governs the shutdown, so pass a
 // context with a live deadline; the cached result is reused for the rest of the
 // process lifetime.
+//
+// On failure (only the OTLP path can fail, during exporter/provider init; the
+// stdout path is infallible), returns a non-nil error and a nil shutdown
+// function — do not invoke shutdown when err != nil.
+//
+// The export mode is detected from the standard OTLP endpoint environment
+// variables on the first call only (sync.Once): a configured OTLP endpoint
+// selects OTLP export, otherwise telemetry logs to stdout. Set those vars in
+// the process environment before starting the server or any worker.
 func SetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	setupOnce.Do(func() {
-		setupResult, setupErr = doSetupSDK(ctx)
+		switch resolveOtelMode() {
+		case "otlp":
+			setupResult, setupErr = doSetupSDK(ctx)
+		default: // "stdout"
+			setupResult, setupErr = doSetupWithoutExport(ctx)
+		}
 	})
 	return setupResult, setupErr
 }
@@ -89,6 +103,7 @@ func doSetupSDK(ctx context.Context) (func(context.Context) error, error) {
 	slog.SetDefault(slog.New(newCorrelationHandler(
 		otelslog.NewHandler(serviceName, otelslog.WithLoggerProvider(loggerProvider), otelslog.WithSource(true)),
 	)))
+	slog.InfoContext(ctx, "OTLP endpoint configured; exporting telemetry via OTLP")
 
 	success = true
 	return onceShutdown(func(ctx context.Context) error {

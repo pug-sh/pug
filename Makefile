@@ -72,14 +72,11 @@ build:
 	go build -o bin/pug-migrate-nats ./cmd/migrate/nats
 	go build -o bin/pug-migrate-postgres ./cmd/migrate/postgres
 	go build -o bin/pug-server ./cmd/server
-	go build -o bin/pug-worker-campaign ./cmd/workers/campaign
-	go build -o bin/pug-worker-device ./cmd/workers/device
 	go build -o bin/pug-worker-email ./cmd/workers/email
 	go build -o bin/pug-worker-events ./cmd/workers/events
 	go build -o bin/pug-worker-profile-identify ./cmd/workers/profile/identify
 	go build -o bin/pug-worker-profile-alias ./cmd/workers/profile/alias
 	go build -o bin/pug-worker-profile-upsert ./cmd/workers/profile/upsert
-	go build -o bin/pug-worker-scheduler ./cmd/workers/scheduler
 
 .PHONY: fmt
 fmt:
@@ -102,6 +99,7 @@ infra: infra-up
 
 infra-up:
 	docker compose -f infra/dev/docker-compose.yaml up -d
+	@echo "Infra is up. Logs default to stdout. For OTLP/HyperDX: make clickstack, then set OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 in .env."
 
 infra-up-fg:
 	docker compose -f infra/dev/docker-compose.yaml up

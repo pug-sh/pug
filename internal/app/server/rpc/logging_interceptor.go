@@ -11,8 +11,9 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
-// LoggingInterceptor logs every RPC request. Since slog is bridged to OTel via
-// otelslog, these log records are automatically exported to the OTel collector.
+// LoggingInterceptor logs every RPC request via slog. When an OTLP endpoint is
+// configured, slog is bridged to OTel (otelslog) and exported to the collector;
+// otherwise records go to stdout as text.
 func LoggingInterceptor() connect.Interceptor {
 	return &loggingInterceptor{}
 }

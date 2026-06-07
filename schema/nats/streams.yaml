@@ -1,41 +1,5 @@
 # NATS JetStream Streams Configuration
 streams:
-  # Stream for device events
-  - name: "devices"
-    subjects: ["devices.>"]
-    description: "Events related to device management"
-    retention_policy: "limits"
-    max_consumers: -1
-    max_msgs: -1
-    max_bytes: -1
-    max_age: 720h  # 30 days
-    storage: "file"
-    num_replicas: 1
-
-  # Stream for campaign events
-  - name: "campaigns"
-    subjects: ["campaigns.>"]
-    description: "Campaign events for scheduled execution"
-    retention_policy: "limits"
-    max_consumers: -1
-    max_msgs: -1
-    max_bytes: -1
-    max_age: 720h  # 30 days
-    storage: "file"
-    num_replicas: 1
-
-  # Stream for delivery events
-  - name: "deliveries"
-    subjects: ["deliveries.>"]
-    description: "Delivery events for notifications"
-    retention_policy: "limits"
-    max_consumers: -1
-    max_msgs: -1
-    max_bytes: -1
-    max_age: 720h  # 30 days
-    storage: "file"
-    num_replicas: 1
-
   # Stream for profile events
   - name: "profiles"
     subjects: ["profiles.>"]
@@ -67,39 +31,6 @@ streams:
     max_consumers: -1
     max_msgs: -1
     max_bytes: -1
-    max_age: 720h  # 30 days
-    storage: "file"
-    num_replicas: 1
-
-  - name: "dlq-devices"
-    subjects: ["dlq.devices.>"]
-    description: "Dead letter queue for device events"
-    retention_policy: "limits"
-    max_consumers: -1
-    max_msgs: -1
-    max_bytes: 1000000000  # ~1GB
-    max_age: 720h  # 30 days
-    storage: "file"
-    num_replicas: 1
-
-  - name: "dlq-campaigns"
-    subjects: ["dlq.campaigns.>"]
-    description: "Dead letter queue for campaign events"
-    retention_policy: "limits"
-    max_consumers: -1
-    max_msgs: -1
-    max_bytes: 1000000000  # ~1GB
-    max_age: 720h  # 30 days
-    storage: "file"
-    num_replicas: 1
-
-  - name: "dlq-deliveries"
-    subjects: ["dlq.deliveries.>"]
-    description: "Dead letter queue for delivery events"
-    retention_policy: "limits"
-    max_consumers: -1
-    max_msgs: -1
-    max_bytes: 1000000000  # ~1GB
     max_age: 720h  # 30 days
     storage: "file"
     num_replicas: 1
