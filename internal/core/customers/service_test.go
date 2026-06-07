@@ -28,8 +28,7 @@ func TestSetPassword_ThenSignInSucceeds(t *testing.T) {
 		t.Fatalf("SetPassword: %v", err)
 	}
 
-	rd := testutil.SetupRedis(t)
-	authSvc, err := coreauth.NewServiceForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), stubPublisher{}, rd.Client)
+	authSvc, err := coreauth.NewServiceForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), stubPublisher{})
 	if err != nil {
 		t.Fatalf("NewServiceForTest: %v", err)
 	}
@@ -60,8 +59,7 @@ func TestSetPassword_OverwritesExistingHash(t *testing.T) {
 		t.Fatalf("SetPassword second: %v", err)
 	}
 
-	rd := testutil.SetupRedis(t)
-	authSvc, err := coreauth.NewServiceForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), stubPublisher{}, rd.Client)
+	authSvc, err := coreauth.NewServiceForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), stubPublisher{})
 	if err != nil {
 		t.Fatalf("NewServiceForTest: %v", err)
 	}

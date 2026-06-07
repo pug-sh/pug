@@ -19,10 +19,7 @@ type mockOAuthProvider struct {
 }
 
 func (m mockOAuthProvider) Name() coreoauth.ProviderName { return coreoauth.ProviderGoogle }
-func (m mockOAuthProvider) AuthorizationURL(state, redirectURI, codeChallenge string) string {
-	return "https://accounts.example/o?state=" + state + "&challenge=" + codeChallenge + "&redirect_uri=" + redirectURI
-}
-func (m mockOAuthProvider) Exchange(context.Context, string, string, string) (*coreoauth.Identity, error) {
+func (m mockOAuthProvider) VerifyCredential(context.Context, string) (*coreoauth.Identity, error) {
 	return m.identity, nil
 }
 
@@ -31,29 +28,16 @@ func TestCompleteOAuthSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	db := testutil.SetupPostgres(t)
-	rd := testutil.SetupRedis(t)
 	ctx := context.Background()
 
-	const redirectURI = "https://app.example/callback"
-	cfg := coreoauth.TestConfig("client-id", "client-secret", redirectURI)
+	cfg := coreoauth.TestConfig("client-id")
 	registry := coreoauth.NewRegistry(mockOAuthProvider{identity: &coreoauth.Identity{
 		Subject: "google-sub-new-int", Email: "oauth-int-new@example.com", EmailVerified: true,
 		DisplayName: "OAuth Int", PictureURI: "https://example.com/p.png",
 	}})
-	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, rd.Client, cfg, registry)
+	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	beginURL, state, err := svc.BeginOAuthSignIn(ctx, coreoauth.ProviderGoogle, redirectURI)
-	if err != nil {
-		t.Fatalf("BeginOAuthSignIn: %v", err)
-	}
-	if !strings.Contains(beginURL, "challenge=") {
-		t.Fatalf("authorization_url missing PKCE challenge: %q", beginURL)
-	}
-	if state == "" {
-		t.Fatal("expected non-empty state")
-	}
-
-	jwtTok, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "auth-code", state)
+	jwtTok, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "google-credential")
 	if err != nil {
 		t.Fatalf("CompleteOAuthSignIn: %v", err)
 	}
@@ -87,7 +71,6 @@ func TestCompleteOAuthSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	db := testutil.SetupPostgres(t)
-	rd := testutil.SetupRedis(t)
 	ctx := context.Background()
 
 	write := dbwrite.New(db.PgW)
@@ -102,18 +85,13 @@ func TestCompleteOAuthSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
 		t.Fatalf("CreateCustomer: %v", err)
 	}
 
-	const redirectURI = "https://app.example/callback"
-	cfg := coreoauth.TestConfig("client-id", "client-secret", redirectURI)
+	cfg := coreoauth.TestConfig("client-id")
 	registry := coreoauth.NewRegistry(mockOAuthProvider{identity: &coreoauth.Identity{
 		Subject: "google-sub-link-int", Email: "oauth-int-link@example.com", EmailVerified: true,
 	}})
-	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, rd.Client, cfg, registry)
+	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	_, state, err := svc.BeginOAuthSignIn(ctx, coreoauth.ProviderGoogle, redirectURI)
-	if err != nil {
-		t.Fatalf("BeginOAuthSignIn: %v", err)
-	}
-	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "code", state); err != nil {
+	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "google-credential"); err != nil {
 		t.Fatalf("CompleteOAuthSignIn: %v", err)
 	}
 	if _, err := svc.SignInWithEmail(ctx, "oauth-int-link@example.com", "password"); err != nil {
@@ -127,7 +105,7 @@ func TestCompleteOAuthSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCustomerIdentityByProviderSubject: %v", err)
 	}
-	if ident.CustomerID != "cust-oauth-int-link" {
+	if strings.TrimSpace(ident.CustomerID) != "cust-oauth-int-link" {
 		t.Fatalf("customer_id = %q, want cust-oauth-int-link", ident.CustomerID)
 	}
 }

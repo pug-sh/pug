@@ -101,7 +101,7 @@ func start(ctx context.Context, d *deps) error {
 	// Handlers — grouped by auth boundary
 
 	// Public
-	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats, d.redis.Unwrap())
+	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats)
 	if err != nil {
 		return fmt.Errorf("auth server: %w", err)
 	}

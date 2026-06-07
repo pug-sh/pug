@@ -2,7 +2,7 @@ package oauth
 
 import "context"
 
-// Identity is the normalized result of a successful OAuth token exchange.
+// Identity is the normalized result of a verified IdP credential.
 type Identity struct {
 	Subject       string
 	Email         string
@@ -11,9 +11,8 @@ type Identity struct {
 	PictureURI    string
 }
 
-// Provider implements authorization and token exchange for one IdP.
+// Provider verifies IdP credentials for one identity provider.
 type Provider interface {
 	Name() ProviderName
-	AuthorizationURL(state, redirectURI, codeChallenge string) string
-	Exchange(ctx context.Context, redirectURI, code, codeVerifier string) (*Identity, error)
+	VerifyCredential(ctx context.Context, credential string) (*Identity, error)
 }

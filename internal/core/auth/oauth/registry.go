@@ -29,7 +29,7 @@ func (r *Registry) Get(name ProviderName) (Provider, error) {
 func NewRegistryFromConfig(ctx context.Context, cfg Config) (*Registry, error) {
 	var providers []Provider
 	if cfg.IsProviderEnabled(ProviderGoogle) {
-		g, err := newGoogleProvider(ctx, cfg.GoogleClientID, cfg.GoogleClientSecret)
+		g, err := newGoogleProvider(ctx, cfg.GoogleClientID)
 		if err != nil {
 			return nil, err
 		}

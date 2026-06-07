@@ -7,12 +7,11 @@ import (
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
-	"github.com/redis/go-redis/v9"
 )
 
 // NewServiceForTest wires an auth Service with empty OAuth provider config.
-func NewServiceForTest(ctx context.Context, pgRO, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, redisClient *redis.Client) (*Service, error) {
-	return NewService(ctx, pgRO, pgW, jwtKey, publisher, redisClient, coreoauth.Config{})
+func NewServiceForTest(ctx context.Context, pgRO, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher) (*Service, error) {
+	return NewService(ctx, pgRO, pgW, jwtKey, publisher, coreoauth.Config{})
 }
 
 // NewServiceWithOAuthForTest wires an auth Service with a custom OAuth registry (integration tests).
@@ -21,11 +20,10 @@ func NewServiceWithOAuthForTest(
 	pgRO, pgW *pgxpool.Pool,
 	jwtKey []byte,
 	publisher JobPublisher,
-	redisClient *redis.Client,
 	oauthCfg coreoauth.Config,
 	registry *coreoauth.Registry,
 ) *Service {
-	oauthSvc := coreoauth.NewService(oauthCfg, registry, coreoauth.NewStateStore(redisClient))
+	oauthSvc := coreoauth.NewService(oauthCfg, registry)
 	return &Service{
 		read:      dbread.New(pgRO),
 		write:     dbwrite.New(pgW),

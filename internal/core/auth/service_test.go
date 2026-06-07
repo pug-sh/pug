@@ -40,8 +40,7 @@ func (p *stubPublisher) Publish(_ context.Context, subject string, data []byte) 
 
 func mustNewTestAuthService(t *testing.T, db *testutil.TestPostgres, pub auth.JobPublisher) *auth.Service {
 	t.Helper()
-	rd := testutil.SetupRedis(t)
-	svc, err := auth.NewServiceForTest(context.Background(), db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub, rd.Client)
+	svc, err := auth.NewServiceForTest(context.Background(), db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
 	if err != nil {
 		t.Fatalf("NewServiceForTest: %v", err)
 	}

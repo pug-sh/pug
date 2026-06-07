@@ -175,7 +175,7 @@ func lookupByProviderSubject(ctx context.Context, pool *pgxpool.Pool, provider P
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.ErrorContext(ctx, "oauth identity race lost with no linked row",
 				slog.String("provider", string(provider)), slog.String("subject", subject))
-			return resolveResult{}, ErrOAuthExchangeFailed
+			return resolveResult{}, ErrIdentityResolutionFailed
 		}
 		slog.ErrorContext(ctx, "failed to look up customer identity after race", slogx.Error(err))
 		telemetry.RecordError(ctx, err)

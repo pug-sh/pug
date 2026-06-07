@@ -334,122 +334,18 @@ func (x *CompleteMagicLinkResponse) GetToken() string {
 	return ""
 }
 
-type BeginOAuthSignInRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Provider      *OAuthProvider         `protobuf:"varint,1,opt,name=provider,enum=public.auth.v1.OAuthProvider" json:"provider,omitempty"`
-	RedirectUri   *string                `protobuf:"bytes,2,opt,name=redirect_uri,json=redirectUri" json:"redirect_uri,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *BeginOAuthSignInRequest) Reset() {
-	*x = BeginOAuthSignInRequest{}
-	mi := &file_public_auth_v1_auth_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BeginOAuthSignInRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BeginOAuthSignInRequest) ProtoMessage() {}
-
-func (x *BeginOAuthSignInRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_public_auth_v1_auth_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use BeginOAuthSignInRequest.ProtoReflect.Descriptor instead.
-func (*BeginOAuthSignInRequest) Descriptor() ([]byte, []int) {
-	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *BeginOAuthSignInRequest) GetProvider() OAuthProvider {
-	if x != nil && x.Provider != nil {
-		return *x.Provider
-	}
-	return OAuthProvider_O_AUTH_PROVIDER_UNSPECIFIED
-}
-
-func (x *BeginOAuthSignInRequest) GetRedirectUri() string {
-	if x != nil && x.RedirectUri != nil {
-		return *x.RedirectUri
-	}
-	return ""
-}
-
-type BeginOAuthSignInResponse struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	AuthorizationUrl *string                `protobuf:"bytes,1,opt,name=authorization_url,json=authorizationUrl" json:"authorization_url,omitempty"`
-	State            *string                `protobuf:"bytes,2,opt,name=state" json:"state,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *BeginOAuthSignInResponse) Reset() {
-	*x = BeginOAuthSignInResponse{}
-	mi := &file_public_auth_v1_auth_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BeginOAuthSignInResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BeginOAuthSignInResponse) ProtoMessage() {}
-
-func (x *BeginOAuthSignInResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_public_auth_v1_auth_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use BeginOAuthSignInResponse.ProtoReflect.Descriptor instead.
-func (*BeginOAuthSignInResponse) Descriptor() ([]byte, []int) {
-	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *BeginOAuthSignInResponse) GetAuthorizationUrl() string {
-	if x != nil && x.AuthorizationUrl != nil {
-		return *x.AuthorizationUrl
-	}
-	return ""
-}
-
-func (x *BeginOAuthSignInResponse) GetState() string {
-	if x != nil && x.State != nil {
-		return *x.State
-	}
-	return ""
-}
-
 type CompleteOAuthSignInRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Provider      *OAuthProvider         `protobuf:"varint,1,opt,name=provider,enum=public.auth.v1.OAuthProvider" json:"provider,omitempty"`
-	Code          *string                `protobuf:"bytes,2,opt,name=code" json:"code,omitempty"`
-	State         *string                `protobuf:"bytes,3,opt,name=state" json:"state,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Provider *OAuthProvider         `protobuf:"varint,1,opt,name=provider,enum=public.auth.v1.OAuthProvider" json:"provider,omitempty"`
+	// Google id_token JWT from @react-oauth/google GoogleLogin onSuccess credential.
+	Credential    *string `protobuf:"bytes,2,opt,name=credential" json:"credential,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CompleteOAuthSignInRequest) Reset() {
 	*x = CompleteOAuthSignInRequest{}
-	mi := &file_public_auth_v1_auth_proto_msgTypes[8]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -461,7 +357,7 @@ func (x *CompleteOAuthSignInRequest) String() string {
 func (*CompleteOAuthSignInRequest) ProtoMessage() {}
 
 func (x *CompleteOAuthSignInRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_public_auth_v1_auth_proto_msgTypes[8]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -474,7 +370,7 @@ func (x *CompleteOAuthSignInRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteOAuthSignInRequest.ProtoReflect.Descriptor instead.
 func (*CompleteOAuthSignInRequest) Descriptor() ([]byte, []int) {
-	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{8}
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CompleteOAuthSignInRequest) GetProvider() OAuthProvider {
@@ -484,16 +380,9 @@ func (x *CompleteOAuthSignInRequest) GetProvider() OAuthProvider {
 	return OAuthProvider_O_AUTH_PROVIDER_UNSPECIFIED
 }
 
-func (x *CompleteOAuthSignInRequest) GetCode() string {
-	if x != nil && x.Code != nil {
-		return *x.Code
-	}
-	return ""
-}
-
-func (x *CompleteOAuthSignInRequest) GetState() string {
-	if x != nil && x.State != nil {
-		return *x.State
+func (x *CompleteOAuthSignInRequest) GetCredential() string {
+	if x != nil && x.Credential != nil {
+		return *x.Credential
 	}
 	return ""
 }
@@ -507,7 +396,7 @@ type CompleteOAuthSignInResponse struct {
 
 func (x *CompleteOAuthSignInResponse) Reset() {
 	*x = CompleteOAuthSignInResponse{}
-	mi := &file_public_auth_v1_auth_proto_msgTypes[9]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -519,7 +408,7 @@ func (x *CompleteOAuthSignInResponse) String() string {
 func (*CompleteOAuthSignInResponse) ProtoMessage() {}
 
 func (x *CompleteOAuthSignInResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_public_auth_v1_auth_proto_msgTypes[9]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -532,7 +421,7 @@ func (x *CompleteOAuthSignInResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteOAuthSignInResponse.ProtoReflect.Descriptor instead.
 func (*CompleteOAuthSignInResponse) Descriptor() ([]byte, []int) {
-	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{9}
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CompleteOAuthSignInResponse) GetToken() string {
@@ -561,29 +450,22 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\x18CompleteMagicLinkRequest\x12\x1c\n" +
 	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\"1\n" +
 	"\x19CompleteMagicLinkResponse\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"\x90\x01\n" +
-	"\x17BeginOAuthSignInRequest\x12E\n" +
-	"\bprovider\x18\x01 \x01(\x0e2\x1d.public.auth.v1.OAuthProviderB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\bprovider\x12.\n" +
-	"\fredirect_uri\x18\x02 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x88\x01\x01R\vredirectUri\"]\n" +
-	"\x18BeginOAuthSignInResponse\x12+\n" +
-	"\x11authorization_url\x18\x01 \x01(\tR\x10authorizationUrl\x12\x14\n" +
-	"\x05state\x18\x02 \x01(\tR\x05state\"\x9d\x01\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"\x8b\x01\n" +
 	"\x1aCompleteOAuthSignInRequest\x12E\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x1d.public.auth.v1.OAuthProviderB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\bprovider\x12\x1a\n" +
-	"\x04code\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x04code\x12\x1c\n" +
-	"\x05state\x18\x03 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05state\"3\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\bprovider\x12&\n" +
+	"\n" +
+	"credential\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
+	"credential\"3\n" +
 	"\x1bCompleteOAuthSignInResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token*L\n" +
 	"\rOAuthProvider\x12\x1f\n" +
 	"\x1bO_AUTH_PROVIDER_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16O_AUTH_PROVIDER_GOOGLE\x10\x012\xa3\x04\n" +
+	"\x16O_AUTH_PROVIDER_GOOGLE\x10\x012\xba\x03\n" +
 	"\vAuthService\x12d\n" +
 	"\x0fSignInWithEmail\x12&.public.auth.v1.SignInWithEmailRequest\x1a'.public.auth.v1.SignInWithEmailResponse\"\x00\x12g\n" +
 	"\x10RequestMagicLink\x12'.public.auth.v1.RequestMagicLinkRequest\x1a(.public.auth.v1.RequestMagicLinkResponse\"\x00\x12j\n" +
-	"\x11CompleteMagicLink\x12(.public.auth.v1.CompleteMagicLinkRequest\x1a).public.auth.v1.CompleteMagicLinkResponse\"\x00\x12g\n" +
-	"\x10BeginOAuthSignIn\x12'.public.auth.v1.BeginOAuthSignInRequest\x1a(.public.auth.v1.BeginOAuthSignInResponse\"\x00\x12p\n" +
+	"\x11CompleteMagicLink\x12(.public.auth.v1.CompleteMagicLinkRequest\x1a).public.auth.v1.CompleteMagicLinkResponse\"\x00\x12p\n" +
 	"\x13CompleteOAuthSignIn\x12*.public.auth.v1.CompleteOAuthSignInRequest\x1a+.public.auth.v1.CompleteOAuthSignInResponse\"\x00B@Z>github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1b\beditionsp\xe8\a"
 
 var (
@@ -599,7 +481,7 @@ func file_public_auth_v1_auth_proto_rawDescGZIP() []byte {
 }
 
 var file_public_auth_v1_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_public_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_public_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_public_auth_v1_auth_proto_goTypes = []any{
 	(OAuthProvider)(0),                  // 0: public.auth.v1.OAuthProvider
 	(*SignInWithEmailRequest)(nil),      // 1: public.auth.v1.SignInWithEmailRequest
@@ -608,29 +490,24 @@ var file_public_auth_v1_auth_proto_goTypes = []any{
 	(*RequestMagicLinkResponse)(nil),    // 4: public.auth.v1.RequestMagicLinkResponse
 	(*CompleteMagicLinkRequest)(nil),    // 5: public.auth.v1.CompleteMagicLinkRequest
 	(*CompleteMagicLinkResponse)(nil),   // 6: public.auth.v1.CompleteMagicLinkResponse
-	(*BeginOAuthSignInRequest)(nil),     // 7: public.auth.v1.BeginOAuthSignInRequest
-	(*BeginOAuthSignInResponse)(nil),    // 8: public.auth.v1.BeginOAuthSignInResponse
-	(*CompleteOAuthSignInRequest)(nil),  // 9: public.auth.v1.CompleteOAuthSignInRequest
-	(*CompleteOAuthSignInResponse)(nil), // 10: public.auth.v1.CompleteOAuthSignInResponse
+	(*CompleteOAuthSignInRequest)(nil),  // 7: public.auth.v1.CompleteOAuthSignInRequest
+	(*CompleteOAuthSignInResponse)(nil), // 8: public.auth.v1.CompleteOAuthSignInResponse
 }
 var file_public_auth_v1_auth_proto_depIdxs = []int32{
-	0,  // 0: public.auth.v1.BeginOAuthSignInRequest.provider:type_name -> public.auth.v1.OAuthProvider
-	0,  // 1: public.auth.v1.CompleteOAuthSignInRequest.provider:type_name -> public.auth.v1.OAuthProvider
-	1,  // 2: public.auth.v1.AuthService.SignInWithEmail:input_type -> public.auth.v1.SignInWithEmailRequest
-	3,  // 3: public.auth.v1.AuthService.RequestMagicLink:input_type -> public.auth.v1.RequestMagicLinkRequest
-	5,  // 4: public.auth.v1.AuthService.CompleteMagicLink:input_type -> public.auth.v1.CompleteMagicLinkRequest
-	7,  // 5: public.auth.v1.AuthService.BeginOAuthSignIn:input_type -> public.auth.v1.BeginOAuthSignInRequest
-	9,  // 6: public.auth.v1.AuthService.CompleteOAuthSignIn:input_type -> public.auth.v1.CompleteOAuthSignInRequest
-	2,  // 7: public.auth.v1.AuthService.SignInWithEmail:output_type -> public.auth.v1.SignInWithEmailResponse
-	4,  // 8: public.auth.v1.AuthService.RequestMagicLink:output_type -> public.auth.v1.RequestMagicLinkResponse
-	6,  // 9: public.auth.v1.AuthService.CompleteMagicLink:output_type -> public.auth.v1.CompleteMagicLinkResponse
-	8,  // 10: public.auth.v1.AuthService.BeginOAuthSignIn:output_type -> public.auth.v1.BeginOAuthSignInResponse
-	10, // 11: public.auth.v1.AuthService.CompleteOAuthSignIn:output_type -> public.auth.v1.CompleteOAuthSignInResponse
-	7,  // [7:12] is the sub-list for method output_type
-	2,  // [2:7] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	0, // 0: public.auth.v1.CompleteOAuthSignInRequest.provider:type_name -> public.auth.v1.OAuthProvider
+	1, // 1: public.auth.v1.AuthService.SignInWithEmail:input_type -> public.auth.v1.SignInWithEmailRequest
+	3, // 2: public.auth.v1.AuthService.RequestMagicLink:input_type -> public.auth.v1.RequestMagicLinkRequest
+	5, // 3: public.auth.v1.AuthService.CompleteMagicLink:input_type -> public.auth.v1.CompleteMagicLinkRequest
+	7, // 4: public.auth.v1.AuthService.CompleteOAuthSignIn:input_type -> public.auth.v1.CompleteOAuthSignInRequest
+	2, // 5: public.auth.v1.AuthService.SignInWithEmail:output_type -> public.auth.v1.SignInWithEmailResponse
+	4, // 6: public.auth.v1.AuthService.RequestMagicLink:output_type -> public.auth.v1.RequestMagicLinkResponse
+	6, // 7: public.auth.v1.AuthService.CompleteMagicLink:output_type -> public.auth.v1.CompleteMagicLinkResponse
+	8, // 8: public.auth.v1.AuthService.CompleteOAuthSignIn:output_type -> public.auth.v1.CompleteOAuthSignInResponse
+	5, // [5:9] is the sub-list for method output_type
+	1, // [1:5] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_public_auth_v1_auth_proto_init() }
@@ -644,7 +521,7 @@ func file_public_auth_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_public_auth_v1_auth_proto_rawDesc), len(file_public_auth_v1_auth_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   10,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

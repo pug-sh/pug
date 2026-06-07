@@ -22,7 +22,6 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
-	"github.com/redis/go-redis/v9"
 	"github.com/rs/xid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -78,12 +77,12 @@ type Service struct {
 	oauth     *coreoauth.Service
 }
 
-func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, redisClient *redis.Client, oauthCfg coreoauth.Config) (*Service, error) {
+func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, oauthCfg coreoauth.Config) (*Service, error) {
 	registry, err := coreoauth.NewRegistryFromConfig(ctx, oauthCfg)
 	if err != nil {
 		return nil, err
 	}
-	oauthSvc := coreoauth.NewService(oauthCfg, registry, coreoauth.NewStateStore(redisClient))
+	oauthSvc := coreoauth.NewService(oauthCfg, registry)
 
 	return &Service{
 		read:      dbread.New(pgRO),
@@ -291,20 +290,10 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 	return jwtToken, nil
 }
 
-func (s *Service) BeginOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, redirectURI string) (authorizationURL, state string, err error) {
-	result, err := s.oauth.Begin(ctx, provider, redirectURI)
+func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (string, error) {
+	ident, err := s.oauth.VerifyIdentity(ctx, provider, credential)
 	if err != nil {
-		return "", "", mapOAuthError(err)
-	}
-	return result.AuthorizationURL, result.State, nil
-}
-
-func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, code, state string) (string, error) {
-	// ExchangeIdentity consumes Redis state and the single-use authorization code before any
-	// database work. If WithIdentityTx fails, the client must restart from BeginOAuthSignIn.
-	ident, err := s.oauth.ExchangeIdentity(ctx, provider, code, state)
-	if err != nil {
-		return "", mapOAuthError(err)
+		return "", err
 	}
 
 	customerID, _, err := coreoauth.WithIdentityTx(ctx, s.pgW, provider, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
@@ -318,7 +307,7 @@ func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.Pr
 			slog.ErrorContext(ctx, "failed to complete oauth sign-in", slogx.Error(err), slog.String("provider", string(provider)))
 			telemetry.RecordError(ctx, err)
 		}
-		return "", mapOAuthError(err)
+		return "", err
 	}
 
 	jwtToken, err := s.generateJWT(customerID)
@@ -328,13 +317,6 @@ func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.Pr
 		return "", err
 	}
 	return jwtToken, nil
-}
-
-func mapOAuthError(err error) error {
-	if errors.Is(err, coreoauth.ErrInvalidState) {
-		return ErrInvalidToken
-	}
-	return err
 }
 
 func isOAuthSignupClientError(err error) bool {

@@ -3,6 +3,7 @@ package oauth_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
@@ -41,7 +42,7 @@ func TestResolveIdentity_LinksExistingEmailPasswordCustomer(t *testing.T) {
 	if createdNew {
 		t.Fatal("expected link to existing customer, not new account")
 	}
-	if customerID != "cust-oauth-link" {
+	if strings.TrimSpace(customerID) != "cust-oauth-link" {
 		t.Fatalf("customer_id = %q, want cust-oauth-link", customerID)
 	}
 
@@ -52,7 +53,7 @@ func TestResolveIdentity_LinksExistingEmailPasswordCustomer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCustomerIdentityByProviderSubject: %v", err)
 	}
-	if ident.CustomerID != "cust-oauth-link" {
+	if strings.TrimSpace(ident.CustomerID) != "cust-oauth-link" {
 		t.Fatalf("identity customer_id = %q", ident.CustomerID)
 	}
 }

@@ -7,6 +7,5 @@ var (
 	ReasonInvalidToken          = codes.add("INVALID_TOKEN")
 	ReasonPasswordTooLong       = codes.add("PASSWORD_TOO_LONG")
 	ReasonOAuthProviderDisabled = codes.add("OAUTH_PROVIDER_DISABLED")
-	ReasonOAuthExchangeInvalid  = codes.add("OAUTH_EXCHANGE_INVALID")
-	ReasonOAuthExchangeFailed   = codes.add("OAUTH_EXCHANGE_FAILED")
+	ReasonOAuthCredentialInvalid = codes.add("OAUTH_CREDENTIAL_INVALID")
 )

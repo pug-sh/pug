@@ -42,9 +42,6 @@ const (
 	// AuthServiceCompleteMagicLinkProcedure is the fully-qualified name of the AuthService's
 	// CompleteMagicLink RPC.
 	AuthServiceCompleteMagicLinkProcedure = "/public.auth.v1.AuthService/CompleteMagicLink"
-	// AuthServiceBeginOAuthSignInProcedure is the fully-qualified name of the AuthService's
-	// BeginOAuthSignIn RPC.
-	AuthServiceBeginOAuthSignInProcedure = "/public.auth.v1.AuthService/BeginOAuthSignIn"
 	// AuthServiceCompleteOAuthSignInProcedure is the fully-qualified name of the AuthService's
 	// CompleteOAuthSignIn RPC.
 	AuthServiceCompleteOAuthSignInProcedure = "/public.auth.v1.AuthService/CompleteOAuthSignIn"
@@ -55,7 +52,6 @@ type AuthServiceClient interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
-	BeginOAuthSignIn(context.Context, *connect.Request[v1.BeginOAuthSignInRequest]) (*connect.Response[v1.BeginOAuthSignInResponse], error)
 	CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error)
 }
 
@@ -88,12 +84,6 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("CompleteMagicLink")),
 			connect.WithClientOptions(opts...),
 		),
-		beginOAuthSignIn: connect.NewClient[v1.BeginOAuthSignInRequest, v1.BeginOAuthSignInResponse](
-			httpClient,
-			baseURL+AuthServiceBeginOAuthSignInProcedure,
-			connect.WithSchema(authServiceMethods.ByName("BeginOAuthSignIn")),
-			connect.WithClientOptions(opts...),
-		),
 		completeOAuthSignIn: connect.NewClient[v1.CompleteOAuthSignInRequest, v1.CompleteOAuthSignInResponse](
 			httpClient,
 			baseURL+AuthServiceCompleteOAuthSignInProcedure,
@@ -108,7 +98,6 @@ type authServiceClient struct {
 	signInWithEmail     *connect.Client[v1.SignInWithEmailRequest, v1.SignInWithEmailResponse]
 	requestMagicLink    *connect.Client[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse]
 	completeMagicLink   *connect.Client[v1.CompleteMagicLinkRequest, v1.CompleteMagicLinkResponse]
-	beginOAuthSignIn    *connect.Client[v1.BeginOAuthSignInRequest, v1.BeginOAuthSignInResponse]
 	completeOAuthSignIn *connect.Client[v1.CompleteOAuthSignInRequest, v1.CompleteOAuthSignInResponse]
 }
 
@@ -127,11 +116,6 @@ func (c *authServiceClient) CompleteMagicLink(ctx context.Context, req *connect.
 	return c.completeMagicLink.CallUnary(ctx, req)
 }
 
-// BeginOAuthSignIn calls public.auth.v1.AuthService.BeginOAuthSignIn.
-func (c *authServiceClient) BeginOAuthSignIn(ctx context.Context, req *connect.Request[v1.BeginOAuthSignInRequest]) (*connect.Response[v1.BeginOAuthSignInResponse], error) {
-	return c.beginOAuthSignIn.CallUnary(ctx, req)
-}
-
 // CompleteOAuthSignIn calls public.auth.v1.AuthService.CompleteOAuthSignIn.
 func (c *authServiceClient) CompleteOAuthSignIn(ctx context.Context, req *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error) {
 	return c.completeOAuthSignIn.CallUnary(ctx, req)
@@ -142,7 +126,6 @@ type AuthServiceHandler interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
-	BeginOAuthSignIn(context.Context, *connect.Request[v1.BeginOAuthSignInRequest]) (*connect.Response[v1.BeginOAuthSignInResponse], error)
 	CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error)
 }
 
@@ -171,12 +154,6 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("CompleteMagicLink")),
 		connect.WithHandlerOptions(opts...),
 	)
-	authServiceBeginOAuthSignInHandler := connect.NewUnaryHandler(
-		AuthServiceBeginOAuthSignInProcedure,
-		svc.BeginOAuthSignIn,
-		connect.WithSchema(authServiceMethods.ByName("BeginOAuthSignIn")),
-		connect.WithHandlerOptions(opts...),
-	)
 	authServiceCompleteOAuthSignInHandler := connect.NewUnaryHandler(
 		AuthServiceCompleteOAuthSignInProcedure,
 		svc.CompleteOAuthSignIn,
@@ -191,8 +168,6 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceRequestMagicLinkHandler.ServeHTTP(w, r)
 		case AuthServiceCompleteMagicLinkProcedure:
 			authServiceCompleteMagicLinkHandler.ServeHTTP(w, r)
-		case AuthServiceBeginOAuthSignInProcedure:
-			authServiceBeginOAuthSignInHandler.ServeHTTP(w, r)
 		case AuthServiceCompleteOAuthSignInProcedure:
 			authServiceCompleteOAuthSignInHandler.ServeHTTP(w, r)
 		default:
@@ -214,10 +189,6 @@ func (UnimplementedAuthServiceHandler) RequestMagicLink(context.Context, *connec
 
 func (UnimplementedAuthServiceHandler) CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.CompleteMagicLink is not implemented"))
-}
-
-func (UnimplementedAuthServiceHandler) BeginOAuthSignIn(context.Context, *connect.Request[v1.BeginOAuthSignInRequest]) (*connect.Response[v1.BeginOAuthSignInResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.BeginOAuthSignIn is not implemented"))
 }
 
 func (UnimplementedAuthServiceHandler) CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error) {

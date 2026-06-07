@@ -16,10 +16,9 @@ import (
 // fakeAuthService satisfies authService so the handler's error mapping can be
 // unit-tested without a database. Only the methods under test return errors.
 type fakeAuthService struct {
-	signInErr          error
-	completeErr        error
-	beginOAuthErr      error
-	completeOAuthErr   error
+	signInErr        error
+	completeErr      error
+	completeOAuthErr error
 }
 
 func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (string, error) {
@@ -29,10 +28,7 @@ func (f fakeAuthService) RequestMagicLink(context.Context, string) error { retur
 func (f fakeAuthService) CompleteMagicLink(context.Context, string) (string, error) {
 	return "", f.completeErr
 }
-func (f fakeAuthService) BeginOAuthSignIn(context.Context, coreoauth.ProviderName, string) (string, string, error) {
-	return "", "", f.beginOAuthErr
-}
-func (f fakeAuthService) CompleteOAuthSignIn(context.Context, coreoauth.ProviderName, string, string) (string, error) {
+func (f fakeAuthService) CompleteOAuthSignIn(context.Context, coreoauth.ProviderName, string) (string, error) {
 	return "", f.completeOAuthErr
 }
 
@@ -88,54 +84,12 @@ func TestCompleteMagicLinkInvalidTokenMapping(t *testing.T) {
 	}
 }
 
-func TestBeginOAuthInvalidStateMapping(t *testing.T) {
-	s := &server{service: fakeAuthService{beginOAuthErr: coreauth.ErrInvalidToken}}
-
-	_, err := s.BeginOAuthSignIn(context.Background(), connect.NewRequest(&authv1.BeginOAuthSignInRequest{
-		Provider:    authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
-		RedirectUri: proto.String("https://app.example/callback"),
-	}))
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	var ae *apperr.Error
-	if !errors.As(err, &ae) {
-		t.Fatalf("expected *apperr.Error, got %T", err)
-	}
-	if ae.Reason() != apperr.ReasonInvalidToken {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvalidToken)
-	}
-}
-
-func TestCompleteOAuthExchangeFailedMapping(t *testing.T) {
-	s := &server{service: fakeAuthService{completeOAuthErr: coreoauth.ErrOAuthExchangeFailed}}
+func TestCompleteOAuthInvalidCredentialMapping(t *testing.T) {
+	s := &server{service: fakeAuthService{completeOAuthErr: coreoauth.ErrInvalidCredential}}
 
 	_, err := s.CompleteOAuthSignIn(context.Background(), connect.NewRequest(&authv1.CompleteOAuthSignInRequest{
-		Provider: authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
-		Code:     proto.String("code"),
-		State:    proto.String("state"),
-	}))
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	var ae *apperr.Error
-	if !errors.As(err, &ae) {
-		t.Fatalf("expected *apperr.Error, got %T", err)
-	}
-	if ae.Code() != connect.CodeUnavailable {
-		t.Errorf("code = %v, want Unavailable", ae.Code())
-	}
-	if ae.Reason() != apperr.ReasonOAuthExchangeFailed {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOAuthExchangeFailed)
-	}
-}
-
-func TestBeginOAuthInvalidRedirectMapping(t *testing.T) {
-	s := &server{service: fakeAuthService{beginOAuthErr: coreoauth.ErrInvalidRedirectURI}}
-
-	_, err := s.BeginOAuthSignIn(context.Background(), connect.NewRequest(&authv1.BeginOAuthSignInRequest{
-		Provider:    authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
-		RedirectUri: proto.String("https://evil.example/callback"),
+		Provider:   authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
+		Credential: proto.String("bad-credential"),
 	}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -147,15 +101,17 @@ func TestBeginOAuthInvalidRedirectMapping(t *testing.T) {
 	if ae.Code() != connect.CodeInvalidArgument {
 		t.Errorf("code = %v, want InvalidArgument", ae.Code())
 	}
+	if ae.Reason() != apperr.ReasonOAuthCredentialInvalid {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOAuthCredentialInvalid)
+	}
 }
 
-func TestCompleteOAuthExchangeInvalidMapping(t *testing.T) {
-	s := &server{service: fakeAuthService{completeOAuthErr: coreoauth.ErrOAuthExchangeInvalid}}
+func TestCompleteOAuthUnverifiedEmailMapping(t *testing.T) {
+	s := &server{service: fakeAuthService{completeOAuthErr: coreoauth.ErrUnverifiedEmail}}
 
 	_, err := s.CompleteOAuthSignIn(context.Background(), connect.NewRequest(&authv1.CompleteOAuthSignInRequest{
-		Provider: authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
-		Code:     proto.String("code"),
-		State:    proto.String("state"),
+		Provider:   authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
+		Credential: proto.String("credential"),
 	}))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -166,8 +122,5 @@ func TestCompleteOAuthExchangeInvalidMapping(t *testing.T) {
 	}
 	if ae.Code() != connect.CodeInvalidArgument {
 		t.Errorf("code = %v, want InvalidArgument", ae.Code())
-	}
-	if ae.Reason() != apperr.ReasonOAuthExchangeInvalid {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOAuthExchangeInvalid)
 	}
 }
