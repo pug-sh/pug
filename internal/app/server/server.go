@@ -18,12 +18,9 @@ import (
 	orgsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/projects"
 	"github.com/pug-sh/pug/internal/app/server/rpc/public/auth"
-	devicesrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/devices"
 	eventsrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/events"
 	sdkprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/profiles"
 	activityrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/activity"
-	"github.com/pug-sh/pug/internal/app/server/rpc/shared/campaigns"
-	"github.com/pug-sh/pug/internal/app/server/rpc/shared/delivery"
 	"github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
 	sharedprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/profiles"
 	corecustomers "github.com/pug-sh/pug/internal/core/customers"
@@ -41,12 +38,9 @@ import (
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/public/auth/v1/authv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/sdk/devices/v1/devicesv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1/eventsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/shared/campaigns/v1/campaignsv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/shared/delivery/v1/deliveryv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -171,10 +165,6 @@ func start(ctx context.Context, d *deps) error {
 	// Shared
 	insightsPath, insightsHandler := insightsv1connect.NewInsightsServiceHandler(
 		insights.NewServer(insightsSvc, insightsExecutor), handlerOpts)
-	campaignsPath, campaignsHandler := campaignsv1connect.NewCampaignServiceHandler(
-		campaigns.NewServer(d.pgRo, d.pgW, d.nats.GetJetStream()), handlerOpts)
-	deliveryPath, deliveryHandler := deliveryv1connect.NewDeliveryServiceHandler(
-		delivery.NewServer(d.nats.GetJetStream()), handlerOpts)
 	activityPath, activityHandler := activityv1connect.NewActivityServiceHandler(
 		activityrpc.NewServer(d.ch, insightsSvc, dbread.New(d.pgRo)), handlerOpts)
 	profilesSvc := coreprofiles.NewService(d.pgW, d.ch, d.nats)
@@ -182,8 +172,6 @@ func start(ctx context.Context, d *deps) error {
 		sharedprofilesrpc.NewServer(profilesSvc), handlerOpts)
 
 	// SDK
-	devicesPath, devicesHandler := devicesv1connect.NewDevicesServiceHandler(
-		devicesrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
 	sdkProfilesPath, sdkProfilesHandler := sdkprofilesv1connect.NewProfilesSDKServiceHandler(
 		sdkprofilesrpc.NewServer(d.nats.GetJetStream()), handlerOpts)
 	geoProvider := geo.CloudflareProvider{}
@@ -208,15 +196,12 @@ func start(ctx context.Context, d *deps) error {
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
 	mux.Handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
-	mux.Handle(campaignsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(campaignsHandler)))
-	mux.Handle(deliveryPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(deliveryHandler)))
 	mux.Handle(activityPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
 	mux.Handle(sharedProfilesPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
 
 	// SDK only (API key auth). CORS is wildcard with credentials disabled because
 	// customer sites embedding the SDK have arbitrary origins; auth lives entirely
 	// in the x-api-key header, so there are no ambient credentials to protect.
-	mux.Handle(devicesPath, pogrpc.WithSDKCORS(sdkMW.Wrap(devicesHandler)))
 	mux.Handle(sdkProfilesPath, pogrpc.WithSDKCORS(sdkMW.Wrap(sdkProfilesHandler)))
 	mux.Handle(eventsPath, pogrpc.WithSDKCORS(sdkMW.Wrap(eventsHandler)))
 
@@ -232,12 +217,9 @@ func start(ctx context.Context, d *deps) error {
 		customersv1connect.CustomersServiceName,
 		// Shared
 		insightsv1connect.InsightsServiceName,
-		campaignsv1connect.CampaignServiceName,
-		deliveryv1connect.DeliveryServiceName,
 		activityv1connect.ActivityServiceName,
 		profilesv1connect.ProfilesServiceName,
 		// SDK
-		devicesv1connect.DevicesServiceName,
 		sdkprofilesv1connect.ProfilesSDKServiceName,
 		eventsv1connect.EventsServiceName,
 	}

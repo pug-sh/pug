@@ -13,13 +13,24 @@ All telemetry is bootstrapped in `internal/deps/telemetry/`. The server initiali
 | Component      | Status                                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Connect RPC    | ✅ — `otelconnect.Interceptor` on all handlers                                                                           |
-| slog → OTel    | ✅ — `otelslog` bridge replaces default logger                                                                           |
+| slog → OTel    | ✅ — `otelslog` bridge replaces default logger; with no OTLP endpoint configured, text logs to stdout instead                        |
 | PostgreSQL     | ✅ — `otelpgx` tracer on all connections                                                                                 |
 | Redis          | ✅ — `redisotel` tracing + metrics on the client                                                                         |
 | NATS/JetStream | Custom — `tracedJetStream` wrapper in `internal/deps/nats/otel.go`, W3C trace context propagation on publish/consume     |
 | ClickHouse     | Custom — `Conn` wrapper in `internal/deps/clickhouse/clickhouse.go`, spans on Query/Exec/Select/PrepareBatch/AsyncInsert |
 
-**Configuration:** Set `OTEL_SERVICE_NAME` (strongly recommended — telemetry data will lack a service identifier without it) and `OTEL_EXPORTER_OTLP_ENDPOINT` (default `localhost:4317`). TLS is disabled by default (`OTEL_EXPORTER_OTLP_INSECURE` defaults to `true` when unset); set `OTEL_EXPORTER_OTLP_INSECURE=false` to enable TLS for production OTLP endpoints.
+**Configuration:** Setting an OTLP endpoint is what selects OTLP export (see *Export modes* below) — `OTEL_EXPORTER_OTLP_ENDPOINT` (the conventional collector port is `4317`) or a per-signal `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT`. Also set `OTEL_SERVICE_NAME` (strongly recommended — telemetry data will lack a service identifier without it). TLS is disabled by default (`OTEL_EXPORTER_OTLP_INSECURE` defaults to `true` when unset); set `OTEL_EXPORTER_OTLP_INSECURE=false` to enable TLS for production OTLP endpoints.
+
+**Export modes (auto-detected):**
+
+There is no `PUG_OTEL` switch. `SetupSDK` calls `resolveOtelMode()`, which returns `otlp` when `otlpConfigured()` finds an OTLP endpoint var set, otherwise `stdout`:
+
+| Condition | Behavior |
+| --------- | -------- |
+| Any of `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` / `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` set (non-blank) | OTLP export via `otelslog` (requires a collector) |
+| None set | Noop trace/metric/log providers; application logs go to stdout as text via a slog handler (not the OTel log pipeline), no collector required |
+
+The mode is resolved once per process on the first `SetupSDK` call — set the endpoint var(s) before starting the server or workers. A present-but-blank endpoint (e.g. `OTEL_EXPORTER_OTLP_ENDPOINT=`) counts as unset, so a conditionally-templated empty value can't silently flip pug into exporting at a collector that isn't there. For local dev with only `make infra`, leave the endpoint unset (stdout); run `make clickstack` and set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` when exporting to HyperDX.
 
 **Recording errors in spans:** Use `telemetry.RecordError(ctx, err)` to record an error on the current span, set the span status to `Error`, and attach stack traces.
 

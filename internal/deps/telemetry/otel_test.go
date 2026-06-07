@@ -2,9 +2,20 @@ package telemetry
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 )
+
+func TestInstallStdoutLogHandler_wrapsCorrelationHandler(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	installStdoutLogHandler()
+	if _, ok := slog.Default().Handler().(*correlationHandler); !ok {
+		t.Fatalf("handler type = %T, want *correlationHandler", slog.Default().Handler())
+	}
+}
 
 func TestShutdownContextPreservesDeadline(t *testing.T) {
 	parent := context.Background()
