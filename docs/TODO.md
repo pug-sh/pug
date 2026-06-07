@@ -11,6 +11,22 @@ The `delivery` domain currently handles both sending notifications and recording
 - Delete `delivery/v1/delivery.proto` event-related messages (`DeliveryEvent`, `DeliveryEventMessage`, `BatchDeliveryEvents`, `RecordEventRequest/Response`)
 - Keep only delivery-specific messages (`BatchMulticastMessage`, `SubscriptionToken`, etc.)
 
+## Push notifications: revive or remove (dormant since PR #4)
+
+Push-notification **entry points** were removed in PR #4 ("Disable push notification worker and API entry points") while the implementation was intentionally kept until push delivery is production-ready. The implementation packages are now orphaned (unreferenced by any binary), so `go build` still passes and the compiler will **not** flag them as dead. When push delivery is picked back up, **either**:
+
+**Revive** (re-wire the kept implementation):
+
+- Re-add the cobra commands + `dev` errgroup launches in `cmd/pug/main.go` (`device`, `campaign`, `scheduler`)
+- Re-add the standalone worker binaries `cmd/workers/{campaign,device,scheduler}` and their `Makefile` build lines
+- Re-register the `campaigns`/`delivery`/`devices` RPC handlers + reflection names in `internal/app/server/server.go`
+- Restore the `devices`/`campaigns`/`deliveries` streams (+ their `dlq-*`) and the `device-processor`/`campaign-processor` consumers in `schema/nats/{streams,consumers}.yaml` (removed alongside PR #4)
+
+**Remove** (if push delivery is abandoned):
+
+- Delete `internal/app/workers/{campaigns,devices,scheduler}`, `internal/core/{campaigns,delivery,devices}`, and `internal/app/server/rpc/{shared/campaigns,shared/delivery,sdk/devices}`
+- Delete the `campaigns`/`delivery`/`devices` `.proto` definitions and regenerate (`make rpc`)
+
 ## Dead letter queue for events pipeline
 
 Poison messages (e.g. corrupt protobuf) are currently terminated via `msg.Term()` and logged, but the data is lost. Add a dead letter queue so failed messages can be inspected and replayed:
