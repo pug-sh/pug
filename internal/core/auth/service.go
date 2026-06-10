@@ -58,8 +58,11 @@ var (
 )
 
 const (
-	aud = "pug/dashboard"
-	iss = "pug/auth"
+	// Audience and Issuer are baked into every session JWT by generateJWT and
+	// verified by the auth middleware (rpc.WithJWTAuth). Exported so the issuing
+	// and verifying sides share one source of truth and cannot drift.
+	Audience = "pug/dashboard"
+	Issuer   = "pug/auth"
 
 	magicLinkTTL = 15 * time.Minute
 )
@@ -401,11 +404,11 @@ func (s *Service) generateJWT(id string) (string, error) {
 	// todo - reduce expiry time
 	now := time.Now()
 	standardClaims := jwt.RegisteredClaims{
-		Audience:  jwt.ClaimStrings{aud},
+		Audience:  jwt.ClaimStrings{Audience},
 		ExpiresAt: jwt.NewNumericDate(now.Add(90 * 24 * time.Hour)), // expire in 90 days
 		ID:        xid.New().String(),
 		IssuedAt:  jwt.NewNumericDate(now),
-		Issuer:    iss,
+		Issuer:    Issuer,
 		Subject:   id,
 	}
 

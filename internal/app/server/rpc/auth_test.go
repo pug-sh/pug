@@ -7,10 +7,12 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
@@ -221,6 +223,18 @@ func (s *stubDBTX) QueryRow(ctx context.Context, sql string, args ...any) pgx.Ro
 
 func signTestJWT(t *testing.T, key []byte, claims jwt.MapClaims) string {
 	t.Helper()
+	// Default to the same registered claims generateJWT mints so the token
+	// satisfies WithJWTAuth's issuer/audience/expiry checks. Tests exercising
+	// those checks override the relevant claim (or delete it) before signing.
+	if _, ok := claims["aud"]; !ok {
+		claims["aud"] = coreauth.Audience
+	}
+	if _, ok := claims["iss"]; !ok {
+		claims["iss"] = coreauth.Issuer
+	}
+	if _, ok := claims["exp"]; !ok {
+		claims["exp"] = time.Now().Add(time.Hour).Unix()
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString(key)
 	if err != nil {
@@ -389,6 +403,48 @@ func TestWithJWTAuth(t *testing.T) {
 		token := signTestJWT(t, []byte("wrong-key"), jwt.MapClaims{"sub": "cust-1"})
 		if _, err := authFunc(ctx, newJWTRequest(token, "")); err == nil {
 			t.Fatal("expected error for invalid JWT signature")
+		} else if got := err.Error(); !strings.Contains(got, "invalid authorization") {
+			t.Errorf("error = %q, want to contain %q", got, "invalid authorization")
+		}
+	})
+
+	t.Run("expired JWT returns error", func(t *testing.T) {
+		token := signTestJWT(t, jwtKey, jwt.MapClaims{"sub": "cust-1", "exp": time.Now().Add(-time.Hour).Unix()})
+		if _, err := authFunc(ctx, newJWTRequest(token, "")); err == nil {
+			t.Fatal("expected error for expired JWT")
+		} else if got := err.Error(); !strings.Contains(got, "invalid authorization") {
+			t.Errorf("error = %q, want to contain %q", got, "invalid authorization")
+		}
+	})
+
+	t.Run("JWT without expiry returns error", func(t *testing.T) {
+		// Build inline (bypassing signTestJWT's exp default) to assert
+		// WithExpirationRequired rejects a token that never expires.
+		raw := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": "cust-1", "aud": coreauth.Audience, "iss": coreauth.Issuer})
+		token, err := raw.SignedString(jwtKey)
+		if err != nil {
+			t.Fatalf("failed to sign test JWT: %v", err)
+		}
+		if _, err := authFunc(ctx, newJWTRequest(token, "")); err == nil {
+			t.Fatal("expected error for JWT without expiry")
+		} else if got := err.Error(); !strings.Contains(got, "invalid authorization") {
+			t.Errorf("error = %q, want to contain %q", got, "invalid authorization")
+		}
+	})
+
+	t.Run("wrong audience returns error", func(t *testing.T) {
+		token := signTestJWT(t, jwtKey, jwt.MapClaims{"sub": "cust-1", "aud": "some-other-service"})
+		if _, err := authFunc(ctx, newJWTRequest(token, "")); err == nil {
+			t.Fatal("expected error for wrong audience")
+		} else if got := err.Error(); !strings.Contains(got, "invalid authorization") {
+			t.Errorf("error = %q, want to contain %q", got, "invalid authorization")
+		}
+	})
+
+	t.Run("wrong issuer returns error", func(t *testing.T) {
+		token := signTestJWT(t, jwtKey, jwt.MapClaims{"sub": "cust-1", "iss": "evil-issuer"})
+		if _, err := authFunc(ctx, newJWTRequest(token, "")); err == nil {
+			t.Fatal("expected error for wrong issuer")
 		} else if got := err.Error(); !strings.Contains(got, "invalid authorization") {
 			t.Errorf("error = %q, want to contain %q", got, "invalid authorization")
 		}
