@@ -8,14 +8,17 @@ import (
 	"connectrpc.com/connect"
 	"github.com/pug-sh/pug/internal/apperr"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
+	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // fakeAuthService satisfies authService so the handler's error mapping can be
 // unit-tested without a database. Only the methods under test return errors.
 type fakeAuthService struct {
-	signInErr   error
-	completeErr error
+	signInErr        error
+	completeErr      error
+	completeOAuthErr error
 }
 
 func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (string, error) {
@@ -24,6 +27,9 @@ func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (strin
 func (f fakeAuthService) RequestMagicLink(context.Context, string) error { return nil }
 func (f fakeAuthService) CompleteMagicLink(context.Context, string) (string, error) {
 	return "", f.completeErr
+}
+func (f fakeAuthService) CompleteOAuthSignIn(context.Context, coreoauth.ProviderName, string) (string, error) {
+	return "", f.completeOAuthErr
 }
 
 // TestSignInCredentialErrorMapping drives the real handler with a service that
@@ -75,5 +81,49 @@ func TestCompleteMagicLinkInvalidTokenMapping(t *testing.T) {
 	}
 	if ae.Reason() != apperr.ReasonInvalidToken {
 		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvalidToken)
+	}
+}
+
+func TestCompleteOAuthInvalidCredentialMapping(t *testing.T) {
+	s := &server{service: fakeAuthService{completeOAuthErr: coreoauth.ErrInvalidCredential}}
+
+	_, err := s.CompleteOAuthSignIn(context.Background(), connect.NewRequest(&authv1.CompleteOAuthSignInRequest{
+		Provider:   authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
+		Credential: proto.String("bad-credential"),
+	}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("expected *apperr.Error, got %T", err)
+	}
+	if ae.Code() != connect.CodeUnauthenticated {
+		t.Errorf("code = %v, want Unauthenticated", ae.Code())
+	}
+	if ae.Reason() != apperr.ReasonOAuthCredentialInvalid {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOAuthCredentialInvalid)
+	}
+}
+
+func TestCompleteOAuthUnverifiedEmailMapping(t *testing.T) {
+	s := &server{service: fakeAuthService{completeOAuthErr: coreoauth.ErrUnverifiedEmail}}
+
+	_, err := s.CompleteOAuthSignIn(context.Background(), connect.NewRequest(&authv1.CompleteOAuthSignInRequest{
+		Provider:   authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
+		Credential: proto.String("credential"),
+	}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("expected *apperr.Error, got %T", err)
+	}
+	if ae.Code() != connect.CodeInvalidArgument {
+		t.Errorf("code = %v, want InvalidArgument", ae.Code())
+	}
+	if ae.Reason() != apperr.ReasonInvalidArgument {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvalidArgument)
 	}
 }
