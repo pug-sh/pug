@@ -41,11 +41,13 @@ func (p *googleProvider) VerifyCredential(ctx context.Context, credential string
 		return nil, fmt.Errorf("%w: claims: %v", ErrInvalidCredential, err)
 	}
 
-	return &Identity{
+	// NewVerifiedIdentity enforces email_verified; an unverified Google email
+	// surfaces as ErrUnverifiedEmail (distinct from ErrInvalidCredential).
+	return NewVerifiedIdentity(Claims{
 		Subject:       idToken.Subject,
 		Email:         claims.Email,
 		EmailVerified: claims.EmailVerified,
 		DisplayName:   claims.Name,
 		PictureURI:    claims.Picture,
-	}, nil
+	})
 }

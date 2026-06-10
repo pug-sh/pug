@@ -98,8 +98,8 @@ func TestCompleteOAuthInvalidCredentialMapping(t *testing.T) {
 	if !errors.As(err, &ae) {
 		t.Fatalf("expected *apperr.Error, got %T", err)
 	}
-	if ae.Code() != connect.CodeInvalidArgument {
-		t.Errorf("code = %v, want InvalidArgument", ae.Code())
+	if ae.Code() != connect.CodeUnauthenticated {
+		t.Errorf("code = %v, want Unauthenticated", ae.Code())
 	}
 	if ae.Reason() != apperr.ReasonOAuthCredentialInvalid {
 		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOAuthCredentialInvalid)
@@ -122,5 +122,8 @@ func TestCompleteOAuthUnverifiedEmailMapping(t *testing.T) {
 	}
 	if ae.Code() != connect.CodeInvalidArgument {
 		t.Errorf("code = %v, want InvalidArgument", ae.Code())
+	}
+	if ae.Reason() != apperr.ReasonInvalidArgument {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvalidArgument)
 	}
 }

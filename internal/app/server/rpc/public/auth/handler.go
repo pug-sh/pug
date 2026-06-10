@@ -104,7 +104,10 @@ func mapOAuthHandlerError(err error) error {
 	case errors.Is(err, coreoauth.ErrUnverifiedEmail):
 		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider")
 	case errors.Is(err, coreoauth.ErrInvalidCredential):
-		return apperr.Invalid(apperr.ReasonOAuthCredentialInvalid, "oauth sign-in failed")
+		// A failed/expired credential is an authentication failure, not a
+		// malformed request — return Unauthenticated so clients prompt re-auth
+		// (mirrors SignInWithEmail). Message stays vague for anti-enumeration.
+		return apperr.Unauthenticated(apperr.ReasonOAuthCredentialInvalid, "oauth sign-in failed")
 	default:
 		return connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

@@ -6,15 +6,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
-	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestResolveIdentity_LinksExistingEmailPasswordCustomer(t *testing.T) {
+func mustVerified(t *testing.T, c coreoauth.Claims) *coreoauth.Identity {
+	t.Helper()
+	id, err := coreoauth.NewVerifiedIdentity(c)
+	if err != nil {
+		t.Fatalf("NewVerifiedIdentity: %v", err)
+	}
+	return id
+}
+
+func TestWithIdentityTx_LinksExistingEmailPasswordCustomer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -33,11 +42,10 @@ func TestResolveIdentity_LinksExistingEmailPasswordCustomer(t *testing.T) {
 		t.Fatalf("CreateCustomer: %v", err)
 	}
 
-	customerID, createdNew, err := coreoauth.ResolveIdentity(ctx, db.PgW, coreoauth.ProviderGoogle, &coreoauth.Identity{
-		Subject: "google-sub-1", Email: "oauth-link@example.com", EmailVerified: true,
-	})
+	ident := mustVerified(t, coreoauth.Claims{Subject: "google-sub-1", Email: "oauth-link@example.com", EmailVerified: true})
+	customerID, createdNew, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, nil)
 	if err != nil {
-		t.Fatalf("ResolveIdentity: %v", err)
+		t.Fatalf("WithIdentityTx: %v", err)
 	}
 	if createdNew {
 		t.Fatal("expected link to existing customer, not new account")
@@ -47,30 +55,31 @@ func TestResolveIdentity_LinksExistingEmailPasswordCustomer(t *testing.T) {
 	}
 
 	read := dbread.New(db.PgRO)
-	ident, err := read.GetCustomerIdentityByProviderSubject(ctx, dbread.GetCustomerIdentityByProviderSubjectParams{
+	identRow, err := read.GetCustomerIdentityByProviderSubject(ctx, dbread.GetCustomerIdentityByProviderSubjectParams{
 		Provider: string(coreoauth.ProviderGoogle), ProviderSubject: "google-sub-1",
 	})
 	if err != nil {
 		t.Fatalf("GetCustomerIdentityByProviderSubject: %v", err)
 	}
-	if strings.TrimSpace(ident.CustomerID) != "cust-oauth-link" {
-		t.Fatalf("identity customer_id = %q", ident.CustomerID)
+	if strings.TrimSpace(identRow.CustomerID) != "cust-oauth-link" {
+		t.Fatalf("identity customer_id = %q", identRow.CustomerID)
 	}
 }
 
-func TestResolveIdentity_CreatesNewCustomer(t *testing.T) {
+func TestWithIdentityTx_CreatesNewCustomer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	db := testutil.SetupPostgres(t)
 	ctx := context.Background()
 
-	customerID, createdNew, err := coreoauth.ResolveIdentity(ctx, db.PgW, coreoauth.ProviderGoogle, &coreoauth.Identity{
+	ident := mustVerified(t, coreoauth.Claims{
 		Subject: "google-sub-new", Email: "oauth-new@example.com", EmailVerified: true,
 		DisplayName: "OAuth User", PictureURI: "https://example.com/pic.png",
 	})
+	customerID, createdNew, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, nil)
 	if err != nil {
-		t.Fatalf("ResolveIdentity: %v", err)
+		t.Fatalf("WithIdentityTx: %v", err)
 	}
 	if !createdNew {
 		t.Fatal("expected new account")
@@ -92,16 +101,37 @@ func TestResolveIdentity_CreatesNewCustomer(t *testing.T) {
 	}
 }
 
-func TestResolveIdentity_RejectsUnverifiedEmail(t *testing.T) {
+// TestWithIdentityTx_IdempotentReSignIn pins the already-linked fast path: a
+// repeat sign-in for the same (provider, subject) returns the same customer,
+// reports createdNew=false, and does not create a duplicate account.
+func TestWithIdentityTx_IdempotentReSignIn(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	db := testutil.SetupPostgres(t)
-	_, _, err := coreoauth.ResolveIdentity(context.Background(), db.PgW, coreoauth.ProviderGoogle, &coreoauth.Identity{
-		Subject: "sub", Email: "a@b.com", EmailVerified: false,
+	ctx := context.Background()
+
+	ident := mustVerified(t, coreoauth.Claims{
+		Subject: "google-sub-idem", Email: "oauth-idem@example.com", EmailVerified: true,
 	})
-	if !errors.Is(err, coreoauth.ErrUnverifiedEmail) {
-		t.Fatalf("err = %v, want ErrUnverifiedEmail", err)
+
+	id1, new1, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, nil)
+	if err != nil {
+		t.Fatalf("first WithIdentityTx: %v", err)
+	}
+	if !new1 {
+		t.Fatal("first sign-in should create a new account")
+	}
+
+	id2, new2, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, nil)
+	if err != nil {
+		t.Fatalf("second WithIdentityTx: %v", err)
+	}
+	if new2 {
+		t.Fatal("repeat sign-in must not create a second account")
+	}
+	if id1 != id2 {
+		t.Fatalf("customer id changed across sign-ins: %q -> %q", id1, id2)
 	}
 }
 
@@ -114,8 +144,8 @@ func TestWithIdentityTx_ConcurrentSignupSameEmail(t *testing.T) {
 
 	const email = "oauth-race@example.com"
 	idents := []*coreoauth.Identity{
-		{Subject: "google-sub-race-a", Email: email, EmailVerified: true, DisplayName: "Race A"},
-		{Subject: "google-sub-race-b", Email: email, EmailVerified: true, DisplayName: "Race B"},
+		mustVerified(t, coreoauth.Claims{Subject: "google-sub-race-a", Email: email, EmailVerified: true, DisplayName: "Race A"}),
+		mustVerified(t, coreoauth.Claims{Subject: "google-sub-race-b", Email: email, EmailVerified: true, DisplayName: "Race B"}),
 	}
 
 	errCh := make(chan error, len(idents))
@@ -137,14 +167,14 @@ func TestWithIdentityTx_ConcurrentSignupSameEmail(t *testing.T) {
 		t.Fatalf("GetCustomerByEmail: %v", err)
 	}
 	for _, subject := range []string{"google-sub-race-a", "google-sub-race-b"} {
-		ident, err := read.GetCustomerIdentityByProviderSubject(ctx, dbread.GetCustomerIdentityByProviderSubjectParams{
+		identRow, err := read.GetCustomerIdentityByProviderSubject(ctx, dbread.GetCustomerIdentityByProviderSubjectParams{
 			Provider: string(coreoauth.ProviderGoogle), ProviderSubject: subject,
 		})
 		if err != nil {
 			t.Fatalf("GetCustomerIdentityByProviderSubject(%q): %v", subject, err)
 		}
-		if ident.CustomerID != customer.ID {
-			t.Fatalf("subject %q linked to %q, want %q", subject, ident.CustomerID, customer.ID)
+		if identRow.CustomerID != customer.ID {
+			t.Fatalf("subject %q linked to %q, want %q", subject, identRow.CustomerID, customer.ID)
 		}
 	}
 }
@@ -156,9 +186,9 @@ func TestWithIdentityTx_RollsBackIdentityWhenFinalizeFails(t *testing.T) {
 	db := testutil.SetupPostgres(t)
 	ctx := context.Background()
 
-	ident := &coreoauth.Identity{
+	ident := mustVerified(t, coreoauth.Claims{
 		Subject: "google-sub-rollback", Email: "oauth-rollback@example.com", EmailVerified: true,
-	}
+	})
 	var attempts int
 	_, _, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, func(context.Context, *dbwrite.Queries, string, bool) error {
 		attempts++
@@ -167,9 +197,12 @@ func TestWithIdentityTx_RollsBackIdentityWhenFinalizeFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected finalize error")
 	}
+	if attempts != 1 {
+		t.Fatalf("finalize attempts = %d, want 1", attempts)
+	}
 
 	read := dbread.New(db.PgRO)
-	if _, err := read.GetCustomerByEmail(ctx, ident.Email); !errors.Is(err, pgx.ErrNoRows) {
+	if _, err := read.GetCustomerByEmail(ctx, ident.Email()); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("expected no customer after rollback, got err=%v", err)
 	}
 

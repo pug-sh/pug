@@ -13,8 +13,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pug-sh/pug/internal/core/emailaction"
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
+	"github.com/pug-sh/pug/internal/core/emailaction"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -293,20 +293,26 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (string, error) {
 	ident, err := s.oauth.VerifyIdentity(ctx, provider, credential)
 	if err != nil {
+		// Client-input errors (ErrInvalidCredential / ErrUnverifiedEmail) are
+		// mapped by the handler; unexpected verifier errors were already recorded
+		// inside VerifyIdentity. Nothing to log or record here.
 		return "", err
 	}
 
 	customerID, _, err := coreoauth.WithIdentityTx(ctx, s.pgW, provider, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
 		if err := FinishSignup(ctx, w, customerID, createdNew, nil); err != nil {
+			return err // coreorgs records this at its detect site; don't re-record.
+		}
+		if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {
+			slog.ErrorContext(ctx, "failed to mark email verified on oauth sign-in", slogx.Error(err), slog.String("customer_id", customerID))
+			telemetry.RecordError(ctx, err)
 			return err
 		}
-		return FinalizeVerifiedCustomer(ctx, w, customerID)
+		return nil
 	})
 	if err != nil {
-		if !isOAuthSignupClientError(err) {
-			slog.ErrorContext(ctx, "failed to complete oauth sign-in", slogx.Error(err), slog.String("provider", string(provider)))
-			telemetry.RecordError(ctx, err)
-		}
+		// resolve.go records its own mechanism errors and the callback above
+		// records FinalizeVerifiedCustomer; this wrapper only translates.
 		return "", err
 	}
 
@@ -317,10 +323,6 @@ func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.Pr
 		return "", err
 	}
 	return jwtToken, nil
-}
-
-func isOAuthSignupClientError(err error) bool {
-	return errors.Is(err, coreoauth.ErrUnverifiedEmail)
 }
 
 type issueActionTokenInput struct {
