@@ -32,7 +32,7 @@ func TestSignInWithEmail_EmptyPasswordHashIsInvalidCredentials(t *testing.T) {
 		t.Fatalf("CreateCustomer: %v", err)
 	}
 
-	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
+	svc := mustNewTestAuthService(t, db, &stubPublisher{})
 
 	_, err := svc.SignInWithEmail(ctx, "nopw@example.com", "anything")
 	if !errors.Is(err, coreauth.ErrInvalidCredentials) {
@@ -54,7 +54,7 @@ func TestRequestMagicLink_IssuesTokenForKnownAndUnknownEmail(t *testing.T) {
 		t.Fatalf("CreateCustomer: %v", err)
 	}
 	pub := &stubPublisher{}
-	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+	svc := mustNewTestAuthService(t, db, pub)
 
 	for _, email := range []string{"known@example.com", "stranger@example.com"} {
 		if err := svc.RequestMagicLink(ctx, email); err != nil {
@@ -85,7 +85,7 @@ func TestCompleteMagicLink_NewEmailCreatesVerifiedAccountAndOrg(t *testing.T) {
 	read := dbread.New(db.PgRO)
 	ctx := context.Background()
 	pub := &stubPublisher{}
-	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+	svc := mustNewTestAuthService(t, db, pub)
 
 	if err := svc.RequestMagicLink(ctx, "fresh@example.com"); err != nil {
 		t.Fatalf("RequestMagicLink: %v", err)
@@ -131,7 +131,7 @@ func TestCompleteMagicLink_CapturesBrowserTimezoneOnDefaultProject(t *testing.T)
 	defaultProjectTZ := func(t *testing.T, email, tz string) string {
 		t.Helper()
 		pub := &stubPublisher{}
-		svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+		svc := mustNewTestAuthService(t, db, pub)
 		if err := svc.RequestMagicLink(ctx, email); err != nil {
 			t.Fatalf("RequestMagicLink: %v", err)
 		}
@@ -167,7 +167,7 @@ func TestCompleteMagicLink_InvalidToken(t *testing.T) {
 	}
 	db := testutil.SetupPostgres(t)
 	ctx := context.Background()
-	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
+	svc := mustNewTestAuthService(t, db, &stubPublisher{})
 	if _, err := svc.CompleteMagicLink(ctx, "no-such-token", ""); !errors.Is(err, coreauth.ErrInvalidToken) {
 		t.Fatalf("err = %v, want ErrInvalidToken", err)
 	}
@@ -212,7 +212,7 @@ func TestCompleteMagicLink_InviteJoinsOrgWithRole(t *testing.T) {
 		t.Fatalf("InviteMemberWithRole: %v", err)
 	}
 
-	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
+	svc := mustNewTestAuthService(t, db, &stubPublisher{})
 	jwtTok, err := svc.CompleteMagicLink(ctx, dispatch.RawToken, "")
 	if err != nil {
 		t.Fatalf("CompleteMagicLink: %v", err)
@@ -265,7 +265,7 @@ func TestCompleteMagicLink_InviteExistingAccountJoinsOrg(t *testing.T) {
 		t.Fatalf("InviteMemberWithRole: %v", err)
 	}
 
-	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
+	svc := mustNewTestAuthService(t, db, &stubPublisher{})
 	if _, err := svc.CompleteMagicLink(ctx, dispatch.RawToken, ""); err != nil {
 		t.Fatalf("CompleteMagicLink: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestCompleteMagicLink_ExpiredInviteTokenRejected(t *testing.T) {
 		t.Fatalf("CreateEmailActionToken: %v", err)
 	}
 
-	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
+	svc := mustNewTestAuthService(t, db, &stubPublisher{})
 	if _, err := svc.CompleteMagicLink(ctx, "expired-invite-raw", ""); !errors.Is(err, coreauth.ErrInvalidToken) {
 		t.Fatalf("err = %v, want ErrInvalidToken", err)
 	}
@@ -350,7 +350,7 @@ func TestCompleteMagicLink_PlainRequestPreservesPendingInvite(t *testing.T) {
 		t.Fatalf("InviteMemberWithRole: %v", err)
 	}
 
-	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{})
+	svc := mustNewTestAuthService(t, db, &stubPublisher{})
 
 	// Invitee requests a plain login link for the same email before clicking the invite.
 	if err := svc.RequestMagicLink(ctx, "preserve-invitee@example.com"); err != nil {
@@ -383,7 +383,7 @@ func TestCompleteMagicLink_ConcurrentRedemptionSerializes(t *testing.T) {
 	read := dbread.New(db.PgRO)
 	ctx := context.Background()
 	pub := &stubPublisher{}
-	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+	svc := mustNewTestAuthService(t, db, pub)
 
 	if err := svc.RequestMagicLink(ctx, "concurrent@example.com"); err != nil {
 		t.Fatalf("RequestMagicLink: %v", err)
@@ -453,7 +453,7 @@ func TestCompleteMagicLink_ExistingAccountPlainLinkCreatesNoSecondOrg(t *testing
 	}
 
 	pub := &stubPublisher{}
-	svc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), pub)
+	svc := mustNewTestAuthService(t, db, pub)
 	if err := svc.RequestMagicLink(ctx, "existplain@example.com"); err != nil {
 		t.Fatalf("RequestMagicLink: %v", err)
 	}

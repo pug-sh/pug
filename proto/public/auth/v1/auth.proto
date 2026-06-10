@@ -9,6 +9,7 @@ service AuthService {
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
   rpc RequestMagicLink(RequestMagicLinkRequest) returns (RequestMagicLinkResponse) {}
   rpc CompleteMagicLink(CompleteMagicLinkRequest) returns (CompleteMagicLinkResponse) {}
+  rpc CompleteOAuthSignIn(CompleteOAuthSignInRequest) returns (CompleteOAuthSignInResponse) {}
 }
 
 message SignInWithEmailRequest {
@@ -50,4 +51,19 @@ message CompleteMagicLinkRequest {
 
 message CompleteMagicLinkResponse {
   string token = 1; // session JWT
+}
+
+enum OAuthProvider {
+  O_AUTH_PROVIDER_UNSPECIFIED = 0;
+  O_AUTH_PROVIDER_GOOGLE = 1;
+}
+
+message CompleteOAuthSignInRequest {
+  OAuthProvider provider = 1 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+  // Google id_token JWT from @react-oauth/google GoogleLogin onSuccess credential.
+  string credential = 2 [(buf.validate.field).required = true];
+}
+
+message CompleteOAuthSignInResponse {
+  string token = 1; // session JWT — sign-in OR sign-up, decided server-side
 }

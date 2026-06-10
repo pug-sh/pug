@@ -32,6 +32,14 @@ type Customer struct {
 	EmailVerifiedAt pgtype.Timestamptz
 }
 
+type CustomerIdentity struct {
+	ID              string
+	CustomerID      string
+	Provider        string
+	ProviderSubject string
+	CreateTime      pgtype.Timestamptz
+}
+
 type Dashboard struct {
 	ID                 string
 	ProjectID          string

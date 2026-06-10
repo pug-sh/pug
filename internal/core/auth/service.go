@@ -13,8 +13,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	"github.com/pug-sh/pug/internal/core/emailaction"
-	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -74,16 +74,24 @@ type Service struct {
 	pgW       *pgxpool.Pool
 	jwtKey    []byte
 	publisher JobPublisher
+	oauth     *coreoauth.Service
 }
 
-func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher) *Service {
+func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, oauthCfg coreoauth.Config) (*Service, error) {
+	registry, err := coreoauth.NewRegistryFromConfig(ctx, oauthCfg)
+	if err != nil {
+		return nil, err
+	}
+	oauthSvc := coreoauth.NewService(oauthCfg, registry)
+
 	return &Service{
 		read:      dbread.New(pgRO),
 		write:     dbwrite.New(pgW),
 		pgW:       pgW,
 		jwtKey:    jwtKey,
 		publisher: publisher,
-	}
+		oauth:     oauthSvc,
+	}, nil
 }
 
 func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (string, error) {
@@ -238,25 +246,21 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 	}
 
 	if isInvite {
-		// Invited user joins the invitation's org with its role; no default org.
-		if err := coreorgs.ApplyInviteAcceptanceInTx(ctx, w, emailToken.OrgInvitationID.String, customerID); err != nil {
-			switch {
-			case errors.Is(err, coreorgs.ErrAlreadyMember):
-				// Idempotent — already in the org; just sign in.
-			case errors.Is(err, coreorgs.ErrInviteNotFound),
-				errors.Is(err, coreorgs.ErrInviteNotPending),
-				errors.Is(err, coreorgs.ErrInviteExpired):
-				return "", ErrInvalidToken
-			default:
-				return "", err // logged + recorded at source in coreorgs
+		invite := &InviteContext{OrgInvitationID: emailToken.OrgInvitationID.String}
+		if err := FinishSignup(ctx, w, customerID, createdNew, invite, reportingTimezone); err != nil {
+			if !errors.Is(err, ErrInvalidToken) {
+				slog.ErrorContext(ctx, "failed to apply org invite on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
+				telemetry.RecordError(ctx, err)
 			}
+			return "", err
 		}
 	} else if createdNew {
 		// Plain passwordless signup: give the new account a default org + project,
 		// seeding the project's reporting timezone from the browser that completed
 		// the link (coerced to UTC if malformed).
-		if _, err := coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default", reportingTimezone); err != nil {
+		if err := FinishSignup(ctx, w, customerID, true, nil, reportingTimezone); err != nil {
 			slog.ErrorContext(ctx, "failed to create default org for magic-link user", slogx.Error(err), slog.String("customer_id", customerID))
+			telemetry.RecordError(ctx, err)
 			return "", err
 		}
 	}
@@ -269,7 +273,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 		telemetry.RecordError(ctx, err)
 		return "", err
 	}
-	if _, err := w.MarkCustomerEmailVerified(ctx, customerID); err != nil {
+	if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {
 		slog.ErrorContext(ctx, "failed to mark email verified on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
 		return "", err
@@ -283,6 +287,42 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 	jwtToken, err := s.generateJWT(customerID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate JWT on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	return jwtToken, nil
+}
+
+func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (string, error) {
+	ident, err := s.oauth.VerifyIdentity(ctx, provider, credential)
+	if err != nil {
+		// Client-input errors (ErrInvalidCredential / ErrUnverifiedEmail) are
+		// mapped by the handler; unexpected verifier errors were already recorded
+		// inside VerifyIdentity. Nothing to log or record here.
+		return "", err
+	}
+
+	customerID, _, err := coreoauth.WithIdentityTx(ctx, s.pgW, provider, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
+		// OAuth sign-in carries no browser timezone; default the project to UTC.
+		if err := FinishSignup(ctx, w, customerID, createdNew, nil, ""); err != nil {
+			return err // coreorgs records this at its detect site; don't re-record.
+		}
+		if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {
+			slog.ErrorContext(ctx, "failed to mark email verified on oauth sign-in", slogx.Error(err), slog.String("customer_id", customerID))
+			telemetry.RecordError(ctx, err)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		// resolve.go records its own mechanism errors and the callback above
+		// records FinalizeVerifiedCustomer; this wrapper only translates.
+		return "", err
+	}
+
+	jwtToken, err := s.generateJWT(customerID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate JWT on oauth sign-in", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
 		return "", err
 	}
