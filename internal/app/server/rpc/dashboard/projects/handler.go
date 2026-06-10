@@ -161,7 +161,7 @@ func (s *server) UpdateMeta(
 	// Explicit settings action: reject a malformed/unknown zone rather than coercing
 	// to UTC (the lenient create/signup behavior). Normalize collapses "UTC" to "".
 	if err := tzx.Validate(req.Msg.GetReportingTimezone()); err != nil {
-		return nil, apperr.Invalid(apperr.ReasonInvalidArgument, "invalid timezone")
+		return nil, apperr.Invalid(apperr.ReasonInvalidTimezone, "invalid timezone")
 	}
 
 	wParams := dbwrite.UpdateProjectMetaParams{

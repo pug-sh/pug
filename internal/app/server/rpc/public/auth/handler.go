@@ -102,7 +102,9 @@ func mapOAuthHandlerError(err error) error {
 	case errors.Is(err, coreoauth.ErrOAuthProviderDisabled):
 		return apperr.Invalid(apperr.ReasonOAuthProviderDisabled, "oauth provider is not configured")
 	case errors.Is(err, coreoauth.ErrUnverifiedEmail):
-		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider")
+		// Generic reason intentional: no distinct client action for an unverified IdP
+		// email (rare edge), so it maps to plain InvalidArgument.
+		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider") // apperr:exempt
 	case errors.Is(err, coreoauth.ErrInvalidCredential):
 		// A failed/expired credential is an authentication failure, not a
 		// malformed request — return Unauthenticated so clients prompt re-auth
