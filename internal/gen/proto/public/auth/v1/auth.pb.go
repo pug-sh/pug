@@ -22,6 +22,52 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type OAuthProvider int32
+
+const (
+	OAuthProvider_O_AUTH_PROVIDER_UNSPECIFIED OAuthProvider = 0
+	OAuthProvider_O_AUTH_PROVIDER_GOOGLE      OAuthProvider = 1
+)
+
+// Enum value maps for OAuthProvider.
+var (
+	OAuthProvider_name = map[int32]string{
+		0: "O_AUTH_PROVIDER_UNSPECIFIED",
+		1: "O_AUTH_PROVIDER_GOOGLE",
+	}
+	OAuthProvider_value = map[string]int32{
+		"O_AUTH_PROVIDER_UNSPECIFIED": 0,
+		"O_AUTH_PROVIDER_GOOGLE":      1,
+	}
+)
+
+func (x OAuthProvider) Enum() *OAuthProvider {
+	p := new(OAuthProvider)
+	*p = x
+	return p
+}
+
+func (x OAuthProvider) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OAuthProvider) Descriptor() protoreflect.EnumDescriptor {
+	return file_public_auth_v1_auth_proto_enumTypes[0].Descriptor()
+}
+
+func (OAuthProvider) Type() protoreflect.EnumType {
+	return &file_public_auth_v1_auth_proto_enumTypes[0]
+}
+
+func (x OAuthProvider) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OAuthProvider.Descriptor instead.
+func (OAuthProvider) EnumDescriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{0}
+}
+
 type SignInWithEmailRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Email *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
@@ -288,6 +334,103 @@ func (x *CompleteMagicLinkResponse) GetToken() string {
 	return ""
 }
 
+type CompleteOAuthSignInRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Provider *OAuthProvider         `protobuf:"varint,1,opt,name=provider,enum=public.auth.v1.OAuthProvider" json:"provider,omitempty"`
+	// Google id_token JWT from @react-oauth/google GoogleLogin onSuccess credential.
+	Credential    *string `protobuf:"bytes,2,opt,name=credential" json:"credential,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteOAuthSignInRequest) Reset() {
+	*x = CompleteOAuthSignInRequest{}
+	mi := &file_public_auth_v1_auth_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteOAuthSignInRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteOAuthSignInRequest) ProtoMessage() {}
+
+func (x *CompleteOAuthSignInRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_public_auth_v1_auth_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteOAuthSignInRequest.ProtoReflect.Descriptor instead.
+func (*CompleteOAuthSignInRequest) Descriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CompleteOAuthSignInRequest) GetProvider() OAuthProvider {
+	if x != nil && x.Provider != nil {
+		return *x.Provider
+	}
+	return OAuthProvider_O_AUTH_PROVIDER_UNSPECIFIED
+}
+
+func (x *CompleteOAuthSignInRequest) GetCredential() string {
+	if x != nil && x.Credential != nil {
+		return *x.Credential
+	}
+	return ""
+}
+
+type CompleteOAuthSignInResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"` // session JWT — sign-in OR sign-up, decided server-side
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteOAuthSignInResponse) Reset() {
+	*x = CompleteOAuthSignInResponse{}
+	mi := &file_public_auth_v1_auth_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteOAuthSignInResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteOAuthSignInResponse) ProtoMessage() {}
+
+func (x *CompleteOAuthSignInResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_public_auth_v1_auth_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteOAuthSignInResponse.ProtoReflect.Descriptor instead.
+func (*CompleteOAuthSignInResponse) Descriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CompleteOAuthSignInResponse) GetToken() string {
+	if x != nil && x.Token != nil {
+		return *x.Token
+	}
+	return ""
+}
+
 var File_public_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_public_auth_v1_auth_proto_rawDesc = "" +
@@ -307,11 +450,23 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\x18CompleteMagicLinkRequest\x12\x1c\n" +
 	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\"1\n" +
 	"\x19CompleteMagicLinkResponse\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token2\xc8\x02\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"\x8b\x01\n" +
+	"\x1aCompleteOAuthSignInRequest\x12E\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x1d.public.auth.v1.OAuthProviderB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\bprovider\x12&\n" +
+	"\n" +
+	"credential\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
+	"credential\"3\n" +
+	"\x1bCompleteOAuthSignInResponse\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token*L\n" +
+	"\rOAuthProvider\x12\x1f\n" +
+	"\x1bO_AUTH_PROVIDER_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16O_AUTH_PROVIDER_GOOGLE\x10\x012\xba\x03\n" +
 	"\vAuthService\x12d\n" +
 	"\x0fSignInWithEmail\x12&.public.auth.v1.SignInWithEmailRequest\x1a'.public.auth.v1.SignInWithEmailResponse\"\x00\x12g\n" +
 	"\x10RequestMagicLink\x12'.public.auth.v1.RequestMagicLinkRequest\x1a(.public.auth.v1.RequestMagicLinkResponse\"\x00\x12j\n" +
-	"\x11CompleteMagicLink\x12(.public.auth.v1.CompleteMagicLinkRequest\x1a).public.auth.v1.CompleteMagicLinkResponse\"\x00B@Z>github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1b\beditionsp\xe8\a"
+	"\x11CompleteMagicLink\x12(.public.auth.v1.CompleteMagicLinkRequest\x1a).public.auth.v1.CompleteMagicLinkResponse\"\x00\x12p\n" +
+	"\x13CompleteOAuthSignIn\x12*.public.auth.v1.CompleteOAuthSignInRequest\x1a+.public.auth.v1.CompleteOAuthSignInResponse\"\x00B@Z>github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1b\beditionsp\xe8\a"
 
 var (
 	file_public_auth_v1_auth_proto_rawDescOnce sync.Once
@@ -325,27 +480,34 @@ func file_public_auth_v1_auth_proto_rawDescGZIP() []byte {
 	return file_public_auth_v1_auth_proto_rawDescData
 }
 
-var file_public_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_public_auth_v1_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_public_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_public_auth_v1_auth_proto_goTypes = []any{
-	(*SignInWithEmailRequest)(nil),    // 0: public.auth.v1.SignInWithEmailRequest
-	(*SignInWithEmailResponse)(nil),   // 1: public.auth.v1.SignInWithEmailResponse
-	(*RequestMagicLinkRequest)(nil),   // 2: public.auth.v1.RequestMagicLinkRequest
-	(*RequestMagicLinkResponse)(nil),  // 3: public.auth.v1.RequestMagicLinkResponse
-	(*CompleteMagicLinkRequest)(nil),  // 4: public.auth.v1.CompleteMagicLinkRequest
-	(*CompleteMagicLinkResponse)(nil), // 5: public.auth.v1.CompleteMagicLinkResponse
+	(OAuthProvider)(0),                  // 0: public.auth.v1.OAuthProvider
+	(*SignInWithEmailRequest)(nil),      // 1: public.auth.v1.SignInWithEmailRequest
+	(*SignInWithEmailResponse)(nil),     // 2: public.auth.v1.SignInWithEmailResponse
+	(*RequestMagicLinkRequest)(nil),     // 3: public.auth.v1.RequestMagicLinkRequest
+	(*RequestMagicLinkResponse)(nil),    // 4: public.auth.v1.RequestMagicLinkResponse
+	(*CompleteMagicLinkRequest)(nil),    // 5: public.auth.v1.CompleteMagicLinkRequest
+	(*CompleteMagicLinkResponse)(nil),   // 6: public.auth.v1.CompleteMagicLinkResponse
+	(*CompleteOAuthSignInRequest)(nil),  // 7: public.auth.v1.CompleteOAuthSignInRequest
+	(*CompleteOAuthSignInResponse)(nil), // 8: public.auth.v1.CompleteOAuthSignInResponse
 }
 var file_public_auth_v1_auth_proto_depIdxs = []int32{
-	0, // 0: public.auth.v1.AuthService.SignInWithEmail:input_type -> public.auth.v1.SignInWithEmailRequest
-	2, // 1: public.auth.v1.AuthService.RequestMagicLink:input_type -> public.auth.v1.RequestMagicLinkRequest
-	4, // 2: public.auth.v1.AuthService.CompleteMagicLink:input_type -> public.auth.v1.CompleteMagicLinkRequest
-	1, // 3: public.auth.v1.AuthService.SignInWithEmail:output_type -> public.auth.v1.SignInWithEmailResponse
-	3, // 4: public.auth.v1.AuthService.RequestMagicLink:output_type -> public.auth.v1.RequestMagicLinkResponse
-	5, // 5: public.auth.v1.AuthService.CompleteMagicLink:output_type -> public.auth.v1.CompleteMagicLinkResponse
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: public.auth.v1.CompleteOAuthSignInRequest.provider:type_name -> public.auth.v1.OAuthProvider
+	1, // 1: public.auth.v1.AuthService.SignInWithEmail:input_type -> public.auth.v1.SignInWithEmailRequest
+	3, // 2: public.auth.v1.AuthService.RequestMagicLink:input_type -> public.auth.v1.RequestMagicLinkRequest
+	5, // 3: public.auth.v1.AuthService.CompleteMagicLink:input_type -> public.auth.v1.CompleteMagicLinkRequest
+	7, // 4: public.auth.v1.AuthService.CompleteOAuthSignIn:input_type -> public.auth.v1.CompleteOAuthSignInRequest
+	2, // 5: public.auth.v1.AuthService.SignInWithEmail:output_type -> public.auth.v1.SignInWithEmailResponse
+	4, // 6: public.auth.v1.AuthService.RequestMagicLink:output_type -> public.auth.v1.RequestMagicLinkResponse
+	6, // 7: public.auth.v1.AuthService.CompleteMagicLink:output_type -> public.auth.v1.CompleteMagicLinkResponse
+	8, // 8: public.auth.v1.AuthService.CompleteOAuthSignIn:output_type -> public.auth.v1.CompleteOAuthSignInResponse
+	5, // [5:9] is the sub-list for method output_type
+	1, // [1:5] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_public_auth_v1_auth_proto_init() }
@@ -358,13 +520,14 @@ func file_public_auth_v1_auth_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_public_auth_v1_auth_proto_rawDesc), len(file_public_auth_v1_auth_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   6,
+			NumEnums:      1,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_public_auth_v1_auth_proto_goTypes,
 		DependencyIndexes: file_public_auth_v1_auth_proto_depIdxs,
+		EnumInfos:         file_public_auth_v1_auth_proto_enumTypes,
 		MessageInfos:      file_public_auth_v1_auth_proto_msgTypes,
 	}.Build()
 	File_public_auth_v1_auth_proto = out.File

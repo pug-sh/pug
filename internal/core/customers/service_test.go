@@ -28,7 +28,10 @@ func TestSetPassword_ThenSignInSucceeds(t *testing.T) {
 		t.Fatalf("SetPassword: %v", err)
 	}
 
-	authSvc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), stubPublisher{})
+	authSvc, err := coreauth.NewServiceForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), stubPublisher{})
+	if err != nil {
+		t.Fatalf("NewServiceForTest: %v", err)
+	}
 	if _, err := authSvc.SignInWithEmail(ctx, "setpw@example.com", "brand-new-password"); err != nil {
 		t.Fatalf("SignInWithEmail after SetPassword: %v", err)
 	}
@@ -56,7 +59,10 @@ func TestSetPassword_OverwritesExistingHash(t *testing.T) {
 		t.Fatalf("SetPassword second: %v", err)
 	}
 
-	authSvc := coreauth.NewService(db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), stubPublisher{})
+	authSvc, err := coreauth.NewServiceForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), stubPublisher{})
+	if err != nil {
+		t.Fatalf("NewServiceForTest: %v", err)
+	}
 	if _, err := authSvc.SignInWithEmail(ctx, "setpw-ow@example.com", "first-password"); !errors.Is(err, coreauth.ErrInvalidCredentials) {
 		t.Fatalf("old password should be rejected after overwrite, got %v", err)
 	}
