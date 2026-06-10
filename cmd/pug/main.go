@@ -24,6 +24,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/workers/profiles/upsert"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/templates"
+	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/slogx"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -234,6 +235,12 @@ var devCmd = &cobra.Command{
 		if err := godotenv.Load(); err != nil {
 			slog.DebugContext(sigCtx, "No .env file found, relying on environment variables")
 		}
+
+		// `pug dev` runs every worker in one local process; the worker liveness
+		// endpoint is for orchestrated deployments, so force it off here. This
+		// avoids an unneeded listener and the single-process bind the standalone
+		// worker binaries would otherwise contend for.
+		os.Setenv(natsworker.HealthAddrEnv, "off")
 
 		port := os.Getenv("PUG_SERVER_PORT")
 		if port == "" {
