@@ -34,7 +34,7 @@ func TestCampaignsService(t *testing.T) {
 	}
 
 	projectsSvc := projects.NewService(db.PgRO, db.PgW, nil)
-	project, err := projectsSvc.CreateProject(ctx, "org-camp-test", "Campaign Project")
+	project, err := projectsSvc.CreateProject(ctx, "org-camp-test", "Campaign Project", "")
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}

@@ -171,7 +171,7 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 // existing account joins the invited org with its role; no default org is
 // created. When org_invitation_id is NULL (plain branch), a newly-created
 // account receives a default org + project.
-func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, error) {
+func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (string, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin magic-link transaction", slogx.Error(err))
@@ -252,8 +252,10 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 			}
 		}
 	} else if createdNew {
-		// Plain passwordless signup: give the new account a default org + project.
-		if _, err := coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
+		// Plain passwordless signup: give the new account a default org + project,
+		// seeding the project's reporting timezone from the browser that completed
+		// the link (coerced to UTC if malformed).
+		if _, err := coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default", reportingTimezone); err != nil {
 			slog.ErrorContext(ctx, "failed to create default org for magic-link user", slogx.Error(err), slog.String("customer_id", customerID))
 			return "", err
 		}

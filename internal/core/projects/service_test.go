@@ -58,7 +58,7 @@ func TestProjectsService(t *testing.T) {
 	var projectID string
 
 	t.Run("CreateProject", func(t *testing.T) {
-		proj, err := svc.CreateProject(ctx, org.ID, "My Project")
+		proj, err := svc.CreateProject(ctx, org.ID, "My Project", "")
 		if err != nil {
 			t.Fatalf("CreateProject: %v", err)
 		}
@@ -105,7 +105,7 @@ func TestProjectsService(t *testing.T) {
 
 	t.Run("GetProjectsByOrgID", func(t *testing.T) {
 		// Create a second project for the same org.
-		if _, err := svc.CreateProject(ctx, org.ID, "Second Project"); err != nil {
+		if _, err := svc.CreateProject(ctx, org.ID, "Second Project", ""); err != nil {
 			t.Fatalf("CreateProject (second): %v", err)
 		}
 
@@ -144,29 +144,36 @@ func TestProjectsService(t *testing.T) {
 		}
 	})
 
-	t.Run("UpdateProjectDisplayName", func(t *testing.T) {
+	t.Run("UpdateProjectMeta", func(t *testing.T) {
 		if projectID == "" {
 			t.Skip("skipping: CreateProject did not produce a project ID")
 		}
-		updated, err := svc.UpdateProjectDisplayName(ctx, dbwrite.UpdateProjectDisplayNameParams{
-			ID:          projectID,
-			OrgID:       org.ID,
-			DisplayName: "Renamed Project",
+		updated, err := svc.UpdateProjectMeta(ctx, dbwrite.UpdateProjectMetaParams{
+			ID:                projectID,
+			OrgID:             org.ID,
+			DisplayName:       "Renamed Project",
+			ReportingTimezone: "Asia/Kolkata",
 		})
 		if err != nil {
-			t.Fatalf("UpdateProjectDisplayName: %v", err)
+			t.Fatalf("UpdateProjectMeta: %v", err)
 		}
 		if updated.DisplayName != "Renamed Project" {
 			t.Errorf("DisplayName = %q, want %q", updated.DisplayName, "Renamed Project")
+		}
+		if updated.ReportingTimezone != "Asia/Kolkata" {
+			t.Errorf("ReportingTimezone = %q, want %q", updated.ReportingTimezone, "Asia/Kolkata")
 		}
 
 		// Confirm via read path.
 		got, err := svc.GetProjectByID(ctx, projectID)
 		if err != nil {
-			t.Fatalf("GetProjectByID after rename: %v", err)
+			t.Fatalf("GetProjectByID after update: %v", err)
 		}
 		if got.DisplayName != "Renamed Project" {
 			t.Errorf("read-path DisplayName = %q, want %q", got.DisplayName, "Renamed Project")
+		}
+		if got.ReportingTimezone != "Asia/Kolkata" {
+			t.Errorf("read-path ReportingTimezone = %q, want %q", got.ReportingTimezone, "Asia/Kolkata")
 		}
 	})
 
@@ -193,7 +200,7 @@ func TestProjectsService(t *testing.T) {
 
 	t.Run("DeleteProject", func(t *testing.T) {
 		// Create a disposable project for deletion.
-		proj, err := svc.CreateProject(ctx, org.ID, "To Delete")
+		proj, err := svc.CreateProject(ctx, org.ID, "To Delete", "")
 		if err != nil {
 			t.Fatalf("CreateProject (to delete): %v", err)
 		}

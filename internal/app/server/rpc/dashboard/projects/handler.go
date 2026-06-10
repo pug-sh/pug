@@ -15,6 +15,7 @@ import (
 	projectsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/pug-sh/pug/internal/tzx"
 )
 
 type server struct {
@@ -97,7 +98,7 @@ func (s *server) Create(
 		return nil, err
 	}
 
-	projectData, err := s.service.CreateProjectAsAdmin(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetDisplayName())
+	projectData, err := s.service.CreateProjectAsAdmin(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetDisplayName(), req.Msg.GetReportingTimezone())
 	if err != nil {
 		if errors.Is(err, projects.ErrAdminRequired) {
 			return nil, apperr.PermissionDenied(apperr.ReasonOrgAdminRequired, "admin role required")
@@ -142,11 +143,12 @@ func (s *server) Delete(
 	return connect.NewResponse(&projectsv1.DeleteResponse{}), nil
 }
 
-// UpdateDisplayName updates the display name of the project specified by x-project-id header.
-func (s *server) UpdateDisplayName(
+// UpdateMeta full-replaces the editable metadata (display name + reporting
+// timezone) of the project specified by the x-project-id header.
+func (s *server) UpdateMeta(
 	ctx context.Context,
-	req *connect.Request[projectsv1.UpdateDisplayNameRequest],
-) (*connect.Response[projectsv1.UpdateDisplayNameResponse], error) {
+	req *connect.Request[projectsv1.UpdateMetaRequest],
+) (*connect.Response[projectsv1.UpdateMetaResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -156,18 +158,29 @@ func (s *server) UpdateDisplayName(
 		return nil, err
 	}
 
-	wParams := dbwrite.UpdateProjectDisplayNameParams{OrgID: principal.Project.OrgID, DisplayName: req.Msg.GetDisplayName(), ID: principal.Project.ID}
-	projectData, err := s.service.UpdateProjectDisplayName(ctx, wParams)
+	// Explicit settings action: reject a malformed/unknown zone rather than coercing
+	// to UTC (the lenient create/signup behavior). Normalize collapses "UTC" to "".
+	if err := tzx.Validate(req.Msg.GetReportingTimezone()); err != nil {
+		return nil, apperr.Invalid(apperr.ReasonInvalidArgument, "invalid timezone")
+	}
+
+	wParams := dbwrite.UpdateProjectMetaParams{
+		OrgID:             principal.Project.OrgID,
+		ID:                principal.Project.ID,
+		DisplayName:       req.Msg.GetDisplayName(),
+		ReportingTimezone: tzx.Normalize(req.Msg.GetReportingTimezone()),
+	}
+	projectData, err := s.service.UpdateProjectMeta(ctx, wParams)
 	if err != nil {
 		if errors.Is(err, projects.ErrProjectNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonProjectNotFound, "project not found", apperr.Resource("project", wParams.ID))
 		}
-		slog.ErrorContext(ctx, "failed to update project display name", slogx.Error(err), slog.String("project_id", wParams.ID))
+		slog.ErrorContext(ctx, "failed to update project meta", slogx.Error(err), slog.String("project_id", wParams.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&projectsv1.UpdateDisplayNameResponse{Project: wToRPCMsg(projectData)}), nil
+	return connect.NewResponse(&projectsv1.UpdateMetaResponse{Project: wToRPCMsg(projectData)}), nil
 }
 
 // UpdateFCMServiceJSON updates the FCM service JSON for the project specified by x-project-id header.

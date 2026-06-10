@@ -10,9 +10,12 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	coreinsights "github.com/pug-sh/pug/internal/core/insights"
+	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
+	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/pug-sh/pug/internal/tzx"
 )
 
 const maxConcurrentDashboardTileQueries = 8
@@ -24,6 +27,13 @@ const maxConcurrentDashboardTileQueries = 8
 type DashboardQueryOverrides struct {
 	TimeRange   *commonv1.TimeRange    // nil = no override
 	Granularity insightsv1.Granularity // GRANULARITY_UNSPECIFIED (zero) = no override
+	// Timezone is an IANA name aligning day/week/month bucket boundaries and the
+	// resolved default-preset window to the viewer's local calendar. Empty = UTC
+	// (the historical behavior). On the QueryDashboard path this is the project's
+	// stored reporting_timezone (server-injected, not a client request field), which
+	// was validated at write time (Coerce on create, Validate on UpdateMeta); the
+	// insights executor re-validates it per tile before use.
+	Timezone string
 }
 
 // RenderedTile is a tile plus, for insight tiles, its query outcome.
@@ -74,7 +84,7 @@ func RenderDashboard(
 			continue // markdown: structure only, no outcome
 		}
 		group.Go(func() error {
-			result, errMsg, err := renderInsightTile(groupCtx, executor, dashboard.Dashboard.ProjectID, tile, timeRange, granularity, now)
+			result, errMsg, err := renderInsightTile(groupCtx, executor, dashboard.Dashboard.ProjectID, tile, timeRange, granularity, overrides.Timezone, now)
 			if err != nil {
 				return err // context cancellation/deadline: cancel siblings, surface via Wait
 			}
@@ -96,8 +106,22 @@ func RenderDashboard(
 func resolveEffectiveWindow(ctx context.Context, dash dbread.Dashboard, overrides DashboardQueryOverrides, now time.Time) (*commonv1.TimeRange, insightsv1.Granularity) {
 	timeRange := overrides.TimeRange
 	if timeRange == nil {
+		// loc aligns the resolved preset window to the viewer's local midnight so
+		// the leading day is a full bucket. The zone is the project's stored
+		// reporting_timezone, validated at write time, so a load failure here means a
+		// corrupt/legacy stored value: fall back to UTC but surface it (log +
+		// telemetry) rather than silently bucketing the window on the wrong calendar.
+		loc, err := tzx.Load(overrides.Timezone)
+		if err != nil {
+			slog.WarnContext(ctx, "dashboard reporting_timezone failed to load; falling back to UTC window alignment",
+				slog.String("project_id", dash.ProjectID),
+				slog.String("reporting_timezone", overrides.Timezone),
+				slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			loc = time.UTC
+		}
 		preset := DashboardDefaultTimeRangePresetFromDB(ctx, dash.DefaultTimeRange)
-		timeRange = ResolveDashboardTimeRangePreset(preset, nil, now)
+		timeRange = ResolveDashboardTimeRangePreset(preset, nil, now, loc)
 	}
 	granularity := overrides.Granularity
 	if granularity == insightsv1.Granularity_GRANULARITY_UNSPECIFIED {
@@ -119,6 +143,7 @@ func renderInsightTile(
 	tile dbread.DashboardTile,
 	timeRange *commonv1.TimeRange,
 	granularity insightsv1.Granularity,
+	timezone string,
 	now time.Time,
 ) (*insightsv1.QueryResponse, string, error) {
 	if len(tile.InsightQuery) == 0 {
@@ -135,6 +160,7 @@ func renderInsightTile(
 		Spec:        spec,
 		TimeRange:   timeRange,
 		Granularity: granularity.Enum(),
+		Timezone:    &timezone,
 	}
 	if err := protovalidate.Validate(assembled); err != nil {
 		slog.WarnContext(ctx, "dashboard tile query invalid",

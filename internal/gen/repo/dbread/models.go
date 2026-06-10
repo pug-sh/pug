@@ -133,12 +133,13 @@ type ProfileDevice struct {
 }
 
 type Project struct {
-	CreateTime     pgtype.Timestamptz
-	DisplayName    string
-	FcmServiceJson pgtype.Text
-	ID             string
-	OrgID          string
-	PrivateApiKey  string
-	PublicApiKey   string
-	UpdateTime     pgtype.Timestamptz
+	CreateTime        pgtype.Timestamptz
+	DisplayName       string
+	FcmServiceJson    pgtype.Text
+	ID                string
+	OrgID             string
+	PrivateApiKey     string
+	PublicApiKey      string
+	ReportingTimezone string
+	UpdateTime        pgtype.Timestamptz
 }

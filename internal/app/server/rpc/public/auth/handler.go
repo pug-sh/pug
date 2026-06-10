@@ -18,7 +18,7 @@ import (
 type authService interface {
 	SignInWithEmail(ctx context.Context, email, password string) (string, error)
 	RequestMagicLink(ctx context.Context, email string) error
-	CompleteMagicLink(ctx context.Context, token string) (string, error)
+	CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (string, error)
 }
 
 type server struct {
@@ -61,7 +61,7 @@ func (s *server) CompleteMagicLink(
 	ctx context.Context,
 	req *connect.Request[authv1.CompleteMagicLinkRequest],
 ) (*connect.Response[authv1.CompleteMagicLinkResponse], error) {
-	token, err := s.service.CompleteMagicLink(ctx, req.Msg.GetToken())
+	token, err := s.service.CompleteMagicLink(ctx, req.Msg.GetToken(), req.Msg.GetTimezone())
 	if err != nil {
 		if errors.Is(err, coreauth.ErrInvalidToken) {
 			return nil, apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired link")

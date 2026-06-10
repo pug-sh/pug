@@ -22,7 +22,7 @@ func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (strin
 	return "", f.signInErr
 }
 func (f fakeAuthService) RequestMagicLink(context.Context, string) error { return nil }
-func (f fakeAuthService) CompleteMagicLink(context.Context, string) (string, error) {
+func (f fakeAuthService) CompleteMagicLink(context.Context, string, string) (string, error) {
 	return "", f.completeErr
 }
 

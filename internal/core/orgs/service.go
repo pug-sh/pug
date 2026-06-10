@@ -135,7 +135,7 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher JobPublisher) *
 func CreateOrgWithDefaultsInTx(
 	ctx context.Context,
 	w *dbwrite.Queries,
-	customerID, displayName string,
+	customerID, displayName, reportingTimezone string,
 ) (dbwrite.Org, error) {
 	org, err := w.CreateOrg(ctx, dbwrite.CreateOrgParams{
 		ID:          xid.New().String(),
@@ -157,7 +157,7 @@ func CreateOrgWithDefaultsInTx(
 		return dbwrite.Org{}, err
 	}
 
-	if _, err := projects.CreateProjectInTx(ctx, w, org.ID, "default"); err != nil {
+	if _, err := projects.CreateProjectInTx(ctx, w, org.ID, "default", reportingTimezone); err != nil {
 		// projects.CreateProjectInTx logs + records at source.
 		return dbwrite.Org{}, err
 	}
@@ -165,7 +165,10 @@ func CreateOrgWithDefaultsInTx(
 }
 
 // CreateOrgWithDefaults opens its own transaction around CreateOrgWithDefaultsInTx.
-// Use this from RPC handlers and other callers without an active tx.
+// Use this from RPC handlers and other callers without an active tx. Its default
+// project gets the UTC reporting zone (""); the browser timezone is captured only on
+// the signup path (auth.CompleteMagicLink), which calls CreateOrgWithDefaultsInTx
+// directly. A future org-create UI that captures a zone can thread it here.
 func (s *Service) CreateOrgWithDefaults(
 	ctx context.Context,
 	customerID, displayName string,
@@ -183,7 +186,7 @@ func (s *Service) CreateOrgWithDefaults(
 		}
 	}()
 
-	org, err := CreateOrgWithDefaultsInTx(ctx, dbwrite.New(tx), customerID, displayName)
+	org, err := CreateOrgWithDefaultsInTx(ctx, dbwrite.New(tx), customerID, displayName, "")
 	if err != nil {
 		return dbwrite.Org{}, err
 	}

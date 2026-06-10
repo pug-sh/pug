@@ -271,6 +271,9 @@ func (s *Server) QueryDashboard(
 	overrides := coredashboards.DashboardQueryOverrides{
 		TimeRange:   req.Msg.GetTimeRange(),
 		Granularity: req.Msg.GetGranularity(),
+		// Server-authoritative: the project's stored reporting_timezone aligns the
+		// resolved preset window and every tile's bucket boundaries; not a client knob.
+		Timezone: principal.Project.ReportingTimezone,
 	}
 	rendered, err := coredashboards.RenderDashboard(ctx, s.executor, dashboard, overrides)
 	if err != nil {

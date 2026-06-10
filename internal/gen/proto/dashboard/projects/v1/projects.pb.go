@@ -111,11 +111,15 @@ func (x *BatchGetResponse) GetProjects() []*Project {
 }
 
 type CreateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	OrgId         *string                `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	DisplayName *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	OrgId       *string                `protobuf:"bytes,2,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
+	// Optional IANA timezone (e.g. "Asia/Kolkata") captured from the creator's browser
+	// and stored as the project's reporting_timezone. Empty = UTC. A malformed value is
+	// coerced to UTC server-side rather than rejected, so creation never fails on it.
+	ReportingTimezone *string `protobuf:"bytes,3,opt,name=reporting_timezone,json=reportingTimezone" json:"reporting_timezone,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *CreateRequest) Reset() {
@@ -158,6 +162,13 @@ func (x *CreateRequest) GetDisplayName() string {
 func (x *CreateRequest) GetOrgId() string {
 	if x != nil && x.OrgId != nil {
 		return *x.OrgId
+	}
+	return ""
+}
+
+func (x *CreateRequest) GetReportingTimezone() string {
+	if x != nil && x.ReportingTimezone != nil {
+		return *x.ReportingTimezone
 	}
 	return ""
 }
@@ -366,8 +377,11 @@ type Project struct {
 	OrgId          *string                `protobuf:"bytes,4,opt,name=org_id,json=orgId" json:"org_id,omitempty"`
 	PrivateApiKey  *string                `protobuf:"bytes,5,opt,name=private_api_key,json=privateApiKey" json:"private_api_key,omitempty"`
 	PublicApiKey   *string                `protobuf:"bytes,6,opt,name=public_api_key,json=publicApiKey" json:"public_api_key,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// IANA reporting timezone (e.g. "Asia/Kolkata") used to bucket day/week/month
+	// boundaries for this project's insights and dashboards. Empty string = UTC.
+	ReportingTimezone *string `protobuf:"bytes,7,opt,name=reporting_timezone,json=reportingTimezone" json:"reporting_timezone,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Project) Reset() {
@@ -442,27 +456,42 @@ func (x *Project) GetPublicApiKey() string {
 	return ""
 }
 
-type UpdateDisplayNameRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DisplayName   *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+func (x *Project) GetReportingTimezone() string {
+	if x != nil && x.ReportingTimezone != nil {
+		return *x.ReportingTimezone
+	}
+	return ""
 }
 
-func (x *UpdateDisplayNameRequest) Reset() {
-	*x = UpdateDisplayNameRequest{}
+// UpdateMetaRequest full-replaces the project's editable metadata. The settings
+// form sends every field; display_name is required, reporting_timezone is optional
+// (empty = UTC, so a client can reset to UTC by sending "").
+type UpdateMetaRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	DisplayName *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	// IANA timezone (e.g. "Asia/Kolkata") aligning insight/dashboard bucket
+	// boundaries to the project's calendar. Empty = UTC. Unlike creation, a malformed
+	// value is rejected (CodeInvalidArgument) rather than coerced — this is an
+	// explicit settings action.
+	ReportingTimezone *string `protobuf:"bytes,2,opt,name=reporting_timezone,json=reportingTimezone" json:"reporting_timezone,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *UpdateMetaRequest) Reset() {
+	*x = UpdateMetaRequest{}
 	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateDisplayNameRequest) String() string {
+func (x *UpdateMetaRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateDisplayNameRequest) ProtoMessage() {}
+func (*UpdateMetaRequest) ProtoMessage() {}
 
-func (x *UpdateDisplayNameRequest) ProtoReflect() protoreflect.Message {
+func (x *UpdateMetaRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -474,39 +503,46 @@ func (x *UpdateDisplayNameRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateDisplayNameRequest.ProtoReflect.Descriptor instead.
-func (*UpdateDisplayNameRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use UpdateMetaRequest.ProtoReflect.Descriptor instead.
+func (*UpdateMetaRequest) Descriptor() ([]byte, []int) {
 	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *UpdateDisplayNameRequest) GetDisplayName() string {
+func (x *UpdateMetaRequest) GetDisplayName() string {
 	if x != nil && x.DisplayName != nil {
 		return *x.DisplayName
 	}
 	return ""
 }
 
-type UpdateDisplayNameResponse struct {
+func (x *UpdateMetaRequest) GetReportingTimezone() string {
+	if x != nil && x.ReportingTimezone != nil {
+		return *x.ReportingTimezone
+	}
+	return ""
+}
+
+type UpdateMetaResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Project       *Project               `protobuf:"bytes,1,opt,name=project" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateDisplayNameResponse) Reset() {
-	*x = UpdateDisplayNameResponse{}
+func (x *UpdateMetaResponse) Reset() {
+	*x = UpdateMetaResponse{}
 	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateDisplayNameResponse) String() string {
+func (x *UpdateMetaResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateDisplayNameResponse) ProtoMessage() {}
+func (*UpdateMetaResponse) ProtoMessage() {}
 
-func (x *UpdateDisplayNameResponse) ProtoReflect() protoreflect.Message {
+func (x *UpdateMetaResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_dashboard_projects_v1_projects_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -518,12 +554,12 @@ func (x *UpdateDisplayNameResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateDisplayNameResponse.ProtoReflect.Descriptor instead.
-func (*UpdateDisplayNameResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use UpdateMetaResponse.ProtoReflect.Descriptor instead.
+func (*UpdateMetaResponse) Descriptor() ([]byte, []int) {
 	return file_dashboard_projects_v1_projects_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *UpdateDisplayNameResponse) GetProject() *Project {
+func (x *UpdateMetaResponse) GetProject() *Project {
 	if x != nil {
 		return x.Project
 	}
@@ -618,10 +654,11 @@ const file_dashboard_projects_v1_projects_proto_rawDesc = "" +
 	"\x0fBatchGetRequest\x12\x1d\n" +
 	"\x06org_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"N\n" +
 	"\x10BatchGetResponse\x12:\n" +
-	"\bprojects\x18\x01 \x03(\v2\x1e.dashboard.projects.v1.ProjectR\bprojects\"^\n" +
+	"\bprojects\x18\x01 \x03(\v2\x1e.dashboard.projects.v1.ProjectR\bprojects\"\xaa\x01\n" +
 	"\rCreateRequest\x12.\n" +
 	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12\x1d\n" +
-	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\"J\n" +
+	"\x06org_id\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05orgId\x12J\n" +
+	"\x12reporting_timezone\x18\x03 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\x11reportingTimezone\"J\n" +
 	"\x0eCreateResponse\x128\n" +
 	"\aproject\x18\x01 \x01(\v2\x1e.dashboard.projects.v1.ProjectR\aproject\"\x0f\n" +
 	"\rDeleteRequest\"\x10\n" +
@@ -629,27 +666,30 @@ const file_dashboard_projects_v1_projects_proto_rawDesc = "" +
 	"\n" +
 	"GetRequest\"G\n" +
 	"\vGetResponse\x128\n" +
-	"\aproject\x18\x01 \x01(\v2\x1e.dashboard.projects.v1.ProjectR\aproject\"\xcb\x01\n" +
+	"\aproject\x18\x01 \x01(\v2\x1e.dashboard.projects.v1.ProjectR\aproject\"\xfa\x01\n" +
 	"\aProject\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12(\n" +
 	"\x10fcm_service_json\x18\x02 \x01(\tR\x0efcmServiceJson\x12\x0e\n" +
 	"\x02id\x18\x03 \x01(\tR\x02id\x12\x15\n" +
 	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12&\n" +
 	"\x0fprivate_api_key\x18\x05 \x01(\tR\rprivateApiKey\x12$\n" +
-	"\x0epublic_api_key\x18\x06 \x01(\tR\fpublicApiKey\"J\n" +
-	"\x18UpdateDisplayNameRequest\x12.\n" +
-	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\"U\n" +
-	"\x19UpdateDisplayNameResponse\x128\n" +
+	"\x0epublic_api_key\x18\x06 \x01(\tR\fpublicApiKey\x12-\n" +
+	"\x12reporting_timezone\x18\a \x01(\tR\x11reportingTimezone\"\x8f\x01\n" +
+	"\x11UpdateMetaRequest\x12.\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12J\n" +
+	"\x12reporting_timezone\x18\x02 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\x11reportingTimezone\"N\n" +
+	"\x12UpdateMetaResponse\x128\n" +
 	"\aproject\x18\x01 \x01(\v2\x1e.dashboard.projects.v1.ProjectR\aproject\"G\n" +
 	"\x1bUpdateFCMServiceJSONRequest\x12(\n" +
 	"\x10fcm_service_json\x18\x01 \x01(\tR\x0efcmServiceJson\"\x1e\n" +
-	"\x1cUpdateFCMServiceJSONResponse2\xf0\x04\n" +
+	"\x1cUpdateFCMServiceJSONResponse2\xdb\x04\n" +
 	"\x0fProjectsService\x12]\n" +
 	"\bBatchGet\x12&.dashboard.projects.v1.BatchGetRequest\x1a'.dashboard.projects.v1.BatchGetResponse\"\x00\x12W\n" +
 	"\x06Create\x12$.dashboard.projects.v1.CreateRequest\x1a%.dashboard.projects.v1.CreateResponse\"\x00\x12W\n" +
 	"\x06Delete\x12$.dashboard.projects.v1.DeleteRequest\x1a%.dashboard.projects.v1.DeleteResponse\"\x00\x12N\n" +
-	"\x03Get\x12!.dashboard.projects.v1.GetRequest\x1a\".dashboard.projects.v1.GetResponse\"\x00\x12x\n" +
-	"\x11UpdateDisplayName\x12/.dashboard.projects.v1.UpdateDisplayNameRequest\x1a0.dashboard.projects.v1.UpdateDisplayNameResponse\"\x00\x12\x81\x01\n" +
+	"\x03Get\x12!.dashboard.projects.v1.GetRequest\x1a\".dashboard.projects.v1.GetResponse\"\x00\x12c\n" +
+	"\n" +
+	"UpdateMeta\x12(.dashboard.projects.v1.UpdateMetaRequest\x1a).dashboard.projects.v1.UpdateMetaResponse\"\x00\x12\x81\x01\n" +
 	"\x14UpdateFCMServiceJSON\x122.dashboard.projects.v1.UpdateFCMServiceJSONRequest\x1a3.dashboard.projects.v1.UpdateFCMServiceJSONResponse\"\x00BKZIgithub.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1;projectsv1b\beditionsp\xe8\a"
 
 var (
@@ -675,8 +715,8 @@ var file_dashboard_projects_v1_projects_proto_goTypes = []any{
 	(*GetRequest)(nil),                   // 6: dashboard.projects.v1.GetRequest
 	(*GetResponse)(nil),                  // 7: dashboard.projects.v1.GetResponse
 	(*Project)(nil),                      // 8: dashboard.projects.v1.Project
-	(*UpdateDisplayNameRequest)(nil),     // 9: dashboard.projects.v1.UpdateDisplayNameRequest
-	(*UpdateDisplayNameResponse)(nil),    // 10: dashboard.projects.v1.UpdateDisplayNameResponse
+	(*UpdateMetaRequest)(nil),            // 9: dashboard.projects.v1.UpdateMetaRequest
+	(*UpdateMetaResponse)(nil),           // 10: dashboard.projects.v1.UpdateMetaResponse
 	(*UpdateFCMServiceJSONRequest)(nil),  // 11: dashboard.projects.v1.UpdateFCMServiceJSONRequest
 	(*UpdateFCMServiceJSONResponse)(nil), // 12: dashboard.projects.v1.UpdateFCMServiceJSONResponse
 }
@@ -684,18 +724,18 @@ var file_dashboard_projects_v1_projects_proto_depIdxs = []int32{
 	8,  // 0: dashboard.projects.v1.BatchGetResponse.projects:type_name -> dashboard.projects.v1.Project
 	8,  // 1: dashboard.projects.v1.CreateResponse.project:type_name -> dashboard.projects.v1.Project
 	8,  // 2: dashboard.projects.v1.GetResponse.project:type_name -> dashboard.projects.v1.Project
-	8,  // 3: dashboard.projects.v1.UpdateDisplayNameResponse.project:type_name -> dashboard.projects.v1.Project
+	8,  // 3: dashboard.projects.v1.UpdateMetaResponse.project:type_name -> dashboard.projects.v1.Project
 	0,  // 4: dashboard.projects.v1.ProjectsService.BatchGet:input_type -> dashboard.projects.v1.BatchGetRequest
 	2,  // 5: dashboard.projects.v1.ProjectsService.Create:input_type -> dashboard.projects.v1.CreateRequest
 	4,  // 6: dashboard.projects.v1.ProjectsService.Delete:input_type -> dashboard.projects.v1.DeleteRequest
 	6,  // 7: dashboard.projects.v1.ProjectsService.Get:input_type -> dashboard.projects.v1.GetRequest
-	9,  // 8: dashboard.projects.v1.ProjectsService.UpdateDisplayName:input_type -> dashboard.projects.v1.UpdateDisplayNameRequest
+	9,  // 8: dashboard.projects.v1.ProjectsService.UpdateMeta:input_type -> dashboard.projects.v1.UpdateMetaRequest
 	11, // 9: dashboard.projects.v1.ProjectsService.UpdateFCMServiceJSON:input_type -> dashboard.projects.v1.UpdateFCMServiceJSONRequest
 	1,  // 10: dashboard.projects.v1.ProjectsService.BatchGet:output_type -> dashboard.projects.v1.BatchGetResponse
 	3,  // 11: dashboard.projects.v1.ProjectsService.Create:output_type -> dashboard.projects.v1.CreateResponse
 	5,  // 12: dashboard.projects.v1.ProjectsService.Delete:output_type -> dashboard.projects.v1.DeleteResponse
 	7,  // 13: dashboard.projects.v1.ProjectsService.Get:output_type -> dashboard.projects.v1.GetResponse
-	10, // 14: dashboard.projects.v1.ProjectsService.UpdateDisplayName:output_type -> dashboard.projects.v1.UpdateDisplayNameResponse
+	10, // 14: dashboard.projects.v1.ProjectsService.UpdateMeta:output_type -> dashboard.projects.v1.UpdateMetaResponse
 	12, // 15: dashboard.projects.v1.ProjectsService.UpdateFCMServiceJSON:output_type -> dashboard.projects.v1.UpdateFCMServiceJSONResponse
 	10, // [10:16] is the sub-list for method output_type
 	4,  // [4:10] is the sub-list for method input_type
