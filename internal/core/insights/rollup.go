@@ -386,3 +386,142 @@ func segmentationQueryForExecution(req *insightsv1.QueryRequest, projectID strin
 	q, err := BuildSegmentationQuery(req, projectID)
 	return q, false, err
 }
+
+// canUseTopKRollup reports whether a top-K query can be served from the
+// dimensional rollup: PROPERTY dimension on a materialized dim or EVENT_KIND
+// dimension (the rollup's $__total__ rows carry per-kind totals), a
+// rollup-expressible metric (TOTAL/UNIQUE_USERS/PER_USER_AVG — numeric
+// property metrics need raw per-event values), no filter groups, and at most a
+// kind-only scope (the rollup is keyed by kind; per-event property filters
+// need raw events). The USER dimension always needs raw events (identity
+// resolution + per-user values).
+//
+// Unlike canUseEventRollup, granularity is NOT consulted: top K has no time
+// bucketing, so only the day-alignment window guard (rollupWindowAligned,
+// checked by the dispatcher) decides whether the day-keyed rollup matches the
+// raw instant filter.
+//
+// The duplicate-delivery over-count caveat documented on canUseEventRollup
+// applies identically here, with the same shape-specific twist as ranking
+// anywhere: near-tied dimensions can swap rank order. UNIQUE_USERS is immune.
+func canUseTopKRollup(spec *insightsv1.InsightQuerySpec) bool {
+	if spec.GetInsightType() != insightsv1.InsightType_INSIGHT_TYPE_TOP_K {
+		return false
+	}
+	tk := spec.GetTopK()
+	if tk == nil {
+		return false
+	}
+	if len(spec.GetFilterGroups()) != 0 {
+		return false
+	}
+	if len(tk.GetScope().GetFilters()) != 0 {
+		return false
+	}
+	switch tk.GetDimension() {
+	case insightsv1.TopKQuery_DIMENSION_EVENT_KIND:
+	case insightsv1.TopKQuery_DIMENSION_PROPERTY:
+		if !isMaterializedDim(tk.GetProperty()) {
+			return false
+		}
+	default:
+		return false
+	}
+	_, ok := rollupAggExpr(tk.GetMetric())
+	return ok
+}
+
+// buildTopKFromRollup builds the top-K query against the dimensional rollup,
+// preserving the raw shape's contract exactly: top_vals CTE with the same
+// DESC/value-ASC tie-break, $others re-aggregation, is_others flag, and row
+// ordering. Two passes over the rollup are fine — it is pre-aggregated and
+// tiny relative to events. Caller must have checked canUseTopKRollup.
+//
+// WithSpillThreshold is deliberately omitted here (unlike the raw
+// BuildTopKQuery): the rollup's GROUP BY cardinality is bounded by the
+// materialized dimension's distinct values, not the unbounded raw event/user
+// space, so it cannot blow the memory limit the way a raw scan can.
+//
+// Output aliases avoid the table's own dim_value column name (top_dim /
+// dim_bucket) so ClickHouse alias substitution cannot turn
+// `if(dim_value IN ..., dim_value, ...) AS dim_value` into a circular alias;
+// the executor scans positionally, so result column names are free.
+func buildTopKFromRollup(req *insightsv1.QueryRequest, projectID string) (TopKQuery, error) {
+	tk := req.GetSpec().GetTopK()
+	limit := int(tk.GetLimit())
+	if limit == 0 {
+		limit = defaultTopKLimit
+	}
+
+	aggExpr, ok := rollupAggExpr(tk.GetMetric())
+	if !ok {
+		return TopKQuery{}, fmt.Errorf("top k rollup: unsupported metric %s", tk.GetMetric())
+	}
+
+	var dimName, dimExpr string
+	switch tk.GetDimension() {
+	case insightsv1.TopKQuery_DIMENSION_PROPERTY:
+		dimName, dimExpr = tk.GetProperty(), "dim_value"
+	case insightsv1.TopKQuery_DIMENSION_EVENT_KIND:
+		dimName, dimExpr = totalDimName, "kind"
+	default:
+		return TopKQuery{}, fmt.Errorf("top k rollup: unsupported dimension %s", tk.GetDimension())
+	}
+
+	fromDay, toDay := rollupDayBounds(req)
+	scopeKind := tk.GetScope().GetKind()
+	conds := func() []chq.Condition {
+		return []chq.Condition{
+			chq.Eq("project_id", projectID),
+			chq.Eq("dim_name", dimName),
+			chq.Gte("day", fromDay),
+			chq.Lte("day", toDay),
+			chq.When(scopeKind != "", chq.Eq("kind", scopeKind)),
+		}
+	}
+
+	topVals := chq.NewQuery().
+		Select(dimExpr+" AS top_dim").
+		From(rollupTable).
+		Where(conds()...).
+		GroupBy("top_dim").
+		// Tie-break matches the raw builders: value DESC, dimension ASC.
+		OrderBy(aggExpr+" DESC", "top_dim ASC").
+		Limit(int64(limit))
+
+	inTopVals := fmt.Sprintf("%s IN (SELECT top_dim FROM top_vals)", dimExpr)
+	sql, args, err := chq.NewQuery().
+		With("top_vals", topVals).
+		Select(
+			fmt.Sprintf("if(%s, %s, '%s') AS dim_bucket", inTopVals, dimExpr, topKOthersValue),
+			fmt.Sprintf("if(%s, 0, 1) AS is_others", inTopVals),
+			aggExpr+" AS value",
+		).
+		From(rollupTable).
+		Where(conds()...).
+		GroupBy("dim_bucket", "is_others").
+		OrderBy("is_others ASC", "value DESC", "dim_bucket ASC").
+		WithQueryCache(analyticsCacheTTL).
+		Build()
+	if err != nil {
+		return TopKQuery{}, fmt.Errorf("top k rollup: %w", err)
+	}
+	return TopKQuery{
+		sql:       sql,
+		args:      args,
+		limit:     limit,
+		dimension: tk.GetDimension(),
+	}, nil
+}
+
+// topKQueryForExecution mirrors trendsQueryForExecution for top K: the
+// rollup-backed query when structurally eligible (canUseTopKRollup) and
+// window-aligned, else the raw-events BuildTopKQuery.
+func topKQueryForExecution(req *insightsv1.QueryRequest, projectID string, now time.Time) (TopKQuery, bool, error) {
+	if canUseTopKRollup(req.GetSpec()) && rollupWindowAligned(req.GetTimeRange(), now) {
+		q, err := buildTopKFromRollup(req, projectID)
+		return q, true, err
+	}
+	q, err := BuildTopKQuery(req, projectID)
+	return q, false, err
+}

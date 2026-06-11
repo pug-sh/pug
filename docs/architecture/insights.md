@@ -1,6 +1,6 @@
 # Insights
 
-Detailed reference for the insights subsystem (`internal/core/insights`, `proto/shared/insights`). Linked from the root [`CLAUDE.md`](../../CLAUDE.md) — read this when working on insights queries (trends, funnel, retention, segmentation).
+Detailed reference for the insights subsystem (`internal/core/insights`, `proto/shared/insights`). Linked from the root [`CLAUDE.md`](../../CLAUDE.md) — read this when working on insights queries (trends, funnel, retention, segmentation, user flow, top K).
 
 Planned: **User flow** (Sankey graph insight) — implemented; see [User Flow](#user-flow) and [`user-flow.md`](user-flow.md).
 
@@ -43,6 +43,25 @@ User flow is a **graph insight** (Sankey): discovered session/user transitions a
 - **Accuracy:** queries omit `FINAL`; ReplacingMergeTree duplicate delivery may slightly inflate edge counts (same tradeoff as other raw-event insights).
 
 Dashboard tiles use `DASHBOARD_TILE_VIEW_MODE_SANKEY`; the server stores and echoes view mode but does not enforce insight ↔ view_mode pairing.
+
+## Top K
+
+Top K (`INSIGHT_TYPE_TOP_K`) ranks the top K values of a **dimension** by an aggregate **metric** — "top 10 browsers", "top events", "top users by sum(order_amount)" — and appends a trailing `$others` row aggregating everything outside the top K. Configured by `InsightQuerySpec.top_k` (a `TopKQuery`), which is self-contained like `user_flow`/`session`: `spec.events`, `session`, and `breakdowns` must be unset (CEL `top_k_no_events` / `top_k_no_session` / `top_k_no_breakdowns`).
+
+- **Dimension** (`TopKQuery.dimension`): `PROPERTY` (an event auto/custom property named by `top_k.property`, same `$`-prefix encoding as `Breakdown.property`), `EVENT_KIND` ("top events"), or `USER` (canonical users).
+- **Scope + metric**: `top_k.scope` is an optional reused `common.v1.EventFilter` (kind and/or per-event filters); `top_k.metric` reuses `AggregationType` (UNSPECIFIED → TOTAL; SUM/AVG/MIN/MAX require `top_k.metric_property`). UNIQUE_USERS/PER_USER_AVG are rejected for the USER dimension (CEL `top_k_user_dimension_metric`) — each group *is* one user, so they are degenerate. Top-level `filter_groups` (including profile-source filters) apply as usual.
+- **K**: `top_k.limit`, default 10, CEL max 100.
+- **`$others` is computed in SQL**, never by collapsing per-dimension partials in Go — that would break UNIQUE_USERS/AVG/MIN/MAX in the bucket (`uniq` of a union ≠ sum of per-dim `uniq`s; pinned by `TestIntegration/top_k/unique_users_others_no_overlap_inflation`) and return unbounded group sets. The two raw shapes pay for it differently:
+  - **PROPERTY/EVENT_KIND** (`buildTopKEvents`): a `top_vals` CTE ranks dimensions (`ORDER BY <agg> DESC, dim_value ASC` tie-break, matching breakdown bucketing) and the outer query re-aggregates raw rows with `if(dim IN top_vals, dim, '$others')` — exactly **two** window-pruned events scans (ClickHouse 26.5 dedups the two identical `IN(top_vals)` set subqueries; verified via EXPLAIN).
+  - **USER** (`buildTopKUsers`): **single pass** — `per_user` partial aggregates (re-mergeable per metric: cnt / sum_num / sum_num+cnt_num / min_num / max_num, see `topKUserMetric`), a `row_number()` ranking, and a rank-split re-merge into top rows vs `$others`. Nothing is referenced twice: a `top_vals` CTE over the joined scan would re-execute the events scan, the profiles aggregation, and the join build (CTEs inline per reference; the old two-pass shape measured 2× events + 6× profiles reads via EXPLAIN, the single-pass one 1× + 2×).
+- **`is_others` contract**: rows are ordered metric-descending with the bucket last (`ORDER BY is_others ASC, value DESC, dim_value ASC`). Clients identify the bucket by `TopKRow.is_others`, never by matching the `"$others"` string — a real value can legitimately be that literal (same contract as `UserFlowNode.is_others`). Empty-string dimension values participate as a real row (the empty/direct referrer bucket is meaningful).
+- **USER dimension**: events resolve to a canonical user key in SQL via the profile identity union — one `ARRAY JOIN [id, external_id]` pass over `profiles.LatestProfilesCTE` plus the alias branch (`LatestProfileAliasesCTE`), `LEFT ANY JOIN` so pathological multi-matches can't multiply rows; unidentified distinct_ids stay as themselves. The winning rows are then **enriched** by a second small lookup (`BuildTopKProfilesQuery`, not query-cached) attaching `TopKProfile{id, external_id, properties}`; the `$others` row and unidentified distinct_ids stay un-enriched.
+- **Spill guard**: top K groups by an arbitrary dimension whose cardinality is data-dependent (users, URLs), so the raw builders set `max_bytes_before_external_group_by` / `max_bytes_before_external_sort` to 1 GiB (`chq.WithSpillThreshold`) — a pathological dimension degrades to a slower spilling query instead of failing at the memory limit. The USER join hash table (∝ profiles + aliases) is not covered by these settings and remains that dimension's memory floor.
+- **Profile-filter caveat**: `PROPERTY_SOURCE_PROFILE` filters match events by `distinct_id IN (profile ids ∪ alias ids)` — **not** external_id (existing `profileFilterCondition` contract) — so an event keyed by a profile's external_id passes the identity union but not the filter. Pinned by `TestIntegration/top_k/user_profile_filter`.
+- **Rollup fast path**: `topKQueryForExecution` (in `rollup.go`) serves eligible queries from `dashboard_event_rollup_daily` instead of raw events: PROPERTY dimension on a `materializedDims` property or EVENT_KIND dimension (the rollup's `$__total__` rows carry per-kind totals), metric in {TOTAL, UNIQUE_USERS, PER_USER_AVG}, no filter groups, at most a kind-only scope, and a day-aligned window (`rollupWindowAligned`; granularity is **not** consulted — top K has no time bucketing). `buildTopKFromRollup` preserves the raw contract exactly (tie-break, `$others`, `is_others`, row order; parity pinned by `TestIntegration/top_k/rollup_parity`); everything else (USER dimension, custom/non-materialized properties, any filters, numeric metrics, misaligned windows) falls back to `BuildTopKQuery`. The duplicate-delivery over-count caveat from [Rollup Fast Path](#rollup-fast-path) applies; for top K it can additionally swap near-tied ranks.
+- **Granularity** is required by `QueryRequest` validation but ignored at build time (funnel/segmentation precedent; the range caps still fire).
+- **Accuracy**: queries omit `FINAL` like every other insight; pre-merge duplicate deliveries can inflate TOTAL/SUM and can flip rankings near the K boundary. The PROPERTY/EVENT_KIND shape's two scans also read events at slightly different instants under concurrent inserts — negligible and self-consistent within the 60s query cache.
+- **Response**: `QueryResponse.top_k` (a `TopKResult`) with `rows: repeated TopKRow {dimension_value, value, is_others, profile?}`. Raw builders and result assembly live in `internal/core/insights/topk.go`; the rollup predicate/builder/dispatcher in `rollup.go`.
 
 ## Insights Granularity
 
@@ -108,14 +127,15 @@ Always use the type-specific builders — they provide compile-time safety betwe
 | Funnel (with timing) | `BuildFunnelTimingQuery` | `FunnelTimingQuery` |
 | Retention            | `BuildRetentionQuery`    | `RetentionQuery`    |
 | User flow            | `BuildUserFlowQuery`     | `UserFlowQuery`     |
+| Top K                | `BuildTopKQuery`         | `TopKQuery`         |
 
-All query types expose `.SQL()` and `.Args()`. All types except `ScalarQuery` and `UserFlowQuery` also expose `.Properties()` and `.NumBreakdowns()`. `FunnelTimingQuery` also exposes `.Kinds()` and `.WindowSec()`. `UserFlowQuery` also exposes `.MaxNodes()` and `.MaxLinks()`.
+All query types expose `.SQL()` and `.Args()`. All types except `ScalarQuery`, `UserFlowQuery`, and `TopKQuery` also expose `.Properties()` and `.NumBreakdowns()`. `FunnelTimingQuery` also exposes `.Kinds()` and `.WindowSec()`. `UserFlowQuery` also exposes `.MaxNodes()` and `.MaxLinks()`. `TopKQuery` also exposes `.Limit()` and `.Dimension()`.
 
-All six cached insight builders emit `SETTINGS use_query_cache = 1, query_cache_ttl = 60` via `WithQueryCache(analyticsCacheTTL)` on the outermost query. Cache isolation between projects relies on `project_id` being a positional parameter on every cached builder; a builder that interpolates `project_id` into raw SQL would silently break tenant isolation. Property keys/values (including profile property keys/values), segment-users, and event-names builders intentionally omit the cache. See `analyticsCacheTTL` in `internal/core/insights/builder.go` for staleness mechanics with ReplacingMergeTree.
+All cached insight builders emit `SETTINGS use_query_cache = 1, query_cache_ttl = 60` via `WithQueryCache(analyticsCacheTTL)` on the outermost query. Cache isolation between projects relies on `project_id` being a positional parameter on every cached builder; a builder that interpolates `project_id` into raw SQL would silently break tenant isolation. Property keys/values (including profile property keys/values), segment-users, event-names, and top-K profile-enrichment builders intentionally omit the cache. See `analyticsCacheTTL` in `internal/core/insights/builder.go` for staleness mechanics with ReplacingMergeTree.
 
 ## Rollup Fast Path
 
-`ExecuteQuery` serves eligible trends and segmentation queries from the pre-aggregated `dashboard_event_rollup_daily` rollup (see [clickhouse.md](clickhouse.md)) instead of scanning raw events. The decision is `canUseEventRollup` (in `internal/core/insights/rollup.go`):
+`ExecuteQuery` serves eligible trends and segmentation queries from the pre-aggregated `dashboard_event_rollup_daily` rollup (see [clickhouse.md](clickhouse.md)) instead of scanning raw events. (Top K has its own predicate/builder/dispatcher over the same rollup — `canUseTopKRollup` / `buildTopKFromRollup` / `topKQueryForExecution`; see [Top K](#top-k).) The decision for trends/segmentation is `canUseEventRollup` (in `internal/core/insights/rollup.go`):
 
 - insight type TRENDS or SEGMENTATION;
 - every event aggregation in `{TOTAL, UNIQUE_USERS, PER_USER_AVG}` (numeric-property aggs SUM/AVG/MIN/MAX need raw per-event values);

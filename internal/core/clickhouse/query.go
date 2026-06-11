@@ -267,6 +267,26 @@ func (q *Query) DisableTopKDynamicFiltering() *Query {
 	return q
 }
 
+// WithSpillThreshold makes aggregation and sorting spill to disk once their
+// in-memory state exceeds thresholdBytes (max_bytes_before_external_group_by /
+// max_bytes_before_external_sort, both 0 = disabled by default in ClickHouse).
+// Use on queries whose GROUP BY or ORDER BY cardinality is data-dependent and
+// unbounded (e.g. grouping by an arbitrary property or by user), so a
+// high-cardinality dimension degrades to a slower spilling query instead of
+// failing at the memory limit. Apply only to the outermost query — same
+// SETTINGS placement rule as WithQueryCache.
+//
+// Panics if thresholdBytes is not positive (0 would silently disable spilling,
+// the opposite of the caller's intent).
+func (q *Query) WithSpillThreshold(thresholdBytes int) *Query {
+	if thresholdBytes <= 0 {
+		panic(fmt.Sprintf("clickhouse: Query.WithSpillThreshold: thresholdBytes must be positive, got %d", thresholdBytes))
+	}
+	q.settings = upsertSetting(q.settings, intSetting("max_bytes_before_external_group_by", thresholdBytes))
+	q.settings = upsertSetting(q.settings, intSetting("max_bytes_before_external_sort", thresholdBytes))
+	return q
+}
+
 // With adds a named CTE. The sub-query's args are emitted before the main query's args.
 // Panics if sub is nil — pass a non-nil *Query or guard with a nil check before calling.
 //

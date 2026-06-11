@@ -197,6 +197,21 @@ func ExecuteQuery(
 		result := GroupUserFlowResult(ctx, rows, q.MaxNodes(), q.MaxLinks())
 		resp.Result = &insightsv1.QueryResponse_UserFlow{UserFlow: result}
 
+	case insightsv1.InsightType_INSIGHT_TYPE_TOP_K:
+		q, usedRollup, err := topKQueryForExecution(req, projectID, now)
+		if err != nil {
+			return nil, buildQueryError(ctx, projectID, "top k", usedRollup, err)
+		}
+		rows, err := executor.QueryTopK(ctx, projectID, q)
+		if err != nil {
+			return nil, queryFailed(err)
+		}
+		result, err := buildTopKResult(ctx, executor, projectID, q, rows)
+		if err != nil {
+			return nil, queryFailed(err)
+		}
+		resp.Result = &insightsv1.QueryResponse_TopK{TopK: result}
+
 	default:
 		err := fmt.Errorf("unsupported insight type %s", req.GetSpec().GetInsightType().String())
 		slog.ErrorContext(ctx, "unsupported insight type reached ExecuteQuery default",

@@ -21,11 +21,11 @@ const PropertyValuesLimit = 100
 // Applied to all cacheable public insight builders: BuildTrendsQuery,
 // BuildSegmentationQuery, BuildSessionTrendsQuery, BuildSessionSegmentationQuery,
 // BuildFunnelCountsQuery, BuildFunnelTimingQuery, BuildRetentionQuery,
-// BuildUserFlowQuery. Other public
-// builders in this package (property keys/values, segment users, event names)
-// intentionally omit WithQueryCache — they either include `now()`
-// (BuildAutoPropertyValuesQuery) or back dashboard typeahead where freshness matters
-// more than the saved compute.
+// BuildUserFlowQuery, BuildTopKQuery. Other public
+// builders in this package (property keys/values, segment users, event names,
+// top-K profile enrichment) intentionally omit WithQueryCache — they either
+// include `now()` (BuildAutoPropertyValuesQuery) or back dashboard typeahead /
+// small enrichment lookups where freshness matters more than the saved compute.
 //
 // Cache isolation: ClickHouse keys the query cache by query text + parameters. Pug binds
 // project_id as a positional parameter on every cached builder, so per-project isolation
