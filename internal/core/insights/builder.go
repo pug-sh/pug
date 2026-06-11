@@ -46,6 +46,25 @@ const PropertyValuesLimit = 100
 // the merge lag at the time the row was cached.
 const analyticsCacheTTL = 60
 
+// insightsSpillThresholdBytes is the in-memory threshold (1 GiB) past which a
+// query's aggregation/sort state spills to disk via WithSpillThreshold instead
+// of failing at the ClickHouse memory limit. Applied to the builders whose
+// GROUP BY / ORDER BY cardinality is data-dependent and unbounded — they group
+// one row per user (or per arbitrary dimension value), so a high-cardinality
+// project degrades to a slower spilling query rather than OOMing:
+// BuildTopKQuery, BuildFunnelCountsQuery, BuildFunnelTimingQuery,
+// BuildRetentionQuery. Fixed-cardinality builders (trends/segmentation over
+// materialized dims) and rollup-served paths do not need it.
+//
+// Because max_bytes_before_external_group_by / _sort are query-global settings,
+// attaching this to the outermost builder also governs the per-user GROUP BY
+// that lives in each builder's aggregation CTE.
+//
+// Ops tuning: this is a per-query ceiling, so N concurrent spilling queries can
+// hold up to N × this resident — size relative to max_memory_usage and expected
+// parallelism.
+const insightsSpillThresholdBytes = 1 << 30
+
 // Typed query structs link builder output to the correct executor method at compile time.
 
 // TrendsQuery is the compiled SQL for a trends insight.
@@ -224,7 +243,7 @@ func BuildFunnelCountsQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	if err != nil {
 		return FunnelQuery{}, err
 	}
-	sql, args, err := q.WithQueryCache(analyticsCacheTTL).Build()
+	sql, args, err := q.WithQueryCache(analyticsCacheTTL).WithSpillThreshold(insightsSpillThresholdBytes).Build()
 	if err != nil {
 		return FunnelQuery{}, fmt.Errorf("funnel counts: %w", err)
 	}
@@ -243,7 +262,7 @@ func BuildFunnelTimingQuery(req *insightsv1.QueryRequest, projectID string) (Fun
 	if err != nil {
 		return FunnelTimingQuery{}, err
 	}
-	sql, args, err := q.WithQueryCache(analyticsCacheTTL).Build()
+	sql, args, err := q.WithQueryCache(analyticsCacheTTL).WithSpillThreshold(insightsSpillThresholdBytes).Build()
 	if err != nil {
 		return FunnelTimingQuery{}, fmt.Errorf("funnel timing: %w", err)
 	}
@@ -271,7 +290,7 @@ func BuildRetentionQuery(req *insightsv1.QueryRequest, projectID string) (Retent
 	if err != nil {
 		return RetentionQuery{}, err
 	}
-	sql, args, err := q.WithQueryCache(analyticsCacheTTL).Build()
+	sql, args, err := q.WithQueryCache(analyticsCacheTTL).WithSpillThreshold(insightsSpillThresholdBytes).Build()
 	if err != nil {
 		return RetentionQuery{}, fmt.Errorf("retention: %w", err)
 	}

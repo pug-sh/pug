@@ -20,14 +20,6 @@ import (
 // defaultTopKLimit mirrors the default breakdown top-N of 10.
 const defaultTopKLimit = 10
 
-// topKSpillThresholdBytes is the in-memory threshold past which top-K
-// aggregation/sort state spills to disk (1 GiB). Top K groups by an arbitrary
-// dimension — property values or users — whose cardinality is data-dependent
-// and unbounded, so unlike the fixed-cardinality insight queries it gets an
-// explicit spill guard: a pathological dimension degrades to a slower spilling
-// query instead of failing at the ClickHouse memory limit.
-const topKSpillThresholdBytes = 1 << 30
-
 // topKOthersValue is the synthetic dimension value for the overflow bucket.
 // Clients identify the bucket by TopKRow.is_others, not this literal — a real
 // dimension value can legitimately be the string "$others".
@@ -99,7 +91,7 @@ func BuildTopKQuery(req *insightsv1.QueryRequest, projectID string) (TopKQuery, 
 
 	sql, args, err := q.
 		WithQueryCache(analyticsCacheTTL).
-		WithSpillThreshold(topKSpillThresholdBytes).
+		WithSpillThreshold(insightsSpillThresholdBytes).
 		Build()
 	if err != nil {
 		return TopKQuery{}, fmt.Errorf("top k: %w", err)
@@ -221,7 +213,7 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 // scan would re-execute the events scan, the latest_profiles aggregation, and
 // the join hash-table build. The ranking sort costs O(users log users) over
 // already-aggregated rows — far cheaper than a second scan+join — and spills
-// past topKSpillThresholdBytes. TestBuildTopKQuery_UserDimension pins the
+// past insightsSpillThresholdBytes. TestBuildTopKQuery_UserDimension pins the
 // single-reference shape (one events scan, one profiles read, one join) so a
 // regression to a twice-referenced CTE is caught.
 //
