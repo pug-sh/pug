@@ -86,11 +86,10 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 	seedStart := time.Now()
 	start := seedStart.AddDate(0, -4, 0)
 
-	slog.InfoContext(ctx, "building session pool")
-	sessionPool := buildSessionPool(start, seedStart)
-	slog.InfoContext(ctx, "session pool ready", slog.Int("pool_size", len(sessionPool)))
+	slog.InfoContext(ctx, "building session factory")
+	factory := newSessionFactory()
+	slog.InfoContext(ctx, "session factory ready", slog.Int("users", len(factory.users)))
 
-	tracker := newUserSessionTracker()
 	var inserted int64
 	startTime := time.Now()
 
@@ -107,7 +106,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		// a stale seed-start instant (long runs can otherwise leave a recent dead zone).
 		end := time.Now()
 
-		n, err := s.insertBatch(ctx, projectID, sessionPool, int(size), start, end, tracker)
+		n, err := s.insertBatch(ctx, projectID, factory, int(size), start, end)
 		if err != nil {
 			return fmt.Errorf("batch insert failed at offset %d: %w", inserted, err)
 		}
@@ -130,7 +129,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 	return nil
 }
 
-func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]event, size int, start, end time.Time, tracker *userSessionTracker) (int, error) {
+func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *sessionFactory, size int, start, end time.Time) (int, error) {
 	batch, err := s.deps.ch.PrepareBatch(ctx, chq.EventsInsertStmt)
 	if err != nil {
 		return 0, err
@@ -138,7 +137,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]eve
 
 	inserted := 0
 	for inserted < size {
-		for _, e := range randomSessionFromPool(pool, start, end, tracker) {
+		for _, e := range factory.session(start, end) {
 			if inserted >= size {
 				break
 			}

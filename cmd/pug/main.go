@@ -17,6 +17,7 @@ import (
 	chseed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
 	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
 	"github.com/pug-sh/pug/internal/app/server"
+	demoworker "github.com/pug-sh/pug/internal/app/workers/demo"
 	emailworker "github.com/pug-sh/pug/internal/app/workers/email"
 	eventsworker "github.com/pug-sh/pug/internal/app/workers/events"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/alias"
@@ -157,6 +158,12 @@ var eventsCmd = &cobra.Command{
 	Run:   run(eventsworker.Run),
 }
 
+var demoWorkerCmd = &cobra.Command{
+	Use:   "demo",
+	Short: "Start the rolling demo-traffic generator (requires PUG_DEMO_PROJECT_ID)",
+	Run:   run(demoworker.Run),
+}
+
 var emailCmd = &cobra.Command{
 	Use:   "email",
 	Short: "Start the transactional email worker",
@@ -260,6 +267,12 @@ var devCmd = &cobra.Command{
 		fmt.Println("  "+yellow+"Events:"+reset, "events")
 		emailEnabled, emailStatus := emailDevStatus()
 		fmt.Println("  "+yellow+"Email:"+reset, emailStatus)
+		demoEnabled := demoworker.Enabled()
+		if demoEnabled {
+			fmt.Println("  "+yellow+"Demo:"+reset, "rolling traffic for project "+os.Getenv("PUG_DEMO_PROJECT_ID"))
+		} else {
+			fmt.Println("  "+yellow+"Demo:"+reset, "disabled (set PUG_DEMO_PROJECT_ID to enable)")
+		}
 		fmt.Println()
 
 		fmt.Println(green + "  Press Ctrl+C to stop" + reset)
@@ -269,6 +282,9 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return eventsworker.Run(ctx) })
 		if emailEnabled {
 			g.Go(func() error { return emailworker.Run(ctx) })
+		}
+		if demoEnabled {
+			g.Go(func() error { return demoworker.Run(ctx) })
 		}
 		g.Go(func() error { return identify.Run(ctx) })
 		g.Go(func() error { return alias.Run(ctx) })
@@ -378,6 +394,7 @@ func init() {
 	workerCmd.AddCommand(profileCmd)
 	workerCmd.AddCommand(eventsCmd)
 	workerCmd.AddCommand(emailCmd)
+	workerCmd.AddCommand(demoWorkerCmd)
 
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)
@@ -407,7 +424,7 @@ func init() {
 	clickhouseMigrateCmd.Flags().StringP("direction", "d", "up", "can be any of 'up' or 'down' (default: up)")
 	clickhouseMigrateCmd.Flags().IntP("num", "n", 0, "number of migrations to apply")
 
-	clickhouseSeedCmd.Flags().Int64P("count", "c", 10_000_000, "total number of events to generate (used when no file provided)")
+	clickhouseSeedCmd.Flags().Int64P("count", "c", 500_000, "total number of events to generate (used when no file provided)")
 	clickhouseSeedCmd.Flags().IntP("batch", "b", 10_000, "number of events per ClickHouse batch")
 	clickhouseSeedCmd.Flags().StringP("file", "f", "", "CSV file to import (REES46 format: event_time,order_id,product_id,category_id,category_code,brand,price,user_id)")
 	clickhouseSeedCmd.Flags().Bool("no-reset", false, "skip migrate down/up; truncate events table instead")
