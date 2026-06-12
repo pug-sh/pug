@@ -30,7 +30,7 @@ type DashboardQueryOverrides struct {
 //
 // Invariant, upheld by renderInsightTile (the sole producer): for an insight tile
 // exactly one of Result / ErrorMessage is set, and Result is non-nil whenever
-// ErrorMessage == ""; markdown tiles carry neither. renderedDashboardToRPC depends
+// ErrorMessage == ""; markdown tiles carry neither. RenderedDashboardToRPC depends
 // on this — it checks ErrorMessage before Result — and renderInsightTile's
 // result == nil guard prevents an outcome-less insight tile. The proto RenderedTile
 // models this as a oneof, but that is not validated outbound, so this Go-side
