@@ -34,8 +34,10 @@ func roDashboardToRPC(ctx context.Context, dashboard coredashboards.DashboardWit
 		DefaultTimeRange:   coredashboards.DashboardDefaultTimeRangePresetFromDB(ctx, dashboard.Dashboard.DefaultTimeRange).Enum(),
 		DefaultGranularity: coredashboards.DashboardGranularityFromDB(ctx, dashboard.Dashboard.DefaultGranularity).Enum(),
 	}
-	if dashboard.Share != nil && dashboard.Share.Enabled {
-		out.ShareId = proto.String(dashboard.Share.ID)
+	// Share is non-nil only when enabled (DashboardWithTiles invariant), so a
+	// presence check is sufficient — no need to re-check Enabled here.
+	if dashboard.Share != nil {
+		out.ShareId = proto.String(dashboard.Share.ShareToken)
 	}
 	return out, nil
 }

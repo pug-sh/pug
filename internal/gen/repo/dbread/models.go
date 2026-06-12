@@ -55,6 +55,7 @@ type DashboardShare struct {
 	ID          string
 	DashboardID string
 	ProjectID   string
+	ShareToken  string
 	Enabled     bool
 	CreateTime  pgtype.Timestamptz
 	UpdateTime  pgtype.Timestamptz

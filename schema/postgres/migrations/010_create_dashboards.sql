@@ -68,10 +68,16 @@ create unique index dashboard_tiles_dashboard_id_display_name_idx
 create trigger update_timestamp before
 update on dashboard_tiles for each row execute procedure moddatetime(update_time);
 
+-- share_token is the public, unauthenticated capability secret: it is the only
+-- thing gating SharedDashboardsService.Query, so it MUST be cryptographically
+-- random (32 bytes from crypto/rand, hex-encoded → 64 chars), never a guessable
+-- xid. The xid `id` stays as the internal primary key; the token is what clients
+-- receive and what the public lookup keys on.
 create table dashboard_shares (
   id           char(20) primary key,
   dashboard_id char(20) not null unique references dashboards(id) on delete cascade,
   project_id   char(20) not null references projects(id) on delete cascade,
+  share_token  char(64) not null unique,
   enabled      boolean not null default true,
   create_time  timestamptz not null default now(),
   update_time  timestamptz not null default now()

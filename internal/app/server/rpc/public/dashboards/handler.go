@@ -46,6 +46,11 @@ func (s *Server) Query(
 		if errors.Is(err, coredashboards.ErrDashboardNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard_share", req.Msg.GetShareId()))
 		}
+		// Mid-request client disconnect maps to Canceled/DeadlineExceeded, matching
+		// the authenticated handler rather than collapsing to a generic 500.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, rpc.ConnectCtxErr(err)
+		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

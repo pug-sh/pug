@@ -89,7 +89,11 @@ type EncodedTileContent struct {
 	MarkdownBody pgtype.Text
 }
 
-// DashboardWithTiles bundles a dashboard with its ordered tiles and optional share.
+// DashboardWithTiles bundles a dashboard with its ordered tiles and optional
+// share. Invariant: Share is non-nil only when the dashboard is publicly shared
+// (the share row is enabled); a nil Share means private — never shared OR sharing
+// disabled. Producers must establish this via enabledShare, never by attaching a
+// raw share row, because the RPC encoder treats Share != nil as "shared".
 type DashboardWithTiles struct {
 	Dashboard dbread.Dashboard
 	Tiles     []dbread.DashboardTile
@@ -153,11 +157,25 @@ func (s *Service) ListDashboards(ctx context.Context, projectID string) ([]Dashb
 		tilesByDashboardID[tile.DashboardID] = append(tilesByDashboardID[tile.DashboardID], tile)
 	}
 
+	// Batch-load enabled shares so List reports share_id consistently with Get.
+	// The query returns only enabled rows, so each entry satisfies the
+	// DashboardWithTiles.Share invariant (non-nil ⇒ shared).
+	shares, err := s.read.ListEnabledDashboardSharesByProjectID(ctx, projectID)
+	if err != nil {
+		return nil, recordServiceError(ctx, "failed to list dashboard shares", err,
+			slog.String("project_id", projectID))
+	}
+	shareByDashboardID := make(map[string]*dbread.DashboardShare, len(shares))
+	for i := range shares {
+		shareByDashboardID[shares[i].DashboardID] = &shares[i]
+	}
+
 	result := make([]DashboardWithTiles, 0, len(dashboards))
 	for _, dashboard := range dashboards {
 		result = append(result, DashboardWithTiles{
 			Dashboard: dashboard,
 			Tiles:     tilesByDashboardID[dashboard.ID],
+			Share:     shareByDashboardID[dashboard.ID],
 		})
 	}
 
@@ -190,9 +208,16 @@ func (s *Service) GetDashboard(ctx context.Context, projectID, dashboardID strin
 			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
-	share, err := s.lookupShare(ctx, dashboardID)
+	// The share is supplementary metadata; a transient dashboard_shares read
+	// failure must not fail the whole dashboard read. lookupShare has already
+	// logged+recorded any real error, so degrade to a private view (Share = nil)
+	// — except for client cancellation/deadline, which should surface.
+	share, err := lookupShare(ctx, s.read, dashboardID)
 	if err != nil {
-		return DashboardWithTiles{}, err
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return DashboardWithTiles{}, err
+		}
+		share = nil
 	}
 
 	return DashboardWithTiles{
@@ -202,21 +227,59 @@ func (s *Service) GetDashboard(ctx context.Context, projectID, dashboardID strin
 	}, nil
 }
 
-// UpdateDashboard updates the dashboard's display name, description,
-// dashboard-level window (default time range + granularity), and public sharing
-// state. Returns the updated row alongside the dashboard's existing tiles so the
-// handler can serialize a complete Dashboard without a follow-up read. Description
-// is updated with partial-update semantics (empty string preserves the existing
-// value); display_name, default_time_range, and default_granularity are
-// full-replaced on every call.
-func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, displayName, description string, defaultTimeRange commonv1.TimeRangePreset, defaultGranularity insightsv1.Granularity, isPublic bool) (DashboardWithTiles, error) {
-	dashboard, err := s.write.UpdateDashboard(ctx, dbwrite.UpdateDashboardParams{
-		Description:        description,
+// UpdateDashboardInput is the service-layer projection of
+// DashboardsServiceUpdateRequest. The handler builds this from the proto.
+// IsPublic carries proto field presence: nil means "leave public-sharing state
+// untouched" (the partial-update semantics description also uses), while a
+// non-nil value full-replaces the share's enabled flag.
+type UpdateDashboardInput struct {
+	DisplayName        string
+	Description        string
+	DefaultTimeRange   commonv1.TimeRangePreset
+	DefaultGranularity insightsv1.Granularity
+	IsPublic           *bool
+}
+
+// UpdateDashboard updates the dashboard's display name, description, and
+// dashboard-level window (default time range + granularity), and optionally
+// toggles public sharing. Returns the updated row alongside the dashboard's
+// existing tiles so the handler can serialize a complete Dashboard without a
+// follow-up read. Description is updated with partial-update semantics (empty
+// string preserves the existing value); display_name, default_time_range, and
+// default_granularity are full-replaced on every call. Public sharing is
+// presence-aware: in.IsPublic == nil leaves the share untouched (the response
+// reflects the current share), while a non-nil value enables/disables it.
+func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID string, in UpdateDashboardInput) (result DashboardWithTiles, retErr error) {
+	// One transaction so the metadata write and the share toggle commit (or roll
+	// back) together — consistent with the Upsert path's atomicity. Without it, a
+	// share-write failure after the metadata write lands would leave the rename
+	// applied but the toggle dropped while the client sees an error.
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		return DashboardWithTiles{}, recordServiceError(ctx, "failed to begin update transaction", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
+	}
+	defer func() {
+		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			attrs := []any{slogx.Error(rbErr),
+				slog.String("project_id", projectID),
+				slog.String("dashboard_id", dashboardID)}
+			if retErr != nil {
+				attrs = append(attrs, slog.String("triggering_error", retErr.Error()))
+			}
+			slog.WarnContext(ctx, "failed to rollback update transaction", attrs...)
+		}
+	}()
+	writeTx := s.write.WithTx(tx)
+	readTx := s.read.WithTx(tx)
+
+	dashboard, err := writeTx.UpdateDashboard(ctx, dbwrite.UpdateDashboardParams{
+		Description:        in.Description,
 		ID:                 dashboardID,
 		ProjectID:          projectID,
-		DisplayName:        displayName,
-		DefaultTimeRange:   dashboardDefaultTimeRangeDBName(defaultTimeRange),
-		DefaultGranularity: dashboardGranularityDBName(defaultGranularity),
+		DisplayName:        in.DisplayName,
+		DefaultTimeRange:   dashboardDefaultTimeRangeDBName(in.DefaultTimeRange),
+		DefaultGranularity: dashboardGranularityDBName(in.DefaultGranularity),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -230,7 +293,7 @@ func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, d
 			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
-	tiles, err := s.read.ListDashboardTilesByDashboardIDAndProjectID(ctx, dbread.ListDashboardTilesByDashboardIDAndProjectIDParams{
+	tiles, err := readTx.ListDashboardTilesByDashboardIDAndProjectID(ctx, dbread.ListDashboardTilesByDashboardIDAndProjectIDParams{
 		DashboardID: dashboardID,
 		ProjectID:   projectID,
 	})
@@ -239,15 +302,23 @@ func (s *Service) UpdateDashboard(ctx context.Context, projectID, dashboardID, d
 			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
-	share, err := s.setShare(ctx, projectID, dashboardID, isPublic)
+	// Presence-aware sharing: only touch the share row when is_public was sent.
+	// On omission, reflect the existing share so the response's share_id stays
+	// accurate without the caller having to re-send the current state. Both
+	// helpers return a non-nil share only when it is enabled (see enabledShare).
+	var sharePtr *dbread.DashboardShare
+	if in.IsPublic != nil {
+		sharePtr, err = setShare(ctx, writeTx, projectID, dashboardID, *in.IsPublic)
+	} else {
+		sharePtr, err = lookupShare(ctx, readTx, dashboardID)
+	}
 	if err != nil {
 		return DashboardWithTiles{}, err
 	}
 
-	var sharePtr *dbread.DashboardShare
-	if share.Enabled {
-		rs := dbwriteShareToDbread(share)
-		sharePtr = &rs
+	if err := tx.Commit(ctx); err != nil {
+		return DashboardWithTiles{}, recordServiceError(ctx, "failed to commit update transaction", err,
+			slog.String("project_id", projectID), slog.String("dashboard_id", dashboardID))
 	}
 
 	return DashboardWithTiles{

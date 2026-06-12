@@ -68,9 +68,12 @@ where dt.dashboard_id = @dashboard_id
 
 -- name: UpsertDashboardShare :one
 -- Inserts a new share row or toggles `enabled` on the existing one. The
--- ON CONFLICT clause preserves the original share id across disable/re-enable.
-insert into dashboard_shares (id, dashboard_id, project_id, enabled)
-select @id, d.id, d.project_id, @enabled
+-- ON CONFLICT clause only updates `enabled`, so the original id AND share_token
+-- are preserved across disable/re-enable — a public link survives toggling. The
+-- freshly-generated id/share_token supplied by the caller are therefore used
+-- only on the first INSERT and discarded on conflict.
+insert into dashboard_shares (id, dashboard_id, project_id, share_token, enabled)
+select @id, d.id, d.project_id, @share_token, @enabled
 from dashboards d
 where d.id = @dashboard_id and d.project_id = @project_id
 on conflict (dashboard_id)

@@ -53,7 +53,15 @@ select *
 from dashboard_shares
 where dashboard_id = @dashboard_id;
 
--- name: GetEnabledDashboardShareByID :one
+-- name: ListEnabledDashboardSharesByProjectID :many
+-- Batch-loads enabled shares for a project so List can populate share_id without
+-- an N+1. Disabled shares are filtered out, so a returned row always means
+-- "publicly shared" (upholds the DashboardWithTiles.Share invariant).
 select *
 from dashboard_shares
-where id = @id and enabled = true;
+where project_id = @project_id and enabled = true;
+
+-- name: GetEnabledDashboardShareByToken :one
+select *
+from dashboard_shares
+where share_token = @share_token and enabled = true;
