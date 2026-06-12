@@ -143,7 +143,13 @@ func (s *Server) Update(
 		return nil, err
 	}
 
-	dashboard, err := s.service.UpdateDashboard(ctx, principal.Project.ID, req.Msg.GetId(), req.Msg.GetDisplayName(), req.Msg.GetDescription(), req.Msg.GetDefaultTimeRange(), req.Msg.GetDefaultGranularity())
+	dashboard, err := s.service.UpdateDashboard(ctx, principal.Project.ID, req.Msg.GetId(), coredashboards.UpdateDashboardInput{
+		DisplayName:        req.Msg.GetDisplayName(),
+		Description:        req.Msg.GetDescription(),
+		DefaultTimeRange:   req.Msg.GetDefaultTimeRange(),
+		DefaultGranularity: req.Msg.GetDefaultGranularity(),
+		IsPublic:           req.Msg.IsPublic,
+	})
 	if err != nil {
 		if errors.Is(err, coredashboards.ErrDashboardNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonDashboardNotFound, "dashboard not found", apperr.Resource("dashboard", req.Msg.GetId()))
@@ -279,9 +285,9 @@ func (s *Server) QueryDashboard(
 		return nil, serviceErrToConnect(err)
 	}
 
-	// renderedDashboardToRPC degrades any undecodable tile to a per-tile error
+	// RenderedDashboardToRPC degrades any undecodable tile to a per-tile error
 	// outcome (recorded at source) rather than failing the whole response.
 	return connect.NewResponse(&dashboardsv1.DashboardsServiceQueryDashboardResponse{
-		Dashboard: renderedDashboardToRPC(ctx, rendered),
+		Dashboard: coredashboards.RenderedDashboardToRPC(ctx, rendered),
 	}), nil
 }
