@@ -260,6 +260,50 @@ func (q *Queries) UpsertDashboardMetadata(ctx context.Context, arg UpsertDashboa
 	return result.RowsAffected(), nil
 }
 
+const upsertDashboardShare = `-- name: UpsertDashboardShare :one
+insert into dashboard_shares (id, dashboard_id, project_id, share_token, enabled)
+select $1, d.id, d.project_id, $2, $3
+from dashboards d
+where d.id = $4 and d.project_id = $5
+on conflict (dashboard_id)
+do update set enabled = $3
+returning id, dashboard_id, project_id, share_token, enabled, create_time, update_time
+`
+
+type UpsertDashboardShareParams struct {
+	ID          string
+	ShareToken  string
+	Enabled     bool
+	DashboardID string
+	ProjectID   string
+}
+
+// Inserts a new share row or toggles `enabled` on the existing one. The
+// ON CONFLICT clause only updates `enabled`, so the original id AND share_token
+// are preserved across disable/re-enable — a public link survives toggling. The
+// freshly-generated id/share_token supplied by the caller are therefore used
+// only on the first INSERT and discarded on conflict.
+func (q *Queries) UpsertDashboardShare(ctx context.Context, arg UpsertDashboardShareParams) (DashboardShare, error) {
+	row := q.db.QueryRow(ctx, upsertDashboardShare,
+		arg.ID,
+		arg.ShareToken,
+		arg.Enabled,
+		arg.DashboardID,
+		arg.ProjectID,
+	)
+	var i DashboardShare
+	err := row.Scan(
+		&i.ID,
+		&i.DashboardID,
+		&i.ProjectID,
+		&i.ShareToken,
+		&i.Enabled,
+		&i.CreateTime,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const upsertDashboardTileUpdate = `-- name: UpsertDashboardTileUpdate :execrows
 update dashboard_tiles dt
 set

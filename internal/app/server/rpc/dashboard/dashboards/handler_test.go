@@ -285,6 +285,131 @@ func TestHandler_Update_EmptyDescriptionPreservesExisting(t *testing.T) {
 	}
 }
 
+// TestHandler_Update_IsPublicPresenceSemantics pins the presence-aware sharing
+// contract on Update: is_public is acted on only when the field is present.
+// Enabling returns a share_id; a later Update that OMITS is_public must preserve
+// the share (not silently disable it — the footgun this guards against); false
+// disables it; and re-enabling returns the same token (ON CONFLICT preserves it).
+func TestHandler_Update_IsPublicPresenceSemantics(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	s, projectID, svc := newIntegrationServer(t)
+	ctx := context.Background()
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "desc",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+
+	// Enable sharing.
+	r1, err := s.Update(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Board"),
+		IsPublic:    proto.Bool(true),
+	}))
+	if err != nil {
+		t.Fatalf("Update enable: %v", err)
+	}
+	shareID := r1.Msg.GetDashboard().GetShareId()
+	if shareID == "" {
+		t.Fatal("enable: share_id empty, want non-empty")
+	}
+
+	// Omit is_public (rename only) → the share must be preserved, NOT disabled.
+	r2, err := s.Update(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Renamed"),
+	}))
+	if err != nil {
+		t.Fatalf("Update omit is_public: %v", err)
+	}
+	if got := r2.Msg.GetDashboard().GetShareId(); got != shareID {
+		t.Errorf("omit is_public: share_id = %q, want preserved %q", got, shareID)
+	}
+
+	// Disable.
+	r3, err := s.Update(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Renamed"),
+		IsPublic:    proto.Bool(false),
+	}))
+	if err != nil {
+		t.Fatalf("Update disable: %v", err)
+	}
+	if got := r3.Msg.GetDashboard().GetShareId(); got != "" {
+		t.Errorf("disable: share_id = %q, want empty", got)
+	}
+
+	// Re-enable → same token preserved across the disable/re-enable cycle.
+	r4, err := s.Update(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceUpdateRequest{
+		Id:          proto.String(dash.ID),
+		DisplayName: proto.String("Renamed"),
+		IsPublic:    proto.Bool(true),
+	}))
+	if err != nil {
+		t.Fatalf("Update re-enable: %v", err)
+	}
+	if got := r4.Msg.GetDashboard().GetShareId(); got != shareID {
+		t.Errorf("re-enable: share_id = %q, want preserved %q", got, shareID)
+	}
+}
+
+// TestHandler_Get_ShareReadFailureDegradesToPrivate pins S2: a transient
+// dashboard_shares read failure must not fail the whole Get — the dashboard is
+// returned without a share_id rather than 500ing (the share is supplementary).
+// Simulated by dropping the share table after enabling sharing.
+func TestHandler_Get_ShareReadFailureDegradesToPrivate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	db := testutil.SetupPostgres(t)
+	svc := coredashboards.NewService(db.PgRO, db.PgW)
+	s := &Server{service: svc}
+	ctx := context.Background()
+
+	orgID := xid.New().String()
+	projectID := xid.New().String()
+	if _, err := db.PgW.Exec(ctx, `INSERT INTO orgs (id, display_name) VALUES ($1, $2)`, orgID, "test-org"); err != nil {
+		t.Fatalf("insert org: %v", err)
+	}
+	if _, err := db.PgW.Exec(ctx,
+		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
+		projectID, orgID, "test-project", xid.New().String()+"priv", xid.New().String()+"pub"); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+
+	dash, err := svc.CreateDashboard(ctx, projectID, "Board", "",
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS, insightsv1.Granularity_GRANULARITY_DAY)
+	if err != nil {
+		t.Fatalf("CreateDashboard: %v", err)
+	}
+	if _, err := svc.UpdateDashboard(ctx, projectID, dash.ID, coredashboards.UpdateDashboardInput{
+		DisplayName:        "Board",
+		DefaultTimeRange:   commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS,
+		DefaultGranularity: insightsv1.Granularity_GRANULARITY_DAY,
+		IsPublic:           proto.Bool(true),
+	}); err != nil {
+		t.Fatalf("enable share: %v", err)
+	}
+
+	// Force a non-ErrNoRows failure on the supplementary share read.
+	if _, err := db.PgW.Exec(ctx, `DROP TABLE dashboard_shares`); err != nil {
+		t.Fatalf("drop dashboard_shares: %v", err)
+	}
+
+	resp, err := s.Get(authCtx(projectID), connect.NewRequest(&dashboardsv1.DashboardsServiceGetRequest{
+		Id: proto.String(dash.ID),
+	}))
+	if err != nil {
+		t.Fatalf("Get should degrade on share-read error, not fail: %v", err)
+	}
+	if got := resp.Msg.GetDashboard().GetShareId(); got != "" {
+		t.Errorf("degraded Get should omit share_id, got %q", got)
+	}
+}
+
 // ----- Helpers -----------------------------------------------------------
 
 func assertCode(t *testing.T, err error, want connect.Code) {

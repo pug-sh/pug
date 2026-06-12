@@ -1,0 +1,29 @@
+edition = "2023";
+package public.dashboards.v1;
+
+import "buf/validate/validate.proto";
+import "common/v1/time.proto";
+import "dashboard/dashboards/v1/dashboards.proto";
+import "shared/insights/v1/insights.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/public/dashboards/v1;publicdashboardsv1";
+
+service SharedDashboardsService {
+  rpc Query(SharedDashboardsServiceQueryRequest) returns (SharedDashboardsServiceQueryResponse) {}
+}
+
+message SharedDashboardsServiceQueryRequest {
+  option (buf.validate.message).cel = {
+    id: "query_shared_dashboard_request.valid_time_range_override"
+    message: "time_range override must have from < to"
+    expression: "!has(this.time_range) || this.time_range.from < this.time_range.to"
+  };
+
+  string share_id = 1 [(buf.validate.field).required = true];
+  common.v1.TimeRange time_range = 2;
+  shared.insights.v1.Granularity granularity = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+message SharedDashboardsServiceQueryResponse {
+  dashboard.dashboards.v1.RenderedDashboard dashboard = 1;
+}

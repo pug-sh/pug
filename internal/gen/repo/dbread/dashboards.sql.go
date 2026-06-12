@@ -36,6 +36,48 @@ func (q *Queries) GetDashboardByIDAndProjectID(ctx context.Context, arg GetDashb
 	return i, err
 }
 
+const getDashboardShareByDashboardID = `-- name: GetDashboardShareByDashboardID :one
+select id, dashboard_id, project_id, share_token, enabled, create_time, update_time
+from dashboard_shares
+where dashboard_id = $1
+`
+
+func (q *Queries) GetDashboardShareByDashboardID(ctx context.Context, dashboardID string) (DashboardShare, error) {
+	row := q.db.QueryRow(ctx, getDashboardShareByDashboardID, dashboardID)
+	var i DashboardShare
+	err := row.Scan(
+		&i.ID,
+		&i.DashboardID,
+		&i.ProjectID,
+		&i.ShareToken,
+		&i.Enabled,
+		&i.CreateTime,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
+const getEnabledDashboardShareByToken = `-- name: GetEnabledDashboardShareByToken :one
+select id, dashboard_id, project_id, share_token, enabled, create_time, update_time
+from dashboard_shares
+where share_token = $1 and enabled = true
+`
+
+func (q *Queries) GetEnabledDashboardShareByToken(ctx context.Context, shareToken string) (DashboardShare, error) {
+	row := q.db.QueryRow(ctx, getEnabledDashboardShareByToken, shareToken)
+	var i DashboardShare
+	err := row.Scan(
+		&i.ID,
+		&i.DashboardID,
+		&i.ProjectID,
+		&i.ShareToken,
+		&i.Enabled,
+		&i.CreateTime,
+		&i.UpdateTime,
+	)
+	return i, err
+}
+
 const listDashboardTileIDsByDashboardIDAndProjectID = `-- name: ListDashboardTileIDsByDashboardIDAndProjectID :many
 select dt.id
 from dashboard_tiles dt
@@ -63,6 +105,50 @@ func (q *Queries) ListDashboardTileIDsByDashboardIDAndProjectID(ctx context.Cont
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDashboardTilesByDashboardID = `-- name: ListDashboardTilesByDashboardID :many
+select id, dashboard_id, kind, view_mode, display_name, description, insight_query, markdown_body, position, compare, thresholds, header, visualization, payload_hash, create_time, update_time
+from dashboard_tiles
+where dashboard_id = $1
+order by create_time asc
+`
+
+func (q *Queries) ListDashboardTilesByDashboardID(ctx context.Context, dashboardID string) ([]DashboardTile, error) {
+	rows, err := q.db.Query(ctx, listDashboardTilesByDashboardID, dashboardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DashboardTile
+	for rows.Next() {
+		var i DashboardTile
+		if err := rows.Scan(
+			&i.ID,
+			&i.DashboardID,
+			&i.Kind,
+			&i.ViewMode,
+			&i.DisplayName,
+			&i.Description,
+			&i.InsightQuery,
+			&i.MarkdownBody,
+			&i.Position,
+			&i.Compare,
+			&i.Thresholds,
+			&i.Header,
+			&i.Visualization,
+			&i.PayloadHash,
+			&i.CreateTime,
+			&i.UpdateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -188,6 +274,43 @@ func (q *Queries) ListDashboardsByProjectID(ctx context.Context, projectID strin
 			&i.Description,
 			&i.DefaultTimeRange,
 			&i.DefaultGranularity,
+			&i.CreateTime,
+			&i.UpdateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEnabledDashboardSharesByProjectID = `-- name: ListEnabledDashboardSharesByProjectID :many
+select id, dashboard_id, project_id, share_token, enabled, create_time, update_time
+from dashboard_shares
+where project_id = $1 and enabled = true
+`
+
+// Batch-loads enabled shares for a project so List can populate share_id without
+// an N+1. Disabled shares are filtered out, so a returned row always means
+// "publicly shared" (upholds the DashboardWithTiles.Share invariant).
+func (q *Queries) ListEnabledDashboardSharesByProjectID(ctx context.Context, projectID string) ([]DashboardShare, error) {
+	rows, err := q.db.Query(ctx, listEnabledDashboardSharesByProjectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DashboardShare
+	for rows.Next() {
+		var i DashboardShare
+		if err := rows.Scan(
+			&i.ID,
+			&i.DashboardID,
+			&i.ProjectID,
+			&i.ShareToken,
+			&i.Enabled,
 			&i.CreateTime,
 			&i.UpdateTime,
 		); err != nil {
