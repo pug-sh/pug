@@ -41,3 +41,27 @@ select *
 from dashboards
 where id = @id and project_id = @project_id
 for update;
+
+-- name: ListDashboardTilesByDashboardID :many
+select *
+from dashboard_tiles
+where dashboard_id = @dashboard_id
+order by create_time asc;
+
+-- name: GetDashboardShareByDashboardID :one
+select *
+from dashboard_shares
+where dashboard_id = @dashboard_id;
+
+-- name: ListEnabledDashboardSharesByProjectID :many
+-- Batch-loads enabled shares for a project so List can populate share_id without
+-- an N+1. Disabled shares are filtered out, so a returned row always means
+-- "publicly shared" (upholds the DashboardWithTiles.Share invariant).
+select *
+from dashboard_shares
+where project_id = @project_id and enabled = true;
+
+-- name: GetEnabledDashboardShareByToken :one
+select *
+from dashboard_shares
+where share_token = @share_token and enabled = true;

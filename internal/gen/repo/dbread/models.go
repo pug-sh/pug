@@ -51,6 +51,16 @@ type Dashboard struct {
 	UpdateTime         pgtype.Timestamptz
 }
 
+type DashboardShare struct {
+	ID          string
+	DashboardID string
+	ProjectID   string
+	ShareToken  string
+	Enabled     bool
+	CreateTime  pgtype.Timestamptz
+	UpdateTime  pgtype.Timestamptz
+}
+
 type DashboardTile struct {
 	ID            string
 	DashboardID   string
