@@ -18,6 +18,7 @@ import (
 	orgsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/projects"
 	"github.com/pug-sh/pug/internal/app/server/rpc/public/auth"
+	publicdashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/public/dashboards"
 	eventsrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/events"
 	sdkprofilesrpc "github.com/pug-sh/pug/internal/app/server/rpc/sdk/profiles"
 	activityrpc "github.com/pug-sh/pug/internal/app/server/rpc/shared/activity"
@@ -38,6 +39,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/public/auth/v1/authv1connect"
+	"github.com/pug-sh/pug/internal/gen/proto/public/dashboards/v1/publicdashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1/eventsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
@@ -114,6 +116,8 @@ func start(ctx context.Context, d *deps) error {
 		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
 	dashboardsPath, dashboardsHandler := dashboardsv1connect.NewDashboardsServiceHandler(
 		dashboardsrpc.NewServer(dashboardsSvc, insightsExecutor), handlerOpts)
+	sharedDashboardsPath, sharedDashboardsHandler := publicdashboardsv1connect.NewSharedDashboardsServiceHandler(
+		publicdashboardsrpc.NewServer(dashboardsSvc, insightsExecutor), handlerOpts)
 
 	// Email providers — JWT + admin gate. Cipher and OrgProviderRepo are only
 	// present when PUG_EMAIL_PROVIDER_SECRET_KEY is configured; otherwise the
@@ -189,6 +193,7 @@ func start(ctx context.Context, d *deps) error {
 
 	// Public (CORS, no auth)
 	mux.Handle(authPath, pogrpc.WithCORS(d.corsOrigins, authHandler))
+	mux.Handle(sharedDashboardsPath, pogrpc.WithCORS(d.corsOrigins, sharedDashboardsHandler))
 
 	// Dashboard only (CORS + JWT auth)
 	mux.Handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
@@ -212,6 +217,7 @@ func start(ctx context.Context, d *deps) error {
 	services := []string{
 		// Public
 		authv1connect.AuthServiceName,
+		publicdashboardsv1connect.SharedDashboardsServiceName,
 		// Dashboard
 		orgsv1connect.OrgsServiceName,
 		projectsv1connect.ProjectsServiceName,

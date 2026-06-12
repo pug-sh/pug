@@ -66,6 +66,20 @@ where dt.dashboard_id = @dashboard_id
   and d.project_id = @project_id
   and dt.id <> all(@keep_ids::char(20)[]);
 
+-- name: UpsertDashboardShare :one
+-- Inserts a new share row or toggles `enabled` on the existing one. The
+-- ON CONFLICT clause only updates `enabled`, so the original id AND share_token
+-- are preserved across disable/re-enable — a public link survives toggling. The
+-- freshly-generated id/share_token supplied by the caller are therefore used
+-- only on the first INSERT and discarded on conflict.
+insert into dashboard_shares (id, dashboard_id, project_id, share_token, enabled)
+select @id, d.id, d.project_id, @share_token, @enabled
+from dashboards d
+where d.id = @dashboard_id and d.project_id = @project_id
+on conflict (dashboard_id)
+do update set enabled = @enabled
+returning *;
+
 -- name: UpsertDashboardMetadata :execrows
 -- Full-replace metadata write gated on (tiles_changed OR metadata changed).
 -- If neither, zero rows are touched and update_time stays put. If tiles_changed
