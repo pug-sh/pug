@@ -8,19 +8,21 @@
 // SDK ingestion path uses, so the events worker and the rollup materialized
 // view ingest them exactly like real traffic.
 //
-// The worker is opt-in: it requires PUG_DEMO_PROJECT_ID. Peak volume is
-// controlled by PUG_DEMO_PEAK_SESSIONS_PER_MIN (default 6 ≈ 30-50k
-// events/day with the default journey mix).
+// The demo project is derived from the demo user (woof@pug.sh), seeded on
+// first run, so no project id needs to be configured. Under `pug dev` the
+// worker is opt-in via PUG_DEMO_ENABLED; the standalone command always runs.
+// Peak volume is controlled by PUG_DEMO_PEAK_SESSIONS_PER_MIN (default 6 ≈
+// 30-50k events/day with the default journey mix).
 package demo
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math"
 	"math/rand/v2"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -28,8 +30,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	seed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
+	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
 	"github.com/pug-sh/pug/internal/core/events"
+	clickhousedeps "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/nats"
+	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
@@ -37,14 +42,19 @@ import (
 )
 
 type Config struct {
-	ProjectID          string  `env:"PUG_DEMO_PROJECT_ID"`
 	PeakSessionsPerMin float64 `env:"PUG_DEMO_PEAK_SESSIONS_PER_MIN,default=6"`
+	// One-time backfill volume used when the demo project has no events yet.
+	SeedCount int64 `env:"PUG_DEMO_SEED_COUNT,default=500000"`
+	SeedBatch int   `env:"PUG_DEMO_SEED_BATCH,default=10000"`
 }
 
-// Enabled reports whether the demo worker is configured to run. Used by
-// `pug dev` to decide whether to start it.
+// Enabled reports whether `pug dev` should start the demo worker. The
+// standalone `pug worker demo` command always runs. The demo project is
+// derived from the demo user, so no project id is configured — this is a plain
+// on/off switch.
 func Enabled() bool {
-	return os.Getenv("PUG_DEMO_PROJECT_ID") != ""
+	v, _ := strconv.ParseBool(os.Getenv("PUG_DEMO_ENABLED"))
+	return v
 }
 
 func Run(ctx context.Context) error {
@@ -64,11 +74,13 @@ func Run(ctx context.Context) error {
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return err
 	}
-	if cfg.ProjectID == "" {
-		return errors.New("demo worker requires PUG_DEMO_PROJECT_ID")
-	}
 	if cfg.PeakSessionsPerMin <= 0 {
 		return fmt.Errorf("PUG_DEMO_PEAK_SESSIONS_PER_MIN must be > 0, got %v", cfg.PeakSessionsPerMin)
+	}
+
+	projectID, err := ensureSeed(ctx, cfg)
+	if err != nil {
+		return err
 	}
 
 	natsClient, err := nats.New(ctx)
@@ -77,7 +89,91 @@ func Run(ctx context.Context) error {
 	}
 	defer natsClient.Close()
 
-	return StartWorker(ctx, natsClient, cfg)
+	return StartWorker(ctx, natsClient, cfg, projectID)
+}
+
+// ensureSeed derives the demo project from the demo user and backfills it the
+// first time the worker starts against an empty ClickHouse. It always ensures
+// the Postgres customer/org/project + profiles exist (creating them on a fresh
+// database, resolving them otherwise), then backfills a few months of
+// historical events so the public dashboard has history behind the live feed.
+//
+// The backfill runs only when the project has fewer than SeedCount events. A
+// finished backfill inserts exactly SeedCount rows and live traffic only grows
+// the count from there, so n >= SeedCount means a prior run completed it and we
+// skip straight to live. A project stuck between 1 and SeedCount-1 events is a
+// backfill that was interrupted mid-run (crash, OOM, pod eviction); because the
+// synthetic events carry random ids the events ReplacingMergeTree can't dedup
+// across runs, re-running would duplicate rather than repair, so ensureSeed
+// logs a warning and leaves the partial history in place (recovery is to
+// truncate the events table and restart). Returns the demo project id to play
+// live traffic into.
+func ensureSeed(ctx context.Context, cfg Config) (string, error) {
+	var pgCfg postgres.Config
+	if err := envconfig.Process(ctx, &pgCfg); err != nil {
+		return "", err
+	}
+	pg, err := postgres.NewWriterPool(ctx, &pgCfg)
+	if err != nil {
+		return "", err
+	}
+	defer pg.Close()
+
+	var chCfg clickhousedeps.Config
+	if err := envconfig.Process(ctx, &chCfg); err != nil {
+		return "", err
+	}
+	chDB, err := clickhousedeps.NewFromConfig(ctx, &chCfg)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err := chDB.Conn.Close(); err != nil {
+			slog.ErrorContext(ctx, "failed to close clickhouse connection", slogx.Error(err))
+		}
+	}()
+
+	project, err := pgseed.SeedProject(ctx, pg)
+	if err != nil {
+		return "", fmt.Errorf("seed postgres: %w", err)
+	}
+
+	n, err := seed.EventCount(ctx, chDB.Conn, project.ID)
+	if err != nil {
+		return "", fmt.Errorf("check demo data: %w", err)
+	}
+	if n >= uint64(cfg.SeedCount) {
+		slog.InfoContext(ctx, "demo data present, skipping backfill",
+			slog.String("project_id", project.ID),
+			slog.Uint64("events", n),
+		)
+		return project.ID, nil
+	}
+	if n > 0 {
+		// A previous backfill was interrupted before it finished. Re-running
+		// would duplicate rather than repair (each event has a random id the
+		// ReplacingMergeTree can't dedup across runs), so surface it loudly
+		// instead of silently shipping a thin dashboard.
+		slog.WarnContext(ctx, "incomplete demo backfill detected, leaving partial history in place",
+			slog.String("project_id", project.ID),
+			slog.Uint64("events", n),
+			slog.Int64("expected", cfg.SeedCount),
+			slog.String("recovery", "TRUNCATE TABLE events and restart the demo worker to re-seed"),
+		)
+		return project.ID, nil
+	}
+
+	slog.InfoContext(ctx, "no demo data found, backfilling before live traffic",
+		slog.String("project_id", project.ID),
+		slog.Int64("count", cfg.SeedCount),
+	)
+
+	if err := seed.Backfill(ctx, pg, chDB.Conn, project.ID, cfg.SeedCount, cfg.SeedBatch); err != nil {
+		return "", fmt.Errorf("backfill clickhouse: %w", err)
+	}
+
+	slog.InfoContext(ctx, "demo backfill complete", slog.String("project_id", project.ID))
+	return project.ID, nil
 }
 
 type worker struct {
@@ -91,15 +187,15 @@ type worker struct {
 // clock, so the bot share of traffic realistically rises at night.
 const liveBotShare = 0.04
 
-func StartWorker(ctx context.Context, natsClient *nats.NATSClient, cfg Config) error {
+func StartWorker(ctx context.Context, natsClient *nats.NATSClient, cfg Config, projectID string) error {
 	w := &worker{
 		publisher: events.NewPublisher(natsClient.GetJetStream()),
 		gen:       seed.NewLiveGenerator(),
-		projectID: cfg.ProjectID,
+		projectID: projectID,
 	}
 
 	slog.InfoContext(ctx, "Starting demo traffic generator",
-		slog.String("project_id", cfg.ProjectID),
+		slog.String("project_id", projectID),
 		slog.Float64("peak_sessions_per_min", cfg.PeakSessionsPerMin),
 	)
 

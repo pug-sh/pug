@@ -41,9 +41,14 @@ make clickstack
 ./bin/pug worker profile alias
 ./bin/pug worker profile upsert
 
-# Rolling demo-traffic generator (requires PUG_DEMO_PROJECT_ID; also runs
-# under `pug dev` when that var is set). Plays "Pug & Pals" demo sessions in
-# real time through the NATS ingestion pipeline.
+# Rolling demo-traffic generator. The standalone command always runs; under
+# `pug dev` it starts only when PUG_DEMO_ENABLED=true. It derives the demo
+# project from the demo user (woof@pug.sh) — creating the customer/org/project
+# + profiles on a fresh DB, resolving them otherwise — then backfills ~4 months
+# of ClickHouse history if the project has no events yet, and finally plays
+# "Pug & Pals" sessions in real time through the NATS ingestion pipeline.
+# Self-bootstrapping so a single k8s deployment seeds-then-streams with no
+# manual seed step and no project id to configure.
 ./bin/pug worker demo
 ```
 

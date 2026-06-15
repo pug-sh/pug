@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/autoprop"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
@@ -68,12 +70,6 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		return s.runFromCSV(ctx, projectID, file, batchSize, truncate)
 	}
 
-	slog.InfoContext(ctx, "seeding events",
-		slog.String("project_id", projectID),
-		slog.Int64("total", count),
-		slog.Int("batch_size", batchSize),
-	)
-
 	if truncate {
 		slog.InfoContext(ctx, "truncating events table")
 		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE events"); err != nil {
@@ -82,6 +78,18 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 	} else {
 		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
 	}
+
+	return s.backfillEvents(ctx, projectID, count, batchSize)
+}
+
+// backfillEvents generates `count` synthetic events for projectID and appends
+// them to the events table. It does not truncate; callers decide reset policy.
+func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int64, batchSize int) error {
+	slog.InfoContext(ctx, "seeding events",
+		slog.String("project_id", projectID),
+		slog.Int64("total", count),
+		slog.Int("batch_size", batchSize),
+	)
 
 	seedStart := time.Now()
 	start := seedStart.AddDate(0, -4, 0)
@@ -127,6 +135,28 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		slog.String("elapsed", time.Since(startTime).Round(time.Second).String()),
 	)
 	return nil
+}
+
+// EventCount returns how many events are stored for projectID. The demo worker
+// uses it to decide whether a one-time backfill is needed before live traffic.
+func EventCount(ctx context.Context, ch driver.Conn, projectID string) (uint64, error) {
+	var n uint64
+	if err := ch.QueryRow(ctx, "SELECT count() FROM events WHERE project_id = ?", projectID).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// Backfill copies profiles from Postgres to ClickHouse and appends `count`
+// synthetic historical events for projectID, without truncating. It is the
+// programmatic entry point used by the demo worker to populate an empty demo
+// project; the CLI path goes through Run (which also handles truncation).
+func Backfill(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, projectID string, count int64, batchSize int) error {
+	s := &Seeder{deps: &deps{pg: pg, ch: ch}}
+	if err := s.runProfiles(ctx, projectID, false); err != nil {
+		return fmt.Errorf("seed profiles: %w", err)
+	}
+	return s.backfillEvents(ctx, projectID, count, batchSize)
 }
 
 func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *sessionFactory, size int, start, end time.Time) (int, error) {

@@ -160,7 +160,7 @@ var eventsCmd = &cobra.Command{
 
 var demoWorkerCmd = &cobra.Command{
 	Use:   "demo",
-	Short: "Start the rolling demo-traffic generator (requires PUG_DEMO_PROJECT_ID)",
+	Short: "Start the rolling demo-traffic generator (seeds the demo project on first run)",
 	Run:   run(demoworker.Run),
 }
 
@@ -269,9 +269,9 @@ var devCmd = &cobra.Command{
 		fmt.Println("  "+yellow+"Email:"+reset, emailStatus)
 		demoEnabled := demoworker.Enabled()
 		if demoEnabled {
-			fmt.Println("  "+yellow+"Demo:"+reset, "rolling traffic for project "+os.Getenv("PUG_DEMO_PROJECT_ID"))
+			fmt.Println("  "+yellow+"Demo:"+reset, "rolling traffic for the demo project (seeds on first run)")
 		} else {
-			fmt.Println("  "+yellow+"Demo:"+reset, "disabled (set PUG_DEMO_PROJECT_ID to enable)")
+			fmt.Println("  "+yellow+"Demo:"+reset, "disabled (set PUG_DEMO_ENABLED=true to enable)")
 		}
 		fmt.Println()
 

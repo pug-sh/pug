@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	chseed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/core/projects"
@@ -34,41 +35,57 @@ func NewSeeder(deps *deps) *Seeder {
 }
 
 func (s *Seeder) Run(ctx context.Context) error {
+	_, err := s.run(ctx)
+	return err
+}
+
+// run seeds the demo customer/org/project plus profiles, devices and merges,
+// and returns the resulting project. If the demo customer already exists its
+// project is resolved and reused, and profile/device/merge seeding is skipped
+// (assumed already populated) — so this is safe to call on every worker start.
+// Completeness is keyed on the demo customer existing: if a fresh seed is
+// interrupted after the customer commits but before profiles finish, later
+// starts resolve the customer and skip re-seeding, leaving profiles partial
+// (recovery is to delete the demo customer and restart).
+func (s *Seeder) run(ctx context.Context) (dbread.Project, error) {
 	read := dbread.New(s.deps.pg)
 
 	slog.InfoContext(ctx, "checking for existing test user")
 
 	customer, err := read.GetCustomerByEmail(ctx, testEmail)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("failed to check existing user: %w", err)
+		return dbread.Project{}, fmt.Errorf("failed to check existing user: %w", err)
 	}
 
-	var project dbread.Project
 	if err == nil {
 		slog.InfoContext(ctx, "test user already exists, resolving project")
-		project, err = s.resolveProject(ctx, read, customer.ID)
+		project, err := s.resolveProject(ctx, read, customer.ID)
 		if err != nil {
-			return err
+			return dbread.Project{}, err
 		}
-	} else {
-		slog.InfoContext(ctx, "creating test user", slog.String("email", testEmail))
-		project, err = s.seedCustomerOrgProject(ctx)
-		if err != nil {
-			return err
-		}
+		slog.InfoContext(ctx, "skipping profile seed, already populated",
+			slog.String("project_id", project.ID),
+		)
+		return project, nil
+	}
+
+	slog.InfoContext(ctx, "creating test user", slog.String("email", testEmail))
+	project, err := s.seedCustomerOrgProject(ctx)
+	if err != nil {
+		return dbread.Project{}, err
 	}
 
 	identifiedIDs, err := s.seedProfiles(ctx, project.ID)
 	if err != nil {
-		return fmt.Errorf("failed to seed profiles: %w", err)
+		return dbread.Project{}, fmt.Errorf("failed to seed profiles: %w", err)
 	}
 
 	if err := s.seedDevices(ctx, project.ID); err != nil {
-		return fmt.Errorf("failed to seed devices: %w", err)
+		return dbread.Project{}, fmt.Errorf("failed to seed devices: %w", err)
 	}
 
 	if err := s.seedMerges(ctx, project.ID, identifiedIDs); err != nil {
-		return fmt.Errorf("failed to seed profile merges: %w", err)
+		return dbread.Project{}, fmt.Errorf("failed to seed profile merges: %w", err)
 	}
 
 	slog.DebugContext(ctx, "seed complete",
@@ -77,7 +94,7 @@ func (s *Seeder) Run(ctx context.Context) error {
 		slog.String("private_api_key", project.PrivateApiKey),
 	)
 
-	return nil
+	return project, nil
 }
 
 func (s *Seeder) resolveProject(ctx context.Context, read *dbread.Queries, customerID string) (dbread.Project, error) {
@@ -510,4 +527,12 @@ func Run(ctx context.Context) error {
 	defer d.close()
 
 	return NewSeeder(d).Run(ctx)
+}
+
+// SeedProject ensures the demo customer/org/project (plus profiles, devices and
+// merges) exists and returns it, using a caller-owned pool. It is the
+// programmatic entry point used by the demo worker to derive the demo project
+// from the demo user; the CLI path goes through Run, which owns its own pool.
+func SeedProject(ctx context.Context, pg *pgxpool.Pool) (dbread.Project, error) {
+	return NewSeeder(&deps{pg: pg}).run(ctx)
 }
