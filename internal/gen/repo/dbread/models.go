@@ -21,6 +21,23 @@ type Campaign struct {
 	UpdateTime       pgtype.Timestamptz
 }
 
+type ComplianceRequest struct {
+	ID             string
+	ProjectID      string
+	Kind           string
+	ProfileID      pgtype.Text
+	ExternalID     pgtype.Text
+	Status         string
+	DistinctIds    []string
+	SessionIds     []string
+	EventsAffected int64
+	RequestedBy    pgtype.Text
+	RequestedAt    pgtype.Timestamptz
+	CompletedAt    pgtype.Timestamptz
+	UpdateTime     pgtype.Timestamptz
+	Error          pgtype.Text
+}
+
 type Customer struct {
 	CreateTime      pgtype.Timestamptz
 	DisplayName     string

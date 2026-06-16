@@ -36,3 +36,9 @@ values (@id, @project_id, @external_id, coalesce(@properties::jsonb, '{}'))
 on conflict (project_id, external_id) where deletion_time is null do update set
   properties = jsonb_shallow_merge(profiles.properties, excluded.properties)
 returning *;
+
+-- name: HardDeleteProfileByIDAndProjectID :execrows
+-- Permanent erasure (GDPR/DPDP). Used only by the erase worker; the profile's
+-- properties jsonb can hold PII, so the row is physically removed, not soft-deleted.
+delete from profiles
+where id = @id and project_id = @project_id;

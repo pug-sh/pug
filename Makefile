@@ -77,6 +77,7 @@ build:
 	go build -o bin/pug-worker-profile-identify ./cmd/workers/profile/identify
 	go build -o bin/pug-worker-profile-alias ./cmd/workers/profile/alias
 	go build -o bin/pug-worker-profile-upsert ./cmd/workers/profile/upsert
+	go build -o bin/pug-worker-compliance ./cmd/workers/compliance
 
 .PHONY: fmt
 fmt:

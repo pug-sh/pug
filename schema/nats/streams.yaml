@@ -12,6 +12,18 @@ streams:
     storage: "file"
     num_replicas: 1
 
+  # Stream for GDPR/DPDP compliance jobs (erasure, export, retention)
+  - name: "compliance"
+    subjects: ["compliance.>"]
+    description: "Low-volume GDPR/DPDP compliance jobs"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: -1
+    max_age: 720h  # 30 days
+    storage: "file"
+    num_replicas: 1
+
   # Stream for analytics events
   - name: "events"
     subjects: ["events.>"]
@@ -49,6 +61,17 @@ streams:
   - name: "dlq-profiles"
     subjects: ["dlq.profiles.>"]
     description: "Dead letter queue for profile events"
+    retention_policy: "limits"
+    max_consumers: -1
+    max_msgs: -1
+    max_bytes: 1000000000  # ~1GB
+    max_age: 720h  # 30 days
+    storage: "file"
+    num_replicas: 1
+
+  - name: "dlq-compliance"
+    subjects: ["dlq.compliance.>"]
+    description: "Dead letter queue for compliance jobs"
     retention_policy: "limits"
     max_consumers: -1
     max_msgs: -1

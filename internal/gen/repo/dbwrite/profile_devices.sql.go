@@ -30,6 +30,27 @@ func (q *Queries) DeactivateDevicesByProfileID(ctx context.Context, arg Deactiva
 	return result.RowsAffected(), nil
 }
 
+const deleteDevicesByProfileID = `-- name: DeleteDevicesByProfileID :execrows
+delete from profile_devices
+where profile_id = $1 and project_id = $2
+`
+
+type DeleteDevicesByProfileIDParams struct {
+	ProfileID pgtype.Text
+	ProjectID string
+}
+
+// Permanent erasure (GDPR/DPDP). Used only by the erase worker. Must run before
+// the profiles hard-delete: the profile_id FK is ON DELETE SET NULL, so deleting
+// the profile first would orphan these rows (token + endpoint = a delivery secret).
+func (q *Queries) DeleteDevicesByProfileID(ctx context.Context, arg DeleteDevicesByProfileIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDevicesByProfileID, arg.ProfileID, arg.ProjectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const linkDeviceToProfile = `-- name: LinkDeviceToProfile :execrows
 update profile_devices pd
 set profile_id = $1

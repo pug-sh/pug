@@ -12,14 +12,55 @@ service ProfilesService {
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
   rpc List(ListRequest) returns (stream ListResponse) {}
+  // Delete erases a data subject identified by profile id. Like
+  // DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
+  // events table and every derived rollup; the profile is soft-deleted
+  // synchronously so it disappears from reads immediately.
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+  // DeleteDataSubject erases a data subject identified by external_id (the
+  // controller-facing handle). Proceeds even when no profile row exists, since
+  // events can be keyed directly by external_id. See docs/compliance/4.1-erasure-scope.md.
+  rpc DeleteDataSubject(DeleteDataSubjectRequest) returns (DeleteDataSubjectResponse) {}
+  // GetDeletionRequest returns the status of an erasure request so a controller
+  // can prove fulfilment within the statutory window (the DSAR audit trail).
+  rpc GetDeletionRequest(GetDeletionRequestRequest) returns (GetDeletionRequestResponse) {}
 }
 
 message DeleteRequest {
   string id = 1 [(buf.validate.field).required = true];
 }
 
-message DeleteResponse {}
+message DeleteResponse {
+  // ID of the recorded erasure request; pass to GetDeletionRequest to track completion.
+  string request_id = 1;
+  // Lifecycle status: pending | processing | completed | failed.
+  string status = 2;
+}
+
+message DeleteDataSubjectRequest {
+  string external_id = 1 [(buf.validate.field).required = true];
+}
+
+message DeleteDataSubjectResponse {
+  string request_id = 1;
+  string status = 2;
+}
+
+message GetDeletionRequestRequest {
+  string request_id = 1 [(buf.validate.field).required = true];
+}
+
+message GetDeletionRequestResponse {
+  string request_id = 1;
+  string external_id = 2;
+  string profile_id = 3;
+  // Lifecycle status: pending | processing | completed | failed.
+  string status = 4;
+  // Number of event rows erased (recorded when the request is frozen).
+  int64 events_deleted = 5;
+  google.protobuf.Timestamp requested_at = 6;
+  google.protobuf.Timestamp completed_at = 7;
+}
 
 message GetByExternalIdRequest {
   string external_id = 1 [(buf.validate.field).required = true];
