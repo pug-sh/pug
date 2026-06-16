@@ -449,6 +449,27 @@ func TestWithJWTAuth(t *testing.T) {
 			t.Errorf("error = %q, want to contain %q", got, "invalid authorization")
 		}
 	})
+
+	t.Run("non-HS256 algorithm returns error", func(t *testing.T) {
+		// Sign with HS384 — still HMAC, so the keyfunc's SigningMethodHMAC
+		// check passes; only WithValidMethods("HS256") rejects it. This
+		// isolates that the algorithm pin works, not just the keyfunc.
+		raw := jwt.NewWithClaims(jwt.SigningMethodHS384, jwt.MapClaims{
+			"sub": "cust-1",
+			"aud": coreauth.Audience,
+			"iss": coreauth.Issuer,
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		token, err := raw.SignedString(jwtKey)
+		if err != nil {
+			t.Fatalf("failed to sign test JWT: %v", err)
+		}
+		if _, err := authFunc(ctx, newJWTRequest(token, "")); err == nil {
+			t.Fatal("expected error for non-HS256 algorithm")
+		} else if got := err.Error(); !strings.Contains(got, "invalid authorization") {
+			t.Errorf("error = %q, want to contain %q", got, "invalid authorization")
+		}
+	})
 }
 
 func TestWithDualAuth(t *testing.T) {
