@@ -1,0 +1,59 @@
+name: Release
+
+# Releases are deliberate, not every push. Pushing a SemVer tag (vX.Y.Z) builds
+# the image and pushes it to Docker Hub. Plain pushes to branches never trigger
+# this — they only run CI (ci.yaml).
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# One release per tag; cancel nothing, but don't run two builds for the same ref.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Docker Hub repository to publish to. Change this if your namespace differs
+  # (Docker Hub namespaces are lowercase alphanumeric — note: not "pug-sh").
+  IMAGE_NAME: docker.io/pugsh/pug
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          # vX.Y.Z -> :X.Y.Z and :X.Y ; :latest is added automatically for
+          # non-prerelease semver tags (flavor latest=auto).
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
