@@ -170,8 +170,8 @@ type UpdateProjectMetaParams struct {
 }
 
 // Partial update: a NULL param leaves the column unchanged, so callers can update
-// display_name and reporting_timezone independently. A present ” is written (e.g.
-// reporting_timezone ” resets to UTC) — distinct from omitted (NULL).
+// display_name and reporting_timezone independently. A present empty string is
+// written (an empty reporting_timezone resets to UTC), unlike an omitted NULL.
 func (q *Queries) UpdateProjectMeta(ctx context.Context, arg UpdateProjectMetaParams) (Project, error) {
 	row := q.db.QueryRow(ctx, updateProjectMeta,
 		arg.DisplayName,

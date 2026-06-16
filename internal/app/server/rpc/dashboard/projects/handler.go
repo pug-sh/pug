@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"connectrpc.com/connect"
@@ -143,8 +144,9 @@ func (s *server) Delete(
 	return connect.NewResponse(&projectsv1.DeleteResponse{}), nil
 }
 
-// UpdateMeta full-replaces the editable metadata (display name + reporting
-// timezone) of the project specified by the x-project-id header.
+// UpdateMeta partially updates the editable metadata (display name + reporting
+// timezone) of the project specified by the x-project-id header. An omitted field
+// is left unchanged; a present reporting_timezone of "" resets it to UTC.
 func (s *server) UpdateMeta(
 	ctx context.Context,
 	req *connect.Request[projectsv1.UpdateMetaRequest],
@@ -165,7 +167,8 @@ func (s *server) UpdateMeta(
 	var tz *string
 	if req.Msg.ReportingTimezone != nil {
 		if err := tzx.Validate(*req.Msg.ReportingTimezone); err != nil {
-			return nil, apperr.Invalid(apperr.ReasonInvalidTimezone, "invalid timezone")
+			return nil, apperr.Invalid(apperr.ReasonInvalidTimezone,
+				fmt.Sprintf("invalid timezone %q", *req.Msg.ReportingTimezone))
 		}
 		n := tzx.Normalize(*req.Msg.ReportingTimezone)
 		tz = &n
