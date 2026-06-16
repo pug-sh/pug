@@ -39,32 +39,16 @@ func (q TopKQuery) Limit() int                                { return q.limit }
 func (q TopKQuery) Dimension() insightsv1.TopKQuery_Dimension { return q.dimension }
 
 // BuildTopKQuery builds the ranked raw-events top-K query for the request's
-// dimension. Execution-time dispatch (topKQueryForExecution in rollup.go) may
-// route eligible PROPERTY/EVENT_KIND queries to the rollup instead
-// (buildTopKFromRollup); this builder stays a pure raw-events builder like
-// BuildTrendsQuery.
+// dimension, dispatching to buildTopKEvents (PROPERTY/EVENT_KIND) or
+// buildTopKUsers (USER). Execution-time dispatch (topKQueryForExecution in
+// rollup.go) may route eligible PROPERTY/EVENT_KIND queries to the rollup
+// instead; this builder stays a pure raw-events builder like BuildTrendsQuery.
+// Each shape documents its own structure and $others handling.
 //
-// $others is computed in SQL — never by collapsing per-dimension partial
-// aggregates in Go, which would break UNIQUE_USERS (uniq of a union is not the
-// sum of per-dim uniqs) and AVG/MIN/MAX for the bucket, and would return an
-// unbounded group set for high-cardinality dimensions (users, URLs). The two
-// shapes pay for that differently:
-//
-//   - PROPERTY/EVENT_KIND (buildTopKEvents): a top_vals CTE plus an outer
-//     re-aggregation over the same window-pruned events filter. The two
-//     identical IN(top_vals) set subqueries are one logical set build that
-//     ClickHouse currently dedups; even without that planner optimization the
-//     shape never exceeds two events scans.
-//   - USER (buildTopKUsers): single pass — per-user partial aggregates, a
-//     row_number() ranking, and a rank-split re-merge. The events scan, the
-//     profile identity union, and the join hash table are each built once
-//     (a CTE referenced twice would re-execute everything inside it).
-//
-// The top_vals sort key is (Float64, String): aggExpr is always toFloat64(...)
-// and the tie-break is dim_value (String). Keeping it off DateTime64/UUID types
-// sidesteps the mixed-type __topKFilter dynamic-filtering issue, so
-// DisableTopKDynamicFiltering is not needed — TestBuildTopKQuery_PropertyPromoted
-// pins the numeric inner ORDER BY this relies on.
+// The top_vals sort key is numeric (Float64 aggExpr) with a String dim_value
+// tie-break, never DateTime64/UUID — that sidesteps the mixed-type
+// __topKFilter dynamic-filtering issue, so DisableTopKDynamicFiltering is not
+// needed. TestBuildTopKQuery_PropertyPromoted pins the numeric inner ORDER BY.
 func BuildTopKQuery(req *insightsv1.QueryRequest, projectID string) (TopKQuery, error) {
 	tk := req.GetSpec().GetTopK()
 	if tk == nil {
@@ -167,11 +151,9 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 		return nil, err
 	}
 
-	cteConds, err := topKBaseConditions(req, projectID, "")
-	if err != nil {
-		return nil, err
-	}
-	outerConds, err := topKBaseConditions(req, projectID, "")
+	// The top_vals CTE and the outer re-aggregation scan the same window-pruned
+	// events filter, so they share one condition set.
+	conds, err := topKBaseConditions(req, projectID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +161,7 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 	topVals := chq.NewQuery().
 		Select(dimExpr+" AS dim_value").
 		From("events").
-		Where(cteConds...).
+		Where(conds...).
 		GroupBy("dim_value").
 		// Tie-break on dim_value ASC so the top-N is deterministic and matches
 		// the breakdown bucketing convention (total DESC, value ASC).
@@ -195,7 +177,7 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 			aggExpr+" AS value",
 		).
 		From("events").
-		Where(outerConds...).
+		Where(conds...).
 		GroupBy("dim_value", "is_others").
 		OrderBy("is_others ASC", "value DESC", "dim_value ASC"), nil
 }
@@ -412,15 +394,9 @@ func BuildTopKProfilesQuery(projectID string, ids []string) (string, []any, erro
 // buildTopKResult translates executor rows into the proto result, attaching
 // profile enrichment to USER-dimension rows whose key resolved to a profile.
 // The $others bucket and unidentified distinct_ids stay un-enriched. Row order
-// is preserved from SQL: top rows metric-descending, $others last.
-//
-// Property conversion failures (structpb.NewStruct) degrade to an un-propertied
-// profile rather than aborting the query. This is deliberately asymmetric with
-// QueryTopKProfiles, which *fails* the query on a JSON decode error: there the
-// raw bytes from ClickHouse are malformed — a storage-contract violation with
-// nothing to salvage — whereas here the map already decoded cleanly and only
-// the proto re-encode failed, a bounded per-row presentation loss. Keep that
-// distinction (storage-integrity → fail, presentation → degrade) if unifying.
+// is preserved from SQL: top rows metric-descending, $others last. A property
+// conversion failure degrades that one row to an un-propertied profile (see the
+// inline note) rather than aborting the query.
 func buildTopKResult(ctx context.Context, executor *Executor, projectID string, q TopKQuery, rows []TopKRow) (*insightsv1.TopKResult, error) {
 	var profilesByID map[string]TopKProfileRow
 	if q.Dimension() == insightsv1.TopKQuery_DIMENSION_USER {

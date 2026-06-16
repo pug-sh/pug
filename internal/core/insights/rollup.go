@@ -470,20 +470,20 @@ func buildTopKFromRollup(req *insightsv1.QueryRequest, projectID string) (TopKQu
 
 	fromDay, toDay := rollupDayBounds(req)
 	scopeKind := tk.GetScope().GetKind()
-	conds := func() []chq.Condition {
-		return []chq.Condition{
-			chq.Eq("project_id", projectID),
-			chq.Eq("dim_name", dimName),
-			chq.Gte("day", fromDay),
-			chq.Lte("day", toDay),
-			chq.When(scopeKind != "", chq.Eq("kind", scopeKind)),
-		}
+	// The top_vals CTE and the outer re-aggregation scan the same rollup slice,
+	// so they share one condition set.
+	conds := []chq.Condition{
+		chq.Eq("project_id", projectID),
+		chq.Eq("dim_name", dimName),
+		chq.Gte("day", fromDay),
+		chq.Lte("day", toDay),
+		chq.When(scopeKind != "", chq.Eq("kind", scopeKind)),
 	}
 
 	topVals := chq.NewQuery().
 		Select(dimExpr+" AS top_dim").
 		From(rollupTable).
-		Where(conds()...).
+		Where(conds...).
 		GroupBy("top_dim").
 		// Tie-break matches the raw builders: value DESC, dimension ASC.
 		OrderBy(aggExpr+" DESC", "top_dim ASC").
@@ -498,7 +498,7 @@ func buildTopKFromRollup(req *insightsv1.QueryRequest, projectID string) (TopKQu
 			aggExpr+" AS value",
 		).
 		From(rollupTable).
-		Where(conds()...).
+		Where(conds...).
 		GroupBy("dim_bucket", "is_others").
 		OrderBy("is_others ASC", "value DESC", "dim_bucket ASC").
 		WithQueryCache(analyticsCacheTTL).
