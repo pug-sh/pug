@@ -29,11 +29,11 @@ jobs:
       matrix:
         include:
           - { name: server,                  cmd: server,                   target: app }
-          - { name: worker-events,           cmd: workers/events,           target: app }
-          - { name: worker-email,            cmd: workers/email,            target: app }
-          - { name: worker-profile-identify, cmd: workers/profile/identify, target: app }
-          - { name: worker-profile-alias,    cmd: workers/profile/alias,    target: app }
-          - { name: worker-profile-upsert,   cmd: workers/profile/upsert,   target: app }
+          - { name: worker-events,           cmd: workers/events,           target: worker }
+          - { name: worker-email,            cmd: workers/email,            target: worker }
+          - { name: worker-profile-identify, cmd: workers/profile/identify, target: worker }
+          - { name: worker-profile-alias,    cmd: workers/profile/alias,    target: worker }
+          - { name: worker-profile-upsert,   cmd: workers/profile/upsert,   target: worker }
           - { name: migrate-postgres,        cmd: migrate/postgres,         target: migrate }
           - { name: migrate-clickhouse,      cmd: migrate/clickhouse,       target: migrate }
           - { name: migrate-nats,            cmd: migrate/nats,             target: migrate }

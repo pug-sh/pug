@@ -3,11 +3,14 @@
 # One parameterized image per pug role. `CMD` selects which ./cmd/<CMD> main to
 # compile; the runtime target selects the filesystem shape:
 #   --build-arg CMD=server                 --target app      -> pug-server
-#   --build-arg CMD=workers/events         --target app      -> pug-worker-events
+#   --build-arg CMD=workers/events         --target worker   -> pug-worker-events
 #   --build-arg CMD=migrate/postgres       --target migrate  -> pug-migrate-postgres
 #
-# app target     = distroless + binary only (server + workers read nothing from schema/).
+# app target     = distroless + binary only (server reads nothing from schema/).
+# worker target  = distroless + binary + schema/nats (each worker role built here reads
+#                  schema/nats/consumers.yaml at startup via GetConsumerConfigByName).
 # migrate target = distroless + binary + schema/ (migrate roles read these from WORKDIR).
+# The sqlc query files under schema/postgres/queries are build-time only, omitted everywhere.
 #
 # Multi-arch (amd64 + arm64) via Go cross-compilation: the build stage runs on the
 # native builder arch ($BUILDPLATFORM) and cross-compiles to $TARGETARCH (no QEMU).
@@ -32,12 +35,24 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /out/app ./cmd/${CMD}
 
-# ---- app runtime: server + workers, binary only ----
+# ---- app runtime: server only, binary only (reads nothing from schema/) ----
 FROM gcr.io/distroless/static-debian12:nonroot AS app
 WORKDIR /app
 COPY --from=build /out/app /app/app
 # Documents the default server port (PUG_SERVER_PORT). Informational only.
 EXPOSE 3000
+USER nonroot:nonroot
+ENTRYPOINT ["/app/app"]
+
+# ---- worker runtime: binary + nats config (schema/nats) ----
+# Workers are NATS consumers (no HTTP port). Each reads schema/nats/consumers.yaml at
+# startup (GetConsumerConfigByName), resolved relative to cwd — so WORKDIR must stay /app.
+# The whole schema/nats dir is copied for simplicity; streams.yaml rides along but is read
+# only by the migrate/nats role, not by workers.
+FROM gcr.io/distroless/static-debian12:nonroot AS worker
+WORKDIR /app
+COPY --from=build /src/schema/nats ./schema/nats
+COPY --from=build /out/app /app/app
 USER nonroot:nonroot
 ENTRYPOINT ["/app/app"]
 
