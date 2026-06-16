@@ -63,12 +63,14 @@ message Project {
   string reporting_timezone = 7;
 }
 
-// UpdateMetaRequest full-replaces the project's editable metadata. The settings
-// form sends every field; display_name is required, reporting_timezone is optional
-// (empty = UTC, so a client can reset to UTC by sending "").
+// UpdateMetaRequest is a partial update of the project's editable metadata: every
+// field is optional and an omitted field leaves the stored value unchanged. A
+// present reporting_timezone of "" resets to UTC (distinct from omitted).
 message UpdateMetaRequest {
+  // Optional (partial update): omit to leave the name unchanged. When present it
+  // must be 1–150 chars; an explicit "" is rejected.
   string display_name = 1 [
-    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 150
   ];
   // IANA timezone (e.g. "Asia/Kolkata") aligning insight/dashboard bucket

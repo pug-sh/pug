@@ -463,12 +463,14 @@ func (x *Project) GetReportingTimezone() string {
 	return ""
 }
 
-// UpdateMetaRequest full-replaces the project's editable metadata. The settings
-// form sends every field; display_name is required, reporting_timezone is optional
-// (empty = UTC, so a client can reset to UTC by sending "").
+// UpdateMetaRequest is a partial update of the project's editable metadata: every
+// field is optional and an omitted field leaves the stored value unchanged. A
+// present reporting_timezone of "" resets to UTC (distinct from omitted).
 type UpdateMetaRequest struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	DisplayName *string                `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Optional (partial update): omit to leave the name unchanged. When present it
+	// must be 1–150 chars; an explicit "" is rejected.
+	DisplayName *string `protobuf:"bytes,1,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
 	// IANA timezone (e.g. "Asia/Kolkata") aligning insight/dashboard bucket
 	// boundaries to the project's calendar. Empty = UTC. Unlike creation, a malformed
 	// value is rejected (CodeInvalidArgument) rather than coerced — this is an
@@ -674,9 +676,10 @@ const file_dashboard_projects_v1_projects_proto_rawDesc = "" +
 	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12&\n" +
 	"\x0fprivate_api_key\x18\x05 \x01(\tR\rprivateApiKey\x12$\n" +
 	"\x0epublic_api_key\x18\x06 \x01(\tR\fpublicApiKey\x12-\n" +
-	"\x12reporting_timezone\x18\a \x01(\tR\x11reportingTimezone\"\x8f\x01\n" +
-	"\x11UpdateMetaRequest\x12.\n" +
-	"\fdisplay_name\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x96\x01R\vdisplayName\x12J\n" +
+	"\x12reporting_timezone\x18\a \x01(\tR\x11reportingTimezone\"\x8e\x01\n" +
+	"\x11UpdateMetaRequest\x12-\n" +
+	"\fdisplay_name\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x96\x01R\vdisplayName\x12J\n" +
 	"\x12reporting_timezone\x18\x02 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\x11reportingTimezone\"N\n" +
 	"\x12UpdateMetaResponse\x128\n" +
 	"\aproject\x18\x01 \x01(\v2\x1e.dashboard.projects.v1.ProjectR\aproject\"G\n" +
