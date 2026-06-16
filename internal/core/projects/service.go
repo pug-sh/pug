@@ -115,7 +115,7 @@ func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, d
 		OrgID:             orgID,
 		CustomerID:        customerID,
 		DisplayName:       displayName,
-		ReportingTimezone: tzx.Coerce(reportingTimezone),
+		ReportingTimezone: tzx.Coerce(ctx, reportingTimezone),
 	})
 	if err != nil {
 		// The CTE checks org_members for admin role. ErrNoRows means the INSERT was
@@ -161,7 +161,7 @@ func CreateProjectInTx(ctx context.Context, w *dbwrite.Queries, orgID, displayNa
 		PublicApiKey:      pubKey,
 		OrgID:             orgID,
 		DisplayName:       displayName,
-		ReportingTimezone: tzx.Coerce(reportingTimezone),
+		ReportingTimezone: tzx.Coerce(ctx, reportingTimezone),
 	})
 	if err != nil {
 		if isUniqueViolationOn(err, projectNameUnique) {

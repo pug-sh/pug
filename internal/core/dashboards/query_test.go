@@ -307,6 +307,23 @@ func TestResolveEffectiveWindow_AppliesProjectTimezone(t *testing.T) {
 	}
 }
 
+// A corrupt/legacy stored reporting_timezone (charset-valid but not loadable, so it
+// slips past the proto pattern yet fails tzx.Load) must not fail the render:
+// resolveEffectiveWindow logs + records telemetry and falls back to a UTC-aligned
+// window. This pins the degrade-don't-fail contract a refactor could silently break.
+func TestResolveEffectiveWindow_InvalidTimezoneFallsBackToUTC(t *testing.T) {
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	dash := dbread.Dashboard{DefaultTimeRange: "TIME_RANGE_PRESET_LAST_7_DAYS", DefaultGranularity: "GRANULARITY_DAY"}
+
+	tr, _ := resolveEffectiveWindow(context.Background(), dash, DashboardQueryOverrides{Timezone: "Not/A/Zone"}, now)
+
+	// UTC fallback: LAST_7_DAYS = today + 6 prior days → midnight UTC of 2026-06-04.
+	want := startOfDayIn(now.AddDate(0, 0, -6), time.UTC)
+	if !tr.GetFrom().AsTime().Equal(want) {
+		t.Fatalf("from = %v, want %v (UTC fallback)", tr.GetFrom().AsTime().UTC(), want)
+	}
+}
+
 func TestResolveEffectiveWindow_UnknownDefaultsNormalize(t *testing.T) {
 	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	dash := dbread.Dashboard{DefaultTimeRange: "", DefaultGranularity: ""}

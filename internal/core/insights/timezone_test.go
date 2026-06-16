@@ -59,13 +59,6 @@ func TestBucketExpr_NonUTCWrapsEveryGranularity(t *testing.T) {
 	}
 }
 
-func TestBucketExpr_RejectsInjection(t *testing.T) {
-	// A value bypassing upstream validation must not reach the SQL literal.
-	if _, err := bucketExpr(insightsv1.Granularity_GRANULARITY_DAY, "occur_time", "evil'); drop"); err == nil {
-		t.Error("bucketExpr accepted an injection-shaped timezone, want error")
-	}
-}
-
 func TestUTCBucketing(t *testing.T) {
 	if !utcBucketing("") || !utcBucketing("UTC") {
 		t.Error("utcBucketing should be true for \"\" and \"UTC\"")

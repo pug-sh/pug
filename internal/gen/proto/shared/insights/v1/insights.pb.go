@@ -515,11 +515,17 @@ type QueryRequest struct {
 	Spec        *InsightQuerySpec      `protobuf:"bytes,1,opt,name=spec" json:"spec,omitempty"`
 	TimeRange   *v1.TimeRange          `protobuf:"bytes,2,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
 	Granularity *Granularity           `protobuf:"varint,3,opt,name=granularity,enum=shared.insights.v1.Granularity" json:"granularity,omitempty"`
-	// Optional IANA timezone name (e.g. "Asia/Kolkata") used to align time-bucket
-	// boundaries to the viewer's local day/week/month instead of UTC. Empty (or
-	// "UTC") buckets on UTC boundaries — the historical behavior. The charset is
-	// restricted so the value can be embedded in the ClickHouse toTimeZone() call
-	// without an injection surface; the zone is otherwise validated server-side.
+	// IANA timezone name (e.g. "Asia/Kolkata") used to align time-bucket boundaries
+	// to the viewer's local day/week/month instead of UTC. Empty (or "UTC") buckets on
+	// UTC boundaries — the historical behavior. The charset is restricted so the value
+	// can be embedded in the ClickHouse toTimeZone() call without an injection surface;
+	// the zone is otherwise validated server-side.
+	//
+	// SERVER-OVERWRITTEN, IGNORED ON INPUT: the InsightsService.Query handler replaces
+	// any client-supplied value with the project's stored reporting_timezone, so
+	// bucketing is server-authoritative. Do not set it on the request — it has no
+	// effect. (The field is retained rather than reserved because the executor and the
+	// dashboard render path both populate it internally.)
 	Timezone      *string `protobuf:"bytes,12,opt,name=timezone" json:"timezone,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

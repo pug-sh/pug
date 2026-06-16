@@ -9,7 +9,9 @@
 package tzx
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"time"
 )
@@ -56,9 +58,14 @@ func Validate(name string) error {
 
 // Coerce returns the normalized name when it validates, otherwise "" (UTC). Use at
 // lenient capture points (project creation, signup) where a malformed client value
-// must never fail the operation — it silently falls back to UTC.
-func Coerce(name string) string {
-	if Validate(name) != nil {
+// must never fail the operation. The fallback to UTC must not be fully silent: a
+// rejected value is a real client bug (the proto already guards the charset, so what
+// reaches here and fails is a charset-valid name no tz database knows), so we log it
+// at warn level. It is client input, so no telemetry.RecordError (per telemetry.md).
+func Coerce(ctx context.Context, name string) string {
+	if err := Validate(name); err != nil {
+		slog.WarnContext(ctx, "coercing invalid reporting timezone to UTC",
+			slog.String("reporting_timezone", name))
 		return ""
 	}
 	return Normalize(name)

@@ -43,15 +43,16 @@ func TestValidate(t *testing.T) {
 }
 
 func TestCoerce(t *testing.T) {
-	if got := Coerce("Asia/Kolkata"); got != "Asia/Kolkata" {
+	ctx := t.Context()
+	if got := Coerce(ctx, "Asia/Kolkata"); got != "Asia/Kolkata" {
 		t.Errorf("Coerce(valid) = %q, want Asia/Kolkata", got)
 	}
-	if got := Coerce("UTC"); got != "" {
+	if got := Coerce(ctx, "UTC"); got != "" {
 		t.Errorf("Coerce(UTC) = %q, want \"\"", got)
 	}
 	// Malformed/unknown coerces to UTC ("") rather than failing.
 	for _, name := range []string{"Not/A/Zone", "evil'); drop"} {
-		if got := Coerce(name); got != "" {
+		if got := Coerce(ctx, name); got != "" {
 			t.Errorf("Coerce(%q) = %q, want \"\" (UTC fallback)", name, got)
 		}
 	}
