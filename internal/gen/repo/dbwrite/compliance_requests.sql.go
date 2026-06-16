@@ -120,8 +120,34 @@ type MarkComplianceRequestFailedParams struct {
 	ProjectID string
 }
 
+// Records a permanent erasure failure on the audit row so the DSAR ledger
+// reflects reality instead of a request stuck at 'processing'. Set by the worker
+// just before a message is dead-lettered.
 func (q *Queries) MarkComplianceRequestFailed(ctx context.Context, arg MarkComplianceRequestFailedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markComplianceRequestFailed, arg.Error, arg.ID, arg.ProjectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reopenComplianceRequest = `-- name: ReopenComplianceRequest :execrows
+update compliance_requests
+set status = 'pending', error = null
+where id = $1 and project_id = $2 and status <> 'completed'
+`
+
+type ReopenComplianceRequestParams struct {
+	ID        string
+	ProjectID string
+}
+
+// Revives a non-completed erase request so a retry re-drives the same row:
+// clears any prior error and resets status to 'pending'. Never touches a
+// 'completed' row. Frozen distinct_ids/session_ids are left intact so the
+// re-driven worker pass reuses them.
+func (q *Queries) ReopenComplianceRequest(ctx context.Context, arg ReopenComplianceRequestParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reopenComplianceRequest, arg.ID, arg.ProjectID)
 	if err != nil {
 		return 0, err
 	}

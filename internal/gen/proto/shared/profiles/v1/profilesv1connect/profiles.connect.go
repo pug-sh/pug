@@ -58,7 +58,8 @@ type ProfilesServiceClient interface {
 	// Delete erases a data subject identified by profile id. Like
 	// DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
 	// events table and every derived rollup; the profile is soft-deleted
-	// synchronously so it disappears from reads immediately.
+	// synchronously in PostgreSQL and physically removed from every store by the
+	// erase worker.
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 	// DeleteDataSubject erases a data subject identified by external_id (the
 	// controller-facing handle). Proceeds even when no profile row exists, since
@@ -167,7 +168,8 @@ type ProfilesServiceHandler interface {
 	// Delete erases a data subject identified by profile id. Like
 	// DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
 	// events table and every derived rollup; the profile is soft-deleted
-	// synchronously so it disappears from reads immediately.
+	// synchronously in PostgreSQL and physically removed from every store by the
+	// erase worker.
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 	// DeleteDataSubject erases a data subject identified by external_id (the
 	// controller-facing handle). Proceeds even when no profile row exists, since

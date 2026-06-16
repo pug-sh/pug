@@ -30,7 +30,11 @@ create table compliance_requests (
   requested_at    timestamptz not null default now(),
   completed_at    timestamptz,
   update_time     timestamptz not null default now(),
-  error           text
+  error           text,
+  -- A completed request must record when it completed: the row is the proof of
+  -- fulfilment, so "completed" without a timestamp is not a valid state.
+  constraint compliance_requests_completed_at_check
+    check (status <> 'completed' or completed_at is not null)
 );
 
 create index compliance_requests_project_kind_status on compliance_requests (project_id, kind, status);

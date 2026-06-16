@@ -40,3 +40,56 @@ func (q *Queries) GetComplianceRequestByID(ctx context.Context, arg GetComplianc
 	)
 	return i, err
 }
+
+const getReopenableComplianceRequest = `-- name: GetReopenableComplianceRequest :one
+select id, project_id, kind, profile_id, external_id, status, distinct_ids, session_ids, events_affected, requested_by, requested_at, completed_at, update_time, error from compliance_requests
+where project_id = $1
+  and kind = $2
+  and status <> 'completed'
+  and (
+    ($3::text <> '' and profile_id::text = $3::text)
+    or ($4::text <> '' and external_id = $4::text)
+  )
+order by requested_at desc
+limit 1
+`
+
+type GetReopenableComplianceRequestParams struct {
+	ProjectID  string
+	Kind       string
+	ProfileID  string
+	ExternalID string
+}
+
+// Idempotency / re-drive: the most recent non-completed request for a data
+// subject, matched by whichever identifier the caller holds. Lets a retried
+// erasure re-drive the existing ledger row (reviving a 'failed' one) instead of
+// inserting a duplicate, and re-publish an enqueue that never reached the worker.
+// A 'completed' request is excluded so a genuinely new erasure (e.g. data
+// re-arrived under the same id) starts a fresh row.
+func (q *Queries) GetReopenableComplianceRequest(ctx context.Context, arg GetReopenableComplianceRequestParams) (ComplianceRequest, error) {
+	row := q.db.QueryRow(ctx, getReopenableComplianceRequest,
+		arg.ProjectID,
+		arg.Kind,
+		arg.ProfileID,
+		arg.ExternalID,
+	)
+	var i ComplianceRequest
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Kind,
+		&i.ProfileID,
+		&i.ExternalID,
+		&i.Status,
+		&i.DistinctIds,
+		&i.SessionIds,
+		&i.EventsAffected,
+		&i.RequestedBy,
+		&i.RequestedAt,
+		&i.CompletedAt,
+		&i.UpdateTime,
+		&i.Error,
+	)
+	return i, err
+}

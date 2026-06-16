@@ -15,7 +15,8 @@ service ProfilesService {
   // Delete erases a data subject identified by profile id. Like
   // DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
   // events table and every derived rollup; the profile is soft-deleted
-  // synchronously so it disappears from reads immediately.
+  // synchronously in PostgreSQL and physically removed from every store by the
+  // erase worker.
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
   // DeleteDataSubject erases a data subject identified by external_id (the
   // controller-facing handle). Proceeds even when no profile row exists, since
@@ -26,24 +27,37 @@ service ProfilesService {
   rpc GetDeletionRequest(GetDeletionRequestRequest) returns (GetDeletionRequestResponse) {}
 }
 
-message DeleteRequest {
-  string id = 1 [(buf.validate.field).required = true];
+// ComplianceRequestStatus is the lifecycle of a compliance (DSAR) request. It
+// mirrors the compliance_requests.status CHECK constraint and the
+// core/profiles.ComplianceStatus constants.
+enum ComplianceRequestStatus {
+  COMPLIANCE_REQUEST_STATUS_UNSPECIFIED = 0;
+  COMPLIANCE_REQUEST_STATUS_PENDING = 1;
+  COMPLIANCE_REQUEST_STATUS_PROCESSING = 2;
+  COMPLIANCE_REQUEST_STATUS_COMPLETED = 3;
+  COMPLIANCE_REQUEST_STATUS_FAILED = 4;
 }
 
-message DeleteResponse {
-  // ID of the recorded erasure request; pass to GetDeletionRequest to track completion.
-  string request_id = 1;
-  // Lifecycle status: pending | processing | completed | failed.
-  string status = 2;
+message DeleteRequest {
+  string id = 1 [(buf.validate.field).required = true];
 }
 
 message DeleteDataSubjectRequest {
   string external_id = 1 [(buf.validate.field).required = true];
 }
 
+// DeleteResponse and DeleteDataSubjectResponse are kept as distinct types (not a
+// shared message) to satisfy buf's RPC_REQUEST_RESPONSE_UNIQUE rule, which lets
+// each erasure RPC evolve its response independently.
+message DeleteResponse {
+  // ID of the recorded erasure request; pass to GetDeletionRequest to track completion.
+  string request_id = 1;
+  ComplianceRequestStatus status = 2;
+}
+
 message DeleteDataSubjectResponse {
   string request_id = 1;
-  string status = 2;
+  ComplianceRequestStatus status = 2;
 }
 
 message GetDeletionRequestRequest {
@@ -54,12 +68,16 @@ message GetDeletionRequestResponse {
   string request_id = 1;
   string external_id = 2;
   string profile_id = 3;
-  // Lifecycle status: pending | processing | completed | failed.
-  string status = 4;
-  // Number of event rows erased (recorded when the request is frozen).
+  ComplianceRequestStatus status = 4;
+  // Number of event rows erased. Projects the compliance_requests.events_affected
+  // column (named generically because the same ledger serves export); for an
+  // erasure that count is the rows deleted, recorded when the request is frozen.
   int64 events_deleted = 5;
   google.protobuf.Timestamp requested_at = 6;
   google.protobuf.Timestamp completed_at = 7;
+  // Failure reason when status is FAILED (the compliance_requests.error column);
+  // empty otherwise.
+  string error = 8;
 }
 
 message GetByExternalIdRequest {

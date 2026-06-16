@@ -25,6 +25,64 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ComplianceRequestStatus is the lifecycle of a compliance (DSAR) request. It
+// mirrors the compliance_requests.status CHECK constraint and the
+// core/profiles.ComplianceStatus constants.
+type ComplianceRequestStatus int32
+
+const (
+	ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_UNSPECIFIED ComplianceRequestStatus = 0
+	ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_PENDING     ComplianceRequestStatus = 1
+	ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_PROCESSING  ComplianceRequestStatus = 2
+	ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_COMPLETED   ComplianceRequestStatus = 3
+	ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_FAILED      ComplianceRequestStatus = 4
+)
+
+// Enum value maps for ComplianceRequestStatus.
+var (
+	ComplianceRequestStatus_name = map[int32]string{
+		0: "COMPLIANCE_REQUEST_STATUS_UNSPECIFIED",
+		1: "COMPLIANCE_REQUEST_STATUS_PENDING",
+		2: "COMPLIANCE_REQUEST_STATUS_PROCESSING",
+		3: "COMPLIANCE_REQUEST_STATUS_COMPLETED",
+		4: "COMPLIANCE_REQUEST_STATUS_FAILED",
+	}
+	ComplianceRequestStatus_value = map[string]int32{
+		"COMPLIANCE_REQUEST_STATUS_UNSPECIFIED": 0,
+		"COMPLIANCE_REQUEST_STATUS_PENDING":     1,
+		"COMPLIANCE_REQUEST_STATUS_PROCESSING":  2,
+		"COMPLIANCE_REQUEST_STATUS_COMPLETED":   3,
+		"COMPLIANCE_REQUEST_STATUS_FAILED":      4,
+	}
+)
+
+func (x ComplianceRequestStatus) Enum() *ComplianceRequestStatus {
+	p := new(ComplianceRequestStatus)
+	*p = x
+	return p
+}
+
+func (x ComplianceRequestStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ComplianceRequestStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_shared_profiles_v1_profiles_proto_enumTypes[0].Descriptor()
+}
+
+func (ComplianceRequestStatus) Type() protoreflect.EnumType {
+	return &file_shared_profiles_v1_profiles_proto_enumTypes[0]
+}
+
+func (x ComplianceRequestStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ComplianceRequestStatus.Descriptor instead.
+func (ComplianceRequestStatus) EnumDescriptor() ([]byte, []int) {
+	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{0}
+}
+
 type DeleteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
@@ -69,60 +127,6 @@ func (x *DeleteRequest) GetId() string {
 	return ""
 }
 
-type DeleteResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// ID of the recorded erasure request; pass to GetDeletionRequest to track completion.
-	RequestId *string `protobuf:"bytes,1,opt,name=request_id,json=requestId" json:"request_id,omitempty"`
-	// Lifecycle status: pending | processing | completed | failed.
-	Status        *string `protobuf:"bytes,2,opt,name=status" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteResponse) Reset() {
-	*x = DeleteResponse{}
-	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteResponse) ProtoMessage() {}
-
-func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
-func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *DeleteResponse) GetRequestId() string {
-	if x != nil && x.RequestId != nil {
-		return *x.RequestId
-	}
-	return ""
-}
-
-func (x *DeleteResponse) GetStatus() string {
-	if x != nil && x.Status != nil {
-		return *x.Status
-	}
-	return ""
-}
-
 type DeleteDataSubjectRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ExternalId    *string                `protobuf:"bytes,1,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
@@ -132,7 +136,7 @@ type DeleteDataSubjectRequest struct {
 
 func (x *DeleteDataSubjectRequest) Reset() {
 	*x = DeleteDataSubjectRequest{}
-	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[2]
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -144,7 +148,7 @@ func (x *DeleteDataSubjectRequest) String() string {
 func (*DeleteDataSubjectRequest) ProtoMessage() {}
 
 func (x *DeleteDataSubjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[2]
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -157,7 +161,7 @@ func (x *DeleteDataSubjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDataSubjectRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDataSubjectRequest) Descriptor() ([]byte, []int) {
-	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{2}
+	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *DeleteDataSubjectRequest) GetExternalId() string {
@@ -167,10 +171,66 @@ func (x *DeleteDataSubjectRequest) GetExternalId() string {
 	return ""
 }
 
+// DeleteResponse and DeleteDataSubjectResponse are kept as distinct types (not a
+// shared message) to satisfy buf's RPC_REQUEST_RESPONSE_UNIQUE rule, which lets
+// each erasure RPC evolve its response independently.
+type DeleteResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// ID of the recorded erasure request; pass to GetDeletionRequest to track completion.
+	RequestId     *string                  `protobuf:"bytes,1,opt,name=request_id,json=requestId" json:"request_id,omitempty"`
+	Status        *ComplianceRequestStatus `protobuf:"varint,2,opt,name=status,enum=shared.profiles.v1.ComplianceRequestStatus" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteResponse) Reset() {
+	*x = DeleteResponse{}
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteResponse) ProtoMessage() {}
+
+func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_profiles_v1_profiles_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
+func (*DeleteResponse) Descriptor() ([]byte, []int) {
+	return file_shared_profiles_v1_profiles_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *DeleteResponse) GetRequestId() string {
+	if x != nil && x.RequestId != nil {
+		return *x.RequestId
+	}
+	return ""
+}
+
+func (x *DeleteResponse) GetStatus() ComplianceRequestStatus {
+	if x != nil && x.Status != nil {
+		return *x.Status
+	}
+	return ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_UNSPECIFIED
+}
+
 type DeleteDataSubjectResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     *string                `protobuf:"bytes,1,opt,name=request_id,json=requestId" json:"request_id,omitempty"`
-	Status        *string                `protobuf:"bytes,2,opt,name=status" json:"status,omitempty"`
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	RequestId     *string                  `protobuf:"bytes,1,opt,name=request_id,json=requestId" json:"request_id,omitempty"`
+	Status        *ComplianceRequestStatus `protobuf:"varint,2,opt,name=status,enum=shared.profiles.v1.ComplianceRequestStatus" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -212,11 +272,11 @@ func (x *DeleteDataSubjectResponse) GetRequestId() string {
 	return ""
 }
 
-func (x *DeleteDataSubjectResponse) GetStatus() string {
+func (x *DeleteDataSubjectResponse) GetStatus() ComplianceRequestStatus {
 	if x != nil && x.Status != nil {
 		return *x.Status
 	}
-	return ""
+	return ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_UNSPECIFIED
 }
 
 type GetDeletionRequestRequest struct {
@@ -264,16 +324,20 @@ func (x *GetDeletionRequestRequest) GetRequestId() string {
 }
 
 type GetDeletionRequestResponse struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	RequestId  *string                `protobuf:"bytes,1,opt,name=request_id,json=requestId" json:"request_id,omitempty"`
-	ExternalId *string                `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
-	ProfileId  *string                `protobuf:"bytes,3,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
-	// Lifecycle status: pending | processing | completed | failed.
-	Status *string `protobuf:"bytes,4,opt,name=status" json:"status,omitempty"`
-	// Number of event rows erased (recorded when the request is frozen).
+	state      protoimpl.MessageState   `protogen:"open.v1"`
+	RequestId  *string                  `protobuf:"bytes,1,opt,name=request_id,json=requestId" json:"request_id,omitempty"`
+	ExternalId *string                  `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	ProfileId  *string                  `protobuf:"bytes,3,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
+	Status     *ComplianceRequestStatus `protobuf:"varint,4,opt,name=status,enum=shared.profiles.v1.ComplianceRequestStatus" json:"status,omitempty"`
+	// Number of event rows erased. Projects the compliance_requests.events_affected
+	// column (named generically because the same ledger serves export); for an
+	// erasure that count is the rows deleted, recorded when the request is frozen.
 	EventsDeleted *int64                 `protobuf:"varint,5,opt,name=events_deleted,json=eventsDeleted" json:"events_deleted,omitempty"`
 	RequestedAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=requested_at,json=requestedAt" json:"requested_at,omitempty"`
 	CompletedAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=completed_at,json=completedAt" json:"completed_at,omitempty"`
+	// Failure reason when status is FAILED (the compliance_requests.error column);
+	// empty otherwise.
+	Error         *string `protobuf:"bytes,8,opt,name=error" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -329,11 +393,11 @@ func (x *GetDeletionRequestResponse) GetProfileId() string {
 	return ""
 }
 
-func (x *GetDeletionRequestResponse) GetStatus() string {
+func (x *GetDeletionRequestResponse) GetStatus() ComplianceRequestStatus {
 	if x != nil && x.Status != nil {
 		return *x.Status
 	}
-	return ""
+	return ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_UNSPECIFIED
 }
 
 func (x *GetDeletionRequestResponse) GetEventsDeleted() int64 {
@@ -355,6 +419,13 @@ func (x *GetDeletionRequestResponse) GetCompletedAt() *timestamppb.Timestamp {
 		return x.CompletedAt
 	}
 	return nil
+}
+
+func (x *GetDeletionRequestResponse) GetError() string {
+	if x != nil && x.Error != nil {
+		return *x.Error
+	}
+	return ""
 }
 
 type GetByExternalIdRequest struct {
@@ -937,32 +1008,33 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"\n" +
 	"!shared/profiles/v1/profiles.proto\x12\x12shared.profiles.v1\x1a\x1bbuf/validate/validate.proto\x1a\x17common/v1/filters.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"'\n" +
 	"\rDeleteRequest\x12\x16\n" +
-	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\"G\n" +
-	"\x0eDeleteResponse\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\"C\n" +
+	"\x02id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x02id\"C\n" +
 	"\x18DeleteDataSubjectRequest\x12'\n" +
 	"\vexternal_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"externalId\"R\n" +
+	"externalId\"t\n" +
+	"\x0eDeleteResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12C\n" +
+	"\x06status\x18\x02 \x01(\x0e2+.shared.profiles.v1.ComplianceRequestStatusR\x06status\"\x7f\n" +
 	"\x19DeleteDataSubjectResponse\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\"B\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12C\n" +
+	"\x06status\x18\x02 \x01(\x0e2+.shared.profiles.v1.ComplianceRequestStatusR\x06status\"B\n" +
 	"\x19GetDeletionRequestRequest\x12%\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\trequestId\"\xb8\x02\n" +
+	"request_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\trequestId\"\xfb\x02\n" +
 	"\x1aGetDeletionRequestResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
 	"\vexternal_id\x18\x02 \x01(\tR\n" +
 	"externalId\x12\x1d\n" +
 	"\n" +
-	"profile_id\x18\x03 \x01(\tR\tprofileId\x12\x16\n" +
-	"\x06status\x18\x04 \x01(\tR\x06status\x12%\n" +
+	"profile_id\x18\x03 \x01(\tR\tprofileId\x12C\n" +
+	"\x06status\x18\x04 \x01(\x0e2+.shared.profiles.v1.ComplianceRequestStatusR\x06status\x12%\n" +
 	"\x0eevents_deleted\x18\x05 \x01(\x03R\reventsDeleted\x12=\n" +
 	"\frequested_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vrequestedAt\x12=\n" +
-	"\fcompleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"A\n" +
+	"\fcompleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x14\n" +
+	"\x05error\x18\b \x01(\tR\x05error\"A\n" +
 	"\x16GetByExternalIdRequest\x12'\n" +
 	"\vexternal_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"externalId\"P\n" +
@@ -1014,7 +1086,13 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"project_id\x18\x05 \x01(\tR\tprojectId\x12;\n" +
 	"\vupdate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"updateTime\x12F\n" +
-	"\bactivity\x18\a \x01(\v2*.shared.profiles.v1.ProfileActivitySummaryR\bactivity2\xd6\x04\n" +
+	"\bactivity\x18\a \x01(\v2*.shared.profiles.v1.ProfileActivitySummaryR\bactivity*\xe4\x01\n" +
+	"\x17ComplianceRequestStatus\x12)\n" +
+	"%COMPLIANCE_REQUEST_STATUS_UNSPECIFIED\x10\x00\x12%\n" +
+	"!COMPLIANCE_REQUEST_STATUS_PENDING\x10\x01\x12(\n" +
+	"$COMPLIANCE_REQUEST_STATUS_PROCESSING\x10\x02\x12'\n" +
+	"#COMPLIANCE_REQUEST_STATUS_COMPLETED\x10\x03\x12$\n" +
+	" COMPLIANCE_REQUEST_STATUS_FAILED\x10\x042\xd6\x04\n" +
 	"\x0fProfilesService\x12H\n" +
 	"\x03Get\x12\x1e.shared.profiles.v1.GetRequest\x1a\x1f.shared.profiles.v1.GetResponse\"\x00\x12l\n" +
 	"\x0fGetByExternalId\x12*.shared.profiles.v1.GetByExternalIdRequest\x1a+.shared.profiles.v1.GetByExternalIdResponse\"\x00\x12M\n" +
@@ -1035,61 +1113,66 @@ func file_shared_profiles_v1_profiles_proto_rawDescGZIP() []byte {
 	return file_shared_profiles_v1_profiles_proto_rawDescData
 }
 
+var file_shared_profiles_v1_profiles_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_shared_profiles_v1_profiles_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_shared_profiles_v1_profiles_proto_goTypes = []any{
-	(*DeleteRequest)(nil),              // 0: shared.profiles.v1.DeleteRequest
-	(*DeleteResponse)(nil),             // 1: shared.profiles.v1.DeleteResponse
+	(ComplianceRequestStatus)(0),       // 0: shared.profiles.v1.ComplianceRequestStatus
+	(*DeleteRequest)(nil),              // 1: shared.profiles.v1.DeleteRequest
 	(*DeleteDataSubjectRequest)(nil),   // 2: shared.profiles.v1.DeleteDataSubjectRequest
-	(*DeleteDataSubjectResponse)(nil),  // 3: shared.profiles.v1.DeleteDataSubjectResponse
-	(*GetDeletionRequestRequest)(nil),  // 4: shared.profiles.v1.GetDeletionRequestRequest
-	(*GetDeletionRequestResponse)(nil), // 5: shared.profiles.v1.GetDeletionRequestResponse
-	(*GetByExternalIdRequest)(nil),     // 6: shared.profiles.v1.GetByExternalIdRequest
-	(*GetByExternalIdResponse)(nil),    // 7: shared.profiles.v1.GetByExternalIdResponse
-	(*GetRequest)(nil),                 // 8: shared.profiles.v1.GetRequest
-	(*GetResponse)(nil),                // 9: shared.profiles.v1.GetResponse
-	(*FilterGroup)(nil),                // 10: shared.profiles.v1.FilterGroup
-	(*ListRequest)(nil),                // 11: shared.profiles.v1.ListRequest
-	(*ListResponse)(nil),               // 12: shared.profiles.v1.ListResponse
-	(*ProfileActivitySummary)(nil),     // 13: shared.profiles.v1.ProfileActivitySummary
-	(*Profile)(nil),                    // 14: shared.profiles.v1.Profile
-	(*timestamppb.Timestamp)(nil),      // 15: google.protobuf.Timestamp
-	(*v1.PropertyFilter)(nil),          // 16: common.v1.PropertyFilter
-	(v1.LogicalOperator)(0),            // 17: common.v1.LogicalOperator
-	(*structpb.Struct)(nil),            // 18: google.protobuf.Struct
+	(*DeleteResponse)(nil),             // 3: shared.profiles.v1.DeleteResponse
+	(*DeleteDataSubjectResponse)(nil),  // 4: shared.profiles.v1.DeleteDataSubjectResponse
+	(*GetDeletionRequestRequest)(nil),  // 5: shared.profiles.v1.GetDeletionRequestRequest
+	(*GetDeletionRequestResponse)(nil), // 6: shared.profiles.v1.GetDeletionRequestResponse
+	(*GetByExternalIdRequest)(nil),     // 7: shared.profiles.v1.GetByExternalIdRequest
+	(*GetByExternalIdResponse)(nil),    // 8: shared.profiles.v1.GetByExternalIdResponse
+	(*GetRequest)(nil),                 // 9: shared.profiles.v1.GetRequest
+	(*GetResponse)(nil),                // 10: shared.profiles.v1.GetResponse
+	(*FilterGroup)(nil),                // 11: shared.profiles.v1.FilterGroup
+	(*ListRequest)(nil),                // 12: shared.profiles.v1.ListRequest
+	(*ListResponse)(nil),               // 13: shared.profiles.v1.ListResponse
+	(*ProfileActivitySummary)(nil),     // 14: shared.profiles.v1.ProfileActivitySummary
+	(*Profile)(nil),                    // 15: shared.profiles.v1.Profile
+	(*timestamppb.Timestamp)(nil),      // 16: google.protobuf.Timestamp
+	(*v1.PropertyFilter)(nil),          // 17: common.v1.PropertyFilter
+	(v1.LogicalOperator)(0),            // 18: common.v1.LogicalOperator
+	(*structpb.Struct)(nil),            // 19: google.protobuf.Struct
 }
 var file_shared_profiles_v1_profiles_proto_depIdxs = []int32{
-	15, // 0: shared.profiles.v1.GetDeletionRequestResponse.requested_at:type_name -> google.protobuf.Timestamp
-	15, // 1: shared.profiles.v1.GetDeletionRequestResponse.completed_at:type_name -> google.protobuf.Timestamp
-	14, // 2: shared.profiles.v1.GetByExternalIdResponse.profile:type_name -> shared.profiles.v1.Profile
-	14, // 3: shared.profiles.v1.GetResponse.profile:type_name -> shared.profiles.v1.Profile
-	16, // 4: shared.profiles.v1.FilterGroup.filters:type_name -> common.v1.PropertyFilter
-	17, // 5: shared.profiles.v1.FilterGroup.operator:type_name -> common.v1.LogicalOperator
-	10, // 6: shared.profiles.v1.ListRequest.filter_groups:type_name -> shared.profiles.v1.FilterGroup
-	17, // 7: shared.profiles.v1.ListRequest.filter_groups_operator:type_name -> common.v1.LogicalOperator
-	14, // 8: shared.profiles.v1.ListResponse.profiles:type_name -> shared.profiles.v1.Profile
-	15, // 9: shared.profiles.v1.ProfileActivitySummary.first_seen:type_name -> google.protobuf.Timestamp
-	15, // 10: shared.profiles.v1.ProfileActivitySummary.last_seen:type_name -> google.protobuf.Timestamp
-	15, // 11: shared.profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
-	18, // 12: shared.profiles.v1.Profile.properties:type_name -> google.protobuf.Struct
-	15, // 13: shared.profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
-	13, // 14: shared.profiles.v1.Profile.activity:type_name -> shared.profiles.v1.ProfileActivitySummary
-	8,  // 15: shared.profiles.v1.ProfilesService.Get:input_type -> shared.profiles.v1.GetRequest
-	6,  // 16: shared.profiles.v1.ProfilesService.GetByExternalId:input_type -> shared.profiles.v1.GetByExternalIdRequest
-	11, // 17: shared.profiles.v1.ProfilesService.List:input_type -> shared.profiles.v1.ListRequest
-	0,  // 18: shared.profiles.v1.ProfilesService.Delete:input_type -> shared.profiles.v1.DeleteRequest
-	2,  // 19: shared.profiles.v1.ProfilesService.DeleteDataSubject:input_type -> shared.profiles.v1.DeleteDataSubjectRequest
-	4,  // 20: shared.profiles.v1.ProfilesService.GetDeletionRequest:input_type -> shared.profiles.v1.GetDeletionRequestRequest
-	9,  // 21: shared.profiles.v1.ProfilesService.Get:output_type -> shared.profiles.v1.GetResponse
-	7,  // 22: shared.profiles.v1.ProfilesService.GetByExternalId:output_type -> shared.profiles.v1.GetByExternalIdResponse
-	12, // 23: shared.profiles.v1.ProfilesService.List:output_type -> shared.profiles.v1.ListResponse
-	1,  // 24: shared.profiles.v1.ProfilesService.Delete:output_type -> shared.profiles.v1.DeleteResponse
-	3,  // 25: shared.profiles.v1.ProfilesService.DeleteDataSubject:output_type -> shared.profiles.v1.DeleteDataSubjectResponse
-	5,  // 26: shared.profiles.v1.ProfilesService.GetDeletionRequest:output_type -> shared.profiles.v1.GetDeletionRequestResponse
-	21, // [21:27] is the sub-list for method output_type
-	15, // [15:21] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	0,  // 0: shared.profiles.v1.DeleteResponse.status:type_name -> shared.profiles.v1.ComplianceRequestStatus
+	0,  // 1: shared.profiles.v1.DeleteDataSubjectResponse.status:type_name -> shared.profiles.v1.ComplianceRequestStatus
+	0,  // 2: shared.profiles.v1.GetDeletionRequestResponse.status:type_name -> shared.profiles.v1.ComplianceRequestStatus
+	16, // 3: shared.profiles.v1.GetDeletionRequestResponse.requested_at:type_name -> google.protobuf.Timestamp
+	16, // 4: shared.profiles.v1.GetDeletionRequestResponse.completed_at:type_name -> google.protobuf.Timestamp
+	15, // 5: shared.profiles.v1.GetByExternalIdResponse.profile:type_name -> shared.profiles.v1.Profile
+	15, // 6: shared.profiles.v1.GetResponse.profile:type_name -> shared.profiles.v1.Profile
+	17, // 7: shared.profiles.v1.FilterGroup.filters:type_name -> common.v1.PropertyFilter
+	18, // 8: shared.profiles.v1.FilterGroup.operator:type_name -> common.v1.LogicalOperator
+	11, // 9: shared.profiles.v1.ListRequest.filter_groups:type_name -> shared.profiles.v1.FilterGroup
+	18, // 10: shared.profiles.v1.ListRequest.filter_groups_operator:type_name -> common.v1.LogicalOperator
+	15, // 11: shared.profiles.v1.ListResponse.profiles:type_name -> shared.profiles.v1.Profile
+	16, // 12: shared.profiles.v1.ProfileActivitySummary.first_seen:type_name -> google.protobuf.Timestamp
+	16, // 13: shared.profiles.v1.ProfileActivitySummary.last_seen:type_name -> google.protobuf.Timestamp
+	16, // 14: shared.profiles.v1.Profile.create_time:type_name -> google.protobuf.Timestamp
+	19, // 15: shared.profiles.v1.Profile.properties:type_name -> google.protobuf.Struct
+	16, // 16: shared.profiles.v1.Profile.update_time:type_name -> google.protobuf.Timestamp
+	14, // 17: shared.profiles.v1.Profile.activity:type_name -> shared.profiles.v1.ProfileActivitySummary
+	9,  // 18: shared.profiles.v1.ProfilesService.Get:input_type -> shared.profiles.v1.GetRequest
+	7,  // 19: shared.profiles.v1.ProfilesService.GetByExternalId:input_type -> shared.profiles.v1.GetByExternalIdRequest
+	12, // 20: shared.profiles.v1.ProfilesService.List:input_type -> shared.profiles.v1.ListRequest
+	1,  // 21: shared.profiles.v1.ProfilesService.Delete:input_type -> shared.profiles.v1.DeleteRequest
+	2,  // 22: shared.profiles.v1.ProfilesService.DeleteDataSubject:input_type -> shared.profiles.v1.DeleteDataSubjectRequest
+	5,  // 23: shared.profiles.v1.ProfilesService.GetDeletionRequest:input_type -> shared.profiles.v1.GetDeletionRequestRequest
+	10, // 24: shared.profiles.v1.ProfilesService.Get:output_type -> shared.profiles.v1.GetResponse
+	8,  // 25: shared.profiles.v1.ProfilesService.GetByExternalId:output_type -> shared.profiles.v1.GetByExternalIdResponse
+	13, // 26: shared.profiles.v1.ProfilesService.List:output_type -> shared.profiles.v1.ListResponse
+	3,  // 27: shared.profiles.v1.ProfilesService.Delete:output_type -> shared.profiles.v1.DeleteResponse
+	4,  // 28: shared.profiles.v1.ProfilesService.DeleteDataSubject:output_type -> shared.profiles.v1.DeleteDataSubjectResponse
+	6,  // 29: shared.profiles.v1.ProfilesService.GetDeletionRequest:output_type -> shared.profiles.v1.GetDeletionRequestResponse
+	24, // [24:30] is the sub-list for method output_type
+	18, // [18:24] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_shared_profiles_v1_profiles_proto_init() }
@@ -1102,13 +1185,14 @@ func file_shared_profiles_v1_profiles_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_shared_profiles_v1_profiles_proto_rawDesc), len(file_shared_profiles_v1_profiles_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_shared_profiles_v1_profiles_proto_goTypes,
 		DependencyIndexes: file_shared_profiles_v1_profiles_proto_depIdxs,
+		EnumInfos:         file_shared_profiles_v1_profiles_proto_enumTypes,
 		MessageInfos:      file_shared_profiles_v1_profiles_proto_msgTypes,
 	}.Build()
 	File_shared_profiles_v1_profiles_proto = out.File

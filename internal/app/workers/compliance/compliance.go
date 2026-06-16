@@ -111,7 +111,7 @@ func runEraseConsumer(ctx context.Context, svc *coreprofiles.Service, natsClient
 	}
 
 	worker, err := natsworker.NewWorker(config, func(ctx context.Context, msg jetstream.Msg) error {
-		return handleErase(ctx, svc, msg.Data())
+		return handleErase(ctx, svc, msg.Data(), isLastEraseDelivery(ctx, msg, config.MaxDeliver))
 	}, natsClient)
 	if err != nil {
 		return err
@@ -120,7 +120,28 @@ func runEraseConsumer(ctx context.Context, svc *coreprofiles.Service, natsClient
 	return worker.Start(ctx)
 }
 
-func handleErase(ctx context.Context, svc *coreprofiles.Service, data []byte) error {
+// isLastEraseDelivery reports whether this is the final delivery before the
+// worker framework dead-letters the message. It mirrors the framework's own
+// last-delivery check so handleErase can record the failure on the ledger row
+// before the message is terminated. Unreadable metadata is treated as the last
+// delivery, matching the framework's conservative DLQ routing.
+func isLastEraseDelivery(ctx context.Context, msg jetstream.Msg, maxDeliver int) bool {
+	meta, err := msg.Metadata()
+	if err != nil {
+		slog.WarnContext(ctx, "failed reading erase message metadata; treating as last delivery", slogx.Error(err))
+		return true
+	}
+	return int(meta.NumDelivered) >= maxDeliver
+}
+
+// erasureExecutor is the slice of the profiles service that handleErase drives,
+// so the error classification + failure-recording can be unit-tested with a fake.
+type erasureExecutor interface {
+	ExecuteErasure(ctx context.Context, projectID, requestID string) error
+	MarkErasureFailed(ctx context.Context, projectID, requestID string, cause error) error
+}
+
+func handleErase(ctx context.Context, svc erasureExecutor, data []byte, lastDelivery bool) error {
 	msg := &workercompliancev1.EraseMessage{}
 	if err := proto.Unmarshal(data, msg); err != nil {
 		slog.ErrorContext(ctx, "failed to unmarshal compliance erase message", slogx.Error(err))
@@ -137,17 +158,47 @@ func handleErase(ctx context.Context, svc *coreprofiles.Service, data []byte) er
 	}
 
 	if err := svc.ExecuteErasure(ctx, msg.GetProjectId(), msg.GetRequestId()); err != nil {
-		// A missing request row is unrecoverable — the message can never succeed,
-		// so route it to the DLQ instead of retrying forever.
+		// A missing request row is unrecoverable and there is no row to mark
+		// failed — route straight to the DLQ instead of retrying forever.
 		if errors.Is(err, coreprofiles.ErrDeletionRequestNotFound) {
-			return natsworker.NewPermanentError(err).
-				With("worker", "compliance-erase").
-				With("request_id", msg.GetRequestId()).
-				With("project_id", msg.GetProjectId())
+			return permanentEraseError(err, msg)
 		}
-		// Transient PG/CH failures: return for Nak/retry. Frozen identifiers keep
-		// the retry correct even after events are deleted.
+		// A request that resolves no identifiers can never succeed. The row exists,
+		// so mark it failed, then route to the DLQ instead of retrying.
+		if errors.Is(err, coreprofiles.ErrNoErasableIdentifiers) {
+			markEraseFailed(ctx, svc, msg, err)
+			return permanentEraseError(err, msg)
+		}
+		// Transient PG/CH failure: return for Nak/retry. Frozen identifiers keep
+		// the retry correct even after events are deleted. On the final delivery
+		// the framework dead-letters this message and never retries it, so record
+		// the failure on the ledger row now — otherwise the DSAR audit trail is
+		// stuck at 'processing' forever.
+		if lastDelivery {
+			markEraseFailed(ctx, svc, msg, err)
+		}
 		return fmt.Errorf("execute erasure: %w", err)
 	}
 	return nil
+}
+
+// permanentEraseError wraps err so the worker framework dead-letters the message
+// (terminate, no retry), tagged with the subject for DLQ inspection.
+func permanentEraseError(err error, msg *workercompliancev1.EraseMessage) error {
+	return natsworker.NewPermanentError(err).
+		With("worker", "compliance-erase").
+		With("request_id", msg.GetRequestId()).
+		With("project_id", msg.GetProjectId())
+}
+
+// markEraseFailed records the failure on the ledger row before the message is
+// dead-lettered. The cause is already recorded at source; if the ledger write
+// itself fails the row stays 'processing' until a re-request re-drives it, so
+// this only logs the secondary failure.
+func markEraseFailed(ctx context.Context, svc erasureExecutor, msg *workercompliancev1.EraseMessage, cause error) {
+	if err := svc.MarkErasureFailed(ctx, msg.GetProjectId(), msg.GetRequestId(), cause); err != nil {
+		slog.ErrorContext(ctx, "could not mark erasure failed before dead-lettering",
+			slog.String("request_id", msg.GetRequestId()),
+			slog.String("project_id", msg.GetProjectId()), slogx.Error(err))
+	}
 }
