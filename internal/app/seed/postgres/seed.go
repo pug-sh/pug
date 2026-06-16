@@ -63,9 +63,31 @@ func (s *Seeder) run(ctx context.Context) (dbread.Project, error) {
 		if err != nil {
 			return dbread.Project{}, err
 		}
-		slog.InfoContext(ctx, "skipping profile seed, already populated",
-			slog.String("project_id", project.ID),
-		)
+
+		// Completeness is keyed on the customer row, but profiles are seeded
+		// outside the customer transaction — a crash mid-seed leaves the
+		// customer present with profiles partial. Re-counting the seeded
+		// user-%05d profiles lets us warn loudly (mirroring the ClickHouse
+		// backfill guard) instead of silently serving a thin dashboard.
+		var n int64
+		if err := s.deps.pg.QueryRow(ctx,
+			"SELECT count(*) FROM profiles WHERE project_id = $1 AND id LIKE 'user-%'", project.ID,
+		).Scan(&n); err != nil {
+			return dbread.Project{}, fmt.Errorf("count demo profiles: %w", err)
+		}
+		if n < profileCount {
+			slog.WarnContext(ctx, "incomplete demo profile seed detected, leaving partial profiles in place",
+				slog.String("project_id", project.ID),
+				slog.Int64("profiles", n),
+				slog.Int("expected", profileCount),
+				slog.String("recovery", "delete the demo customer (woof@pug.sh) and restart the demo worker to re-seed"),
+			)
+		} else {
+			slog.InfoContext(ctx, "skipping profile seed, already populated",
+				slog.String("project_id", project.ID),
+				slog.Int64("profiles", n),
+			)
+		}
 		return project, nil
 	}
 
@@ -323,7 +345,7 @@ func (s *Seeder) seedProfiles(ctx context.Context, projectID string) ([]string, 
 
 		// ~60% identified (with external_id), ~40% anonymous-only.
 		if rand.Float32() < 0.60 {
-			externalID := externalIDForProfile(props, i)
+			externalID := externalIDForProfile(i)
 			if _, err := w.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 				ID:         id,
 				ProjectID:  projectID,
@@ -464,12 +486,13 @@ func randomPushToken(platform string) string {
 	}
 }
 
-// externalIDForProfile returns a unique external ID per seed index.
-// Properties may include an email for realism, but external_id must stay unique:
+// externalIDForProfile returns a unique external ID per seed index. We
+// deliberately derive it from the index rather than the profile's email:
 // UpsertProfileByExternalID conflicts on (project_id, external_id) and updates
-// the existing row without creating the requested profile id, which breaks the
-// seeder's fixed user-%05d ids when attaching devices.
-func externalIDForProfile(_ map[string]any, i int) string {
+// the existing row without creating the requested profile id, so a non-unique
+// external_id would break the seeder's fixed user-%05d ids when attaching
+// devices.
+func externalIDForProfile(i int) string {
 	return fmt.Sprintf("cust_%06d", i)
 }
 

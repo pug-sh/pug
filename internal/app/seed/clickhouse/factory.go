@@ -1,12 +1,16 @@
 package seed
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pug-sh/pug/internal/slogx"
 )
 
 // ---------------------------------------------------------------------------
@@ -183,9 +187,6 @@ type sessionFactory struct {
 	memories map[string]*userMemory
 	tracker  *userSessionTracker
 	locs     map[string]*time.Location
-
-	geoWeights    []int
-	deviceWeights []int
 }
 
 func newSessionFactory() *sessionFactory {
@@ -193,12 +194,6 @@ func newSessionFactory() *sessionFactory {
 		memories: make(map[string]*userMemory),
 		tracker:  newUserSessionTracker(),
 		locs:     make(map[string]*time.Location),
-	}
-	for _, g := range geoPool {
-		f.geoWeights = append(f.geoWeights, g.weight)
-	}
-	for _, d := range deviceProfiles {
-		f.deviceWeights = append(f.deviceWeights, d.weight)
 	}
 
 	f.users = make([]userProfile, distinctIDPool)
@@ -309,12 +304,22 @@ func (f *sessionFactory) pickActiveUser(start, end time.Time) (*userProfile, tim
 	return u, start, end
 }
 
+// warnedMissingTZ dedupes the missing-timezone warning to one log per zone.
+var warnedMissingTZ sync.Map
+
 func (f *sessionFactory) location(name string) *time.Location {
 	if loc, ok := f.locs[name]; ok {
 		return loc
 	}
 	loc, err := time.LoadLocation(name)
 	if err != nil {
+		// Falling back to UTC silently would collapse every region's diurnal
+		// curve onto the same hours (a slim/distroless image without tzdata is
+		// the usual cause), so surface it once per zone.
+		if _, warned := warnedMissingTZ.LoadOrStore(name, struct{}{}); !warned {
+			slog.WarnContext(context.Background(), "timezone not found, defaulting to UTC (diurnal curve for this region will be wrong)",
+				slog.String("timezone", name), slogx.Error(err))
+		}
 		loc = time.UTC
 	}
 	f.locs[name] = loc
@@ -433,7 +438,7 @@ func (f *sessionFactory) sampleStart(geo geoEntry, mobile bool, start, end time.
 // cohort entry), purchase journeys during promo episodes, push journeys on
 // blast days, and crash/error journeys right after an app release.
 func (f *sessionFactory) journeyFor(u *userProfile, prof deviceProfile, sessionStart time.Time) journeyDef {
-	app := prof.platform == "ios" || prof.platform == "android"
+	app := isApp(prof.platform)
 
 	if sessionStart.Sub(u.join) < firstSessionWindow {
 		if app {
@@ -464,26 +469,27 @@ func (f *sessionFactory) journeyFor(u *userProfile, prof deviceProfile, sessionS
 	return pickJourney(prof.platform, u.member)
 }
 
+// isApp reports whether a platform is one of the native mobile apps (as opposed
+// to web), which run a different journey mix.
+func isApp(platform string) bool {
+	return platform == "ios" || platform == "android"
+}
+
 func pickJourney(platform string, member bool) journeyDef {
 	defs := webJourneys
-	if platform == "ios" || platform == "android" {
+	if isApp(platform) {
 		defs = appJourneys
 	}
+	weights := make([]int, len(defs))
+	for i, d := range defs {
+		weights[i] = d.weight
+	}
 	for {
-		total := 0
-		for _, d := range defs {
-			total += d.weight
+		d := defs[weightedIndex(weights)]
+		if d.memberOnly && !member {
+			continue // member-only journey drawn for a non-member; redraw
 		}
-		n := rand.IntN(total)
-		for _, d := range defs {
-			n -= d.weight
-			if n < 0 {
-				if d.memberOnly && !member {
-					break // redraw
-				}
-				return d
-			}
-		}
+		return d
 	}
 }
 
@@ -496,7 +502,7 @@ func pickJourney(platform string, member bool) journeyDef {
 // commerce activity.
 func (f *sessionFactory) botSession(anchor, end time.Time) []event {
 	bp := botProfiles[rand.IntN(len(botProfiles))]
-	geo := geoPool[weightedIndex(f.geoWeights)]
+	geo := geoPool[weightedIndex(geoWeightsAll())]
 	distinctID := fmt.Sprintf("bot-%04d", rand.IntN(botIDPool))
 	sessionID := uuid.New().String()
 

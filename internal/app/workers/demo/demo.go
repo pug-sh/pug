@@ -92,6 +92,30 @@ func Run(ctx context.Context) error {
 	return StartWorker(ctx, natsClient, cfg, projectID)
 }
 
+type seedAction int
+
+const (
+	seedSkip        seedAction = iota // enough events present; go straight to live traffic
+	seedWarnPartial                   // interrupted backfill; leave partial history, warn
+	seedBackfill                      // empty project; run the one-time backfill
+)
+
+// decideSeedAction picks the backfill action from the current event count. A
+// finished backfill inserts exactly seedCount rows and live traffic only grows
+// it from there, so n >= seedCount means a prior run completed. 0 < n <
+// seedCount is an interrupted backfill that re-running can't repair (random
+// event ids defeat ReplacingMergeTree dedup). n == 0 is a fresh project.
+func decideSeedAction(n uint64, seedCount int64) seedAction {
+	switch {
+	case n >= uint64(seedCount):
+		return seedSkip
+	case n > 0:
+		return seedWarnPartial
+	default:
+		return seedBackfill
+	}
+}
+
 // ensureSeed derives the demo project from the demo user and backfills it the
 // first time the worker starts against an empty ClickHouse. It always ensures
 // the Postgres customer/org/project + profiles exist (creating them on a fresh
@@ -142,14 +166,14 @@ func ensureSeed(ctx context.Context, cfg Config) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("check demo data: %w", err)
 	}
-	if n >= uint64(cfg.SeedCount) {
+	switch decideSeedAction(n, cfg.SeedCount) {
+	case seedSkip:
 		slog.InfoContext(ctx, "demo data present, skipping backfill",
 			slog.String("project_id", project.ID),
 			slog.Uint64("events", n),
 		)
 		return project.ID, nil
-	}
-	if n > 0 {
+	case seedWarnPartial:
 		// A previous backfill was interrupted before it finished. Re-running
 		// would duplicate rather than repair (each event has a random id the
 		// ReplacingMergeTree can't dedup across runs), so surface it loudly
@@ -182,9 +206,11 @@ type worker struct {
 	projectID string
 }
 
-// liveBotShare sets the flat crawler session rate relative to the configured
-// human peak. Bots don't follow the diurnal curve — they crawl around the
-// clock, so the bot share of traffic realistically rises at night.
+// liveBotShare sets the flat crawler session rate as a fraction of the
+// configured human peak. ~4% keeps the bot filters and bot-score charts
+// populated without crawlers dominating the live map. Bots don't follow the
+// diurnal curve — they crawl around the clock — so their share of total traffic
+// naturally rises at night when human traffic dips.
 const liveBotShare = 0.04
 
 func StartWorker(ctx context.Context, natsClient *nats.NATSClient, cfg Config, projectID string) error {
@@ -199,29 +225,38 @@ func StartWorker(ctx context.Context, natsClient *nats.NATSClient, cfg Config, p
 		slog.Float64("peak_sessions_per_min", cfg.PeakSessionsPerMin),
 	)
 
-	var wg sync.WaitGroup
-	defer wg.Wait()
+	// players tracks in-flight session goroutines; loops tracks the two
+	// long-lived spawn loops. Keeping them separate means players only ever
+	// gets Add'd from inside a running loop, so the final players.Wait() can't
+	// race a concurrent Add — loops drain first (on ctx cancel), then sessions.
+	var players, loops sync.WaitGroup
+	defer players.Wait()
 
 	// Crawlers: constant low rate, 24/7.
-	wg.Go(func() {
-		w.spawnLoop(ctx, &wg, func() float64 { return cfg.PeakSessionsPerMin * liveBotShare }, func() {
+	loops.Go(func() {
+		w.spawnLoop(ctx, &players, func() float64 { return cfg.PeakSessionsPerMin * liveBotShare }, func() {
 			w.play(ctx, w.gen.LiveBotSession(time.Now()))
 		})
 	})
 
 	// Humans: rate follows the diurnal/weekly/episode curve.
-	w.spawnLoop(ctx, &wg, func() float64 {
-		return cfg.PeakSessionsPerMin * seed.TrafficFactor(time.Now())
-	}, func() {
-		w.play(ctx, w.gen.LiveSession(time.Now()))
+	loops.Go(func() {
+		w.spawnLoop(ctx, &players, func() float64 {
+			return cfg.PeakSessionsPerMin * seed.TrafficFactor(time.Now())
+		}, func() {
+			w.play(ctx, w.gen.LiveSession(time.Now()))
+		})
 	})
+
+	loops.Wait()
 	return nil
 }
 
 // spawnLoop spawns sessions as a Poisson process whose rate (sessions/min)
 // is re-evaluated before each arrival. Delays are clamped so a quiet curve
-// still emits something and a spike can't busy-loop.
-func (w *worker) spawnLoop(ctx context.Context, wg *sync.WaitGroup, rate func() float64, spawn func()) {
+// still emits something and a spike can't busy-loop. Each spawned session is
+// tracked on players so shutdown can wait for in-flight publishes.
+func (w *worker) spawnLoop(ctx context.Context, players *sync.WaitGroup, rate func() float64, spawn func()) {
 	for {
 		mean := time.Duration(float64(time.Minute) / rate())
 		delay := time.Duration(float64(mean) * rand.ExpFloat64())
@@ -233,7 +268,7 @@ func (w *worker) spawnLoop(ctx context.Context, wg *sync.WaitGroup, rate func() 
 		case <-time.After(delay):
 		}
 
-		wg.Go(spawn)
+		players.Go(spawn)
 	}
 }
 

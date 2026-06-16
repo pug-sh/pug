@@ -5,44 +5,6 @@ import (
 	"time"
 )
 
-func TestInferKind(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{input: "view", want: "page_view"},
-		{input: "cart", want: "add_to_cart"},
-		{input: "purchase", want: "purchase"},
-		{input: "order-123", want: "purchase"},
-		{input: "", want: "page_view"},
-	}
-
-	for _, tt := range tests {
-		if got := inferKind(tt.input); got != tt.want {
-			t.Errorf("inferKind(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
-func TestIsEventType(t *testing.T) {
-	tests := []struct {
-		input string
-		want  bool
-	}{
-		{input: "view", want: true},
-		{input: "cart", want: true},
-		{input: "purchase", want: true},
-		{input: "signup", want: false},
-		{input: "order-123", want: false},
-	}
-
-	for _, tt := range tests {
-		if got := isEventType(tt.input); got != tt.want {
-			t.Errorf("isEventType(%q) = %v, want %v", tt.input, got, tt.want)
-		}
-	}
-}
-
 func TestClampOccurTime(t *testing.T) {
 	max := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
 	past := max.Add(-time.Hour)
@@ -135,6 +97,31 @@ func TestUserPoolDeterministic(t *testing.T) {
 			if ua.devices[j].platform != ub.devices[j].platform || ua.devices[j].device != ub.devices[j].device {
 				t.Fatalf("user %d device %d differs: %+v vs %+v", i, j, ua.devices[j], ub.devices[j])
 			}
+		}
+	}
+}
+
+// DemoUsers (the postgres profile seeder's view of a user) must agree with the
+// event generator's view, or seeded profiles drift from the events they belong
+// to — same city, membership, and join date for the same distinct id.
+func TestDemoUsersMatchFactory(t *testing.T) {
+	f := newSessionFactory()
+	users := DemoUsers(len(f.users))
+	if len(users) != len(f.users) {
+		t.Fatalf("DemoUsers returned %d users, factory has %d", len(users), len(f.users))
+	}
+
+	for _, i := range []int{0, 1, 42, 100, 999, 5000, len(f.users) - 1} {
+		want, got := f.users[i], users[i]
+		switch {
+		case got.ID != want.id:
+			t.Errorf("user %d: ID = %q, want %q", i, got.ID, want.id)
+		case got.City != want.geo.city:
+			t.Errorf("user %d: City = %q, want %q", i, got.City, want.geo.city)
+		case got.Member != want.member:
+			t.Errorf("user %d: Member = %v, want %v", i, got.Member, want.member)
+		case !got.Join.Equal(want.join):
+			t.Errorf("user %d: Join = %v, want %v", i, got.Join, want.join)
 		}
 	}
 }
