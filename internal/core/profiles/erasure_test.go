@@ -188,7 +188,7 @@ func TestErasure_FullEraseReachesEventsAndRollups(t *testing.T) {
 		t.Errorf("request status = %q, want completed", dr.Status)
 	}
 	if dr.EventsAffected != 5 {
-		t.Errorf("events_deleted = %d, want 5", dr.EventsAffected)
+		t.Errorf("events_identified = %d, want 5", dr.EventsAffected)
 	}
 	if !dr.CompletedAt.Valid {
 		t.Error("completed_at is NULL, want set")
@@ -259,7 +259,7 @@ func TestErasure_ByExternalIDWithNoProfile(t *testing.T) {
 		t.Errorf("status = %q, want completed", dr.Status)
 	}
 	if dr.EventsAffected != 4 {
-		t.Errorf("events_deleted = %d, want 4", dr.EventsAffected)
+		t.Errorf("events_identified = %d, want 4", dr.EventsAffected)
 	}
 	if dr.ProfileID.Valid {
 		t.Errorf("profile_id = %q, want NULL (no profile resolved)", dr.ProfileID.String)
@@ -360,7 +360,7 @@ func TestErasure_ByID_FullErase(t *testing.T) {
 		t.Errorf("status = %q, want completed", dr.Status)
 	}
 	if dr.EventsAffected != 4 {
-		t.Errorf("events_deleted = %d, want 4", dr.EventsAffected)
+		t.Errorf("events_identified = %d, want 4", dr.EventsAffected)
 	}
 	if !dr.ProfileID.Valid || dr.ProfileID.String != profileID {
 		t.Errorf("recorded profile_id = %v, want %q", dr.ProfileID, profileID)

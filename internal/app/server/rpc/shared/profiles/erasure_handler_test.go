@@ -60,8 +60,8 @@ func TestToDeletionRequestResponse_MapsAllFields(t *testing.T) {
 	if resp.GetStatus() != profilesv1.ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_FAILED {
 		t.Errorf("status = %v, want FAILED", resp.GetStatus())
 	}
-	if resp.GetEventsDeleted() != 42 {
-		t.Errorf("events_deleted = %d, want 42", resp.GetEventsDeleted())
+	if resp.GetEventsIdentified() != 42 {
+		t.Errorf("events_identified = %d, want 42", resp.GetEventsIdentified())
 	}
 	if resp.GetExternalId() != "ext-1" {
 		t.Errorf("external_id = %q, want ext-1", resp.GetExternalId())
@@ -106,8 +106,8 @@ func TestToDeletionRequestResponse_OmitsNullOptionalFields(t *testing.T) {
 	if resp.Error != nil {
 		t.Errorf("error = %v, want unset", resp.Error)
 	}
-	if resp.GetEventsDeleted() != 0 {
-		t.Errorf("events_deleted = %d, want 0", resp.GetEventsDeleted())
+	if resp.GetEventsIdentified() != 0 {
+		t.Errorf("events_identified = %d, want 0", resp.GetEventsIdentified())
 	}
 }
 

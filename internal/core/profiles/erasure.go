@@ -123,10 +123,10 @@ func (s *Service) RequestErasureByExternalID(ctx context.Context, projectID, ext
 }
 
 // requestErasure is the shared synchronous prelude: create the audit row, soft
-// delete the PostgreSQL profile and deactivate its devices (when one exists),
-// then publish the erase message for the worker, which hard-deletes every store
-// including the ClickHouse profile. profileID is "" when erasing by external_id
-// with no resolved profile.
+// delete the PostgreSQL profile and deactivate its devices (when a profile
+// resolved), then publish the erase message for the worker, which hard-deletes
+// every store including the ClickHouse profile. profileID is "" when erasing by
+// external_id with no resolved profile.
 func (s *Service) requestErasure(ctx context.Context, projectID, externalID, profileID, requestedBy string) (string, ComplianceStatus, error) {
 	requestID := xid.New().String()
 
@@ -618,9 +618,11 @@ func (s *Service) eraseClickHouse(ctx context.Context, projectID, profileID stri
 	return nil
 }
 
-// execMutation runs a ClickHouse ALTER ... DELETE with mutations_sync = 1 so the
-// call blocks until the rows are physically removed — required to prove erasure
-// (a lightweight delete would defer physical removal to a later merge).
+// execMutation runs a ClickHouse heavyweight ALTER ... DELETE with
+// mutations_sync = 1 so the call blocks until the rows are physically removed —
+// required to prove erasure. (ClickHouse's lightweight DELETE FROM only marks
+// rows and defers physical removal to a later merge, so it can't prove erasure;
+// mutations_sync does not apply to it.)
 func (s *Service) execMutation(ctx context.Context, query string, args ...any) error {
 	return s.ch.Exec(ctx, query+" SETTINGS mutations_sync = 1", args...)
 }

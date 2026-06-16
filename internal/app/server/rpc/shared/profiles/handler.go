@@ -140,10 +140,10 @@ func complianceStatusToProto(s coreprofiles.ComplianceStatus) profilesv1.Complia
 
 func toDeletionRequestResponse(dr dbread.ComplianceRequest) *profilesv1.GetDeletionRequestResponse {
 	resp := &profilesv1.GetDeletionRequestResponse{
-		RequestId:     proto.String(dr.ID),
-		Status:        complianceStatusToProto(coreprofiles.ComplianceStatus(dr.Status)).Enum(),
-		EventsDeleted: proto.Int64(dr.EventsAffected),
-		RequestedAt:   postgres.TimestamptzToTimestamp(dr.RequestedAt),
+		RequestId:        proto.String(dr.ID),
+		Status:           complianceStatusToProto(coreprofiles.ComplianceStatus(dr.Status)).Enum(),
+		EventsIdentified: proto.Int64(dr.EventsAffected),
+		RequestedAt:      postgres.TimestamptzToTimestamp(dr.RequestedAt),
 	}
 	if dr.ExternalID.Valid {
 		resp.ExternalId = proto.String(dr.ExternalID.String)

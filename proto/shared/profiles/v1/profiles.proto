@@ -69,10 +69,11 @@ message GetDeletionRequestResponse {
   string external_id = 2;
   string profile_id = 3;
   ComplianceRequestStatus status = 4;
-  // Number of event rows erased. Projects the compliance_requests.events_affected
-  // column (named generically because the same ledger serves export); for an
-  // erasure that count is the rows deleted, recorded when the request is frozen.
-  int64 events_deleted = 5;
+  // Number of event rows identified for erasure when the request was frozen
+  // (counted just before the deletes run, not reconciled to rows physically
+  // removed). Projects the compliance_requests.events_affected column, named
+  // generically because the same ledger serves export.
+  int64 events_identified = 5;
   google.protobuf.Timestamp requested_at = 6;
   google.protobuf.Timestamp completed_at = 7;
   // Failure reason when status is FAILED (the compliance_requests.error column);

@@ -2,6 +2,7 @@ package profiles
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -13,6 +14,22 @@ import (
 	"github.com/pug-sh/pug/internal/testutil"
 	"github.com/rs/xid"
 )
+
+// TestFreezeIdentifiers_EmptyRequestRefuses pins the DSAR-correctness guard: a
+// request that resolves to no external_id and no profile must fail with
+// ErrNoErasableIdentifiers rather than freeze an empty set and let the worker
+// mark it 'completed' — a completed erasure that deleted nothing would silently
+// misreport fulfilment. A unit test (no infra): an all-empty request never
+// reaches ClickHouse, so resolveDistinctIDs returns empty and the guard fires.
+func TestFreezeIdentifiers_EmptyRequestRefuses(t *testing.T) {
+	svc := NewService(nil, nil, nil)
+	req := dbread.ComplianceRequest{ID: "req-empty", ProjectID: "proj-1"}
+
+	_, _, err := svc.freezeIdentifiers(context.Background(), &req)
+	if !errors.Is(err, ErrNoErasableIdentifiers) {
+		t.Fatalf("freezeIdentifiers err = %v, want ErrNoErasableIdentifiers", err)
+	}
+}
 
 func TestChInClause(t *testing.T) {
 	clause, args := chInClause([]string{"a", "b", "c"})
@@ -120,6 +137,99 @@ func TestErasure_FrozenIdentifiersSurviveEventDeletion(t *testing.T) {
 	if got := chCountInternal(t, ctx, ch,
 		"SELECT count() FROM dashboard_session_rollup WHERE project_id = ? AND toString(session_id) = ?", projectID, session); got != 0 {
 		t.Errorf("session rollup remains: %d (frozen session id was not used on retry)", got)
+	}
+}
+
+// TestErasure_PartialEraseRetryCompletes covers the partial-failure contract of
+// eraseClickHouse: the mutations run sequentially with no surrounding transaction
+// (ClickHouse has none), so a crash after some stores are deleted leaves the rest
+// behind. A retry must re-run every (idempotent) mutation off the frozen set and
+// drive the request to 'completed'. Here we delete only the events table to
+// simulate a first pass that died before clearing the activity-state and session
+// rollups, then assert the retry cleans them and marks the row completed.
+func TestErasure_PartialEraseRetryCompletes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	tn := testutil.SetupNATS(t)
+	t.Setenv("NATS_URL", tn.URL)
+
+	natsClient, err := natsdeps.New(ctx)
+	if err != nil {
+		t.Fatalf("create nats client: %v", err)
+	}
+	defer natsClient.Close()
+
+	orgID := xid.New().String()
+	projectID := xid.New().String()
+	if _, err := pg.PgW.Exec(ctx, `INSERT INTO orgs (id, display_name) VALUES ($1, $2)`, orgID, "test-org"); err != nil {
+		t.Fatalf("insert org: %v", err)
+	}
+	if _, err := pg.PgW.Exec(ctx,
+		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
+		projectID, orgID, "test-project", xid.New().String()+"priv", xid.New().String()+"pub",
+	); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	const distinctID = "partial@example.com"
+	session := uuid.NewString()
+	for range 3 {
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, distinctID, "page_view", session,
+			map[string]string{}, map[string]string{}, now)
+	}
+
+	svc := NewService(pg.PgW, ch.Conn, natsClient)
+
+	requestID := xid.New().String()
+	if _, err := svc.write.CreateComplianceRequest(ctx, dbwrite.CreateComplianceRequestParams{
+		ID: requestID, ProjectID: projectID, Kind: string(ComplianceKindErase),
+		ExternalID: postgres.NewOptionalText(distinctID),
+	}); err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	if _, err := svc.write.FreezeComplianceRequestIdentifiers(ctx, dbwrite.FreezeComplianceRequestIdentifiersParams{
+		ID: requestID, ProjectID: projectID,
+		DistinctIds: []string{distinctID}, SessionIds: []string{session}, EventsAffected: 3,
+	}); err != nil {
+		t.Fatalf("freeze identifiers: %v", err)
+	}
+
+	// Simulate a first pass that deleted only the events table before crashing.
+	if err := svc.execMutation(ctx,
+		"ALTER TABLE events DELETE WHERE project_id = ? AND distinct_id = ?", projectID, distinctID); err != nil {
+		t.Fatalf("simulate partial erase: %v", err)
+	}
+	if got := chCountInternal(t, ctx, ch,
+		"SELECT count() FROM distinct_id_activity_states WHERE project_id = ? AND distinct_id = ?", projectID, distinctID); got == 0 {
+		t.Fatal("setup: activity state already gone; cannot prove the retry cleans it")
+	}
+
+	// Retry: must clean the stores the partial pass left behind and complete.
+	if err := svc.ExecuteErasure(ctx, projectID, requestID); err != nil {
+		t.Fatalf("ExecuteErasure: %v", err)
+	}
+
+	if got := chCountInternal(t, ctx, ch,
+		"SELECT count() FROM distinct_id_activity_states WHERE project_id = ? AND distinct_id = ?", projectID, distinctID); got != 0 {
+		t.Errorf("activity state remains: %d", got)
+	}
+	if got := chCountInternal(t, ctx, ch,
+		"SELECT count() FROM dashboard_session_rollup WHERE project_id = ? AND toString(session_id) = ?", projectID, session); got != 0 {
+		t.Errorf("session rollup remains: %d", got)
+	}
+
+	req, err := svc.read.GetComplianceRequestByID(ctx, dbread.GetComplianceRequestByIDParams{ID: requestID, ProjectID: projectID})
+	if err != nil {
+		t.Fatalf("load request: %v", err)
+	}
+	if ComplianceStatus(req.Status) != ComplianceStatusCompleted {
+		t.Errorf("status = %q, want completed", req.Status)
 	}
 }
 

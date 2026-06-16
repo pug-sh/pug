@@ -329,12 +329,13 @@ type GetDeletionRequestResponse struct {
 	ExternalId *string                  `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
 	ProfileId  *string                  `protobuf:"bytes,3,opt,name=profile_id,json=profileId" json:"profile_id,omitempty"`
 	Status     *ComplianceRequestStatus `protobuf:"varint,4,opt,name=status,enum=shared.profiles.v1.ComplianceRequestStatus" json:"status,omitempty"`
-	// Number of event rows erased. Projects the compliance_requests.events_affected
-	// column (named generically because the same ledger serves export); for an
-	// erasure that count is the rows deleted, recorded when the request is frozen.
-	EventsDeleted *int64                 `protobuf:"varint,5,opt,name=events_deleted,json=eventsDeleted" json:"events_deleted,omitempty"`
-	RequestedAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=requested_at,json=requestedAt" json:"requested_at,omitempty"`
-	CompletedAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=completed_at,json=completedAt" json:"completed_at,omitempty"`
+	// Number of event rows identified for erasure when the request was frozen
+	// (counted just before the deletes run, not reconciled to rows physically
+	// removed). Projects the compliance_requests.events_affected column, named
+	// generically because the same ledger serves export.
+	EventsIdentified *int64                 `protobuf:"varint,5,opt,name=events_identified,json=eventsIdentified" json:"events_identified,omitempty"`
+	RequestedAt      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=requested_at,json=requestedAt" json:"requested_at,omitempty"`
+	CompletedAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=completed_at,json=completedAt" json:"completed_at,omitempty"`
 	// Failure reason when status is FAILED (the compliance_requests.error column);
 	// empty otherwise.
 	Error         *string `protobuf:"bytes,8,opt,name=error" json:"error,omitempty"`
@@ -400,9 +401,9 @@ func (x *GetDeletionRequestResponse) GetStatus() ComplianceRequestStatus {
 	return ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_UNSPECIFIED
 }
 
-func (x *GetDeletionRequestResponse) GetEventsDeleted() int64 {
-	if x != nil && x.EventsDeleted != nil {
-		return *x.EventsDeleted
+func (x *GetDeletionRequestResponse) GetEventsIdentified() int64 {
+	if x != nil && x.EventsIdentified != nil {
+		return *x.EventsIdentified
 	}
 	return 0
 }
@@ -1022,7 +1023,7 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"\x06status\x18\x02 \x01(\x0e2+.shared.profiles.v1.ComplianceRequestStatusR\x06status\"B\n" +
 	"\x19GetDeletionRequestRequest\x12%\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\trequestId\"\xfb\x02\n" +
+	"request_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\trequestId\"\x81\x03\n" +
 	"\x1aGetDeletionRequestResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1f\n" +
@@ -1030,8 +1031,8 @@ const file_shared_profiles_v1_profiles_proto_rawDesc = "" +
 	"externalId\x12\x1d\n" +
 	"\n" +
 	"profile_id\x18\x03 \x01(\tR\tprofileId\x12C\n" +
-	"\x06status\x18\x04 \x01(\x0e2+.shared.profiles.v1.ComplianceRequestStatusR\x06status\x12%\n" +
-	"\x0eevents_deleted\x18\x05 \x01(\x03R\reventsDeleted\x12=\n" +
+	"\x06status\x18\x04 \x01(\x0e2+.shared.profiles.v1.ComplianceRequestStatusR\x06status\x12+\n" +
+	"\x11events_identified\x18\x05 \x01(\x03R\x10eventsIdentified\x12=\n" +
 	"\frequested_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vrequestedAt\x12=\n" +
 	"\fcompleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x14\n" +
 	"\x05error\x18\b \x01(\tR\x05error\"A\n" +
