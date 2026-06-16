@@ -18,7 +18,7 @@
 ARG CMD=server
 
 # ---- build ----
-FROM --platform=$BUILDPLATFORM golang:1.26.3-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.3-trixie AS build
 WORKDIR /src
 
 # Module download as its own cached layer (only re-runs when go.mod/go.sum change).
@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath -ldflags="-s -w" -o /out/app ./cmd/${CMD}
 
 # ---- app runtime: server only, binary only (reads nothing from schema/) ----
-FROM gcr.io/distroless/static-debian12:nonroot AS app
+FROM gcr.io/distroless/static-debian13:nonroot AS app
 WORKDIR /app
 COPY --from=build /out/app /app/app
 # Documents the default server port (PUG_SERVER_PORT). Informational only.
@@ -49,7 +49,7 @@ ENTRYPOINT ["/app/app"]
 # startup (GetConsumerConfigByName), resolved relative to cwd — so WORKDIR must stay /app.
 # The whole schema/nats dir is copied for simplicity; streams.yaml rides along but is read
 # only by the migrate/nats role, not by workers.
-FROM gcr.io/distroless/static-debian12:nonroot AS worker
+FROM gcr.io/distroless/static-debian13:nonroot AS worker
 WORKDIR /app
 COPY --from=build /src/schema/nats ./schema/nats
 COPY --from=build /out/app /app/app
@@ -58,7 +58,7 @@ ENTRYPOINT ["/app/app"]
 
 # ---- migrate runtime: binary + schema assets ----
 # WORKDIR must stay /app so the migrate roles resolve schema/ relative to cwd.
-FROM gcr.io/distroless/static-debian12:nonroot AS migrate
+FROM gcr.io/distroless/static-debian13:nonroot AS migrate
 WORKDIR /app
 COPY --from=build /src/schema/postgres/migrations   ./schema/postgres/migrations
 COPY --from=build /src/schema/clickhouse/migrations ./schema/clickhouse/migrations
