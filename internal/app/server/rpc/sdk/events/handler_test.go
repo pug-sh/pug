@@ -71,14 +71,14 @@ func TestEnrichGeo(t *testing.T) {
 		{
 			"all geo fields set",
 			geo.Location{
-				geo.PropIP: "1.2.3.4", geo.PropContinent: "NA", geo.PropCountry: "US",
+				geo.PropContinent: "NA", geo.PropCountry: "US",
 				geo.PropRegion: "California", geo.PropCity: "San Francisco",
 				geo.PropPostalCode: "94105", geo.PropMetroCode: "807",
 				geo.PropLatitude: "37.7749", geo.PropLongitude: "-122.4194", geo.PropTimezone: "America/Los_Angeles",
 			},
 			[]*eventsv1.Event{{}},
 			map[string]string{
-				geo.PropIP: "1.2.3.4", geo.PropContinent: "NA", geo.PropCountry: "US",
+				geo.PropContinent: "NA", geo.PropCountry: "US",
 				geo.PropRegion: "California", geo.PropCity: "San Francisco",
 				geo.PropPostalCode: "94105", geo.PropMetroCode: "807",
 				geo.PropLatitude: "37.7749", geo.PropLongitude: "-122.4194", geo.PropTimezone: "America/Los_Angeles",
@@ -119,6 +119,31 @@ func TestEnrichGeo(t *testing.T) {
 			geo.Location{geo.PropCountry: "ServerSide"},
 			[]*eventsv1.Event{{AutoProperties: propMap(map[string]string{geo.PropCountry: "ClientSide"})}},
 			map[string]string{geo.PropCountry: "ServerSide"},
+		},
+		{
+			// $ip is personal data and is never stored. Our SDKs never send it, but
+			// the SDK endpoint assumes untrusted callers — a hand-crafted request
+			// must not be able to smuggle an IP into storage via auto_properties.
+			"client-supplied $ip is stripped",
+			geo.Location{geo.PropCountry: "US"},
+			[]*eventsv1.Event{{AutoProperties: propMap(map[string]string{geo.PropIP: "9.9.9.9", "$browser": "Chrome"})}},
+			map[string]string{geo.PropCountry: "US", "$browser": "Chrome"},
+		},
+		{
+			// The strip runs even when the provider returns no location (the
+			// empty-location early-return must not skip it).
+			"client-supplied $ip stripped with empty location",
+			geo.Location{},
+			[]*eventsv1.Event{{AutoProperties: propMap(map[string]string{geo.PropIP: "9.9.9.9", "$browser": "Chrome"})}},
+			map[string]string{"$browser": "Chrome"},
+		},
+		{
+			// Defense in depth: even if a provider's Location carries $ip, it is
+			// dropped before merge and never reaches the event.
+			"provider $ip is dropped",
+			geo.Location{geo.PropIP: "1.2.3.4", geo.PropCountry: "US"},
+			[]*eventsv1.Event{{}},
+			map[string]string{geo.PropCountry: "US"},
 		},
 		{
 			"metro targeting fields",

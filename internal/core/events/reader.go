@@ -18,7 +18,6 @@ import (
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
-	"github.com/pug-sh/pug/internal/geo"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -830,7 +829,6 @@ type ProfileStats struct {
 	Device         string
 	Country        string
 	City           string
-	IP             string
 }
 
 // queryProfileStats runs the aggregate stats query and extracts auto_properties
@@ -849,7 +847,6 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 			"argMax(device, occur_time) AS latest_device",
 			"argMax(country, occur_time) AS latest_country",
 			"argMax(city, occur_time) AS latest_city",
-			"argMax(auto_properties, occur_time) AS latest_props",
 		).
 		From("events").
 		Where(
@@ -897,7 +894,6 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 	var stats ProfileStats
 	var totalEvents uint64
 	var latestBrowser, latestBrowserVersion, latestOS, latestOSVersion, latestDevice, latestCountry, latestCity string
-	var rawLatestProps map[string]chcol.Variant
 	if err := rows.Scan(
 		&stats.FirstSeen,
 		&stats.LastSeen,
@@ -909,7 +905,6 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 		&latestDevice,
 		&latestCountry,
 		&latestCity,
-		&rawLatestProps,
 	); err != nil {
 		slog.ErrorContext(ctx, "queryProfileStats: scan failed", slogx.Error(err),
 			slog.String("project_id", projectID))
@@ -928,8 +923,6 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 		return nil, nil
 	}
 
-	latestProps := unwrapPropertyMap(ctx, rawLatestProps)
-
 	stats.Browser = latestBrowser
 	stats.BrowserVersion = latestBrowserVersion
 	stats.OS = latestOS
@@ -937,16 +930,8 @@ func (r *Reader) queryProfileStats(ctx context.Context, projectID string, ids []
 	stats.Device = latestDevice
 	stats.Country = latestCountry
 	stats.City = latestCity
-	stats.IP = stringProp(latestProps, geo.PropIP)
 
 	return &stats, nil
-}
-
-func stringProp(props map[string]any, key string) string {
-	if v, ok := props[key].(string); ok {
-		return v
-	}
-	return ""
 }
 
 // GetProfileStats returns aggregate event statistics and latest-event context (over all time),

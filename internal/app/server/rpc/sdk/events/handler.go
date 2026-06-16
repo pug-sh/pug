@@ -120,7 +120,16 @@ func (s *Server) enrichUserAgent(ctx context.Context, projectID string, h http.H
 }
 
 func (s *Server) enrichGeo(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {
+	// The visitor IP is personal data and must never be persisted: strip any
+	// client-supplied $ip from every event so it can never reach NATS/ClickHouse.
+	// The geo provider uses the IP only transiently for lookup and does not emit
+	// it in the Location.
+	for _, event := range events {
+		delete(event.AutoProperties, geo.PropIP)
+	}
+
 	loc := s.geoProvider.Locate(h)
+	delete(loc, geo.PropIP) // defensive: never let a provider leak $ip into storage
 	if len(loc) == 0 {
 		slog.DebugContext(ctx, "geo location empty, skipping enrichment", slog.String("project_id", projectID))
 		return

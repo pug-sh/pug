@@ -1732,7 +1732,6 @@ func TestGetProfileStats(t *testing.T) {
 		"$osVersion":      "6",
 		"$country":        "Germany",
 		"$city":           "Berlin",
-		"$ip":             "10.0.0.1",
 	}
 	latestProps := map[string]string{
 		"$browser":        "Chrome",
@@ -1742,7 +1741,6 @@ func TestGetProfileStats(t *testing.T) {
 		"$device":         "MacBook",
 		"$country":        "United States",
 		"$city":           "San Francisco",
-		"$ip":             "10.0.0.2",
 	}
 
 	// Day -5: 1 event with old props.
@@ -1823,9 +1821,6 @@ func TestGetProfileStats(t *testing.T) {
 		}
 		if stats.Country != "United States" {
 			t.Errorf("Country: got %q, want %q", stats.Country, "United States")
-		}
-		if stats.IP != "10.0.0.2" {
-			t.Errorf("IP: got %q, want %q", stats.IP, "10.0.0.2")
 		}
 
 		// Heatmap should contain days within the last 60 days.
@@ -1938,9 +1933,6 @@ func TestGetProfileStats(t *testing.T) {
 		}
 		if stats.Country != "" {
 			t.Errorf("Country: got %q, want empty string", stats.Country)
-		}
-		if stats.IP != "" {
-			t.Errorf("IP: got %q, want empty string", stats.IP)
 		}
 	})
 }

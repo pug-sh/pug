@@ -7,6 +7,11 @@ import (
 
 // Auto-property keys used by geo providers.
 const (
+	// PropIP is the visitor IP key. The IP is personal data and is never
+	// persisted: the ingestion path strips it from every event so it cannot
+	// reach NATS or ClickHouse, and providers must not emit it in their
+	// Location. Kept only so the strip logic and IP-lookup providers can refer
+	// to the canonical key.
 	PropIP         = "$ip"
 	PropContinent  = "$continent"
 	PropCountry    = "$country"

@@ -1439,14 +1439,14 @@ func TestBuildAutoPropertyValuesQuery(t *testing.T) {
 	})
 
 	t.Run("auto_map_fallback", func(t *testing.T) {
-		sql, args, err := insights.BuildAutoPropertyValuesQuery("proj_1", "$ip", "")
+		sql, args, err := insights.BuildAutoPropertyValuesQuery("proj_1", "$timezone", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !strings.Contains(sql, "CAST(auto_properties[?] AS Nullable(String)) AS value") {
 			t.Errorf("expected map access in SQL, got: %s", sql)
 		}
-		if len(args) != 4 || args[0] != "$ip" || args[1] != "proj_1" || args[2] != "$ip" || args[3] != int64(100) {
+		if len(args) != 4 || args[0] != "$timezone" || args[1] != "proj_1" || args[2] != "$timezone" || args[3] != int64(100) {
 			t.Errorf("unexpected args: %v", args)
 		}
 	})

@@ -25,9 +25,11 @@ type CloudflareProvider struct{}
 func (CloudflareProvider) Locate(h http.Header) Location {
 	loc := Location{}
 
-	if ip := ClientIP(h); ip != "" {
-		loc[PropIP] = ip
-	}
+	// The visitor IP is personal data and must never be persisted (DPDP/GDPR).
+	// Cloudflare resolves geo from CF-* headers, so the IP is not needed for
+	// enrichment here and is deliberately omitted from the Location. ClientIP
+	// remains available as a transient primitive for IP-lookup providers (e.g.
+	// MaxMind), which must likewise keep it out of the returned Location.
 	if v := h.Get(cfHeaderContinent); v != "" {
 		loc[PropContinent] = v
 	}

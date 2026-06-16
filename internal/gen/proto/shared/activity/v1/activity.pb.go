@@ -746,9 +746,7 @@ type ProfileStats struct {
 	// Country name from the latest event (e.g. "United States"). Empty if unavailable.
 	Country *string `protobuf:"bytes,9,opt,name=country" json:"country,omitempty"`
 	// City name from the latest event (e.g. "San Francisco"). Empty if unavailable.
-	City *string `protobuf:"bytes,10,opt,name=city" json:"city,omitempty"`
-	// IP address from the latest event. Empty if unavailable.
-	Ip            *string `protobuf:"bytes,11,opt,name=ip" json:"ip,omitempty"`
+	City          *string `protobuf:"bytes,10,opt,name=city" json:"city,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -849,13 +847,6 @@ func (x *ProfileStats) GetCountry() string {
 func (x *ProfileStats) GetCity() string {
 	if x != nil && x.City != nil {
 		return *x.City
-	}
-	return ""
-}
-
-func (x *ProfileStats) GetIp() string {
-	if x != nil && x.Ip != nil {
-		return *x.Ip
 	}
 	return ""
 }
@@ -994,7 +985,7 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\x04days\x18\x01 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\x04days\"A\n" +
 	"\x16GetProfileStatsRequest\x12'\n" +
 	"\vdistinct_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"distinctId\"\xed\x02\n" +
+	"distinctId\"\xdd\x02\n" +
 	"\fProfileStats\x129\n" +
 	"\n" +
 	"first_seen\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tfirstSeen\x127\n" +
@@ -1008,8 +999,7 @@ const file_shared_activity_v1_activity_proto_rawDesc = "" +
 	"\x06device\x18\b \x01(\tR\x06device\x12\x18\n" +
 	"\acountry\x18\t \x01(\tR\acountry\x12\x12\n" +
 	"\x04city\x18\n" +
-	" \x01(\tR\x04city\x12\x0e\n" +
-	"\x02ip\x18\v \x01(\tR\x02ip\"\xc4\x01\n" +
+	" \x01(\tR\x04city\"\xc4\x01\n" +
 	"\x17GetProfileStatsResponse\x126\n" +
 	"\x05stats\x18\x01 \x01(\v2 .shared.activity.v1.ProfileStatsR\x05stats\x128\n" +
 	"\aheatmap\x18\x02 \x03(\v2\x1e.shared.activity.v1.HeatmapDayR\aheatmap\x127\n" +
