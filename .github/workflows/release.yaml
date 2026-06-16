@@ -1,14 +1,14 @@
 name: Release
 
-# Releases are deliberate, not every push. Pushing a SemVer tag (vX.Y.Z) builds
-# the image and pushes it to Docker Hub. Plain pushes to branches never trigger
-# this — they only run CI (ci.yaml).
+# Releases are deliberate, not every push. Pushing a SemVer tag (vX.Y.Z) builds the
+# nine per-role images and pushes them to Docker Hub. Plain branch pushes never
+# trigger this — they only run CI (ci.yaml).
 on:
   push:
     tags:
       - "v*.*.*"
 
-# One release per tag; cancel nothing, but don't run two builds for the same ref.
+# One release per tag; don't run two builds for the same ref.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -17,13 +17,26 @@ permissions:
   contents: read
 
 env:
-  # Docker Hub repository to publish to. Change this if your namespace differs
-  # (Docker Hub namespaces are lowercase alphanumeric — note: not "pug-sh").
-  IMAGE_NAME: docker.io/pugsh/pug
+  # Repo-per-role on Docker Hub: pugsh/pug-<name>. (Docker Hub namespaces are
+  # lowercase alphanumeric — note: "pugsh", not "pug-sh".)
+  IMAGE_PREFIX: docker.io/pugsh/pug
 
 jobs:
   image:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: server,                  cmd: server,                   target: app }
+          - { name: worker-events,           cmd: workers/events,           target: app }
+          - { name: worker-email,            cmd: workers/email,            target: app }
+          - { name: worker-profile-identify, cmd: workers/profile/identify, target: app }
+          - { name: worker-profile-alias,    cmd: workers/profile/alias,    target: app }
+          - { name: worker-profile-upsert,   cmd: workers/profile/upsert,   target: app }
+          - { name: migrate-postgres,        cmd: migrate/postgres,         target: migrate }
+          - { name: migrate-clickhouse,      cmd: migrate/clickhouse,       target: migrate }
+          - { name: migrate-nats,            cmd: migrate/nats,             target: migrate }
     steps:
       - uses: actions/checkout@v6
 
@@ -40,7 +53,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE_PREFIX }}-${{ matrix.name }}
           # vX.Y.Z -> :X.Y.Z and :X.Y ; :latest is added automatically for
           # non-prerelease semver tags (flavor latest=auto).
           tags: |
@@ -51,9 +64,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          target: ${{ matrix.target }}
+          build-args: |
+            CMD=${{ matrix.cmd }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Per-name cache scope so the nine parallel builds don't clobber each other.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
