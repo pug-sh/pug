@@ -429,3 +429,76 @@ func TestHandler_BatchGet_NotMemberReturnsPermissionDenied(t *testing.T) {
 	assertCode(t, err, connect.CodePermissionDenied)
 	assertReason(t, err, apperr.ReasonOrgNotAMember)
 }
+
+// ----- UpdateMeta: name-only update preserves the stored timezone -----
+//
+// Regression guard for the partial update: omitting reporting_timezone must NOT
+// reset it to UTC (the pre-partial-update full-replace footgun). protovalidate is
+// not in the direct-handler path, so this exercises handler+SQL preservation only.
+func TestHandler_UpdateMeta_NameOnlyPreservesTimezone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	srv, customer, orgID := newIntegrationServer(t)
+	ctx := context.Background()
+
+	created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId:             proto.String(orgID),
+		DisplayName:       proto.String("orig"),
+		ReportingTimezone: proto.String("Asia/Kolkata"),
+	}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	projectID := created.Msg.GetProject().GetId()
+
+	updated, err := srv.UpdateMeta(
+		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID}),
+		connect.NewRequest(&projectsv1.UpdateMetaRequest{
+			DisplayName: proto.String("renamed"), // reporting_timezone omitted (nil)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("UpdateMeta: %v", err)
+	}
+	if got := updated.Msg.GetProject().GetDisplayName(); got != "renamed" {
+		t.Errorf("display_name = %q, want renamed", got)
+	}
+	if got := updated.Msg.GetProject().GetReportingTimezone(); got != "Asia/Kolkata" {
+		t.Errorf("reporting_timezone = %q, want Asia/Kolkata (preserved, not reset)", got)
+	}
+}
+
+// ----- UpdateMeta: timezone-only update preserves the display name -----
+func TestHandler_UpdateMeta_TimezoneOnlyPreservesName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	srv, customer, orgID := newIntegrationServer(t)
+	ctx := context.Background()
+
+	created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId:       proto.String(orgID),
+		DisplayName: proto.String("keep me"), // timezone omitted → "" (UTC)
+	}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	projectID := created.Msg.GetProject().GetId()
+
+	updated, err := srv.UpdateMeta(
+		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID}),
+		connect.NewRequest(&projectsv1.UpdateMetaRequest{
+			ReportingTimezone: proto.String("Asia/Kolkata"), // display_name omitted (nil)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("UpdateMeta: %v", err)
+	}
+	if got := updated.Msg.GetProject().GetDisplayName(); got != "keep me" {
+		t.Errorf("display_name = %q, want 'keep me' (preserved)", got)
+	}
+	if got := updated.Msg.GetProject().GetReportingTimezone(); got != "Asia/Kolkata" {
+		t.Errorf("reporting_timezone = %q, want Asia/Kolkata", got)
+	}
+}

@@ -156,19 +156,22 @@ func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMService
 
 const updateProjectMeta = `-- name: UpdateProjectMeta :one
 update projects
-set display_name = $1,
-    reporting_timezone = $2
+set display_name       = coalesce($1, display_name),
+    reporting_timezone = coalesce($2, reporting_timezone)
 where org_id = $3 and id = $4
 returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
 `
 
 type UpdateProjectMetaParams struct {
-	DisplayName       string
-	ReportingTimezone string
+	DisplayName       pgtype.Text
+	ReportingTimezone pgtype.Text
 	OrgID             string
 	ID                string
 }
 
+// Partial update: a NULL param leaves the column unchanged, so callers can update
+// display_name and reporting_timezone independently. A present ” is written (e.g.
+// reporting_timezone ” resets to UTC) — distinct from omitted (NULL).
 func (q *Queries) UpdateProjectMeta(ctx context.Context, arg UpdateProjectMetaParams) (Project, error) {
 	row := q.db.QueryRow(ctx, updateProjectMeta,
 		arg.DisplayName,

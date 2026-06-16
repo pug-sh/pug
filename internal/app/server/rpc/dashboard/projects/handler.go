@@ -158,17 +158,24 @@ func (s *server) UpdateMeta(
 		return nil, err
 	}
 
-	// Explicit settings action: reject a malformed/unknown zone rather than coercing
-	// to UTC (the lenient create/signup behavior). Normalize collapses "UTC" to "".
-	if err := tzx.Validate(req.Msg.GetReportingTimezone()); err != nil {
-		return nil, apperr.Invalid(apperr.ReasonInvalidTimezone, "invalid timezone")
+	// Partial update: each field is presence-tracked (edition 2023). A nil pointer
+	// means "leave unchanged" — NewNullableText emits SQL NULL and the query's
+	// coalesce(...) preserves the stored value. reporting_timezone is validated and
+	// normalized only when the client actually sent it; a present "" resets to UTC.
+	var tz *string
+	if req.Msg.ReportingTimezone != nil {
+		if err := tzx.Validate(*req.Msg.ReportingTimezone); err != nil {
+			return nil, apperr.Invalid(apperr.ReasonInvalidTimezone, "invalid timezone")
+		}
+		n := tzx.Normalize(*req.Msg.ReportingTimezone)
+		tz = &n
 	}
 
 	wParams := dbwrite.UpdateProjectMetaParams{
 		OrgID:             principal.Project.OrgID,
 		ID:                principal.Project.ID,
-		DisplayName:       req.Msg.GetDisplayName(),
-		ReportingTimezone: tzx.Normalize(req.Msg.GetReportingTimezone()),
+		DisplayName:       postgres.NewNullableText(req.Msg.DisplayName),
+		ReportingTimezone: postgres.NewNullableText(tz),
 	}
 	projectData, err := s.service.UpdateProjectMeta(ctx, wParams)
 	if err != nil {

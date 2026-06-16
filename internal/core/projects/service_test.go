@@ -151,8 +151,8 @@ func TestProjectsService(t *testing.T) {
 		updated, err := svc.UpdateProjectMeta(ctx, dbwrite.UpdateProjectMetaParams{
 			ID:                projectID,
 			OrgID:             org.ID,
-			DisplayName:       "Renamed Project",
-			ReportingTimezone: "Asia/Kolkata",
+			DisplayName:       postgres.NewText("Renamed Project"),
+			ReportingTimezone: postgres.NewText("Asia/Kolkata"),
 		})
 		if err != nil {
 			t.Fatalf("UpdateProjectMeta: %v", err)

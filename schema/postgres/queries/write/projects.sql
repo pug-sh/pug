@@ -25,8 +25,11 @@ where org_id = @org_id and id = @id
 returning *;
 
 -- name: UpdateProjectMeta :one
+-- Partial update: a NULL param leaves the column unchanged, so callers can update
+-- display_name and reporting_timezone independently. A present '' is written (e.g.
+-- reporting_timezone '' resets to UTC) — distinct from omitted (NULL).
 update projects
-set display_name = @display_name,
-    reporting_timezone = @reporting_timezone
+set display_name       = coalesce(sqlc.narg('display_name'), display_name),
+    reporting_timezone = coalesce(sqlc.narg('reporting_timezone'), reporting_timezone)
 where org_id = @org_id and id = @id
 returning *;
