@@ -31,11 +31,12 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 
-# Runtime-needed schema assets only: the migrate roles (pug postgres|clickhouse|
-# nats migrate) read these relative to the working directory. The sqlc query files
-# under schema/postgres/queries are build-time only and deliberately omitted; the
-# server and workers read nothing from schema/. WORKDIR must stay /app — do not
-# override the container's workingDir, or the migrate role won't find schema/.
+# Runtime-needed schema assets only, all read relative to the working directory:
+#   - postgres|clickhouse migrate roles read schema/{postgres,clickhouse}/migrations
+#   - every worker reads schema/nats/consumers.yaml at startup (GetConsumerConfigByName)
+# The sqlc query files under schema/postgres/queries are build-time only and
+# deliberately omitted; the server itself reads nothing from schema/. WORKDIR must
+# stay /app — do not override the container's workingDir, or these won't resolve.
 COPY --from=build /src/schema/postgres/migrations ./schema/postgres/migrations
 COPY --from=build /src/schema/clickhouse/migrations ./schema/clickhouse/migrations
 COPY --from=build /src/schema/nats ./schema/nats
