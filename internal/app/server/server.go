@@ -191,6 +191,11 @@ func start(ctx context.Context, d *deps) error {
 
 	mux := http.NewServeMux()
 
+	// Health probes (no auth, no CORS — infra endpoints). Plain paths do not
+	// collide with the RPC routes, which are all /<package>.<Service>/...
+	mux.HandleFunc("/healthz", livenessHandler)
+	mux.HandleFunc("/readyz", d.readinessHandler)
+
 	// Public (CORS, no auth)
 	mux.Handle(authPath, pogrpc.WithCORS(d.corsOrigins, authHandler))
 	mux.Handle(sharedDashboardsPath, pogrpc.WithCORS(d.corsOrigins, sharedDashboardsHandler))
