@@ -86,6 +86,12 @@ func New(ctx context.Context) (*NATSClient, error) {
 	}, nil
 }
 
+// IsConnected reports whether the underlying NATS connection is currently
+// established. Used by readiness probes; a closed/reconnecting conn is not ready.
+func (nc *NATSClient) IsConnected() bool {
+	return nc.conn != nil && nc.conn.IsConnected()
+}
+
 // Close closes the NATS connection
 func (nc *NATSClient) Close() {
 	if nc.conn != nil {
