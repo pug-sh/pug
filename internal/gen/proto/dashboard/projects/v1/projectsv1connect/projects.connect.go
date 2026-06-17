@@ -42,9 +42,9 @@ const (
 	ProjectsServiceDeleteProcedure = "/dashboard.projects.v1.ProjectsService/Delete"
 	// ProjectsServiceGetProcedure is the fully-qualified name of the ProjectsService's Get RPC.
 	ProjectsServiceGetProcedure = "/dashboard.projects.v1.ProjectsService/Get"
-	// ProjectsServiceUpdateDisplayNameProcedure is the fully-qualified name of the ProjectsService's
-	// UpdateDisplayName RPC.
-	ProjectsServiceUpdateDisplayNameProcedure = "/dashboard.projects.v1.ProjectsService/UpdateDisplayName"
+	// ProjectsServiceUpdateMetaProcedure is the fully-qualified name of the ProjectsService's
+	// UpdateMeta RPC.
+	ProjectsServiceUpdateMetaProcedure = "/dashboard.projects.v1.ProjectsService/UpdateMeta"
 	// ProjectsServiceUpdateFCMServiceJSONProcedure is the fully-qualified name of the ProjectsService's
 	// UpdateFCMServiceJSON RPC.
 	ProjectsServiceUpdateFCMServiceJSONProcedure = "/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON"
@@ -56,7 +56,7 @@ type ProjectsServiceClient interface {
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
-	UpdateDisplayName(context.Context, *connect.Request[v1.UpdateDisplayNameRequest]) (*connect.Response[v1.UpdateDisplayNameResponse], error)
+	UpdateMeta(context.Context, *connect.Request[v1.UpdateMetaRequest]) (*connect.Response[v1.UpdateMetaResponse], error)
 	UpdateFCMServiceJSON(context.Context, *connect.Request[v1.UpdateFCMServiceJSONRequest]) (*connect.Response[v1.UpdateFCMServiceJSONResponse], error)
 }
 
@@ -95,10 +95,10 @@ func NewProjectsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(projectsServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
-		updateDisplayName: connect.NewClient[v1.UpdateDisplayNameRequest, v1.UpdateDisplayNameResponse](
+		updateMeta: connect.NewClient[v1.UpdateMetaRequest, v1.UpdateMetaResponse](
 			httpClient,
-			baseURL+ProjectsServiceUpdateDisplayNameProcedure,
-			connect.WithSchema(projectsServiceMethods.ByName("UpdateDisplayName")),
+			baseURL+ProjectsServiceUpdateMetaProcedure,
+			connect.WithSchema(projectsServiceMethods.ByName("UpdateMeta")),
 			connect.WithClientOptions(opts...),
 		),
 		updateFCMServiceJSON: connect.NewClient[v1.UpdateFCMServiceJSONRequest, v1.UpdateFCMServiceJSONResponse](
@@ -116,7 +116,7 @@ type projectsServiceClient struct {
 	create               *connect.Client[v1.CreateRequest, v1.CreateResponse]
 	delete               *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
 	get                  *connect.Client[v1.GetRequest, v1.GetResponse]
-	updateDisplayName    *connect.Client[v1.UpdateDisplayNameRequest, v1.UpdateDisplayNameResponse]
+	updateMeta           *connect.Client[v1.UpdateMetaRequest, v1.UpdateMetaResponse]
 	updateFCMServiceJSON *connect.Client[v1.UpdateFCMServiceJSONRequest, v1.UpdateFCMServiceJSONResponse]
 }
 
@@ -140,9 +140,9 @@ func (c *projectsServiceClient) Get(ctx context.Context, req *connect.Request[v1
 	return c.get.CallUnary(ctx, req)
 }
 
-// UpdateDisplayName calls dashboard.projects.v1.ProjectsService.UpdateDisplayName.
-func (c *projectsServiceClient) UpdateDisplayName(ctx context.Context, req *connect.Request[v1.UpdateDisplayNameRequest]) (*connect.Response[v1.UpdateDisplayNameResponse], error) {
-	return c.updateDisplayName.CallUnary(ctx, req)
+// UpdateMeta calls dashboard.projects.v1.ProjectsService.UpdateMeta.
+func (c *projectsServiceClient) UpdateMeta(ctx context.Context, req *connect.Request[v1.UpdateMetaRequest]) (*connect.Response[v1.UpdateMetaResponse], error) {
+	return c.updateMeta.CallUnary(ctx, req)
 }
 
 // UpdateFCMServiceJSON calls dashboard.projects.v1.ProjectsService.UpdateFCMServiceJSON.
@@ -156,7 +156,7 @@ type ProjectsServiceHandler interface {
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
-	UpdateDisplayName(context.Context, *connect.Request[v1.UpdateDisplayNameRequest]) (*connect.Response[v1.UpdateDisplayNameResponse], error)
+	UpdateMeta(context.Context, *connect.Request[v1.UpdateMetaRequest]) (*connect.Response[v1.UpdateMetaResponse], error)
 	UpdateFCMServiceJSON(context.Context, *connect.Request[v1.UpdateFCMServiceJSONRequest]) (*connect.Response[v1.UpdateFCMServiceJSONResponse], error)
 }
 
@@ -191,10 +191,10 @@ func NewProjectsServiceHandler(svc ProjectsServiceHandler, opts ...connect.Handl
 		connect.WithSchema(projectsServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
-	projectsServiceUpdateDisplayNameHandler := connect.NewUnaryHandler(
-		ProjectsServiceUpdateDisplayNameProcedure,
-		svc.UpdateDisplayName,
-		connect.WithSchema(projectsServiceMethods.ByName("UpdateDisplayName")),
+	projectsServiceUpdateMetaHandler := connect.NewUnaryHandler(
+		ProjectsServiceUpdateMetaProcedure,
+		svc.UpdateMeta,
+		connect.WithSchema(projectsServiceMethods.ByName("UpdateMeta")),
 		connect.WithHandlerOptions(opts...),
 	)
 	projectsServiceUpdateFCMServiceJSONHandler := connect.NewUnaryHandler(
@@ -213,8 +213,8 @@ func NewProjectsServiceHandler(svc ProjectsServiceHandler, opts ...connect.Handl
 			projectsServiceDeleteHandler.ServeHTTP(w, r)
 		case ProjectsServiceGetProcedure:
 			projectsServiceGetHandler.ServeHTTP(w, r)
-		case ProjectsServiceUpdateDisplayNameProcedure:
-			projectsServiceUpdateDisplayNameHandler.ServeHTTP(w, r)
+		case ProjectsServiceUpdateMetaProcedure:
+			projectsServiceUpdateMetaHandler.ServeHTTP(w, r)
 		case ProjectsServiceUpdateFCMServiceJSONProcedure:
 			projectsServiceUpdateFCMServiceJSONHandler.ServeHTTP(w, r)
 		default:
@@ -242,8 +242,8 @@ func (UnimplementedProjectsServiceHandler) Get(context.Context, *connect.Request
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.projects.v1.ProjectsService.Get is not implemented"))
 }
 
-func (UnimplementedProjectsServiceHandler) UpdateDisplayName(context.Context, *connect.Request[v1.UpdateDisplayNameRequest]) (*connect.Response[v1.UpdateDisplayNameResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.projects.v1.ProjectsService.UpdateDisplayName is not implemented"))
+func (UnimplementedProjectsServiceHandler) UpdateMeta(context.Context, *connect.Request[v1.UpdateMetaRequest]) (*connect.Response[v1.UpdateMetaResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.projects.v1.ProjectsService.UpdateMeta is not implemented"))
 }
 
 func (UnimplementedProjectsServiceHandler) UpdateFCMServiceJSON(context.Context, *connect.Request[v1.UpdateFCMServiceJSONRequest]) (*connect.Response[v1.UpdateFCMServiceJSONResponse], error) {

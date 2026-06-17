@@ -10,7 +10,7 @@ service ProjectsService {
   rpc Create(CreateRequest) returns (CreateResponse) {}
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
   rpc Get(GetRequest) returns (GetResponse) {}
-  rpc UpdateDisplayName(UpdateDisplayNameRequest) returns (UpdateDisplayNameResponse) {}
+  rpc UpdateMeta(UpdateMetaRequest) returns (UpdateMetaResponse) {}
   rpc UpdateFCMServiceJSON(UpdateFCMServiceJSONRequest) returns (UpdateFCMServiceJSONResponse) {}
 }
 
@@ -28,6 +28,13 @@ message CreateRequest {
     (buf.validate.field).string.max_len = 150
   ];
   string org_id = 2 [(buf.validate.field).required = true];
+  // Optional IANA timezone (e.g. "Asia/Kolkata") captured from the creator's browser
+  // and stored as the project's reporting_timezone. Empty = UTC. A malformed value is
+  // coerced to UTC server-side rather than rejected, so creation never fails on it.
+  string reporting_timezone = 3 [(buf.validate.field).string = {
+    max_len: 64
+    pattern: "^[A-Za-z0-9_+/-]*$"
+  }];
 }
 
 message CreateResponse {
@@ -51,16 +58,32 @@ message Project {
   string org_id = 4;
   string private_api_key = 5;
   string public_api_key = 6;
+  // IANA reporting timezone (e.g. "Asia/Kolkata") used to bucket day/week/month
+  // boundaries for this project's insights and dashboards. Empty string = UTC.
+  string reporting_timezone = 7;
 }
 
-message UpdateDisplayNameRequest {
+// UpdateMetaRequest is a partial update of the project's editable metadata: every
+// field is optional and an omitted field leaves the stored value unchanged. A
+// present reporting_timezone of "" resets to UTC (distinct from omitted).
+message UpdateMetaRequest {
+  // Optional (partial update): omit to leave the name unchanged. When present it
+  // must be 1–150 chars; an explicit "" is rejected.
   string display_name = 1 [
-    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 150
   ];
+  // IANA timezone (e.g. "Asia/Kolkata") aligning insight/dashboard bucket
+  // boundaries to the project's calendar. Empty = UTC. Unlike creation, a malformed
+  // value is rejected (CodeInvalidArgument) rather than coerced — this is an
+  // explicit settings action.
+  string reporting_timezone = 2 [(buf.validate.field).string = {
+    max_len: 64
+    pattern: "^[A-Za-z0-9_+/-]*$"
+  }];
 }
 
-message UpdateDisplayNameResponse {
+message UpdateMetaResponse {
   Project project = 1;
 }
 

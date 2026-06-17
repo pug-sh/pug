@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
@@ -61,6 +62,26 @@ func TestGetPropertyValues_Unauthenticated(t *testing.T) {
 	var ae *apperr.Error
 	if !errors.As(err, &ae) || ae.Code() != connect.CodeUnauthenticated {
 		t.Fatalf("want unauthenticated apperr, got %v (%T)", err, err)
+	}
+}
+
+// The bucketing timezone is server-authoritative: the handler must overwrite any
+// client-supplied QueryRequest.timezone with the project's stored reporting_timezone
+// before executing. We assert on the mutated request rather than the downstream
+// result (the empty Executor fails execution, but the overwrite happens first).
+func TestQuery_InjectsProjectTimezone_IgnoresClient(t *testing.T) {
+	ctx := authn.SetInfo(context.Background(), &rpc.Principal{
+		Project: &dbread.Project{ID: "test-project", ReportingTimezone: "Asia/Kolkata"},
+	})
+	s := &server{executor: &coreinsights.Executor{}}
+	insightType := insightsv1.InsightType_INSIGHT_TYPE_TRENDS
+	req := connect.NewRequest(&insightsv1.QueryRequest{
+		Spec:     &insightsv1.InsightQuerySpec{InsightType: &insightType},
+		Timezone: proto.String("America/New_York"), // client-supplied; must be ignored
+	})
+	_, _ = s.Query(ctx, req) // fails downstream (no ClickHouse); we only check the override
+	if got := req.Msg.GetTimezone(); got != "Asia/Kolkata" {
+		t.Errorf("timezone = %q, want project's Asia/Kolkata (client value must be ignored)", got)
 	}
 }
 

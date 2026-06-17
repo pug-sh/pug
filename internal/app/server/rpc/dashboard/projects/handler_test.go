@@ -146,9 +146,9 @@ func TestHandler_Delete_ProjectNotFound(t *testing.T) {
 	assertReason(t, err, apperr.ReasonProjectNotFound)
 }
 
-// ----- UpdateDisplayName: project not found → CodeNotFound + ReasonProjectNotFound ----
+// ----- UpdateMeta: project not found → CodeNotFound + ReasonProjectNotFound ----
 
-func TestHandler_UpdateDisplayName_ProjectNotFound(t *testing.T) {
+func TestHandler_UpdateMeta_ProjectNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -171,14 +171,128 @@ func TestHandler_UpdateDisplayName_ProjectNotFound(t *testing.T) {
 		ID:    nonexistentProjectID,
 		OrgID: orgID,
 	}
-	_, err := srv.UpdateDisplayName(
+	_, err := srv.UpdateMeta(
 		ctxWithProject(ctx, principal),
-		connect.NewRequest(&projectsv1.UpdateDisplayNameRequest{
+		connect.NewRequest(&projectsv1.UpdateMetaRequest{
 			DisplayName: proto.String("new name"),
 		}),
 	)
 	assertCode(t, err, connect.CodeNotFound)
 	assertReason(t, err, apperr.ReasonProjectNotFound)
+}
+
+// ----- UpdateMeta: malformed timezone → CodeInvalidArgument (rejected, not coerced) ----
+
+func TestHandler_UpdateMeta_InvalidTimezone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	db := testutil.SetupPostgres(t)
+	srv := NewServer(coreprojects.NewService(db.PgRO, db.PgW, nil), coreorgs.NewService(db.PgRO, db.PgW, nil))
+
+	// The zone is validated before any DB access, so an arbitrary principal suffices.
+	principal := dbread.Project{ID: xid.New().String(), OrgID: xid.New().String()}
+	_, err := srv.UpdateMeta(
+		ctxWithProject(context.Background(), principal),
+		connect.NewRequest(&projectsv1.UpdateMetaRequest{
+			DisplayName:       proto.String("name"),
+			ReportingTimezone: proto.String("Not/A/Zone"), // passes proto charset, unknown to tzdata
+		}),
+	)
+	assertCode(t, err, connect.CodeInvalidArgument)
+	assertReason(t, err, apperr.ReasonInvalidTimezone)
+}
+
+// ----- UpdateMeta: "UTC" full-replaces (clears) the stored zone to "" ----
+//
+// UpdateMeta normalizes via tzx.Normalize (not a coalesce-preserve), so sending
+// "UTC" must overwrite a previously-set zone with "" rather than preserving it.
+
+func TestHandler_UpdateMeta_ClearsTimezoneToUTC(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	db := testutil.SetupPostgres(t)
+	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
+	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := NewServer(projectsSvc, orgsSvc)
+
+	ctx := context.Background()
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+
+	customerID := xid.New().String()
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: customerID, Email: customerID + "@test.example.com", DisplayName: "U", PasswordHash: "x",
+	}); err != nil {
+		t.Fatalf("seed customer: %v", err)
+	}
+	customer, err := read.GetCustomerByID(ctx, customerID)
+	if err != nil {
+		t.Fatalf("read customer: %v", err)
+	}
+	orgID := xid.New().String()
+	if _, err := db.PgW.Exec(ctx, `INSERT INTO orgs (id, display_name) VALUES ($1, $2)`, orgID, "tz-org"); err != nil {
+		t.Fatalf("insert org: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{OrgID: orgID, CustomerID: customerID, Role: "ORG_ROLE_ADMIN"}); err != nil {
+		t.Fatalf("insert org member: %v", err)
+	}
+
+	created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId:             proto.String(orgID),
+		DisplayName:       proto.String("tz project"),
+		ReportingTimezone: proto.String("Asia/Kolkata"),
+	}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	projectID := created.Msg.GetProject().GetId()
+
+	// Create response must echo the stored zone on the read message.
+	if got := created.Msg.GetProject().GetReportingTimezone(); got != "Asia/Kolkata" {
+		t.Errorf("Create response ReportingTimezone = %q, want Asia/Kolkata", got)
+	}
+
+	if stored, err := projectsSvc.GetProjectByID(ctx, projectID); err != nil {
+		t.Fatalf("GetProjectByID after create: %v", err)
+	} else if stored.ReportingTimezone != "Asia/Kolkata" {
+		t.Fatalf("after create ReportingTimezone = %q, want Asia/Kolkata", stored.ReportingTimezone)
+	}
+
+	// Get must also surface the stored zone (read-model mapper).
+	if got, err := srv.Get(
+		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID, ReportingTimezone: "Asia/Kolkata"}),
+		connect.NewRequest(&projectsv1.GetRequest{}),
+	); err != nil {
+		t.Fatalf("Get: %v", err)
+	} else if tz := got.Msg.GetProject().GetReportingTimezone(); tz != "Asia/Kolkata" {
+		t.Errorf("Get response ReportingTimezone = %q, want Asia/Kolkata", tz)
+	}
+
+	updated, err := srv.UpdateMeta(
+		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID}),
+		connect.NewRequest(&projectsv1.UpdateMetaRequest{
+			DisplayName:       proto.String("tz project"),
+			ReportingTimezone: proto.String("UTC"), // must clear to "", not preserve Asia/Kolkata
+		}),
+	)
+	if err != nil {
+		t.Fatalf("UpdateMeta: %v", err)
+	}
+
+	// UpdateMeta response must echo the cleared zone as "" (not "UTC").
+	if got := updated.Msg.GetProject().GetReportingTimezone(); got != "" {
+		t.Errorf("UpdateMeta response ReportingTimezone = %q, want \"\" (UTC)", got)
+	}
+
+	stored, err := projectsSvc.GetProjectByID(ctx, projectID)
+	if err != nil {
+		t.Fatalf("GetProjectByID after update: %v", err)
+	}
+	if stored.ReportingTimezone != "" {
+		t.Errorf("after clearing, ReportingTimezone = %q, want \"\" (UTC)", stored.ReportingTimezone)
+	}
 }
 
 // ----- Create: admin required → CodePermissionDenied + ReasonOrgAdminRequired ----
@@ -315,4 +429,151 @@ func TestHandler_BatchGet_NotMemberReturnsPermissionDenied(t *testing.T) {
 	)
 	assertCode(t, err, connect.CodePermissionDenied)
 	assertReason(t, err, apperr.ReasonOrgNotAMember)
+}
+
+// ----- UpdateMeta: name-only update preserves the stored timezone -----
+//
+// Regression guard for the partial update: omitting reporting_timezone must NOT
+// reset it to UTC (the pre-partial-update full-replace footgun). protovalidate is
+// not in the direct-handler path, so this exercises handler+SQL preservation only.
+func TestHandler_UpdateMeta_NameOnlyPreservesTimezone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	srv, customer, orgID := newIntegrationServer(t)
+	ctx := context.Background()
+
+	created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId:             proto.String(orgID),
+		DisplayName:       proto.String("orig"),
+		ReportingTimezone: proto.String("Asia/Kolkata"),
+	}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	projectID := created.Msg.GetProject().GetId()
+
+	updated, err := srv.UpdateMeta(
+		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID}),
+		connect.NewRequest(&projectsv1.UpdateMetaRequest{
+			DisplayName: proto.String("renamed"), // reporting_timezone omitted (nil)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("UpdateMeta: %v", err)
+	}
+	if got := updated.Msg.GetProject().GetDisplayName(); got != "renamed" {
+		t.Errorf("display_name = %q, want renamed", got)
+	}
+	if got := updated.Msg.GetProject().GetReportingTimezone(); got != "Asia/Kolkata" {
+		t.Errorf("reporting_timezone = %q, want Asia/Kolkata (preserved, not reset)", got)
+	}
+}
+
+// ----- UpdateMeta: timezone-only update preserves the display name -----
+func TestHandler_UpdateMeta_TimezoneOnlyPreservesName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	srv, customer, orgID := newIntegrationServer(t)
+	ctx := context.Background()
+
+	created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId:       proto.String(orgID),
+		DisplayName: proto.String("keep me"), // timezone omitted → "" (UTC)
+	}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	projectID := created.Msg.GetProject().GetId()
+
+	updated, err := srv.UpdateMeta(
+		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID}),
+		connect.NewRequest(&projectsv1.UpdateMetaRequest{
+			ReportingTimezone: proto.String("Asia/Kolkata"), // display_name omitted (nil)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("UpdateMeta: %v", err)
+	}
+	if got := updated.Msg.GetProject().GetDisplayName(); got != "keep me" {
+		t.Errorf("display_name = %q, want 'keep me' (preserved)", got)
+	}
+	if got := updated.Msg.GetProject().GetReportingTimezone(); got != "Asia/Kolkata" {
+		t.Errorf("reporting_timezone = %q, want Asia/Kolkata", got)
+	}
+}
+
+// ----- UpdateMeta: an explicit empty reporting_timezone resets a non-UTC zone to UTC -----
+//
+// Distinct code path from the "UTC" string (TestHandler_UpdateMeta_ClearsTimezoneToUTC):
+// a present "" is a non-nil pointer to empty, so it must enter the presence branch
+// (req.Msg.ReportingTimezone != nil), pass tzx.Validate(""), and be WRITTEN as "" —
+// not treated as omitted (which would preserve the old zone). Re-reads via
+// GetProjectByID to assert persistence, not just the echoed RETURNING row.
+func TestHandler_UpdateMeta_EmptyStringResetsTimezoneToUTC(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	db := testutil.SetupPostgres(t)
+	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
+	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
+	srv := NewServer(projectsSvc, orgsSvc)
+
+	ctx := context.Background()
+	write := dbwrite.New(db.PgW)
+	read := dbread.New(db.PgRO)
+
+	customerID := xid.New().String()
+	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID: customerID, Email: customerID + "@test.example.com", DisplayName: "U", PasswordHash: "x",
+	}); err != nil {
+		t.Fatalf("seed customer: %v", err)
+	}
+	customer, err := read.GetCustomerByID(ctx, customerID)
+	if err != nil {
+		t.Fatalf("read customer: %v", err)
+	}
+	orgID := xid.New().String()
+	if _, err := db.PgW.Exec(ctx, `INSERT INTO orgs (id, display_name) VALUES ($1, $2)`, orgID, "tz-empty-org"); err != nil {
+		t.Fatalf("insert org: %v", err)
+	}
+	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{OrgID: orgID, CustomerID: customerID, Role: "ORG_ROLE_ADMIN"}); err != nil {
+		t.Fatalf("insert org member: %v", err)
+	}
+
+	created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+		OrgId:             proto.String(orgID),
+		DisplayName:       proto.String("tz empty project"),
+		ReportingTimezone: proto.String("Asia/Kolkata"),
+	}))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	projectID := created.Msg.GetProject().GetId()
+
+	updated, err := srv.UpdateMeta(
+		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID}),
+		connect.NewRequest(&projectsv1.UpdateMetaRequest{
+			ReportingTimezone: proto.String(""), // explicit empty → reset to UTC (display_name omitted)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("UpdateMeta: %v", err)
+	}
+	if got := updated.Msg.GetProject().GetReportingTimezone(); got != "" {
+		t.Errorf("UpdateMeta response ReportingTimezone = %q, want \"\" (UTC)", got)
+	}
+	// display_name was omitted → must be preserved.
+	if got := updated.Msg.GetProject().GetDisplayName(); got != "tz empty project" {
+		t.Errorf("display_name = %q, want 'tz empty project' (preserved)", got)
+	}
+
+	stored, err := projectsSvc.GetProjectByID(ctx, projectID)
+	if err != nil {
+		t.Fatalf("GetProjectByID after update: %v", err)
+	}
+	if stored.ReportingTimezone != "" {
+		t.Errorf("after empty-string reset, stored ReportingTimezone = %q, want \"\" (UTC)", stored.ReportingTimezone)
+	}
 }

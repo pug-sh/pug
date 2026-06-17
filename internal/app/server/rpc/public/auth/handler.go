@@ -20,7 +20,7 @@ import (
 type authService interface {
 	SignInWithEmail(ctx context.Context, email, password string) (string, error)
 	RequestMagicLink(ctx context.Context, email string) error
-	CompleteMagicLink(ctx context.Context, token string) (string, error)
+	CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (string, error)
 	CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (string, error)
 }
 
@@ -71,7 +71,7 @@ func (s *server) CompleteMagicLink(
 	ctx context.Context,
 	req *connect.Request[authv1.CompleteMagicLinkRequest],
 ) (*connect.Response[authv1.CompleteMagicLinkResponse], error) {
-	token, err := s.service.CompleteMagicLink(ctx, req.Msg.GetToken())
+	token, err := s.service.CompleteMagicLink(ctx, req.Msg.GetToken(), req.Msg.GetTimezone())
 	if err != nil {
 		if errors.Is(err, coreauth.ErrInvalidToken) {
 			return nil, apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired link")
@@ -102,7 +102,9 @@ func mapOAuthHandlerError(err error) error {
 	case errors.Is(err, coreoauth.ErrOAuthProviderDisabled):
 		return apperr.Invalid(apperr.ReasonOAuthProviderDisabled, "oauth provider is not configured")
 	case errors.Is(err, coreoauth.ErrUnverifiedEmail):
-		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider")
+		// Generic reason intentional: no distinct client action for an unverified IdP
+		// email (rare edge), so it maps to plain InvalidArgument.
+		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider") // apperr:exempt
 	case errors.Is(err, coreoauth.ErrInvalidCredential):
 		// A failed/expired credential is an authentication failure, not a
 		// malformed request — return Unauthenticated so clients prompt re-auth

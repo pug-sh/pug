@@ -92,7 +92,7 @@ func TestCompleteMagicLink_NewEmailCreatesVerifiedAccountAndOrg(t *testing.T) {
 	}
 	raw := lastMagicToken(t, pub)
 
-	jwtTok, err := svc.CompleteMagicLink(ctx, raw)
+	jwtTok, err := svc.CompleteMagicLink(ctx, raw, "")
 	if err != nil {
 		t.Fatalf("CompleteMagicLink: %v", err)
 	}
@@ -112,8 +112,52 @@ func TestCompleteMagicLink_NewEmailCreatesVerifiedAccountAndOrg(t *testing.T) {
 	}
 
 	// Single-use: a second completion fails.
-	if _, err := svc.CompleteMagicLink(ctx, raw); !errors.Is(err, coreauth.ErrInvalidToken) {
+	if _, err := svc.CompleteMagicLink(ctx, raw, ""); !errors.Is(err, coreauth.ErrInvalidToken) {
 		t.Fatalf("second use err = %v, want ErrInvalidToken", err)
+	}
+}
+
+// The browser timezone passed to CompleteMagicLink is stored as the auto-created
+// default project's reporting_timezone; a malformed value coerces to "" (UTC) so
+// signup never fails on it.
+func TestCompleteMagicLink_CapturesBrowserTimezoneOnDefaultProject(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	read := dbread.New(db.PgRO)
+	ctx := context.Background()
+
+	defaultProjectTZ := func(t *testing.T, email, tz string) string {
+		t.Helper()
+		pub := &stubPublisher{}
+		svc := mustNewTestAuthService(t, db, pub)
+		if err := svc.RequestMagicLink(ctx, email); err != nil {
+			t.Fatalf("RequestMagicLink: %v", err)
+		}
+		if _, err := svc.CompleteMagicLink(ctx, lastMagicToken(t, pub), tz); err != nil {
+			t.Fatalf("CompleteMagicLink: %v", err)
+		}
+		cust, err := read.GetCustomerByEmail(ctx, email)
+		if err != nil {
+			t.Fatalf("GetCustomerByEmail: %v", err)
+		}
+		orgs, err := read.GetOrgsByCustomerID(ctx, cust.ID)
+		if err != nil || len(orgs) == 0 {
+			t.Fatalf("expected a default org, got %d (err=%v)", len(orgs), err)
+		}
+		projects, err := read.GetProjectsByOrgID(ctx, orgs[0].ID)
+		if err != nil || len(projects) == 0 {
+			t.Fatalf("expected a default project, got %d (err=%v)", len(projects), err)
+		}
+		return projects[0].ReportingTimezone
+	}
+
+	if got := defaultProjectTZ(t, "tz-valid@example.com", "Asia/Kolkata"); got != "Asia/Kolkata" {
+		t.Errorf("reporting_timezone = %q, want Asia/Kolkata", got)
+	}
+	if got := defaultProjectTZ(t, "tz-bad@example.com", "Not/A/Zone"); got != "" {
+		t.Errorf("malformed tz reporting_timezone = %q, want \"\" (UTC)", got)
 	}
 }
 
@@ -124,7 +168,7 @@ func TestCompleteMagicLink_InvalidToken(t *testing.T) {
 	db := testutil.SetupPostgres(t)
 	ctx := context.Background()
 	svc := mustNewTestAuthService(t, db, &stubPublisher{})
-	if _, err := svc.CompleteMagicLink(ctx, "no-such-token"); !errors.Is(err, coreauth.ErrInvalidToken) {
+	if _, err := svc.CompleteMagicLink(ctx, "no-such-token", ""); !errors.Is(err, coreauth.ErrInvalidToken) {
 		t.Fatalf("err = %v, want ErrInvalidToken", err)
 	}
 }
@@ -169,7 +213,7 @@ func TestCompleteMagicLink_InviteJoinsOrgWithRole(t *testing.T) {
 	}
 
 	svc := mustNewTestAuthService(t, db, &stubPublisher{})
-	jwtTok, err := svc.CompleteMagicLink(ctx, dispatch.RawToken)
+	jwtTok, err := svc.CompleteMagicLink(ctx, dispatch.RawToken, "")
 	if err != nil {
 		t.Fatalf("CompleteMagicLink: %v", err)
 	}
@@ -222,7 +266,7 @@ func TestCompleteMagicLink_InviteExistingAccountJoinsOrg(t *testing.T) {
 	}
 
 	svc := mustNewTestAuthService(t, db, &stubPublisher{})
-	if _, err := svc.CompleteMagicLink(ctx, dispatch.RawToken); err != nil {
+	if _, err := svc.CompleteMagicLink(ctx, dispatch.RawToken, ""); err != nil {
 		t.Fatalf("CompleteMagicLink: %v", err)
 	}
 	// The EXISTING customer joined the invited org; no new account, no default org.
@@ -270,7 +314,7 @@ func TestCompleteMagicLink_ExpiredInviteTokenRejected(t *testing.T) {
 	}
 
 	svc := mustNewTestAuthService(t, db, &stubPublisher{})
-	if _, err := svc.CompleteMagicLink(ctx, "expired-invite-raw"); !errors.Is(err, coreauth.ErrInvalidToken) {
+	if _, err := svc.CompleteMagicLink(ctx, "expired-invite-raw", ""); !errors.Is(err, coreauth.ErrInvalidToken) {
 		t.Fatalf("err = %v, want ErrInvalidToken", err)
 	}
 }
@@ -314,7 +358,7 @@ func TestCompleteMagicLink_PlainRequestPreservesPendingInvite(t *testing.T) {
 	}
 
 	// The invite token must still redeem and join the invited org.
-	if _, err := svc.CompleteMagicLink(ctx, dispatch.RawToken); err != nil {
+	if _, err := svc.CompleteMagicLink(ctx, dispatch.RawToken, ""); err != nil {
 		t.Fatalf("invite token should survive a plain magic-link request, got: %v", err)
 	}
 	cust, err := read.GetCustomerByEmail(ctx, "preserve-invitee@example.com")
@@ -355,7 +399,7 @@ func TestCompleteMagicLink_ConcurrentRedemptionSerializes(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := svc.CompleteMagicLink(ctx, raw)
+			_, err := svc.CompleteMagicLink(ctx, raw, "")
 			results[i] = err
 		}()
 	}
@@ -413,7 +457,7 @@ func TestCompleteMagicLink_ExistingAccountPlainLinkCreatesNoSecondOrg(t *testing
 	if err := svc.RequestMagicLink(ctx, "existplain@example.com"); err != nil {
 		t.Fatalf("RequestMagicLink: %v", err)
 	}
-	if _, err := svc.CompleteMagicLink(ctx, lastMagicToken(t, pub)); err != nil {
+	if _, err := svc.CompleteMagicLink(ctx, lastMagicToken(t, pub), ""); err != nil {
 		t.Fatalf("CompleteMagicLink: %v", err)
 	}
 

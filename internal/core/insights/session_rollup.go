@@ -253,7 +253,7 @@ func sessionRollupDimSuffix(prop string) (string, bool) {
 }
 
 func sessionTrendsQueryForExecution(req *insightsv1.QueryRequest, projectID string, now time.Time) (TrendsQuery, bool, error) {
-	if canUseSessionRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
+	if utcBucketing(req.GetTimezone()) && canUseSessionRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
 		q, err := buildSessionTrendsFromRollup(req, projectID)
 		return q, true, err
 	}
@@ -262,7 +262,7 @@ func sessionTrendsQueryForExecution(req *insightsv1.QueryRequest, projectID stri
 }
 
 func sessionSegmentationQueryForExecution(req *insightsv1.QueryRequest, projectID string, now time.Time) (ScalarQuery, bool, error) {
-	if canUseSessionRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
+	if utcBucketing(req.GetTimezone()) && canUseSessionRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
 		q, err := buildSessionSegmentationFromRollup(req, projectID)
 		return q, true, err
 	}

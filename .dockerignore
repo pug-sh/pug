@@ -1,0 +1,45 @@
+# Keep the build context small and never ship local secrets into the image.
+# The build needs: go.mod, go.sum, cmd/, internal/, and schema/ (copied into the
+# runtime image for migrations). Everything below is irrelevant to that.
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Local secrets / env (runtime config is injected as env vars, never baked in)
+.env
+.env.*
+
+# Build outputs
+bin/
+/server
+
+# Generated SDK clients
+clients/
+
+# Docs, plans, scratch notes
+docs/
+*.md
+todo.md
+review-*.md
+pr-*review.md
+
+# CI / editor / tooling state
+.github/
+.vscode/
+.claude/
+.agents/
+.cache/
+
+# Dev-only infra and the legacy VM deploy script (not used by the image)
+infra/dev/
+scripts/
+
+# Proto sources & codegen config — generated Go is committed under internal/gen
+proto/
+buf.yaml
+buf.gen.yaml
+buf.lock
+sqlc.yaml
+skills-lock.json
