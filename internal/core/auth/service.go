@@ -179,7 +179,7 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 // existing account joins the invited org with its role; no default org is
 // created. When org_invitation_id is NULL (plain branch), a newly-created
 // account receives a default org + project.
-func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, error) {
+func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (string, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin magic-link transaction", slogx.Error(err))
@@ -247,7 +247,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 
 	if isInvite {
 		invite := &InviteContext{OrgInvitationID: emailToken.OrgInvitationID.String}
-		if err := FinishSignup(ctx, w, customerID, createdNew, invite); err != nil {
+		if err := FinishSignup(ctx, w, customerID, createdNew, invite, reportingTimezone); err != nil {
 			if !errors.Is(err, ErrInvalidToken) {
 				slog.ErrorContext(ctx, "failed to apply org invite on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
 				telemetry.RecordError(ctx, err)
@@ -255,7 +255,10 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 			return "", err
 		}
 	} else if createdNew {
-		if err := FinishSignup(ctx, w, customerID, true, nil); err != nil {
+		// Plain passwordless signup: give the new account a default org + project,
+		// seeding the project's reporting timezone from the browser that completed
+		// the link (coerced to UTC if malformed).
+		if err := FinishSignup(ctx, w, customerID, true, nil, reportingTimezone); err != nil {
 			slog.ErrorContext(ctx, "failed to create default org for magic-link user", slogx.Error(err), slog.String("customer_id", customerID))
 			telemetry.RecordError(ctx, err)
 			return "", err
@@ -300,7 +303,8 @@ func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.Pr
 	}
 
 	customerID, _, err := coreoauth.WithIdentityTx(ctx, s.pgW, provider, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
-		if err := FinishSignup(ctx, w, customerID, createdNew, nil); err != nil {
+		// OAuth sign-in carries no browser timezone; default the project to UTC.
+		if err := FinishSignup(ctx, w, customerID, createdNew, nil, ""); err != nil {
 			return err // coreorgs records this at its detect site; don't re-record.
 		}
 		if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {

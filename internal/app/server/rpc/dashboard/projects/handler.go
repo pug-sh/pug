@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"connectrpc.com/connect"
@@ -15,6 +16,7 @@ import (
 	projectsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/pug-sh/pug/internal/tzx"
 )
 
 type server struct {
@@ -97,7 +99,7 @@ func (s *server) Create(
 		return nil, err
 	}
 
-	projectData, err := s.service.CreateProjectAsAdmin(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetDisplayName())
+	projectData, err := s.service.CreateProjectAsAdmin(ctx, req.Msg.GetOrgId(), principal.Customer.ID, req.Msg.GetDisplayName(), req.Msg.GetReportingTimezone())
 	if err != nil {
 		if errors.Is(err, projects.ErrAdminRequired) {
 			return nil, apperr.PermissionDenied(apperr.ReasonOrgAdminRequired, "admin role required")
@@ -142,11 +144,13 @@ func (s *server) Delete(
 	return connect.NewResponse(&projectsv1.DeleteResponse{}), nil
 }
 
-// UpdateDisplayName updates the display name of the project specified by x-project-id header.
-func (s *server) UpdateDisplayName(
+// UpdateMeta partially updates the editable metadata (display name + reporting
+// timezone) of the project specified by the x-project-id header. An omitted field
+// is left unchanged; a present reporting_timezone of "" resets it to UTC.
+func (s *server) UpdateMeta(
 	ctx context.Context,
-	req *connect.Request[projectsv1.UpdateDisplayNameRequest],
-) (*connect.Response[projectsv1.UpdateDisplayNameResponse], error) {
+	req *connect.Request[projectsv1.UpdateMetaRequest],
+) (*connect.Response[projectsv1.UpdateMetaResponse], error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -156,18 +160,37 @@ func (s *server) UpdateDisplayName(
 		return nil, err
 	}
 
-	wParams := dbwrite.UpdateProjectDisplayNameParams{OrgID: principal.Project.OrgID, DisplayName: req.Msg.GetDisplayName(), ID: principal.Project.ID}
-	projectData, err := s.service.UpdateProjectDisplayName(ctx, wParams)
+	// Partial update: each field is presence-tracked (edition 2023). A nil pointer
+	// means "leave unchanged" — NewNullableText emits SQL NULL and the query's
+	// coalesce(...) preserves the stored value. reporting_timezone is validated and
+	// normalized only when the client actually sent it; a present "" resets to UTC.
+	var tz *string
+	if req.Msg.ReportingTimezone != nil {
+		if err := tzx.Validate(*req.Msg.ReportingTimezone); err != nil {
+			return nil, apperr.Invalid(apperr.ReasonInvalidTimezone,
+				fmt.Sprintf("invalid timezone %q", *req.Msg.ReportingTimezone))
+		}
+		n := tzx.Normalize(*req.Msg.ReportingTimezone)
+		tz = &n
+	}
+
+	wParams := dbwrite.UpdateProjectMetaParams{
+		OrgID:             principal.Project.OrgID,
+		ID:                principal.Project.ID,
+		DisplayName:       postgres.NewNullableText(req.Msg.DisplayName),
+		ReportingTimezone: postgres.NewNullableText(tz),
+	}
+	projectData, err := s.service.UpdateProjectMeta(ctx, wParams)
 	if err != nil {
 		if errors.Is(err, projects.ErrProjectNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonProjectNotFound, "project not found", apperr.Resource("project", wParams.ID))
 		}
-		slog.ErrorContext(ctx, "failed to update project display name", slogx.Error(err), slog.String("project_id", wParams.ID))
+		slog.ErrorContext(ctx, "failed to update project meta", slogx.Error(err), slog.String("project_id", wParams.ID))
 		telemetry.RecordError(ctx, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 
-	return connect.NewResponse(&projectsv1.UpdateDisplayNameResponse{Project: wToRPCMsg(projectData)}), nil
+	return connect.NewResponse(&projectsv1.UpdateMetaResponse{Project: wToRPCMsg(projectData)}), nil
 }
 
 // UpdateFCMServiceJSON updates the FCM service JSON for the project specified by x-project-id header.

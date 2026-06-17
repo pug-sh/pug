@@ -2209,13 +2209,13 @@ const file_dashboard_dashboards_v1_dashboards_proto_rawDesc = "" +
 	"\rvisualization\x18\v \x01(\v2-.dashboard.dashboards.v1.VisualizationOptionsR\rvisualizationB\x10\n" +
 	"\acontent\x12\x05\xbaH\x02\b\x01\"c\n" +
 	"\x1fDashboardsServiceUpsertResponse\x12@\n" +
-	"\tdashboard\x18\x01 \x01(\v2\".dashboard.dashboards.v1.DashboardR\tdashboard\"\xff\x02\n" +
+	"\tdashboard\x18\x01 \x01(\v2\".dashboard.dashboards.v1.DashboardR\tdashboard\"\x8f\x03\n" +
 	"&DashboardsServiceQueryDashboardRequest\x12)\n" +
 	"\fdashboard_id\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\vdashboardId\x123\n" +
 	"\n" +
 	"time_range\x18\x02 \x01(\v2\x14.common.v1.TimeRangeR\ttimeRange\x12K\n" +
 	"\vgranularity\x18\x03 \x01(\x0e2\x1f.shared.insights.v1.GranularityB\b\xbaH\x05\x82\x01\x02\x10\x01R\vgranularity:\xa7\x01\xbaH\xa3\x01\x1a\xa0\x01\n" +
-	"1query_dashboard_request.valid_time_range_override\x12'time_range override must have from < to\x1aB!has(this.time_range) || this.time_range.from < this.time_range.to\"\xa0\x04\n" +
+	"1query_dashboard_request.valid_time_range_override\x12'time_range override must have from < to\x1aB!has(this.time_range) || this.time_range.from < this.time_range.toJ\x04\b\x04\x10\x05R\btimezone\"\xa0\x04\n" +
 	"\fRenderedTile\x12B\n" +
 	"\x04tile\x18\x01 \x01(\v2&.dashboard.dashboards.v1.DashboardTileB\x06\xbaH\x03\xc8\x01\x01R\x04tile\x12;\n" +
 	"\x06result\x18\x02 \x01(\v2!.shared.insights.v1.QueryResponseH\x00R\x06result\x12.\n" +
