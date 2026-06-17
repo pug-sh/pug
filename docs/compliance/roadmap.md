@@ -122,6 +122,12 @@ Each item: what the code does today (with file references), what to add, and the
 
 **Add:** an opt-in `respectDNT`/GPC mode; a documented region-aware **deny-by-default** mode (EU/ePrivacy expects opt-in *before* any localStorage write); and either server-side recording of the consent basis on events or clear documentation that gating is client-side. Note the SDK writes ~4 localStorage keys (session, profile, consent, device) → ePrivacy "terminal equipment" consent territory.
 
+#### 4.10 Cookieless server-hash identity ❌ — scoped in [`4.10-cookieless-identity.md`](./4.10-cookieless-identity.md)
+
+**Today:** anonymous identity is always a client-stored UUID (`anon-<uuid>` in `sdk-web/src/profile.ts`), so a consent-denied visitor writes nothing and is **uncounted**.
+
+**Add (optional mode):** a PostHog `on_reject`-style cookieless mode — for consent-denied / pre-consent visitors, derive `distinct_id` server-side as `hash(project_id, daily_salt, ip, ua, host)` (reusing the transient IP from §4.4), rotate+destroy the salt daily so the hash is anonymous not pseudonymous, and **upgrade** to the UUID profile on opt-in. Keeps the UUID model as the default (Pug is product analytics — anonymous retention + anon→identified merge must survive); this is opt-in only. `identify()` blocked while cookieless; these profiles are synthetic and outside DSAR/merge scope. Full design, salt lifecycle, and open questions in the scope doc.
+
 ### P2 — Security & residency (our processor duties)
 
 #### 4.8 Security hardening ⚠️ — GDPR Art. 32 / DPDP §8(5) (and DPDP makes the processor liable for breaches)
