@@ -247,8 +247,12 @@ func (*RequestMagicLinkResponse) Descriptor() ([]byte, []int) {
 }
 
 type CompleteMagicLinkRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Token *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`
+	// Optional IANA timezone captured from the browser completing the link. When the
+	// link provisions a new account (default org + project), it is stored as that
+	// project's reporting_timezone. Empty = UTC; a malformed value is coerced to UTC.
+	Timezone      *string `protobuf:"bytes,2,opt,name=timezone" json:"timezone,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -286,6 +290,13 @@ func (*CompleteMagicLinkRequest) Descriptor() ([]byte, []int) {
 func (x *CompleteMagicLinkRequest) GetToken() string {
 	if x != nil && x.Token != nil {
 		return *x.Token
+	}
+	return ""
+}
+
+func (x *CompleteMagicLinkRequest) GetTimezone() string {
+	if x != nil && x.Timezone != nil {
+		return *x.Timezone
 	}
 	return ""
 }
@@ -446,9 +457,10 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\x17RequestMagicLinkRequest\x12 \n" +
 	"\x05email\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02`\x01R\x05email\"\x1a\n" +
-	"\x18RequestMagicLinkResponse\"8\n" +
+	"\x18RequestMagicLinkResponse\"q\n" +
 	"\x18CompleteMagicLinkRequest\x12\x1c\n" +
-	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\"1\n" +
+	"\x05token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\x05token\x127\n" +
+	"\btimezone\x18\x02 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"1\n" +
 	"\x19CompleteMagicLinkResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"\x8b\x01\n" +
 	"\x1aCompleteOAuthSignInRequest\x12E\n" +

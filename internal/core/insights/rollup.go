@@ -172,7 +172,9 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 	}
 	// Bucket the Date column through the SAME granularity function the raw path
 	// uses (over toDateTime(day)) so week/month boundaries are byte-identical.
-	bucketExpr := fmt.Sprintf("%s(toDateTime(day))", granFn)
+	// (Named bucketSQL, not bucketExpr, to avoid shadowing the package-level
+	// bucketExpr helper — this UTC-only rollup path deliberately does not call it.)
+	bucketSQL := fmt.Sprintf("%s(toDateTime(day))", granFn)
 
 	spec := req.GetSpec()
 	bds := spec.GetBreakdowns()
@@ -216,7 +218,7 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 		}
 
 		selectExprs := []string{
-			bucketExpr + " AS t",
+			bucketSQL + " AS t",
 			"kind AS event_kind",
 		}
 		if len(bds) == 1 {
@@ -366,7 +368,7 @@ func trendsQueryForExecution(req *insightsv1.QueryRequest, projectID string, now
 	if req.GetSpec().GetSession() != nil {
 		return sessionTrendsQueryForExecution(req, projectID, now)
 	}
-	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
+	if utcBucketing(req.GetTimezone()) && canUseEventRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
 		q, err := buildTrendsFromRollup(req, projectID)
 		return q, true, err
 	}
@@ -379,7 +381,7 @@ func segmentationQueryForExecution(req *insightsv1.QueryRequest, projectID strin
 	if req.GetSpec().GetSession() != nil {
 		return sessionSegmentationQueryForExecution(req, projectID, now)
 	}
-	if canUseEventRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
+	if utcBucketing(req.GetTimezone()) && canUseEventRollup(req.GetSpec(), req.GetGranularity()) && rollupWindowAligned(req.GetTimeRange(), now) {
 		q, err := buildSegmentationFromRollup(req, projectID)
 		return q, true, err
 	}

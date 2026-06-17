@@ -53,6 +53,11 @@ func (s *server) Query(
 		return nil, err
 	}
 
+	// Bucketing timezone is server-authoritative: inject the project's stored
+	// reporting_timezone, ignoring any client-supplied value, so day/week/month
+	// buckets align to the project's calendar consistently for every viewer.
+	req.Msg.Timezone = &principal.Project.ReportingTimezone
+
 	resp, err := coreinsights.ExecuteQuery(ctx, s.executor, principal.Project.ID, req.Msg, time.Now())
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

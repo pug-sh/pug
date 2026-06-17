@@ -395,7 +395,7 @@ func buildTrendsBranchQuery(
 	idx int,
 	topLevelFilterCond chq.Condition,
 ) (*chq.Query, error) {
-	granFn, err := granularityFunc(req.GetGranularity())
+	bucket, err := bucketExpr(req.GetGranularity(), "occur_time", req.GetTimezone())
 	if err != nil {
 		return nil, fmt.Errorf("trends: %w", err)
 	}
@@ -407,7 +407,7 @@ func buildTrendsBranchQuery(
 	}
 
 	selectExprs := []string{
-		fmt.Sprintf("%s(occur_time) AS t", granFn),
+		bucket + " AS t",
 		"kind AS event_kind",
 	}
 	for j, bd := range breakdowns {
@@ -450,7 +450,7 @@ func buildTrendsBranchQuery(
 // with conditional aggregates (countIf/uniqIf/…) per event, unpivoted via CROSS JOIN
 // against a compact event-index table — same pattern as funnel counts.
 func buildTrendsMultiEvent(req *insightsv1.QueryRequest, projectID string, events []*insightsv1.EventQuery) (*chq.Query, error) {
-	granFn, err := granularityFunc(req.GetGranularity())
+	bucket, err := bucketExpr(req.GetGranularity(), "occur_time", req.GetTimezone())
 	if err != nil {
 		return nil, fmt.Errorf("trends: %w", err)
 	}
@@ -468,7 +468,7 @@ func buildTrendsMultiEvent(req *insightsv1.QueryRequest, projectID string, event
 	valueCases := make([]string, 0, len(events))
 
 	aggCTE := chq.NewQuery().
-		Select(fmt.Sprintf("%s(occur_time) AS t", granFn))
+		Select(bucket + " AS t")
 	for j, bd := range breakdowns {
 		aggCTE.Select(fmt.Sprintf("%s AS breakdown_%d", chq.PropertyExpr(bd.GetProperty()), j))
 	}
@@ -589,7 +589,7 @@ func buildSessionTrends(req *insightsv1.QueryRequest, projectID string) (*chq.Qu
 	if session == nil {
 		return nil, fmt.Errorf("session trends: session is required")
 	}
-	granFn, err := granularityFunc(req.GetGranularity())
+	bucket, err := bucketExpr(req.GetGranularity(), "start_time", req.GetTimezone())
 	if err != nil {
 		return nil, fmt.Errorf("session trends: %w", err)
 	}
@@ -605,7 +605,7 @@ func buildSessionTrends(req *insightsv1.QueryRequest, projectID string) (*chq.Qu
 
 	breakdowns := req.GetSpec().GetBreakdowns()
 	selectExprs := []string{
-		fmt.Sprintf("%s(start_time) AS t", granFn),
+		bucket + " AS t",
 		sqlStringLiteral(sessionEventKind(session)) + " AS event_kind",
 	}
 	groupByCols := []string{"t"}
@@ -1048,7 +1048,11 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 		return nil, fmt.Errorf("retention: %w", err)
 	}
 
-	granFn, err := granularityFunc(req.GetGranularity())
+	bucket, err := bucketExpr(req.GetGranularity(), "occur_time", req.GetTimezone())
+	if err != nil {
+		return nil, fmt.Errorf("retention: %w", err)
+	}
+	retainedBucket, err := bucketExpr(req.GetGranularity(), "e.occur_time", req.GetTimezone())
 	if err != nil {
 		return nil, fmt.Errorf("retention: %w", err)
 	}
@@ -1061,7 +1065,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	cohortsAgg := chq.NewQuery().
 		Select(
 			"distinct_id",
-			fmt.Sprintf("min(%s(occur_time)) AS cohort_time", granFn),
+			fmt.Sprintf("min(%s) AS cohort_time", bucket),
 			"min(occur_time) AS first_event_time",
 		)
 	for i, bd := range breakdowns {
@@ -1096,7 +1100,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 	// before the user's actual start. Conditions use "e." alias to avoid ambiguity in the JOIN.
 	retainedSelect := []string{
 		"c.cohort_time",
-		fmt.Sprintf("%s(e.occur_time) AS t", granFn),
+		retainedBucket + " AS t",
 		"toFloat64(uniq(e.distinct_id)) AS retained_users",
 	}
 	retainedGroupBy := []string{"c.cohort_time", "t"}

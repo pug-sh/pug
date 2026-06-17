@@ -581,10 +581,22 @@ func (x *InsightQuerySpec) GetTopK() *TopKQuery {
 }
 
 type QueryRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Spec          *InsightQuerySpec      `protobuf:"bytes,1,opt,name=spec" json:"spec,omitempty"`
-	TimeRange     *v1.TimeRange          `protobuf:"bytes,2,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
-	Granularity   *Granularity           `protobuf:"varint,3,opt,name=granularity,enum=shared.insights.v1.Granularity" json:"granularity,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Spec        *InsightQuerySpec      `protobuf:"bytes,1,opt,name=spec" json:"spec,omitempty"`
+	TimeRange   *v1.TimeRange          `protobuf:"bytes,2,opt,name=time_range,json=timeRange" json:"time_range,omitempty"`
+	Granularity *Granularity           `protobuf:"varint,3,opt,name=granularity,enum=shared.insights.v1.Granularity" json:"granularity,omitempty"`
+	// IANA timezone name (e.g. "Asia/Kolkata") used to align time-bucket boundaries
+	// to the viewer's local day/week/month instead of UTC. Empty (or "UTC") buckets on
+	// UTC boundaries — the historical behavior. The charset is restricted so the value
+	// can be embedded in the ClickHouse toTimeZone() call without an injection surface;
+	// the zone is otherwise validated server-side.
+	//
+	// SERVER-OVERWRITTEN, IGNORED ON INPUT: the InsightsService.Query handler replaces
+	// any client-supplied value with the project's stored reporting_timezone, so
+	// bucketing is server-authoritative. Do not set it on the request — it has no
+	// effect. (The field is retained rather than reserved because the executor and the
+	// dashboard render path both populate it internally.)
+	Timezone      *string `protobuf:"bytes,12,opt,name=timezone" json:"timezone,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -638,6 +650,13 @@ func (x *QueryRequest) GetGranularity() Granularity {
 		return *x.Granularity
 	}
 	return Granularity_GRANULARITY_UNSPECIFIED
+}
+
+func (x *QueryRequest) GetTimezone() string {
+	if x != nil && x.Timezone != nil {
+		return *x.Timezone
+	}
+	return ""
 }
 
 type QueryResponse struct {
@@ -2520,13 +2539,14 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"*insight_query_spec.top_k_property_required\x12/property is required when dimension is PROPERTY\x1a\xfa\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| this.top_k.dimension   != shared.insights.v1.TopKQuery.Dimension.DIMENSION_PROPERTY|| (this.top_k.property.size() > 0    && this.top_k.property.matches('^\\\\$?[a-zA-Z0-9_.-]+$'))\x1a\xad\x02\n" +
 	"=insight_query_spec.top_k_property_only_for_property_dimension\x121property is only valid when dimension is PROPERTY\x1a\xb8\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| this.top_k.dimension   == shared.insights.v1.TopKQuery.Dimension.DIMENSION_PROPERTY|| this.top_k.property == ''\x1a\xe4\x03\n" +
 	"1insight_query_spec.top_k_metric_property_required\x12>metric_property is required for SUM, AVG, MIN, and MAX metrics\x1a\xee\x02this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| !(this.top_k.metric in [  shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX]) || this.top_k.metric_property != ''\x1a\xbb\x03\n" +
-	".insight_query_spec.top_k_user_dimension_metric\x12NUNIQUE_USERS and PER_USER_AVG metrics are not supported for the USER dimension\x1a\xb8\x02this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| this.top_k.dimension != shared.insights.v1.TopKQuery.Dimension.DIMENSION_USER|| !(this.top_k.metric in [  shared.insights.v1.AggregationType.AGGREGATION_TYPE_UNIQUE_USERS,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_PER_USER_AVG])\"\xe3\f\n" +
+	".insight_query_spec.top_k_user_dimension_metric\x12NUNIQUE_USERS and PER_USER_AVG metrics are not supported for the USER dimension\x1a\xb8\x02this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| this.top_k.dimension != shared.insights.v1.TopKQuery.Dimension.DIMENSION_USER|| !(this.top_k.metric in [  shared.insights.v1.AggregationType.AGGREGATION_TYPE_UNIQUE_USERS,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_PER_USER_AVG])\"\x9c\r\n" +
 	"\fQueryRequest\x12@\n" +
 	"\x04spec\x18\x01 \x01(\v2$.shared.insights.v1.InsightQuerySpecB\x06\xbaH\x03\xc8\x01\x01R\x04spec\x12;\n" +
 	"\n" +
 	"time_range\x18\x02 \x01(\v2\x14.common.v1.TimeRangeB\x06\xbaH\x03\xc8\x01\x01R\ttimeRange\x12P\n" +
 	"\vgranularity\x18\x03 \x01(\x0e2\x1f.shared.insights.v1.GranularityB\r\xbaH\n" +
-	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\vgranularity:\xcf\t\xbaH\xcb\t\x1a\xef\x01\n" +
+	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\vgranularity\x127\n" +
+	"\btimezone\x18\f \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone:\xcf\t\xbaH\xcb\t\x1a\xef\x01\n" +
 	"*query_request.granularity_minute_max_range\x12;GRANULARITY_MINUTE requires a time range of at most 6 hours\x1a\x83\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_MINUTE|| this.time_range.to - this.time_range.from <= duration('6h')\x1a\xeb\x01\n" +
 	"(query_request.granularity_hour_max_range\x129GRANULARITY_HOUR requires a time range of at most 14 days\x1a\x83\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_HOUR|| this.time_range.to - this.time_range.from <= duration('336h')\x1a\xea\x01\n" +
 	"'query_request.granularity_day_max_range\x129GRANULARITY_DAY requires a time range of at most 365 days\x1a\x83\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_DAY|| this.time_range.to - this.time_range.from <= duration('8760h')\x1a\xfa\x01\n" +

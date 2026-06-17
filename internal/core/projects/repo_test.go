@@ -31,7 +31,7 @@ func TestProjectsRepo(t *testing.T) {
 
 	// Use the service to create a project — generates proper xid (20-char) IDs and API keys.
 	svc := projects.NewService(db.PgRO, db.PgW, nil)
-	proj, err := svc.CreateProject(ctx, "org-repo", "Repo Project")
+	proj, err := svc.CreateProject(ctx, "org-repo", "Repo Project", "")
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}

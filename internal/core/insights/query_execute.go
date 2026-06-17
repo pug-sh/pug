@@ -13,6 +13,7 @@ import (
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
 	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/pug-sh/pug/internal/tzx"
 )
 
 // InvalidQueryError indicates client-side query parameters failed to build.
@@ -39,6 +40,13 @@ func ExecuteQuery(
 ) (*insightsv1.QueryResponse, error) {
 	if executor == nil {
 		panic("insights: executor is nil")
+	}
+
+	// Validate the bucketing timezone once up front: a friendly client error here
+	// (rather than a builder failure deep in the dispatch) and a guarantee that the
+	// value reaching bucketExpr / toTimeZone is injection-safe.
+	if err := tzx.Validate(req.GetTimezone()); err != nil {
+		return nil, &InvalidQueryError{Message: err.Error(), err: err}
 	}
 
 	resp := &insightsv1.QueryResponse{}

@@ -9,14 +9,16 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// startOfDay truncates t to midnight UTC. UTC (not t's local zone) is deliberate:
-// the day-keyed ClickHouse rollup is UTC-aligned, and insights.rollupWindowAligned
-// only treats a window as rollup-eligible when `from` is exactly midnight UTC. A
-// midnight-local boundary on a non-UTC server would silently disqualify every
-// default-window dashboard tile and force a raw scan.
-func startOfDay(t time.Time) time.Time {
-	t = t.UTC()
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+// startOfDayIn truncates t to midnight in loc. With loc == time.UTC this is the
+// historical UTC-aligned boundary, deliberate because the day-keyed ClickHouse
+// rollup is UTC-aligned and insights.rollupWindowAligned only treats a window as
+// rollup-eligible when `from` is exactly midnight UTC. A non-UTC loc trades that
+// eligibility for a window whose first bucket is a full *local* day: the insights
+// raw builders bucket in the same zone (QueryRequest.timezone), so the window edge
+// and the bucket edges line up and the leading day is no longer a partial slice.
+func startOfDayIn(t time.Time, loc *time.Location) time.Time {
+	t = t.In(loc)
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
 }
 
 func lastNHours(now time.Time, n int) *commonv1.TimeRange {
@@ -34,8 +36,8 @@ func lastNHours(now time.Time, n int) *commonv1.TimeRange {
 // fits its per-granularity range cap (proto QueryRequest CEL) instead of
 // overshooting by the partial day and failing per-tile validation. It also
 // yields exactly N daily buckets rather than N+1.
-func lastNDays(now time.Time, n int) *commonv1.TimeRange {
-	from := startOfDay(now.AddDate(0, 0, -(n - 1)))
+func lastNDays(now time.Time, n int, loc *time.Location) *commonv1.TimeRange {
+	from := startOfDayIn(now.AddDate(0, 0, -(n-1)), loc)
 	return &commonv1.TimeRange{
 		From: timestamppb.New(from),
 		To:   timestamppb.New(now),
@@ -80,12 +82,15 @@ func validAbsoluteTimeRange(tr *commonv1.TimeRange) bool {
 }
 
 // ResolveDashboardTimeRangePreset resolves a dashboard tile preset to an absolute
-// time range. When the preset is unknown, fallback is used when valid; otherwise
-// LAST_30_DAYS is used.
+// time range. Day-and-coarser presets align `from` to midnight in loc (pass
+// time.UTC for the historical UTC-aligned, rollup-eligible behavior); hour presets
+// are instant-based and ignore loc. When the preset is unknown, fallback is used
+// when valid; otherwise LAST_30_DAYS is used.
 func ResolveDashboardTimeRangePreset(
 	preset commonv1.TimeRangePreset,
 	fallback *commonv1.TimeRange,
 	now time.Time,
+	loc *time.Location,
 ) *commonv1.TimeRange {
 	switch preset {
 	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_1_HOUR:
@@ -95,21 +100,21 @@ func ResolveDashboardTimeRangePreset(
 	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_24_HOURS:
 		return lastNHours(now, 24)
 	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS:
-		return lastNDays(now, 7)
+		return lastNDays(now, 7, loc)
 	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_14_DAYS:
-		return lastNDays(now, 14)
+		return lastNDays(now, 14, loc)
 	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS:
-		return lastNDays(now, 30)
+		return lastNDays(now, 30, loc)
 	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_90_DAYS:
-		return lastNDays(now, 90)
+		return lastNDays(now, 90, loc)
 	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_180_DAYS:
-		return lastNDays(now, 180)
+		return lastNDays(now, 180, loc)
 	case commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS:
-		return lastNDays(now, 365)
+		return lastNDays(now, 365, loc)
 	default:
 		if validAbsoluteTimeRange(fallback) {
 			return fallback
 		}
-		return lastNDays(now, 30)
+		return lastNDays(now, 30, loc)
 	}
 }

@@ -387,6 +387,50 @@ func TestTrendsExecution_FallsBackToRaw_NonAlignedWindow(t *testing.T) {
 	}
 }
 
+func TestTrendsExecution_FallsBackToRaw_NonUTCTimezone(t *testing.T) {
+	// Fully rollup-eligible (DAY, no filters, materialized breakdown, aligned window)
+	// EXCEPT the bucketing timezone is non-UTC. The daily rollup is UTC-keyed, so
+	// serving a local-calendar query from it would silently bucket on UTC boundaries
+	// (off-by-one days for the viewer). The utcBucketing gate must force the raw path.
+	req := rollupDayReq(rollupTrendsSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view", "$country"))
+	req.Timezone = proto.String("Asia/Kolkata")
+	q, usedRollup, err := trendsQueryForExecution(req, "proj_123", time.Now())
+	if err != nil {
+		t.Fatalf("trendsQueryForExecution: %v", err)
+	}
+	if usedRollup {
+		t.Fatal("non-UTC timezone must not use the UTC-keyed rollup")
+	}
+	if strings.Contains(q.SQL(), rollupTable) {
+		t.Errorf("non-UTC timezone must hit raw events, got rollup\nSQL:\n%s", q.SQL())
+	}
+	if !strings.Contains(q.SQL(), "FROM events") {
+		t.Errorf("expected raw events query\nSQL:\n%s", q.SQL())
+	}
+	if !strings.Contains(q.SQL(), "toTimeZone(occur_time, 'Asia/Kolkata')") {
+		t.Errorf("raw fallback must bucket in the requested zone\nSQL:\n%s", q.SQL())
+	}
+}
+
+func TestSegmentationExecution_FallsBackToRaw_NonUTCTimezone(t *testing.T) {
+	// Same gate on the segmentation dispatch path.
+	req := rollupDayReq(rollupSegSpec(insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL, "page_view"))
+	req.Timezone = proto.String("Asia/Kolkata")
+	q, usedRollup, err := segmentationQueryForExecution(req, "proj_123", time.Now())
+	if err != nil {
+		t.Fatalf("segmentationQueryForExecution: %v", err)
+	}
+	if usedRollup {
+		t.Fatal("non-UTC timezone must not use the UTC-keyed rollup")
+	}
+	if strings.Contains(q.SQL(), rollupTable) {
+		t.Errorf("non-UTC timezone must hit raw events, got rollup\nSQL:\n%s", q.SQL())
+	}
+	if !strings.Contains(q.SQL(), "FROM events") {
+		t.Errorf("expected raw events query\nSQL:\n%s", q.SQL())
+	}
+}
+
 func TestRollupWindowAligned(t *testing.T) {
 	now := time.Date(2026, 5, 25, 14, 0, 0, 0, time.UTC)
 	cases := []struct {

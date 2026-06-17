@@ -13,8 +13,11 @@ type InviteContext struct {
 	OrgInvitationID string
 }
 
-// FinishSignup applies org join (invite) or default org for newly-created accounts.
-func FinishSignup(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool, invite *InviteContext) error {
+// FinishSignup applies org join (invite) or default org for newly-created
+// accounts. reportingTimezone seeds the default project's reporting timezone on
+// the plain-signup path (coerced to UTC if malformed); it is ignored on the
+// invite path, which joins an existing org rather than creating one.
+func FinishSignup(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool, invite *InviteContext, reportingTimezone string) error {
 	if invite != nil && invite.OrgInvitationID != "" {
 		if err := coreorgs.ApplyInviteAcceptanceInTx(ctx, w, invite.OrgInvitationID, customerID); err != nil {
 			switch {
@@ -31,7 +34,7 @@ func FinishSignup(ctx context.Context, w *dbwrite.Queries, customerID string, cr
 		return nil
 	}
 	if createdNew {
-		if _, err := coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default"); err != nil {
+		if _, err := coreorgs.CreateOrgWithDefaultsInTx(ctx, w, customerID, "default", reportingTimezone); err != nil {
 			return err
 		}
 	}
