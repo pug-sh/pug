@@ -10,7 +10,7 @@ import (
 )
 
 const getProjectByID = `-- name: GetProjectByID :one
-select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where id = $1
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time from projects where id = $1
 `
 
 func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error) {
@@ -24,13 +24,14 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
+		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getProjectByIDAndOrgMember = `-- name: GetProjectByIDAndOrgMember :one
-select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.private_api_key, p.public_api_key, p.update_time
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.private_api_key, p.public_api_key, p.reporting_timezone, p.update_time
 from projects p
 join org_members om on om.org_id = p.org_id
 where p.id = $1 and om.customer_id = $2
@@ -52,13 +53,14 @@ func (q *Queries) GetProjectByIDAndOrgMember(ctx context.Context, arg GetProject
 		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
+		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getProjectByPrivateApiKey = `-- name: GetProjectByPrivateApiKey :one
-select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where private_api_key = $1
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time from projects where private_api_key = $1
 `
 
 func (q *Queries) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey string) (Project, error) {
@@ -72,13 +74,14 @@ func (q *Queries) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey s
 		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
+		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getProjectByPublicApiKey = `-- name: GetProjectByPublicApiKey :one
-select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where public_api_key = $1
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time from projects where public_api_key = $1
 `
 
 func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, publicApiKey string) (Project, error) {
@@ -92,13 +95,14 @@ func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, publicApiKey str
 		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
+		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
 const getProjectsByOrgID = `-- name: GetProjectsByOrgID :many
-select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time from projects where org_id = $1
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time from projects where org_id = $1
 `
 
 func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Project, error) {
@@ -118,6 +122,7 @@ func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Proje
 			&i.OrgID,
 			&i.PrivateApiKey,
 			&i.PublicApiKey,
+			&i.ReportingTimezone,
 			&i.UpdateTime,
 		); err != nil {
 			return nil, err

@@ -119,8 +119,12 @@ func (x *GetMeResponse) GetEmailVerified() bool {
 }
 
 type SetPasswordRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Password      *string                `protobuf:"bytes,1,opt,name=password" json:"password,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// min_len is a character count (>= 6); max_bytes is bcrypt's 72-byte input
+	// ceiling. Enforced here on the password-creation path — SignInWithEmail
+	// deliberately omits a min so a tightened policy never locks out an account
+	// whose password predates it.
+	Password      *string `protobuf:"bytes,1,opt,name=password" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -208,10 +212,9 @@ const file_dashboard_customers_v1_customers_proto_rawDesc = "" +
 	"\vcustomer_id\x18\x01 \x01(\tR\n" +
 	"customerId\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12%\n" +
-	"\x0eemail_verified\x18\x03 \x01(\bR\remailVerified\"<\n" +
-	"\x12SetPasswordRequest\x12&\n" +
-	"\bpassword\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02(HR\bpassword\"\x15\n" +
+	"\x0eemail_verified\x18\x03 \x01(\bR\remailVerified\">\n" +
+	"\x12SetPasswordRequest\x12(\n" +
+	"\bpassword\x18\x01 \x01(\tB\f\xbaH\t\xc8\x01\x01r\x04\x10\x06(HR\bpassword\"\x15\n" +
 	"\x13SetPasswordResponse2\xd4\x01\n" +
 	"\x10CustomersService\x12V\n" +
 	"\x05GetMe\x12$.dashboard.customers.v1.GetMeRequest\x1a%.dashboard.customers.v1.GetMeResponse\"\x00\x12h\n" +

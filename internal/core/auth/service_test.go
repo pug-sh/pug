@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.opentelemetry.io/otel"
@@ -74,14 +76,17 @@ func TestAuthService(t *testing.T) {
 	var signinToken string
 
 	t.Run("SignInWithEmail_valid", func(t *testing.T) {
-		token, err := svc.SignInWithEmail(ctx, "test@example.com", "password123")
+		session, err := svc.SignInWithEmail(ctx, "test@example.com", "password123")
 		if err != nil {
 			t.Fatalf("SignInWithEmail: %v", err)
 		}
-		if token == "" {
-			t.Fatal("expected non-empty token")
+		if session.AccessToken == "" {
+			t.Fatal("expected non-empty access token")
 		}
-		signinToken = token
+		if session.RefreshToken == "" {
+			t.Fatal("expected non-empty refresh token")
+		}
+		signinToken = session.AccessToken
 	})
 
 	t.Run("SignInWithEmail_wrongPassword", func(t *testing.T) {
@@ -91,7 +96,8 @@ func TestAuthService(t *testing.T) {
 	})
 
 	t.Run("JWT_structure", func(t *testing.T) {
-		parsed, err := jwt.Parse(signinToken, func(tok *jwt.Token) (any, error) {
+		var claims jwt.RegisteredClaims
+		parsed, err := jwt.ParseWithClaims(signinToken, &claims, func(tok *jwt.Token) (any, error) {
 			if _, ok := tok.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, errors.New("unexpected signing method")
 			}
@@ -102,6 +108,22 @@ func TestAuthService(t *testing.T) {
 		}
 		if !parsed.Valid {
 			t.Fatal("JWT is not valid")
+		}
+		// aud/iss must match what WithJWTAuth verifies, else every dashboard request 401s.
+		if !slices.Contains(claims.Audience, auth.Audience) {
+			t.Errorf("audience = %v, want to contain %q", claims.Audience, auth.Audience)
+		}
+		if claims.Issuer != auth.Issuer {
+			t.Errorf("issuer = %q, want %q", claims.Issuer, auth.Issuer)
+		}
+		// Access token is intentionally short-lived (~1h). A regression to a long TTL
+		// (e.g. the old 90 days) would silently widen the leak window — pin it.
+		if claims.ExpiresAt == nil || claims.IssuedAt == nil {
+			t.Fatal("access token must carry both iat and exp")
+		}
+		ttl := claims.ExpiresAt.Sub(claims.IssuedAt.Time)
+		if ttl < 55*time.Minute || ttl > 65*time.Minute {
+			t.Errorf("access token TTL = %v, want ~1h", ttl)
 		}
 	})
 }

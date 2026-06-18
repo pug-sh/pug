@@ -52,6 +52,11 @@ func NewFromConfig(ctx context.Context, cfg *Config) (*Client, error) {
 	return &Client{client: client}, nil
 }
 
+// Ping verifies connectivity to Redis. Used by readiness probes.
+func (c *Client) Ping(ctx context.Context) error {
+	return c.client.Ping(ctx).Err()
+}
+
 func (c *Client) Close(ctx context.Context) {
 	slog.InfoContext(ctx, "Closing redis connection.")
 	if err := c.client.Close(); err != nil {

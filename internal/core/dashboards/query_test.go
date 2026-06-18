@@ -183,7 +183,7 @@ func TestValidAbsoluteTimeRange(t *testing.T) {
 func TestResolveDashboardTimeRangePreset(t *testing.T) {
 	now := time.Date(2026, 5, 23, 15, 30, 0, 0, time.UTC)
 
-	got := ResolveDashboardTimeRangePreset(commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, nil, now)
+	got := ResolveDashboardTimeRangePreset(commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, nil, now, time.UTC)
 	if got.GetFrom().AsTime().After(got.GetTo().AsTime()) {
 		t.Fatal("expected from before to")
 	}
@@ -195,7 +195,7 @@ func TestResolveDashboardTimeRangePreset(t *testing.T) {
 		From: timestamppb.New(now.Add(-2 * time.Hour)),
 		To:   timestamppb.New(now.Add(-time.Hour)),
 	}
-	got = ResolveDashboardTimeRangePreset(commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, fallback, now)
+	got = ResolveDashboardTimeRangePreset(commonv1.TimeRangePreset_TIME_RANGE_PRESET_UNSPECIFIED, fallback, now, time.UTC)
 	if !got.GetFrom().AsTime().Equal(fallback.GetFrom().AsTime()) || !got.GetTo().AsTime().Equal(fallback.GetTo().AsTime()) {
 		t.Fatalf("got fallback range %v-%v, want %v-%v", got.GetFrom().AsTime(), got.GetTo().AsTime(), fallback.GetFrom().AsTime(), fallback.GetTo().AsTime())
 	}
@@ -218,11 +218,38 @@ func TestResolveDashboardTimeRangePreset_DayPresetsAreMidnightUTC(t *testing.T) 
 		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_30_DAYS,
 		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_365_DAYS,
 	} {
-		from := ResolveDashboardTimeRangePreset(preset, nil, now).GetFrom().AsTime().UTC()
+		from := ResolveDashboardTimeRangePreset(preset, nil, now, time.UTC).GetFrom().AsTime().UTC()
 		midnight := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
 		if !from.Equal(midnight) {
 			t.Errorf("%v: from = %v, want midnight UTC (%v)", preset, from, midnight)
 		}
+	}
+}
+
+// With a non-UTC location, day presets align `from` to LOCAL midnight so the leading
+// bucket is a full local day (the fix for the left-edge dip). Asia/Kolkata is UTC+05:30,
+// so local midnight lands at 18:30 UTC the previous day.
+func TestResolveDashboardTimeRangePreset_NonUTCAlignsToLocalMidnight(t *testing.T) {
+	loc, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		t.Skipf("tz data unavailable: %v", err)
+	}
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC) // 17:30 IST
+
+	from := ResolveDashboardTimeRangePreset(
+		commonv1.TimeRangePreset_TIME_RANGE_PRESET_LAST_7_DAYS, nil, now, loc,
+	).GetFrom().AsTime()
+
+	// LAST_7_DAYS = today + 6 prior days → local midnight of 2026-06-04 IST,
+	// which is 2026-06-03 18:30:00 UTC.
+	want := time.Date(2026, 6, 3, 18, 30, 0, 0, time.UTC)
+	if !from.Equal(want) {
+		t.Errorf("from = %v, want %v (local midnight in Asia/Kolkata)", from.UTC(), want)
+	}
+
+	// It must NOT be midnight UTC — that was the bug.
+	if from.UTC().Hour() == 0 && from.UTC().Minute() == 0 {
+		t.Error("from aligned to midnight UTC, want local midnight")
 	}
 }
 
@@ -248,12 +275,52 @@ func TestResolveEffectiveWindow_FallsBackToDashboardDefault(t *testing.T) {
 	if gran != insightsv1.Granularity_GRANULARITY_WEEK {
 		t.Fatalf("granularity = %v, want WEEK", gran)
 	}
-	wantFrom := startOfDay(now.AddDate(0, 0, -6)) // LAST_7_DAYS = today + 6 prior days
+	wantFrom := startOfDayIn(now.AddDate(0, 0, -6), time.UTC) // LAST_7_DAYS = today + 6 prior days
 	if !tr.GetFrom().AsTime().Equal(wantFrom) {
 		t.Fatalf("from = %v, want %v", tr.GetFrom().AsTime(), wantFrom)
 	}
 	if !tr.GetTo().AsTime().Equal(now) {
 		t.Fatalf("to = %v, want %v", tr.GetTo().AsTime(), now)
+	}
+}
+
+// The project's reporting_timezone (threaded as DashboardQueryOverrides.Timezone)
+// must align the resolved default-preset window to local midnight, confirming the
+// overrides.Timezone → tzx.Load → preset wiring. Asia/Kolkata is UTC+05:30, so local
+// midnight lands at 18:30 UTC the previous day — not midnight UTC.
+func TestResolveEffectiveWindow_AppliesProjectTimezone(t *testing.T) {
+	if _, err := time.LoadLocation("Asia/Kolkata"); err != nil {
+		t.Skipf("tz data unavailable: %v", err)
+	}
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC) // 17:30 IST
+	dash := dbread.Dashboard{DefaultTimeRange: "TIME_RANGE_PRESET_LAST_7_DAYS", DefaultGranularity: "GRANULARITY_DAY"}
+
+	tr, _ := resolveEffectiveWindow(context.Background(), dash, DashboardQueryOverrides{Timezone: "Asia/Kolkata"}, now)
+
+	// LAST_7_DAYS = today + 6 prior days → local midnight of 2026-06-04 IST = 2026-06-03 18:30 UTC.
+	want := time.Date(2026, 6, 3, 18, 30, 0, 0, time.UTC)
+	if !tr.GetFrom().AsTime().Equal(want) {
+		t.Fatalf("from = %v, want %v (local midnight Asia/Kolkata)", tr.GetFrom().AsTime().UTC(), want)
+	}
+	if h, m := tr.GetFrom().AsTime().UTC().Hour(), tr.GetFrom().AsTime().UTC().Minute(); h == 0 && m == 0 {
+		t.Error("from aligned to midnight UTC; project timezone was not applied")
+	}
+}
+
+// A corrupt/legacy stored reporting_timezone (charset-valid but not loadable, so it
+// slips past the proto pattern yet fails tzx.Load) must not fail the render:
+// resolveEffectiveWindow logs + records telemetry and falls back to a UTC-aligned
+// window. This pins the degrade-don't-fail contract a refactor could silently break.
+func TestResolveEffectiveWindow_InvalidTimezoneFallsBackToUTC(t *testing.T) {
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	dash := dbread.Dashboard{DefaultTimeRange: "TIME_RANGE_PRESET_LAST_7_DAYS", DefaultGranularity: "GRANULARITY_DAY"}
+
+	tr, _ := resolveEffectiveWindow(context.Background(), dash, DashboardQueryOverrides{Timezone: "Not/A/Zone"}, now)
+
+	// UTC fallback: LAST_7_DAYS = today + 6 prior days → midnight UTC of 2026-06-04.
+	want := startOfDayIn(now.AddDate(0, 0, -6), time.UTC)
+	if !tr.GetFrom().AsTime().Equal(want) {
+		t.Fatalf("from = %v, want %v (UTC fallback)", tr.GetFrom().AsTime().UTC(), want)
 	}
 }
 
@@ -265,7 +332,7 @@ func TestResolveEffectiveWindow_UnknownDefaultsNormalize(t *testing.T) {
 	if gran != insightsv1.Granularity_GRANULARITY_DAY {
 		t.Fatalf("granularity = %v, want DAY", gran)
 	}
-	wantFrom := startOfDay(now.AddDate(0, 0, -29)) // LAST_30_DAYS fallback = today + 29 prior days
+	wantFrom := startOfDayIn(now.AddDate(0, 0, -29), time.UTC) // LAST_30_DAYS fallback = today + 29 prior days
 	if !tr.GetFrom().AsTime().Equal(wantFrom) {
 		t.Fatalf("from = %v, want %v (LAST_30_DAYS)", tr.GetFrom().AsTime(), wantFrom)
 	}

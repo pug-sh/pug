@@ -102,6 +102,25 @@ func TestSessionTrendsExecution_RoutesToRollup(t *testing.T) {
 	}
 }
 
+func TestSessionTrendsExecution_FallsBackToRawForNonUTCTimezone(t *testing.T) {
+	// The session rollup is UTC-keyed too; a non-UTC bucketing zone must force raw.
+	req := sessionReq(insightsv1.SessionMetric_SESSION_METRIC_ENTRY, "page_view", "$url")
+	req.Timezone = proto.String("Asia/Kolkata")
+	q, usedRollup, err := trendsQueryForExecution(req, "proj_123", time.Now())
+	if err != nil {
+		t.Fatalf("trendsQueryForExecution: %v", err)
+	}
+	if usedRollup {
+		t.Fatal("non-UTC timezone must not use the UTC-keyed session rollup")
+	}
+	if strings.Contains(q.SQL(), sessionRollupTable) || !strings.Contains(q.SQL(), "FROM events") {
+		t.Errorf("expected raw events query\nSQL:\n%s", q.SQL())
+	}
+	if !strings.Contains(q.SQL(), "toTimeZone(start_time, 'Asia/Kolkata')") {
+		t.Errorf("raw session fallback must bucket start_time in the requested zone\nSQL:\n%s", q.SQL())
+	}
+}
+
 func TestSessionTrendsExecution_FallsBackToRawForUnalignedWindow(t *testing.T) {
 	req := sessionReq(insightsv1.SessionMetric_SESSION_METRIC_ENTRY, "page_view", "$url")
 	req.TimeRange = rollupTimeRange("2024-01-01T06:00:00Z", "2024-01-08T12:00:00Z")

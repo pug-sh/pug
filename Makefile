@@ -85,7 +85,7 @@ fmt:
 
 .PHONY: test
 test:
-	go test ./... -count=1
+	go test ./... -race -count=1
 
 .PHONY: psql
 psql:

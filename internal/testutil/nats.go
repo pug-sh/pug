@@ -175,6 +175,7 @@ func testStreamConfig(stream natsdeps.StreamConfig) jetstream.StreamConfig {
 		MaxMsgs:      stream.MaxMsgs,
 		MaxBytes:     maxBytes,
 		MaxAge:       maxAge,
+		Discard:      testDiscardPolicy(stream.Discard),
 		// CI test containers do not have production-scale disk budgets.
 		Storage:  jetstream.MemoryStorage,
 		Replicas: 1,
@@ -190,6 +191,13 @@ func testRetentionPolicy(policy string) jetstream.RetentionPolicy {
 	default:
 		return jetstream.LimitsPolicy
 	}
+}
+
+func testDiscardPolicy(policy string) jetstream.DiscardPolicy {
+	if strings.EqualFold(policy, "new") {
+		return jetstream.DiscardNew
+	}
+	return jetstream.DiscardOld
 }
 
 func readStreamConfig() ([]natsdeps.StreamConfig, error) {

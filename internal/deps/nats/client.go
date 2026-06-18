@@ -32,7 +32,13 @@ type StreamConfig struct {
 	MaxBytes        int64         `yaml:"max_bytes"`
 	MaxAge          time.Duration `yaml:"max_age"`
 	Storage         string        `yaml:"storage"`
-	NumReplicas     int           `yaml:"num_replicas"`
+	// Discard is the policy when a limit (max_bytes/max_msgs) is hit: "old"
+	// (default) drops the oldest messages to admit new ones, "new" rejects new
+	// publishes. DLQ streams use "new" so a full DLQ fails the publish loudly
+	// (surfaced via the nats.dlq_messages_total outcome=dropped metric) instead of
+	// silently overwriting the oldest dead-letter evidence.
+	Discard     string `yaml:"discard"`
+	NumReplicas int    `yaml:"num_replicas"`
 }
 
 type ConsumerConfig struct {
@@ -86,6 +92,12 @@ func New(ctx context.Context) (*NATSClient, error) {
 	}, nil
 }
 
+// IsConnected reports whether the underlying NATS connection is currently
+// established. Used by readiness probes; a closed/reconnecting conn is not ready.
+func (nc *NATSClient) IsConnected() bool {
+	return nc.conn != nil && nc.conn.IsConnected()
+}
+
 // Close closes the NATS connection
 func (nc *NATSClient) Close() {
 	if nc.conn != nil {
@@ -96,6 +108,13 @@ func (nc *NATSClient) Close() {
 // GetJetStream returns the JetStream context
 func (nc *NATSClient) GetJetStream() jetstream.JetStream {
 	return nc.jetStream
+}
+
+// IsConnected reports whether the underlying NATS connection is currently
+// established. It backs worker readiness (see natsWorker.Ready); a nil connection
+// reads as not connected.
+func (nc *NATSClient) IsConnected() bool {
+	return nc.conn != nil && nc.conn.IsConnected()
 }
 
 // GetConfig returns the NATS configuration

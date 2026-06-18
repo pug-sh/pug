@@ -18,10 +18,12 @@ import (
 // consumer-side so handlers can be unit-tested with a fake (instead of
 // re-implementing the mapping logic in tests).
 type authService interface {
-	SignInWithEmail(ctx context.Context, email, password string) (string, error)
+	SignInWithEmail(ctx context.Context, email, password string) (coreauth.Session, error)
 	RequestMagicLink(ctx context.Context, email string) error
-	CompleteMagicLink(ctx context.Context, token string) (string, error)
-	CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (string, error)
+	CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (coreauth.Session, error)
+	CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (coreauth.Session, error)
+	RefreshSession(ctx context.Context, refreshToken string) (coreauth.Session, error)
+	RevokeSession(ctx context.Context, refreshToken string) error
 }
 
 type server struct {
@@ -47,14 +49,17 @@ func (s *server) SignInWithEmail(
 	ctx context.Context,
 	req *connect.Request[authv1.SignInWithEmailRequest],
 ) (*connect.Response[authv1.SignInWithEmailResponse], error) {
-	token, err := s.service.SignInWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword())
+	session, err := s.service.SignInWithEmail(ctx, req.Msg.GetEmail(), req.Msg.GetPassword())
 	if err != nil {
 		if errors.Is(err, coreauth.ErrInvalidCredentials) {
 			return nil, apperr.Unauthenticated(apperr.ReasonInvalidCredentials, "invalid credentials")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	return connect.NewResponse(&authv1.SignInWithEmailResponse{Token: &token}), nil
+	return connect.NewResponse(&authv1.SignInWithEmailResponse{
+		Token:        &session.AccessToken,
+		RefreshToken: &session.RefreshToken,
+	}), nil
 }
 
 func (s *server) RequestMagicLink(
@@ -71,14 +76,17 @@ func (s *server) CompleteMagicLink(
 	ctx context.Context,
 	req *connect.Request[authv1.CompleteMagicLinkRequest],
 ) (*connect.Response[authv1.CompleteMagicLinkResponse], error) {
-	token, err := s.service.CompleteMagicLink(ctx, req.Msg.GetToken())
+	session, err := s.service.CompleteMagicLink(ctx, req.Msg.GetToken(), req.Msg.GetTimezone())
 	if err != nil {
 		if errors.Is(err, coreauth.ErrInvalidToken) {
 			return nil, apperr.Invalid(apperr.ReasonInvalidToken, "invalid or expired link")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
-	return connect.NewResponse(&authv1.CompleteMagicLinkResponse{Token: &token}), nil
+	return connect.NewResponse(&authv1.CompleteMagicLinkResponse{
+		Token:        &session.AccessToken,
+		RefreshToken: &session.RefreshToken,
+	}), nil
 }
 
 func (s *server) CompleteOAuthSignIn(
@@ -90,11 +98,43 @@ func (s *server) CompleteOAuthSignIn(
 		return nil, apperr.Invalid(apperr.ReasonOAuthProviderDisabled, "oauth provider is not configured")
 	}
 
-	token, err := s.service.CompleteOAuthSignIn(ctx, provider, req.Msg.GetCredential())
+	session, err := s.service.CompleteOAuthSignIn(ctx, provider, req.Msg.GetCredential())
 	if err != nil {
 		return nil, mapOAuthHandlerError(err)
 	}
-	return connect.NewResponse(&authv1.CompleteOAuthSignInResponse{Token: &token}), nil
+	return connect.NewResponse(&authv1.CompleteOAuthSignInResponse{
+		Token:        &session.AccessToken,
+		RefreshToken: &session.RefreshToken,
+	}), nil
+}
+
+func (s *server) RefreshSession(
+	ctx context.Context,
+	req *connect.Request[authv1.RefreshSessionRequest],
+) (*connect.Response[authv1.RefreshSessionResponse], error) {
+	session, err := s.service.RefreshSession(ctx, req.Msg.GetRefreshToken())
+	if err != nil {
+		if errors.Is(err, coreauth.ErrInvalidToken) {
+			// Refresh failed → the client must sign in again. Unauthenticated (not
+			// InvalidArgument) so the FE's existing 401 handling clears the session.
+			return nil, apperr.Unauthenticated(apperr.ReasonInvalidToken, "session expired")
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	return connect.NewResponse(&authv1.RefreshSessionResponse{
+		Token:        &session.AccessToken,
+		RefreshToken: &session.RefreshToken,
+	}), nil
+}
+
+func (s *server) SignOut(
+	ctx context.Context,
+	req *connect.Request[authv1.SignOutRequest],
+) (*connect.Response[authv1.SignOutResponse], error) {
+	if err := s.service.RevokeSession(ctx, req.Msg.GetRefreshToken()); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	return connect.NewResponse(&authv1.SignOutResponse{}), nil
 }
 
 func mapOAuthHandlerError(err error) error {
@@ -102,7 +142,9 @@ func mapOAuthHandlerError(err error) error {
 	case errors.Is(err, coreoauth.ErrOAuthProviderDisabled):
 		return apperr.Invalid(apperr.ReasonOAuthProviderDisabled, "oauth provider is not configured")
 	case errors.Is(err, coreoauth.ErrUnverifiedEmail):
-		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider")
+		// Generic reason intentional: no distinct client action for an unverified IdP
+		// email (rare edge), so it maps to plain InvalidArgument.
+		return apperr.Invalid(apperr.ReasonInvalidArgument, "email not verified by identity provider") // apperr:exempt
 	case errors.Is(err, coreoauth.ErrInvalidCredential):
 		// A failed/expired credential is an authentication failure, not a
 		// malformed request — return Unauthenticated so clients prompt re-auth

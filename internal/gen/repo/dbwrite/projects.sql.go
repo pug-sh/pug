@@ -12,17 +12,18 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-insert into projects (display_name, id, org_id, private_api_key, public_api_key)
-values ($1, $2, $3, $4, $5)
-returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+insert into projects (display_name, id, org_id, private_api_key, public_api_key, reporting_timezone)
+values ($1, $2, $3, $4, $5, $6)
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
 `
 
 type CreateProjectParams struct {
-	DisplayName   string
-	ID            string
-	OrgID         string
-	PrivateApiKey string
-	PublicApiKey  string
+	DisplayName       string
+	ID                string
+	OrgID             string
+	PrivateApiKey     string
+	PublicApiKey      string
+	ReportingTimezone string
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
@@ -32,6 +33,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.OrgID,
 		arg.PrivateApiKey,
 		arg.PublicApiKey,
+		arg.ReportingTimezone,
 	)
 	var i Project
 	err := row.Scan(
@@ -42,6 +44,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
+		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
 	return i, err
@@ -50,21 +53,22 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 const createProjectAsAdmin = `-- name: CreateProjectAsAdmin :one
 with check_admin as (
   select 1 from org_members
-  where org_id = $3 and customer_id = $6 and role = 'ORG_ROLE_ADMIN'
+  where org_id = $3 and customer_id = $7 and role = 'ORG_ROLE_ADMIN'
 )
-insert into projects (display_name, id, org_id, private_api_key, public_api_key)
-select $1, $2, $3, $4, $5
+insert into projects (display_name, id, org_id, private_api_key, public_api_key, reporting_timezone)
+select $1, $2, $3, $4, $5, $6
 where exists (select 1 from check_admin)
-returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
 `
 
 type CreateProjectAsAdminParams struct {
-	DisplayName   string
-	ID            string
-	OrgID         string
-	PrivateApiKey string
-	PublicApiKey  string
-	CustomerID    string
+	DisplayName       string
+	ID                string
+	OrgID             string
+	PrivateApiKey     string
+	PublicApiKey      string
+	ReportingTimezone string
+	CustomerID        string
 }
 
 func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsAdminParams) (Project, error) {
@@ -74,6 +78,7 @@ func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsA
 		arg.OrgID,
 		arg.PrivateApiKey,
 		arg.PublicApiKey,
+		arg.ReportingTimezone,
 		arg.CustomerID,
 	)
 	var i Project
@@ -85,6 +90,7 @@ func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsA
 		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
+		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
 	return i, err
@@ -93,7 +99,7 @@ func (q *Queries) CreateProjectAsAdmin(ctx context.Context, arg CreateProjectAsA
 const deleteProject = `-- name: DeleteProject :one
 delete from projects
 where org_id = $1 and id = $2
-returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
 `
 
 type DeleteProjectParams struct {
@@ -112,6 +118,7 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (P
 		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
+		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
 	return i, err
@@ -121,7 +128,7 @@ const updateFCMServiceJSON = `-- name: UpdateFCMServiceJSON :one
 update projects
 set fcm_service_json = $1
 where org_id = $2 and id = $3
-returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
 `
 
 type UpdateFCMServiceJSONParams struct {
@@ -141,26 +148,37 @@ func (q *Queries) UpdateFCMServiceJSON(ctx context.Context, arg UpdateFCMService
 		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
+		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
 	return i, err
 }
 
-const updateProjectDisplayName = `-- name: UpdateProjectDisplayName :one
+const updateProjectMeta = `-- name: UpdateProjectMeta :one
 update projects
-set display_name = $1
-where org_id = $2 and id = $3
-returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, update_time
+set display_name       = coalesce($1, display_name),
+    reporting_timezone = coalesce($2, reporting_timezone)
+where org_id = $3 and id = $4
+returning create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time
 `
 
-type UpdateProjectDisplayNameParams struct {
-	DisplayName string
-	OrgID       string
-	ID          string
+type UpdateProjectMetaParams struct {
+	DisplayName       pgtype.Text
+	ReportingTimezone pgtype.Text
+	OrgID             string
+	ID                string
 }
 
-func (q *Queries) UpdateProjectDisplayName(ctx context.Context, arg UpdateProjectDisplayNameParams) (Project, error) {
-	row := q.db.QueryRow(ctx, updateProjectDisplayName, arg.DisplayName, arg.OrgID, arg.ID)
+// Partial update: a NULL param leaves the column unchanged, so callers can update
+// display_name and reporting_timezone independently. A present empty string is
+// written (an empty reporting_timezone resets to UTC), unlike an omitted NULL.
+func (q *Queries) UpdateProjectMeta(ctx context.Context, arg UpdateProjectMetaParams) (Project, error) {
+	row := q.db.QueryRow(ctx, updateProjectMeta,
+		arg.DisplayName,
+		arg.ReportingTimezone,
+		arg.OrgID,
+		arg.ID,
+	)
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
@@ -170,6 +188,7 @@ func (q *Queries) UpdateProjectDisplayName(ctx context.Context, arg UpdateProjec
 		&i.OrgID,
 		&i.PrivateApiKey,
 		&i.PublicApiKey,
+		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
 	return i, err
