@@ -161,3 +161,14 @@ type Project struct {
 	ReportingTimezone string
 	UpdateTime        pgtype.Timestamptz
 }
+
+type RefreshToken struct {
+	ID         string
+	CustomerID string
+	FamilyID   string
+	TokenHash  string
+	ExpiresAt  pgtype.Timestamptz
+	ConsumedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+	CreateTime pgtype.Timestamptz
+}

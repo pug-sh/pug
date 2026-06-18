@@ -13,6 +13,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/pug-sh/pug/internal/apperr"
+	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
@@ -155,7 +156,17 @@ func WithJWTAuth(jwtKey []byte, queries *dbread.Queries) authn.AuthFunc {
 				return nil, authn.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
 			return jwtKey, nil
-		})
+		},
+			// Defense in depth: pin the algorithm (the keyfunc already rejects
+			// non-HMAC, but WithValidMethods stops a forged header before the
+			// keyfunc runs) and require the aud/iss/exp our issuer sets, so a
+			// token minted for a different audience or signed without an expiry
+			// is rejected rather than silently accepted.
+			jwt.WithValidMethods([]string{"HS256"}),
+			jwt.WithIssuer(coreauth.Issuer),
+			jwt.WithAudience(coreauth.Audience),
+			jwt.WithExpirationRequired(),
+		)
 		if err != nil {
 			return nil, unauthenticated(ctx, "invalid authorization")
 		}

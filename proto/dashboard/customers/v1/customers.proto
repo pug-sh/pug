@@ -22,8 +22,13 @@ message GetMeResponse {
 }
 
 message SetPasswordRequest {
+  // min_len is a character count (>= 6); max_bytes is bcrypt's 72-byte input
+  // ceiling. Enforced here on the password-creation path — SignInWithEmail
+  // deliberately omits a min so a tightened policy never locks out an account
+  // whose password predates it.
   string password = 1 [
     (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 6,
     (buf.validate.field).string.max_bytes = 72
   ];
 }

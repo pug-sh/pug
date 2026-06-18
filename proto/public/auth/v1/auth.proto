@@ -10,6 +10,12 @@ service AuthService {
   rpc RequestMagicLink(RequestMagicLinkRequest) returns (RequestMagicLinkResponse) {}
   rpc CompleteMagicLink(CompleteMagicLinkRequest) returns (CompleteMagicLinkResponse) {}
   rpc CompleteOAuthSignIn(CompleteOAuthSignInRequest) returns (CompleteOAuthSignInResponse) {}
+  // RefreshSession exchanges a valid refresh token for a new access+refresh pair.
+  // Public (no JWT): it runs precisely when the access token has expired.
+  rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse) {}
+  // SignOut revokes the refresh token's rotation family. Best-effort: a stale or
+  // unknown token still returns success.
+  rpc SignOut(SignOutRequest) returns (SignOutResponse) {}
 }
 
 message SignInWithEmailRequest {
@@ -26,7 +32,8 @@ message SignInWithEmailRequest {
 }
 
 message SignInWithEmailResponse {
-  string token = 1;
+  string token = 1; // short-lived access JWT
+  string refresh_token = 2; // long-lived opaque refresh token
 }
 
 message RequestMagicLinkRequest {
@@ -50,7 +57,8 @@ message CompleteMagicLinkRequest {
 }
 
 message CompleteMagicLinkResponse {
-  string token = 1; // session JWT
+  string token = 1; // short-lived access JWT
+  string refresh_token = 2; // long-lived opaque refresh token
 }
 
 enum OAuthProvider {
@@ -65,5 +73,23 @@ message CompleteOAuthSignInRequest {
 }
 
 message CompleteOAuthSignInResponse {
-  string token = 1; // session JWT — sign-in OR sign-up, decided server-side
+  string token = 1; // short-lived access JWT — sign-in OR sign-up, decided server-side
+  string refresh_token = 2; // long-lived opaque refresh token
 }
+
+message RefreshSessionRequest {
+  string refresh_token = 1 [(buf.validate.field).required = true];
+}
+
+message RefreshSessionResponse {
+  string token = 1; // new short-lived access JWT
+  string refresh_token = 2; // rotated refresh token (replaces the one sent)
+}
+
+message SignOutRequest {
+  // The refresh token to revoke. Optional: an empty/stale token is a no-op so a
+  // client without a stored token can still call SignOut idempotently.
+  string refresh_token = 1;
+}
+
+message SignOutResponse {}
