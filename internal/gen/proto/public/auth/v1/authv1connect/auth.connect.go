@@ -45,6 +45,11 @@ const (
 	// AuthServiceCompleteOAuthSignInProcedure is the fully-qualified name of the AuthService's
 	// CompleteOAuthSignIn RPC.
 	AuthServiceCompleteOAuthSignInProcedure = "/public.auth.v1.AuthService/CompleteOAuthSignIn"
+	// AuthServiceRefreshSessionProcedure is the fully-qualified name of the AuthService's
+	// RefreshSession RPC.
+	AuthServiceRefreshSessionProcedure = "/public.auth.v1.AuthService/RefreshSession"
+	// AuthServiceSignOutProcedure is the fully-qualified name of the AuthService's SignOut RPC.
+	AuthServiceSignOutProcedure = "/public.auth.v1.AuthService/SignOut"
 )
 
 // AuthServiceClient is a client for the public.auth.v1.AuthService service.
@@ -53,6 +58,12 @@ type AuthServiceClient interface {
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
 	CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error)
+	// RefreshSession exchanges a valid refresh token for a new access+refresh pair.
+	// Public (no JWT): it runs precisely when the access token has expired.
+	RefreshSession(context.Context, *connect.Request[v1.RefreshSessionRequest]) (*connect.Response[v1.RefreshSessionResponse], error)
+	// SignOut revokes the refresh token's rotation family. Best-effort: a stale or
+	// unknown token still returns success.
+	SignOut(context.Context, *connect.Request[v1.SignOutRequest]) (*connect.Response[v1.SignOutResponse], error)
 }
 
 // NewAuthServiceClient constructs a client for the public.auth.v1.AuthService service. By default,
@@ -90,6 +101,18 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("CompleteOAuthSignIn")),
 			connect.WithClientOptions(opts...),
 		),
+		refreshSession: connect.NewClient[v1.RefreshSessionRequest, v1.RefreshSessionResponse](
+			httpClient,
+			baseURL+AuthServiceRefreshSessionProcedure,
+			connect.WithSchema(authServiceMethods.ByName("RefreshSession")),
+			connect.WithClientOptions(opts...),
+		),
+		signOut: connect.NewClient[v1.SignOutRequest, v1.SignOutResponse](
+			httpClient,
+			baseURL+AuthServiceSignOutProcedure,
+			connect.WithSchema(authServiceMethods.ByName("SignOut")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -99,6 +122,8 @@ type authServiceClient struct {
 	requestMagicLink    *connect.Client[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse]
 	completeMagicLink   *connect.Client[v1.CompleteMagicLinkRequest, v1.CompleteMagicLinkResponse]
 	completeOAuthSignIn *connect.Client[v1.CompleteOAuthSignInRequest, v1.CompleteOAuthSignInResponse]
+	refreshSession      *connect.Client[v1.RefreshSessionRequest, v1.RefreshSessionResponse]
+	signOut             *connect.Client[v1.SignOutRequest, v1.SignOutResponse]
 }
 
 // SignInWithEmail calls public.auth.v1.AuthService.SignInWithEmail.
@@ -121,12 +146,28 @@ func (c *authServiceClient) CompleteOAuthSignIn(ctx context.Context, req *connec
 	return c.completeOAuthSignIn.CallUnary(ctx, req)
 }
 
+// RefreshSession calls public.auth.v1.AuthService.RefreshSession.
+func (c *authServiceClient) RefreshSession(ctx context.Context, req *connect.Request[v1.RefreshSessionRequest]) (*connect.Response[v1.RefreshSessionResponse], error) {
+	return c.refreshSession.CallUnary(ctx, req)
+}
+
+// SignOut calls public.auth.v1.AuthService.SignOut.
+func (c *authServiceClient) SignOut(ctx context.Context, req *connect.Request[v1.SignOutRequest]) (*connect.Response[v1.SignOutResponse], error) {
+	return c.signOut.CallUnary(ctx, req)
+}
+
 // AuthServiceHandler is an implementation of the public.auth.v1.AuthService service.
 type AuthServiceHandler interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
 	CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error)
+	// RefreshSession exchanges a valid refresh token for a new access+refresh pair.
+	// Public (no JWT): it runs precisely when the access token has expired.
+	RefreshSession(context.Context, *connect.Request[v1.RefreshSessionRequest]) (*connect.Response[v1.RefreshSessionResponse], error)
+	// SignOut revokes the refresh token's rotation family. Best-effort: a stale or
+	// unknown token still returns success.
+	SignOut(context.Context, *connect.Request[v1.SignOutRequest]) (*connect.Response[v1.SignOutResponse], error)
 }
 
 // NewAuthServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -160,6 +201,18 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("CompleteOAuthSignIn")),
 		connect.WithHandlerOptions(opts...),
 	)
+	authServiceRefreshSessionHandler := connect.NewUnaryHandler(
+		AuthServiceRefreshSessionProcedure,
+		svc.RefreshSession,
+		connect.WithSchema(authServiceMethods.ByName("RefreshSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authServiceSignOutHandler := connect.NewUnaryHandler(
+		AuthServiceSignOutProcedure,
+		svc.SignOut,
+		connect.WithSchema(authServiceMethods.ByName("SignOut")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/public.auth.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuthServiceSignInWithEmailProcedure:
@@ -170,6 +223,10 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceCompleteMagicLinkHandler.ServeHTTP(w, r)
 		case AuthServiceCompleteOAuthSignInProcedure:
 			authServiceCompleteOAuthSignInHandler.ServeHTTP(w, r)
+		case AuthServiceRefreshSessionProcedure:
+			authServiceRefreshSessionHandler.ServeHTTP(w, r)
+		case AuthServiceSignOutProcedure:
+			authServiceSignOutHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -193,4 +250,12 @@ func (UnimplementedAuthServiceHandler) CompleteMagicLink(context.Context, *conne
 
 func (UnimplementedAuthServiceHandler) CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.CompleteOAuthSignIn is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) RefreshSession(context.Context, *connect.Request[v1.RefreshSessionRequest]) (*connect.Response[v1.RefreshSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.RefreshSession is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) SignOut(context.Context, *connect.Request[v1.SignOutRequest]) (*connect.Response[v1.SignOutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.SignOut is not implemented"))
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/pug-sh/pug/internal/tzx"
 	"github.com/rs/xid"
 )
 
@@ -94,7 +95,7 @@ func NewPublicKey() (string, error) {
 	return "pub_" + h, nil
 }
 
-func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, displayName string) (dbwrite.Project, error) {
+func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, displayName, reportingTimezone string) (dbwrite.Project, error) {
 	privKey, err := NewPrivateKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
@@ -108,12 +109,13 @@ func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, d
 		return dbwrite.Project{}, err
 	}
 	project, err := s.write.CreateProjectAsAdmin(ctx, dbwrite.CreateProjectAsAdminParams{
-		ID:            xid.New().String(),
-		PrivateApiKey: privKey,
-		PublicApiKey:  pubKey,
-		OrgID:         orgID,
-		CustomerID:    customerID,
-		DisplayName:   displayName,
+		ID:                xid.New().String(),
+		PrivateApiKey:     privKey,
+		PublicApiKey:      pubKey,
+		OrgID:             orgID,
+		CustomerID:        customerID,
+		DisplayName:       displayName,
+		ReportingTimezone: tzx.Coerce(ctx, reportingTimezone),
 	})
 	if err != nil {
 		// The CTE checks org_members for admin role. ErrNoRows means the INSERT was
@@ -132,15 +134,15 @@ func (s *Service) CreateProjectAsAdmin(ctx context.Context, orgID, customerID, d
 	return project, nil
 }
 
-func (s *Service) CreateProject(ctx context.Context, orgID, displayName string) (dbwrite.Project, error) {
-	return CreateProjectInTx(ctx, s.write, orgID, displayName)
+func (s *Service) CreateProject(ctx context.Context, orgID, displayName, reportingTimezone string) (dbwrite.Project, error) {
+	return CreateProjectInTx(ctx, s.write, orgID, displayName, reportingTimezone)
 }
 
 // CreateProjectInTx is the shared body of Service.CreateProject, exposed so
 // callers with an open transaction (e.g. signup creating a default project
 // alongside the customer+org rows) can run the same insert under their own
 // tx. The handle may be tx-bound or pool-bound; behavior is identical.
-func CreateProjectInTx(ctx context.Context, w *dbwrite.Queries, orgID, displayName string) (dbwrite.Project, error) {
+func CreateProjectInTx(ctx context.Context, w *dbwrite.Queries, orgID, displayName, reportingTimezone string) (dbwrite.Project, error) {
 	privKey, err := NewPrivateKey()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate project private key", slogx.Error(err))
@@ -154,11 +156,12 @@ func CreateProjectInTx(ctx context.Context, w *dbwrite.Queries, orgID, displayNa
 		return dbwrite.Project{}, err
 	}
 	project, err := w.CreateProject(ctx, dbwrite.CreateProjectParams{
-		ID:            xid.New().String(),
-		PrivateApiKey: privKey,
-		PublicApiKey:  pubKey,
-		OrgID:         orgID,
-		DisplayName:   displayName,
+		ID:                xid.New().String(),
+		PrivateApiKey:     privKey,
+		PublicApiKey:      pubKey,
+		OrgID:             orgID,
+		DisplayName:       displayName,
+		ReportingTimezone: tzx.Coerce(ctx, reportingTimezone),
 	})
 	if err != nil {
 		if isUniqueViolationOn(err, projectNameUnique) {
@@ -193,8 +196,8 @@ func (s *Service) ProjectExistsForOrgMember(ctx context.Context, projectID strin
 	return true, nil
 }
 
-func (s *Service) UpdateProjectDisplayName(ctx context.Context, arg dbwrite.UpdateProjectDisplayNameParams) (dbwrite.Project, error) {
-	project, err := s.write.UpdateProjectDisplayName(ctx, arg)
+func (s *Service) UpdateProjectMeta(ctx context.Context, arg dbwrite.UpdateProjectMetaParams) (dbwrite.Project, error) {
+	project, err := s.write.UpdateProjectMeta(ctx, arg)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dbwrite.Project{}, ErrProjectNotFound

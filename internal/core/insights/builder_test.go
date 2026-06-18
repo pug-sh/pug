@@ -398,6 +398,39 @@ func TestFunnelWithFilterGroups(t *testing.T) {
 	}
 }
 
+// TestRetention_NonUTCTimezoneWrapsBothBucketColumns guards the one place bucketExpr
+// is called twice with different columns: the cohort CTE buckets occur_time and the
+// retained CTE buckets e.occur_time. Both must be wrapped in toTimeZone() for the
+// requested zone — wrapping only one would bucket cohorts and their return windows on
+// different calendars and silently distort every retention curve.
+func TestRetention_NonUTCTimezoneWrapsBothBucketColumns(t *testing.T) {
+	req := &insightsv1.QueryRequest{
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION.Enum(),
+			Events: []*insightsv1.EventQuery{
+				{Event: &commonv1.EventFilter{Kind: proto.String("signup")}},
+				{Event: &commonv1.EventFilter{Kind: proto.String("session")}},
+			},
+		},
+		TimeRange:   timeRange("2024-01-01T00:00:00Z", "2024-01-07T23:59:59Z"),
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		Timezone:    proto.String("Asia/Kolkata"),
+	}
+
+	q, err := insights.BuildRetentionQuery(req, "proj_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sql := q.SQL()
+
+	if !strings.Contains(sql, "toTimeZone(occur_time, 'Asia/Kolkata')") {
+		t.Errorf("cohort bucket not wrapped in requested zone, got: %s", sql)
+	}
+	if !strings.Contains(sql, "toTimeZone(e.occur_time, 'Asia/Kolkata')") {
+		t.Errorf("retained bucket not wrapped in requested zone, got: %s", sql)
+	}
+}
+
 func TestRetention(t *testing.T) {
 	req := &insightsv1.QueryRequest{
 		Spec: &insightsv1.InsightQuerySpec{

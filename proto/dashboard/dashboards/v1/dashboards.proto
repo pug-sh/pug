@@ -297,6 +297,10 @@ message DashboardsServiceQueryDashboardRequest {
   // applied uniformly to every insight tile.
   common.v1.TimeRange time_range = 2;
   shared.insights.v1.Granularity granularity = 3 [(buf.validate.field).enum.defined_only = true];
+  // Bucketing timezone is NOT a client override: the server injects the project's
+  // stored reporting_timezone authoritatively (field 4 intentionally left unused).
+  reserved 4;
+  reserved timezone;
 }
 
 message RenderedTile {

@@ -14,6 +14,9 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/slogx"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // PermanentError wraps errors that should not be retried. When a worker
@@ -60,6 +63,10 @@ func IsPermanentError(err error) bool {
 
 type MessageProcessor func(context.Context, jetstream.Msg) error
 
+// WorkerConfig configures a NATS JetStream worker: the stream/consumer it binds,
+// its concurrency and timeouts, the retryable-failure backoff schedule, and the
+// DLQ subject dead-lettered messages are published to. NewWorker validates the
+// required fields and fills defaults for the rest.
 type WorkerConfig struct {
 	StreamName        string
 	ConsumerName      string
@@ -69,12 +76,27 @@ type WorkerConfig struct {
 	ProcessingTimeout time.Duration
 	MaxDeliver        int
 	AckWait           time.Duration
-	DLQSubject        string
+	// BackOff is the redelivery-delay schedule applied to retryable failures via
+	// NakWithDelay: the delay before the i-th redelivery is BackOff[i-1], with the
+	// last entry reused for any further attempts. It is applied worker-side rather
+	// than via the consumer's BackOff field because that field overrides AckWait
+	// (letting the server redeliver mid-processing) and is bypassed for nack'ed
+	// messages — and this worker always Naks explicitly. Leave it unset and
+	// NewWorker fills in defaultBackOff(); a custom schedule must be non-empty with
+	// positive entries (NewWorker validates this).
+	BackOff    []time.Duration
+	DLQSubject string
 }
 
 type Worker interface {
 	Start(ctx context.Context) error
+	// HealthCheck reports liveness: false means the consume loop is wedged and the
+	// process should be restarted. Backs the /healthz endpoint.
 	HealthCheck() (bool, error)
+	// Ready reports readiness: true once the worker has started consuming and its
+	// NATS connection is live. A not-ready worker should be pulled from rotation /
+	// gate a rollout, but not necessarily restarted. Backs the /readyz endpoint.
+	Ready() (bool, error)
 }
 
 const (
@@ -84,11 +106,34 @@ const (
 	DefaultAckWait           = 30 * time.Second
 )
 
+// defaultBackOff returns the redelivery-delay schedule used when
+// WorkerConfig.BackOff is unset. It spaces retries out so a transient downstream
+// outage (e.g. a brief ClickHouse or Postgres blip) is ridden out across attempts
+// instead of burning every delivery in a tight loop and dead-lettering recoverable
+// messages. It returns a fresh slice on each call, so each worker owns its copy
+// and there is no shared mutable package state to guard. The four intervals are
+// sized to the production consumer config (every consumer in consumers.yaml sets
+// max_deliver: 5, so deliveries 1–4 are nak'd with these delays and the 5th
+// dead-letters); DefaultMaxDeliver=3 above is only the fallback for a consumer
+// that omits max_deliver entirely.
+func defaultBackOff() []time.Duration {
+	return []time.Duration{
+		1 * time.Second,
+		5 * time.Second,
+		15 * time.Second,
+		30 * time.Second,
+	}
+}
+
 type natsWorker struct {
 	config    WorkerConfig
 	processor MessageProcessor
 	consumer  jetstream.Consumer
 	js        jetstream.JetStream
+	// connected reports whether the underlying NATS connection is live; it backs
+	// the readiness check. Injected (rather than holding the *NATSClient) so Ready
+	// is unit-testable without a real connection.
+	connected func() bool
 	wg        sync.WaitGroup
 	healthy   atomic.Bool
 	started   atomic.Bool
@@ -123,11 +168,20 @@ func NewWorker(config WorkerConfig, processor MessageProcessor, client *NATSClie
 	if config.AckWait <= 0 {
 		config.AckWait = DefaultAckWait
 	}
+	for i, d := range config.BackOff {
+		if d <= 0 {
+			return nil, fmt.Errorf("nats: WorkerConfig.BackOff[%d] must be positive, got %s", i, d)
+		}
+	}
+	if len(config.BackOff) == 0 {
+		config.BackOff = defaultBackOff()
+	}
 
 	return &natsWorker{
 		config:    config,
 		processor: processor,
 		js:        client.GetJetStream(),
+		connected: client.IsConnected,
 	}, nil
 }
 
@@ -158,6 +212,11 @@ func (w *natsWorker) Start(ctx context.Context) error {
 	}
 	w.consumer = consumer
 	w.healthy.Store(true)
+
+	// Expose this worker on the process-wide /healthz (liveness) and /readyz
+	// (readiness) endpoints. Registering here — after the consumer is created —
+	// means a worker only appears on the endpoints once it is genuinely consuming.
+	registerHealth(ctx, w)
 
 	for i := 0; i < w.config.Concurrency; i++ {
 		w.wg.Add(1)
@@ -272,12 +331,19 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 
 	procCtx = extractTraceContext(procCtx, msg)
 
+	// Read metadata once: this single snapshot feeds the consumer-span attributes,
+	// the last-delivery routing decision, the backoff delay, and the DLQ diagnostic
+	// headers (passed into publishToDLQ), so every decision stays consistent and we
+	// never re-read. On failure we record once here and fall back to treating the
+	// delivery as last (see isLastDelivery).
 	meta, metaErr := msg.Metadata()
-	if metaErr != nil {
-		slog.WarnContext(procCtx, "failed to read message metadata for span attributes",
+	metaOK := metaErr == nil
+	if !metaOK {
+		slog.WarnContext(procCtx, "failed to read message metadata",
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
 			slogx.Error(metaErr))
+		telemetry.RecordError(procCtx, metaErr)
 	}
 	var streamSeq, consumerSeq uint64
 	var numDelivered uint64
@@ -301,7 +367,11 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 			slog.String("stream", w.config.StreamName),
 			slog.String("consumer", w.config.ConsumerName),
 			slogx.Error(err))
-		if !w.publishToDLQ(procCtx, msg, err) {
+		dlqCtx, dlqCancel := dlqContext(procCtx)
+		published := w.publishToDLQ(dlqCtx, msg, meta, err)
+		dlqCancel()
+		recordDLQOutcome(procCtx, w.config.StreamName, w.config.ConsumerName, dispositionPermanent, published)
+		if !published {
 			slog.ErrorContext(procCtx, "DLQ publish failed for permanent error, terminating to avoid wasting retries",
 				slog.String("stream", w.config.StreamName),
 				slog.String("consumer", w.config.ConsumerName),
@@ -319,23 +389,37 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 			slog.String("consumer", w.config.ConsumerName),
 			slogx.Error(err))
 
-		if w.isLastDelivery(procCtx, msg) {
-			if !w.publishToDLQ(procCtx, msg, err) {
+		if w.isLastDelivery(numDelivered, metaOK) {
+			// Distinguish "burned all retries" from "couldn't read metadata, so
+			// routed to DLQ to avoid an endless redelivery loop": both dead-letter
+			// here, but they are different operational facts on the dropped-message
+			// alert, so they carry different disposition labels.
+			disposition := dispositionExhausted
+			if !metaOK {
+				disposition = dispositionMetadataUnavailable
+			}
+			dlqCtx, dlqCancel := dlqContext(procCtx)
+			published := w.publishToDLQ(dlqCtx, msg, meta, err)
+			dlqCancel()
+			recordDLQOutcome(procCtx, w.config.StreamName, w.config.ConsumerName, disposition, published)
+			if !published {
 				slog.ErrorContext(procCtx, "DLQ publish failed on last delivery, terminating to avoid silent message loss",
 					slog.String("stream", w.config.StreamName),
 					slog.String("consumer", w.config.ConsumerName),
 					slog.String("subject", msg.Subject()))
 			}
 			if termErr := msg.Term(); termErr != nil {
-				slog.ErrorContext(procCtx, "failed to term message",
+				slog.ErrorContext(procCtx, "failed to terminate message",
 					slog.String("stream", w.config.StreamName),
 					slogx.Error(termErr))
 				telemetry.RecordError(procCtx, termErr)
 			}
 		} else {
-			if nakErr := msg.Nak(); nakErr != nil {
+			delay := w.nakBackoff(numDelivered)
+			if nakErr := msg.NakWithDelay(delay); nakErr != nil {
 				slog.ErrorContext(procCtx, "failed to nak message",
 					slog.String("stream", w.config.StreamName),
+					slog.Duration("redelivery_delay", delay),
 					slogx.Error(nakErr))
 				telemetry.RecordError(procCtx, nakErr)
 			}
@@ -350,20 +434,104 @@ func (w *natsWorker) handleMessage(ctx context.Context, msg jetstream.Msg) {
 	}
 }
 
-func (w *natsWorker) isLastDelivery(ctx context.Context, msg jetstream.Msg) bool {
-	meta, err := msg.Metadata()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to read message metadata, treating as last delivery to preserve DLQ routing",
-			slog.String("stream", w.config.StreamName),
-			slog.String("consumer", w.config.ConsumerName),
-			slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return true
+// nakBackoff returns the redelivery delay for a message whose processing failed
+// on its numDelivered-th attempt, following the configured BackOff schedule. The
+// last interval is reused for any attempts beyond the schedule's length. Returns
+// 0 (immediate redelivery) when no schedule is configured. A zero numDelivered
+// (metadata unavailable) is clamped to the first interval.
+func (w *natsWorker) nakBackoff(numDelivered uint64) time.Duration {
+	if len(w.config.BackOff) == 0 {
+		return 0
 	}
-	return int(meta.NumDelivered) >= w.config.MaxDeliver
+	idx := max(int(numDelivered)-1, 0)
+	idx = min(idx, len(w.config.BackOff)-1)
+	return w.config.BackOff[idx]
 }
 
-func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, processingErr error) bool {
+// isLastDelivery reports whether this is the final delivery attempt before the
+// message must be dead-lettered. numDelivered and metaOK come from the single
+// Metadata() read in handleMessage, so the routing decision shares one snapshot
+// with the backoff decision. When metadata was unavailable (metaOK false) we
+// treat the delivery as last to preserve DLQ routing rather than risk an endless
+// redelivery loop.
+func (w *natsWorker) isLastDelivery(numDelivered uint64, metaOK bool) bool {
+	if !metaOK {
+		return true
+	}
+	return int(numDelivered) >= w.config.MaxDeliver
+}
+
+// dlqPublishTimeout bounds the DLQ publish on the deadline-free context below.
+const dlqPublishTimeout = 5 * time.Second
+
+// DLQ disposition labels for the nats.dlq_messages_total metric.
+const (
+	dispositionPermanent           = "permanent"            // poison message, never retried
+	dispositionExhausted           = "max_deliver"          // retries exhausted
+	dispositionMetadataUnavailable = "metadata_unavailable" // metadata unreadable, routed to DLQ to avoid an endless redelivery loop
+)
+
+// DLQ outcome labels for the nats.dlq_messages_total metric.
+const (
+	outcomePublished = "published" // dead-letter landed safely
+	outcomeDropped   = "dropped"   // DLQ publish failed; the message was lost (Term'd)
+)
+
+// dlqMessageCounter counts every attempt to route a message to a DLQ.
+// outcome="published" is a dead-letter that safely landed; outcome="dropped" is
+// a message LOST because the DLQ publish itself failed (it is Term'd afterward).
+// Operators should alert on any outcome="dropped" — it is unrecoverable data loss.
+var dlqMessageCounter metric.Int64Counter
+
+func init() {
+	meter := otel.Meter("github.com/pug-sh/pug/internal/deps/nats")
+	// Defensive: instrument creation on the global meter does not error in
+	// practice, but should it ever, panic rather than run on with a nil counter —
+	// this counter is the only machine signal for dropped (lost) dead-letters.
+	c, err := meter.Int64Counter(
+		"nats.dlq_messages_total",
+		metric.WithDescription("Messages routed to a DLQ; outcome=dropped means the DLQ publish failed and the message was lost."),
+	)
+	if err != nil {
+		panic("nats: failed to register nats.dlq_messages_total counter: " + err.Error())
+	}
+	dlqMessageCounter = c
+}
+
+// outcomeLabel maps a DLQ publish result to its nats.dlq_messages_total outcome
+// label. A published dead-letter landed safely; a failed publish means the
+// message was lost (and is Term'd afterward) — the value operators alert on.
+// Inverting this mapping would make the data-loss alert fire on every success.
+func outcomeLabel(published bool) string {
+	if published {
+		return outcomePublished
+	}
+	return outcomeDropped
+}
+
+// recordDLQOutcome emits the nats.dlq_messages_total metric for one dead-letter
+// attempt, tagged by stream, consumer, disposition, and whether it landed.
+func recordDLQOutcome(ctx context.Context, stream, consumer, disposition string, published bool) {
+	dlqMessageCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("stream", stream),
+		attribute.String("consumer", consumer),
+		attribute.String("disposition", disposition),
+		attribute.String("outcome", outcomeLabel(published)),
+	))
+}
+
+// dlqContext returns a context for the DLQ publish that is decoupled from the
+// per-message processing deadline. A message that fails *because* it exhausted
+// its ProcessingTimeout arrives with procCtx already cancelled; publishing the
+// DLQ copy on that dead context would fail and force a Term() that silently
+// drops the very message we most want to capture. WithoutCancel keeps the trace
+// context (so the DLQ producer span links to the consumer span) while shedding
+// the expired deadline; a fresh short timeout bounds the publish.
+func dlqContext(procCtx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(procCtx), dlqPublishTimeout)
+}
+
+func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, meta *jetstream.MsgMetadata, processingErr error) bool {
 	if w.config.DLQSubject == "" {
 		slog.ErrorContext(ctx, "no DLQ subject configured, message will be redelivered",
 			slog.String("stream", w.config.StreamName),
@@ -390,18 +558,13 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, proces
 		}
 	}
 	dlqMsg.Header.Set("dlq_timestamp", time.Now().UTC().Format(time.RFC3339))
-	if meta, err := msg.Metadata(); err == nil {
+	// Stamp delivery diagnostics from the snapshot handleMessage already captured.
+	// A nil meta means that single read failed (and was logged + recorded there),
+	// so skip these headers rather than re-read and double-log — the message still
+	// gets DLQ'd either way.
+	if meta != nil {
 		dlqMsg.Header.Set("delivery_count", fmt.Sprintf("%d", meta.NumDelivered))
 		dlqMsg.Header.Set("stream_sequence", fmt.Sprintf("%d", meta.Sequence.Stream))
-	} else {
-		// Warn (not Error) — metadata is best-effort for DLQ debugging headers, the
-		// message still gets DLQ'd. RecordError surfaces systemic failures on the span
-		// without escalating individual events.
-		slog.WarnContext(ctx, "failed to read message metadata for DLQ headers",
-			slog.String("stream", w.config.StreamName),
-			slog.String("dlq_subject", w.config.DLQSubject),
-			slogx.Error(err))
-		telemetry.RecordError(ctx, err)
 	}
 
 	if _, err := w.js.PublishMsg(ctx, dlqMsg); err != nil {
@@ -423,6 +586,21 @@ func (w *natsWorker) publishToDLQ(ctx context.Context, msg jetstream.Msg, proces
 func (w *natsWorker) HealthCheck() (bool, error) {
 	if !w.healthy.Load() {
 		return false, fmt.Errorf("worker %s/%s is unhealthy", w.config.StreamName, w.config.ConsumerName)
+	}
+	return true, nil
+}
+
+// Ready reports readiness: the worker has started AND its NATS connection is live.
+// `started` is set at the top of Start(), before the consumer exists — but a
+// worker is only added to the registry (and so only reachable via /readyz) after
+// CreateOrUpdateConsumer succeeds, so any Ready() served by the endpoint is for a
+// worker that is genuinely consuming. A nil connected check fails closed.
+func (w *natsWorker) Ready() (bool, error) {
+	if !w.started.Load() {
+		return false, fmt.Errorf("worker %s/%s not started", w.config.StreamName, w.config.ConsumerName)
+	}
+	if w.connected == nil || !w.connected() {
+		return false, fmt.Errorf("worker %s/%s: NATS connection is down", w.config.StreamName, w.config.ConsumerName)
 	}
 	return true, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/otelconnect"
@@ -28,6 +29,11 @@ type deps struct {
 	pgW             *pgxpool.Pool
 	redis           *redis.Client
 	port            string
+
+	// readyFailures counts consecutive failed readiness probes. It distinguishes
+	// a transient blip (logged at WARN) from a sustained outage (escalated to
+	// error telemetry); see (*deps).recordReadiness in health.go.
+	readyFailures atomic.Int64
 }
 
 // close shuts down all deps. OTel must shut down last — it owns the slog backend,
