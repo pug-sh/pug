@@ -92,12 +92,15 @@ func TestCompleteMagicLink_NewEmailCreatesVerifiedAccountAndOrg(t *testing.T) {
 	}
 	raw := lastMagicToken(t, pub)
 
-	jwtTok, err := svc.CompleteMagicLink(ctx, raw, "")
+	session, err := svc.CompleteMagicLink(ctx, raw, "")
 	if err != nil {
 		t.Fatalf("CompleteMagicLink: %v", err)
 	}
-	if jwtTok == "" {
+	if session.AccessToken == "" {
 		t.Fatal("expected a session JWT")
+	}
+	if session.RefreshToken == "" {
+		t.Fatal("expected a refresh token")
 	}
 	cust, err := read.GetCustomerByEmail(ctx, "fresh@example.com")
 	if err != nil {
@@ -213,11 +216,11 @@ func TestCompleteMagicLink_InviteJoinsOrgWithRole(t *testing.T) {
 	}
 
 	svc := mustNewTestAuthService(t, db, &stubPublisher{})
-	jwtTok, err := svc.CompleteMagicLink(ctx, dispatch.RawToken, "")
+	session, err := svc.CompleteMagicLink(ctx, dispatch.RawToken, "")
 	if err != nil {
 		t.Fatalf("CompleteMagicLink: %v", err)
 	}
-	if jwtTok == "" {
+	if session.AccessToken == "" {
 		t.Fatal("expected JWT")
 	}
 	cust, err := read.GetCustomerByEmail(ctx, "mlinv-invitee@example.com")
