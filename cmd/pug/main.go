@@ -236,11 +236,13 @@ var devCmd = &cobra.Command{
 			slog.DebugContext(sigCtx, "No .env file found, relying on environment variables")
 		}
 
-		// `pug dev` runs every worker in one local process; the worker liveness
-		// endpoint is for orchestrated deployments, so force it off here. This
-		// avoids an unneeded listener and the single-process bind the standalone
-		// worker binaries would otherwise contend for.
-		os.Setenv(natsworker.HealthAddrEnv, "off")
+		// `pug dev` runs every worker in one local process; the health/readiness
+		// endpoints are for orchestrated deployments, so force them off here to
+		// avoid binding an unneeded listener in local dev.
+		if err := os.Setenv(natsworker.HealthAddrEnv, "off"); err != nil {
+			slog.WarnContext(sigCtx, "failed to disable worker health endpoint for dev",
+				slog.String("env", natsworker.HealthAddrEnv), slogx.Error(err))
+		}
 
 		port := os.Getenv("PUG_SERVER_PORT")
 		if port == "" {
