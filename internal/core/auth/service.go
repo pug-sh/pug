@@ -58,11 +58,31 @@ var (
 )
 
 const (
-	aud = "pug/dashboard"
-	iss = "pug/auth"
+	// Audience and Issuer are baked into every session JWT by generateJWT and
+	// verified by the auth middleware (rpc.WithJWTAuth). Exported so the issuing
+	// and verifying sides share one source of truth and cannot drift.
+	Audience = "pug/dashboard"
+	Issuer   = "pug/auth"
 
 	magicLinkTTL = 15 * time.Minute
+
+	// accessTokenTTL is the lifetime of the session JWT. Kept short so a leaked
+	// access token is useful only briefly; clients silently exchange the
+	// long-lived refresh token for a new pair via RefreshSession.
+	accessTokenTTL = 1 * time.Hour
+	// refreshTokenTTL is the sliding lifetime of a refresh token. Every refresh
+	// issues a fresh one, so a user active at least once per window stays signed
+	// in indefinitely; one fully idle for the whole window must sign in again.
+	refreshTokenTTL = 90 * 24 * time.Hour
 )
+
+// Session is the token pair returned by every sign-in path (password, magic link,
+// OAuth) and by RefreshSession. AccessToken is the short-lived JWT sent as the
+// bearer; RefreshToken is the long-lived opaque secret exchanged for a new pair.
+type Session struct {
+	AccessToken  string
+	RefreshToken string
+}
 
 type JobPublisher interface {
 	Publish(ctx context.Context, subject string, data []byte) error
@@ -94,42 +114,35 @@ func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtK
 	}, nil
 }
 
-func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (string, error) {
+func (s *Service) SignInWithEmail(ctx context.Context, email, password string) (Session, error) {
 	customer, err := s.read.GetCustomerByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrInvalidCredentials
+			return Session{}, ErrInvalidCredentials
 		}
 		slog.ErrorContext(ctx, "failed to get customer by email", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return Session{}, err
 	}
 
 	if customer.PasswordHash == "" {
 		// Passwordless (magic-link) account — no password set. Treat as invalid
 		// credentials rather than letting bcrypt fail on an empty hash (which
 		// returns ErrHashTooShort, not ErrMismatchedHashAndPassword).
-		return "", ErrInvalidCredentials
+		return Session{}, ErrInvalidCredentials
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(customer.PasswordHash), []byte(password))
 	if err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-			return "", ErrInvalidCredentials
+			return Session{}, ErrInvalidCredentials
 		}
 		slog.ErrorContext(ctx, "failed to compare password hash", slogx.Error(err), slog.String("customer_id", customer.ID))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return Session{}, err
 	}
 
-	token, err := s.generateJWT(customer.ID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate JWT", slogx.Error(err))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-
-	return token, nil
+	return s.issueSession(ctx, customer.ID)
 }
 
 // RequestMagicLink issues and emails a single-use magic link for the given
@@ -179,12 +192,12 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 // existing account joins the invited org with its role; no default org is
 // created. When org_invitation_id is NULL (plain branch), a newly-created
 // account receives a default org + project.
-func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, error) {
+func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (Session, error) {
 	tx, err := s.pgW.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to begin magic-link transaction", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return Session{}, err
 	}
 	defer func() {
 		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
@@ -204,11 +217,11 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 	emailToken, err := w.GetValidEmailActionTokenByHashForUpdate(ctx, hashToken(token))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrInvalidToken
+			return Session{}, ErrInvalidToken
 		}
 		slog.ErrorContext(ctx, "failed to look up magic-link token", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return Session{}, err
 	}
 
 	// token_hash is unique, so the lookup above is purpose-agnostic. Gate on
@@ -222,7 +235,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 	case emailaction.PurposeOrgInvite:
 		isInvite = true
 	default:
-		return "", ErrInvalidToken
+		return Session{}, ErrInvalidToken
 	}
 
 	customerID := ""
@@ -237,70 +250,75 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token string) (string, 
 		}); err != nil {
 			slog.ErrorContext(ctx, "failed to create magic-link customer", slogx.Error(err))
 			telemetry.RecordError(ctx, err)
-			return "", err
+			return Session{}, err
 		}
 	} else {
 		slog.ErrorContext(ctx, "failed to look up magic-link customer", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return Session{}, err
 	}
 
 	if isInvite {
 		invite := &InviteContext{OrgInvitationID: emailToken.OrgInvitationID.String}
-		if err := FinishSignup(ctx, w, customerID, createdNew, invite); err != nil {
+		if err := FinishSignup(ctx, w, customerID, createdNew, invite, reportingTimezone); err != nil {
 			if !errors.Is(err, ErrInvalidToken) {
 				slog.ErrorContext(ctx, "failed to apply org invite on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
 				telemetry.RecordError(ctx, err)
 			}
-			return "", err
+			return Session{}, err
 		}
 	} else if createdNew {
-		if err := FinishSignup(ctx, w, customerID, true, nil); err != nil {
+		// Plain passwordless signup: give the new account a default org + project,
+		// seeding the project's reporting timezone from the browser that completed
+		// the link (coerced to UTC if malformed).
+		if err := FinishSignup(ctx, w, customerID, true, nil, reportingTimezone); err != nil {
 			slog.ErrorContext(ctx, "failed to create default org for magic-link user", slogx.Error(err), slog.String("customer_id", customerID))
 			telemetry.RecordError(ctx, err)
-			return "", err
+			return Session{}, err
 		}
 	}
 
 	if _, err := w.ConsumeEmailActionToken(ctx, emailToken.ID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrInvalidToken
+			return Session{}, ErrInvalidToken
 		}
 		slog.ErrorContext(ctx, "failed to consume magic-link token", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return Session{}, err
 	}
 	if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {
 		slog.ErrorContext(ctx, "failed to mark email verified on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return Session{}, err
+	}
+	// Issue the refresh token inside the provisioning tx so a brand-new account and
+	// its first session commit atomically: no customer is ever created without a
+	// usable session, and a failed insert rolls the whole sign-up back.
+	session, err := s.issueSessionTx(ctx, w, customerID)
+	if err != nil {
+		return Session{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed to commit magic-link transaction", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return Session{}, err
 	}
-
-	jwtToken, err := s.generateJWT(customerID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate JWT on magic-link", slogx.Error(err), slog.String("customer_id", customerID))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	return jwtToken, nil
+	return session, nil
 }
 
-func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (string, error) {
+func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (Session, error) {
 	ident, err := s.oauth.VerifyIdentity(ctx, provider, credential)
 	if err != nil {
 		// Client-input errors (ErrInvalidCredential / ErrUnverifiedEmail) are
 		// mapped by the handler; unexpected verifier errors were already recorded
 		// inside VerifyIdentity. Nothing to log or record here.
-		return "", err
+		return Session{}, err
 	}
 
-	customerID, _, err := coreoauth.WithIdentityTx(ctx, s.pgW, provider, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
-		if err := FinishSignup(ctx, w, customerID, createdNew, nil); err != nil {
+	var session Session
+	_, _, err = coreoauth.WithIdentityTx(ctx, s.pgW, provider, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
+		// OAuth sign-in carries no browser timezone; default the project to UTC.
+		if err := FinishSignup(ctx, w, customerID, createdNew, nil, ""); err != nil {
 			return err // coreorgs records this at its detect site; don't re-record.
 		}
 		if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {
@@ -308,21 +326,17 @@ func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.Pr
 			telemetry.RecordError(ctx, err)
 			return err
 		}
-		return nil
+		// Issue the session inside the identity tx so the refresh token commits
+		// atomically with sign-up/link (same rationale as magic link).
+		session, err = s.issueSessionTx(ctx, w, customerID)
+		return err
 	})
 	if err != nil {
 		// resolve.go records its own mechanism errors and the callback above
-		// records FinalizeVerifiedCustomer; this wrapper only translates.
-		return "", err
+		// records FinalizeVerifiedCustomer / issueSessionTx; this wrapper only translates.
+		return Session{}, err
 	}
-
-	jwtToken, err := s.generateJWT(customerID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate JWT on oauth sign-in", slogx.Error(err), slog.String("customer_id", customerID))
-		telemetry.RecordError(ctx, err)
-		return "", err
-	}
-	return jwtToken, nil
+	return session, nil
 }
 
 type issueActionTokenInput struct {
@@ -436,14 +450,13 @@ type UserClaims struct {
 }
 
 func (s *Service) generateJWT(id string) (string, error) {
-	// todo - reduce expiry time
 	now := time.Now()
 	standardClaims := jwt.RegisteredClaims{
-		Audience:  jwt.ClaimStrings{aud},
-		ExpiresAt: jwt.NewNumericDate(now.Add(90 * 24 * time.Hour)), // expire in 90 days
+		Audience:  jwt.ClaimStrings{Audience},
+		ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenTTL)),
 		ID:        xid.New().String(),
 		IssuedAt:  jwt.NewNumericDate(now),
-		Issuer:    iss,
+		Issuer:    Issuer,
 		Subject:   id,
 	}
 
@@ -455,6 +468,179 @@ func (s *Service) generateJWT(id string) (string, error) {
 	}
 
 	return tokenString, nil
+}
+
+// issueSession mints an access JWT + a fresh-family refresh token using the
+// pool-backed queries, as a standalone insert. For callers issuing a session
+// outside any provisioning transaction — currently only password sign-in.
+// (Magic link and OAuth issue inside their provisioning tx via issueSessionTx.)
+func (s *Service) issueSession(ctx context.Context, customerID string) (Session, error) {
+	return s.issueSessionTx(ctx, s.write, customerID)
+}
+
+// issueSessionTx is issueSession parameterized over a *dbwrite.Queries so it can
+// run inside an existing transaction (magic link / OAuth sign-up) and commit the
+// refresh token atomically with account provisioning. Each call starts a NEW
+// rotation family.
+func (s *Service) issueSessionTx(ctx context.Context, w *dbwrite.Queries, customerID string) (Session, error) {
+	accessToken, err := s.generateJWT(customerID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate access token", slogx.Error(err), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return Session{}, err
+	}
+	refreshToken, err := s.createRefreshToken(ctx, w, customerID, xid.New().String())
+	if err != nil {
+		return Session{}, err
+	}
+	return Session{AccessToken: accessToken, RefreshToken: refreshToken}, nil
+}
+
+// createRefreshToken generates an opaque refresh token, persists only its hash in
+// the given family, and returns the plaintext (shown to the client once). The
+// token is crypto-random for the same reason magic-link tokens are: it is the
+// sole secret needed to mint sessions.
+//
+// TODO(refresh-token-pruning): refresh_tokens grows unbounded. Rotation inserts a
+// new row on every refresh (~hourly per active user, given a 1h access TTL) and
+// only marks the predecessor consumed_at — its expires_at stays ~90 days out, so
+// nothing reaps it. Add a periodic prune (e.g. in the scheduler worker, which
+// needs a write pool wired in) deleting rows that can no longer be presented:
+//
+//	delete from refresh_tokens
+//	where expires_at < now()
+//	   or (consumed_at is not null and consumed_at < now() - <reuse-grace>)
+//	   or (revoked_at  is not null and revoked_at  < now() - <reuse-grace>);
+//
+// Keep a reuse-detection grace (~7d) on consumed/revoked rows so a replayed token
+// still trips RevokeRefreshTokenFamily within that window; past it, a replay just
+// reads as not-found (acceptable). Until this lands, the table only ever grows.
+func (s *Service) createRefreshToken(ctx context.Context, w *dbwrite.Queries, customerID, familyID string) (string, error) {
+	rawToken, err := newActionToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate refresh token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	if _, err := w.CreateRefreshToken(ctx, dbwrite.CreateRefreshTokenParams{
+		ID:         xid.New().String(),
+		CustomerID: customerID,
+		FamilyID:   familyID,
+		TokenHash:  hashToken(rawToken),
+		ExpiresAt:  postgres.NewTimestamptz(time.Now().Add(refreshTokenTTL)),
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to create refresh token", slogx.Error(err), slog.String("customer_id", customerID))
+		telemetry.RecordError(ctx, err)
+		return "", err
+	}
+	return rawToken, nil
+}
+
+// RefreshSession exchanges a valid refresh token for a new access+refresh pair,
+// rotating (consuming) the presented token. It implements reuse-detection: a
+// token that was ALREADY consumed being presented again means the chain was
+// replayed (a leaked/stolen token, or a buggy client double-refreshing), so the
+// whole rotation family is revoked and the request rejected — neither the
+// attacker nor the legitimate client can keep refreshing, forcing a fresh
+// sign-in. Returns ErrInvalidToken for unknown/expired/revoked/reused tokens.
+func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (Session, error) {
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin refresh transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return Session{}, err
+	}
+	defer func() {
+		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back refresh transaction", slogx.Error(rbErr))
+			telemetry.RecordError(ctx, rbErr)
+		}
+	}()
+
+	w := dbwrite.New(tx)
+
+	// FOR UPDATE serializes concurrent refreshes of the same token. The lookup is
+	// deliberately unfiltered (it returns consumed/revoked rows) so reuse can be
+	// detected below rather than masked as "not found".
+	row, err := w.GetRefreshTokenByHashForUpdate(ctx, hashToken(refreshToken))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Session{}, ErrInvalidToken
+		}
+		slog.ErrorContext(ctx, "failed to look up refresh token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return Session{}, err
+	}
+
+	if row.ConsumedAt.Valid {
+		// Reuse detected: kill the whole family and commit the revocation.
+		if _, err := w.RevokeRefreshTokenFamily(ctx, row.FamilyID); err != nil {
+			slog.ErrorContext(ctx, "failed to revoke reused refresh token family", slogx.Error(err), slog.String("customer_id", row.CustomerID))
+			telemetry.RecordError(ctx, err)
+			return Session{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			slog.ErrorContext(ctx, "failed to commit refresh token family revocation", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+			return Session{}, err
+		}
+		slog.WarnContext(ctx, "refresh token reuse detected; revoked family",
+			slog.String("customer_id", row.CustomerID), slog.String("family_id", row.FamilyID))
+		return Session{}, ErrInvalidToken
+	}
+
+	// Already revoked (sign-out or a prior family kill) or expired.
+	if row.RevokedAt.Valid || !row.ExpiresAt.Time.After(time.Now()) {
+		return Session{}, ErrInvalidToken
+	}
+
+	// Generate the access token before mutating state: a signing failure then
+	// leaves the presented token unconsumed and the client can retry cleanly.
+	accessToken, err := s.generateJWT(row.CustomerID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate access token on refresh", slogx.Error(err), slog.String("customer_id", row.CustomerID))
+		telemetry.RecordError(ctx, err)
+		return Session{}, err
+	}
+
+	if _, err := w.ConsumeRefreshToken(ctx, row.ID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Lost the race to a concurrent refresh of the same token.
+			return Session{}, ErrInvalidToken
+		}
+		slog.ErrorContext(ctx, "failed to consume refresh token", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return Session{}, err
+	}
+
+	newRefresh, err := s.createRefreshToken(ctx, w, row.CustomerID, row.FamilyID)
+	if err != nil {
+		return Session{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit refresh transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return Session{}, err
+	}
+
+	return Session{AccessToken: accessToken, RefreshToken: newRefresh}, nil
+}
+
+// RevokeSession revokes the rotation family of the presented refresh token —
+// the sign-out path. It is intentionally forgiving: an unknown, expired, or
+// already-revoked token revokes nothing and still returns nil, so logging out
+// with a stale token never surfaces an error to the client.
+func (s *Service) RevokeSession(ctx context.Context, refreshToken string) error {
+	if refreshToken == "" {
+		return nil
+	}
+	if _, err := s.write.RevokeRefreshTokenFamilyByHash(ctx, hashToken(refreshToken)); err != nil {
+		slog.ErrorContext(ctx, "failed to revoke refresh token family on sign-out", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	return nil
 }
 
 // newActionToken returns a 32-byte cryptographically-random token, hex-encoded

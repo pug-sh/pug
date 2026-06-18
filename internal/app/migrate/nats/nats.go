@@ -90,6 +90,23 @@ func (n *initializer) createStreams(ctx context.Context, streams []natsdeps.Stre
 			storage = jetstream.FileStorage // default
 		}
 
+		// Convert discard policy string to jetstream.DiscardPolicy. An
+		// unrecognized value falls back to DiscardOld but is warned about: a
+		// typo'd discard on a DLQ stream would silently revert it to dropping
+		// the oldest evidence, defeating the "fail loud when full" intent.
+		var discard jetstream.DiscardPolicy
+		switch strings.ToLower(streamConfig.Discard) {
+		case "new":
+			discard = jetstream.DiscardNew
+		case "", "old":
+			discard = jetstream.DiscardOld
+		default:
+			slog.WarnContext(ctx, "unrecognized discard policy, defaulting to old",
+				slog.String("stream", streamConfig.Name),
+				slog.String("discard", streamConfig.Discard))
+			discard = jetstream.DiscardOld
+		}
+
 		cfg := jetstream.StreamConfig{
 			Name:         streamConfig.Name,
 			Description:  streamConfig.Description,
@@ -100,6 +117,7 @@ func (n *initializer) createStreams(ctx context.Context, streams []natsdeps.Stre
 			MaxBytes:     streamConfig.MaxBytes,
 			MaxAge:       streamConfig.MaxAge,
 			Storage:      storage,
+			Discard:      discard,
 			Replicas:     streamConfig.NumReplicas,
 		}
 

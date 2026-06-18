@@ -48,11 +48,14 @@ func TestCompleteOAuthSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	jwtTok, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "google-credential")
+	session, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "google-credential")
 	if err != nil {
 		t.Fatalf("CompleteOAuthSignIn: %v", err)
 	}
-	parsed, err := jwt.Parse(jwtTok, func(tok *jwt.Token) (any, error) {
+	if session.RefreshToken == "" {
+		t.Fatal("expected non-empty refresh token")
+	}
+	parsed, err := jwt.Parse(session.AccessToken, func(tok *jwt.Token) (any, error) {
 		return []byte("test-secret-key-for-jwt"), nil
 	})
 	if err != nil || !parsed.Valid {

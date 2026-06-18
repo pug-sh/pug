@@ -44,6 +44,9 @@ streams:
     max_bytes: 1000000000  # ~1GB
     max_age: 720h  # 30 days
     storage: "file"
+    # Reject new dead-letters when full rather than silently dropping the oldest
+    # evidence; the failed publish surfaces as nats.dlq_messages_total{outcome=dropped}.
+    discard: "new"
     num_replicas: 1
 
   - name: "dlq-profiles"
@@ -55,6 +58,7 @@ streams:
     max_bytes: 1000000000  # ~1GB
     max_age: 720h  # 30 days
     storage: "file"
+    discard: "new"
     num_replicas: 1
 
   - name: "dlq-misc"
@@ -66,4 +70,5 @@ streams:
     max_bytes: 1000000000
     max_age: 720h  # 30 days
     storage: "file"
+    discard: "new"
     num_replicas: 1
