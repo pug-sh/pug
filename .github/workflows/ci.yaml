@@ -2,10 +2,10 @@ name: CI
 
 on:
   pull_request:
-    branches: [dev]
+    branches: [main]
     types: [closed]
   push:
-    branches: [dev]
+    branches: [main]
 
 env:
   GOMODCACHE: /home/runner/go/pkg/mod
