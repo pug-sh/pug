@@ -6,6 +6,7 @@ import "common/v1/filter_schema.proto";
 import "common/v1/filters.proto";
 import "common/v1/time.proto";
 import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1;insightsv1";
@@ -187,6 +188,9 @@ message InsightQuerySpec {
   // User-flow graph query. Only valid when insight_type == USER_FLOW.
   UserFlowQuery user_flow = 10;
 
+  // Top-K ranking query. Only valid when insight_type == TOP_K.
+  TopKQuery top_k = 11;
+
   option (buf.validate.message).cel = {
     id: "insight_query_spec.user_flow_only_for_user_flow"
     message: "user_flow is only valid for user flow insight type"
@@ -262,6 +266,94 @@ message InsightQuerySpec {
       "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW"
       "|| this.user_flow.max_links == 0"
       "|| (this.user_flow.max_links >= 1 && this.user_flow.max_links <= 500)"
+  };
+
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.top_k_only_for_top_k"
+    message: "top_k is only valid for top k insight type"
+    expression:
+      "!has(this.top_k)"
+      "|| this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.top_k_required"
+    message: "top k insight type requires top_k"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K"
+      "|| has(this.top_k)"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.top_k_no_events"
+    message: "top k insights cannot specify events"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K"
+      "|| this.events.size() == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.top_k_no_session"
+    message: "top k insights cannot specify session"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K"
+      "|| !has(this.session)"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.top_k_no_breakdowns"
+    message: "breakdowns are not supported for top k insight type"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K"
+      "|| this.breakdowns.size() == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.top_k_no_breakdown_limit"
+    message: "breakdown_limit is not supported for top k insight type"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K"
+      "|| this.breakdown_limit == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.top_k_property_required"
+    message: "property is required when dimension is PROPERTY"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K"
+      "|| this.top_k.dimension"
+      "   != shared.insights.v1.TopKQuery.Dimension.DIMENSION_PROPERTY"
+      "|| (this.top_k.property.size() > 0"
+      "    && this.top_k.property.matches('^\\\\$?[a-zA-Z0-9_.-]+$'))"
+  };
+  // property with a non-PROPERTY dimension is rejected — likely a client mistake.
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.top_k_property_only_for_property_dimension"
+    message: "property is only valid when dimension is PROPERTY"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K"
+      "|| this.top_k.dimension"
+      "   == shared.insights.v1.TopKQuery.Dimension.DIMENSION_PROPERTY"
+      "|| this.top_k.property == ''"
+  };
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.top_k_metric_property_required"
+    message: "metric_property is required for SUM, AVG, MIN, and MAX metrics"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K"
+      "|| !(this.top_k.metric in ["
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX"
+      "]) || this.top_k.metric_property != ''"
+  };
+  // Each USER-dimension group is a single user, so per-user metrics are degenerate:
+  // UNIQUE_USERS is constant 1 and PER_USER_AVG collapses to TOTAL.
+  option (buf.validate.message).cel = {
+    id: "insight_query_spec.top_k_user_dimension_metric"
+    message: "UNIQUE_USERS and PER_USER_AVG metrics are not supported for the USER dimension"
+    expression:
+      "this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K"
+      "|| this.top_k.dimension != shared.insights.v1.TopKQuery.Dimension.DIMENSION_USER"
+      "|| !(this.top_k.metric in ["
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_UNIQUE_USERS,"
+      "  shared.insights.v1.AggregationType.AGGREGATION_TYPE_PER_USER_AVG"
+      "])"
   };
 }
 
@@ -339,6 +431,7 @@ message QueryResponse {
     FunnelResult funnel = 4;
     RetentionResult retention = 5;
     UserFlowResult user_flow = 6;
+    TopKResult top_k = 7;
   }
   reserved 1; // was: repeated Series series
 }
@@ -370,6 +463,7 @@ enum InsightType {
   INSIGHT_TYPE_FUNNEL = 3;
   INSIGHT_TYPE_RETENTION = 4;
   INSIGHT_TYPE_USER_FLOW = 5;
+  INSIGHT_TYPE_TOP_K = 6;
 }
 
 // Granularity values are listed finest → coarsest by source-order convention.
@@ -459,6 +553,88 @@ message UserFlowQuery {
 
   // Maximum links in response after $others collapse. Default 100. CEL max 500 when set.
   int32 max_links = 7;
+}
+
+// TopKQuery configures a "top K" ranking insight: the top K values of a
+// dimension by an aggregate metric, plus a trailing $others bucket that
+// aggregates everything outside the top K.
+//
+// Granularity note: top K has no time bucketing, so QueryRequest.granularity
+// does not affect a top-K result. It is still required (every QueryRequest
+// requires one) and, for top K, serves only to select which time-range cap
+// applies — see the query_request.granularity_*_max_range rules: e.g.
+// GRANULARITY_MINUTE caps the window at 6h, GRANULARITY_MONTH at ~10y. Send the
+// coarsest granularity whose cap admits your intended window; the value is
+// otherwise inert for top K.
+message TopKQuery {
+  // What is being ranked.
+  enum Dimension {
+    DIMENSION_UNSPECIFIED = 0;
+    // Values of an event property (auto or custom), named by `property`.
+    DIMENSION_PROPERTY = 1;
+    // Event kinds ("top events").
+    DIMENSION_EVENT_KIND = 2;
+    // Canonical users. Rows carry profile enrichment when the user key
+    // resolves to a profile.
+    DIMENSION_USER = 3;
+  }
+  Dimension dimension = 1 [(buf.validate.field) = {
+    required: true
+    enum: {defined_only: true, not_in: [0]}
+  }];
+
+  // Property to rank values of. Required when dimension == DIMENSION_PROPERTY,
+  // forbidden otherwise. Same $-prefix encoding as Breakdown.property.
+  // Pattern uses * (not +) because this field is empty for other dimensions.
+  string property = 2 [(buf.validate.field).string.pattern = "^\\$?[a-zA-Z0-9_.-]*$"];
+
+  // Optional event scope (kind and/or per-event filters), same reuse as
+  // SessionQuery.scope. Empty scope means all events participate.
+  common.v1.EventFilter scope = 3;
+
+  // Metric to rank by. Defaults to TOTAL when unspecified. UNIQUE_USERS and
+  // PER_USER_AVG are rejected for DIMENSION_USER (degenerate when each group
+  // is a single user).
+  AggregationType metric = 4 [(buf.validate.field).enum.defined_only = true];
+
+  // Property to aggregate. Required for SUM/AVG/MIN/MAX; ignored otherwise.
+  // Pattern uses * (not +) because this field may be empty for count-based metrics.
+  string metric_property = 5 [(buf.validate.field).string.pattern = "^\\$?[a-zA-Z0-9_.-]*$"];
+
+  // Number of top rows before the $others bucket. Default 10 in builder. CEL max 100.
+  int32 limit = 6 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+// TopKResult holds the ranked rows, ordered metric-descending with the
+// synthetic $others bucket (if non-empty) last.
+message TopKResult {
+  repeated TopKRow rows = 1;
+}
+
+message TopKRow {
+  // Dimension value: property value, event kind, or user key (canonical
+  // profile id when resolved, else the raw distinct_id). "$others" for the
+  // overflow bucket — but identify the bucket by is_others, NOT by matching
+  // this string: a real value can legitimately be the literal "$others"
+  // (same contract as UserFlowNode).
+  string dimension_value = 1;
+  double value = 2;
+  bool is_others = 3;
+  // Profile enrichment, populated only for DIMENSION_USER rows whose key
+  // resolved to a profile. Absent for the $others bucket and for
+  // unidentified distinct_ids.
+  TopKProfile profile = 4;
+}
+
+// TopKProfile is the profile enrichment attached to a DIMENSION_USER row.
+message TopKProfile {
+  string id = 1;
+  string external_id = 2;
+  // Same shape as shared.profiles.v1.Profile.properties.
+  google.protobuf.Struct properties = 3;
 }
 
 message UserFlowNode {

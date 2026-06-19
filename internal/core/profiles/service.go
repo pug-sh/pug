@@ -119,8 +119,8 @@ func (s *Service) getSingle(ctx context.Context, projectID string, extra chq.Con
 	sql, args, err := chq.NewQuery().
 		Select(profileSelectColumns()...).
 		From("latest_profiles p LEFT JOIN profile_activity_summary activity_summary ON activity_summary.project_id = p.project_id AND activity_summary.profile_id = p.id").
-		With("latest_profiles", latestProfilesCTE(projectID)).
-		With("latest_profile_aliases", latestProfileAliasesCTE(projectID)).
+		With("latest_profiles", LatestProfilesCTE(projectID)).
+		With("latest_profile_aliases", LatestProfileAliasesCTE(projectID)).
 		With("profile_activity_summary", profileActivitySummaryCTE(projectID)).
 		Where(
 			chq.Eq("p.is_deleted", uint8(0)),
@@ -179,8 +179,8 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Profile, error
 	sql, args, err := chq.NewQuery().
 		Select(profileSelectColumns()...).
 		From("latest_profiles p LEFT JOIN profile_activity_summary activity_summary ON activity_summary.project_id = p.project_id AND activity_summary.profile_id = p.id").
-		With("latest_profiles", latestProfilesCTE(params.ProjectID)).
-		With("latest_profile_aliases", latestProfileAliasesCTE(params.ProjectID)).
+		With("latest_profiles", LatestProfilesCTE(params.ProjectID)).
+		With("latest_profile_aliases", LatestProfileAliasesCTE(params.ProjectID)).
 		With("profile_activity_summary", profileActivitySummaryCTE(params.ProjectID)).
 		Where(wheres...).
 		OrderBy("p.create_time DESC", "p.id DESC").
@@ -215,7 +215,10 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Profile, error
 	return items, nil
 }
 
-func latestProfilesCTE(projectID string) *chq.Query {
+// LatestProfilesCTE projects the latest state of each profile row
+// (argMax by insert_time over the ReplacingMergeTree), project-scoped.
+// Exported for reuse by insights queries that resolve canonical users.
+func LatestProfilesCTE(projectID string) *chq.Query {
 	return chq.NewQuery().
 		Select(
 			"argMax(create_time, insert_time) AS create_time",
@@ -231,7 +234,10 @@ func latestProfilesCTE(projectID string) *chq.Query {
 		GroupBy("project_id", "id")
 }
 
-func latestProfileAliasesCTE(projectID string) *chq.Query {
+// LatestProfileAliasesCTE projects the latest alias_id -> profile_id mapping,
+// project-scoped. Exported for reuse by insights queries that resolve
+// canonical users.
+func LatestProfileAliasesCTE(projectID string) *chq.Query {
 	return chq.NewQuery().
 		Select(
 			"alias_id",

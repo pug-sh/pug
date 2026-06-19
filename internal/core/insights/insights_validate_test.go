@@ -70,6 +70,22 @@ func validUserFlowQueryRequest() *insightsv1.QueryRequest {
 	}
 }
 
+func validTopKQueryRequest() *insightsv1.QueryRequest {
+	return &insightsv1.QueryRequest{
+		Spec: &insightsv1.InsightQuerySpec{
+			InsightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K.Enum(),
+			TopK: &insightsv1.TopKQuery{
+				Dimension: insightsv1.TopKQuery_DIMENSION_EVENT_KIND.Enum(),
+			},
+		},
+		Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		TimeRange: &commonv1.TimeRange{
+			From: timestamppb.New(validQueryAnchor),
+			To:   timestamppb.New(validQueryAnchor.Add(24 * time.Hour)),
+		},
+	}
+}
+
 // TestInsightTypeValidation exercises the required + defined_only constraints on InsightType.
 func TestInsightTypeValidation(t *testing.T) {
 	tests := []struct {
@@ -82,6 +98,7 @@ func TestInsightTypeValidation(t *testing.T) {
 		{name: "valid_retention", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, wantErr: false},
 		{name: "valid_segmentation", insightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION, wantErr: false},
 		{name: "valid_user_flow", insightType: insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW, wantErr: false},
+		{name: "valid_top_k", insightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K, wantErr: false},
 		{name: "unspecified_rejected", insightType: insightsv1.InsightType_INSIGHT_TYPE_UNSPECIFIED, wantErr: true},
 		{name: "undefined_value_rejected", insightType: 999, wantErr: true},
 	}
@@ -90,6 +107,9 @@ func TestInsightTypeValidation(t *testing.T) {
 			req := validQueryRequest()
 			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_USER_FLOW {
 				req = validUserFlowQueryRequest()
+			}
+			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_TOP_K {
+				req = validTopKQueryRequest()
 			}
 			req.Spec.InsightType = tt.insightType.Enum()
 			err := protovalidate.Validate(req)
@@ -264,6 +284,228 @@ func TestUserFlowQueryValidation(t *testing.T) {
 			}
 			if !hasRule(err, tt.rule) {
 				t.Errorf("expected rule %s, got: %v", tt.rule, err)
+			}
+		})
+	}
+}
+
+// TestTopKQueryValidation exercises top-k-specific CEL rules on InsightQuerySpec
+// plus the field-level rules on TopKQuery.
+func TestTopKQueryValidation(t *testing.T) {
+	t.Run("valid_event_kind_dimension", func(t *testing.T) {
+		if err := protovalidate.Validate(validTopKQueryRequest()); err != nil {
+			t.Fatalf("expected valid, got error: %v", err)
+		}
+	})
+
+	t.Run("valid_property_dimension_with_scope_and_metric", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.TopK = &insightsv1.TopKQuery{
+			Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+			Property:  proto.String("$browser"),
+			Scope:     &commonv1.EventFilter{Kind: proto.String("page_view")},
+			Metric:    insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum(),
+			Limit:     proto.Int32(5),
+		}
+		if err := protovalidate.Validate(req); err != nil {
+			t.Fatalf("expected valid, got error: %v", err)
+		}
+	})
+
+	t.Run("valid_user_dimension_sum_metric", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.TopK = &insightsv1.TopKQuery{
+			Dimension:      insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+			Metric:         insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum(),
+			MetricProperty: proto.String("order_amount"),
+		}
+		if err := protovalidate.Validate(req); err != nil {
+			t.Fatalf("expected valid, got error: %v", err)
+		}
+	})
+
+	t.Run("top_k_required_when_insight_type_is_top_k", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.TopK = nil
+		if err := protovalidate.Validate(req); !hasRule(err, "top_k_required") {
+			t.Errorf("expected top_k_required, got: %v", err)
+		}
+	})
+
+	t.Run("top_k_only_for_top_k_insight_type", func(t *testing.T) {
+		req := validQueryRequest() // TRENDS with events — otherwise valid
+		req.Spec.TopK = &insightsv1.TopKQuery{
+			Dimension: insightsv1.TopKQuery_DIMENSION_EVENT_KIND.Enum(),
+		}
+		if err := protovalidate.Validate(req); !hasRule(err, "top_k_only_for_top_k") {
+			t.Errorf("expected top_k_only_for_top_k, got: %v", err)
+		}
+	})
+
+	t.Run("top_k_rejects_events", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.Events = []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}}}
+		if err := protovalidate.Validate(req); !hasRule(err, "top_k_no_events") {
+			t.Errorf("expected top_k_no_events, got: %v", err)
+		}
+	})
+
+	t.Run("top_k_rejects_session", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.Session = &insightsv1.SessionQuery{
+			Metric: insightsv1.SessionMetric_SESSION_METRIC_SESSIONS.Enum(),
+		}
+		if err := protovalidate.Validate(req); !hasRule(err, "top_k_no_session") {
+			t.Errorf("expected top_k_no_session, got: %v", err)
+		}
+	})
+
+	t.Run("top_k_rejects_breakdowns", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$url")}}
+		if err := protovalidate.Validate(req); !hasRule(err, "top_k_no_breakdowns") {
+			t.Errorf("expected top_k_no_breakdowns, got: %v", err)
+		}
+	})
+
+	t.Run("top_k_rejects_breakdown_limit", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.BreakdownLimit = proto.Int32(5)
+		if err := protovalidate.Validate(req); !hasRule(err, "top_k_no_breakdown_limit") {
+			t.Errorf("expected top_k_no_breakdown_limit, got: %v", err)
+		}
+	})
+
+	t.Run("property_dimension_requires_property", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.TopK = &insightsv1.TopKQuery{
+			Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+		}
+		if err := protovalidate.Validate(req); !hasRule(err, "top_k_property_required") {
+			t.Errorf("expected top_k_property_required, got: %v", err)
+		}
+	})
+
+	t.Run("property_forbidden_for_event_kind_dimension", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.TopK.Property = proto.String("$browser")
+		if err := protovalidate.Validate(req); !hasRule(err, "top_k_property_only_for_property_dimension") {
+			t.Errorf("expected top_k_property_only_for_property_dimension, got: %v", err)
+		}
+	})
+
+	t.Run("property_forbidden_for_user_dimension", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.TopK = &insightsv1.TopKQuery{
+			Dimension: insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+			Property:  proto.String("$browser"),
+		}
+		if err := protovalidate.Validate(req); !hasRule(err, "top_k_property_only_for_property_dimension") {
+			t.Errorf("expected top_k_property_only_for_property_dimension, got: %v", err)
+		}
+	})
+
+	t.Run("property_pattern_rejects_invalid_chars", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.TopK = &insightsv1.TopKQuery{
+			Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+			Property:  proto.String("bad prop"), // space is outside the field pattern
+		}
+		if err := protovalidate.Validate(req); err == nil {
+			t.Error("expected validation error for property containing a space")
+		}
+	})
+
+	t.Run("dimension_unspecified_rejected", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.TopK.Dimension = insightsv1.TopKQuery_DIMENSION_UNSPECIFIED.Enum()
+		if err := protovalidate.Validate(req); err == nil {
+			t.Error("expected validation error for unspecified dimension")
+		}
+	})
+
+	t.Run("dimension_undefined_rejected", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		undefined := insightsv1.TopKQuery_Dimension(999)
+		req.Spec.TopK.Dimension = &undefined
+		if err := protovalidate.Validate(req); err == nil {
+			t.Error("expected validation error for undefined dimension")
+		}
+	})
+
+	// metric_property requirement for numeric metrics, mirrored from
+	// event_query.property_required_for_numeric_agg.
+	numericMetrics := []insightsv1.AggregationType{
+		insightsv1.AggregationType_AGGREGATION_TYPE_SUM,
+		insightsv1.AggregationType_AGGREGATION_TYPE_AVG,
+		insightsv1.AggregationType_AGGREGATION_TYPE_MIN,
+		insightsv1.AggregationType_AGGREGATION_TYPE_MAX,
+	}
+	for _, m := range numericMetrics {
+		t.Run("metric_property_required_for_"+m.String(), func(t *testing.T) {
+			req := validTopKQueryRequest()
+			req.Spec.TopK.Metric = m.Enum()
+			if err := protovalidate.Validate(req); !hasRule(err, "top_k_metric_property_required") {
+				t.Errorf("expected top_k_metric_property_required, got: %v", err)
+			}
+		})
+	}
+
+	t.Run("metric_property_not_required_for_total", func(t *testing.T) {
+		req := validTopKQueryRequest()
+		req.Spec.TopK.Metric = insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum()
+		if err := protovalidate.Validate(req); err != nil {
+			t.Errorf("expected valid, got: %v", err)
+		}
+	})
+
+	// Per-user metrics are degenerate for the USER dimension and rejected; they
+	// remain valid for PROPERTY/EVENT_KIND dimensions.
+	for _, m := range []insightsv1.AggregationType{
+		insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS,
+		insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG,
+	} {
+		t.Run("user_dimension_rejects_"+m.String(), func(t *testing.T) {
+			req := validTopKQueryRequest()
+			req.Spec.TopK = &insightsv1.TopKQuery{
+				Dimension: insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+				Metric:    m.Enum(),
+			}
+			if err := protovalidate.Validate(req); !hasRule(err, "top_k_user_dimension_metric") {
+				t.Errorf("expected top_k_user_dimension_metric, got: %v", err)
+			}
+		})
+		t.Run("event_kind_dimension_accepts_"+m.String(), func(t *testing.T) {
+			req := validTopKQueryRequest()
+			req.Spec.TopK.Metric = m.Enum()
+			if err := protovalidate.Validate(req); err != nil {
+				t.Errorf("expected valid, got: %v", err)
+			}
+		})
+	}
+
+	// Limit bounds: 0 means unset (valid, builder defaults to 10); 100 is the cap.
+	limitTests := []struct {
+		name    string
+		limit   int32
+		wantErr bool
+	}{
+		{"limit_unset_ok", 0, false},
+		{"limit_min_ok", 1, false},
+		{"limit_max_ok", 100, false},
+		{"limit_over_max", 101, true},
+		{"limit_negative", -1, true},
+	}
+	for _, tt := range limitTests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validTopKQueryRequest()
+			req.Spec.TopK.Limit = proto.Int32(tt.limit)
+			err := protovalidate.Validate(req)
+			if tt.wantErr && err == nil {
+				t.Error("expected validation error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("expected valid, got: %v", err)
 			}
 		})
 	}
@@ -476,10 +718,14 @@ func TestQueryRequest_GranularityMaxRange_AllInsightTypes(t *testing.T) {
 		{name: "segmentation", insightType: insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION, events: twoEvents},
 		{name: "funnel", insightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL, events: twoEvents},
 		{name: "retention", insightType: insightsv1.InsightType_INSIGHT_TYPE_RETENTION, events: twoEvents},
+		{name: "top_k", insightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K, events: nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := validQueryRequest()
+			if tt.insightType == insightsv1.InsightType_INSIGHT_TYPE_TOP_K {
+				req = validTopKQueryRequest()
+			}
 			req.Spec.InsightType = tt.insightType.Enum()
 			req.Spec.Events = tt.events
 			req.Granularity = insightsv1.Granularity_GRANULARITY_MINUTE.Enum()

@@ -638,3 +638,205 @@ func TestMigration006PromotedDimExprsMatch(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func rollupTopKSpec(dim insightsv1.TopKQuery_Dimension, property, scopeKind string, metric insightsv1.AggregationType) *insightsv1.InsightQuerySpec {
+	tk := &insightsv1.TopKQuery{
+		Dimension: dim.Enum(),
+		Metric:    metric.Enum(),
+	}
+	if property != "" {
+		tk.Property = proto.String(property)
+	}
+	if scopeKind != "" {
+		tk.Scope = &commonv1.EventFilter{Kind: proto.String(scopeKind)}
+	}
+	return &insightsv1.InsightQuerySpec{
+		InsightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K.Enum(),
+		TopK:        tk,
+	}
+}
+
+func TestCanUseTopKRollup(t *testing.T) {
+	total := insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
+	cases := []struct {
+		name string
+		spec *insightsv1.InsightQuerySpec
+		want bool
+	}{
+		{"materialized property", rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "", total), true},
+		{"materialized property with kind scope", rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$country", "page_view", total), true},
+		{"event kind", rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_EVENT_KIND, "", "", total), true},
+		{"unique users", rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "", insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS), true},
+		{"per user avg", rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_EVENT_KIND, "", "", insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG), true},
+		{"unspecified metric resolves to total", rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "", insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED), true},
+		{"user dimension rejected", rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_USER, "", "", total), false},
+		{"non-materialized auto property rejected", rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$referrer", "", total), false},
+		{"custom property rejected", rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "plan", "", total), false},
+		{"numeric metric rejected", rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "", insightsv1.AggregationType_AGGREGATION_TYPE_SUM), false},
+		{"non-top-k insight type rejected", rollupTrendsSpec(total, "page_view", ""), false},
+		{"missing top_k rejected", &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K.Enum()}, false},
+	}
+	for _, c := range cases {
+		if got := canUseTopKRollup(c.spec); got != c.want {
+			t.Errorf("%s: canUseTopKRollup = %v, want %v", c.name, got, c.want)
+		}
+	}
+
+	t.Run("filter_groups rejected", func(t *testing.T) {
+		spec := rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "", total)
+		spec.FilterGroups = []*insightsv1.FilterGroup{{}}
+		if canUseTopKRollup(spec) {
+			t.Error("expected rollup rejected when filter_groups present")
+		}
+	})
+
+	t.Run("scope filters rejected", func(t *testing.T) {
+		spec := rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "page_view", total)
+		spec.TopK.Scope.Filters = []*commonv1.PropertyFilter{{Property: proto.String("$os")}}
+		if canUseTopKRollup(spec) {
+			t.Error("expected rollup rejected when scope has per-event filters")
+		}
+	})
+}
+
+func TestBuildTopKFromRollup(t *testing.T) {
+	t.Run("property_dimension", func(t *testing.T) {
+		req := rollupDayReq(rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "page_view", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL))
+		req.Spec.TopK.Limit = proto.Int32(5)
+		q, err := buildTopKFromRollup(req, "proj_123")
+		if err != nil {
+			t.Fatalf("buildTopKFromRollup: %v", err)
+		}
+		sql := q.SQL()
+		for _, want := range []string{
+			"FROM dashboard_event_rollup_daily",
+			"top_vals AS (",
+			"dim_value AS top_dim",
+			"if(dim_value IN (SELECT top_dim FROM top_vals), dim_value, '$others') AS dim_bucket",
+			"AS is_others",
+			"toFloat64(sum(cnt)) AS value",
+			"GROUP BY dim_bucket, is_others",
+			"ORDER BY is_others ASC, value DESC, dim_bucket ASC",
+			"SETTINGS use_query_cache = 1, query_cache_ttl = 60",
+		} {
+			if !strings.Contains(sql, want) {
+				t.Errorf("expected SQL to contain %q\nSQL:\n%s", want, sql)
+			}
+		}
+		// The pre-aggregated rollup is tiny and bounded-cardinality, so it must
+		// not carry the raw path's spill threshold; guards against an accidental
+		// future WithSpillThreshold on the rollup builder.
+		if strings.Contains(sql, "max_bytes_before_external_group_by") {
+			t.Errorf("rollup path must not set a spill threshold, got: %s", sql)
+		}
+		// Both passes carry dim_name=$browser and the kind scope; day bounds map
+		// [from, to) to inclusive whole days.
+		wantArgs := map[any]int{"proj_123": 2, "$browser": 2, "page_view": 2, "2024-01-01": 2, "2024-01-07": 2, int64(5): 1}
+		counts := map[any]int{}
+		for _, a := range q.Args() {
+			counts[a]++
+		}
+		for v, n := range wantArgs {
+			if counts[v] != n {
+				t.Errorf("expected arg %v ×%d, got %d: %v", v, n, counts[v], q.Args())
+			}
+		}
+		if q.Limit() != 5 || q.Dimension() != insightsv1.TopKQuery_DIMENSION_PROPERTY {
+			t.Errorf("expected Limit 5 / PROPERTY dimension, got %d / %s", q.Limit(), q.Dimension())
+		}
+	})
+
+	t.Run("event_kind_dimension", func(t *testing.T) {
+		req := rollupDayReq(rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_EVENT_KIND, "", "", insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS))
+		q, err := buildTopKFromRollup(req, "proj_123")
+		if err != nil {
+			t.Fatalf("buildTopKFromRollup: %v", err)
+		}
+		sql := q.SQL()
+		for _, want := range []string{
+			"kind AS top_dim",
+			"if(kind IN (SELECT top_dim FROM top_vals), kind, '$others') AS dim_bucket",
+			"toFloat64(uniqMerge(uniq_state)) AS value",
+		} {
+			if !strings.Contains(sql, want) {
+				t.Errorf("expected SQL to contain %q\nSQL:\n%s", want, sql)
+			}
+		}
+		// EVENT_KIND reads the synthetic $__total__ dimension rows.
+		found := false
+		for _, a := range q.Args() {
+			if a == totalDimName {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected dim_name arg %q, got: %v", totalDimName, q.Args())
+		}
+	})
+
+	t.Run("default_limit_when_unset", func(t *testing.T) {
+		// buildTopKFromRollup carries its own limit==0 → defaultTopKLimit block,
+		// independent of the raw BuildTopKQuery copy. Pin it: a regression dropping
+		// it would send LIMIT 0 to the rollup (zero ranked rows) on the fast path
+		// only, while the raw path stayed correct — exactly the kind of divergence
+		// rollup_parity (which uses an explicit limit) would not catch.
+		req := rollupDayReq(rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "page_view", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL))
+		// Limit deliberately left unset (0).
+		q, err := buildTopKFromRollup(req, "proj_123")
+		if err != nil {
+			t.Fatalf("buildTopKFromRollup: %v", err)
+		}
+		if q.Limit() != defaultTopKLimit {
+			t.Errorf("expected default limit %d, got %d", defaultTopKLimit, q.Limit())
+		}
+		found := false
+		for _, a := range q.Args() {
+			if a == int64(defaultTopKLimit) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected LIMIT arg %d in args, got: %v", defaultTopKLimit, q.Args())
+		}
+	})
+}
+
+func TestTopKQueryForExecution_Dispatch(t *testing.T) {
+	now := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	eligible := func() *insightsv1.QueryRequest {
+		return rollupDayReq(rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL))
+	}
+
+	t.Run("aligned_eligible_uses_rollup", func(t *testing.T) {
+		q, usedRollup, err := topKQueryForExecution(eligible(), "proj_123", now)
+		if err != nil {
+			t.Fatalf("topKQueryForExecution: %v", err)
+		}
+		if !usedRollup || !strings.Contains(q.SQL(), rollupTable) {
+			t.Errorf("expected rollup-served query, usedRollup=%v SQL: %s", usedRollup, q.SQL())
+		}
+	})
+
+	t.Run("misaligned_window_falls_back_raw", func(t *testing.T) {
+		req := eligible()
+		req.TimeRange = rollupTimeRange("2024-01-01T12:00:00Z", "2024-01-08T00:00:00Z")
+		q, usedRollup, err := topKQueryForExecution(req, "proj_123", now)
+		if err != nil {
+			t.Fatalf("topKQueryForExecution: %v", err)
+		}
+		if usedRollup || !strings.Contains(q.SQL(), "FROM events") {
+			t.Errorf("expected raw-events query, usedRollup=%v SQL: %s", usedRollup, q.SQL())
+		}
+	})
+
+	t.Run("user_dimension_falls_back_raw", func(t *testing.T) {
+		req := rollupDayReq(rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_USER, "", "", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL))
+		q, usedRollup, err := topKQueryForExecution(req, "proj_123", now)
+		if err != nil {
+			t.Fatalf("topKQueryForExecution: %v", err)
+		}
+		if usedRollup || !strings.Contains(q.SQL(), "FROM events") {
+			t.Errorf("expected raw-events query, usedRollup=%v SQL: %s", usedRollup, q.SQL())
+		}
+	})
+}

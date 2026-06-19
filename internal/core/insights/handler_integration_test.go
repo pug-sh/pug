@@ -2,6 +2,7 @@ package insights_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	insightshandler "github.com/pug-sh/pug/internal/app/server/rpc/shared/insights"
+	"github.com/pug-sh/pug/internal/apperr"
 	"github.com/pug-sh/pug/internal/core/insights"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
@@ -245,5 +247,82 @@ func TestIntegration_GetFilterSchemaHandlerForwardsAllowedTypes(t *testing.T) {
 		if got[name] {
 			t.Errorf("did not expect %q in INTEGER+FLOAT-filtered response — handler may be passing nil for allowed_types", name)
 		}
+	}
+}
+
+// TestIntegration_TopKHandler verifies the handler-level dispatch of TOP_K
+// through ExecuteQuery (ranked rows + $others through the full RPC path) and
+// the InvalidQueryError → CodeInvalidArgument mapping for a builder-level
+// failure that bypasses the proto interceptor.
+func TestIntegration_TopKHandler(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	rd := testutil.SetupRedis(t)
+	ctx := context.Background()
+
+	seedTopKEvents(t, ctx, ch)
+
+	executor := insights.NewExecutor(ch.Conn)
+	service := insights.NewService(executor, rd.Client)
+	srv := insightshandler.NewServer(service, executor)
+
+	principal := &rpc.Principal{Project: &dbread.Project{ID: testProjectID}}
+	authedCtx := authn.SetInfo(ctx, principal)
+
+	makeReq := func(tk *insightsv1.TopKQuery) *connect.Request[insightsv1.QueryRequest] {
+		return connect.NewRequest(&insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K.Enum(),
+				TopK:        tk,
+			},
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 9, 8, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		})
+	}
+
+	resp, err := srv.Query(authedCtx, makeReq(&insightsv1.TopKQuery{
+		Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+		Property:  proto.String("$browser"),
+		Scope:     &commonv1.EventFilter{Kind: proto.String("tk_view")},
+		Limit:     proto.Int32(2),
+	}))
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	result := resp.Msg.GetTopK()
+	if result == nil {
+		t.Fatal("expected TopK result")
+	}
+	rows := result.GetRows()
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 rows (top 2 + $others), got %d: %v", len(rows), rows)
+	}
+	if rows[0].GetDimensionValue() != "chrome" || rows[0].GetValue() != 5 || rows[0].GetIsOthers() {
+		t.Errorf("row 0: expected chrome/5, got %v", rows[0])
+	}
+	if rows[1].GetDimensionValue() != "safari" || rows[1].GetValue() != 3 || rows[1].GetIsOthers() {
+		t.Errorf("row 1: expected safari/3, got %v", rows[1])
+	}
+	if !rows[2].GetIsOthers() || rows[2].GetValue() != 3 {
+		t.Errorf("row 2: expected $others/3, got %v", rows[2])
+	}
+
+	// PROPERTY dimension without a property fails in the builder (the proto CEL
+	// rule is bypassed because the handler is called directly, without the
+	// validate interceptor) and must surface as an invalid-argument apperr —
+	// translated to CodeInvalidArgument by the apperr interceptor in the served
+	// stack, which a direct handler call bypasses.
+	_, err = srv.Query(authedCtx, makeReq(&insightsv1.TopKQuery{
+		Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+	}))
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeInvalidArgument {
+		t.Fatalf("expected apperr with CodeInvalidArgument, got: %v", err)
 	}
 }
