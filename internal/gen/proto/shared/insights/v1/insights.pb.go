@@ -1100,6 +1100,14 @@ func (x *UserFlowQuery) GetMaxLinks() int32 {
 // TopKQuery configures a "top K" ranking insight: the top K values of a
 // dimension by an aggregate metric, plus a trailing $others bucket that
 // aggregates everything outside the top K.
+//
+// Granularity note: top K has no time bucketing, so QueryRequest.granularity
+// does not affect a top-K result. It is still required (every QueryRequest
+// requires one) and, for top K, serves only to select which time-range cap
+// applies — see the query_request.granularity_*_max_range rules: e.g.
+// GRANULARITY_MINUTE caps the window at 6h, GRANULARITY_MONTH at ~10y. Send the
+// coarsest granularity whose cap admits your intended window; the value is
+// otherwise inert for top K.
 type TopKQuery struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Dimension *TopKQuery_Dimension   `protobuf:"varint,1,opt,name=dimension,enum=shared.insights.v1.TopKQuery_Dimension" json:"dimension,omitempty"`

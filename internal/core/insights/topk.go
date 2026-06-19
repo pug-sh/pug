@@ -127,6 +127,17 @@ func topKBaseConditions(req *insightsv1.QueryRequest, projectID, alias string) (
 // over events, ranked in the top_vals CTE, re-aggregated with the dimension
 // collapsed to $others outside the top K.
 //
+// This shape is deliberately two-pass (top_vals CTE scans events, then the outer
+// query scans them again) — the opposite choice from buildTopKUsers' single-pass
+// row_number ranking. The asymmetry is intentional: there is no join or
+// latest_profiles aggregation to repeat here, so the second scan is just a scan,
+// and re-scanning yields an exact UNIQUE_USERS for $others "for free" (a true
+// uniq over the bucket's events) without threading uniqState/uniqMerge partials
+// through a ranked CTE. buildTopKUsers cannot afford a second pass because its
+// scan drags a join + profile aggregation, so it pays the partial-state plumbing
+// instead. If the raw event scan ever dominates here, revisit with the
+// single-pass technique (and add uniqState partials for exact UNIQUE_USERS).
+//
 // Empty-string dimension values participate as a real row (consistent with
 // breakdown behavior — for "top referrers" the empty/direct bucket is usually
 // the largest and hiding it would mislead).
@@ -274,9 +285,11 @@ func topKMetric(tk *insightsv1.TopKQuery) insightsv1.AggregationType {
 }
 
 // topKPartial is one re-mergeable per-user aggregate: its expression and the
-// column alias it is projected as. Pairing expr+col in a single struct makes
-// the per_user-projection ↔ ranked-carry-through invariant structural — a
-// length mismatch between the two slices can no longer arise.
+// column alias it is projected as. Pairing expr+col in a single struct makes the
+// per_user-projection and ranked-carry-through slices share one source, so a
+// *length* mismatch between them can no longer arise. It does not — and cannot,
+// for string-built SQL — guarantee that a metric's rankExpr/mergeExpr reference
+// only the cols declared here; that coupling stays prose- and test-enforced.
 type topKPartial struct {
 	expr string // aggregate projection in per_user, e.g. "sum(...)"
 	col  string // the alias it is projected AS, carried through the ranked CTE
@@ -364,6 +377,14 @@ func topKUserMetricExprs(tk *insightsv1.TopKQuery) (topKUserMetric, error) {
 //
 // Intentionally not query-cached: freshness over compute at K ≤ 100, matching
 // the property-values / segment-users cache policy.
+//
+// This deliberately re-derives the "latest profile row" semantics inline (argMax
+// by insert_time + an is_deleted HAVING over the raw `profiles` table) instead of
+// reusing profiles.LatestProfilesCTE, so the `id IN (...)` filter is pushed into
+// the scan and only the ≤K winning ids are grouped — far cheaper than
+// materializing every project profile through the CTE just to keep K of them. The
+// cost is a second copy of the ReplacingMergeTree "latest" rule: if that
+// dedup/tie-break convention changes, update LatestProfilesCTE AND this query.
 func BuildTopKProfilesQuery(projectID string, ids []string) (string, []any, error) {
 	if len(ids) == 0 {
 		return "", nil, nil
@@ -418,7 +439,26 @@ func buildTopKResult(ctx context.Context, executor *Executor, projectID string, 
 			}
 			profilesByID, err = executor.QueryTopKProfiles(ctx, projectID, sql, args)
 			if err != nil {
-				return nil, err
+				if isContextError(err) {
+					// Request cancellation / deadline is a lifecycle signal, not a
+					// transient enrichment fault: propagate it so queryFailed and
+					// dashboards.renderInsightTile surface CodeCanceled /
+					// CodeDeadlineExceeded rather than masking it as a 200 with
+					// partial (un-enriched) data.
+					return nil, err
+				}
+				// Enrichment is strictly additive to an already-complete ranking:
+				// QueryTopK has produced the ranked rows + values; profile id /
+				// external_id / properties only decorate the USER rows. A transient
+				// failure of this second query (already logged+recorded inside
+				// QueryTopKProfiles) degrades to un-enriched rows rather than
+				// discarding a good ranking — matching the per-row property-decode
+				// degradation below. The BuildTopKProfilesQuery failure above stays
+				// fatal on purpose: it builds from our own query output, so a failure
+				// there signals a code bug, not a transient operational fault.
+				slog.WarnContext(ctx, "top k profile enrichment query failed; returning un-enriched rows",
+					slogx.Error(err), slog.String("project_id", projectID))
+				profilesByID = nil
 			}
 		}
 	}

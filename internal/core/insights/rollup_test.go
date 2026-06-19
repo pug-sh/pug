@@ -773,6 +773,32 @@ func TestBuildTopKFromRollup(t *testing.T) {
 			t.Errorf("expected dim_name arg %q, got: %v", totalDimName, q.Args())
 		}
 	})
+
+	t.Run("default_limit_when_unset", func(t *testing.T) {
+		// buildTopKFromRollup carries its own limit==0 → defaultTopKLimit block,
+		// independent of the raw BuildTopKQuery copy. Pin it: a regression dropping
+		// it would send LIMIT 0 to the rollup (zero ranked rows) on the fast path
+		// only, while the raw path stayed correct — exactly the kind of divergence
+		// rollup_parity (which uses an explicit limit) would not catch.
+		req := rollupDayReq(rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "page_view", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL))
+		// Limit deliberately left unset (0).
+		q, err := buildTopKFromRollup(req, "proj_123")
+		if err != nil {
+			t.Fatalf("buildTopKFromRollup: %v", err)
+		}
+		if q.Limit() != defaultTopKLimit {
+			t.Errorf("expected default limit %d, got %d", defaultTopKLimit, q.Limit())
+		}
+		found := false
+		for _, a := range q.Args() {
+			if a == int64(defaultTopKLimit) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected LIMIT arg %d in args, got: %v", defaultTopKLimit, q.Args())
+		}
+	})
 }
 
 func TestTopKQueryForExecution_Dispatch(t *testing.T) {
