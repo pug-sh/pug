@@ -110,13 +110,6 @@ func (nc *NATSClient) GetJetStream() jetstream.JetStream {
 	return nc.jetStream
 }
 
-// IsConnected reports whether the underlying NATS connection is currently
-// established. It backs worker readiness (see natsWorker.Ready); a nil connection
-// reads as not connected.
-func (nc *NATSClient) IsConnected() bool {
-	return nc.conn != nil && nc.conn.IsConnected()
-}
-
 // GetConfig returns the NATS configuration
 func (nc *NATSClient) GetConfig() *Config {
 	return nc.config
