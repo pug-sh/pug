@@ -59,6 +59,13 @@ func PropertyExpr(name string) string {
 	return propertyExpr(name, "")
 }
 
+// PropertyExprAliased is PropertyExpr with event table column references
+// prefixed by the given table alias. Used in JOINed CTEs where bare column
+// names are ambiguous. The same SAFETY contract as PropertyExpr applies.
+func PropertyExprAliased(name, alias string) string {
+	return propertyExpr(name, alias)
+}
+
 func propertyExpr(name, alias string) string {
 	if strings.HasPrefix(name, "$") {
 		return AutoPropertyProjectionFor(name, alias).StringSQL

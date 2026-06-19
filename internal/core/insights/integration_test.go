@@ -1837,6 +1837,457 @@ func TestIntegration(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("top_k", func(t *testing.T) {
+		// Sept 2024 window, isolated from every other seed (Jan–Jun).
+		seedTopKEvents(t, ctx, ch)
+		seedIntegrationProfiles(t, ctx, ch)
+		topKWindow := &commonv1.TimeRange{
+			From: timestamppb.New(time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC)),
+			To:   timestamppb.New(time.Date(2024, 9, 8, 0, 0, 0, 0, time.UTC)),
+		}
+		topKReq := func(tk *insightsv1.TopKQuery) *insightsv1.QueryRequest {
+			return &insightsv1.QueryRequest{
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K.Enum(),
+					TopK:        tk,
+				},
+				TimeRange:   topKWindow,
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+			}
+		}
+		runTopK := func(t *testing.T, tk *insightsv1.TopKQuery) []insights.TopKRow {
+			t.Helper()
+			q, err := insights.BuildTopKQuery(topKReq(tk), testProjectID)
+			if err != nil {
+				t.Fatalf("BuildTopKQuery: %v", err)
+			}
+			rows, err := executor.QueryTopK(ctx, testProjectID, q)
+			if err != nil {
+				t.Fatalf("QueryTopK: %v", err)
+			}
+			return rows
+		}
+
+		// Edge-case + USER-metric fixtures live in their own day-aligned windows
+		// so the no-scope event_kind test above isn't perturbed by extra kinds.
+		seedTopKEdgeEvents(t, ctx, ch)
+		seedTopKCollisionProfiles(t, ctx, ch)
+		edgeWindow := &commonv1.TimeRange{
+			From: timestamppb.New(time.Date(2024, 10, 1, 0, 0, 0, 0, time.UTC)),
+			To:   timestamppb.New(time.Date(2024, 10, 8, 0, 0, 0, 0, time.UTC)),
+		}
+		collisionWindow := &commonv1.TimeRange{
+			From: timestamppb.New(time.Date(2024, 11, 1, 0, 0, 0, 0, time.UTC)),
+			To:   timestamppb.New(time.Date(2024, 11, 8, 0, 0, 0, 0, time.UTC)),
+		}
+		runTopKWindow := func(t *testing.T, win *commonv1.TimeRange, tk *insightsv1.TopKQuery) []insights.TopKRow {
+			t.Helper()
+			req := &insightsv1.QueryRequest{
+				Spec: &insightsv1.InsightQuerySpec{
+					InsightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K.Enum(),
+					TopK:        tk,
+				},
+				TimeRange:   win,
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+			}
+			q, err := insights.BuildTopKQuery(req, testProjectID)
+			if err != nil {
+				t.Fatalf("BuildTopKQuery: %v", err)
+			}
+			rows, err := executor.QueryTopK(ctx, testProjectID, q)
+			if err != nil {
+				t.Fatalf("QueryTopK: %v", err)
+			}
+			return rows
+		}
+
+		t.Run("property_basic", func(t *testing.T) {
+			// tk_view browsers: chrome 5, safari 3, firefox 2, edge 1.
+			// K=2 → chrome, safari, then $others = firefox + edge = 3.
+			rows := runTopK(t, &insightsv1.TopKQuery{
+				Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+				Property:  proto.String("$browser"),
+				Scope:     &commonv1.EventFilter{Kind: proto.String("tk_view")},
+				Limit:     proto.Int32(2),
+			})
+			want := []insights.TopKRow{
+				{DimensionValue: "chrome", IsOthers: false, Value: 5},
+				{DimensionValue: "safari", IsOthers: false, Value: 3},
+				{DimensionValue: "$others", IsOthers: true, Value: 3},
+			}
+			if !reflect.DeepEqual(rows, want) {
+				t.Errorf("expected %+v, got %+v", want, rows)
+			}
+		})
+
+		t.Run("event_kind", func(t *testing.T) {
+			// Kinds in the window: tk_view 11, tk_click 7, tk_lit 6, tk_purchase 5.
+			// K=2 → tk_view, tk_click, then $others = 6 + 5 = 11.
+			rows := runTopK(t, &insightsv1.TopKQuery{
+				Dimension: insightsv1.TopKQuery_DIMENSION_EVENT_KIND.Enum(),
+				Limit:     proto.Int32(2),
+			})
+			want := []insights.TopKRow{
+				{DimensionValue: "tk_view", IsOthers: false, Value: 11},
+				{DimensionValue: "tk_click", IsOthers: false, Value: 7},
+				{DimensionValue: "$others", IsOthers: true, Value: 11},
+			}
+			if !reflect.DeepEqual(rows, want) {
+				t.Errorf("expected %+v, got %+v", want, rows)
+			}
+		})
+
+		t.Run("unique_users_others_no_overlap_inflation", func(t *testing.T) {
+			// tk_click browsers by UNIQUE_USERS: chrome {u1,u2,u3}, safari {u4,u5},
+			// opera {dup}, brave {dup}. K=2 → chrome 3, safari 2. The $others bucket
+			// re-aggregates raw events, so dup — active in BOTH non-top browsers —
+			// counts once (uniq of the union), not twice (sum of per-dim uniqs).
+			// This pins the SQL re-aggregation design for the bucket.
+			rows := runTopK(t, &insightsv1.TopKQuery{
+				Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+				Property:  proto.String("$browser"),
+				Scope:     &commonv1.EventFilter{Kind: proto.String("tk_click")},
+				Metric:    insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum(),
+				Limit:     proto.Int32(2),
+			})
+			want := []insights.TopKRow{
+				{DimensionValue: "chrome", IsOthers: false, Value: 3},
+				{DimensionValue: "safari", IsOthers: false, Value: 2},
+				{DimensionValue: "$others", IsOthers: true, Value: 1},
+			}
+			if !reflect.DeepEqual(rows, want) {
+				t.Errorf("expected %+v, got %+v", want, rows)
+			}
+		})
+
+		t.Run("literal_others_value", func(t *testing.T) {
+			// tk_lit label values: big 3, literal "$others" 2, small 1. K=2 keeps
+			// big and the REAL "$others" value (is_others=false); small collapses
+			// into the synthetic bucket, which is also rendered "$others" but
+			// carries is_others=true — the flag, not the string, identifies it.
+			rows := runTopK(t, &insightsv1.TopKQuery{
+				Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+				Property:  proto.String("label"),
+				Scope:     &commonv1.EventFilter{Kind: proto.String("tk_lit")},
+				Limit:     proto.Int32(2),
+			})
+			want := []insights.TopKRow{
+				{DimensionValue: "big", IsOthers: false, Value: 3},
+				{DimensionValue: "$others", IsOthers: false, Value: 2},
+				{DimensionValue: "$others", IsOthers: true, Value: 1},
+			}
+			if !reflect.DeepEqual(rows, want) {
+				t.Errorf("expected %+v, got %+v", want, rows)
+			}
+		})
+
+		t.Run("user_sum_alias_resolution_and_enrichment", func(t *testing.T) {
+			// Full ExecuteQuery path: dispatch, alias resolution, $others, and
+			// profile enrichment. tk_purchase order_amount sums per canonical user:
+			// alice = 100 (id) + 50 (external_id) + 25 (alias) = 175,
+			// bob = 120 (via external_id bob_ext), ghost (no profile) = 80.
+			// K=2 → alice, bob enriched; ghost in un-enriched $others.
+			resp, err := insights.ExecuteQuery(ctx, executor, testProjectID, topKReq(&insightsv1.TopKQuery{
+				Dimension:      insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+				Scope:          &commonv1.EventFilter{Kind: proto.String("tk_purchase")},
+				Metric:         insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum(),
+				MetricProperty: proto.String("order_amount"),
+				Limit:          proto.Int32(2),
+			}), time.Now())
+			if err != nil {
+				t.Fatalf("ExecuteQuery: %v", err)
+			}
+			rows := resp.GetTopK().GetRows()
+			if len(rows) != 3 {
+				t.Fatalf("expected 3 rows, got %d: %v", len(rows), rows)
+			}
+
+			if rows[0].GetDimensionValue() != "alice" || rows[0].GetValue() != 175 || rows[0].GetIsOthers() {
+				t.Errorf("row 0: expected alice/175/is_others=false, got %v", rows[0])
+			}
+			if rows[0].GetProfile().GetExternalId() != "alice_ext" {
+				t.Errorf("row 0: expected enrichment external_id alice_ext, got %v", rows[0].GetProfile())
+			}
+			if got := rows[0].GetProfile().GetProperties().GetFields()["plan"].GetStringValue(); got != "pro" {
+				t.Errorf("row 0: expected properties.plan=pro, got %q", got)
+			}
+
+			if rows[1].GetDimensionValue() != "bob" || rows[1].GetValue() != 120 || rows[1].GetIsOthers() {
+				t.Errorf("row 1: expected bob/120/is_others=false, got %v", rows[1])
+			}
+			if rows[1].GetProfile().GetExternalId() != "bob_ext" {
+				t.Errorf("row 1: expected enrichment external_id bob_ext, got %v", rows[1].GetProfile())
+			}
+
+			if !rows[2].GetIsOthers() || rows[2].GetValue() != 80 {
+				t.Errorf("row 2: expected $others/80, got %v", rows[2])
+			}
+			if rows[2].GetProfile() != nil {
+				t.Errorf("row 2: $others must not be enriched, got %v", rows[2].GetProfile())
+			}
+		})
+
+		t.Run("user_unidentified_distinct_id_not_enriched", func(t *testing.T) {
+			// K large enough to surface ghost as a top row: it stays keyed by its
+			// raw distinct_id with no profile attached.
+			resp, err := insights.ExecuteQuery(ctx, executor, testProjectID, topKReq(&insightsv1.TopKQuery{
+				Dimension:      insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+				Scope:          &commonv1.EventFilter{Kind: proto.String("tk_purchase")},
+				Metric:         insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum(),
+				MetricProperty: proto.String("order_amount"),
+				Limit:          proto.Int32(10),
+			}), time.Now())
+			if err != nil {
+				t.Fatalf("ExecuteQuery: %v", err)
+			}
+			rows := resp.GetTopK().GetRows()
+			if len(rows) != 3 {
+				t.Fatalf("expected 3 rows (no $others when all fit), got %d: %v", len(rows), rows)
+			}
+			if rows[2].GetDimensionValue() != "ghost" || rows[2].GetValue() != 80 || rows[2].GetIsOthers() {
+				t.Errorf("row 2: expected ghost/80/is_others=false, got %v", rows[2])
+			}
+			if rows[2].GetProfile() != nil {
+				t.Errorf("ghost has no profile and must not be enriched, got %v", rows[2].GetProfile())
+			}
+		})
+
+		t.Run("rollup_parity", func(t *testing.T) {
+			// The Sept window is day-aligned, so ExecuteQuery routes eligible
+			// queries (materialized dim / event kind, no filters, kind-only
+			// scope) through the rollup; the raw builder is forced via
+			// BuildTopKQuery directly. With no duplicate deliveries seeded the
+			// two paths must agree exactly — rows, order, and flags.
+			parityCases := []struct {
+				name string
+				tk   func() *insightsv1.TopKQuery
+			}{
+				{"browser_total_scoped", func() *insightsv1.TopKQuery {
+					return &insightsv1.TopKQuery{
+						Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+						Property:  proto.String("$browser"),
+						Scope:     &commonv1.EventFilter{Kind: proto.String("tk_view")},
+						Limit:     proto.Int32(2),
+					}
+				}},
+				{"event_kind_unique_users", func() *insightsv1.TopKQuery {
+					return &insightsv1.TopKQuery{
+						Dimension: insightsv1.TopKQuery_DIMENSION_EVENT_KIND.Enum(),
+						Metric:    insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum(),
+						Limit:     proto.Int32(2),
+					}
+				}},
+			}
+			for _, pc := range parityCases {
+				t.Run(pc.name, func(t *testing.T) {
+					rawRows := runTopK(t, pc.tk())
+
+					resp, err := insights.ExecuteQuery(ctx, executor, testProjectID, topKReq(pc.tk()), time.Now())
+					if err != nil {
+						t.Fatalf("ExecuteQuery: %v", err)
+					}
+					var rollupRows []insights.TopKRow
+					for _, r := range resp.GetTopK().GetRows() {
+						rollupRows = append(rollupRows, insights.TopKRow{
+							DimensionValue: r.GetDimensionValue(),
+							IsOthers:       r.GetIsOthers(),
+							Value:          r.GetValue(),
+						})
+					}
+					if !reflect.DeepEqual(rawRows, rollupRows) {
+						t.Errorf("raw and rollup paths diverge:\nraw:    %+v\nrollup: %+v", rawRows, rollupRows)
+					}
+				})
+			}
+		})
+
+		t.Run("user_profile_filter", func(t *testing.T) {
+			// PROPERTY_SOURCE_PROFILE plan=pro restricts the ranking to alice's
+			// events. Note the existing profileFilterCondition contract: it
+			// matches events by distinct_id IN (profile ids ∪ alias ids) — NOT
+			// external_id — so alice's event keyed by "alice_ext" is excluded by
+			// the filter even though the top-K identity union resolves it to her.
+			// The surviving events ("alice" + "alice_anon") still group to the
+			// canonical key.
+			req := topKReq(&insightsv1.TopKQuery{
+				Dimension: insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+				Scope:     &commonv1.EventFilter{Kind: proto.String("tk_purchase")},
+			})
+			req.Spec.FilterGroups = []*insightsv1.FilterGroup{{
+				Filters: []*commonv1.PropertyFilter{{
+					Property: proto.String("plan"),
+					Operator: commonv1.FilterOperator_FILTER_OPERATOR_EQUALS.Enum(),
+					Value:    proto.String("pro"),
+					Source:   commonv1.PropertySource_PROPERTY_SOURCE_PROFILE.Enum(),
+				}},
+			}}
+			resp, err := insights.ExecuteQuery(ctx, executor, testProjectID, req, time.Now())
+			if err != nil {
+				t.Fatalf("ExecuteQuery: %v", err)
+			}
+			rows := resp.GetTopK().GetRows()
+			if len(rows) != 1 {
+				t.Fatalf("expected 1 row (alice only), got %d: %v", len(rows), rows)
+			}
+			// TOTAL metric (default): 2 events pass the filter (id + alias).
+			if rows[0].GetDimensionValue() != "alice" || rows[0].GetValue() != 2 {
+				t.Errorf("expected alice/2, got %v", rows[0])
+			}
+		})
+
+		t.Run("user_avg_others_remerge", func(t *testing.T) {
+			// tk_metric per-user order_amount avgs: m1 15, m2 100, m3 20, m4 50,
+			// mnull none (non-numeric → NULL). K=2 → top m2, m4; $others =
+			// {m3,m1,mnull}. AVG is not re-mergeable from per-user avgs — the
+			// bucket re-divides summed numerator by summed non-NULL denominator =
+			// (60+30+0)/(3+2+0) = 18, NOT avg-of-avgs (17.5 or 11.67). The all-NULL
+			// mnull user contributes 0 to both sums.
+			rows := runTopKWindow(t, edgeWindow, &insightsv1.TopKQuery{
+				Dimension:      insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+				Scope:          &commonv1.EventFilter{Kind: proto.String("tk_metric")},
+				Metric:         insightsv1.AggregationType_AGGREGATION_TYPE_AVG.Enum(),
+				MetricProperty: proto.String("order_amount"),
+				Limit:          proto.Int32(2),
+			})
+			want := []insights.TopKRow{
+				{DimensionValue: "m2", IsOthers: false, Value: 100},
+				{DimensionValue: "m4", IsOthers: false, Value: 50},
+				{DimensionValue: "$others", IsOthers: true, Value: 18},
+			}
+			if !reflect.DeepEqual(rows, want) {
+				t.Errorf("expected %+v, got %+v", want, rows)
+			}
+		})
+
+		t.Run("user_min_others_null_skip", func(t *testing.T) {
+			// Per-user min: m1 10, m2 100, m3 10, m4 50, mnull NULL→rank 0. K=2 →
+			// top m2, m4; $others = {m1,m3,mnull}. The bucket min skips mnull's
+			// NULL partial = min(10,10,NULL) = 10 — NOT 0, which a toFloat64OrZero
+			// regression (NULL→0) would produce.
+			rows := runTopKWindow(t, edgeWindow, &insightsv1.TopKQuery{
+				Dimension:      insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+				Scope:          &commonv1.EventFilter{Kind: proto.String("tk_metric")},
+				Metric:         insightsv1.AggregationType_AGGREGATION_TYPE_MIN.Enum(),
+				MetricProperty: proto.String("order_amount"),
+				Limit:          proto.Int32(2),
+			})
+			want := []insights.TopKRow{
+				{DimensionValue: "m2", IsOthers: false, Value: 100},
+				{DimensionValue: "m4", IsOthers: false, Value: 50},
+				{DimensionValue: "$others", IsOthers: true, Value: 10},
+			}
+			if !reflect.DeepEqual(rows, want) {
+				t.Errorf("expected %+v, got %+v", want, rows)
+			}
+		})
+
+		t.Run("user_max_others", func(t *testing.T) {
+			// Per-user max: m1 20, m2 100, m3 30, m4 50, mnull NULL→rank 0. K=2 →
+			// top m2, m4; $others = max over {m1,m3,mnull} = max(20,30,NULL) = 30.
+			rows := runTopKWindow(t, edgeWindow, &insightsv1.TopKQuery{
+				Dimension:      insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+				Scope:          &commonv1.EventFilter{Kind: proto.String("tk_metric")},
+				Metric:         insightsv1.AggregationType_AGGREGATION_TYPE_MAX.Enum(),
+				MetricProperty: proto.String("order_amount"),
+				Limit:          proto.Int32(2),
+			})
+			want := []insights.TopKRow{
+				{DimensionValue: "m2", IsOthers: false, Value: 100},
+				{DimensionValue: "m4", IsOthers: false, Value: 50},
+				{DimensionValue: "$others", IsOthers: true, Value: 30},
+			}
+			if !reflect.DeepEqual(rows, want) {
+				t.Errorf("expected %+v, got %+v", want, rows)
+			}
+		})
+
+		t.Run("property_empty_string_dimension", func(t *testing.T) {
+			// chrome×3, ""(no browser)×2, safari×1. K=2 keeps chrome and the
+			// empty/direct bucket as a REAL ranked row (is_others=false) — it is
+			// not hidden; safari collapses into the synthetic $others.
+			rows := runTopKWindow(t, edgeWindow, &insightsv1.TopKQuery{
+				Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+				Property:  proto.String("$browser"),
+				Scope:     &commonv1.EventFilter{Kind: proto.String("tk_empty")},
+				Limit:     proto.Int32(2),
+			})
+			want := []insights.TopKRow{
+				{DimensionValue: "chrome", IsOthers: false, Value: 3},
+				{DimensionValue: "", IsOthers: false, Value: 2},
+				{DimensionValue: "$others", IsOthers: true, Value: 1},
+			}
+			if !reflect.DeepEqual(rows, want) {
+				t.Errorf("expected %+v, got %+v", want, rows)
+			}
+		})
+
+		t.Run("tie_break_determinism", func(t *testing.T) {
+			// aaa and bbb tie at 2 events; the secondary dim-ASC sort must place
+			// aaa before bbb deterministically — and the rollup path must break
+			// the tie identically to the raw path.
+			tk := func() *insightsv1.TopKQuery {
+				return &insightsv1.TopKQuery{
+					Dimension: insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+					Property:  proto.String("$browser"),
+					Scope:     &commonv1.EventFilter{Kind: proto.String("tk_tie")},
+					Limit:     proto.Int32(2),
+				}
+			}
+			want := []insights.TopKRow{
+				{DimensionValue: "aaa", IsOthers: false, Value: 2},
+				{DimensionValue: "bbb", IsOthers: false, Value: 2},
+				{DimensionValue: "$others", IsOthers: true, Value: 1},
+			}
+			if raw := runTopKWindow(t, edgeWindow, tk()); !reflect.DeepEqual(raw, want) {
+				t.Errorf("raw: expected %+v, got %+v", want, raw)
+			}
+			// ExecuteQuery over the day-aligned Oct window routes through the rollup.
+			req := &insightsv1.QueryRequest{
+				Spec:        &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TOP_K.Enum(), TopK: tk()},
+				TimeRange:   edgeWindow,
+				Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+			}
+			resp, err := insights.ExecuteQuery(ctx, executor, testProjectID, req, time.Now())
+			if err != nil {
+				t.Fatalf("ExecuteQuery: %v", err)
+			}
+			var rollup []insights.TopKRow
+			for _, r := range resp.GetTopK().GetRows() {
+				rollup = append(rollup, insights.TopKRow{
+					DimensionValue: r.GetDimensionValue(),
+					IsOthers:       r.GetIsOthers(),
+					Value:          r.GetValue(),
+				})
+			}
+			if !reflect.DeepEqual(rollup, want) {
+				t.Errorf("rollup: expected %+v, got %+v", want, rollup)
+			}
+		})
+
+		t.Run("user_alias_collision_no_inflation", func(t *testing.T) {
+			// distinct_id "collide" resolves to pA (external_id) AND pB (alias).
+			// The identity union's LEFT ANY JOIN must pick ONE canonical id per
+			// event, so 3 collide events count as 3 under a single key — not 6
+			// split across pA and pB (which a plain LEFT JOIN would produce,
+			// adding a third row and pushing "solo" into $others).
+			rows := runTopKWindow(t, collisionWindow, &insightsv1.TopKQuery{
+				Dimension: insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+				Scope:     &commonv1.EventFilter{Kind: proto.String("tk_collide")},
+				Limit:     proto.Int32(2),
+			})
+			if len(rows) != 2 {
+				t.Fatalf("expected 2 rows (collide winner + solo, no $others), got %d: %+v", len(rows), rows)
+			}
+			if rows[0].Value != 3 || rows[0].IsOthers ||
+				(rows[0].DimensionValue != "pA" && rows[0].DimensionValue != "pB") {
+				t.Errorf("row 0: expected one canonical collide user (pA|pB) value 3, got %+v", rows[0])
+			}
+			if rows[1].DimensionValue != "solo" || rows[1].Value != 1 || rows[1].IsOthers {
+				t.Errorf("row 1: expected solo/1/is_others=false, got %+v", rows[1])
+			}
+		})
+	})
 }
 
 func rollupParityTrendsReq(agg insightsv1.AggregationType) *insightsv1.QueryRequest {
@@ -2325,6 +2776,220 @@ func seedPurchases(t *testing.T, ctx context.Context, ch *testutil.TestClickHous
 		)
 		if err != nil {
 			t.Fatalf("insert purchase event: %v", err)
+		}
+	}
+}
+
+// seedTopKEvents inserts the top-K fixtures in an isolated Sept 2024 window.
+//
+// Layout (project_id = testProjectID, all Sep 1–3 2024):
+//
+//	tk_view (11): $browser chrome×5, safari×3, firefox×2, edge×1
+//	tk_click (7): $browser chrome by u1,u2,u3; safari by u4,u5; opera + brave both by dup
+//	tk_purchase (5): order_amount — alice 100, alice_ext 50, alice_anon 25 (one
+//	  canonical user via seedIntegrationProfiles), bob_ext 120, ghost 80 (no profile)
+//	tk_lit (6): label big×3, literal "$others"×2, small×1
+func seedTopKEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
+	t.Helper()
+
+	type event struct {
+		kind   string
+		user   string
+		auto   map[string]string
+		custom map[string]chcol.Variant
+	}
+
+	browserEvents := func(kind string, perBrowserUsers map[string][]string) []event {
+		var out []event
+		for browser, users := range perBrowserUsers {
+			for _, u := range users {
+				out = append(out, event{kind: kind, user: u, auto: map[string]string{"$browser": browser}})
+			}
+		}
+		return out
+	}
+
+	var events []event
+	events = append(events, browserEvents("tk_view", map[string][]string{
+		"chrome":  {"v1", "v2", "v3", "v1", "v2"},
+		"safari":  {"v4", "v5", "v4"},
+		"firefox": {"v6", "v6"},
+		"edge":    {"v7"},
+	})...)
+	events = append(events, browserEvents("tk_click", map[string][]string{
+		"chrome": {"u1", "u2", "u3"},
+		"safari": {"u4", "u5"},
+		"opera":  {"dup"},
+		"brave":  {"dup"},
+	})...)
+	for _, p := range []struct {
+		user   string
+		amount float64
+	}{
+		{"alice", 100}, {"alice_ext", 50}, {"alice_anon", 25},
+		{"bob_ext", 120}, {"ghost", 80},
+	} {
+		events = append(events, event{
+			kind: "tk_purchase", user: p.user,
+			custom: map[string]chcol.Variant{"order_amount": chcol.NewVariantWithType(p.amount, "Float64")},
+		})
+	}
+	for _, l := range []struct {
+		label string
+		n     int
+	}{
+		{"big", 3}, {"$others", 2}, {"small", 1},
+	} {
+		for i := 0; i < l.n; i++ {
+			events = append(events, event{
+				kind: "tk_lit", user: fmt.Sprintf("l_%s_%d", l.label, i),
+				custom: map[string]chcol.Variant{"label": chcol.NewVariantWithType(l.label, "String")},
+			})
+		}
+	}
+
+	for i, e := range events {
+		occurTime := time.Date(2024, 9, 1+i%3, 12, 0, 0, 0, time.UTC)
+		batch, err := ch.Conn.PrepareBatch(ctx, chq.EventsInsertStmt)
+		if err != nil {
+			t.Fatalf("prepare top k batch: %v", err)
+		}
+		if err := batch.Append(chq.PrepareEventInsertArgs(
+			uuid.New().String(), testProjectID, e.user, e.kind,
+			variantStringMap(e.auto), e.custom,
+			occurTime, uuid.NewString(),
+		)...); err != nil {
+			t.Fatalf("append top k event: %v", err)
+		}
+		if err := batch.Send(); err != nil {
+			t.Fatalf("send top k event: %v", err)
+		}
+	}
+}
+
+// seedTopKEdgeEvents inserts top-K edge-case fixtures in an isolated, day-aligned
+// Oct 2024 window so the no-scope event_kind test (Sept window) is unaffected.
+//
+// Layout (project_id = testProjectID, Oct 1–3 2024):
+//
+//	tk_metric: per-user order_amount for AVG/MIN/MAX $others re-merge —
+//	  m1 [10,20], m2 [100], m3 [10,20,30], m4 [50], mnull ["x" non-numeric → NULL]
+//	tk_empty:  $browser chrome×3, ""(absent)×2, safari×1 (empty value is a real row)
+//	tk_tie:    $browser aaa×2, bbb×2, ccc×1 (equal-value tie-break)
+func seedTopKEdgeEvents(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
+	t.Helper()
+
+	type event struct {
+		kind   string
+		user   string
+		auto   map[string]string
+		custom map[string]chcol.Variant
+	}
+	var events []event
+
+	floatAmt := func(user string, amt float64) event {
+		return event{kind: "tk_metric", user: user,
+			custom: map[string]chcol.Variant{"order_amount": chcol.NewVariantWithType(amt, "Float64")}}
+	}
+	events = append(events,
+		floatAmt("m1", 10), floatAmt("m1", 20),
+		floatAmt("m2", 100),
+		floatAmt("m3", 10), floatAmt("m3", 20), floatAmt("m3", 30),
+		floatAmt("m4", 50),
+		// Non-numeric metric value → toFloat64OrNull NULL; the all-NULL user must
+		// fold into $others contributing nothing (and not collapse MIN to 0).
+		event{kind: "tk_metric", user: "mnull",
+			custom: map[string]chcol.Variant{"order_amount": chcol.NewVariantWithType("x", "String")}},
+	)
+
+	browser := func(kind, user, b string) event {
+		e := event{kind: kind, user: user}
+		if b != "" {
+			e.auto = map[string]string{"$browser": b}
+		}
+		return e
+	}
+	// tk_empty: two events with NO $browser form the empty/direct bucket.
+	events = append(events,
+		browser("tk_empty", "e1", "chrome"), browser("tk_empty", "e2", "chrome"), browser("tk_empty", "e3", "chrome"),
+		browser("tk_empty", "e4", ""), browser("tk_empty", "e5", ""),
+		browser("tk_empty", "e6", "safari"),
+	)
+	// tk_tie: aaa and bbb tie at 2 events each.
+	events = append(events,
+		browser("tk_tie", "t1", "aaa"), browser("tk_tie", "t2", "aaa"),
+		browser("tk_tie", "t3", "bbb"), browser("tk_tie", "t4", "bbb"),
+		browser("tk_tie", "t5", "ccc"),
+	)
+
+	for i, e := range events {
+		occurTime := time.Date(2024, 10, 1+i%3, 12, 0, 0, 0, time.UTC)
+		batch, err := ch.Conn.PrepareBatch(ctx, chq.EventsInsertStmt)
+		if err != nil {
+			t.Fatalf("prepare top k edge batch: %v", err)
+		}
+		if err := batch.Append(chq.PrepareEventInsertArgs(
+			uuid.New().String(), testProjectID, e.user, e.kind,
+			variantStringMap(e.auto), e.custom,
+			occurTime, uuid.NewString(),
+		)...); err != nil {
+			t.Fatalf("append top k edge event: %v", err)
+		}
+		if err := batch.Send(); err != nil {
+			t.Fatalf("send top k edge event: %v", err)
+		}
+	}
+}
+
+// seedTopKCollisionProfiles seeds a deliberate identity collision: distinct_id
+// "collide" resolves to profile pA via its external_id AND to profile pB via an
+// alias. The USER identity union's LEFT ANY JOIN must pick ONE canonical id per
+// event so the collision cannot multiply event rows. Events live in an isolated
+// Nov 2024 window.
+func seedTopKCollisionProfiles(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
+	t.Helper()
+	now := time.Now().UTC()
+
+	for _, p := range []struct{ id, externalID string }{
+		{"pA", "collide"}, // external_id collides with pB's alias_id below
+		{"pB", "pB_ext"},
+	} {
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time, insert_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.id, testProjectID, p.externalID, "{}", uint8(0), now, now, now,
+		); err != nil {
+			t.Fatalf("insert collision profile %s: %v", p.id, err)
+		}
+	}
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+		"collide", "pB", "pB_ext", testProjectID,
+	); err != nil {
+		t.Fatalf("insert collision alias: %v", err)
+	}
+
+	// 3 events for the colliding distinct_id + 1 clean user.
+	n := 0
+	for _, e := range []struct {
+		user  string
+		count int
+	}{{"collide", 3}, {"solo", 1}} {
+		for i := 0; i < e.count; i++ {
+			occurTime := time.Date(2024, 11, 1+n%3, 12, 0, 0, 0, time.UTC)
+			n++
+			batch, err := ch.Conn.PrepareBatch(ctx, chq.EventsInsertStmt)
+			if err != nil {
+				t.Fatalf("prepare collision batch: %v", err)
+			}
+			if err := batch.Append(chq.PrepareEventInsertArgs(
+				uuid.New().String(), testProjectID, e.user, "tk_collide",
+				nil, nil, occurTime, uuid.NewString(),
+			)...); err != nil {
+				t.Fatalf("append collision event: %v", err)
+			}
+			if err := batch.Send(); err != nil {
+				t.Fatalf("send collision event: %v", err)
+			}
 		}
 	}
 }
