@@ -3,6 +3,7 @@ package insights
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -380,6 +381,112 @@ func (e *Executor) QueryUserFlow(ctx context.Context, projectID string, q UserFl
 			slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
 		return nil, fmt.Errorf("QueryUserFlow: %w", err)
+	}
+	return result, nil
+}
+
+// TopKRow is a single ranked dimension bucket from a top-K query.
+type TopKRow struct {
+	DimensionValue string
+	IsOthers       bool
+	Value          float64
+}
+
+// QueryTopK executes a top-K query and returns rows of (dim_value, is_others, value)
+// in SQL order: top rows metric-descending, the $others bucket (if any) last.
+func (e *Executor) QueryTopK(ctx context.Context, projectID string, q TopKQuery) ([]TopKRow, error) {
+	sql := q.SQL()
+	if sql == "" {
+		// Defensive: a zero-value TopKQuery means a builder's (TopKQuery, error)
+		// error went unchecked. Fail locally rather than send empty SQL to CH.
+		return nil, fmt.Errorf("QueryTopK: empty SQL (unchecked zero-value TopKQuery)")
+	}
+	args := q.Args()
+	rows, err := e.ch.Query(ctx, sql, args...)
+	if err != nil {
+		recordQueryError(ctx, "clickhouse: query top k failed", projectID, sql, len(args), err)
+		return nil, fmt.Errorf("QueryTopK: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
+		}
+	}()
+
+	var result []TopKRow
+	for rows.Next() {
+		var row TopKRow
+		// is_others is projected as if(..., 0, 1) — a UInt8 in ClickHouse.
+		var isOthers uint8
+		if err := rows.Scan(&row.DimensionValue, &isOthers, &row.Value); err != nil {
+			slog.ErrorContext(ctx, "clickhouse: query top k scan failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
+			return nil, fmt.Errorf("QueryTopK: scan: %w", err)
+		}
+		row.IsOthers = isOthers != 0
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query top k iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return nil, fmt.Errorf("QueryTopK: %w", err)
+	}
+	return result, nil
+}
+
+// TopKProfileRow is one enrichment row from BuildTopKProfilesQuery.
+type TopKProfileRow struct {
+	ID         string
+	ExternalID string
+	Properties map[string]any
+}
+
+// QueryTopKProfiles executes the top-K profile enrichment lookup and returns
+// rows keyed by profile id. The properties column arrives as a JSON string
+// (toJSONString) and is decoded into a plain map.
+func (e *Executor) QueryTopKProfiles(ctx context.Context, projectID string, sql string, args []any) (map[string]TopKProfileRow, error) {
+	rows, err := e.ch.Query(ctx, sql, args...)
+	if err != nil {
+		recordQueryError(ctx, "clickhouse: query top k profiles failed", projectID, sql, len(args), err)
+		return nil, fmt.Errorf("QueryTopKProfiles: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "error closing clickhouse rows", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
+		}
+	}()
+
+	result := make(map[string]TopKProfileRow)
+	for rows.Next() {
+		var row TopKProfileRow
+		var propertiesJSON string
+		if err := rows.Scan(&row.ID, &row.ExternalID, &propertiesJSON); err != nil {
+			slog.ErrorContext(ctx, "clickhouse: query top k profiles scan failed", slogx.Error(err),
+				slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
+			return nil, fmt.Errorf("QueryTopKProfiles: scan: %w", err)
+		}
+		if propertiesJSON != "" && propertiesJSON != "{}" {
+			if err := json.Unmarshal([]byte(propertiesJSON), &row.Properties); err != nil {
+				slog.ErrorContext(ctx, "clickhouse: query top k profiles properties decode failed", slogx.Error(err),
+					slog.String("project_id", projectID), slog.String("profile_id", row.ID))
+				telemetry.RecordError(ctx, err)
+				return nil, fmt.Errorf("QueryTopKProfiles: decode properties: %w", err)
+			}
+		}
+		result[row.ID] = row
+	}
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "clickhouse: query top k profiles iteration failed", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return nil, fmt.Errorf("QueryTopKProfiles: %w", err)
 	}
 	return result, nil
 }

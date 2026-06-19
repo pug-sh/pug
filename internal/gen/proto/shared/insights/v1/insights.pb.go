@@ -12,6 +12,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -34,6 +35,7 @@ const (
 	InsightType_INSIGHT_TYPE_FUNNEL       InsightType = 3
 	InsightType_INSIGHT_TYPE_RETENTION    InsightType = 4
 	InsightType_INSIGHT_TYPE_USER_FLOW    InsightType = 5
+	InsightType_INSIGHT_TYPE_TOP_K        InsightType = 6
 )
 
 // Enum value maps for InsightType.
@@ -45,6 +47,7 @@ var (
 		3: "INSIGHT_TYPE_FUNNEL",
 		4: "INSIGHT_TYPE_RETENTION",
 		5: "INSIGHT_TYPE_USER_FLOW",
+		6: "INSIGHT_TYPE_TOP_K",
 	}
 	InsightType_value = map[string]int32{
 		"INSIGHT_TYPE_UNSPECIFIED":  0,
@@ -53,6 +56,7 @@ var (
 		"INSIGHT_TYPE_FUNNEL":       3,
 		"INSIGHT_TYPE_RETENTION":    4,
 		"INSIGHT_TYPE_USER_FLOW":    5,
+		"INSIGHT_TYPE_TOP_K":        6,
 	}
 )
 
@@ -373,6 +377,63 @@ func (UserFlowQuery_GroupBy) EnumDescriptor() ([]byte, []int) {
 	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{6, 1}
 }
 
+// What is being ranked.
+type TopKQuery_Dimension int32
+
+const (
+	TopKQuery_DIMENSION_UNSPECIFIED TopKQuery_Dimension = 0
+	// Values of an event property (auto or custom), named by `property`.
+	TopKQuery_DIMENSION_PROPERTY TopKQuery_Dimension = 1
+	// Event kinds ("top events").
+	TopKQuery_DIMENSION_EVENT_KIND TopKQuery_Dimension = 2
+	// Canonical users. Rows carry profile enrichment when the user key
+	// resolves to a profile.
+	TopKQuery_DIMENSION_USER TopKQuery_Dimension = 3
+)
+
+// Enum value maps for TopKQuery_Dimension.
+var (
+	TopKQuery_Dimension_name = map[int32]string{
+		0: "DIMENSION_UNSPECIFIED",
+		1: "DIMENSION_PROPERTY",
+		2: "DIMENSION_EVENT_KIND",
+		3: "DIMENSION_USER",
+	}
+	TopKQuery_Dimension_value = map[string]int32{
+		"DIMENSION_UNSPECIFIED": 0,
+		"DIMENSION_PROPERTY":    1,
+		"DIMENSION_EVENT_KIND":  2,
+		"DIMENSION_USER":        3,
+	}
+)
+
+func (x TopKQuery_Dimension) Enum() *TopKQuery_Dimension {
+	p := new(TopKQuery_Dimension)
+	*p = x
+	return p
+}
+
+func (x TopKQuery_Dimension) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TopKQuery_Dimension) Descriptor() protoreflect.EnumDescriptor {
+	return file_shared_insights_v1_insights_proto_enumTypes[6].Descriptor()
+}
+
+func (TopKQuery_Dimension) Type() protoreflect.EnumType {
+	return &file_shared_insights_v1_insights_proto_enumTypes[6]
+}
+
+func (x TopKQuery_Dimension) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TopKQuery_Dimension.Descriptor instead.
+func (TopKQuery_Dimension) EnumDescriptor() ([]byte, []int) {
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{7, 0}
+}
+
 type InsightQuerySpec struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	InsightType    *InsightType           `protobuf:"varint,1,opt,name=insight_type,json=insightType,enum=shared.insights.v1.InsightType" json:"insight_type,omitempty"`
@@ -405,7 +466,9 @@ type InsightQuerySpec struct {
 	// by start time, it does not clip a session's events.
 	Session *SessionQuery `protobuf:"bytes,9,opt,name=session" json:"session,omitempty"`
 	// User-flow graph query. Only valid when insight_type == USER_FLOW.
-	UserFlow      *UserFlowQuery `protobuf:"bytes,10,opt,name=user_flow,json=userFlow" json:"user_flow,omitempty"`
+	UserFlow *UserFlowQuery `protobuf:"bytes,10,opt,name=user_flow,json=userFlow" json:"user_flow,omitempty"`
+	// Top-K ranking query. Only valid when insight_type == TOP_K.
+	TopK          *TopKQuery `protobuf:"bytes,11,opt,name=top_k,json=topK" json:"top_k,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -510,6 +573,13 @@ func (x *InsightQuerySpec) GetUserFlow() *UserFlowQuery {
 	return nil
 }
 
+func (x *InsightQuerySpec) GetTopK() *TopKQuery {
+	if x != nil {
+		return x.TopK
+	}
+	return nil
+}
+
 type QueryRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Spec        *InsightQuerySpec      `protobuf:"bytes,1,opt,name=spec" json:"spec,omitempty"`
@@ -598,6 +668,7 @@ type QueryResponse struct {
 	//	*QueryResponse_Funnel
 	//	*QueryResponse_Retention
 	//	*QueryResponse_UserFlow
+	//	*QueryResponse_TopK
 	Result        isQueryResponse_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -685,6 +756,15 @@ func (x *QueryResponse) GetUserFlow() *UserFlowResult {
 	return nil
 }
 
+func (x *QueryResponse) GetTopK() *TopKResult {
+	if x != nil {
+		if x, ok := x.Result.(*QueryResponse_TopK); ok {
+			return x.TopK
+		}
+	}
+	return nil
+}
+
 type isQueryResponse_Result interface {
 	isQueryResponse_Result()
 }
@@ -709,6 +789,10 @@ type QueryResponse_UserFlow struct {
 	UserFlow *UserFlowResult `protobuf:"bytes,6,opt,name=user_flow,json=userFlow,oneof"`
 }
 
+type QueryResponse_TopK struct {
+	TopK *TopKResult `protobuf:"bytes,7,opt,name=top_k,json=topK,oneof"`
+}
+
 func (*QueryResponse_Trends) isQueryResponse_Result() {}
 
 func (*QueryResponse_Segmentation) isQueryResponse_Result() {}
@@ -718,6 +802,8 @@ func (*QueryResponse_Funnel) isQueryResponse_Result() {}
 func (*QueryResponse_Retention) isQueryResponse_Result() {}
 
 func (*QueryResponse_UserFlow) isQueryResponse_Result() {}
+
+func (*QueryResponse_TopK) isQueryResponse_Result() {}
 
 type SegmentUsersRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
@@ -1011,6 +1097,296 @@ func (x *UserFlowQuery) GetMaxLinks() int32 {
 	return 0
 }
 
+// TopKQuery configures a "top K" ranking insight: the top K values of a
+// dimension by an aggregate metric, plus a trailing $others bucket that
+// aggregates everything outside the top K.
+//
+// Granularity note: top K has no time bucketing, so QueryRequest.granularity
+// does not affect a top-K result. It is still required (every QueryRequest
+// requires one) and, for top K, serves only to select which time-range cap
+// applies — see the query_request.granularity_*_max_range rules: e.g.
+// GRANULARITY_MINUTE caps the window at 6h, GRANULARITY_MONTH at ~10y. Send the
+// coarsest granularity whose cap admits your intended window; the value is
+// otherwise inert for top K.
+type TopKQuery struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Dimension *TopKQuery_Dimension   `protobuf:"varint,1,opt,name=dimension,enum=shared.insights.v1.TopKQuery_Dimension" json:"dimension,omitempty"`
+	// Property to rank values of. Required when dimension == DIMENSION_PROPERTY,
+	// forbidden otherwise. Same $-prefix encoding as Breakdown.property.
+	// Pattern uses * (not +) because this field is empty for other dimensions.
+	Property *string `protobuf:"bytes,2,opt,name=property" json:"property,omitempty"`
+	// Optional event scope (kind and/or per-event filters), same reuse as
+	// SessionQuery.scope. Empty scope means all events participate.
+	Scope *v1.EventFilter `protobuf:"bytes,3,opt,name=scope" json:"scope,omitempty"`
+	// Metric to rank by. Defaults to TOTAL when unspecified. UNIQUE_USERS and
+	// PER_USER_AVG are rejected for DIMENSION_USER (degenerate when each group
+	// is a single user).
+	Metric *AggregationType `protobuf:"varint,4,opt,name=metric,enum=shared.insights.v1.AggregationType" json:"metric,omitempty"`
+	// Property to aggregate. Required for SUM/AVG/MIN/MAX; ignored otherwise.
+	// Pattern uses * (not +) because this field may be empty for count-based metrics.
+	MetricProperty *string `protobuf:"bytes,5,opt,name=metric_property,json=metricProperty" json:"metric_property,omitempty"`
+	// Number of top rows before the $others bucket. Default 10 in builder. CEL max 100.
+	Limit         *int32 `protobuf:"varint,6,opt,name=limit" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TopKQuery) Reset() {
+	*x = TopKQuery{}
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TopKQuery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TopKQuery) ProtoMessage() {}
+
+func (x *TopKQuery) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TopKQuery.ProtoReflect.Descriptor instead.
+func (*TopKQuery) Descriptor() ([]byte, []int) {
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *TopKQuery) GetDimension() TopKQuery_Dimension {
+	if x != nil && x.Dimension != nil {
+		return *x.Dimension
+	}
+	return TopKQuery_DIMENSION_UNSPECIFIED
+}
+
+func (x *TopKQuery) GetProperty() string {
+	if x != nil && x.Property != nil {
+		return *x.Property
+	}
+	return ""
+}
+
+func (x *TopKQuery) GetScope() *v1.EventFilter {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+func (x *TopKQuery) GetMetric() AggregationType {
+	if x != nil && x.Metric != nil {
+		return *x.Metric
+	}
+	return AggregationType_AGGREGATION_TYPE_UNSPECIFIED
+}
+
+func (x *TopKQuery) GetMetricProperty() string {
+	if x != nil && x.MetricProperty != nil {
+		return *x.MetricProperty
+	}
+	return ""
+}
+
+func (x *TopKQuery) GetLimit() int32 {
+	if x != nil && x.Limit != nil {
+		return *x.Limit
+	}
+	return 0
+}
+
+// TopKResult holds the ranked rows, ordered metric-descending with the
+// synthetic $others bucket (if non-empty) last.
+type TopKResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rows          []*TopKRow             `protobuf:"bytes,1,rep,name=rows" json:"rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TopKResult) Reset() {
+	*x = TopKResult{}
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TopKResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TopKResult) ProtoMessage() {}
+
+func (x *TopKResult) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TopKResult.ProtoReflect.Descriptor instead.
+func (*TopKResult) Descriptor() ([]byte, []int) {
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *TopKResult) GetRows() []*TopKRow {
+	if x != nil {
+		return x.Rows
+	}
+	return nil
+}
+
+type TopKRow struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Dimension value: property value, event kind, or user key (canonical
+	// profile id when resolved, else the raw distinct_id). "$others" for the
+	// overflow bucket — but identify the bucket by is_others, NOT by matching
+	// this string: a real value can legitimately be the literal "$others"
+	// (same contract as UserFlowNode).
+	DimensionValue *string  `protobuf:"bytes,1,opt,name=dimension_value,json=dimensionValue" json:"dimension_value,omitempty"`
+	Value          *float64 `protobuf:"fixed64,2,opt,name=value" json:"value,omitempty"`
+	IsOthers       *bool    `protobuf:"varint,3,opt,name=is_others,json=isOthers" json:"is_others,omitempty"`
+	// Profile enrichment, populated only for DIMENSION_USER rows whose key
+	// resolved to a profile. Absent for the $others bucket and for
+	// unidentified distinct_ids.
+	Profile       *TopKProfile `protobuf:"bytes,4,opt,name=profile" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TopKRow) Reset() {
+	*x = TopKRow{}
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TopKRow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TopKRow) ProtoMessage() {}
+
+func (x *TopKRow) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TopKRow.ProtoReflect.Descriptor instead.
+func (*TopKRow) Descriptor() ([]byte, []int) {
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *TopKRow) GetDimensionValue() string {
+	if x != nil && x.DimensionValue != nil {
+		return *x.DimensionValue
+	}
+	return ""
+}
+
+func (x *TopKRow) GetValue() float64 {
+	if x != nil && x.Value != nil {
+		return *x.Value
+	}
+	return 0
+}
+
+func (x *TopKRow) GetIsOthers() bool {
+	if x != nil && x.IsOthers != nil {
+		return *x.IsOthers
+	}
+	return false
+}
+
+func (x *TopKRow) GetProfile() *TopKProfile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
+// TopKProfile is the profile enrichment attached to a DIMENSION_USER row.
+type TopKProfile struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	ExternalId *string                `protobuf:"bytes,2,opt,name=external_id,json=externalId" json:"external_id,omitempty"`
+	// Same shape as shared.profiles.v1.Profile.properties.
+	Properties    *structpb.Struct `protobuf:"bytes,3,opt,name=properties" json:"properties,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TopKProfile) Reset() {
+	*x = TopKProfile{}
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TopKProfile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TopKProfile) ProtoMessage() {}
+
+func (x *TopKProfile) ProtoReflect() protoreflect.Message {
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TopKProfile.ProtoReflect.Descriptor instead.
+func (*TopKProfile) Descriptor() ([]byte, []int) {
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *TopKProfile) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return ""
+}
+
+func (x *TopKProfile) GetExternalId() string {
+	if x != nil && x.ExternalId != nil {
+		return *x.ExternalId
+	}
+	return ""
+}
+
+func (x *TopKProfile) GetProperties() *structpb.Struct {
+	if x != nil {
+		return x.Properties
+	}
+	return nil
+}
+
 type UserFlowNode struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
@@ -1025,7 +1401,7 @@ type UserFlowNode struct {
 
 func (x *UserFlowNode) Reset() {
 	*x = UserFlowNode{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[7]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1037,7 +1413,7 @@ func (x *UserFlowNode) String() string {
 func (*UserFlowNode) ProtoMessage() {}
 
 func (x *UserFlowNode) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[7]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1050,7 +1426,7 @@ func (x *UserFlowNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserFlowNode.ProtoReflect.Descriptor instead.
 func (*UserFlowNode) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{7}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *UserFlowNode) GetId() string {
@@ -1078,7 +1454,7 @@ type UserFlowLink struct {
 
 func (x *UserFlowLink) Reset() {
 	*x = UserFlowLink{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[8]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1090,7 +1466,7 @@ func (x *UserFlowLink) String() string {
 func (*UserFlowLink) ProtoMessage() {}
 
 func (x *UserFlowLink) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[8]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1103,7 +1479,7 @@ func (x *UserFlowLink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserFlowLink.ProtoReflect.Descriptor instead.
 func (*UserFlowLink) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{8}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UserFlowLink) GetSource() string {
@@ -1137,7 +1513,7 @@ type UserFlowResult struct {
 
 func (x *UserFlowResult) Reset() {
 	*x = UserFlowResult{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[9]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1149,7 +1525,7 @@ func (x *UserFlowResult) String() string {
 func (*UserFlowResult) ProtoMessage() {}
 
 func (x *UserFlowResult) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[9]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1162,7 +1538,7 @@ func (x *UserFlowResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserFlowResult.ProtoReflect.Descriptor instead.
 func (*UserFlowResult) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{9}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UserFlowResult) GetNodes() []*UserFlowNode {
@@ -1189,7 +1565,7 @@ type FilterGroup struct {
 
 func (x *FilterGroup) Reset() {
 	*x = FilterGroup{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[10]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1201,7 +1577,7 @@ func (x *FilterGroup) String() string {
 func (*FilterGroup) ProtoMessage() {}
 
 func (x *FilterGroup) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[10]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1214,7 +1590,7 @@ func (x *FilterGroup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilterGroup.ProtoReflect.Descriptor instead.
 func (*FilterGroup) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{10}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *FilterGroup) GetFilters() []*v1.PropertyFilter {
@@ -1246,7 +1622,7 @@ type EventQuery struct {
 
 func (x *EventQuery) Reset() {
 	*x = EventQuery{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[11]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1258,7 +1634,7 @@ func (x *EventQuery) String() string {
 func (*EventQuery) ProtoMessage() {}
 
 func (x *EventQuery) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[11]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1271,7 +1647,7 @@ func (x *EventQuery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventQuery.ProtoReflect.Descriptor instead.
 func (*EventQuery) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{11}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *EventQuery) GetEvent() *v1.EventFilter {
@@ -1304,7 +1680,7 @@ type Breakdown struct {
 
 func (x *Breakdown) Reset() {
 	*x = Breakdown{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[12]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1316,7 +1692,7 @@ func (x *Breakdown) String() string {
 func (*Breakdown) ProtoMessage() {}
 
 func (x *Breakdown) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[12]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1329,7 +1705,7 @@ func (x *Breakdown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Breakdown.ProtoReflect.Descriptor instead.
 func (*Breakdown) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{12}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Breakdown) GetProperty() string {
@@ -1349,7 +1725,7 @@ type TrendsResult struct {
 
 func (x *TrendsResult) Reset() {
 	*x = TrendsResult{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[13]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1361,7 +1737,7 @@ func (x *TrendsResult) String() string {
 func (*TrendsResult) ProtoMessage() {}
 
 func (x *TrendsResult) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[13]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1374,7 +1750,7 @@ func (x *TrendsResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrendsResult.ProtoReflect.Descriptor instead.
 func (*TrendsResult) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{13}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *TrendsResult) GetSeries() []*TrendSeries {
@@ -1396,7 +1772,7 @@ type TrendSeries struct {
 
 func (x *TrendSeries) Reset() {
 	*x = TrendSeries{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[14]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1408,7 +1784,7 @@ func (x *TrendSeries) String() string {
 func (*TrendSeries) ProtoMessage() {}
 
 func (x *TrendSeries) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[14]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1421,7 +1797,7 @@ func (x *TrendSeries) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrendSeries.ProtoReflect.Descriptor instead.
 func (*TrendSeries) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{14}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *TrendSeries) GetEventKind() string {
@@ -1455,7 +1831,7 @@ type SegmentationResult struct {
 
 func (x *SegmentationResult) Reset() {
 	*x = SegmentationResult{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[15]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1467,7 +1843,7 @@ func (x *SegmentationResult) String() string {
 func (*SegmentationResult) ProtoMessage() {}
 
 func (x *SegmentationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[15]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1480,7 +1856,7 @@ func (x *SegmentationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentationResult.ProtoReflect.Descriptor instead.
 func (*SegmentationResult) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{15}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SegmentationResult) GetTotal() float64 {
@@ -1501,7 +1877,7 @@ type FunnelResult struct {
 
 func (x *FunnelResult) Reset() {
 	*x = FunnelResult{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[16]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1513,7 +1889,7 @@ func (x *FunnelResult) String() string {
 func (*FunnelResult) ProtoMessage() {}
 
 func (x *FunnelResult) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[16]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1526,7 +1902,7 @@ func (x *FunnelResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FunnelResult.ProtoReflect.Descriptor instead.
 func (*FunnelResult) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{16}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *FunnelResult) GetSeries() []*FunnelSeries {
@@ -1548,7 +1924,7 @@ type FunnelSeries struct {
 
 func (x *FunnelSeries) Reset() {
 	*x = FunnelSeries{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[17]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1560,7 +1936,7 @@ func (x *FunnelSeries) String() string {
 func (*FunnelSeries) ProtoMessage() {}
 
 func (x *FunnelSeries) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[17]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1573,7 +1949,7 @@ func (x *FunnelSeries) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FunnelSeries.ProtoReflect.Descriptor instead.
 func (*FunnelSeries) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{17}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *FunnelSeries) GetBreakdown() map[string]string {
@@ -1605,7 +1981,7 @@ type DistributionBucket struct {
 
 func (x *DistributionBucket) Reset() {
 	*x = DistributionBucket{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[18]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1617,7 +1993,7 @@ func (x *DistributionBucket) String() string {
 func (*DistributionBucket) ProtoMessage() {}
 
 func (x *DistributionBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[18]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1630,7 +2006,7 @@ func (x *DistributionBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DistributionBucket.ProtoReflect.Descriptor instead.
 func (*DistributionBucket) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{18}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DistributionBucket) GetLabel() string {
@@ -1681,7 +2057,7 @@ type StepTiming struct {
 
 func (x *StepTiming) Reset() {
 	*x = StepTiming{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[19]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1693,7 +2069,7 @@ func (x *StepTiming) String() string {
 func (*StepTiming) ProtoMessage() {}
 
 func (x *StepTiming) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[19]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1706,7 +2082,7 @@ func (x *StepTiming) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StepTiming.ProtoReflect.Descriptor instead.
 func (*StepTiming) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{19}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *StepTiming) GetAvg() *durationpb.Duration {
@@ -1751,7 +2127,7 @@ type FunnelStep struct {
 
 func (x *FunnelStep) Reset() {
 	*x = FunnelStep{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[20]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1763,7 +2139,7 @@ func (x *FunnelStep) String() string {
 func (*FunnelStep) ProtoMessage() {}
 
 func (x *FunnelStep) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[20]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1776,7 +2152,7 @@ func (x *FunnelStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FunnelStep.ProtoReflect.Descriptor instead.
 func (*FunnelStep) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{20}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *FunnelStep) GetEventKind() string {
@@ -1811,7 +2187,7 @@ type RetentionResult struct {
 
 func (x *RetentionResult) Reset() {
 	*x = RetentionResult{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[21]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1823,7 +2199,7 @@ func (x *RetentionResult) String() string {
 func (*RetentionResult) ProtoMessage() {}
 
 func (x *RetentionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[21]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1836,7 +2212,7 @@ func (x *RetentionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetentionResult.ProtoReflect.Descriptor instead.
 func (*RetentionResult) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{21}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *RetentionResult) GetSeries() []*RetentionSeries {
@@ -1858,7 +2234,7 @@ type RetentionSeries struct {
 
 func (x *RetentionSeries) Reset() {
 	*x = RetentionSeries{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[22]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1870,7 +2246,7 @@ func (x *RetentionSeries) String() string {
 func (*RetentionSeries) ProtoMessage() {}
 
 func (x *RetentionSeries) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[22]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1883,7 +2259,7 @@ func (x *RetentionSeries) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetentionSeries.ProtoReflect.Descriptor instead.
 func (*RetentionSeries) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{22}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *RetentionSeries) GetBreakdown() map[string]string {
@@ -1913,7 +2289,7 @@ type RetentionCohort struct {
 
 func (x *RetentionCohort) Reset() {
 	*x = RetentionCohort{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[23]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1925,7 +2301,7 @@ func (x *RetentionCohort) String() string {
 func (*RetentionCohort) ProtoMessage() {}
 
 func (x *RetentionCohort) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[23]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1938,7 +2314,7 @@ func (x *RetentionCohort) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetentionCohort.ProtoReflect.Descriptor instead.
 func (*RetentionCohort) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{23}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *RetentionCohort) GetCohort() string {
@@ -1972,7 +2348,7 @@ type DataPoint struct {
 
 func (x *DataPoint) Reset() {
 	*x = DataPoint{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[24]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1984,7 +2360,7 @@ func (x *DataPoint) String() string {
 func (*DataPoint) ProtoMessage() {}
 
 func (x *DataPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[24]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1997,7 +2373,7 @@ func (x *DataPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DataPoint.ProtoReflect.Descriptor instead.
 func (*DataPoint) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{24}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DataPoint) GetTime() *timestamppb.Timestamp {
@@ -2025,7 +2401,7 @@ type GetPropertyValuesRequest struct {
 
 func (x *GetPropertyValuesRequest) Reset() {
 	*x = GetPropertyValuesRequest{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[25]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2037,7 +2413,7 @@ func (x *GetPropertyValuesRequest) String() string {
 func (*GetPropertyValuesRequest) ProtoMessage() {}
 
 func (x *GetPropertyValuesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[25]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2050,7 +2426,7 @@ func (x *GetPropertyValuesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPropertyValuesRequest.ProtoReflect.Descriptor instead.
 func (*GetPropertyValuesRequest) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{25}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *GetPropertyValuesRequest) GetPropertyKey() string {
@@ -2083,7 +2459,7 @@ type GetPropertyValuesResponse struct {
 
 func (x *GetPropertyValuesResponse) Reset() {
 	*x = GetPropertyValuesResponse{}
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[26]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2095,7 +2471,7 @@ func (x *GetPropertyValuesResponse) String() string {
 func (*GetPropertyValuesResponse) ProtoMessage() {}
 
 func (x *GetPropertyValuesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_shared_insights_v1_insights_proto_msgTypes[26]
+	mi := &file_shared_insights_v1_insights_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2108,7 +2484,7 @@ func (x *GetPropertyValuesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPropertyValuesResponse.ProtoReflect.Descriptor instead.
 func (*GetPropertyValuesResponse) Descriptor() ([]byte, []int) {
-	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{26}
+	return file_shared_insights_v1_insights_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *GetPropertyValuesResponse) GetValues() []string {
@@ -2122,7 +2498,7 @@ var File_shared_insights_v1_insights_proto protoreflect.FileDescriptor
 
 const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
-	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe01\n" +
+	"!shared/insights/v1/insights.proto\x12\x12shared.insights.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dcommon/v1/filter_schema.proto\x1a\x17common/v1/filters.proto\x1a\x14common/v1/time.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8aG\n" +
 	"\x10InsightQuerySpec\x12Q\n" +
 	"\finsight_type\x18\x01 \x01(\x0e2\x1f.shared.insights.v1.InsightTypeB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\vinsightType\x126\n" +
@@ -2138,7 +2514,8 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x13include_step_timing\x18\b \x01(\bR\x11includeStepTiming\x12:\n" +
 	"\asession\x18\t \x01(\v2 .shared.insights.v1.SessionQueryR\asession\x12>\n" +
 	"\tuser_flow\x18\n" +
-	" \x01(\v2!.shared.insights.v1.UserFlowQueryR\buserFlow:\xf4*\xbaH\xf0*\x1a\xa5\x02\n" +
+	" \x01(\v2!.shared.insights.v1.UserFlowQueryR\buserFlow\x122\n" +
+	"\x05top_k\x18\v \x01(\v2\x1d.shared.insights.v1.TopKQueryR\x04topK:\xea?\xbaH\xe6?\x1a\xa5\x02\n" +
 	"2insight_query_spec.funnel_retention_require_events\x12=funnel and retention insight types require at least one event\x1a\xaf\x01(this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL&& this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_RETENTION)|| this.events.size() > 0\x1a\xd3\x01\n" +
 	"0insight_query_spec.funnel_only_conversion_window\x127conversion_window is only valid for funnel insight type\x1afthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| !has(this.conversion_window)\x1a\xcc\x01\n" +
 	"*insight_query_spec.funnel_only_step_timing\x129include_step_timing is only valid for funnel insight type\x1acthis.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_FUNNEL|| !this.include_step_timing\x1a\x95\x02\n" +
@@ -2160,7 +2537,17 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	".insight_query_spec.user_flow_property_required\x124node_property is required when node_kind is PROPERTY\x1a\x97\x02this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.user_flow.node_kind   != shared.insights.v1.UserFlowQuery.NodeKind.NODE_KIND_PROPERTY|| (this.user_flow.node_property.size() > 0    && this.user_flow.node_property.matches('^\\\\$?[a-zA-Z0-9_.-]+$'))\x1a\x87\x02\n" +
 	"+insight_query_spec.user_flow_max_hops_range\x12*max_hops must be between 1 and 10 when set\x1a\xab\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.user_flow.max_hops == 0|| (this.user_flow.max_hops >= 1 && this.user_flow.max_hops <= 10)\x1a\x8c\x02\n" +
 	",insight_query_spec.user_flow_max_nodes_range\x12+max_nodes must be between 2 and 50 when set\x1a\xae\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.user_flow.max_nodes == 0|| (this.user_flow.max_nodes >= 2 && this.user_flow.max_nodes <= 50)\x1a\x8e\x02\n" +
-	",insight_query_spec.user_flow_max_links_range\x12,max_links must be between 1 and 500 when set\x1a\xaf\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.user_flow.max_links == 0|| (this.user_flow.max_links >= 1 && this.user_flow.max_links <= 500)\"\x9c\r\n" +
+	",insight_query_spec.user_flow_max_links_range\x12,max_links must be between 1 and 500 when set\x1a\xaf\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_USER_FLOW|| this.user_flow.max_links == 0|| (this.user_flow.max_links >= 1 && this.user_flow.max_links <= 500)\x1a\xb0\x01\n" +
+	"'insight_query_spec.top_k_only_for_top_k\x12*top_k is only valid for top k insight type\x1aY!has(this.top_k)|| this.insight_type == shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K\x1a\xa0\x01\n" +
+	"!insight_query_spec.top_k_required\x12!top k insight type requires top_k\x1aXthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| has(this.top_k)\x1a\xac\x01\n" +
+	"\"insight_query_spec.top_k_no_events\x12$top k insights cannot specify events\x1a`this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| this.events.size() == 0\x1a\xa9\x01\n" +
+	"#insight_query_spec.top_k_no_session\x12%top k insights cannot specify session\x1a[this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| !has(this.session)\x1a\xc3\x01\n" +
+	"&insight_query_spec.top_k_no_breakdowns\x123breakdowns are not supported for top k insight type\x1adthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| this.breakdowns.size() == 0\x1a\xca\x01\n" +
+	"+insight_query_spec.top_k_no_breakdown_limit\x127breakdown_limit is not supported for top k insight type\x1abthis.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| this.breakdown_limit == 0\x1a\xda\x02\n" +
+	"*insight_query_spec.top_k_property_required\x12/property is required when dimension is PROPERTY\x1a\xfa\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| this.top_k.dimension   != shared.insights.v1.TopKQuery.Dimension.DIMENSION_PROPERTY|| (this.top_k.property.size() > 0    && this.top_k.property.matches('^\\\\$?[a-zA-Z0-9_.-]+$'))\x1a\xad\x02\n" +
+	"=insight_query_spec.top_k_property_only_for_property_dimension\x121property is only valid when dimension is PROPERTY\x1a\xb8\x01this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| this.top_k.dimension   == shared.insights.v1.TopKQuery.Dimension.DIMENSION_PROPERTY|| this.top_k.property == ''\x1a\xe4\x03\n" +
+	"1insight_query_spec.top_k_metric_property_required\x12>metric_property is required for SUM, AVG, MIN, and MAX metrics\x1a\xee\x02this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| !(this.top_k.metric in [  shared.insights.v1.AggregationType.AGGREGATION_TYPE_SUM,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_AVG,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MIN,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_MAX]) || this.top_k.metric_property != ''\x1a\xbb\x03\n" +
+	".insight_query_spec.top_k_user_dimension_metric\x12NUNIQUE_USERS and PER_USER_AVG metrics are not supported for the USER dimension\x1a\xb8\x02this.insight_type != shared.insights.v1.InsightType.INSIGHT_TYPE_TOP_K|| this.top_k.dimension != shared.insights.v1.TopKQuery.Dimension.DIMENSION_USER|| !(this.top_k.metric in [  shared.insights.v1.AggregationType.AGGREGATION_TYPE_UNIQUE_USERS,  shared.insights.v1.AggregationType.AGGREGATION_TYPE_PER_USER_AVG])\"\x9c\r\n" +
 	"\fQueryRequest\x12@\n" +
 	"\x04spec\x18\x01 \x01(\v2$.shared.insights.v1.InsightQuerySpecB\x06\xbaH\x03\xc8\x01\x01R\x04spec\x12;\n" +
 	"\n" +
@@ -2175,13 +2562,14 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	")query_request.granularity_month_max_range\x12HGRANULARITY_MONTH requires a time range of at most 3652 days (~10 years)\x1a\x86\x01this.granularity != shared.insights.v1.Granularity.GRANULARITY_MONTH|| this.time_range.to - this.time_range.from <= duration('87660h')J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
 	"J\x04\b\n" +
 	"\x10\vJ\x04\b\v\x10\fR\finsight_typeR\x06eventsR\n" +
-	"breakdownsR\x0fbreakdown_limitR\rfilter_groupsR\x16filter_groups_operatorR\x11conversion_windowR\x13include_step_timing\"\xed\x02\n" +
+	"breakdownsR\x0fbreakdown_limitR\rfilter_groupsR\x16filter_groups_operatorR\x11conversion_windowR\x13include_step_timing\"\xa4\x03\n" +
 	"\rQueryResponse\x12:\n" +
 	"\x06trends\x18\x02 \x01(\v2 .shared.insights.v1.TrendsResultH\x00R\x06trends\x12L\n" +
 	"\fsegmentation\x18\x03 \x01(\v2&.shared.insights.v1.SegmentationResultH\x00R\fsegmentation\x12:\n" +
 	"\x06funnel\x18\x04 \x01(\v2 .shared.insights.v1.FunnelResultH\x00R\x06funnel\x12C\n" +
 	"\tretention\x18\x05 \x01(\v2#.shared.insights.v1.RetentionResultH\x00R\tretention\x12A\n" +
-	"\tuser_flow\x18\x06 \x01(\v2\".shared.insights.v1.UserFlowResultH\x00R\buserFlowB\b\n" +
+	"\tuser_flow\x18\x06 \x01(\v2\".shared.insights.v1.UserFlowResultH\x00R\buserFlow\x125\n" +
+	"\x05top_k\x18\a \x01(\v2\x1e.shared.insights.v1.TopKResultH\x00R\x04topKB\b\n" +
 	"\x06resultJ\x04\b\x01\x10\x02\"\xfa\x02\n" +
 	"\x13SegmentUsersRequest\x12;\n" +
 	"\n" +
@@ -2214,7 +2602,35 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x12NODE_KIND_PROPERTY\x10\x02\"9\n" +
 	"\aGroupBy\x12\x18\n" +
 	"\x14GROUP_BY_UNSPECIFIED\x10\x00\x12\x14\n" +
-	"\x10GROUP_BY_SESSION\x10\x01\";\n" +
+	"\x10GROUP_BY_SESSION\x10\x01\"\xe4\x03\n" +
+	"\tTopKQuery\x12T\n" +
+	"\tdimension\x18\x01 \x01(\x0e2'.shared.insights.v1.TopKQuery.DimensionB\r\xbaH\n" +
+	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\tdimension\x127\n" +
+	"\bproperty\x18\x02 \x01(\tB\x1b\xbaH\x18r\x162\x14^\\$?[a-zA-Z0-9_.-]*$R\bproperty\x12,\n" +
+	"\x05scope\x18\x03 \x01(\v2\x16.common.v1.EventFilterR\x05scope\x12E\n" +
+	"\x06metric\x18\x04 \x01(\x0e2#.shared.insights.v1.AggregationTypeB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06metric\x12D\n" +
+	"\x0fmetric_property\x18\x05 \x01(\tB\x1b\xbaH\x18r\x162\x14^\\$?[a-zA-Z0-9_.-]*$R\x0emetricProperty\x12\x1f\n" +
+	"\x05limit\x18\x06 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x05limit\"l\n" +
+	"\tDimension\x12\x19\n" +
+	"\x15DIMENSION_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12DIMENSION_PROPERTY\x10\x01\x12\x18\n" +
+	"\x14DIMENSION_EVENT_KIND\x10\x02\x12\x12\n" +
+	"\x0eDIMENSION_USER\x10\x03\"=\n" +
+	"\n" +
+	"TopKResult\x12/\n" +
+	"\x04rows\x18\x01 \x03(\v2\x1b.shared.insights.v1.TopKRowR\x04rows\"\xa0\x01\n" +
+	"\aTopKRow\x12'\n" +
+	"\x0fdimension_value\x18\x01 \x01(\tR\x0edimensionValue\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\x12\x1b\n" +
+	"\tis_others\x18\x03 \x01(\bR\bisOthers\x129\n" +
+	"\aprofile\x18\x04 \x01(\v2\x1f.shared.insights.v1.TopKProfileR\aprofile\"w\n" +
+	"\vTopKProfile\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
+	"\vexternal_id\x18\x02 \x01(\tR\n" +
+	"externalId\x127\n" +
+	"\n" +
+	"properties\x18\x03 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"properties\";\n" +
 	"\fUserFlowNode\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tis_others\x18\x02 \x01(\bR\bisOthers\"]\n" +
@@ -2296,14 +2712,15 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\n" +
 	"event_kind\x18\x03 \x01(\tB\x18\xbaH\x15r\x132\x11^[a-zA-Z0-9_.-]*$R\teventKind\"3\n" +
 	"\x19GetPropertyValuesResponse\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values*\xb4\x01\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values*\xcc\x01\n" +
 	"\vInsightType\x12\x1c\n" +
 	"\x18INSIGHT_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13INSIGHT_TYPE_TRENDS\x10\x01\x12\x1d\n" +
 	"\x19INSIGHT_TYPE_SEGMENTATION\x10\x02\x12\x17\n" +
 	"\x13INSIGHT_TYPE_FUNNEL\x10\x03\x12\x1a\n" +
 	"\x16INSIGHT_TYPE_RETENTION\x10\x04\x12\x1a\n" +
-	"\x16INSIGHT_TYPE_USER_FLOW\x10\x05*\x9a\x01\n" +
+	"\x16INSIGHT_TYPE_USER_FLOW\x10\x05\x12\x16\n" +
+	"\x12INSIGHT_TYPE_TOP_K\x10\x06*\x9a\x01\n" +
 	"\vGranularity\x12\x1b\n" +
 	"\x17GRANULARITY_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12GRANULARITY_MINUTE\x10\x01\x12\x14\n" +
@@ -2345,8 +2762,8 @@ func file_shared_insights_v1_insights_proto_rawDescGZIP() []byte {
 	return file_shared_insights_v1_insights_proto_rawDescData
 }
 
-var file_shared_insights_v1_insights_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_shared_insights_v1_insights_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_shared_insights_v1_insights_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_shared_insights_v1_insights_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_shared_insights_v1_insights_proto_goTypes = []any{
 	(InsightType)(0),                   // 0: shared.insights.v1.InsightType
 	(Granularity)(0),                   // 1: shared.insights.v1.Granularity
@@ -2354,109 +2771,123 @@ var file_shared_insights_v1_insights_proto_goTypes = []any{
 	(SessionMetric)(0),                 // 3: shared.insights.v1.SessionMetric
 	(UserFlowQuery_NodeKind)(0),        // 4: shared.insights.v1.UserFlowQuery.NodeKind
 	(UserFlowQuery_GroupBy)(0),         // 5: shared.insights.v1.UserFlowQuery.GroupBy
-	(*InsightQuerySpec)(nil),           // 6: shared.insights.v1.InsightQuerySpec
-	(*QueryRequest)(nil),               // 7: shared.insights.v1.QueryRequest
-	(*QueryResponse)(nil),              // 8: shared.insights.v1.QueryResponse
-	(*SegmentUsersRequest)(nil),        // 9: shared.insights.v1.SegmentUsersRequest
-	(*SegmentUsersResponse)(nil),       // 10: shared.insights.v1.SegmentUsersResponse
-	(*SessionQuery)(nil),               // 11: shared.insights.v1.SessionQuery
-	(*UserFlowQuery)(nil),              // 12: shared.insights.v1.UserFlowQuery
-	(*UserFlowNode)(nil),               // 13: shared.insights.v1.UserFlowNode
-	(*UserFlowLink)(nil),               // 14: shared.insights.v1.UserFlowLink
-	(*UserFlowResult)(nil),             // 15: shared.insights.v1.UserFlowResult
-	(*FilterGroup)(nil),                // 16: shared.insights.v1.FilterGroup
-	(*EventQuery)(nil),                 // 17: shared.insights.v1.EventQuery
-	(*Breakdown)(nil),                  // 18: shared.insights.v1.Breakdown
-	(*TrendsResult)(nil),               // 19: shared.insights.v1.TrendsResult
-	(*TrendSeries)(nil),                // 20: shared.insights.v1.TrendSeries
-	(*SegmentationResult)(nil),         // 21: shared.insights.v1.SegmentationResult
-	(*FunnelResult)(nil),               // 22: shared.insights.v1.FunnelResult
-	(*FunnelSeries)(nil),               // 23: shared.insights.v1.FunnelSeries
-	(*DistributionBucket)(nil),         // 24: shared.insights.v1.DistributionBucket
-	(*StepTiming)(nil),                 // 25: shared.insights.v1.StepTiming
-	(*FunnelStep)(nil),                 // 26: shared.insights.v1.FunnelStep
-	(*RetentionResult)(nil),            // 27: shared.insights.v1.RetentionResult
-	(*RetentionSeries)(nil),            // 28: shared.insights.v1.RetentionSeries
-	(*RetentionCohort)(nil),            // 29: shared.insights.v1.RetentionCohort
-	(*DataPoint)(nil),                  // 30: shared.insights.v1.DataPoint
-	(*GetPropertyValuesRequest)(nil),   // 31: shared.insights.v1.GetPropertyValuesRequest
-	(*GetPropertyValuesResponse)(nil),  // 32: shared.insights.v1.GetPropertyValuesResponse
-	nil,                                // 33: shared.insights.v1.TrendSeries.BreakdownEntry
-	nil,                                // 34: shared.insights.v1.FunnelSeries.BreakdownEntry
-	nil,                                // 35: shared.insights.v1.RetentionSeries.BreakdownEntry
-	(v1.LogicalOperator)(0),            // 36: common.v1.LogicalOperator
-	(*durationpb.Duration)(nil),        // 37: google.protobuf.Duration
-	(*v1.TimeRange)(nil),               // 38: common.v1.TimeRange
-	(*v1.EventFilter)(nil),             // 39: common.v1.EventFilter
-	(*v1.PropertyFilter)(nil),          // 40: common.v1.PropertyFilter
-	(*timestamppb.Timestamp)(nil),      // 41: google.protobuf.Timestamp
-	(v1.PropertySource)(0),             // 42: common.v1.PropertySource
-	(*v1.GetFilterSchemaRequest)(nil),  // 43: common.v1.GetFilterSchemaRequest
-	(*v1.GetFilterSchemaResponse)(nil), // 44: common.v1.GetFilterSchemaResponse
+	(TopKQuery_Dimension)(0),           // 6: shared.insights.v1.TopKQuery.Dimension
+	(*InsightQuerySpec)(nil),           // 7: shared.insights.v1.InsightQuerySpec
+	(*QueryRequest)(nil),               // 8: shared.insights.v1.QueryRequest
+	(*QueryResponse)(nil),              // 9: shared.insights.v1.QueryResponse
+	(*SegmentUsersRequest)(nil),        // 10: shared.insights.v1.SegmentUsersRequest
+	(*SegmentUsersResponse)(nil),       // 11: shared.insights.v1.SegmentUsersResponse
+	(*SessionQuery)(nil),               // 12: shared.insights.v1.SessionQuery
+	(*UserFlowQuery)(nil),              // 13: shared.insights.v1.UserFlowQuery
+	(*TopKQuery)(nil),                  // 14: shared.insights.v1.TopKQuery
+	(*TopKResult)(nil),                 // 15: shared.insights.v1.TopKResult
+	(*TopKRow)(nil),                    // 16: shared.insights.v1.TopKRow
+	(*TopKProfile)(nil),                // 17: shared.insights.v1.TopKProfile
+	(*UserFlowNode)(nil),               // 18: shared.insights.v1.UserFlowNode
+	(*UserFlowLink)(nil),               // 19: shared.insights.v1.UserFlowLink
+	(*UserFlowResult)(nil),             // 20: shared.insights.v1.UserFlowResult
+	(*FilterGroup)(nil),                // 21: shared.insights.v1.FilterGroup
+	(*EventQuery)(nil),                 // 22: shared.insights.v1.EventQuery
+	(*Breakdown)(nil),                  // 23: shared.insights.v1.Breakdown
+	(*TrendsResult)(nil),               // 24: shared.insights.v1.TrendsResult
+	(*TrendSeries)(nil),                // 25: shared.insights.v1.TrendSeries
+	(*SegmentationResult)(nil),         // 26: shared.insights.v1.SegmentationResult
+	(*FunnelResult)(nil),               // 27: shared.insights.v1.FunnelResult
+	(*FunnelSeries)(nil),               // 28: shared.insights.v1.FunnelSeries
+	(*DistributionBucket)(nil),         // 29: shared.insights.v1.DistributionBucket
+	(*StepTiming)(nil),                 // 30: shared.insights.v1.StepTiming
+	(*FunnelStep)(nil),                 // 31: shared.insights.v1.FunnelStep
+	(*RetentionResult)(nil),            // 32: shared.insights.v1.RetentionResult
+	(*RetentionSeries)(nil),            // 33: shared.insights.v1.RetentionSeries
+	(*RetentionCohort)(nil),            // 34: shared.insights.v1.RetentionCohort
+	(*DataPoint)(nil),                  // 35: shared.insights.v1.DataPoint
+	(*GetPropertyValuesRequest)(nil),   // 36: shared.insights.v1.GetPropertyValuesRequest
+	(*GetPropertyValuesResponse)(nil),  // 37: shared.insights.v1.GetPropertyValuesResponse
+	nil,                                // 38: shared.insights.v1.TrendSeries.BreakdownEntry
+	nil,                                // 39: shared.insights.v1.FunnelSeries.BreakdownEntry
+	nil,                                // 40: shared.insights.v1.RetentionSeries.BreakdownEntry
+	(v1.LogicalOperator)(0),            // 41: common.v1.LogicalOperator
+	(*durationpb.Duration)(nil),        // 42: google.protobuf.Duration
+	(*v1.TimeRange)(nil),               // 43: common.v1.TimeRange
+	(*v1.EventFilter)(nil),             // 44: common.v1.EventFilter
+	(*structpb.Struct)(nil),            // 45: google.protobuf.Struct
+	(*v1.PropertyFilter)(nil),          // 46: common.v1.PropertyFilter
+	(*timestamppb.Timestamp)(nil),      // 47: google.protobuf.Timestamp
+	(v1.PropertySource)(0),             // 48: common.v1.PropertySource
+	(*v1.GetFilterSchemaRequest)(nil),  // 49: common.v1.GetFilterSchemaRequest
+	(*v1.GetFilterSchemaResponse)(nil), // 50: common.v1.GetFilterSchemaResponse
 }
 var file_shared_insights_v1_insights_proto_depIdxs = []int32{
 	0,  // 0: shared.insights.v1.InsightQuerySpec.insight_type:type_name -> shared.insights.v1.InsightType
-	17, // 1: shared.insights.v1.InsightQuerySpec.events:type_name -> shared.insights.v1.EventQuery
-	18, // 2: shared.insights.v1.InsightQuerySpec.breakdowns:type_name -> shared.insights.v1.Breakdown
-	16, // 3: shared.insights.v1.InsightQuerySpec.filter_groups:type_name -> shared.insights.v1.FilterGroup
-	36, // 4: shared.insights.v1.InsightQuerySpec.filter_groups_operator:type_name -> common.v1.LogicalOperator
-	37, // 5: shared.insights.v1.InsightQuerySpec.conversion_window:type_name -> google.protobuf.Duration
-	11, // 6: shared.insights.v1.InsightQuerySpec.session:type_name -> shared.insights.v1.SessionQuery
-	12, // 7: shared.insights.v1.InsightQuerySpec.user_flow:type_name -> shared.insights.v1.UserFlowQuery
-	6,  // 8: shared.insights.v1.QueryRequest.spec:type_name -> shared.insights.v1.InsightQuerySpec
-	38, // 9: shared.insights.v1.QueryRequest.time_range:type_name -> common.v1.TimeRange
-	1,  // 10: shared.insights.v1.QueryRequest.granularity:type_name -> shared.insights.v1.Granularity
-	19, // 11: shared.insights.v1.QueryResponse.trends:type_name -> shared.insights.v1.TrendsResult
-	21, // 12: shared.insights.v1.QueryResponse.segmentation:type_name -> shared.insights.v1.SegmentationResult
-	22, // 13: shared.insights.v1.QueryResponse.funnel:type_name -> shared.insights.v1.FunnelResult
-	27, // 14: shared.insights.v1.QueryResponse.retention:type_name -> shared.insights.v1.RetentionResult
-	15, // 15: shared.insights.v1.QueryResponse.user_flow:type_name -> shared.insights.v1.UserFlowResult
-	38, // 16: shared.insights.v1.SegmentUsersRequest.time_range:type_name -> common.v1.TimeRange
-	17, // 17: shared.insights.v1.SegmentUsersRequest.events:type_name -> shared.insights.v1.EventQuery
-	16, // 18: shared.insights.v1.SegmentUsersRequest.filter_groups:type_name -> shared.insights.v1.FilterGroup
-	36, // 19: shared.insights.v1.SegmentUsersRequest.filter_groups_operator:type_name -> common.v1.LogicalOperator
-	3,  // 20: shared.insights.v1.SessionQuery.metric:type_name -> shared.insights.v1.SessionMetric
-	39, // 21: shared.insights.v1.SessionQuery.scope:type_name -> common.v1.EventFilter
-	4,  // 22: shared.insights.v1.UserFlowQuery.node_kind:type_name -> shared.insights.v1.UserFlowQuery.NodeKind
-	5,  // 23: shared.insights.v1.UserFlowQuery.group_by:type_name -> shared.insights.v1.UserFlowQuery.GroupBy
-	39, // 24: shared.insights.v1.UserFlowQuery.scope:type_name -> common.v1.EventFilter
-	13, // 25: shared.insights.v1.UserFlowResult.nodes:type_name -> shared.insights.v1.UserFlowNode
-	14, // 26: shared.insights.v1.UserFlowResult.links:type_name -> shared.insights.v1.UserFlowLink
-	40, // 27: shared.insights.v1.FilterGroup.filters:type_name -> common.v1.PropertyFilter
-	36, // 28: shared.insights.v1.FilterGroup.operator:type_name -> common.v1.LogicalOperator
-	39, // 29: shared.insights.v1.EventQuery.event:type_name -> common.v1.EventFilter
-	2,  // 30: shared.insights.v1.EventQuery.aggregation:type_name -> shared.insights.v1.AggregationType
-	20, // 31: shared.insights.v1.TrendsResult.series:type_name -> shared.insights.v1.TrendSeries
-	33, // 32: shared.insights.v1.TrendSeries.breakdown:type_name -> shared.insights.v1.TrendSeries.BreakdownEntry
-	30, // 33: shared.insights.v1.TrendSeries.points:type_name -> shared.insights.v1.DataPoint
-	23, // 34: shared.insights.v1.FunnelResult.series:type_name -> shared.insights.v1.FunnelSeries
-	34, // 35: shared.insights.v1.FunnelSeries.breakdown:type_name -> shared.insights.v1.FunnelSeries.BreakdownEntry
-	26, // 36: shared.insights.v1.FunnelSeries.steps:type_name -> shared.insights.v1.FunnelStep
-	37, // 37: shared.insights.v1.DistributionBucket.upper_bound:type_name -> google.protobuf.Duration
-	37, // 38: shared.insights.v1.StepTiming.avg:type_name -> google.protobuf.Duration
-	37, // 39: shared.insights.v1.StepTiming.median:type_name -> google.protobuf.Duration
-	37, // 40: shared.insights.v1.StepTiming.p95:type_name -> google.protobuf.Duration
-	24, // 41: shared.insights.v1.StepTiming.distribution:type_name -> shared.insights.v1.DistributionBucket
-	25, // 42: shared.insights.v1.FunnelStep.timing:type_name -> shared.insights.v1.StepTiming
-	28, // 43: shared.insights.v1.RetentionResult.series:type_name -> shared.insights.v1.RetentionSeries
-	35, // 44: shared.insights.v1.RetentionSeries.breakdown:type_name -> shared.insights.v1.RetentionSeries.BreakdownEntry
-	29, // 45: shared.insights.v1.RetentionSeries.cohorts:type_name -> shared.insights.v1.RetentionCohort
-	30, // 46: shared.insights.v1.RetentionCohort.points:type_name -> shared.insights.v1.DataPoint
-	41, // 47: shared.insights.v1.DataPoint.time:type_name -> google.protobuf.Timestamp
-	42, // 48: shared.insights.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
-	7,  // 49: shared.insights.v1.InsightsService.Query:input_type -> shared.insights.v1.QueryRequest
-	9,  // 50: shared.insights.v1.InsightsService.SegmentUsers:input_type -> shared.insights.v1.SegmentUsersRequest
-	43, // 51: shared.insights.v1.InsightsService.GetFilterSchema:input_type -> common.v1.GetFilterSchemaRequest
-	31, // 52: shared.insights.v1.InsightsService.GetPropertyValues:input_type -> shared.insights.v1.GetPropertyValuesRequest
-	8,  // 53: shared.insights.v1.InsightsService.Query:output_type -> shared.insights.v1.QueryResponse
-	10, // 54: shared.insights.v1.InsightsService.SegmentUsers:output_type -> shared.insights.v1.SegmentUsersResponse
-	44, // 55: shared.insights.v1.InsightsService.GetFilterSchema:output_type -> common.v1.GetFilterSchemaResponse
-	32, // 56: shared.insights.v1.InsightsService.GetPropertyValues:output_type -> shared.insights.v1.GetPropertyValuesResponse
-	53, // [53:57] is the sub-list for method output_type
-	49, // [49:53] is the sub-list for method input_type
-	49, // [49:49] is the sub-list for extension type_name
-	49, // [49:49] is the sub-list for extension extendee
-	0,  // [0:49] is the sub-list for field type_name
+	22, // 1: shared.insights.v1.InsightQuerySpec.events:type_name -> shared.insights.v1.EventQuery
+	23, // 2: shared.insights.v1.InsightQuerySpec.breakdowns:type_name -> shared.insights.v1.Breakdown
+	21, // 3: shared.insights.v1.InsightQuerySpec.filter_groups:type_name -> shared.insights.v1.FilterGroup
+	41, // 4: shared.insights.v1.InsightQuerySpec.filter_groups_operator:type_name -> common.v1.LogicalOperator
+	42, // 5: shared.insights.v1.InsightQuerySpec.conversion_window:type_name -> google.protobuf.Duration
+	12, // 6: shared.insights.v1.InsightQuerySpec.session:type_name -> shared.insights.v1.SessionQuery
+	13, // 7: shared.insights.v1.InsightQuerySpec.user_flow:type_name -> shared.insights.v1.UserFlowQuery
+	14, // 8: shared.insights.v1.InsightQuerySpec.top_k:type_name -> shared.insights.v1.TopKQuery
+	7,  // 9: shared.insights.v1.QueryRequest.spec:type_name -> shared.insights.v1.InsightQuerySpec
+	43, // 10: shared.insights.v1.QueryRequest.time_range:type_name -> common.v1.TimeRange
+	1,  // 11: shared.insights.v1.QueryRequest.granularity:type_name -> shared.insights.v1.Granularity
+	24, // 12: shared.insights.v1.QueryResponse.trends:type_name -> shared.insights.v1.TrendsResult
+	26, // 13: shared.insights.v1.QueryResponse.segmentation:type_name -> shared.insights.v1.SegmentationResult
+	27, // 14: shared.insights.v1.QueryResponse.funnel:type_name -> shared.insights.v1.FunnelResult
+	32, // 15: shared.insights.v1.QueryResponse.retention:type_name -> shared.insights.v1.RetentionResult
+	20, // 16: shared.insights.v1.QueryResponse.user_flow:type_name -> shared.insights.v1.UserFlowResult
+	15, // 17: shared.insights.v1.QueryResponse.top_k:type_name -> shared.insights.v1.TopKResult
+	43, // 18: shared.insights.v1.SegmentUsersRequest.time_range:type_name -> common.v1.TimeRange
+	22, // 19: shared.insights.v1.SegmentUsersRequest.events:type_name -> shared.insights.v1.EventQuery
+	21, // 20: shared.insights.v1.SegmentUsersRequest.filter_groups:type_name -> shared.insights.v1.FilterGroup
+	41, // 21: shared.insights.v1.SegmentUsersRequest.filter_groups_operator:type_name -> common.v1.LogicalOperator
+	3,  // 22: shared.insights.v1.SessionQuery.metric:type_name -> shared.insights.v1.SessionMetric
+	44, // 23: shared.insights.v1.SessionQuery.scope:type_name -> common.v1.EventFilter
+	4,  // 24: shared.insights.v1.UserFlowQuery.node_kind:type_name -> shared.insights.v1.UserFlowQuery.NodeKind
+	5,  // 25: shared.insights.v1.UserFlowQuery.group_by:type_name -> shared.insights.v1.UserFlowQuery.GroupBy
+	44, // 26: shared.insights.v1.UserFlowQuery.scope:type_name -> common.v1.EventFilter
+	6,  // 27: shared.insights.v1.TopKQuery.dimension:type_name -> shared.insights.v1.TopKQuery.Dimension
+	44, // 28: shared.insights.v1.TopKQuery.scope:type_name -> common.v1.EventFilter
+	2,  // 29: shared.insights.v1.TopKQuery.metric:type_name -> shared.insights.v1.AggregationType
+	16, // 30: shared.insights.v1.TopKResult.rows:type_name -> shared.insights.v1.TopKRow
+	17, // 31: shared.insights.v1.TopKRow.profile:type_name -> shared.insights.v1.TopKProfile
+	45, // 32: shared.insights.v1.TopKProfile.properties:type_name -> google.protobuf.Struct
+	18, // 33: shared.insights.v1.UserFlowResult.nodes:type_name -> shared.insights.v1.UserFlowNode
+	19, // 34: shared.insights.v1.UserFlowResult.links:type_name -> shared.insights.v1.UserFlowLink
+	46, // 35: shared.insights.v1.FilterGroup.filters:type_name -> common.v1.PropertyFilter
+	41, // 36: shared.insights.v1.FilterGroup.operator:type_name -> common.v1.LogicalOperator
+	44, // 37: shared.insights.v1.EventQuery.event:type_name -> common.v1.EventFilter
+	2,  // 38: shared.insights.v1.EventQuery.aggregation:type_name -> shared.insights.v1.AggregationType
+	25, // 39: shared.insights.v1.TrendsResult.series:type_name -> shared.insights.v1.TrendSeries
+	38, // 40: shared.insights.v1.TrendSeries.breakdown:type_name -> shared.insights.v1.TrendSeries.BreakdownEntry
+	35, // 41: shared.insights.v1.TrendSeries.points:type_name -> shared.insights.v1.DataPoint
+	28, // 42: shared.insights.v1.FunnelResult.series:type_name -> shared.insights.v1.FunnelSeries
+	39, // 43: shared.insights.v1.FunnelSeries.breakdown:type_name -> shared.insights.v1.FunnelSeries.BreakdownEntry
+	31, // 44: shared.insights.v1.FunnelSeries.steps:type_name -> shared.insights.v1.FunnelStep
+	42, // 45: shared.insights.v1.DistributionBucket.upper_bound:type_name -> google.protobuf.Duration
+	42, // 46: shared.insights.v1.StepTiming.avg:type_name -> google.protobuf.Duration
+	42, // 47: shared.insights.v1.StepTiming.median:type_name -> google.protobuf.Duration
+	42, // 48: shared.insights.v1.StepTiming.p95:type_name -> google.protobuf.Duration
+	29, // 49: shared.insights.v1.StepTiming.distribution:type_name -> shared.insights.v1.DistributionBucket
+	30, // 50: shared.insights.v1.FunnelStep.timing:type_name -> shared.insights.v1.StepTiming
+	33, // 51: shared.insights.v1.RetentionResult.series:type_name -> shared.insights.v1.RetentionSeries
+	40, // 52: shared.insights.v1.RetentionSeries.breakdown:type_name -> shared.insights.v1.RetentionSeries.BreakdownEntry
+	34, // 53: shared.insights.v1.RetentionSeries.cohorts:type_name -> shared.insights.v1.RetentionCohort
+	35, // 54: shared.insights.v1.RetentionCohort.points:type_name -> shared.insights.v1.DataPoint
+	47, // 55: shared.insights.v1.DataPoint.time:type_name -> google.protobuf.Timestamp
+	48, // 56: shared.insights.v1.GetPropertyValuesRequest.source:type_name -> common.v1.PropertySource
+	8,  // 57: shared.insights.v1.InsightsService.Query:input_type -> shared.insights.v1.QueryRequest
+	10, // 58: shared.insights.v1.InsightsService.SegmentUsers:input_type -> shared.insights.v1.SegmentUsersRequest
+	49, // 59: shared.insights.v1.InsightsService.GetFilterSchema:input_type -> common.v1.GetFilterSchemaRequest
+	36, // 60: shared.insights.v1.InsightsService.GetPropertyValues:input_type -> shared.insights.v1.GetPropertyValuesRequest
+	9,  // 61: shared.insights.v1.InsightsService.Query:output_type -> shared.insights.v1.QueryResponse
+	11, // 62: shared.insights.v1.InsightsService.SegmentUsers:output_type -> shared.insights.v1.SegmentUsersResponse
+	50, // 63: shared.insights.v1.InsightsService.GetFilterSchema:output_type -> common.v1.GetFilterSchemaResponse
+	37, // 64: shared.insights.v1.InsightsService.GetPropertyValues:output_type -> shared.insights.v1.GetPropertyValuesResponse
+	61, // [61:65] is the sub-list for method output_type
+	57, // [57:61] is the sub-list for method input_type
+	57, // [57:57] is the sub-list for extension type_name
+	57, // [57:57] is the sub-list for extension extendee
+	0,  // [0:57] is the sub-list for field type_name
 }
 
 func init() { file_shared_insights_v1_insights_proto_init() }
@@ -2470,14 +2901,15 @@ func file_shared_insights_v1_insights_proto_init() {
 		(*QueryResponse_Funnel)(nil),
 		(*QueryResponse_Retention)(nil),
 		(*QueryResponse_UserFlow)(nil),
+		(*QueryResponse_TopK)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_shared_insights_v1_insights_proto_rawDesc), len(file_shared_insights_v1_insights_proto_rawDesc)),
-			NumEnums:      6,
-			NumMessages:   30,
+			NumEnums:      7,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
