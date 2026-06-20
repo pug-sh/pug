@@ -40,7 +40,7 @@ type DeleteDevicesByProfileIDParams struct {
 	ProjectID string
 }
 
-// Permanent erasure (GDPR/DPDP). Used only by the erase worker. Must run before
+// Permanent erasure (GDPR/DPDP). Used only by the compliance worker. Must run before
 // the profiles hard-delete: the profile_id FK is ON DELETE SET NULL, so deleting
 // the profile first would orphan these rows (token + endpoint = a delivery secret).
 func (q *Queries) DeleteDevicesByProfileID(ctx context.Context, arg DeleteDevicesByProfileIDParams) (int64, error) {

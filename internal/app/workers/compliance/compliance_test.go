@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/nats-io/nats.go/jetstream"
 	coreprofiles "github.com/pug-sh/pug/internal/core/profiles"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	workercompliancev1 "github.com/pug-sh/pug/internal/gen/proto/workers/compliance/v1"
@@ -177,5 +178,42 @@ func TestHandleErase_Success(t *testing.T) {
 	}
 	if exec.markCalls != 0 {
 		t.Errorf("MarkErasureFailed calls = %d, want 0 on success", exec.markCalls)
+	}
+}
+
+// fakeMsg implements jetstream.Msg via interface embedding; only Metadata is real
+// (the other methods are never called by isLastEraseDelivery and would panic).
+type fakeMsg struct {
+	jetstream.Msg
+	meta    *jetstream.MsgMetadata
+	metaErr error
+}
+
+func (m fakeMsg) Metadata() (*jetstream.MsgMetadata, error) { return m.meta, m.metaErr }
+
+// TestIsLastEraseDelivery pins the last-delivery boundary that decides whether
+// handleErase records 'failed' on the ledger before the framework dead-letters the
+// message. Off-by-one here would either mark-failed too early (audit says failed
+// while retries continue) or never (a stalled request stuck at 'processing'
+// forever). Unreadable metadata is conservatively the last delivery, matching the
+// framework's DLQ routing.
+func TestIsLastEraseDelivery(t *testing.T) {
+	const maxDeliver = 3
+	cases := []struct {
+		name string
+		msg  fakeMsg
+		want bool
+	}{
+		{"before last", fakeMsg{meta: &jetstream.MsgMetadata{NumDelivered: 2}}, false},
+		{"at max", fakeMsg{meta: &jetstream.MsgMetadata{NumDelivered: 3}}, true},
+		{"past max", fakeMsg{meta: &jetstream.MsgMetadata{NumDelivered: 4}}, true},
+		{"unreadable metadata is last", fakeMsg{metaErr: errors.New("no meta")}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isLastEraseDelivery(context.Background(), tc.msg, maxDeliver); got != tc.want {
+				t.Errorf("isLastEraseDelivery = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

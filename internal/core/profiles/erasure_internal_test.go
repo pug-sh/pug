@@ -3,6 +3,7 @@ package profiles
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func TestFreezeIdentifiers_EmptyRequestRefuses(t *testing.T) {
 	svc := NewService(nil, nil, nil)
 	req := dbread.ComplianceRequest{ID: "req-empty", ProjectID: "proj-1"}
 
-	_, _, err := svc.freezeIdentifiers(context.Background(), &req)
+	_, err := svc.freezeIdentifiers(context.Background(), &req)
 	if !errors.Is(err, ErrNoErasableIdentifiers) {
 		t.Fatalf("freezeIdentifiers err = %v, want ErrNoErasableIdentifiers", err)
 	}
@@ -224,7 +225,7 @@ func TestErasure_PartialEraseRetryCompletes(t *testing.T) {
 		t.Errorf("session rollup remains: %d", got)
 	}
 
-	req, err := svc.read.GetComplianceRequestByID(ctx, dbread.GetComplianceRequestByIDParams{ID: requestID, ProjectID: projectID})
+	req, err := svc.read.GetEraseRequestByID(ctx, dbread.GetEraseRequestByIDParams{ID: requestID, ProjectID: projectID})
 	if err != nil {
 		t.Fatalf("load request: %v", err)
 	}
@@ -275,6 +276,167 @@ func TestResolveDistinctIDs_DedupsExternalIDEqualToAlias(t *testing.T) {
 	if len(ids) != 2 || counts[externalID] != 1 || counts[profileID] != 1 {
 		t.Errorf("resolved ids = %v, want [%s %s] with no duplicates", ids, externalID, profileID)
 	}
+}
+
+// TestErasure_MarkErasureFailedPersistsState pins the I5 gap that every existing
+// MarkErasureFailed test used a call-counting fake: this drives the real ledger
+// through freeze → 'processing' (the intermediate state asserted nowhere else
+// end-to-end) → MarkErasureFailed, and reads back that the row reaches 'failed'
+// with the cause truncated to the column bound and the frozen identifiers intact
+// (so a later re-drive still cleans every store).
+func TestErasure_MarkErasureFailedPersistsState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	tn := testutil.SetupNATS(t)
+	t.Setenv("NATS_URL", tn.URL)
+
+	natsClient, err := natsdeps.New(ctx)
+	if err != nil {
+		t.Fatalf("create nats client: %v", err)
+	}
+	defer natsClient.Close()
+
+	projectID := seedProjectInternal(t, ctx, pg)
+	svc := NewService(pg.PgW, ch.Conn, natsClient)
+
+	const distinctID = "fail-me@example.com"
+	session := uuid.NewString()
+	requestID := xid.New().String()
+	if _, err := svc.write.CreateComplianceRequest(ctx, dbwrite.CreateComplianceRequestParams{
+		ID: requestID, ProjectID: projectID, Kind: string(ComplianceKindErase),
+		ExternalID: postgres.NewOptionalText(distinctID),
+	}); err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	if _, err := svc.write.FreezeComplianceRequestIdentifiers(ctx, dbwrite.FreezeComplianceRequestIdentifiersParams{
+		ID: requestID, ProjectID: projectID,
+		DistinctIds: []string{distinctID}, SessionIds: []string{session}, EventsAffected: 7,
+	}); err != nil {
+		t.Fatalf("freeze identifiers: %v", err)
+	}
+
+	// Intermediate-state read-back: freeze advanced the row to 'processing'.
+	mid, err := svc.read.GetEraseRequestByID(ctx, dbread.GetEraseRequestByIDParams{ID: requestID, ProjectID: projectID})
+	if err != nil {
+		t.Fatalf("read after freeze: %v", err)
+	}
+	if ComplianceStatus(mid.Status) != ComplianceStatusProcessing {
+		t.Errorf("status after freeze = %q, want processing", mid.Status)
+	}
+
+	// Mark failed with an over-long cause; it must be truncated to maxErrorLen.
+	bigCause := errors.New(strings.Repeat("x", 2000))
+	if err := svc.MarkErasureFailed(ctx, projectID, requestID, bigCause); err != nil {
+		t.Fatalf("MarkErasureFailed: %v", err)
+	}
+
+	got, err := svc.read.GetEraseRequestByID(ctx, dbread.GetEraseRequestByIDParams{ID: requestID, ProjectID: projectID})
+	if err != nil {
+		t.Fatalf("read after fail: %v", err)
+	}
+	if ComplianceStatus(got.Status) != ComplianceStatusFailed {
+		t.Errorf("status = %q, want failed", got.Status)
+	}
+	if len(got.Error.String) != 1024 {
+		t.Errorf("persisted error len = %d, want 1024 (truncated)", len(got.Error.String))
+	}
+	if len(got.DistinctIds) != 1 || got.DistinctIds[0] != distinctID {
+		t.Errorf("distinct_ids = %v, want frozen [%s] to survive the failure", got.DistinctIds, distinctID)
+	}
+	if len(got.SessionIds) != 1 || got.SessionIds[0] != session {
+		t.Errorf("session_ids = %v, want frozen [%s] to survive the failure", got.SessionIds, session)
+	}
+}
+
+// TestErasure_FreezeGuardAbortsOnMissingRow pins finding C3: if the freeze UPDATE
+// matches 0 rows (the ledger row vanished), freezeIdentifiers must abort with
+// ErrComplianceRequestVanished BEFORE any destructive delete — the complement of
+// the no-identifiers guard. Here the request row is never created, so the freeze
+// write affects 0 rows.
+func TestErasure_FreezeGuardAbortsOnMissingRow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+
+	svc := NewService(pg.PgW, ch.Conn, nil)
+	// External_id present (so resolveDistinctIDs yields one id and the empty-set guard
+	// does NOT fire), but no matching ledger row exists, so the freeze hits 0 rows.
+	req := dbread.ComplianceRequest{
+		ID:         xid.New().String(),
+		ProjectID:  xid.New().String(),
+		ExternalID: postgres.NewOptionalText("ghost@example.com"),
+	}
+	_, err := svc.freezeIdentifiers(ctx, &req)
+	if !errors.Is(err, ErrComplianceRequestVanished) {
+		t.Fatalf("freezeIdentifiers err = %v, want ErrComplianceRequestVanished", err)
+	}
+}
+
+// TestComplianceRequests_OpenStatusUniqueIndex pins finding I2: the partial unique
+// indexes reject a second OPEN (pending/processing) request for the same subject,
+// and isComplianceOpenRequestConflict recognizes the violation so the prelude can
+// re-drive the winner instead of erroring. Covers both the external_id and
+// profile_id indexes.
+func TestComplianceRequests_OpenStatusUniqueIndex(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProjectInternal(t, ctx, pg)
+	svc := NewService(pg.PgW, nil, nil)
+
+	cases := []struct {
+		name   string
+		params dbwrite.CreateComplianceRequestParams
+	}{
+		{"external_id", dbwrite.CreateComplianceRequestParams{ExternalID: postgres.NewOptionalText("dup@example.com")}},
+		{"profile_id", dbwrite.CreateComplianceRequestParams{ProfileID: postgres.NewOptionalText(xid.New().String())}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			first := tc.params
+			first.ID, first.ProjectID, first.Kind = xid.New().String(), projectID, string(ComplianceKindErase)
+			if _, err := svc.write.CreateComplianceRequest(ctx, first); err != nil {
+				t.Fatalf("first insert: %v", err)
+			}
+			second := tc.params
+			second.ID, second.ProjectID, second.Kind = xid.New().String(), projectID, string(ComplianceKindErase)
+			_, err := svc.write.CreateComplianceRequest(ctx, second)
+			if err == nil {
+				t.Fatal("second open insert for same subject succeeded, want unique violation")
+			}
+			if !isComplianceOpenRequestConflict(err) {
+				t.Errorf("isComplianceOpenRequestConflict(%v) = false, want true", err)
+			}
+		})
+	}
+}
+
+func seedProjectInternal(t *testing.T, ctx context.Context, pg *testutil.TestPostgres) string {
+	t.Helper()
+	orgID := xid.New().String()
+	projectID := xid.New().String()
+	if _, err := pg.PgW.Exec(ctx, `INSERT INTO orgs (id, display_name) VALUES ($1, $2)`, orgID, "test-org"); err != nil {
+		t.Fatalf("insert org: %v", err)
+	}
+	if _, err := pg.PgW.Exec(ctx,
+		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
+		projectID, orgID, "test-project", xid.New().String()+"priv", xid.New().String()+"pub",
+	); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+	return projectID
 }
 
 func chCountInternal(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse, query string, args ...any) uint64 {

@@ -7,20 +7,26 @@ package dbread
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getComplianceRequestByID = `-- name: GetComplianceRequestByID :one
+const getEraseRequestByID = `-- name: GetEraseRequestByID :one
 select id, project_id, kind, profile_id, external_id, status, distinct_ids, session_ids, events_affected, requested_by, requested_at, completed_at, update_time, error from compliance_requests
-where id = $1 and project_id = $2
+where id = $1 and project_id = $2 and kind = 'erase'
 `
 
-type GetComplianceRequestByIDParams struct {
+type GetEraseRequestByIDParams struct {
 	ID        string
 	ProjectID string
 }
 
-func (q *Queries) GetComplianceRequestByID(ctx context.Context, arg GetComplianceRequestByIDParams) (ComplianceRequest, error) {
-	row := q.db.QueryRow(ctx, getComplianceRequestByID, arg.ID, arg.ProjectID)
+// Erase-path load. Scoped to kind = 'erase' so the erasure executor and the
+// erasure-status RPC structurally cannot load (and the executor cannot hard-delete
+// against) an 'export' row once the unified ledger holds both kinds — an export row
+// simply reads as not-found here. Export gets its own GetExportRequestByID.
+func (q *Queries) GetEraseRequestByID(ctx context.Context, arg GetEraseRequestByIDParams) (ComplianceRequest, error) {
+	row := q.db.QueryRow(ctx, getEraseRequestByID, arg.ID, arg.ProjectID)
 	var i ComplianceRequest
 	err := row.Scan(
 		&i.ID,
@@ -92,4 +98,57 @@ func (q *Queries) GetReopenableComplianceRequest(ctx context.Context, arg GetReo
 		&i.Error,
 	)
 	return i, err
+}
+
+const listStuckComplianceRequests = `-- name: ListStuckComplianceRequests :many
+select id, project_id, kind, profile_id, external_id, status, distinct_ids, session_ids, events_affected, requested_by, requested_at, completed_at, update_time, error from compliance_requests
+where status in ('pending', 'processing')
+  and requested_at < $1::timestamptz
+order by requested_at asc
+limit $2
+`
+
+type ListStuckComplianceRequestsParams struct {
+	OlderThan pgtype.Timestamptz
+	RowLimit  int32
+}
+
+// Operability / SLA backstop: open (pending|processing) requests whose enqueue may
+// have been lost (publish failure) or aged out of the compliance stream (max_age 720h)
+// with nothing to re-drive them. Surfaced to oncall/alerting so an operator can
+// re-drive via a fresh RequestErasure* call (frozen identifiers keep the re-drive
+// correct). Bounded by @row_limit so the alert query stays cheap.
+func (q *Queries) ListStuckComplianceRequests(ctx context.Context, arg ListStuckComplianceRequestsParams) ([]ComplianceRequest, error) {
+	rows, err := q.db.Query(ctx, listStuckComplianceRequests, arg.OlderThan, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ComplianceRequest
+	for rows.Next() {
+		var i ComplianceRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Kind,
+			&i.ProfileID,
+			&i.ExternalID,
+			&i.Status,
+			&i.DistinctIds,
+			&i.SessionIds,
+			&i.EventsAffected,
+			&i.RequestedBy,
+			&i.RequestedAt,
+			&i.CompletedAt,
+			&i.UpdateTime,
+			&i.Error,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

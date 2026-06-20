@@ -67,7 +67,7 @@ Each item: what the code does today (with file references), what to add, and the
 2. A dedicated **erasure worker** (`internal/app/workers/compliance/` — a generalized compliance worker that also hosts §4.2 export and §4.5 retention) — ClickHouse `ALTER … DELETE` mutations are heavy and async; never run them inline in the RPC. Steps:
    - resolve all distinct_ids from `profile_aliases`,
    - `ALTER TABLE events DELETE WHERE project_id = ? AND distinct_id IN (…)`,
-   - delete rows in `profiles`, `profile_aliases`, `profile_activity_summary` (PG + CH),
+   - delete rows in `profiles`, `profile_aliases`, `distinct_id_activity_states` (PG + CH),
    - delete `profile_devices` (push tokens).
 3. A **deletion-request table** (PG) recording request → status → completion timestamp, so we can *prove* fulfilment within the statutory window (GDPR ~1 month; DPDP timelines). This is also the DSAR audit trail.
 

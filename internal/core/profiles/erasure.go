@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -33,6 +36,18 @@ var (
 	// external_id nor a profile — it can never identify data to erase, so it must
 	// fail rather than complete as a no-op.
 	ErrNoErasableIdentifiers = errors.New("profiles: erasure request resolved no identifiers")
+	// ErrComplianceRequestVanished is returned when a guarded ledger write (freeze or
+	// completion) matches 0 rows — the row was concurrently removed or its (id,
+	// project_id, kind) no longer matches. The freeze guard prevents a destructive
+	// delete with no surviving audit row; the completion guard prevents reporting a
+	// phantom 'completed' that never landed in the ledger.
+	ErrComplianceRequestVanished = errors.New("profiles: compliance request row vanished before write")
+	// ErrInvalidComplianceStatus is returned by ParseComplianceStatus when a DB value
+	// is not a recognized lifecycle status, so a corrupt column surfaces loudly
+	// instead of flowing through as an unchecked cast. (There is no kind parse: the
+	// erase read boundary enforces kind = 'erase' in SQL via GetEraseRequestByID,
+	// which is stronger than a Go-side check.)
+	ErrInvalidComplianceStatus = errors.New("profiles: invalid compliance status")
 )
 
 // ComplianceStatus is the lifecycle of a compliance request. Mirrors the
@@ -56,6 +71,59 @@ const (
 	ComplianceKindErase  ComplianceKind = "erase"
 	ComplianceKindExport ComplianceKind = "export"
 )
+
+// ParseComplianceStatus validates a raw DB status string at the single read
+// boundary, so the rest of the service works with a known-good value rather than
+// an unchecked ComplianceStatus(...) cast that would silently propagate a corrupt
+// column. The status CHECK constraint makes a bad value unreachable in practice;
+// this is the defensive complement.
+func ParseComplianceStatus(s string) (ComplianceStatus, error) {
+	switch ComplianceStatus(s) {
+	case ComplianceStatusPending, ComplianceStatusProcessing, ComplianceStatusCompleted, ComplianceStatusFailed:
+		return ComplianceStatus(s), nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrInvalidComplianceStatus, s)
+	}
+}
+
+// isTerminal reports whether the request has reached its final state. Only
+// 'completed' is terminal: a 'failed' request can still be revived (reopened) to
+// 'pending' by a re-request.
+func (s ComplianceStatus) isTerminal() bool { return s == ComplianceStatusCompleted }
+
+// canReopen reports whether a re-driven request in this state needs its status
+// reset to 'pending'. Only 'failed' is revived; 'pending'/'processing' are already
+// open and are simply re-published.
+func (s ComplianceStatus) canReopen() bool { return s == ComplianceStatusFailed }
+
+// erasureScope is the frozen identifier fan-out for one erasure: the distinct_id
+// set (events + per-distinct_id rollups) and the session_id set (session rollup),
+// bundled so the two transposable []string slices can't be swapped at a call site.
+type erasureScope struct {
+	distinctIDs []string
+	sessionIDs  []string
+}
+
+// Postgres open-status unique indexes (migration 015) that dedup concurrent
+// first-time requests for the same subject.
+const (
+	complianceOpenProfileUnique  = "compliance_requests_open_profile_uniq"
+	complianceOpenExternalUnique = "compliance_requests_open_external_uniq"
+)
+
+// isComplianceOpenRequestConflict reports whether err is the unique-violation
+// raised when a concurrent first-time request for the same subject already holds
+// the open (pending/processing) slot. The caller re-drives the winner instead of
+// surfacing the error.
+func isComplianceOpenRequestConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == pgerrcode.UniqueViolation &&
+		(pgErr.ConstraintName == complianceOpenProfileUnique ||
+			pgErr.ConstraintName == complianceOpenExternalUnique)
+}
 
 // RequestErasureByID enqueues erasure of the data subject identified by profile
 // id (the dashboard "delete this profile" path). The profile must exist; a
@@ -155,6 +223,25 @@ func (s *Service) requestErasure(ctx context.Context, projectID, externalID, pro
 		ExternalID:  postgres.NewOptionalText(externalID),
 		RequestedBy: postgres.NewOptionalText(requestedBy),
 	}); err != nil {
+		// A concurrent first-time request for the same subject won the open-status
+		// unique index (migration 015). This is the concurrent twin of the sequential
+		// reopen gate at the top — abandon this tx and re-drive the winner instead of
+		// surfacing a duplicate-key error. Not logged as an error: it's an expected,
+		// handled race, not a fault.
+		if isComplianceOpenRequestConflict(err) {
+			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+				slog.ErrorContext(ctx, "failed rolling back after compliance insert conflict", slogx.Error(rbErr),
+					slog.String("project_id", projectID), slog.String("request_id", requestID))
+				telemetry.RecordError(ctx, rbErr)
+			}
+			if rid, status, ok, rerr := s.reopenErasure(ctx, projectID, profileID, externalID); rerr != nil {
+				return rid, status, rerr
+			} else if ok {
+				return rid, status, nil
+			}
+			// Conflict but nothing reopenable (the winner completed between our failed
+			// insert and the reopen lookup): fall through to report the original error.
+		}
 		slog.ErrorContext(ctx, "failed creating deletion request", slogx.Error(err),
 			slog.String("project_id", projectID), slog.String("request_id", requestID))
 		telemetry.RecordError(ctx, err)
@@ -229,8 +316,14 @@ func (s *Service) reopenErasure(ctx context.Context, projectID, profileID, exter
 		return "", "", false, err
 	}
 
-	status := ComplianceStatus(existing.Status)
-	if status == ComplianceStatusFailed {
+	status, err := ParseComplianceStatus(existing.Status)
+	if err != nil {
+		slog.ErrorContext(ctx, "reopenable erasure request has invalid status", slogx.Error(err),
+			slog.String("request_id", existing.ID), slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return "", "", false, err
+	}
+	if status.canReopen() {
 		if _, err := s.write.ReopenComplianceRequest(ctx, dbwrite.ReopenComplianceRequestParams{
 			ID:        existing.ID,
 			ProjectID: projectID,
@@ -268,11 +361,14 @@ func (s *Service) reopenErasure(ctx context.Context, projectID, profileID, exter
 // It is idempotent and retry-safe: the resolved identifiers are frozen on the
 // first pass, so a redelivery after events are deleted still cleans every store.
 func (s *Service) ExecuteErasure(ctx context.Context, projectID, requestID string) error {
-	req, err := s.read.GetComplianceRequestByID(ctx, dbread.GetComplianceRequestByIDParams{
+	req, err := s.read.GetEraseRequestByID(ctx, dbread.GetEraseRequestByIDParams{
 		ID:        requestID,
 		ProjectID: projectID,
 	})
 	if err != nil {
+		// Not-found also covers a non-erase (e.g. export) row carrying this id: the
+		// query is scoped to kind = 'erase', so the erase path can never hard-delete
+		// against an export request.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrDeletionRequestNotFound
 		}
@@ -282,16 +378,22 @@ func (s *Service) ExecuteErasure(ctx context.Context, projectID, requestID strin
 		return err
 	}
 
-	if ComplianceStatus(req.Status) == ComplianceStatusCompleted {
+	status, err := ParseComplianceStatus(req.Status)
+	if err != nil {
+		slog.ErrorContext(ctx, "deletion request has invalid status", slogx.Error(err),
+			slog.String("request_id", requestID), slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if status.isTerminal() {
 		slog.InfoContext(ctx, "deletion request already completed, skipping",
 			slog.String("request_id", requestID), slog.String("project_id", projectID))
 		return nil
 	}
 
-	distinctIDs := req.DistinctIds
-	sessionIDs := req.SessionIds
-	if len(distinctIDs) == 0 {
-		distinctIDs, sessionIDs, err = s.freezeIdentifiers(ctx, &req)
+	scope := erasureScope{distinctIDs: req.DistinctIds, sessionIDs: req.SessionIds}
+	if len(scope.distinctIDs) == 0 {
+		scope, err = s.freezeIdentifiers(ctx, &req)
 		if err != nil {
 			return err
 		}
@@ -311,23 +413,36 @@ func (s *Service) ExecuteErasure(ctx context.Context, projectID, requestID strin
 		}
 	}
 
-	if err := s.eraseClickHouse(ctx, projectID, profileID, distinctIDs, sessionIDs); err != nil {
+	if err := s.eraseClickHouse(ctx, projectID, profileID, scope); err != nil {
 		return err
 	}
 
-	if _, err := s.write.MarkComplianceRequestCompleted(ctx, dbwrite.MarkComplianceRequestCompletedParams{
+	// Guard the proof-of-fulfilment write. If it matched 0 rows the row was
+	// concurrently removed (the (id, project_id, kind='erase') no longer matches),
+	// so the ledger holds no 'completed' record. Fail loudly so the message
+	// Naks/retries rather than logging a phantom completion the audit trail can't
+	// back. The common path loaded the row at the top, so this is a high-consequence
+	// edge, not an everyday case.
+	rows, err := s.write.MarkComplianceRequestCompleted(ctx, dbwrite.MarkComplianceRequestCompletedParams{
 		ID:        requestID,
 		ProjectID: projectID,
-	}); err != nil {
+	})
+	if err != nil {
 		slog.ErrorContext(ctx, "failed marking deletion request completed", slogx.Error(err),
 			slog.String("request_id", requestID), slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
 		return err
 	}
+	if rows == 0 {
+		slog.ErrorContext(ctx, "deletion request completion matched no rows; refusing to report phantom completion",
+			slog.String("request_id", requestID), slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, ErrComplianceRequestVanished)
+		return ErrComplianceRequestVanished
+	}
 
 	slog.InfoContext(ctx, "data subject erasure completed",
 		slog.String("request_id", requestID), slog.String("project_id", projectID),
-		slog.Int("distinct_ids", len(distinctIDs)), slog.Int("session_ids", len(sessionIDs)))
+		slog.Int("distinct_ids", len(scope.distinctIDs)), slog.Int("session_ids", len(scope.sessionIDs)))
 	return nil
 }
 
@@ -362,7 +477,9 @@ func (s *Service) MarkErasureFailed(ctx context.Context, projectID, requestID st
 // GetDeletionRequest returns the audit row for an erasure request so a
 // controller can prove fulfilment.
 func (s *Service) GetDeletionRequest(ctx context.Context, projectID, requestID string) (dbread.ComplianceRequest, error) {
-	req, err := s.read.GetComplianceRequestByID(ctx, dbread.GetComplianceRequestByIDParams{
+	// Scoped to kind = 'erase' (GetEraseRequestByID): an export row carrying this id
+	// reads as not-found, so the erasure-status RPC can never surface an export row.
+	req, err := s.read.GetEraseRequestByID(ctx, dbread.GetEraseRequestByIDParams{
 		ID:        requestID,
 		ProjectID: projectID,
 	})
@@ -378,14 +495,36 @@ func (s *Service) GetDeletionRequest(ctx context.Context, projectID, requestID s
 	return req, nil
 }
 
+// ListStuckComplianceRequests returns open (pending|processing) ledger rows older
+// than `olderThan`, capped at `limit`. It is an operability / SLA backstop: a row
+// whose enqueue was lost (publish failure) or aged out of the compliance stream
+// (max_age 720h) sits open with nothing to re-drive it, so the subject looks
+// erased (profile hidden) while PII is physically intact. Surface these to
+// alerting; an operator re-drives erasure rows via a fresh RequestErasure* call
+// (frozen identifiers keep the re-drive correct). See
+// docs/compliance/4.1-erasure-scope.md.
+func (s *Service) ListStuckComplianceRequests(ctx context.Context, olderThan time.Time, limit int32) ([]dbread.ComplianceRequest, error) {
+	rows, err := s.read.ListStuckComplianceRequests(ctx, dbread.ListStuckComplianceRequestsParams{
+		OlderThan: postgres.NewTimestamptz(olderThan),
+		RowLimit:  limit,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed listing stuck compliance requests", slogx.Error(err),
+			slog.Time("older_than", olderThan))
+		telemetry.RecordError(ctx, err)
+		return nil, err
+	}
+	return rows, nil
+}
+
 // freezeIdentifiers resolves the full distinct_id fan-out and the session_ids
 // (read from events BEFORE they are deleted) and persists them onto the request
 // row so retries reuse the frozen set. Any resolution failure aborts without
 // persisting, so a retry re-resolves cleanly.
-func (s *Service) freezeIdentifiers(ctx context.Context, req *dbread.ComplianceRequest) ([]string, []string, error) {
+func (s *Service) freezeIdentifiers(ctx context.Context, req *dbread.ComplianceRequest) (erasureScope, error) {
 	distinctIDs, err := s.resolveDistinctIDs(ctx, req)
 	if err != nil {
-		return nil, nil, err
+		return erasureScope{}, err
 	}
 
 	if len(distinctIDs) == 0 {
@@ -397,31 +536,43 @@ func (s *Service) freezeIdentifiers(ctx context.Context, req *dbread.ComplianceR
 		slog.ErrorContext(ctx, "erasure request resolved no identifiers; refusing to complete",
 			slog.String("request_id", req.ID), slog.String("project_id", req.ProjectID))
 		telemetry.RecordError(ctx, ErrNoErasableIdentifiers)
-		return nil, nil, ErrNoErasableIdentifiers
+		return erasureScope{}, ErrNoErasableIdentifiers
 	}
 
 	sessionIDs, err := s.resolveSessionIDs(ctx, req.ProjectID, distinctIDs)
 	if err != nil {
-		return nil, nil, err
+		return erasureScope{}, err
 	}
-	eventsDeleted, err := s.countEvents(ctx, req.ProjectID, distinctIDs)
+	eventsIdentified, err := s.countEvents(ctx, req.ProjectID, distinctIDs)
 	if err != nil {
-		return nil, nil, err
+		return erasureScope{}, err
 	}
 
-	if _, err := s.write.FreezeComplianceRequestIdentifiers(ctx, dbwrite.FreezeComplianceRequestIdentifiersParams{
+	// Guard the freeze with its rows-affected count: this UPDATE advances the row to
+	// 'processing' and persists the frozen identifier set *before* any destructive
+	// delete. If it matched 0 rows the row is gone, so aborting here is what keeps a
+	// hard delete from running with no surviving audit row (the complement of the
+	// no-identifiers guard above).
+	frozen, err := s.write.FreezeComplianceRequestIdentifiers(ctx, dbwrite.FreezeComplianceRequestIdentifiersParams{
 		ID:             req.ID,
 		ProjectID:      req.ProjectID,
 		DistinctIds:    distinctIDs,
 		SessionIds:     sessionIDs,
-		EventsAffected: int64(eventsDeleted),
-	}); err != nil {
+		EventsAffected: int64(eventsIdentified),
+	})
+	if err != nil {
 		slog.ErrorContext(ctx, "failed freezing erasure identifiers", slogx.Error(err),
 			slog.String("request_id", req.ID), slog.String("project_id", req.ProjectID))
 		telemetry.RecordError(ctx, err)
-		return nil, nil, err
+		return erasureScope{}, err
 	}
-	return distinctIDs, sessionIDs, nil
+	if frozen == 0 {
+		slog.ErrorContext(ctx, "erasure freeze matched no rows; aborting before any delete",
+			slog.String("request_id", req.ID), slog.String("project_id", req.ProjectID))
+		telemetry.RecordError(ctx, ErrComplianceRequestVanished)
+		return erasureScope{}, ErrComplianceRequestVanished
+	}
+	return erasureScope{distinctIDs: distinctIDs, sessionIDs: sessionIDs}, nil
 }
 
 // resolveDistinctIDs builds the complete set of events.distinct_id values for the
@@ -464,20 +615,46 @@ func (s *Service) resolveAliasIDs(ctx context.Context, projectID, profileID stri
 		projectID, profileID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("resolve alias ids: %w", err)
+		err = fmt.Errorf("resolve alias ids: %w", err)
+		slog.ErrorContext(ctx, "failed resolving alias ids for erasure", slogx.Error(err),
+			slog.String("profile_id", profileID), slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return nil, err
 	}
 	return aliasIDs, nil
 }
 
+// resolveSessionIDs collects the subject's session_ids, batching the distinct_id
+// IN list (S1) so a huge fan-out can't blow ClickHouse max_query_size. SELECT
+// DISTINCT only dedups within a batch, so cross-batch duplicates are removed here.
 func (s *Service) resolveSessionIDs(ctx context.Context, projectID string, distinctIDs []string) ([]string, error) {
-	inClause, inArgs := chInClause(distinctIDs)
-	args := append([]any{projectID}, inArgs...)
-	sessionIDs, err := s.selectStrings(ctx,
-		"SELECT DISTINCT toString(session_id) FROM events WHERE project_id = ? AND distinct_id IN "+inClause,
-		args...,
-	)
+	seen := make(map[string]struct{})
+	var sessionIDs []string
+	err := forEachBatch(distinctIDs, func(batch []string) error {
+		inClause, inArgs := chInClause(batch)
+		args := append([]any{projectID}, inArgs...)
+		ids, err := s.selectStrings(ctx,
+			"SELECT DISTINCT toString(session_id) FROM events WHERE project_id = ? AND distinct_id IN "+inClause,
+			args...,
+		)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			sessionIDs = append(sessionIDs, id)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("resolve session ids: %w", err)
+		err = fmt.Errorf("resolve session ids: %w", err)
+		slog.ErrorContext(ctx, "failed resolving session ids for erasure", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return nil, err
 	}
 	return sessionIDs, nil
 }
@@ -507,17 +684,31 @@ func (s *Service) selectStrings(ctx context.Context, query string, args ...any) 
 	return out, rows.Err()
 }
 
+// countEvents totals events.count() across the subject's distinct_ids, batching the
+// IN list (S1) and summing per batch.
 func (s *Service) countEvents(ctx context.Context, projectID string, distinctIDs []string) (uint64, error) {
-	inClause, inArgs := chInClause(distinctIDs)
-	args := append([]any{projectID}, inArgs...)
-	var count uint64
-	if err := s.ch.QueryRow(ctx,
-		"SELECT count() FROM events WHERE project_id = ? AND distinct_id IN "+inClause,
-		args...,
-	).Scan(&count); err != nil {
-		return 0, fmt.Errorf("count events: %w", err)
+	var total uint64
+	err := forEachBatch(distinctIDs, func(batch []string) error {
+		inClause, inArgs := chInClause(batch)
+		args := append([]any{projectID}, inArgs...)
+		var count uint64
+		if err := s.ch.QueryRow(ctx,
+			"SELECT count() FROM events WHERE project_id = ? AND distinct_id IN "+inClause,
+			args...,
+		).Scan(&count); err != nil {
+			return err
+		}
+		total += count
+		return nil
+	})
+	if err != nil {
+		err = fmt.Errorf("count events: %w", err)
+		slog.ErrorContext(ctx, "failed counting events for erasure", slogx.Error(err),
+			slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return 0, err
 	}
-	return count, nil
+	return total, nil
 }
 
 // hardDeletePostgres removes the profile's PostgreSQL rows in one transaction,
@@ -570,35 +761,26 @@ func (s *Service) hardDeletePostgres(ctx context.Context, projectID, profileID s
 // data. dashboard_event_rollup_daily is intentionally NOT touched — it has no
 // per-person key and retains only an anonymous aggregate (decision "a"). The
 // per-distinct_id and per-session rollups are insert-triggered MVs, so deleting
-// from events does not propagate — they must be deleted explicitly here.
-func (s *Service) eraseClickHouse(ctx context.Context, projectID, profileID string, distinctIDs, sessionIDs []string) error {
-	if len(sessionIDs) > 0 {
-		inClause, inArgs := chInClause(sessionIDs)
-		// session_id is a UUID column; compare as string to avoid a UUID/String
-		// supertype error on the IN literals.
-		if err := s.execMutation(ctx,
-			"ALTER TABLE dashboard_session_rollup DELETE WHERE project_id = ? AND toString(session_id) IN "+inClause,
-			append([]any{projectID}, inArgs...)...,
-		); err != nil {
-			return fmt.Errorf("erase session rollup: %w", err)
-		}
+// from events does not propagate — they must be deleted explicitly here. Each
+// IN-list mutation is batched (S1) so a huge fan-out can't blow max_query_size,
+// and every CH failure is recorded at this detect site (I1).
+func (s *Service) eraseClickHouse(ctx context.Context, projectID, profileID string, scope erasureScope) error {
+	// session_id is a UUID column; compare as string to avoid a UUID/String
+	// supertype error on the IN literals.
+	if err := s.eraseByBatch(ctx, "erase session rollup", projectID, scope.sessionIDs, func(in string) string {
+		return "ALTER TABLE dashboard_session_rollup DELETE WHERE project_id = ? AND toString(session_id) IN " + in
+	}); err != nil {
+		return err
 	}
-
-	if len(distinctIDs) > 0 {
-		inClause, inArgs := chInClause(distinctIDs)
-		base := append([]any{projectID}, inArgs...)
-		if err := s.execMutation(ctx,
-			"ALTER TABLE events DELETE WHERE project_id = ? AND distinct_id IN "+inClause,
-			base...,
-		); err != nil {
-			return fmt.Errorf("erase events: %w", err)
-		}
-		if err := s.execMutation(ctx,
-			"ALTER TABLE distinct_id_activity_states DELETE WHERE project_id = ? AND distinct_id IN "+inClause,
-			base...,
-		); err != nil {
-			return fmt.Errorf("erase activity states: %w", err)
-		}
+	if err := s.eraseByBatch(ctx, "erase events", projectID, scope.distinctIDs, func(in string) string {
+		return "ALTER TABLE events DELETE WHERE project_id = ? AND distinct_id IN " + in
+	}); err != nil {
+		return err
+	}
+	if err := s.eraseByBatch(ctx, "erase activity states", projectID, scope.distinctIDs, func(in string) string {
+		return "ALTER TABLE distinct_id_activity_states DELETE WHERE project_id = ? AND distinct_id IN " + in
+	}); err != nil {
+		return err
 	}
 
 	if profileID != "" {
@@ -606,16 +788,44 @@ func (s *Service) eraseClickHouse(ctx context.Context, projectID, profileID stri
 			"ALTER TABLE profile_aliases DELETE WHERE project_id = ? AND profile_id = ?",
 			projectID, profileID,
 		); err != nil {
-			return fmt.Errorf("erase profile aliases: %w", err)
+			return s.recordEraseError(ctx, "erase profile aliases", projectID, err)
 		}
 		if err := s.execMutation(ctx,
 			"ALTER TABLE profiles DELETE WHERE project_id = ? AND id = ?",
 			projectID, profileID,
 		); err != nil {
-			return fmt.Errorf("erase profile: %w", err)
+			return s.recordEraseError(ctx, "erase profile", projectID, err)
 		}
 	}
 	return nil
+}
+
+// eraseByBatch runs one DELETE mutation per chBatchSize-bounded chunk of ids, with
+// the IN clause spliced in by queryFor. A 0-length id set is a no-op. On failure it
+// records once at this detect site and returns the wrapped error. DELETE is
+// idempotent across batches, so a mid-batch retry stays correct.
+func (s *Service) eraseByBatch(ctx context.Context, op, projectID string, ids []string, queryFor func(inClause string) string) error {
+	err := forEachBatch(ids, func(batch []string) error {
+		inClause, inArgs := chInClause(batch)
+		return s.execMutation(ctx, queryFor(inClause), append([]any{projectID}, inArgs...)...)
+	})
+	if err != nil {
+		return s.recordEraseError(ctx, op, projectID, err)
+	}
+	return nil
+}
+
+// recordEraseError wraps, logs, and records a ClickHouse erase failure at the
+// detect site (CLAUDE.md: the detecting layer pairs slog.ErrorContext with
+// telemetry.RecordError; ExecuteErasure and the worker only translate). Without
+// this the most safety-critical path — a failed erasure mutation — was
+// observability-blind.
+func (s *Service) recordEraseError(ctx context.Context, op, projectID string, err error) error {
+	wrapped := fmt.Errorf("%s: %w", op, err)
+	slog.ErrorContext(ctx, "clickhouse erasure mutation failed",
+		slog.String("op", op), slog.String("project_id", projectID), slogx.Error(wrapped))
+	telemetry.RecordError(ctx, wrapped)
+	return wrapped
 }
 
 // execMutation runs a ClickHouse heavyweight ALTER ... DELETE with
@@ -670,4 +880,26 @@ func chInClause(values []string) (string, []any) {
 		args[i] = v
 	}
 	return "(" + strings.Join(placeholders, ", ") + ")", args
+}
+
+// chBatchSize bounds the IN-list size per ClickHouse statement (S1). A subject with
+// a large alias/session fan-out would otherwise produce one giant (?, ?, …) query
+// that can exceed max_query_size / the max-AST-elements limit and fail the mutation
+// — retried forever until the DLQ, never completing. A char(20) id binds as ~1
+// placeholder + ~20-byte value, so 1000 ids stays well under the 256 KiB default.
+const chBatchSize = 1000
+
+// forEachBatch splits values into chunks of at most chBatchSize and invokes fn per
+// chunk, stopping at the first error. An empty slice invokes fn zero times.
+func forEachBatch(values []string, fn func(batch []string) error) error {
+	for start := 0; start < len(values); start += chBatchSize {
+		end := start + chBatchSize
+		if end > len(values) {
+			end = len(values)
+		}
+		if err := fn(values[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
 }

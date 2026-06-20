@@ -21,7 +21,7 @@ type HardDeleteProfileByIDAndProjectIDParams struct {
 	ProjectID string
 }
 
-// Permanent erasure (GDPR/DPDP). Used only by the erase worker; the profile's
+// Permanent erasure (GDPR/DPDP). Used only by the compliance worker; the profile's
 // properties jsonb can hold PII, so the row is physically removed, not soft-deleted.
 func (q *Queries) HardDeleteProfileByIDAndProjectID(ctx context.Context, arg HardDeleteProfileByIDAndProjectIDParams) (int64, error) {
 	result, err := q.db.Exec(ctx, hardDeleteProfileByIDAndProjectID, arg.ID, arg.ProjectID)

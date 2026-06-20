@@ -37,7 +37,7 @@ func NewServer(service *coreprofiles.Service) *Server {
 
 // Delete enqueues erasure of the data subject identified by profile id. The
 // PostgreSQL profile is soft-deleted synchronously; the irreversible hard
-// erasure (events, rollups, and the ClickHouse profile) runs in the erase
+// erasure (events, rollups, and the ClickHouse profile) runs in the compliance
 // worker. Returns the request id for tracking.
 func (s *Server) Delete(
 	ctx context.Context,
