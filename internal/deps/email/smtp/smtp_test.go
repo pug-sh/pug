@@ -32,13 +32,25 @@ type fakeSMTPServer struct {
 	silentOnAccept    bool
 }
 
-func newFakeSMTPServer(t *testing.T) *fakeSMTPServer {
+// fakeOption configures a fakeSMTPServer before its serve goroutine starts.
+// Flags must be set pre-launch: serve() reads them concurrently, so mutating
+// them after newFakeSMTPServer returns would race the goroutine.
+type fakeOption func(*fakeSMTPServer)
+
+func withDropOnQuit() fakeOption        { return func(s *fakeSMTPServer) { s.dropOnQuit = true } }
+func withHangAfterGreeting() fakeOption { return func(s *fakeSMTPServer) { s.hangAfterGreeting = true } }
+func withSilentOnAccept() fakeOption    { return func(s *fakeSMTPServer) { s.silentOnAccept = true } }
+
+func newFakeSMTPServer(t *testing.T, opts ...fakeOption) *fakeSMTPServer {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
 	srv := &fakeSMTPServer{listener: ln}
+	for _, opt := range opts {
+		opt(srv)
+	}
 	srv.wg.Add(1)
 	go srv.serve()
 	t.Cleanup(func() {
@@ -218,8 +230,7 @@ func TestSMTPProviderSanitizesHeaders(t *testing.T) {
 // see a duplicate. Without this test, a future refactor that did
 // `return c.Quit()` would compile and pass every other test.
 func TestSMTPProviderSwallowsQuitError(t *testing.T) {
-	srv := newFakeSMTPServer(t)
-	srv.dropOnQuit = true
+	srv := newFakeSMTPServer(t, withDropOnQuit())
 	host, port := splitHostPort(t, srv.addr())
 
 	prov, err := emailsmtp.New(emailsmtp.Config{
@@ -249,8 +260,7 @@ func TestSMTPProviderSwallowsQuitError(t *testing.T) {
 // on the EHLO reply — the watchdog must close the conn so Send returns
 // promptly rather than pinning a worker past the NATS ProcessingTimeout.
 func TestSMTPProviderRespectsContextCancellation(t *testing.T) {
-	srv := newFakeSMTPServer(t)
-	srv.hangAfterGreeting = true
+	srv := newFakeSMTPServer(t, withHangAfterGreeting())
 	host, port := splitHostPort(t, srv.addr())
 
 	prov, err := emailsmtp.New(emailsmtp.Config{
@@ -281,8 +291,7 @@ func TestSMTPProviderRespectsContextCancellation(t *testing.T) {
 // conn on ctx.Done so Send returns instead of pinning a worker until the
 // OS TCP timeout.
 func TestSMTPProviderRespectsContextCancellationBeforeGreeting(t *testing.T) {
-	srv := newFakeSMTPServer(t)
-	srv.silentOnAccept = true
+	srv := newFakeSMTPServer(t, withSilentOnAccept())
 	host, port := splitHostPort(t, srv.addr())
 
 	prov, err := emailsmtp.New(emailsmtp.Config{
