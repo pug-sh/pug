@@ -30,6 +30,18 @@ consumers:
     max_deliver: 5
     replay_policy: "instant"
 
+  # Compliance worker — GDPR/DPDP erasure (export + retention join here later).
+  # Heavy, slow ClickHouse mutations run here off the request path; the worker uses
+  # generous timeouts and is idempotent, so over-long mutations redeliver and re-run.
+  - name: "compliance-erase-processor"
+    stream_name: "compliance"
+    durable_name: "compliance-erase-processor-durable"
+    filter_subject: "compliance.erase"
+    deliver_policy: "all"
+    ack_explicit: true
+    max_deliver: 5
+    replay_policy: "instant"
+
   # Consumer for analytics events -> ClickHouse
   - name: "events-writer"
     stream_name: "events"

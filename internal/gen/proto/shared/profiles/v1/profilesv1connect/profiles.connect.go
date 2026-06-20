@@ -42,6 +42,12 @@ const (
 	ProfilesServiceListProcedure = "/shared.profiles.v1.ProfilesService/List"
 	// ProfilesServiceDeleteProcedure is the fully-qualified name of the ProfilesService's Delete RPC.
 	ProfilesServiceDeleteProcedure = "/shared.profiles.v1.ProfilesService/Delete"
+	// ProfilesServiceDeleteDataSubjectProcedure is the fully-qualified name of the ProfilesService's
+	// DeleteDataSubject RPC.
+	ProfilesServiceDeleteDataSubjectProcedure = "/shared.profiles.v1.ProfilesService/DeleteDataSubject"
+	// ProfilesServiceGetDeletionRequestProcedure is the fully-qualified name of the ProfilesService's
+	// GetDeletionRequest RPC.
+	ProfilesServiceGetDeletionRequestProcedure = "/shared.profiles.v1.ProfilesService/GetDeletionRequest"
 )
 
 // ProfilesServiceClient is a client for the shared.profiles.v1.ProfilesService service.
@@ -49,7 +55,19 @@ type ProfilesServiceClient interface {
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.ServerStreamForClient[v1.ListResponse], error)
+	// Delete erases a data subject identified by profile id. Like
+	// DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
+	// events table and every derived rollup; the profile is soft-deleted
+	// synchronously in PostgreSQL and physically removed from every store by the
+	// compliance worker.
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
+	// DeleteDataSubject erases a data subject identified by external_id (the
+	// controller-facing handle). Proceeds even when no profile row exists, since
+	// events can be keyed directly by external_id. See docs/compliance/4.1-erasure-scope.md.
+	DeleteDataSubject(context.Context, *connect.Request[v1.DeleteDataSubjectRequest]) (*connect.Response[v1.DeleteDataSubjectResponse], error)
+	// GetDeletionRequest returns the status of an erasure request so a controller
+	// can prove fulfilment within the statutory window (the DSAR audit trail).
+	GetDeletionRequest(context.Context, *connect.Request[v1.GetDeletionRequestRequest]) (*connect.Response[v1.GetDeletionRequestResponse], error)
 }
 
 // NewProfilesServiceClient constructs a client for the shared.profiles.v1.ProfilesService service.
@@ -87,15 +105,29 @@ func NewProfilesServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(profilesServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
+		deleteDataSubject: connect.NewClient[v1.DeleteDataSubjectRequest, v1.DeleteDataSubjectResponse](
+			httpClient,
+			baseURL+ProfilesServiceDeleteDataSubjectProcedure,
+			connect.WithSchema(profilesServiceMethods.ByName("DeleteDataSubject")),
+			connect.WithClientOptions(opts...),
+		),
+		getDeletionRequest: connect.NewClient[v1.GetDeletionRequestRequest, v1.GetDeletionRequestResponse](
+			httpClient,
+			baseURL+ProfilesServiceGetDeletionRequestProcedure,
+			connect.WithSchema(profilesServiceMethods.ByName("GetDeletionRequest")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // profilesServiceClient implements ProfilesServiceClient.
 type profilesServiceClient struct {
-	get             *connect.Client[v1.GetRequest, v1.GetResponse]
-	getByExternalId *connect.Client[v1.GetByExternalIdRequest, v1.GetByExternalIdResponse]
-	list            *connect.Client[v1.ListRequest, v1.ListResponse]
-	delete          *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
+	get                *connect.Client[v1.GetRequest, v1.GetResponse]
+	getByExternalId    *connect.Client[v1.GetByExternalIdRequest, v1.GetByExternalIdResponse]
+	list               *connect.Client[v1.ListRequest, v1.ListResponse]
+	delete             *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
+	deleteDataSubject  *connect.Client[v1.DeleteDataSubjectRequest, v1.DeleteDataSubjectResponse]
+	getDeletionRequest *connect.Client[v1.GetDeletionRequestRequest, v1.GetDeletionRequestResponse]
 }
 
 // Get calls shared.profiles.v1.ProfilesService.Get.
@@ -118,12 +150,34 @@ func (c *profilesServiceClient) Delete(ctx context.Context, req *connect.Request
 	return c.delete.CallUnary(ctx, req)
 }
 
+// DeleteDataSubject calls shared.profiles.v1.ProfilesService.DeleteDataSubject.
+func (c *profilesServiceClient) DeleteDataSubject(ctx context.Context, req *connect.Request[v1.DeleteDataSubjectRequest]) (*connect.Response[v1.DeleteDataSubjectResponse], error) {
+	return c.deleteDataSubject.CallUnary(ctx, req)
+}
+
+// GetDeletionRequest calls shared.profiles.v1.ProfilesService.GetDeletionRequest.
+func (c *profilesServiceClient) GetDeletionRequest(ctx context.Context, req *connect.Request[v1.GetDeletionRequestRequest]) (*connect.Response[v1.GetDeletionRequestResponse], error) {
+	return c.getDeletionRequest.CallUnary(ctx, req)
+}
+
 // ProfilesServiceHandler is an implementation of the shared.profiles.v1.ProfilesService service.
 type ProfilesServiceHandler interface {
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	List(context.Context, *connect.Request[v1.ListRequest], *connect.ServerStream[v1.ListResponse]) error
+	// Delete erases a data subject identified by profile id. Like
+	// DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
+	// events table and every derived rollup; the profile is soft-deleted
+	// synchronously in PostgreSQL and physically removed from every store by the
+	// compliance worker.
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
+	// DeleteDataSubject erases a data subject identified by external_id (the
+	// controller-facing handle). Proceeds even when no profile row exists, since
+	// events can be keyed directly by external_id. See docs/compliance/4.1-erasure-scope.md.
+	DeleteDataSubject(context.Context, *connect.Request[v1.DeleteDataSubjectRequest]) (*connect.Response[v1.DeleteDataSubjectResponse], error)
+	// GetDeletionRequest returns the status of an erasure request so a controller
+	// can prove fulfilment within the statutory window (the DSAR audit trail).
+	GetDeletionRequest(context.Context, *connect.Request[v1.GetDeletionRequestRequest]) (*connect.Response[v1.GetDeletionRequestResponse], error)
 }
 
 // NewProfilesServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -157,6 +211,18 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 		connect.WithSchema(profilesServiceMethods.ByName("Delete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	profilesServiceDeleteDataSubjectHandler := connect.NewUnaryHandler(
+		ProfilesServiceDeleteDataSubjectProcedure,
+		svc.DeleteDataSubject,
+		connect.WithSchema(profilesServiceMethods.ByName("DeleteDataSubject")),
+		connect.WithHandlerOptions(opts...),
+	)
+	profilesServiceGetDeletionRequestHandler := connect.NewUnaryHandler(
+		ProfilesServiceGetDeletionRequestProcedure,
+		svc.GetDeletionRequest,
+		connect.WithSchema(profilesServiceMethods.ByName("GetDeletionRequest")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/shared.profiles.v1.ProfilesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProfilesServiceGetProcedure:
@@ -167,6 +233,10 @@ func NewProfilesServiceHandler(svc ProfilesServiceHandler, opts ...connect.Handl
 			profilesServiceListHandler.ServeHTTP(w, r)
 		case ProfilesServiceDeleteProcedure:
 			profilesServiceDeleteHandler.ServeHTTP(w, r)
+		case ProfilesServiceDeleteDataSubjectProcedure:
+			profilesServiceDeleteDataSubjectHandler.ServeHTTP(w, r)
+		case ProfilesServiceGetDeletionRequestProcedure:
+			profilesServiceGetDeletionRequestHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -190,4 +260,12 @@ func (UnimplementedProfilesServiceHandler) List(context.Context, *connect.Reques
 
 func (UnimplementedProfilesServiceHandler) Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.profiles.v1.ProfilesService.Delete is not implemented"))
+}
+
+func (UnimplementedProfilesServiceHandler) DeleteDataSubject(context.Context, *connect.Request[v1.DeleteDataSubjectRequest]) (*connect.Response[v1.DeleteDataSubjectResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.profiles.v1.ProfilesService.DeleteDataSubject is not implemented"))
+}
+
+func (UnimplementedProfilesServiceHandler) GetDeletionRequest(context.Context, *connect.Request[v1.GetDeletionRequestRequest]) (*connect.Response[v1.GetDeletionRequestResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("shared.profiles.v1.ProfilesService.GetDeletionRequest is not implemented"))
 }

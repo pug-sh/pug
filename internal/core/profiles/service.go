@@ -9,20 +9,16 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
-	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
-	workerprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/workers/profiles/v1"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var unrecognisedJSONTypeCounter metric.Int64Counter
@@ -47,7 +43,6 @@ func init() {
 }
 
 var ErrProfileNotFound = errors.New("profile not found")
-var ErrProfileDeleteUnavailable = errors.New("profiles: delete dependencies are unavailable")
 
 type Profile struct {
 	CreateTime time.Time
@@ -88,96 +83,24 @@ type Service struct {
 	ch       driver.Conn
 	pgW      *pgxpool.Pool
 	write    *dbwrite.Queries
+	read     *dbread.Queries
 	producer *natsdeps.NATSClient
 }
 
 func NewService(pgW *pgxpool.Pool, ch driver.Conn, producer *natsdeps.NATSClient) *Service {
 	var write *dbwrite.Queries
+	var read *dbread.Queries
 	if pgW != nil {
 		write = dbwrite.New(pgW)
+		read = dbread.New(pgW)
 	}
 	return &Service{
 		ch:       ch,
 		pgW:      pgW,
 		write:    write,
+		read:     read,
 		producer: producer,
 	}
-}
-
-func (s *Service) Delete(ctx context.Context, projectID, profileID string) error {
-	if s == nil || s.pgW == nil || s.write == nil || s.producer == nil {
-		return ErrProfileDeleteUnavailable
-	}
-
-	tx, err := s.pgW.Begin(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed starting delete transaction", slogx.Error(err), slog.String("profile_id", profileID), slog.String("project_id", projectID))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "failed rolling back delete transaction", slogx.Error(rollbackErr), slog.String("profile_id", profileID), slog.String("project_id", projectID))
-			telemetry.RecordError(ctx, rollbackErr)
-		}
-	}()
-
-	qtx := s.write.WithTx(tx)
-
-	n, err := qtx.SoftDeleteProfileByIDAndProjectID(ctx, dbwrite.SoftDeleteProfileByIDAndProjectIDParams{
-		ID:        profileID,
-		ProjectID: projectID,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed soft-deleting profile", slogx.Error(err), slog.String("profile_id", profileID), slog.String("project_id", projectID))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	if n == 0 {
-		return ErrProfileNotFound
-	}
-
-	deactivated, err := qtx.DeactivateDevicesByProfileID(ctx, dbwrite.DeactivateDevicesByProfileIDParams{
-		ProfileID: postgres.NewText(profileID),
-		ProjectID: projectID,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "failed deactivating devices for deleted profile", slogx.Error(err),
-			slog.String("profile_id", profileID), slog.String("project_id", projectID))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-	slog.InfoContext(ctx, "deactivated devices for deleted profile",
-		slog.Int64("count", deactivated),
-		slog.String("profile_id", profileID),
-		slog.String("project_id", projectID))
-
-	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed committing delete transaction", slogx.Error(err), slog.String("profile_id", profileID), slog.String("project_id", projectID))
-		telemetry.RecordError(ctx, err)
-		return err
-	}
-
-	now := timestamppb.New(time.Now())
-	upsertMsg := &workerprofilesv1.ProfileUpsertMessage{
-		ProfileId:  proto.String(profileID),
-		ProjectId:  proto.String(projectID),
-		IsDeleted:  proto.Bool(true),
-		UpdateTime: now,
-	}
-	upsertData, err := proto.Marshal(upsertMsg)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed marshalling profile delete upsert message", slogx.Error(err),
-			slog.String("profile_id", profileID), slog.String("project_id", projectID))
-		telemetry.RecordError(ctx, err)
-		return nil
-	}
-	if err = s.producer.Publish(ctx, natsdeps.ProfileUpsertSubject, upsertData); err != nil {
-		slog.ErrorContext(ctx, "failed publishing profile delete to NATS", slogx.Error(err),
-			slog.String("profile_id", profileID), slog.String("project_id", projectID))
-		telemetry.RecordError(ctx, err)
-	}
-	return nil
 }
 
 func (s *Service) GetByID(ctx context.Context, projectID, id string) (Profile, error) {

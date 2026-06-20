@@ -10,6 +10,9 @@ const (
 	ProfileAliasSubject    = "profiles.alias"
 	ProfileUpsertSubject   = "profiles.upsert"
 
+	// Compliance subjects (GDPR/DPDP erasure, export, retention)
+	ComplianceEraseSubject = "compliance.erase"
+
 	// Campaign subjects
 	CampaignScheduledSubject = "campaigns.scheduled"
 
@@ -32,4 +35,5 @@ const (
 	DLQProfilesIdentifySubject = "dlq.profiles.identify"
 	DLQProfilesAliasSubject    = "dlq.profiles.alias"
 	DLQProfilesUpsertSubject   = "dlq.profiles.upsert"
+	DLQComplianceEraseSubject  = "dlq.compliance.erase"
 )
