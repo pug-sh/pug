@@ -89,6 +89,60 @@ func normalizeAllowedTypes(in []commonv1.PropertyValueType) []commonv1.PropertyV
 	return out
 }
 
+// promotedAutoDimValueType is the variant type name reported for every
+// rollup-backed promoted breakdown dimension. All materializedDims are
+// string-typed events columns (String / LowCardinality(String)), so they
+// surface as string properties.
+const promotedAutoDimValueType = "String"
+
+// mergePromotedAutoDimensions injects the rollup-backed promoted breakdown
+// dimensions (materializedDims: browser, country, region, ...) into the
+// discovered auto-property keys. These dimensions live in dedicated events
+// columns, not the auto_properties map, so the property_keys MV never observes
+// them — without this they are missing from the filter/breakdown picker even
+// though the query engine fully supports them. Counts and last-seen come from
+// the event rollup when available; a dimension with no rollup rows — or when the
+// caller degraded a failed/absent rollup query to a nil result — is still
+// surfaced (count 0), so discovery never depends on the rollup being populated
+// or healthy. The combined list is re-sorted by count so the busiest properties
+// stay on top.
+func mergePromotedAutoDimensions(discovered, rollup []AggregateKeyMeta) []AggregateKeyMeta {
+	byKey := make(map[string]AggregateKeyMeta, len(rollup))
+	for _, r := range rollup {
+		byKey[r.Key] = r
+	}
+
+	out := make([]AggregateKeyMeta, 0, len(discovered)+len(materializedDims))
+	for _, k := range discovered {
+		// A promoted dim should never appear in property_keys (it is stripped
+		// from the map at ingest); drop any such duplicate in favor of the
+		// authoritative rollup-sourced entry appended below.
+		if isMaterializedDim(k.Key) {
+			continue
+		}
+		out = append(out, k)
+	}
+	for _, dim := range materializedDims {
+		meta := AggregateKeyMeta{Key: dim, ValueType: promotedAutoDimValueType}
+		if r, ok := byKey[dim]; ok {
+			meta.Count = r.Count
+			meta.LastSeen = r.LastSeen
+		}
+		out = append(out, meta)
+	}
+
+	slices.SortStableFunc(out, func(a, b AggregateKeyMeta) int {
+		if a.Count != b.Count {
+			if a.Count > b.Count {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.Key, b.Key)
+	})
+	return out
+}
+
 func filterAggregateKeysByType(rows []AggregateKeyMeta, allowed []commonv1.PropertyValueType) []AggregateKeyMeta {
 	allowed = normalizeAllowedTypes(allowed)
 	if len(allowed) == 0 {
@@ -146,6 +200,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 
 	var eventMetas []AggregateKeyMeta
 	var autoPropKeys []AggregateKeyMeta
+	var promotedAutoKeys []AggregateKeyMeta
 	var customPropKeys []AggregateKeyMeta
 	var profilePropKeys []AggregateKeyMeta
 
@@ -177,6 +232,32 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		if err != nil {
 			return fmt.Errorf("query auto property keys: %w", err)
 		}
+		return nil
+	})
+	eg.Go(func() error {
+		sql, args, err := BuildPromotedAutoPropertyKeysQuery(projectID, eventKind)
+		if err != nil {
+			slog.ErrorContext(egCtx, "build promoted auto property keys query failed", slogx.Error(err),
+				slog.String("project_id", projectID), slog.String("event_kind", eventKind))
+			telemetry.RecordError(egCtx, err)
+			return fmt.Errorf("build promoted auto property keys query: %w", err)
+		}
+		keys, err := s.executor.QueryAggregateKeys(egCtx, projectID, sql, args)
+		if err != nil {
+			// Promoted dimensions are an enhancement sourced from the
+			// dashboard_event_rollup_daily fast-path table, which may be absent
+			// (migration 006 not yet applied) or transiently unavailable. Unlike
+			// the foundational event_names / property_keys fetches, a rollup
+			// failure must NOT fail the whole schema: degrade to count-0
+			// dimensions — mergePromotedAutoDimensions still lists every dim — so
+			// the picker stays populated. The error is already logged+recorded in
+			// QueryAggregateKeys; add a disposition line and swallow it so egCtx
+			// is not cancelled for the sibling fetches.
+			slog.WarnContext(egCtx, "promoted auto dimensions unavailable; serving filter schema without rollup counts",
+				slogx.Error(err), slog.String("project_id", projectID), slog.String("event_kind", eventKind))
+			return nil
+		}
+		promotedAutoKeys = keys
 		return nil
 	})
 	eg.Go(func() error {
@@ -213,6 +294,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		return nil, err
 	}
 
+	autoPropKeys = mergePromotedAutoDimensions(autoPropKeys, promotedAutoKeys)
 	autoPropKeys = filterAggregateKeysByType(autoPropKeys, allowedTypes)
 	customPropKeys = filterAggregateKeysByType(customPropKeys, allowedTypes)
 	profilePropKeys = filterAggregateKeysByType(profilePropKeys, allowedTypes)

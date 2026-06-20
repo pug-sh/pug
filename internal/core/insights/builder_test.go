@@ -1572,6 +1572,63 @@ func TestBuildPropertyKeysQuery(t *testing.T) {
 	})
 }
 
+func TestBuildPromotedAutoPropertyKeysQuery(t *testing.T) {
+	t.Run("reads_rollup_excluding_total_and_empty", func(t *testing.T) {
+		sql, args, err := insights.BuildPromotedAutoPropertyKeysQuery("proj_1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Must read the rollup table, not the events table or property_keys.
+		if !strings.Contains(sql, "dashboard_event_rollup_daily") {
+			t.Errorf("expected rollup table in SQL, got: %s", sql)
+		}
+		// dim_name is the property key; counts come from sum(cnt).
+		if !strings.Contains(sql, "dim_name AS key") {
+			t.Errorf("expected dim_name AS key, got: %s", sql)
+		}
+		if !strings.Contains(sql, "sum(cnt) AS count") {
+			t.Errorf("expected sum(cnt) AS count, got: %s", sql)
+		}
+		// The synthetic total dimension and empty values must be excluded so
+		// the count matches "key present" semantics of map-based keys.
+		if !strings.Contains(sql, "dim_name != ?") {
+			t.Errorf("expected dim_name exclusion, got: %s", sql)
+		}
+		if !strings.Contains(sql, "dim_value != ''") {
+			t.Errorf("expected non-empty dim_value filter, got: %s", sql)
+		}
+		if strings.Contains(sql, "kind = ?") {
+			t.Error("should not have kind filter when empty")
+		}
+		// args: project_id, totalDimName.
+		if len(args) != 2 {
+			t.Fatalf("expected 2 args, got %d: %v", len(args), args)
+		}
+		if args[0] != "proj_1" {
+			t.Errorf("expected project_id 'proj_1', got %v", args[0])
+		}
+		if args[1] != "$__total__" {
+			t.Errorf("expected total dim '$__total__' excluded, got %v", args[1])
+		}
+	})
+
+	t.Run("scopes_by_kind", func(t *testing.T) {
+		sql, args, err := insights.BuildPromotedAutoPropertyKeysQuery("proj_1", "page_view")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(sql, "kind = ?") {
+			t.Error("expected kind filter when event kind provided")
+		}
+		if len(args) != 3 {
+			t.Fatalf("expected 3 args, got %d: %v", len(args), args)
+		}
+		if args[1] != "page_view" {
+			t.Errorf("expected kind 'page_view', got %v", args[1])
+		}
+	})
+}
+
 func TestBuildProfilePropertyKeysQuery(t *testing.T) {
 	sql, args, err := insights.BuildProfilePropertyKeysQuery("proj_1")
 	if err != nil {

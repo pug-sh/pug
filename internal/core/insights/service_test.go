@@ -10,8 +10,8 @@ import (
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/pug-sh/pug/internal/core/insights"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	"github.com/pug-sh/pug/internal/core/insights"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -151,6 +151,83 @@ func TestServiceGetFilterSchema(t *testing.T) {
 		for _, name := range []string{"load_time", "user_id", "plan_name", "coupon", "is_cached", "revenue"} {
 			if dtKeys[name] {
 				t.Errorf("DATETIME filter: unexpected %q in custom keys", name)
+			}
+		}
+	})
+
+	t.Run("includes_promoted_breakdown_dimensions", func(t *testing.T) {
+		resp, err := svc.GetFilterSchema(ctx, projectID, "", nil)
+		if err != nil {
+			t.Fatalf("GetFilterSchema: %v", err)
+		}
+
+		autoByName := map[string]*commonv1.PropertyKeyMeta{}
+		for _, k := range resp.GetAutoPropertyKeys() {
+			autoByName[k.GetName()] = k
+		}
+
+		// $country is a promoted column (stripped from auto_properties into a
+		// dedicated events column), so it never appears in property_keys. It must
+		// be surfaced from the event rollup with a real count and STRING type.
+		country, ok := autoByName["$country"]
+		if !ok {
+			t.Fatalf("expected promoted dimension $country in auto property keys, got: %v", autoByName)
+		}
+		if country.GetValueType() != commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING {
+			t.Errorf("$country value_type = %v, want STRING", country.GetValueType())
+		}
+		// Seeded with US, US, GB — three non-empty country events.
+		if country.GetCount() != 3 {
+			t.Errorf("$country count = %d, want 3", country.GetCount())
+		}
+		// last_seen must round-trip the rollup's max(day) through the CH scan
+		// (Date -> toDateTime64 -> time.Time -> timestamppb), not stay zero.
+		if country.GetLastSeenAt() == nil || country.GetLastSeenAt().AsTime().IsZero() {
+			t.Errorf("$country last_seen_at is zero, expected the rollup day; got %v", country.GetLastSeenAt())
+		}
+
+		// $browser is also promoted but has no seeded value; it is still listed
+		// (count 0) so the picker exposes every promoted dimension.
+		if _, ok := autoByName["$browser"]; !ok {
+			t.Errorf("expected promoted dimension $browser to be listed even with no data, got: %v", autoByName)
+		}
+	})
+
+	t.Run("promoted_dimension_counts_scoped_by_event_kind", func(t *testing.T) {
+		// The rollup is keyed on kind, so a kind-scoped request must return
+		// kind-scoped promoted counts. Seed: $country = US for the single
+		// purchase event (page_view's US/GB rows must not leak in).
+		resp, err := svc.GetFilterSchema(ctx, projectID, "purchase", nil)
+		if err != nil {
+			t.Fatalf("GetFilterSchema (purchase): %v", err)
+		}
+		var country *commonv1.PropertyKeyMeta
+		for _, k := range resp.GetAutoPropertyKeys() {
+			if k.GetName() == "$country" {
+				country = k
+				break
+			}
+		}
+		if country == nil {
+			t.Fatalf("expected $country in purchase-scoped auto property keys")
+		}
+		if country.GetCount() != 1 {
+			t.Errorf("$country count for kind=purchase = %d, want 1", country.GetCount())
+		}
+	})
+
+	t.Run("promoted_dimensions_excluded_by_numeric_type_filter", func(t *testing.T) {
+		// Promoted dims are all strings, so an INTEGER-only request must not
+		// surface them.
+		resp, err := svc.GetFilterSchema(ctx, projectID, "", []commonv1.PropertyValueType{
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
+		})
+		if err != nil {
+			t.Fatalf("GetFilterSchema (INTEGER): %v", err)
+		}
+		for _, k := range resp.GetAutoPropertyKeys() {
+			if k.GetName() == "$country" || k.GetName() == "$browser" {
+				t.Errorf("string dimension %q leaked into INTEGER-filtered schema", k.GetName())
 			}
 		}
 	})

@@ -101,6 +101,10 @@ A tile's `insight_query` JSONB stores only an `InsightQuerySpec` (insight_type, 
   - Between groups, conditions are combined using `filter_groups_operator` (`AND` by default when unspecified).
 - Per-event filters remain on `EventQuery.event.filters` and are independent of top-level filter groups.
 
+### Property discovery (filter schema)
+
+`InsightsService.GetFilterSchema` populates the filter/breakdown property picker. Event names come from the `event_names` MV; custom-property keys and the *non-promoted* auto-property keys come from the `property_keys` MV (both migration 004), which enumerates `auto_properties`/`custom_properties` **map keys**. Promoted auto-properties (`materializedDims`: `$country`, `$region`, `$city`, `$os`, `$browser`, `$device`, `$platform`, `$utmSource`, `$utmMedium`, `$utmCampaign`) are stripped out of the map into dedicated events columns at ingest, so the MV never sees them — `mergePromotedAutoDimensions` injects them into `AutoPropertyKeys` from the event rollup (`BuildPromotedAutoPropertyKeysQuery` over `dashboard_event_rollup_daily`, counting non-empty values). Every promoted dimension is always listed (count 0 when the rollup has no rows), typed `STRING`, and re-sorted with the map keys by count; the `allowedTypes` filter still applies (they're excluded from numeric/boolean-only requests). The query engine already reads promoted columns for breakdowns, filters, and value typeahead (`AutoPropertyProjectionFor` / `AutoPropertyDistinctValuesFor`); this only closes the discovery gap. The schema is Redis-cached (`filterschema:<projectID>`, 5-min TTL); once a populated production cache exists, a change to the assembled shape should be paired with a cache-key version bump so stale entries don't linger past TTL.
+
 ## Retention Insight
 
 - `shared.insights.v1.InsightType` supports `INSIGHT_TYPE_RETENTION`.

@@ -2,6 +2,7 @@ package insights
 
 import (
 	"testing"
+	"time"
 
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 )
@@ -117,6 +118,89 @@ func TestNormalizeAllowedTypes(t *testing.T) {
 			if got[i] != want[i] {
 				t.Errorf("position %d: got %v, want %v", i, got[i], want[i])
 			}
+		}
+	})
+}
+
+func TestMergePromotedAutoDimensions(t *testing.T) {
+	t.Run("all_materialized_dims_always_present", func(t *testing.T) {
+		// No rollup data at all: every promoted dimension must still surface
+		// (count 0) so discovery never depends on the rollup being populated.
+		got := mergePromotedAutoDimensions(nil, nil)
+		gotKeys := map[string]AggregateKeyMeta{}
+		for _, k := range got {
+			gotKeys[k.Key] = k
+		}
+		for _, dim := range materializedDims {
+			m, ok := gotKeys[dim]
+			if !ok {
+				t.Fatalf("expected promoted dim %q in merged keys", dim)
+			}
+			if m.ValueType != promotedAutoDimValueType {
+				t.Errorf("dim %q: value_type = %q, want %q", dim, m.ValueType, promotedAutoDimValueType)
+			}
+			if m.Count != 0 {
+				t.Errorf("dim %q: expected count 0 without rollup data, got %d", dim, m.Count)
+			}
+		}
+	})
+
+	t.Run("rollup_counts_applied_and_sorted_by_count", func(t *testing.T) {
+		seen := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+		discovered := []AggregateKeyMeta{
+			{Key: "$timezone", ValueType: "String", Count: 5},
+		}
+		rollup := []AggregateKeyMeta{
+			{Key: "$browser", ValueType: "", Count: 100, LastSeen: seen},
+			{Key: "$country", ValueType: "", Count: 50, LastSeen: seen},
+		}
+		got := mergePromotedAutoDimensions(discovered, rollup)
+
+		byKey := map[string]AggregateKeyMeta{}
+		for _, k := range got {
+			byKey[k.Key] = k
+		}
+		if b := byKey["$browser"]; b.Count != 100 || b.ValueType != "String" || !b.LastSeen.Equal(seen) {
+			t.Errorf("$browser: got %+v, want count 100 / String / %v", b, seen)
+		}
+		if c := byKey["$country"]; c.Count != 50 {
+			t.Errorf("$country: got count %d, want 50", c.Count)
+		}
+		// The map-sourced key is preserved alongside the promoted dims.
+		if _, ok := byKey["$timezone"]; !ok {
+			t.Error("expected map-sourced $timezone to be preserved")
+		}
+		// Highest count first: $browser (100) before $country (50) before $timezone (5).
+		if got[0].Key != "$browser" {
+			t.Errorf("expected $browser first (highest count), got %q", got[0].Key)
+		}
+	})
+
+	t.Run("map_sourced_duplicate_of_promoted_dim_is_dropped", func(t *testing.T) {
+		// Defensive: if ingest stripping ever regressed and a promoted dim
+		// leaked into property_keys, the authoritative rollup entry must win and
+		// the dim must appear exactly once.
+		discovered := []AggregateKeyMeta{
+			{Key: "$browser", ValueType: "String", Count: 9},
+		}
+		rollup := []AggregateKeyMeta{
+			{Key: "$browser", ValueType: "", Count: 100},
+		}
+		got := mergePromotedAutoDimensions(discovered, rollup)
+
+		n := 0
+		var browser AggregateKeyMeta
+		for _, k := range got {
+			if k.Key == "$browser" {
+				n++
+				browser = k
+			}
+		}
+		if n != 1 {
+			t.Fatalf("expected $browser exactly once, got %d", n)
+		}
+		if browser.Count != 100 {
+			t.Errorf("expected authoritative rollup count 100, got %d", browser.Count)
 		}
 	})
 }
