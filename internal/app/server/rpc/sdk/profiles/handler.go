@@ -12,6 +12,7 @@ import (
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	sdkprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
+	"github.com/pug-sh/pug/internal/geo"
 	"github.com/pug-sh/pug/internal/slogx"
 	"google.golang.org/protobuf/proto"
 )
@@ -35,6 +36,12 @@ func (s *Server) Identify(
 	if err != nil {
 		return nil, err
 	}
+
+	// The visitor IP is personal data and must never be persisted: strip any
+	// client-supplied $ip from traits so an untrusted SDK caller cannot inject it
+	// into a profile's stored properties (mirrors the events enrichGeo strip).
+	// delete on a nil Fields map (traits unset) is a safe no-op.
+	delete(req.Msg.GetTraits().GetFields(), geo.PropIP)
 
 	msg := &sdkprofilesv1.ProfileIdentifyMessage{
 		ExternalId:  proto.String(req.Msg.GetExternalId()),
