@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -132,13 +133,12 @@ func mergePromotedAutoDimensions(discovered, rollup []AggregateKeyMeta) []Aggreg
 	}
 
 	slices.SortStableFunc(out, func(a, b AggregateKeyMeta) int {
-		if a.Count != b.Count {
-			if a.Count > b.Count {
-				return -1
-			}
-			return 1
+		// Count descending (busiest first), then key ascending as a stable,
+		// deterministic tie-break — see executor.go for the same idiom.
+		if c := cmp.Compare(b.Count, a.Count); c != 0 {
+			return c
 		}
-		return strings.Compare(a.Key, b.Key)
+		return cmp.Compare(a.Key, b.Key)
 	})
 	return out
 }
@@ -160,6 +160,17 @@ func filterAggregateKeysByType(rows []AggregateKeyMeta, allowed []commonv1.Prope
 		}
 	}
 	return out
+}
+
+// lastSeenTimestamp converts a key's last-seen instant to a protobuf timestamp,
+// returning nil for the zero time. A count-0 promoted dimension (one with no
+// rollup rows) has no genuine last-seen instant; emitting nil keeps last_seen_at
+// absent rather than serializing the Go zero time as a misleading 0001-01-01.
+func lastSeenTimestamp(t time.Time) *timestamppb.Timestamp {
+	if t.IsZero() {
+		return nil
+	}
+	return timestamppb.New(t)
 }
 
 func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind string, allowedTypes []commonv1.PropertyValueType) (*commonv1.GetFilterSchemaResponse, error) {
@@ -201,6 +212,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 	var eventMetas []AggregateKeyMeta
 	var autoPropKeys []AggregateKeyMeta
 	var promotedAutoKeys []AggregateKeyMeta
+	var promotedDegraded bool
 	var customPropKeys []AggregateKeyMeta
 	var profilePropKeys []AggregateKeyMeta
 
@@ -250,11 +262,14 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 			// the foundational event_names / property_keys fetches, a rollup
 			// failure must NOT fail the whole schema: degrade to count-0
 			// dimensions — mergePromotedAutoDimensions still lists every dim — so
-			// the picker stays populated. The error is already logged+recorded in
-			// QueryAggregateKeys; add a disposition line and swallow it so egCtx
-			// is not cancelled for the sibling fetches.
+			// the picker stays populated. QueryAggregateKeys already logs+records
+			// non-context query failures, so this is only a disposition line, not a
+			// second RecordError; swallowing keeps egCtx alive for the sibling
+			// fetches. (A context cancellation here means a sibling already failed;
+			// its error surfaces from eg.Wait.)
 			slog.WarnContext(egCtx, "promoted auto dimensions unavailable; serving filter schema without rollup counts",
 				slogx.Error(err), slog.String("project_id", projectID), slog.String("event_kind", eventKind))
+			promotedDegraded = true
 			return nil
 		}
 		promotedAutoKeys = keys
@@ -304,7 +319,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		for i, m := range rows {
 			key := m.Key
 			count := m.Count
-			out[i] = &commonv1.EventNameMeta{Name: proto.String(key), Count: &count, LastSeenAt: timestamppb.New(m.LastSeen)}
+			out[i] = &commonv1.EventNameMeta{Name: proto.String(key), Count: &count, LastSeenAt: lastSeenTimestamp(m.LastSeen)}
 		}
 		return out
 	}
@@ -314,7 +329,7 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 			key := m.Key
 			count := m.Count
 			valueType := variantTypeToPropertyValueType(m.ValueType)
-			out[i] = &commonv1.PropertyKeyMeta{Name: proto.String(key), Count: &count, LastSeenAt: timestamppb.New(m.LastSeen), ValueType: &valueType}
+			out[i] = &commonv1.PropertyKeyMeta{Name: proto.String(key), Count: &count, LastSeenAt: lastSeenTimestamp(m.LastSeen), ValueType: &valueType}
 		}
 		return out
 	}
@@ -324,6 +339,16 @@ func (s *Service) GetFilterSchema(ctx context.Context, projectID, eventKind stri
 		AutoPropertyKeys:    toPropKeyMetas(autoPropKeys),
 		CustomPropertyKeys:  toPropKeyMetas(customPropKeys),
 		ProfilePropertyKeys: toPropKeyMetas(profilePropKeys),
+	}
+
+	// A degraded schema — promoted dimensions served at count 0 because the rollup
+	// fast-path was unavailable — must not be cached. Caching it would freeze the
+	// count-0 dims for the full schemaCacheTTL, amplifying a transient rollup blip
+	// into minutes of stale zeros (and a corrupted count-sort order) for every
+	// reader of this project. Skip the write and recompute next request, which
+	// picks up a recovered rollup immediately.
+	if promotedDegraded {
+		return resp, nil
 	}
 
 	if data, err := proto.Marshal(resp); err != nil {

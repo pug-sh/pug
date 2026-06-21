@@ -188,8 +188,13 @@ func TestServiceGetFilterSchema(t *testing.T) {
 
 		// $browser is also promoted but has no seeded value; it is still listed
 		// (count 0) so the picker exposes every promoted dimension.
-		if _, ok := autoByName["$browser"]; !ok {
+		browser, ok := autoByName["$browser"]
+		if !ok {
 			t.Errorf("expected promoted dimension $browser to be listed even with no data, got: %v", autoByName)
+		} else if browser.GetLastSeenAt() != nil {
+			// A count-0 dimension has no genuine last-seen instant: last_seen_at
+			// must be nil, not the 0001-01-01 Go zero time.
+			t.Errorf("$browser (count 0) last_seen_at = %v, want nil", browser.GetLastSeenAt())
 		}
 	})
 
@@ -255,6 +260,75 @@ func TestServiceGetFilterSchema(t *testing.T) {
 			t.Error("expected auto property keys for page_view")
 		}
 	})
+}
+
+// TestServiceGetFilterSchemaRollupDegraded pins the rollup-failure degradation
+// contract. When the dashboard_event_rollup_daily fast-path table is unavailable
+// (here simulated by dropping it — modelling migration 006 not applied, or a
+// transient ClickHouse failure), GetFilterSchema must:
+//   - still succeed (a rollup failure must NOT fail the whole schema),
+//   - keep the foundational sibling fetches populated (the rollup error must not
+//     cancel egCtx),
+//   - still surface every promoted dimension, at count 0, and
+//   - NOT cache the degraded response (a transient blip must not freeze count-0
+//     promoted dims for the full schemaCacheTTL).
+func TestServiceGetFilterSchemaRollupDegraded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	rd := testutil.SetupRedis(t)
+
+	// projectID is only a ClickHouse query scope here; GetFilterSchema does not
+	// touch Postgres, so a bare xid (no seeded project row) is sufficient.
+	projectID := xid.New().String()
+	seedServiceEvents(t, ctx, ch, projectID)
+
+	// Simulate the rollup fast-path being unavailable. Only the promoted-dimension
+	// fetch reads this table; the event_names / property_keys MVs are untouched,
+	// so the sibling fetches must still succeed.
+	if err := ch.Conn.Exec(ctx, "DROP TABLE IF EXISTS dashboard_event_rollup_daily"); err != nil {
+		t.Fatalf("drop rollup table: %v", err)
+	}
+
+	svc := insights.NewService(insights.NewExecutor(ch.Conn), rd.Client)
+
+	resp, err := svc.GetFilterSchema(ctx, projectID, "", nil)
+	if err != nil {
+		t.Fatalf("rollup failure must degrade, not error; got %v", err)
+	}
+
+	// Siblings unaffected: the rollup error must not cancel egCtx.
+	if len(resp.GetEvents()) == 0 {
+		t.Error("expected event names despite rollup failure (siblings must not be cancelled)")
+	}
+
+	// Every promoted dimension still surfaces, at count 0 (no rollup to count from).
+	autoByName := map[string]*commonv1.PropertyKeyMeta{}
+	for _, k := range resp.GetAutoPropertyKeys() {
+		autoByName[k.GetName()] = k
+	}
+	for _, dim := range []string{"$country", "$browser"} {
+		m, ok := autoByName[dim]
+		if !ok {
+			t.Errorf("expected promoted dimension %q despite rollup failure, got: %v", dim, autoByName)
+			continue
+		}
+		if m.GetCount() != 0 {
+			t.Errorf("%s: degraded count = %d, want 0", dim, m.GetCount())
+		}
+	}
+
+	// The degraded result must NOT be cached. The cache key mirrors
+	// GetFilterSchema's construction for (projectID, no kind, no types).
+	cacheKey := "filterschema:" + projectID
+	if n, err := rd.Client.Exists(ctx, cacheKey).Result(); err != nil {
+		t.Fatalf("redis exists: %v", err)
+	} else if n != 0 {
+		t.Errorf("degraded schema must not be cached, but cache key %q is present", cacheKey)
+	}
 }
 
 func TestServiceGetPropertyValues(t *testing.T) {

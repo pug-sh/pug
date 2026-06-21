@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -201,6 +202,53 @@ func TestMergePromotedAutoDimensions(t *testing.T) {
 		}
 		if browser.Count != 100 {
 			t.Errorf("expected authoritative rollup count 100, got %d", browser.Count)
+		}
+	})
+
+	t.Run("equal_counts_tie_break_by_key_ascending", func(t *testing.T) {
+		// Equal counts must tie-break by key ascending so the merged order is
+		// deterministic. The schema cache-equality invariant
+		// (cache_hit_returns_same_response) and a stable FE picker order both
+		// depend on this; count-0 ties are the common case in production (any
+		// promoted dim a project hasn't collected yet sits at count 0).
+		rollup := []AggregateKeyMeta{
+			{Key: "$os", Count: 7},
+			{Key: "$browser", Count: 7},
+			{Key: "$country", Count: 7},
+		}
+		got := mergePromotedAutoDimensions(nil, rollup)
+
+		var ordered []string
+		for _, k := range got {
+			if k.Count == 7 {
+				ordered = append(ordered, k.Key)
+			}
+		}
+		want := []string{"$browser", "$country", "$os"}
+		if !slices.Equal(ordered, want) {
+			t.Errorf("equal-count dims: got order %v, want key-ascending %v", ordered, want)
+		}
+	})
+}
+
+func TestLastSeenTimestamp(t *testing.T) {
+	t.Run("zero_time_maps_to_nil", func(t *testing.T) {
+		// A count-0 promoted dimension has no genuine last-seen instant. Emitting
+		// nil keeps last_seen_at absent rather than serializing the Go zero time
+		// as a misleading 0001-01-01 value.
+		if got := lastSeenTimestamp(time.Time{}); got != nil {
+			t.Errorf("zero time: got %v, want nil", got)
+		}
+	})
+
+	t.Run("real_time_round_trips", func(t *testing.T) {
+		ts := time.Date(2026, 6, 1, 12, 30, 0, 0, time.UTC)
+		got := lastSeenTimestamp(ts)
+		if got == nil {
+			t.Fatal("real time: got nil, want a timestamp")
+		}
+		if !got.AsTime().Equal(ts) {
+			t.Errorf("real time: got %v, want %v", got.AsTime(), ts)
 		}
 	})
 }
