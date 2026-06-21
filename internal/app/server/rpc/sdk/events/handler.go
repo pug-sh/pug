@@ -31,13 +31,20 @@ const (
 	cfHeaderVerifiedBot = "CF-Verified-Bot"
 )
 
-var cdnHeaderParseFailedCounter metric.Int64Counter
+var (
+	cdnHeaderParseFailedCounter metric.Int64Counter
+	ipStrippedCounter           metric.Int64Counter
+)
 
 func init() {
 	meter := otel.Meter("github.com/pug-sh/pug/internal/app/server/rpc/sdk/events")
 	cdnHeaderParseFailedCounter, _ = meter.Int64Counter(
 		"events.cdn_header_parse_failed_total",
 		metric.WithDescription("CDN-injected header could not be parsed during enrichment. The property is stripped and the event is enriched as if the header were absent."),
+	)
+	ipStrippedCounter, _ = meter.Int64Counter(
+		"events.ip_stripped_total",
+		metric.WithDescription("A $ip auto-property was stripped during geo enrichment because the visitor IP must never be persisted. Our SDKs never send it, so a non-zero count means a hand-crafted client supplied one (source=client) or a provider emitted one (source=provider) — both are contract violations worth investigating."),
 	)
 }
 
@@ -120,16 +127,27 @@ func (s *Server) enrichUserAgent(ctx context.Context, projectID string, h http.H
 }
 
 func (s *Server) enrichGeo(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {
-	// The visitor IP is personal data and must never be persisted: strip any
-	// client-supplied $ip from every event so it can never reach NATS/ClickHouse.
-	// The geo provider uses the IP only transiently for lookup and does not emit
-	// it in the Location.
+	// The visitor IP is personal data and must never be persisted: strip the
+	// canonical $ip key from every event so it can never reach NATS/ClickHouse,
+	// and count any occurrence. The strip targets the canonical key our SDKs and
+	// enrichment use; a hostile caller can still place arbitrary data under other
+	// keys, which no strip can prevent and which is never read back as an IP. The
+	// geo provider uses the IP only transiently for lookup and does not emit it.
 	for _, event := range events {
+		if _, ok := event.AutoProperties[geo.PropIP]; ok {
+			ipStrippedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("source", "client")))
+		}
 		delete(event.AutoProperties, geo.PropIP)
 	}
 
 	loc := s.geoProvider.Locate(h)
-	delete(loc, geo.PropIP) // defensive: never let a provider leak $ip into storage
+	// Defensive: never let a provider leak $ip into storage. The current
+	// Cloudflare provider can't, but a future IP-lookup provider might regress —
+	// the counter makes that regression visible instead of silent.
+	if _, ok := loc[geo.PropIP]; ok {
+		ipStrippedCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("source", "provider")))
+	}
+	delete(loc, geo.PropIP)
 	if len(loc) == 0 {
 		slog.DebugContext(ctx, "geo location empty, skipping enrichment", slog.String("project_id", projectID))
 		return

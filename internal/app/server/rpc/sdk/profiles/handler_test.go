@@ -142,6 +142,36 @@ func TestIdentify_StripsClientSuppliedIP(t *testing.T) {
 	}
 }
 
+func TestIdentify_NilTraitsIsSafe(t *testing.T) {
+	spy := &spyJetStream{}
+	srv := NewServer(spy)
+
+	// Traits unset (nil Struct). The $ip strip dereferences GetTraits().GetFields()
+	// — a nil map — so this pins the handler comment's "safe no-op" claim: no panic,
+	// and the identify still publishes.
+	req := connect.NewRequest(&sdkprofilesv1.IdentifyRequest{
+		ExternalId: proto.String("user-7"),
+	})
+
+	if _, err := srv.Identify(sdkContext("proj-test"), req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if len(spy.published) != 1 {
+		t.Fatalf("expected 1 published message, got %d", len(spy.published))
+	}
+
+	var ident sdkprofilesv1.ProfileIdentifyMessage
+	if err := proto.Unmarshal(spy.published[0].Data, &ident); err != nil {
+		t.Fatalf("unmarshal published message: %v", err)
+	}
+	if len(ident.GetTraits().GetFields()) != 0 {
+		t.Errorf("expected no traits, got %v", ident.GetTraits().GetFields())
+	}
+}
+
 func TestIdentify_Unauthenticated(t *testing.T) {
 	srv := NewServer(&spyJetStream{})
 
