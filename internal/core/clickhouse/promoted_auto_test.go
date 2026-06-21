@@ -11,16 +11,16 @@ import (
 
 func TestSplitPromotedAutoProperties(t *testing.T) {
 	src := map[string]*commonv1.PropertyValue{
-		"$country": {Value: &commonv1.PropertyValue_StringValue{StringValue: "US"}},
-		"$browser": {Value: &commonv1.PropertyValue_StringValue{StringValue: "Chrome"}},
-		"$ip":      {Value: &commonv1.PropertyValue_StringValue{StringValue: "1.2.3.4"}},
+		"$country":  {Value: &commonv1.PropertyValue_StringValue{StringValue: "US"}},
+		"$browser":  {Value: &commonv1.PropertyValue_StringValue{StringValue: "Chrome"}},
+		"$timezone": {Value: &commonv1.PropertyValue_StringValue{StringValue: "America/New_York"}},
 	}
 	row, rest := clickhouse.SplitPromotedAutoProperties(src)
 	if row.Country != "US" || row.Browser != "Chrome" {
 		t.Fatalf("unexpected promoted row: %+v", row)
 	}
-	if len(rest) != 1 || rest["$ip"] == nil {
-		t.Fatalf("expected only $ip in remainder, got %#v", rest)
+	if len(rest) != 1 || rest["$timezone"] == nil {
+		t.Fatalf("expected only $timezone in remainder, got %#v", rest)
 	}
 }
 
@@ -32,8 +32,8 @@ func TestPromotedAutoRowMergeIntoAutoProperties(t *testing.T) {
 		Browser:  "Chrome",
 		Mobile:   true,
 	}
-	m := row.MergeIntoAutoProperties(map[string]any{"$ip": "9.9.9.9"})
-	if m["$country"] != "US" || m["$browser"] != "Chrome" || m["$mobile"] != "true" || m["$bot_score"] != "42" || m["$ip"] != "9.9.9.9" {
+	m := row.MergeIntoAutoProperties(map[string]any{"$timezone": "Europe/Berlin"})
+	if m["$country"] != "US" || m["$browser"] != "Chrome" || m["$mobile"] != "true" || m["$bot_score"] != "42" || m["$timezone"] != "Europe/Berlin" {
 		t.Fatalf("unexpected merged map: %#v", m)
 	}
 }

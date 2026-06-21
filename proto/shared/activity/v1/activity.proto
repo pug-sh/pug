@@ -181,8 +181,6 @@ message ProfileStats {
   string country = 9;
   // City name from the latest event (e.g. "San Francisco"). Empty if unavailable.
   string city = 10;
-  // IP address from the latest event. Empty if unavailable.
-  string ip = 11;
 }
 
 message GetProfileStatsResponse {

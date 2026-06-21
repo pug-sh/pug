@@ -42,7 +42,7 @@ Profiles store properties as a single JSONB field (`properties`) rather than sep
 - `PROPERTY_SOURCE_PROFILE` and `PROPERTY_SOURCE_UNSPECIFIED` filter against the JSON `properties` column on the ClickHouse `profiles` row via `internal/core/clickhouse.ProfilePropertyCondition`.
 - `PROPERTY_SOURCE_AUTO` on profile list requests does **not** read directly from event property maps. It filters against already-materialized summary columns from `activity_summary` via `internal/app/server/rpc/shared/profiles/filters.go`.
 - Supported auto filter keys for profile list are exactly: `$browser`, `$browserVersion`, `$os`, `$osVersion`, `$device`, `$country`, `$region`, `$city`.
-- Unsupported auto keys should stay explicit errors. In particular, list filters do not currently support `$ip`, channel/referrer/UTM fields, or typed numeric auto-properties such as `$bot_score`.
+- Unsupported auto keys should stay explicit errors. In particular, list filters do not currently support channel/referrer/UTM fields or typed numeric auto-properties such as `$bot_score`.
 - Numeric auto-property operators (`<`, `<=`, `>`, `>=`, `BETWEEN`, `NOT BETWEEN`) only work for auto fields that provide a numeric expression. The current profile-list auto summary fields are string-only, so numeric operators against them must fail rather than silently coerce.
 
 ## Profile Soft-Delete

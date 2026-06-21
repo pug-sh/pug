@@ -103,6 +103,75 @@ func TestIdentify_Success(t *testing.T) {
 	}
 }
 
+func TestIdentify_StripsClientSuppliedIP(t *testing.T) {
+	spy := &spyJetStream{}
+	srv := NewServer(spy)
+
+	// An untrusted SDK caller injects $ip into traits. It must never be
+	// persisted onto the profile — the handler strips it while keeping
+	// legitimate (non-reserved) traits.
+	traits, _ := structpb.NewStruct(map[string]any{
+		"$ip":  "203.0.113.7",
+		"plan": "pro",
+	})
+	req := connect.NewRequest(&sdkprofilesv1.IdentifyRequest{
+		ExternalId: proto.String("user-42"),
+		Traits:     traits,
+	})
+
+	if _, err := srv.Identify(sdkContext("proj-test"), req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if len(spy.published) != 1 {
+		t.Fatalf("expected 1 published message, got %d", len(spy.published))
+	}
+
+	var ident sdkprofilesv1.ProfileIdentifyMessage
+	if err := proto.Unmarshal(spy.published[0].Data, &ident); err != nil {
+		t.Fatalf("unmarshal published message: %v", err)
+	}
+	if _, ok := ident.GetTraits().GetFields()["$ip"]; ok {
+		t.Error("$ip must be stripped from traits, but it was published")
+	}
+	if ident.GetTraits().GetFields()["plan"].GetStringValue() != "pro" {
+		t.Errorf("legitimate trait dropped: plan = %v, want %q",
+			ident.GetTraits().GetFields()["plan"], "pro")
+	}
+}
+
+func TestIdentify_NilTraitsIsSafe(t *testing.T) {
+	spy := &spyJetStream{}
+	srv := NewServer(spy)
+
+	// Traits unset (nil Struct). The $ip strip dereferences GetTraits().GetFields()
+	// — a nil map — so this pins the handler comment's "safe no-op" claim: no panic,
+	// and the identify still publishes.
+	req := connect.NewRequest(&sdkprofilesv1.IdentifyRequest{
+		ExternalId: proto.String("user-7"),
+	})
+
+	if _, err := srv.Identify(sdkContext("proj-test"), req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if len(spy.published) != 1 {
+		t.Fatalf("expected 1 published message, got %d", len(spy.published))
+	}
+
+	var ident sdkprofilesv1.ProfileIdentifyMessage
+	if err := proto.Unmarshal(spy.published[0].Data, &ident); err != nil {
+		t.Fatalf("unmarshal published message: %v", err)
+	}
+	if len(ident.GetTraits().GetFields()) != 0 {
+		t.Errorf("expected no traits, got %v", ident.GetTraits().GetFields())
+	}
+}
+
 func TestIdentify_Unauthenticated(t *testing.T) {
 	srv := NewServer(&spyJetStream{})
 

@@ -281,7 +281,6 @@ func (s *server) GetProfileStats(
 			Device:         proto.String(stats.Device),
 			Country:        proto.String(stats.Country),
 			City:           proto.String(stats.City),
-			Ip:             proto.String(stats.IP),
 		}
 	}
 

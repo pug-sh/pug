@@ -91,8 +91,8 @@ func TestPromotedAutoKindExhaustiveness(t *testing.T) {
 }
 
 func TestAutoPropertyProjectionForMapFallback(t *testing.T) {
-	proj := clickhouse.AutoPropertyProjectionFor("$ip", "")
-	wantString := "coalesce(nullIf(CAST(auto_properties['$ip'] AS Nullable(String)), ''), '')"
+	proj := clickhouse.AutoPropertyProjectionFor("$timezone", "")
+	wantString := "coalesce(nullIf(CAST(auto_properties['$timezone'] AS Nullable(String)), ''), '')"
 	if proj.StringSQL != wantString {
 		t.Fatalf("StringSQL = %q, want %q", proj.StringSQL, wantString)
 	}
@@ -151,15 +151,15 @@ func TestAutoPropertyDistinctValuesForPromotedBotScore(t *testing.T) {
 }
 
 func TestAutoPropertyDistinctValuesForMapFallback(t *testing.T) {
-	dv, ok := clickhouse.AutoPropertyDistinctValuesFor("$ip")
+	dv, ok := clickhouse.AutoPropertyDistinctValuesFor("$timezone")
 	if !ok {
 		t.Fatal("expected ok")
 	}
 	if dv.SelectExpr != "CAST(auto_properties[?] AS Nullable(String)) AS value" {
 		t.Fatalf("SelectExpr = %q", dv.SelectExpr)
 	}
-	if len(dv.Args) != 1 || dv.Args[0] != "$ip" {
-		t.Fatalf("Args = %v, want [$ip]", dv.Args)
+	if len(dv.Args) != 1 || dv.Args[0] != "$timezone" {
+		t.Fatalf("Args = %v, want [$timezone]", dv.Args)
 	}
 }
 

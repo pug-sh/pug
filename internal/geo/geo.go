@@ -7,6 +7,12 @@ import (
 
 // Auto-property keys used by geo providers.
 const (
+	// PropIP is the canonical visitor-IP key. The IP is personal data and is
+	// never persisted: the SDK ingestion handlers strip it before publishing —
+	// events in enrichGeo, identify traits in Identify — so it cannot reach NATS
+	// or ClickHouse, and providers must not emit it in their Location. The strip
+	// targets this canonical key (the only one our enrichment and SDKs produce).
+	// Kept only so the strip logic and IP-lookup providers can refer to it.
 	PropIP         = "$ip"
 	PropContinent  = "$continent"
 	PropCountry    = "$country"
@@ -35,6 +41,12 @@ const (
 // ClientIP extracts the visitor's IP address from request headers.
 // Tries CF-Connecting-IP (Cloudflare), then True-Client-IP (CDNs/LBs),
 // then the first address in X-Forwarded-For.
+//
+// It has no production caller today: the Cloudflare provider resolves geo from
+// CF-* headers and never reads the IP. It is retained as the extraction
+// primitive for a future IP-lookup Provider (see Provider) — such a provider
+// must hash/use the IP transiently and keep it out of the returned Location, as
+// the raw IP must never be persisted (see PropIP).
 func ClientIP(h http.Header) string {
 	if ip := h.Get(HeaderCFConnectingIP); ip != "" {
 		return ip

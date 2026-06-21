@@ -25,8 +25,9 @@ func TestCloudflareProvider_Locate(t *testing.T) {
 				"Cf-Iplongitude":   {"-122.4194"},
 				"Cf-Timezone":      {"America/Los_Angeles"},
 			},
+			// CF-Connecting-IP is present but the IP is never emitted (never persisted).
 			Location{
-				PropIP: "1.2.3.4", PropContinent: "NA", PropCountry: "US",
+				PropContinent: "NA", PropCountry: "US",
 				PropRegion: "California", PropCity: "San Francisco",
 				PropPostalCode: "94105", PropMetroCode: "807",
 				PropLatitude: "37.7749", PropLongitude: "-122.4194", PropTimezone: "America/Los_Angeles",
@@ -53,9 +54,9 @@ func TestCloudflareProvider_Locate(t *testing.T) {
 			Location{},
 		},
 		{
-			"ip and timezone only",
+			"ip header ignored — timezone only",
 			http.Header{"Cf-Connecting-Ip": {"8.8.8.8"}, "Cf-Timezone": {"Europe/Berlin"}},
-			Location{PropIP: "8.8.8.8", PropTimezone: "Europe/Berlin"},
+			Location{PropTimezone: "Europe/Berlin"},
 		},
 		{
 			"metro targeting headers",

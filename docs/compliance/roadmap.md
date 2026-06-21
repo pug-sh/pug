@@ -93,7 +93,7 @@ Each item: what the code does today (with file references), what to add, and the
 
 **Done:** the IP is now used only transiently for geo enrichment and never stored. GDPR Recital 30; DPDP treats IP as personal data.
 
-- `CloudflareProvider.Locate` no longer emits `$ip` into the `Location`; `geo.ClientIP` remains as the transient extraction primitive for IP-lookup providers (e.g. MaxMind), which must likewise keep it out of the returned `Location` (`internal/geo/cloudflare.go`, `internal/geo/geo.go`).
+- `CloudflareProvider.Locate` no longer emits `$ip` into the `Location`; `geo.ClientIP` is now uncalled in production, retained as the transient extraction primitive a future IP-lookup provider (e.g. MaxMind, or the §4.10 cookieless hash) would use — such a caller must likewise keep the IP out of the returned `Location` (`internal/geo/cloudflare.go`, `internal/geo/geo.go`).
 - `enrichGeo` **strips any client-supplied `$ip`** from every event (and defensively drops `$ip` from the provider `Location`) — beyond the original plan, this closes the hole where an untrusted SDK caller could smuggle an IP into NATS/ClickHouse via `auto_properties` (`internal/app/server/rpc/sdk/events/handler.go`).
 - Dropped the `$ip` read-back: removed `ProfileStats.IP`, its ClickHouse `argMax(auto_properties)` column, and the `ip` field (#11) on the `activity.ProfileStats` proto (`internal/core/events/reader.go`, `internal/app/server/rpc/shared/activity/handler.go`, `proto/shared/activity/v1/activity.proto`).
 - Tests assert `$ip` is stripped from client input (even when geo is empty) and never reaches storage; `docs/architecture/ingestion.md` and `profiles.md` updated in the same PR.

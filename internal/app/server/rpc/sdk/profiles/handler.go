@@ -12,9 +12,22 @@ import (
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	sdkprofilesv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
+	"github.com/pug-sh/pug/internal/geo"
 	"github.com/pug-sh/pug/internal/slogx"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/protobuf/proto"
 )
+
+var ipStrippedCounter metric.Int64Counter
+
+func init() {
+	meter := otel.Meter("github.com/pug-sh/pug/internal/app/server/rpc/sdk/profiles")
+	ipStrippedCounter, _ = meter.Int64Counter(
+		"profiles.identify_ip_stripped_total",
+		metric.WithDescription("A $ip trait was stripped during Identify because the visitor IP must never be persisted. Our SDKs never send it, so a non-zero count means a hand-crafted client supplied an IP in traits."),
+	)
+}
 
 type Server struct {
 	sdkprofilesv1connect.UnimplementedProfilesSDKServiceHandler
@@ -35,6 +48,18 @@ func (s *Server) Identify(
 	if err != nil {
 		return nil, err
 	}
+
+	// The visitor IP is personal data and must never be persisted: strip the
+	// canonical $ip key from traits so an untrusted SDK caller cannot inject it
+	// into a profile's stored properties (mirrors the events enrichGeo strip),
+	// and count any occurrence. Scope is the canonical key our SDKs produce;
+	// arbitrary client data under other keys is never interpreted as an IP.
+	// delete on a nil Fields map (traits unset) is a safe no-op.
+	traits := req.Msg.GetTraits().GetFields()
+	if _, ok := traits[geo.PropIP]; ok {
+		ipStrippedCounter.Add(ctx, 1)
+	}
+	delete(traits, geo.PropIP)
 
 	msg := &sdkprofilesv1.ProfileIdentifyMessage{
 		ExternalId:  proto.String(req.Msg.GetExternalId()),
