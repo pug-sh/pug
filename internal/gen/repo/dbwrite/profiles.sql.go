@@ -11,6 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const hardDeleteProfileByIDAndProjectID = `-- name: HardDeleteProfileByIDAndProjectID :execrows
+delete from profiles
+where id = $1 and project_id = $2
+`
+
+type HardDeleteProfileByIDAndProjectIDParams struct {
+	ID        string
+	ProjectID string
+}
+
+// Permanent erasure (GDPR/DPDP). Used only by the compliance worker; the profile's
+// properties jsonb can hold PII, so the row is physically removed, not soft-deleted.
+func (q *Queries) HardDeleteProfileByIDAndProjectID(ctx context.Context, arg HardDeleteProfileByIDAndProjectIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteProfileByIDAndProjectID, arg.ID, arg.ProjectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const mergeProfileProperties = `-- name: MergeProfileProperties :one
 update profiles
 set properties = jsonb_shallow_merge(s.properties, profiles.properties)

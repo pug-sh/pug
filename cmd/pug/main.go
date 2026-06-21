@@ -17,6 +17,7 @@ import (
 	chseed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
 	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
 	"github.com/pug-sh/pug/internal/app/server"
+	"github.com/pug-sh/pug/internal/app/workers/compliance"
 	demoworker "github.com/pug-sh/pug/internal/app/workers/demo"
 	emailworker "github.com/pug-sh/pug/internal/app/workers/email"
 	eventsworker "github.com/pug-sh/pug/internal/app/workers/events"
@@ -153,6 +154,12 @@ var profileUpsertCmd = &cobra.Command{
 	Run:   run(upsert.Run),
 }
 
+var complianceCmd = &cobra.Command{
+	Use:   "compliance",
+	Short: "Start the compliance worker (GDPR/DPDP erasure, export, retention)",
+	Run:   run(compliance.Run),
+}
+
 var eventsCmd = &cobra.Command{
 	Use:   "events",
 	Short: "Start the events worker",
@@ -273,6 +280,7 @@ var devCmd = &cobra.Command{
 
 		fmt.Println(bold + "Workers:" + reset)
 		fmt.Println("  "+yellow+"Profiles:"+reset, "identify, alias, upsert")
+		fmt.Println("  "+yellow+"Compliance:"+reset, "erase")
 		fmt.Println("  "+yellow+"Events:"+reset, "events")
 		emailEnabled, emailStatus := emailDevStatus()
 		fmt.Println("  "+yellow+"Email:"+reset, emailStatus)
@@ -298,6 +306,7 @@ var devCmd = &cobra.Command{
 		g.Go(func() error { return identify.Run(ctx) })
 		g.Go(func() error { return alias.Run(ctx) })
 		g.Go(func() error { return upsert.Run(ctx) })
+		g.Go(func() error { return compliance.Run(ctx) })
 		g.Go(func() error { return server.Run(ctx) })
 
 		if err := g.Wait(); err != nil {
@@ -403,6 +412,7 @@ func init() {
 	workerCmd.AddCommand(eventsCmd)
 	workerCmd.AddCommand(emailCmd)
 	workerCmd.AddCommand(demoWorkerCmd)
+	workerCmd.AddCommand(complianceCmd)
 
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)

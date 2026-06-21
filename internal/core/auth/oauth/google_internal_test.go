@@ -5,7 +5,9 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,13 +117,26 @@ func TestGoogleVerifyCredential_RejectsTamperedSignature(t *testing.T) {
 	}
 	p := newTestVerifierProvider(t, &key.PublicKey, testGoogleClientID)
 
-	tok := []byte(signToken(t, key, validClaims()))
-	if tok[len(tok)-1] == 'A' { // flip the last signature char
-		tok[len(tok)-1] = 'B'
-	} else {
-		tok[len(tok)-1] = 'A'
+	parts := strings.Split(signToken(t, key, validClaims()), ".")
+	if len(parts) != 3 {
+		t.Fatalf("expected a 3-part JWT, got %d parts", len(parts))
 	}
-	if _, err := p.VerifyCredential(context.Background(), string(tok)); !errors.Is(err, ErrInvalidCredential) {
+
+	// Tamper the signature bytes directly rather than flipping the token's
+	// final character. A 256-byte RS256 signature base64url-encodes to a
+	// length ≡ 2 (mod 4), so its last character holds only 2 significant bits
+	// and Go's non-strict decoder discards the trailing padding bits — flipping
+	// that char can decode to the identical signature and verify cleanly (a
+	// ~25% flaky false negative). Mutating a decoded byte and re-encoding
+	// alters the signature deterministically.
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		t.Fatalf("decode signature: %v", err)
+	}
+	sig[0] ^= 0xFF
+	parts[2] = base64.RawURLEncoding.EncodeToString(sig)
+
+	if _, err := p.VerifyCredential(context.Background(), strings.Join(parts, ".")); !errors.Is(err, ErrInvalidCredential) {
 		t.Fatalf("err = %v, want ErrInvalidCredential", err)
 	}
 }
