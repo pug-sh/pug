@@ -72,6 +72,7 @@ build:
 	go build -o bin/pug-migrate-nats ./cmd/migrate/nats
 	go build -o bin/pug-migrate-postgres ./cmd/migrate/postgres
 	go build -o bin/pug-server ./cmd/server
+	go build -o bin/pug-worker-demo ./cmd/workers/demo
 	go build -o bin/pug-worker-email ./cmd/workers/email
 	go build -o bin/pug-worker-events ./cmd/workers/events
 	go build -o bin/pug-worker-profile-identify ./cmd/workers/profile/identify

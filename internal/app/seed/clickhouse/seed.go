@@ -3,19 +3,23 @@ package seed
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
-	"github.com/google/uuid"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pug-sh/pug/internal/autoprop"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
+
+// profilesInsertStmt is the column list for copying profiles into ClickHouse.
+// Shared between the initial batch and each re-prepared flush so the two can't
+// drift.
+const profilesInsertStmt = "INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time)"
 
 type Seeder struct {
 	deps *deps
@@ -54,7 +58,7 @@ func autoAnyMapToVariantMap(ctx context.Context, projectID string, props map[str
 	return out
 }
 
-func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file string, truncate bool) error {
+func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, truncate bool) error {
 	projectID, err := s.resolveProjectID(ctx)
 	if err != nil {
 		return err
@@ -63,16 +67,6 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 	if err := s.runProfiles(ctx, projectID, truncate); err != nil {
 		return fmt.Errorf("seed profiles: %w", err)
 	}
-
-	if file != "" {
-		return s.runFromCSV(ctx, projectID, file, batchSize, truncate)
-	}
-
-	slog.InfoContext(ctx, "seeding events",
-		slog.String("project_id", projectID),
-		slog.Int64("total", count),
-		slog.Int("batch_size", batchSize),
-	)
 
 	if truncate {
 		slog.InfoContext(ctx, "truncating events table")
@@ -83,14 +77,25 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
 	}
 
+	return s.backfillEvents(ctx, projectID, count, batchSize)
+}
+
+// backfillEvents generates `count` synthetic events for projectID and appends
+// them to the events table. It does not truncate; callers decide reset policy.
+func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int64, batchSize int) error {
+	slog.InfoContext(ctx, "seeding events",
+		slog.String("project_id", projectID),
+		slog.Int64("total", count),
+		slog.Int("batch_size", batchSize),
+	)
+
 	seedStart := time.Now()
 	start := seedStart.AddDate(0, -4, 0)
 
-	slog.InfoContext(ctx, "building session pool")
-	sessionPool := buildSessionPool(start, seedStart)
-	slog.InfoContext(ctx, "session pool ready", slog.Int("pool_size", len(sessionPool)))
+	slog.InfoContext(ctx, "building session factory")
+	factory := newSessionFactory()
+	slog.InfoContext(ctx, "session factory ready", slog.Int("users", len(factory.users)))
 
-	tracker := newUserSessionTracker()
 	var inserted int64
 	startTime := time.Now()
 
@@ -107,7 +112,7 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 		// a stale seed-start instant (long runs can otherwise leave a recent dead zone).
 		end := time.Now()
 
-		n, err := s.insertBatch(ctx, projectID, sessionPool, int(size), start, end, tracker)
+		n, err := s.insertBatch(ctx, projectID, factory, int(size), start, end)
 		if err != nil {
 			return fmt.Errorf("batch insert failed at offset %d: %w", inserted, err)
 		}
@@ -130,15 +135,47 @@ func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, file strin
 	return nil
 }
 
-func (s *Seeder) insertBatch(ctx context.Context, projectID string, pool [][]event, size int, start, end time.Time, tracker *userSessionTracker) (int, error) {
+// EventCount returns how many events are stored for projectID. The demo worker
+// uses it to decide whether a one-time backfill is needed before live traffic.
+func EventCount(ctx context.Context, ch driver.Conn, projectID string) (uint64, error) {
+	var n uint64
+	if err := ch.QueryRow(ctx, "SELECT count() FROM events WHERE project_id = ?", projectID).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// Backfill copies profiles from Postgres to ClickHouse and appends `count`
+// synthetic historical events for projectID, without truncating. It is the
+// programmatic entry point used by the demo worker to populate an empty demo
+// project; the CLI path goes through Run (which also handles truncation).
+func Backfill(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, projectID string, count int64, batchSize int) error {
+	s := &Seeder{deps: &deps{pg: pg, ch: ch}}
+	if err := s.runProfiles(ctx, projectID, false); err != nil {
+		return fmt.Errorf("seed profiles: %w", err)
+	}
+	return s.backfillEvents(ctx, projectID, count, batchSize)
+}
+
+func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *sessionFactory, size int, start, end time.Time) (int, error) {
 	batch, err := s.deps.ch.PrepareBatch(ctx, chq.EventsInsertStmt)
 	if err != nil {
 		return 0, err
 	}
 
 	inserted := 0
+	// Sessions are atomic and variable-length, so keep pulling whole sessions
+	// until the batch is full, truncating the final session at `size`.
 	for inserted < size {
-		for _, e := range randomSessionFromPool(pool, start, end, tracker) {
+		sess := factory.session(start, end)
+		if len(sess) == 0 {
+			// Defensive: every journey has ≥1 step and botSession emits ≥2, so a
+			// session is never empty today. Guard anyway so a future zero-step
+			// journey can't spin this loop forever — the ctx cancellation check
+			// lives one level up in backfillEvents.
+			break
+		}
+		for _, e := range sess {
 			if inserted >= size {
 				break
 			}
@@ -197,8 +234,7 @@ func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate boo
 		return fmt.Errorf("query profiles: %w", err)
 	}
 
-	batch, err := s.deps.ch.PrepareBatch(ctx,
-		"INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time)")
+	batch, err := s.deps.ch.PrepareBatch(ctx, profilesInsertStmt)
 	if err != nil {
 		return fmt.Errorf("prepare profiles batch: %w", err)
 	}
@@ -225,8 +261,7 @@ func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate boo
 			slog.InfoContext(ctx, "profiles copied",
 				slog.Int("inserted", inserted),
 			)
-			batch, err = s.deps.ch.PrepareBatch(ctx,
-				"INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time)")
+			batch, err = s.deps.ch.PrepareBatch(ctx, profilesInsertStmt)
 			if err != nil {
 				return fmt.Errorf("prepare profiles batch: %w", err)
 			}
@@ -243,95 +278,12 @@ func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate boo
 	return nil
 }
 
-func (s *Seeder) runFromCSV(ctx context.Context, projectID, file string, batchSize int, truncate bool) error {
-	slog.InfoContext(ctx, "importing from CSV",
-		slog.String("project_id", projectID),
-		slog.String("file", file),
-		slog.Int("batch_size", batchSize),
-	)
-
-	if truncate {
-		slog.InfoContext(ctx, "truncating events table")
-		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE events"); err != nil {
-			return fmt.Errorf("truncate failed: %w", err)
-		}
-	} else {
-		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
-	}
-
-	reader, err := newRees46Reader(file)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = reader.Close() }()
-
-	var inserted int64
-	startTime := time.Now()
-
-	for {
-		select {
-		case <-ctx.Done():
-			slog.InfoContext(ctx, "import interrupted", slog.Int64("inserted", inserted))
-			return ctx.Err()
-		default:
-		}
-
-		batch, err := s.deps.ch.PrepareBatch(ctx, chq.EventsInsertStmt)
-		if err != nil {
-			return err
-		}
-
-		for i := 0; i < batchSize; i++ {
-			e, err := reader.Read()
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					slog.InfoContext(ctx, "import complete",
-						slog.Int64("inserted", inserted),
-						slog.String("elapsed", time.Since(startTime).Round(time.Second).String()),
-					)
-					return batch.Send()
-				}
-				return fmt.Errorf("read record: %w", err)
-			}
-
-			promoted, restAuto := chq.SplitPromotedAutoAnyProperties(e.autoProperties)
-			args := []any{
-				e.eventID,
-				projectID,
-				e.distinctID,
-				e.kind,
-				autoAnyMapToVariantMap(ctx, projectID, restAuto),
-				autoAnyMapToVariantMap(ctx, projectID, e.customProperties),
-			}
-			args = append(args, promoted.AppendArgs()...)
-			occurTime := clampOccurTime(e.occurTime, time.Now())
-			args = append(args, occurTime, uuid.NewString())
-			if err := batch.Append(args...); err != nil {
-				return err
-			}
-			inserted++
-		}
-
-		if err := batch.Send(); err != nil {
-			return fmt.Errorf("batch send failed at offset %d: %w", inserted, err)
-		}
-
-		elapsed := time.Since(startTime)
-		rate := float64(inserted) / elapsed.Seconds()
-		slog.InfoContext(ctx, "progress",
-			slog.Int64("inserted", inserted),
-			slog.String("rate", fmt.Sprintf("%.0f events/s", rate)),
-			slog.String("elapsed", elapsed.Round(time.Second).String()),
-		)
-	}
-}
-
-func Run(ctx context.Context, count int64, batchSize int, file string, truncate bool) error {
+func Run(ctx context.Context, count int64, batchSize int, truncate bool) error {
 	d, err := newDeps(ctx)
 	if err != nil {
 		return err
 	}
 	defer d.close(ctx)
 
-	return NewSeeder(d).Run(ctx, count, batchSize, file, truncate)
+	return NewSeeder(d).Run(ctx, count, batchSize, truncate)
 }

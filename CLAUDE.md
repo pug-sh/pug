@@ -40,6 +40,16 @@ make clickstack
 ./bin/pug worker profile identify
 ./bin/pug worker profile alias
 ./bin/pug worker profile upsert
+
+# Rolling demo-traffic generator. The standalone command always runs; under
+# `pug dev` it starts only when PUG_DEMO_ENABLED=true. It derives the demo
+# project from the demo user (woof@pug.sh) — creating the customer/org/project
+# + profiles on a fresh DB, resolving them otherwise — then backfills ~4 months
+# of ClickHouse history if the project has no events yet, and finally plays
+# "Pug & Pals" sessions in real time through the NATS ingestion pipeline.
+# Self-bootstrapping so a single k8s deployment seeds-then-streams with no
+# manual seed step and no project id to configure.
+./bin/pug worker demo
 ```
 
 Environment variables are documented in `.env.example`. **Telemetry export is auto-detected** (decided once on first `SetupSDK` in server/workers): if any standard OTLP endpoint var is set (`OTEL_EXPORTER_OTLP_ENDPOINT`, or a per-signal `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT`), pug exports via OTLP (`otelslog`; needs a collector, e.g. `make clickstack`); otherwise it falls back to application logs as text on stdout with noop trace/metric export (use for deploys without a collector). There is no `PUG_OTEL` switch, and a present-but-blank endpoint counts as unset. Set `OTEL_SERVICE_NAME` when exporting via OTLP.
