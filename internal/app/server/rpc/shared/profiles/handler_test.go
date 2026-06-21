@@ -212,28 +212,24 @@ func TestDelete_AlreadyDeleted(t *testing.T) {
 
 	s := NewServer(coreprofiles.NewService(pg.PgW, nil, natsClient))
 
-	// First delete succeeds.
-	delID := proto.String(profileID)
-	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: delID}))
+	// First delete soft-deletes the profile and records a pending erasure request.
+	first, err := s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: proto.String(profileID)}))
 	if err != nil {
 		t.Fatalf("first Delete: %v", err)
 	}
+	if first.Msg.GetRequestId() == "" {
+		t.Fatal("first Delete returned an empty request id")
+	}
 
-	// Second delete returns CodeNotFound.
-	delID = proto.String(profileID)
-	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: delID}))
-	if err == nil {
-		t.Fatal("expected error for already-deleted profile, got nil")
+	// Re-deleting the same (now soft-deleted) profile is idempotent: it re-drives
+	// the still-pending request via reopenErasure rather than 404-ing on the hidden
+	// profile or creating a duplicate ledger row.
+	second, err := s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: proto.String(profileID)}))
+	if err != nil {
+		t.Fatalf("second Delete should reopen the existing request, got error: %v", err)
 	}
-	var appErr *apperr.Error
-	if !errors.As(err, &appErr) {
-		t.Fatalf("want *apperr.Error, got %v (%T)", err, err)
-	}
-	if appErr.Code() != connect.CodeNotFound {
-		t.Errorf("code = %v, want CodeNotFound", appErr.Code())
-	}
-	if appErr.Reason() != apperr.ReasonProfileNotFound {
-		t.Errorf("reason = %q, want %q", appErr.Reason(), apperr.ReasonProfileNotFound)
+	if got, want := second.Msg.GetRequestId(), first.Msg.GetRequestId(); got != want {
+		t.Errorf("second Delete request id = %q, want first id %q (reopen, not duplicate)", got, want)
 	}
 }
 

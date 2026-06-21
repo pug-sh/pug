@@ -35,3 +35,10 @@ update profile_devices
 set token = @token
 where id = @id and project_id = @project_id
 returning *;
+
+-- name: DeleteDevicesByProfileID :execrows
+-- Permanent erasure (GDPR/DPDP). Used only by the compliance worker. Must run before
+-- the profiles hard-delete: the profile_id FK is ON DELETE SET NULL, so deleting
+-- the profile first would orphan these rows (token + endpoint = a delivery secret).
+delete from profile_devices
+where profile_id = @profile_id and project_id = @project_id;

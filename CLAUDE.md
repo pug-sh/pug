@@ -40,6 +40,16 @@ make clickstack
 ./bin/pug worker profile identify
 ./bin/pug worker profile alias
 ./bin/pug worker profile upsert
+
+# Rolling demo-traffic generator. The standalone command always runs; under
+# `pug dev` it starts only when PUG_DEMO_ENABLED=true. It derives the demo
+# project from the demo user (woof@pug.sh) — creating the customer/org/project
+# + profiles on a fresh DB, resolving them otherwise — then backfills ~4 months
+# of ClickHouse history if the project has no events yet, and finally plays
+# "Pug & Pals" sessions in real time through the NATS ingestion pipeline.
+# Self-bootstrapping so a single k8s deployment seeds-then-streams with no
+# manual seed step and no project id to configure.
+./bin/pug worker demo
 ```
 
 Environment variables are documented in `.env.example`. **Telemetry export is auto-detected** (decided once on first `SetupSDK` in server/workers): if any standard OTLP endpoint var is set (`OTEL_EXPORTER_OTLP_ENDPOINT`, or a per-signal `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT`), pug exports via OTLP (`otelslog`; needs a collector, e.g. `make clickstack`); otherwise it falls back to application logs as text on stdout with noop trace/metric export (use for deploys without a collector). There is no `PUG_OTEL` switch, and a present-but-blank endpoint counts as unset. Set `OTEL_SERVICE_NAME` when exporting via OTLP.
@@ -133,7 +143,7 @@ Never call `getPrincipalFromContext` directly in handlers.
 
 ### Proto/RPC
 
-Services defined in `proto/` directory, organized by auth boundary (`public/`, `sdk/`, `dashboard/`, `shared/`). Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled. Profiles is split into `ProfilesSDKService` (sdk — Identify) and `ProfilesService` (shared — Get, GetByExternalId, List, Delete). SDK profiles uses Go import alias `sdkprofilesv1` to avoid collision with shared `profilesv1`.
+Services defined in `proto/` directory, organized by auth boundary (`public/`, `sdk/`, `dashboard/`, `shared/`). Generated code goes to `internal/gen/proto/`. Uses Connect RPC with gRPC reflection enabled. Profiles is split into `ProfilesSDKService` (sdk — Identify) and `ProfilesService` (shared — Get, GetByExternalId, List, Delete, DeleteDataSubject, GetDeletionRequest). SDK profiles uses Go import alias `sdkprofilesv1` to avoid collision with shared `profilesv1`. `Delete`/`DeleteDataSubject` enqueue GDPR/DPDP erasure handled by the compliance worker — see Subsystem Reference.
 
 **Validation:** Always use `buf/validate` (protovalidate) annotations in `.proto` files for request validation. The `validate.NewInterceptor()` in the server enforces all proto annotations before handlers run. Use CEL expressions for cross-field constraints (e.g., `this.from < this.to`, operator-dependent required fields, ordered values in repeated fields, map-key prefix checks via `map.all(k, k.startsWith('$'))`). Do **not** duplicate proto validations in Go code — if protovalidate already enforces a constraint, trust it. Redundant checks add maintenance burden and drift risk without meaningful safety gain. Only add Go-side validation for constraints CEL cannot express — for example, batch-level cross-element checks on repeated fields, since CEL on `repeated` evaluates per-element. Concrete example: `internal/core/events/service.go::ValidateExternalEvents` deduplicates `event_id` across a batch.
 
@@ -152,6 +162,7 @@ Deep per-subsystem documentation lives in [`docs/architecture/`](docs/architectu
 - **Insights** — trends/funnel/retention/segmentation/**user flow (Sankey)**/**top K (ranked dimension + $others bucket)** queries; breakdowns, granularity caps, filter model, funnel timing stats, type-specific query builders → [`docs/architecture/insights.md`](docs/architecture/insights.md), user flow plan → [`docs/architecture/user-flow.md`](docs/architecture/user-flow.md)
 - **ClickHouse** — type-safe query builder, events table (dedup key, partitioning, `FINAL` policy), materialized-view flavors, query conventions → [`docs/architecture/clickhouse.md`](docs/architecture/clickhouse.md)
 - **Profiles** — read API (ClickHouse-backed), activity summary, property model, soft-delete, device subscriptions → [`docs/architecture/profiles.md`](docs/architecture/profiles.md)
+- **Compliance (GDPR/DPDP)** — data-subject erasure: a synchronous prelude + the generalized `compliance` worker that hard-deletes events, derived rollups, and the profile; the unified `compliance_requests` DSAR ledger; idempotent re-drive on retry, NATS retry-to-DLQ for the async hard delete → [`docs/compliance/4.1-erasure-scope.md`](docs/compliance/4.1-erasure-scope.md)
 - **Event ingestion enrichment** — geo, user-agent, and bot-management auto-properties → [`docs/architecture/ingestion.md`](docs/architecture/ingestion.md)
 - **Email templating** — templ + go-premailer rendering, frozen brand tokens, preview CLI → [`docs/architecture/email.md`](docs/architecture/email.md)
 - **OpenTelemetry** — `internal/deps/telemetry/` (`SetupSDK`; OTLP-vs-stdout auto-detected from the `OTEL_EXPORTER_OTLP_*` endpoint vars, no `PUG_OTEL`), per-component instrumentation, slog bridge vs stdout handler, error-recording convention and exceptions → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md)

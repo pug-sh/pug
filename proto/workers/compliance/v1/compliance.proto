@@ -1,0 +1,30 @@
+edition = "2023";
+package workers.compliance.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pug-sh/pug/internal/gen/proto/workers/compliance/v1;workercompliancev1";
+
+// Messages for the compliance worker — the home for slow, low-volume GDPR/DPDP
+// jobs (erasure now; retention §4.5 joins later). Export §4.2 needs no async job
+// and stays out of the worker (4.2 decision 2). See
+// docs/compliance/4.1-erasure-scope.md.
+
+// EraseMessage is published to compliance.erase by the deletion RPCs to trigger
+// asynchronous hard erasure of a data subject — events across every distinct_id,
+// the profile, aliases, and the per-person derived rollups. The worker loads the
+// compliance_requests row by (project_id, request_id) as the source of truth;
+// profile_id and external_id are carried for logging.
+message EraseMessage {
+  string project_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
+  string request_id = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
+  // May be empty when erasing by external_id with no resolved profile row.
+  string profile_id = 3;
+  string external_id = 4;
+}

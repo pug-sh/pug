@@ -10,8 +10,8 @@ import (
 	"github.com/rs/xid"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/pug-sh/pug/internal/core/insights"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	"github.com/pug-sh/pug/internal/core/insights"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	"github.com/pug-sh/pug/internal/testutil"
 )
@@ -155,6 +155,88 @@ func TestServiceGetFilterSchema(t *testing.T) {
 		}
 	})
 
+	t.Run("includes_promoted_breakdown_dimensions", func(t *testing.T) {
+		resp, err := svc.GetFilterSchema(ctx, projectID, "", nil)
+		if err != nil {
+			t.Fatalf("GetFilterSchema: %v", err)
+		}
+
+		autoByName := map[string]*commonv1.PropertyKeyMeta{}
+		for _, k := range resp.GetAutoPropertyKeys() {
+			autoByName[k.GetName()] = k
+		}
+
+		// $country is a promoted column (stripped from auto_properties into a
+		// dedicated events column), so it never appears in property_keys. It must
+		// be surfaced from the event rollup with a real count and STRING type.
+		country, ok := autoByName["$country"]
+		if !ok {
+			t.Fatalf("expected promoted dimension $country in auto property keys, got: %v", autoByName)
+		}
+		if country.GetValueType() != commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_STRING {
+			t.Errorf("$country value_type = %v, want STRING", country.GetValueType())
+		}
+		// Seeded with US, US, GB — three non-empty country events.
+		if country.GetCount() != 3 {
+			t.Errorf("$country count = %d, want 3", country.GetCount())
+		}
+		// last_seen must round-trip the rollup's max(day) through the CH scan
+		// (Date -> toDateTime64 -> time.Time -> timestamppb), not stay zero.
+		if country.GetLastSeenAt() == nil || country.GetLastSeenAt().AsTime().IsZero() {
+			t.Errorf("$country last_seen_at is zero, expected the rollup day; got %v", country.GetLastSeenAt())
+		}
+
+		// $browser is also promoted but has no seeded value; it is still listed
+		// (count 0) so the picker exposes every promoted dimension.
+		browser, ok := autoByName["$browser"]
+		if !ok {
+			t.Errorf("expected promoted dimension $browser to be listed even with no data, got: %v", autoByName)
+		} else if browser.GetLastSeenAt() != nil {
+			// A count-0 dimension has no genuine last-seen instant: last_seen_at
+			// must be nil, not the 0001-01-01 Go zero time.
+			t.Errorf("$browser (count 0) last_seen_at = %v, want nil", browser.GetLastSeenAt())
+		}
+	})
+
+	t.Run("promoted_dimension_counts_scoped_by_event_kind", func(t *testing.T) {
+		// The rollup is keyed on kind, so a kind-scoped request must return
+		// kind-scoped promoted counts. Seed: $country = US for the single
+		// purchase event (page_view's US/GB rows must not leak in).
+		resp, err := svc.GetFilterSchema(ctx, projectID, "purchase", nil)
+		if err != nil {
+			t.Fatalf("GetFilterSchema (purchase): %v", err)
+		}
+		var country *commonv1.PropertyKeyMeta
+		for _, k := range resp.GetAutoPropertyKeys() {
+			if k.GetName() == "$country" {
+				country = k
+				break
+			}
+		}
+		if country == nil {
+			t.Fatalf("expected $country in purchase-scoped auto property keys")
+		}
+		if country.GetCount() != 1 {
+			t.Errorf("$country count for kind=purchase = %d, want 1", country.GetCount())
+		}
+	})
+
+	t.Run("promoted_dimensions_excluded_by_numeric_type_filter", func(t *testing.T) {
+		// Promoted dims are all strings, so an INTEGER-only request must not
+		// surface them.
+		resp, err := svc.GetFilterSchema(ctx, projectID, "", []commonv1.PropertyValueType{
+			commonv1.PropertyValueType_PROPERTY_VALUE_TYPE_INTEGER,
+		})
+		if err != nil {
+			t.Fatalf("GetFilterSchema (INTEGER): %v", err)
+		}
+		for _, k := range resp.GetAutoPropertyKeys() {
+			if k.GetName() == "$country" || k.GetName() == "$browser" {
+				t.Errorf("string dimension %q leaked into INTEGER-filtered schema", k.GetName())
+			}
+		}
+	})
+
 	t.Run("cache_hit_returns_same_response", func(t *testing.T) {
 		resp1, err := svc.GetFilterSchema(ctx, projectID, "", nil)
 		if err != nil {
@@ -178,6 +260,75 @@ func TestServiceGetFilterSchema(t *testing.T) {
 			t.Error("expected auto property keys for page_view")
 		}
 	})
+}
+
+// TestServiceGetFilterSchemaRollupDegraded pins the rollup-failure degradation
+// contract. When the dashboard_event_rollup_daily fast-path table is unavailable
+// (here simulated by dropping it — modelling migration 006 not applied, or a
+// transient ClickHouse failure), GetFilterSchema must:
+//   - still succeed (a rollup failure must NOT fail the whole schema),
+//   - keep the foundational sibling fetches populated (the rollup error must not
+//     cancel egCtx),
+//   - still surface every promoted dimension, at count 0, and
+//   - NOT cache the degraded response (a transient blip must not freeze count-0
+//     promoted dims for the full schemaCacheTTL).
+func TestServiceGetFilterSchemaRollupDegraded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	ch := testutil.SetupClickHouse(t)
+	rd := testutil.SetupRedis(t)
+
+	// projectID is only a ClickHouse query scope here; GetFilterSchema does not
+	// touch Postgres, so a bare xid (no seeded project row) is sufficient.
+	projectID := xid.New().String()
+	seedServiceEvents(t, ctx, ch, projectID)
+
+	// Simulate the rollup fast-path being unavailable. Only the promoted-dimension
+	// fetch reads this table; the event_names / property_keys MVs are untouched,
+	// so the sibling fetches must still succeed.
+	if err := ch.Conn.Exec(ctx, "DROP TABLE IF EXISTS dashboard_event_rollup_daily"); err != nil {
+		t.Fatalf("drop rollup table: %v", err)
+	}
+
+	svc := insights.NewService(insights.NewExecutor(ch.Conn), rd.Client)
+
+	resp, err := svc.GetFilterSchema(ctx, projectID, "", nil)
+	if err != nil {
+		t.Fatalf("rollup failure must degrade, not error; got %v", err)
+	}
+
+	// Siblings unaffected: the rollup error must not cancel egCtx.
+	if len(resp.GetEvents()) == 0 {
+		t.Error("expected event names despite rollup failure (siblings must not be cancelled)")
+	}
+
+	// Every promoted dimension still surfaces, at count 0 (no rollup to count from).
+	autoByName := map[string]*commonv1.PropertyKeyMeta{}
+	for _, k := range resp.GetAutoPropertyKeys() {
+		autoByName[k.GetName()] = k
+	}
+	for _, dim := range []string{"$country", "$browser"} {
+		m, ok := autoByName[dim]
+		if !ok {
+			t.Errorf("expected promoted dimension %q despite rollup failure, got: %v", dim, autoByName)
+			continue
+		}
+		if m.GetCount() != 0 {
+			t.Errorf("%s: degraded count = %d, want 0", dim, m.GetCount())
+		}
+	}
+
+	// The degraded result must NOT be cached. The cache key mirrors
+	// GetFilterSchema's construction for (projectID, no kind, no types).
+	cacheKey := "filterschema:" + projectID
+	if n, err := rd.Client.Exists(ctx, cacheKey).Result(); err != nil {
+		t.Fatalf("redis exists: %v", err)
+	} else if n != 0 {
+		t.Errorf("degraded schema must not be cached, but cache key %q is present", cacheKey)
+	}
 }
 
 func TestServiceGetPropertyValues(t *testing.T) {

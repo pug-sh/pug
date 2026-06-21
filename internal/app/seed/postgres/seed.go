@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	chseed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/core/projects"
 	dbtypes "github.com/pug-sh/pug/internal/deps/postgres"
@@ -19,9 +21,9 @@ import (
 )
 
 const (
-	testEmail    = "test@pug.sh"
-	testPassword = "password"
-	testName     = "Test User"
+	testEmail    = "woof@pug.sh"
+	testPassword = "goodboy"
+	testName     = "Pug"
 )
 
 type Seeder struct {
@@ -33,41 +35,89 @@ func NewSeeder(deps *deps) *Seeder {
 }
 
 func (s *Seeder) Run(ctx context.Context) error {
+	_, err := s.run(ctx)
+	return err
+}
+
+// run seeds the demo customer/org/project plus profiles, devices and merges,
+// and returns the resulting project. If the demo customer already exists its
+// project is resolved and reused, and profile/device/merge seeding is skipped
+// (assumed already populated) — so this is safe to call on every worker start.
+// Completeness is keyed on the demo customer existing: if a fresh seed is
+// interrupted after the customer commits but before profiles finish, later
+// starts resolve the customer and skip re-seeding, leaving profiles partial
+// (recovery is to delete the demo customer and restart).
+func (s *Seeder) run(ctx context.Context) (dbread.Project, error) {
 	read := dbread.New(s.deps.pg)
 
 	slog.InfoContext(ctx, "checking for existing test user")
 
 	customer, err := read.GetCustomerByEmail(ctx, testEmail)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("failed to check existing user: %w", err)
+		return dbread.Project{}, fmt.Errorf("failed to check existing user: %w", err)
 	}
 
-	var project dbread.Project
 	if err == nil {
 		slog.InfoContext(ctx, "test user already exists, resolving project")
-		project, err = s.resolveProject(ctx, read, customer.ID)
+		project, err := s.resolveProject(ctx, read, customer.ID)
 		if err != nil {
-			return err
+			return dbread.Project{}, err
 		}
-	} else {
-		slog.InfoContext(ctx, "creating test user", slog.String("email", testEmail))
-		project, err = s.seedCustomerOrgProject(ctx)
-		if err != nil {
-			return err
+
+		// Completeness is keyed on the customer row, but profiles, devices and
+		// merges are seeded in separate post-customer commits — a crash mid-seed
+		// leaves the customer present with later steps partial. Re-counting the
+		// seeded user-%05d profiles and their devices lets us warn loudly
+		// (mirroring the ClickHouse backfill guard) instead of silently serving
+		// a thin dashboard. Every seeded profile gets at least one device, so a
+		// finished seed has devices >= profiles; a shortfall in either means the
+		// post-customer seed didn't finish.
+		var profiles, devices int64
+		if err := s.deps.pg.QueryRow(ctx,
+			"SELECT count(*) FROM profiles WHERE project_id = $1 AND id LIKE 'user-%'", project.ID,
+		).Scan(&profiles); err != nil {
+			return dbread.Project{}, fmt.Errorf("count demo profiles: %w", err)
 		}
+		if err := s.deps.pg.QueryRow(ctx,
+			"SELECT count(*) FROM profile_devices WHERE project_id = $1", project.ID,
+		).Scan(&devices); err != nil {
+			return dbread.Project{}, fmt.Errorf("count demo devices: %w", err)
+		}
+		if profiles < profileCount || devices < profileCount {
+			slog.WarnContext(ctx, "incomplete demo seed detected, leaving partial data in place",
+				slog.String("project_id", project.ID),
+				slog.Int64("profiles", profiles),
+				slog.Int64("devices", devices),
+				slog.Int("expected", profileCount),
+				slog.String("recovery", "delete the demo customer (woof@pug.sh) and restart the demo worker to re-seed"),
+			)
+		} else {
+			slog.InfoContext(ctx, "skipping profile seed, already populated",
+				slog.String("project_id", project.ID),
+				slog.Int64("profiles", profiles),
+				slog.Int64("devices", devices),
+			)
+		}
+		return project, nil
+	}
+
+	slog.InfoContext(ctx, "creating test user", slog.String("email", testEmail))
+	project, err := s.seedCustomerOrgProject(ctx)
+	if err != nil {
+		return dbread.Project{}, err
 	}
 
 	identifiedIDs, err := s.seedProfiles(ctx, project.ID)
 	if err != nil {
-		return fmt.Errorf("failed to seed profiles: %w", err)
+		return dbread.Project{}, fmt.Errorf("failed to seed profiles: %w", err)
 	}
 
 	if err := s.seedDevices(ctx, project.ID); err != nil {
-		return fmt.Errorf("failed to seed devices: %w", err)
+		return dbread.Project{}, fmt.Errorf("failed to seed devices: %w", err)
 	}
 
 	if err := s.seedMerges(ctx, project.ID, identifiedIDs); err != nil {
-		return fmt.Errorf("failed to seed profile merges: %w", err)
+		return dbread.Project{}, fmt.Errorf("failed to seed profile merges: %w", err)
 	}
 
 	slog.DebugContext(ctx, "seed complete",
@@ -76,7 +126,7 @@ func (s *Seeder) Run(ctx context.Context) error {
 		slog.String("private_api_key", project.PrivateApiKey),
 	)
 
-	return nil
+	return project, nil
 }
 
 func (s *Seeder) resolveProject(ctx context.Context, read *dbread.Queries, customerID string) (dbread.Project, error) {
@@ -172,64 +222,122 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, er
 	}, nil
 }
 
-const profileCount = 10_000
+// profileCount must equal the event generator's user pool so seeded profiles
+// and the events they belong to describe the same distinct ids. Sourced from
+// the exported constant rather than re-declaring the literal so the two cannot
+// drift.
+const profileCount = chseed.DistinctIDPool
 
+// Customers of the Pug & Pals demo store are, naturally, dogs.
 var firstNames = []string{
-	"Alice", "Bob", "Carlos", "Diana", "Emma", "Felix", "Grace", "Henry",
-	"Isabel", "James", "Karen", "Liam", "Mia", "Noah", "Olivia", "Paul",
-	"Quinn", "Rachel", "Sam", "Tina", "Uma", "Victor", "Wendy", "Xander",
-	"Yara", "Zoe",
+	"Biscuit", "Luna", "Max", "Bella", "Charlie", "Cooper", "Daisy", "Milo",
+	"Rosie", "Teddy", "Winnie", "Ziggy", "Peanut", "Waffles", "Mochi",
+	"Noodle", "Pickles", "Pepper", "Olive", "Hazel", "Gus", "Bruno",
+	"Frankie", "Archie", "Poppy", "Maple", "Clover", "Scout", "Pretzel",
+	"Banjo",
 }
 
 var lastNames = []string{
-	"Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller",
-	"Davis", "Wilson", "Moore", "Taylor", "Anderson", "Thomas", "Jackson",
-	"White", "Harris", "Martin", "Thompson", "Young", "Lee",
+	"Barksdale", "Waggins", "Pawson", "McFluff", "Von Woof", "Sniffington",
+	"Wigglesworth", "Beagleton", "Scruffins", "Fetcher", "Pugsley",
+	"Furbanks", "Houndstooth", "Barkley", "Snoots", "Goodboy", "Droolittle",
+	"Zoomies", "Borkman", "Floofington",
 }
 
-var emailDomains = []string{"gmail.com", "yahoo.com", "outlook.com", "icloud.com", "proton.me"}
+// Reserved .example TLD (RFC 6761) so demo emails can never resolve.
+var emailDomains = []string{"barkmail.example", "woofhub.example", "fetchmail.example", "pugmail.example", "tailmail.example"}
 
 var streetNames = []string{
 	"Main St", "Oak Ave", "Maple Dr", "Park Blvd", "Cedar Ln",
 	"Elm St", "Pine Rd", "Washington Ave", "Lake Dr", "Hill Ct",
 }
 
-var cities = []string{
-	"New York", "Los Angeles", "Chicago", "Houston", "Phoenix",
-	"Philadelphia", "San Antonio", "San Diego", "Dallas", "Austin",
+// Weighted breeds — this is a pug company, the demo skews accordingly.
+var breeds = []struct {
+	name   string
+	size   string
+	weight int
+}{
+	{"Pug", "small", 12},
+	{"Mixed (Best Kind)", "medium", 10},
+	{"Golden Retriever", "large", 8},
+	{"Labrador Retriever", "large", 8},
+	{"French Bulldog", "small", 7},
+	{"Corgi", "small", 6},
+	{"Shiba Inu", "medium", 5},
+	{"Beagle", "medium", 5},
+	{"Dachshund", "small", 5},
+	{"Border Collie", "medium", 4},
+	{"Australian Shepherd", "medium", 4},
+	{"Chihuahua", "small", 4},
+	{"Siberian Husky", "large", 4},
+	{"Pomeranian", "small", 3},
+	{"Great Dane", "large", 2},
 }
 
-func randomProperties(i int) map[string]any {
-	first := firstNames[rand.IntN(len(firstNames))]
-	last := lastNames[rand.IntN(len(lastNames))]
+var favoriteTreats = []string{
+	"Peanut Butter Training Bites", "Bully Sticks", "Sweet Potato Jerky",
+	"Freeze-Dried Liver Treats", "Dental Chews", "Cheese (forbidden)",
+	"Whatever the human is eating",
+}
 
-	// ~80% of profiles just have name; ~20% have richer fields
-	if rand.Float32() < 0.80 {
-		return map[string]any{
-			"name": fmt.Sprintf("%s %s", first, last),
+func pickBreed() (string, string) {
+	total := 0
+	for _, b := range breeds {
+		total += b.weight
+	}
+	n := rand.IntN(total)
+	for _, b := range breeds {
+		n -= b.weight
+		if n < 0 {
+			return b.name, b.size
 		}
 	}
+	last := breeds[len(breeds)-1]
+	return last.name, last.size
+}
+
+// profileProperties builds a dog profile aligned with the user's event data:
+// same home city/country the event generator gives this distinct id, and
+// pug_club membership matching the journeys the user runs.
+func profileProperties(i int, du chseed.DemoUser) map[string]any {
+	first := firstNames[rand.IntN(len(firstNames))]
+	last := lastNames[rand.IntN(len(lastNames))]
+	breed, size := pickBreed()
 
 	props := map[string]any{
-		"first_name": first,
-		"last_name":  last,
+		"name":     fmt.Sprintf("%s %s", first, last),
+		"breed":    breed,
+		"dog_size": size,
+		"city":     du.City,
+		"country":  du.Country,
 	}
+	if du.Member {
+		props["pug_club"] = true
+	}
+
+	// ~80% of profiles stop there; ~20% have richer CRM-ish fields.
+	if rand.Float32() < 0.80 {
+		return props
+	}
+
+	props["first_name"] = first
+	props["last_name"] = last
+	props["favorite_treat"] = favoriteTreats[rand.IntN(len(favoriteTreats))]
+	props["age_years"] = 1 + rand.IntN(12)
 
 	if rand.Float32() < 0.70 {
 		props["email"] = fmt.Sprintf("%s.%s%d@%s",
-			strings.ToLower(first), strings.ToLower(last), i,
+			strings.ToLower(first),
+			strings.ReplaceAll(strings.ToLower(last), " ", ""), i,
 			emailDomains[rand.IntN(len(emailDomains))],
 		)
-	}
-	if rand.Float32() < 0.50 {
-		props["phone"] = fmt.Sprintf("+1%03d%03d%04d",
-			rand.IntN(800)+100, rand.IntN(900)+100, rand.IntN(10000))
 	}
 	if rand.Float32() < 0.30 {
 		props["address"] = fmt.Sprintf("%d %s, %s",
 			rand.IntN(9900)+100,
 			streetNames[rand.IntN(len(streetNames))],
-			cities[rand.IntN(len(cities))],
+			du.City,
 		)
 	}
 
@@ -243,14 +351,15 @@ func (s *Seeder) seedProfiles(ctx context.Context, projectID string) ([]string, 
 	)
 
 	w := dbwrite.New(s.deps.pg)
+	demoUsers := chseed.DemoUsers(profileCount)
 	var identifiedIDs []string
 	for i := range profileCount {
 		id := fmt.Sprintf("user-%05d", i)
-		props := randomProperties(i)
+		props := profileProperties(i, demoUsers[i])
 
 		// ~60% identified (with external_id), ~40% anonymous-only.
 		if rand.Float32() < 0.60 {
-			externalID := externalIDForProfile(props, i)
+			externalID := externalIDForProfile(i)
 			if _, err := w.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
 				ID:         id,
 				ProjectID:  projectID,
@@ -391,12 +500,13 @@ func randomPushToken(platform string) string {
 	}
 }
 
-// externalIDForProfile returns a unique external ID per seed index.
-// Properties may include an email for realism, but external_id must stay unique:
+// externalIDForProfile returns a unique external ID per seed index. We
+// deliberately derive it from the index rather than the profile's email:
 // UpsertProfileByExternalID conflicts on (project_id, external_id) and updates
-// the existing row without creating the requested profile id, which breaks the
-// seeder's fixed user-%05d ids when attaching devices.
-func externalIDForProfile(_ map[string]any, i int) string {
+// the existing row without creating the requested profile id, so a non-unique
+// external_id would break the seeder's fixed user-%05d ids when attaching
+// devices.
+func externalIDForProfile(i int) string {
 	return fmt.Sprintf("cust_%06d", i)
 }
 
@@ -454,4 +564,12 @@ func Run(ctx context.Context) error {
 	defer d.close()
 
 	return NewSeeder(d).Run(ctx)
+}
+
+// SeedProject ensures the demo customer/org/project (plus profiles, devices and
+// merges) exists and returns it, using a caller-owned pool. It is the
+// programmatic entry point used by the demo worker to derive the demo project
+// from the demo user; the CLI path goes through Run, which owns its own pool.
+func SeedProject(ctx context.Context, pg *pgxpool.Pool) (dbread.Project, error) {
+	return NewSeeder(&deps{pg: pg}).run(ctx)
 }

@@ -17,6 +17,8 @@ import (
 	chseed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
 	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
 	"github.com/pug-sh/pug/internal/app/server"
+	"github.com/pug-sh/pug/internal/app/workers/compliance"
+	demoworker "github.com/pug-sh/pug/internal/app/workers/demo"
 	emailworker "github.com/pug-sh/pug/internal/app/workers/email"
 	eventsworker "github.com/pug-sh/pug/internal/app/workers/events"
 	"github.com/pug-sh/pug/internal/app/workers/profiles/alias"
@@ -152,10 +154,22 @@ var profileUpsertCmd = &cobra.Command{
 	Run:   run(upsert.Run),
 }
 
+var complianceCmd = &cobra.Command{
+	Use:   "compliance",
+	Short: "Start the compliance worker (GDPR/DPDP erasure, export, retention)",
+	Run:   run(compliance.Run),
+}
+
 var eventsCmd = &cobra.Command{
 	Use:   "events",
 	Short: "Start the events worker",
 	Run:   run(eventsworker.Run),
+}
+
+var demoWorkerCmd = &cobra.Command{
+	Use:   "demo",
+	Short: "Start the rolling demo-traffic generator (seeds the demo project on first run)",
+	Run:   run(demoworker.Run),
 }
 
 var emailCmd = &cobra.Command{
@@ -266,9 +280,16 @@ var devCmd = &cobra.Command{
 
 		fmt.Println(bold + "Workers:" + reset)
 		fmt.Println("  "+yellow+"Profiles:"+reset, "identify, alias, upsert")
+		fmt.Println("  "+yellow+"Compliance:"+reset, "erase")
 		fmt.Println("  "+yellow+"Events:"+reset, "events")
 		emailEnabled, emailStatus := emailDevStatus()
 		fmt.Println("  "+yellow+"Email:"+reset, emailStatus)
+		demoEnabled := demoworker.Enabled()
+		if demoEnabled {
+			fmt.Println("  "+yellow+"Demo:"+reset, "rolling traffic for the demo project (seeds on first run)")
+		} else {
+			fmt.Println("  "+yellow+"Demo:"+reset, "disabled (set PUG_DEMO_ENABLED=true to enable)")
+		}
 		fmt.Println()
 
 		fmt.Println(green + "  Press Ctrl+C to stop" + reset)
@@ -279,9 +300,13 @@ var devCmd = &cobra.Command{
 		if emailEnabled {
 			g.Go(func() error { return emailworker.Run(ctx) })
 		}
+		if demoEnabled {
+			g.Go(func() error { return demoworker.Run(ctx) })
+		}
 		g.Go(func() error { return identify.Run(ctx) })
 		g.Go(func() error { return alias.Run(ctx) })
 		g.Go(func() error { return upsert.Run(ctx) })
+		g.Go(func() error { return compliance.Run(ctx) })
 		g.Go(func() error { return server.Run(ctx) })
 
 		if err := g.Wait(); err != nil {
@@ -323,7 +348,6 @@ var clickhouseSeedCmd = &cobra.Command{
 
 		count, _ := cmd.Flags().GetInt64("count")
 		batchSize, _ := cmd.Flags().GetInt("batch")
-		file, _ := cmd.Flags().GetString("file")
 		noReset, _ := cmd.Flags().GetBool("no-reset")
 
 		truncate := true
@@ -341,7 +365,7 @@ var clickhouseSeedCmd = &cobra.Command{
 			truncate = false
 		}
 
-		if err := chseed.Run(ctx, count, batchSize, file, truncate); err != nil {
+		if err := chseed.Run(ctx, count, batchSize, truncate); err != nil {
 			slog.ErrorContext(ctx, "seed error", slogx.Error(err))
 			os.Exit(1)
 		}
@@ -387,6 +411,8 @@ func init() {
 	workerCmd.AddCommand(profileCmd)
 	workerCmd.AddCommand(eventsCmd)
 	workerCmd.AddCommand(emailCmd)
+	workerCmd.AddCommand(demoWorkerCmd)
+	workerCmd.AddCommand(complianceCmd)
 
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(workerCmd)
@@ -416,9 +442,8 @@ func init() {
 	clickhouseMigrateCmd.Flags().StringP("direction", "d", "up", "can be any of 'up' or 'down' (default: up)")
 	clickhouseMigrateCmd.Flags().IntP("num", "n", 0, "number of migrations to apply")
 
-	clickhouseSeedCmd.Flags().Int64P("count", "c", 10_000_000, "total number of events to generate (used when no file provided)")
+	clickhouseSeedCmd.Flags().Int64P("count", "c", 500_000, "total number of events to generate")
 	clickhouseSeedCmd.Flags().IntP("batch", "b", 10_000, "number of events per ClickHouse batch")
-	clickhouseSeedCmd.Flags().StringP("file", "f", "", "CSV file to import (REES46 format: event_time,order_id,product_id,category_id,category_code,brand,price,user_id)")
 	clickhouseSeedCmd.Flags().Bool("no-reset", false, "skip migrate down/up; truncate events table instead")
 	postgresSeedCmd.Flags().Bool("no-reset", false, "skip migrate down/up before seeding")
 

@@ -14,6 +14,7 @@ import (
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	profilesv1 "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
+	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/slogx"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -34,6 +35,10 @@ func NewServer(service *coreprofiles.Service) *Server {
 	}
 }
 
+// Delete enqueues erasure of the data subject identified by profile id. The
+// PostgreSQL profile is soft-deleted synchronously; the irreversible hard
+// erasure (events, rollups, and the ClickHouse profile) runs in the compliance
+// worker. Returns the request id for tracking.
 func (s *Server) Delete(
 	ctx context.Context,
 	req *connect.Request[profilesv1.DeleteRequest],
@@ -44,20 +49,115 @@ func (s *Server) Delete(
 	}
 
 	profileID := req.Msg.GetId()
-	err = s.service.Delete(ctx, principal.Project.ID, profileID)
+	requestID, status, err := s.service.RequestErasureByID(ctx, principal.Project.ID, profileID, requestedBy(principal))
 	if err != nil {
 		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found", apperr.Resource("profile", profileID))
 		}
-		if errors.Is(err, coreprofiles.ErrProfileDeleteUnavailable) {
-			return nil, connect.NewError(connect.CodeInternal, errors.New("profiles delete is unavailable"))
-		}
-		slog.ErrorContext(ctx, "failed deleting profile", slogx.Error(err), slog.String("profile_id", profileID), slog.String("project_id", principal.Project.ID))
-		telemetry.RecordError(ctx, err)
+		// Already logged + recorded at the service layer; only translate for the client.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete profile"))
 	}
 
-	return connect.NewResponse(&profilesv1.DeleteResponse{}), nil
+	return connect.NewResponse(&profilesv1.DeleteResponse{
+		RequestId: proto.String(requestID),
+		Status:    complianceStatusToProto(status).Enum(),
+	}), nil
+}
+
+// DeleteDataSubject enqueues erasure of the data subject identified by
+// external_id. Unlike Delete, it succeeds even when no profile row exists, since
+// events can be keyed directly by external_id.
+func (s *Server) DeleteDataSubject(
+	ctx context.Context,
+	req *connect.Request[profilesv1.DeleteDataSubjectRequest],
+) (*connect.Response[profilesv1.DeleteDataSubjectResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	externalID := req.Msg.GetExternalId()
+	requestID, status, err := s.service.RequestErasureByExternalID(ctx, principal.Project.ID, externalID, requestedBy(principal))
+	if err != nil {
+		// Already logged + recorded at the service layer; only translate for the client.
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to erase data subject"))
+	}
+
+	return connect.NewResponse(&profilesv1.DeleteDataSubjectResponse{
+		RequestId: proto.String(requestID),
+		Status:    complianceStatusToProto(status).Enum(),
+	}), nil
+}
+
+// GetDeletionRequest returns the status of an erasure request (the DSAR audit
+// trail) so a controller can prove fulfilment.
+func (s *Server) GetDeletionRequest(
+	ctx context.Context,
+	req *connect.Request[profilesv1.GetDeletionRequestRequest],
+) (*connect.Response[profilesv1.GetDeletionRequestResponse], error) {
+	principal, err := rpc.MustGetPrincipalWithProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	requestID := req.Msg.GetRequestId()
+	dr, err := s.service.GetDeletionRequest(ctx, principal.Project.ID, requestID)
+	if err != nil {
+		if errors.Is(err, coreprofiles.ErrDeletionRequestNotFound) {
+			return nil, apperr.NotFound(apperr.ReasonDeletionRequestNotFound, "deletion request not found", apperr.Resource("deletion_request", requestID))
+		}
+		// Already logged + recorded at the service layer; only translate for the client.
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to get deletion request"))
+	}
+
+	return connect.NewResponse(toDeletionRequestResponse(dr)), nil
+}
+
+// requestedBy returns the initiating customer id for accountability, or "" for
+// API-key callers (Principal.Customer is nil on the API-key auth path).
+func requestedBy(p *rpc.Principal) string {
+	if p.Customer != nil {
+		return p.Customer.ID
+	}
+	return ""
+}
+
+// complianceStatusToProto maps the service's ComplianceStatus to the wire enum.
+func complianceStatusToProto(s coreprofiles.ComplianceStatus) profilesv1.ComplianceRequestStatus {
+	switch s {
+	case coreprofiles.ComplianceStatusPending:
+		return profilesv1.ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_PENDING
+	case coreprofiles.ComplianceStatusProcessing:
+		return profilesv1.ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_PROCESSING
+	case coreprofiles.ComplianceStatusCompleted:
+		return profilesv1.ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_COMPLETED
+	case coreprofiles.ComplianceStatusFailed:
+		return profilesv1.ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_FAILED
+	default:
+		return profilesv1.ComplianceRequestStatus_COMPLIANCE_REQUEST_STATUS_UNSPECIFIED
+	}
+}
+
+func toDeletionRequestResponse(dr dbread.ComplianceRequest) *profilesv1.GetDeletionRequestResponse {
+	resp := &profilesv1.GetDeletionRequestResponse{
+		RequestId:        proto.String(dr.ID),
+		Status:           complianceStatusToProto(coreprofiles.ComplianceStatus(dr.Status)).Enum(),
+		EventsIdentified: proto.Int64(dr.EventsAffected),
+		RequestedAt:      postgres.TimestamptzToTimestamp(dr.RequestedAt),
+	}
+	if dr.ExternalID.Valid {
+		resp.ExternalId = proto.String(dr.ExternalID.String)
+	}
+	if dr.ProfileID.Valid {
+		resp.ProfileId = proto.String(dr.ProfileID.String)
+	}
+	if dr.CompletedAt.Valid {
+		resp.CompletedAt = postgres.TimestamptzToTimestamp(dr.CompletedAt)
+	}
+	if dr.Error.Valid {
+		resp.Error = proto.String(dr.Error.String)
+	}
+	return resp
 }
 
 func (s *Server) Get(

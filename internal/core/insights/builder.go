@@ -1340,6 +1340,35 @@ func BuildCustomPropertyKeysQuery(projectID, eventKind string) (string, []any, e
 	return buildPropertyKeysQuery(projectID, "custom", eventKind)
 }
 
+// BuildPromotedAutoPropertyKeysQuery returns the count and recency of each
+// promoted breakdown dimension (materializedDims) from the event rollup
+// (dashboard_event_rollup_daily), optionally scoped to an event kind.
+//
+// Promoted dimensions are stripped out of the auto_properties map into dedicated
+// events columns at ingest, so the property_keys MV — which only enumerates map
+// keys — never sees them. Without this they are absent from the filter/breakdown
+// picker even though the query engine fully supports filtering and breaking down
+// by them. Only non-empty dimension values are counted, matching the
+// "key is present" semantics of the map-based property_keys queries.
+func BuildPromotedAutoPropertyKeysQuery(projectID, eventKind string) (string, []any, error) {
+	return chq.NewQuery().
+		Select(
+			"dim_name AS key",
+			"sum(cnt) AS count",
+			"toDateTime64(max(day), 3) AS last_seen",
+		).
+		From(rollupTable).
+		Where(
+			chq.Eq("project_id", projectID),
+			chq.When(eventKind != "", chq.Eq("kind", eventKind)),
+			chq.Neq("dim_name", totalDimName),
+			chq.RawCond("dim_value != ''"),
+		).
+		GroupBy("dim_name").
+		OrderBy("count DESC").
+		Build()
+}
+
 // BuildProfilePropertyKeysQuery returns a query against property_keys for profile property keys.
 // Profile keys are project-wide (not scoped to an event kind).
 func BuildProfilePropertyKeysQuery(projectID string) (string, []any, error) {
