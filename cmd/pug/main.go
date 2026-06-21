@@ -240,8 +240,9 @@ func renderEmailPreview(ctx context.Context, r *coreemail.Renderer, kind, sample
 }
 
 var devCmd = &cobra.Command{
-	Use:   "dev",
-	Short: "Start the Pug server and workers for development",
+	Use:     "dev",
+	Aliases: []string{"start"},
+	Short:   "Start the Pug server and workers",
 	Run: func(cmd *cobra.Command, args []string) {
 		sigCtx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
