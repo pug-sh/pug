@@ -54,6 +54,13 @@ func weightedIndexN(intN func(int) int, weights []int) int {
 	for _, w := range weights {
 		total += w
 	}
+	if total <= 0 {
+		// All-zero or empty weights have no valid weighted pick; return the
+		// first index rather than panicking in intN(0). Every caller passes a
+		// non-empty, positive-weight table today — this only guards a future
+		// degenerate one.
+		return 0
+	}
 	n := intN(total)
 	for i, w := range weights {
 		n -= w

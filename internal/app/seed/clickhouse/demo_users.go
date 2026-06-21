@@ -1,6 +1,9 @@
 package seed
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // DemoUser exposes a demo user's stable, deterministically-derived
 // attributes to other seeders — the postgres profile seeder uses this so
@@ -20,6 +23,11 @@ type DemoUser struct {
 // DemoUsers returns the first n demo users. Attributes match what the event
 // generator produces for the same distinct ids, in every factory instance.
 func DemoUsers(n int) []DemoUser {
+	if n > DistinctIDPool {
+		// Over-asking would fabricate profiles for distinct ids the event
+		// generator never emits — fail loudly rather than silently drift.
+		panic(fmt.Sprintf("seed: DemoUsers(%d) exceeds the user pool of %d", n, DistinctIDPool))
+	}
 	out := make([]DemoUser, n)
 	for i := range out {
 		u := demoUserProfile(i)

@@ -1,6 +1,10 @@
 package seed
 
 import (
+	"fmt"
+	"math/rand/v2"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -122,6 +126,14 @@ func TestDemoUsersMatchFactory(t *testing.T) {
 			t.Errorf("user %d: Member = %v, want %v", i, got.Member, want.member)
 		case !got.Join.Equal(want.join):
 			t.Errorf("user %d: Join = %v, want %v", i, got.Join, want.join)
+		case got.Region != want.geo.region:
+			t.Errorf("user %d: Region = %q, want %q", i, got.Region, want.geo.region)
+		case got.Country != want.geo.country:
+			t.Errorf("user %d: Country = %q, want %q", i, got.Country, want.geo.country)
+		case got.Timezone != want.geo.timezone:
+			t.Errorf("user %d: Timezone = %q, want %q", i, got.Timezone, want.geo.timezone)
+		case got.Locale != want.geo.locale:
+			t.Errorf("user %d: Locale = %q, want %q", i, got.Locale, want.geo.locale)
 		}
 	}
 }
@@ -358,5 +370,195 @@ func TestSessionFunnelCoherence(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no purchase funnels generated in 20k sessions")
+	}
+}
+
+// TestUserMemoryCausality pins the load-bearing invariant of the cross-session
+// memory helpers: a remembered entry is released only to a session that
+// postdates it. This is what stops out-of-order batch generation from producing
+// a refund that predates its order or a conversion before its trial. The
+// existing continuity test only consumes in-order, so it never exercises the
+// guard these helpers exist for.
+func TestUserMemoryCausality(t *testing.T) {
+	t0 := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+
+	m := &userMemory{}
+	m.rememberOrder(pastOrder{id: "ord-1", amount: 10, t: t0})
+	if _, ok := m.takeOrderBefore(t0.Add(-time.Hour)); ok {
+		t.Error("takeOrderBefore released an order that postdates the cutoff")
+	}
+	if got, ok := m.takeOrderBefore(t0.Add(time.Hour)); !ok || got.id != "ord-1" {
+		t.Errorf("takeOrderBefore = %+v, %v; want ord-1, true", got, ok)
+	}
+
+	m = &userMemory{}
+	m.rememberAbandonedCart([]cartLine{{p: catalog[0], qty: 1}}, t0)
+	if _, ok := m.takeAbandonedCartBefore(t0.Add(-time.Hour)); ok {
+		t.Error("takeAbandonedCartBefore released a cart that postdates the cutoff")
+	}
+	if _, ok := m.takeAbandonedCartBefore(t0.Add(time.Hour)); !ok {
+		t.Error("takeAbandonedCartBefore withheld a cart that predates the cutoff")
+	}
+
+	m = &userMemory{}
+	m.rememberTrial("trial-1", t0)
+	if _, ok := m.takeTrialBefore(t0.Add(-time.Hour)); ok {
+		t.Error("takeTrialBefore released a trial that postdates the cutoff")
+	}
+	if id, ok := m.takeTrialBefore(t0.Add(time.Hour)); !ok || id != "trial-1" {
+		t.Errorf("takeTrialBefore = %q, %v; want trial-1, true", id, ok)
+	}
+}
+
+// TestUserMemoryOrderCap pins the bounded-memory invariant that keeps the live
+// worker's per-user state flat: only the most recent maxRememberedOrders are
+// retained, oldest-first.
+func TestUserMemoryOrderCap(t *testing.T) {
+	m := &userMemory{}
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := range maxRememberedOrders + 2 {
+		m.rememberOrder(pastOrder{id: fmt.Sprintf("ord-%d", i), amount: float64(i), t: base.Add(time.Duration(i) * time.Hour)})
+	}
+	if len(m.orders) != maxRememberedOrders {
+		t.Fatalf("orders len = %d, want cap %d", len(m.orders), maxRememberedOrders)
+	}
+	if m.orders[0].id != "ord-2" { // the two oldest were dropped
+		t.Errorf("oldest surviving order = %s, want ord-2", m.orders[0].id)
+	}
+}
+
+// TestWeightedIndexDegenerate pins the degenerate-weight contract: an all-zero
+// (or empty) weight table returns index 0 rather than panicking in rand.IntN(0),
+// and the normal selection arithmetic lands in the expected bucket.
+func TestWeightedIndexDegenerate(t *testing.T) {
+	if got := weightedIndex([]int{0, 0, 0}); got != 0 {
+		t.Errorf("weightedIndex(all-zero) = %d, want 0", got)
+	}
+	r := rand.New(rand.NewPCG(1, 2))
+	if got := weightedIndexR(r, []int{0, 0}); got != 0 {
+		t.Errorf("weightedIndexR(all-zero) = %d, want 0", got)
+	}
+	if got := weightedIndexN(func(int) int { return 2 }, []int{1, 1, 1}); got != 2 {
+		t.Errorf("weightedIndexN({1,1,1}, pick=2) = %d, want 2", got)
+	}
+}
+
+// TestPickActiveUserDegenerateWindow pins that the lifecycle-rejection loop
+// always makes progress: a window with no overlapping user still returns a
+// usable user and a non-empty window (the documented fallback), and a normal
+// window returns an overlap contained in the user's lifecycle.
+func TestPickActiveUserDegenerateWindow(t *testing.T) {
+	f := newSessionFactory()
+
+	before := userJoinEpoch.Add(-365 * 24 * time.Hour)
+	u, s, e := f.pickActiveUser(before, before.Add(time.Minute))
+	if u == nil {
+		t.Fatal("pickActiveUser returned nil for a pre-epoch window")
+	}
+	if !e.After(s) {
+		t.Fatalf("pickActiveUser returned empty window [%v, %v]", s, e)
+	}
+
+	mid := userJoinEpoch.Add(400 * 24 * time.Hour)
+	u, s, e = f.pickActiveUser(mid, mid.Add(time.Hour))
+	if u == nil || !e.After(s) {
+		t.Fatalf("pickActiveUser(normal) = %v, [%v, %v]", u, s, e)
+	}
+	if s.Before(u.join) || e.After(u.churn) {
+		t.Fatalf("overlap [%v, %v] escapes user lifecycle [%v, %v]", s, e, u.join, u.churn)
+	}
+}
+
+// TestPickJourneyMemberOnly pins the membership gate: a non-member can never be
+// assigned a member-only journey (push, billing, NPS), while a member can.
+func TestPickJourneyMemberOnly(t *testing.T) {
+	for _, platform := range []string{"web", "ios", "android"} {
+		for range 5000 {
+			if jd := pickJourney(platform, false); jd.memberOnly {
+				t.Fatalf("pickJourney(%s, member=false) returned member-only journey %q", platform, jd.name)
+			}
+		}
+	}
+	sawMemberOnly := false
+	for range 5000 {
+		if pickJourney("web", true).memberOnly {
+			sawMemberOnly = true
+			break
+		}
+	}
+	if !sawMemberOnly {
+		t.Error("pickJourney(web, member=true) never returned a member-only journey in 5000 draws")
+	}
+}
+
+// TestBotSessionShape pins that crawler sessions stay web-only, carry a low bot
+// score, use bot- distinct ids, and never emit commerce events — so bot traffic
+// can't pollute revenue/funnel charts.
+func TestBotSessionShape(t *testing.T) {
+	f := newSessionFactory()
+	now := time.Now()
+	for range 500 {
+		sess := f.botSession(now, now.Add(time.Hour))
+		if len(sess) == 0 {
+			t.Fatal("empty bot session")
+		}
+		for _, e := range sess {
+			a := e.autoProperties
+			if a["$platform"] != "web" {
+				t.Fatalf("bot event on non-web platform %v", a["$platform"])
+			}
+			if score, ok := a["$bot_score"].(int); !ok || score < 1 || score > 28 {
+				t.Fatalf("bot $bot_score = %v, want 1-28", a["$bot_score"])
+			}
+			if !strings.HasPrefix(e.distinctID, "bot-") {
+				t.Fatalf("bot distinct id = %q, want bot- prefix", e.distinctID)
+			}
+			switch e.kind {
+			case "purchase", "add_to_cart", "checkout_started", "trial_started":
+				t.Fatalf("bot emitted commerce event %q", e.kind)
+			}
+		}
+	}
+}
+
+// TestToLiveEventsCopiesAllFields pins the event → LiveEvent boundary: every
+// field round-trips, and a field-count check guards against a new event field
+// silently going unmapped (which would diverge backfilled events from live ones).
+func TestToLiveEventsCopiesAllFields(t *testing.T) {
+	e := event{
+		eventID:          "evt",
+		distinctID:       "did",
+		sessionID:        "sid",
+		kind:             "purchase",
+		occurTime:        time.Unix(1_700_000_000, 0).UTC(),
+		autoProperties:   map[string]any{"$k": "v"},
+		customProperties: map[string]any{"amount": 1.0},
+	}
+	got := toLiveEvents([]event{e})
+	if len(got) != 1 {
+		t.Fatalf("toLiveEvents len = %d, want 1", len(got))
+	}
+	le := got[0]
+	if le.EventID != e.eventID || le.DistinctID != e.distinctID || le.SessionID != e.sessionID ||
+		le.Kind != e.kind || !le.OccurTime.Equal(e.occurTime) {
+		t.Fatalf("scalar field mismatch: %+v vs %+v", le, e)
+	}
+	if le.AutoProperties["$k"] != "v" || le.CustomProperties["amount"] != 1.0 {
+		t.Fatalf("property maps not copied: %+v", le)
+	}
+	if ne, nl := reflect.TypeOf(event{}).NumField(), reflect.TypeOf(LiveEvent{}).NumField(); ne != nl {
+		t.Errorf("event has %d fields, LiveEvent has %d — toLiveEvents must map all of them", ne, nl)
+	}
+}
+
+// TestTrafficFactorShape pins the direction of the diurnal curve (not just its
+// range): the small hours are quieter than the evening peak on a given day. A
+// transposed hour table (peak at 3am) passes the range test but fails this.
+func TestTrafficFactorShape(t *testing.T) {
+	day := time.Date(2026, 4, 7, 0, 0, 0, 0, time.UTC) // Tuesday
+	night := TrafficFactor(day.Add(3 * time.Hour))
+	evening := TrafficFactor(day.Add(20 * time.Hour))
+	if night >= evening {
+		t.Errorf("TrafficFactor 03:00 (%v) >= 20:00 (%v); diurnal curve looks inverted", night, evening)
 	}
 }

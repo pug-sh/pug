@@ -17,8 +17,14 @@ import (
 // Users
 // ---------------------------------------------------------------------------
 
+// DistinctIDPool is the number of distinct human users the generator emits
+// events for. Exported as the single source of truth for the demo population
+// size: the postgres profile seeder seeds exactly this many profiles, so
+// seeding more would create profiles for distinct ids that never produce
+// events and seeding fewer would leave emitted users profile-less.
+const DistinctIDPool = 10_000
+
 const (
-	distinctIDPool = 10_000
 	botIDPool      = 300
 	memberShare    = 0.3 // members: signed-in, pushable, higher purchase intent
 	botSessionRate = 0.025
@@ -147,6 +153,21 @@ func (m *userMemory) rememberOrder(o pastOrder) {
 	}
 }
 
+// rememberAbandonedCart records a cart left un-purchased so a later session can
+// resume it. Mirrors the read-side takeAbandonedCartBefore so every mutation of
+// the causality-sensitive memory fields goes through the type rather than
+// caller discipline.
+func (m *userMemory) rememberAbandonedCart(cart []cartLine, at time.Time) {
+	m.abandonedCart = cart
+	m.abandonedAt = at
+}
+
+// rememberTrial records a started trial so a later session can convert it.
+func (m *userMemory) rememberTrial(id string, at time.Time) {
+	m.trialID = id
+	m.trialStartedAt = at
+}
+
 // takeOrderBefore pops the oldest remembered order that predates t.
 func (m *userMemory) takeOrderBefore(t time.Time) (pastOrder, bool) {
 	for i, o := range m.orders {
@@ -196,7 +217,7 @@ func newSessionFactory() *sessionFactory {
 		locs:     make(map[string]*time.Location),
 	}
 
-	f.users = make([]userProfile, distinctIDPool)
+	f.users = make([]userProfile, DistinctIDPool)
 	for i := range f.users {
 		f.users[i] = demoUserProfile(i)
 	}
@@ -363,8 +384,12 @@ var dayWeights = [7]float64{1.35, 0.85, 0.85, 0.90, 0.95, 1.10, 1.45} // Sun..Sa
 
 // startTimeWeight combines diurnal/weekly curves with episode multipliers.
 // Long-term growth is not synthesized here — it emerges from loyal users
-// accumulating as join dates spread across the window. Max possible value =
-// 1.65 (mobile hour peak) * 1.45 (Saturday) * 1.45 (promo) ≈ 3.47.
+// accumulating as join dates spread across the window. Max possible value:
+// Sat/Sun force weekendHourWeights (peak 1.50) rather than the mobile table
+// (1.65), so the weekend ceiling dominates — 1.50 (weekend hour peak) * 1.45
+// (Saturday) * 1.45 (promo) ≈ 3.15; 3.5 is a safe over-estimate for the
+// rejection sampler (an over-estimated denominator only costs sampling
+// efficiency, never correctness).
 const maxStartWeight = 3.5
 
 func (f *sessionFactory) startTimeWeight(t time.Time, geo geoEntry, mobile bool) float64 {

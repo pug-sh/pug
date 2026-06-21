@@ -102,9 +102,14 @@ const (
 
 // decideSeedAction picks the backfill action from the current event count. A
 // finished backfill inserts exactly seedCount rows and live traffic only grows
-// it from there, so n >= seedCount means a prior run completed. 0 < n <
-// seedCount is an interrupted backfill that re-running can't repair (random
-// event ids defeat ReplacingMergeTree dedup). n == 0 is a fresh project.
+// it from there, so n >= seedCount is treated as "a prior run completed". That
+// is a proxy, not a proof: the count alone can't distinguish a clean backfill
+// from one that was interrupted early and then had live traffic push the total
+// past seedCount — both read as complete. We accept that (the alternative is a
+// persisted completion marker) because the blast radius is a slightly thin demo
+// dashboard, not production data. 0 < n < seedCount is an interrupted backfill
+// that re-running can't repair (random event ids defeat ReplacingMergeTree
+// dedup). n == 0 is a fresh project.
 func decideSeedAction(n uint64, seedCount int64) seedAction {
 	switch {
 	case n >= uint64(seedCount):
@@ -166,7 +171,7 @@ func ensureSeed(ctx context.Context, cfg Config) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("check demo data: %w", err)
 	}
-	switch decideSeedAction(n, cfg.SeedCount) {
+	switch action := decideSeedAction(n, cfg.SeedCount); action {
 	case seedSkip:
 		slog.InfoContext(ctx, "demo data present, skipping backfill",
 			slog.String("project_id", project.ID),
@@ -185,6 +190,10 @@ func ensureSeed(ctx context.Context, cfg Config) (string, error) {
 			slog.String("recovery", "TRUNCATE TABLE events and restart the demo worker to re-seed"),
 		)
 		return project.ID, nil
+	case seedBackfill:
+		// Empty project — fall through to the one-time backfill below.
+	default:
+		return "", fmt.Errorf("unhandled seed action %d", action)
 	}
 
 	slog.InfoContext(ctx, "no demo data found, backfilling before live traffic",
@@ -284,7 +293,7 @@ func (w *worker) play(ctx context.Context, sess []seed.LiveEvent) {
 			}
 		}
 
-		if err := w.publisher.Publish(ctx, w.projectID, []*eventsv1.Event{toProtoEvent(e)}); err != nil {
+		if err := w.publisher.Publish(ctx, w.projectID, []*eventsv1.Event{toProtoEvent(ctx, e)}); err != nil {
 			// Publisher already logged and recorded the error; drop the rest
 			// of the session rather than retrying — this is synthetic
 			// traffic and the next session is seconds away.
@@ -293,33 +302,38 @@ func (w *worker) play(ctx context.Context, sess []seed.LiveEvent) {
 	}
 }
 
-func toProtoEvent(e seed.LiveEvent) *eventsv1.Event {
+func toProtoEvent(ctx context.Context, e seed.LiveEvent) *eventsv1.Event {
 	return &eventsv1.Event{
 		EventId:          &e.EventID,
 		DistinctId:       &e.DistinctID,
 		SessionId:        &e.SessionID,
 		Kind:             &e.Kind,
 		OccurTime:        timestamppb.New(e.OccurTime),
-		AutoProperties:   toPropertyValues(e.AutoProperties),
-		CustomProperties: toPropertyValues(e.CustomProperties),
+		AutoProperties:   toPropertyValues(ctx, e.AutoProperties),
+		CustomProperties: toPropertyValues(ctx, e.CustomProperties),
 	}
 }
 
-func toPropertyValues(props map[string]any) map[string]*commonv1.PropertyValue {
+func toPropertyValues(ctx context.Context, props map[string]any) map[string]*commonv1.PropertyValue {
 	if len(props) == 0 {
 		return nil
 	}
 	out := make(map[string]*commonv1.PropertyValue, len(props))
 	for k, v := range props {
-		out[k] = toPropertyValue(v)
+		out[k] = toPropertyValue(ctx, k, v)
 	}
 	return out
 }
 
+// nonFiniteWarned rate-limits the non-finite-float warning to one log per
+// property key so a regression that starts emitting NaN/Inf surfaces without
+// flooding the hot publish path.
+var nonFiniteWarned sync.Map
+
 // toPropertyValue maps the generator's typed Go values onto PropertyValue
 // slots, matching the typing the enrichment pipeline applies to real traffic
 // (bot scores/screens → Int, lat/long/amounts → Double, flags → Bool).
-func toPropertyValue(v any) *commonv1.PropertyValue {
+func toPropertyValue(ctx context.Context, key string, v any) *commonv1.PropertyValue {
 	switch x := v.(type) {
 	case string:
 		return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_StringValue{StringValue: x}}
@@ -331,6 +345,16 @@ func toPropertyValue(v any) *commonv1.PropertyValue {
 		return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_IntValue{IntValue: x}}
 	case float64:
 		if math.IsNaN(x) || math.IsInf(x, 0) {
+			// A non-finite float can't survive a DoubleValue through protojson,
+			// so fall back to a string. No current generator formula produces
+			// NaN/Inf; warn once per key so a future one that does isn't a
+			// silent Double→String column flip in ClickHouse.
+			if _, seen := nonFiniteWarned.LoadOrStore(key, struct{}{}); !seen {
+				slog.WarnContext(ctx, "non-finite demo property coerced to string",
+					slog.String("key", key),
+					slog.String("value", fmt.Sprint(x)),
+				)
+			}
 			return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_StringValue{StringValue: fmt.Sprint(x)}}
 		}
 		return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_DoubleValue{DoubleValue: x}}

@@ -167,7 +167,15 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *ses
 	// Sessions are atomic and variable-length, so keep pulling whole sessions
 	// until the batch is full, truncating the final session at `size`.
 	for inserted < size {
-		for _, e := range factory.session(start, end) {
+		sess := factory.session(start, end)
+		if len(sess) == 0 {
+			// Defensive: every journey has ≥1 step and botSession emits ≥2, so a
+			// session is never empty today. Guard anyway so a future zero-step
+			// journey can't spin this loop forever — the ctx cancellation check
+			// lives one level up in backfillEvents.
+			break
+		}
+		for _, e := range sess {
 			if inserted >= size {
 				break
 			}

@@ -64,28 +64,38 @@ func (s *Seeder) run(ctx context.Context) (dbread.Project, error) {
 			return dbread.Project{}, err
 		}
 
-		// Completeness is keyed on the customer row, but profiles are seeded
-		// outside the customer transaction — a crash mid-seed leaves the
-		// customer present with profiles partial. Re-counting the seeded
-		// user-%05d profiles lets us warn loudly (mirroring the ClickHouse
-		// backfill guard) instead of silently serving a thin dashboard.
-		var n int64
+		// Completeness is keyed on the customer row, but profiles, devices and
+		// merges are seeded in separate post-customer commits — a crash mid-seed
+		// leaves the customer present with later steps partial. Re-counting the
+		// seeded user-%05d profiles and their devices lets us warn loudly
+		// (mirroring the ClickHouse backfill guard) instead of silently serving
+		// a thin dashboard. Every seeded profile gets at least one device, so a
+		// finished seed has devices >= profiles; a shortfall in either means the
+		// post-customer seed didn't finish.
+		var profiles, devices int64
 		if err := s.deps.pg.QueryRow(ctx,
 			"SELECT count(*) FROM profiles WHERE project_id = $1 AND id LIKE 'user-%'", project.ID,
-		).Scan(&n); err != nil {
+		).Scan(&profiles); err != nil {
 			return dbread.Project{}, fmt.Errorf("count demo profiles: %w", err)
 		}
-		if n < profileCount {
-			slog.WarnContext(ctx, "incomplete demo profile seed detected, leaving partial profiles in place",
+		if err := s.deps.pg.QueryRow(ctx,
+			"SELECT count(*) FROM profile_devices WHERE project_id = $1", project.ID,
+		).Scan(&devices); err != nil {
+			return dbread.Project{}, fmt.Errorf("count demo devices: %w", err)
+		}
+		if profiles < profileCount || devices < profileCount {
+			slog.WarnContext(ctx, "incomplete demo seed detected, leaving partial data in place",
 				slog.String("project_id", project.ID),
-				slog.Int64("profiles", n),
+				slog.Int64("profiles", profiles),
+				slog.Int64("devices", devices),
 				slog.Int("expected", profileCount),
 				slog.String("recovery", "delete the demo customer (woof@pug.sh) and restart the demo worker to re-seed"),
 			)
 		} else {
 			slog.InfoContext(ctx, "skipping profile seed, already populated",
 				slog.String("project_id", project.ID),
-				slog.Int64("profiles", n),
+				slog.Int64("profiles", profiles),
+				slog.Int64("devices", devices),
 			)
 		}
 		return project, nil
@@ -212,7 +222,11 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, er
 	}, nil
 }
 
-const profileCount = 10_000
+// profileCount must equal the event generator's user pool so seeded profiles
+// and the events they belong to describe the same distinct ids. Sourced from
+// the exported constant rather than re-declaring the literal so the two cannot
+// drift.
+const profileCount = chseed.DistinctIDPool
 
 // Customers of the Pug & Pals demo store are, naturally, dogs.
 var firstNames = []string{

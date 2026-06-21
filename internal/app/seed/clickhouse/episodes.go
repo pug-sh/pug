@@ -84,7 +84,7 @@ const (
 	appReleaseCount    = 24                     // covers the join span and then some
 
 	// Error spike window after a release.
-	postReleaseGrace = 3 * 24 * time.Hour
+	postReleaseGrace      = 3 * 24 * time.Hour
 	postReleaseCrashBoost = 0.08
 
 	// Adoption shape: a new version ramps in over ~days and old versions

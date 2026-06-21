@@ -86,8 +86,7 @@ func buildSession(u *userProfile, prof deviceProfile, jd journeyDef, sessionStar
 	// A cart left un-purchased is remembered so a later session (push
 	// recovery or an organic return to the cart) can pick it up.
 	if st.mem != nil && len(st.cart) > 0 && !st.purchased {
-		st.mem.abandonedCart = st.cart
-		st.mem.abandonedAt = sessionStart
+		st.mem.rememberAbandonedCart(st.cart, sessionStart)
 	}
 	return sess
 }
@@ -410,8 +409,7 @@ func (st *sessionState) apply(stp step) map[string]any {
 		p := st.plan()
 		trialID := "trial-" + shortID()
 		if st.mem != nil {
-			st.mem.trialID = trialID
-			st.mem.trialStartedAt = st.start
+			st.mem.rememberTrial(trialID, st.start)
 		}
 		return map[string]any{"trial_id": trialID, "plan_id": p.id, "plan_name": p.name}
 
