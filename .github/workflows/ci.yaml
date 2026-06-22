@@ -3,7 +3,6 @@ name: CI
 on:
   pull_request:
     branches: [main]
-    types: [closed]
   push:
     branches: [main]
 
@@ -17,7 +16,6 @@ defaults:
 
 jobs:
   test:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -42,7 +40,6 @@ jobs:
         run: make test
 
   lint:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -67,7 +64,6 @@ jobs:
         run: make lint
 
   drift:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
