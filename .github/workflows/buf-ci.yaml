@@ -16,6 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # buf-action authenticates via its own token inputs (github_token,
+          # BUF_TOKEN); it needs no persisted git credentials.
+          persist-credentials: false
       - uses: bufbuild/buf-action@v1.4.0
         with:
           # Keep in sync with the buf version pinned in go.mod (go tool buf / make rpc).
