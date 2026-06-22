@@ -6,7 +6,6 @@
 Pug is an open-source product analytics platform. Capture events, identify the
 people behind them, and explore behavior through funnels, retention, trends,
 segmentation, and user-flow analysis — all surfaced on customizable dashboards.
-Pug also handles push notifications: campaigns, delivery, and device management.
 
 Built in Go on PostgreSQL, ClickHouse, and NATS.
 
@@ -21,7 +20,6 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
   comparison.
 - **Dashboards** — compose insight and markdown tiles on a grid with a
   board-level time window, accelerated by a pre-aggregated rollup fast path.
-- **Push notifications** — campaigns, delivery, and device subscriptions.
 - **Privacy & compliance** — GDPR/DPDP data-subject erasure across events,
   rollups, and profiles.
 
