@@ -3,6 +3,7 @@ clients/
 .env
 __debug*
 /bin/
+coverage.out
 pr-review.md
 pr-*review.md
 .agents/
