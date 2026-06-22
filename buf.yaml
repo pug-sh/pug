@@ -10,4 +10,4 @@ breaking:
     - FILE
 modules:
   - path: proto
-    name: buf.build/fivebits/pug
+    name: buf.build/pug-sh/pug
