@@ -1,0 +1,7 @@
+# Codecov configuration — https://docs.codecov.com/docs/codecov-yaml
+# Exclude generated code and binary entrypoints so coverage reflects
+# hand-written, testable code.
+ignore:
+  - "internal/gen/**" # generated protobuf + sqlc
+  - "**/*_templ.go"   # generated templ email templates
+  - "cmd/**"          # binary entrypoints and CLI wiring
