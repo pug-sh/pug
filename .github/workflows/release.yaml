@@ -38,7 +38,7 @@ jobs:
           - { name: migrate-clickhouse,      cmd: migrate/clickhouse,       target: migrate }
           - { name: migrate-nats,            cmd: migrate/nats,             target: migrate }
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
