@@ -20,8 +20,8 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
   comparison.
 - **Dashboards** — compose insight and markdown tiles on a grid with a
   board-level time window, accelerated by a pre-aggregated rollup fast path.
-- **Privacy & compliance** — GDPR/DPDP data-subject erasure across events,
-  rollups, and profiles.
+- **Privacy & compliance** — GDPR/DPDP data-subject erasure of a person's
+  events and profile.
 
 ## Tech stack
 
