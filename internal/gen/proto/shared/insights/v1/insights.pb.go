@@ -1007,12 +1007,15 @@ type UserFlowQuery struct {
 	// Event-level filter: restricts which events are eligible to become nodes.
 	// Not a session filter — sessions with no eligible events emit no transitions.
 	Scope *v1.EventFilter `protobuf:"bytes,4,opt,name=scope" json:"scope,omitempty"`
-	// Maximum transitions (edges) per session/user. A max_hops = N flow touches at most N+1 nodes.
+	// Maximum transitions (edges) per session/user, i.e. the number of Sankey
+	// steps. A max_hops = N flow touches at most N+1 nodes (depths 0..N).
 	// Default 5 in builder. CEL max: 10.
 	MaxHops *int32 `protobuf:"varint,5,opt,name=max_hops,json=maxHops" json:"max_hops,omitempty"`
-	// Top-N nodes before $others collapse. Default 20. CEL min 2, max 50 when set.
+	// Top-N nodes to keep PER STEP (per depth) before collapsing the rest of that
+	// step into its $others bucket. Default 20. CEL min 2, max 50 when set.
 	MaxNodes *int32 `protobuf:"varint,6,opt,name=max_nodes,json=maxNodes" json:"max_nodes,omitempty"`
-	// Maximum links in response after $others collapse. Default 100. CEL max 500 when set.
+	// Maximum links in response after the per-step $others collapse (lowest-value
+	// links dropped). Default 250. CEL max 500 when set.
 	MaxLinks      *int32 `protobuf:"varint,7,opt,name=max_links,json=maxLinks" json:"max_links,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1389,12 +1392,25 @@ func (x *TopKProfile) GetProperties() *structpb.Struct {
 
 type UserFlowNode struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Id    *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
-	// is_others marks the synthetic overflow bucket that aggregates the nodes
-	// pruned by max_nodes. Real nodes have is_others=false. Clients must identify
-	// the bucket by this flag, NOT by matching id against "$others" — a real event
-	// kind or property value can legitimately be the literal string "$others".
-	IsOthers      *bool `protobuf:"varint,2,opt,name=is_others,json=isOthers" json:"is_others,omitempty"`
+	// Opaque unique key, referenced by UserFlowLink.source/target. Unique per
+	// (depth, label): the same event kind or property value at two different steps
+	// is two distinct nodes (e.g. "page_view" at step 0 and step 2). Treat as an
+	// opaque token — do not parse it; use label for display and depth for column.
+	Id *string `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	// is_others marks the synthetic per-step overflow bucket that aggregates the
+	// nodes pruned by max_nodes at that depth. Real nodes have is_others=false.
+	// Clients must identify the bucket by this flag, NOT by matching id/label
+	// against "$others" — a real event kind or property value can legitimately be
+	// the literal string "$others".
+	IsOthers *bool `protobuf:"varint,2,opt,name=is_others,json=isOthers" json:"is_others,omitempty"`
+	// depth is the 0-based step index — the Sankey column. It is the node's
+	// position in each session's time-ordered event sequence. Every link connects
+	// a node at depth d to a node at depth d+1, so the graph is a layered DAG.
+	Depth *int32 `protobuf:"varint,3,opt,name=depth" json:"depth,omitempty"`
+	// label is the display name: the event kind (NODE_KIND_EVENT_KIND) or property
+	// value (NODE_KIND_PROPERTY). The overflow bucket carries "$others" but must be
+	// rendered from is_others, not by matching this string.
+	Label         *string `protobuf:"bytes,4,opt,name=label" json:"label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1441,6 +1457,20 @@ func (x *UserFlowNode) GetIsOthers() bool {
 		return *x.IsOthers
 	}
 	return false
+}
+
+func (x *UserFlowNode) GetDepth() int32 {
+	if x != nil && x.Depth != nil {
+		return *x.Depth
+	}
+	return 0
+}
+
+func (x *UserFlowNode) GetLabel() string {
+	if x != nil && x.Label != nil {
+		return *x.Label
+	}
+	return ""
 }
 
 type UserFlowLink struct {
@@ -2630,10 +2660,12 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"externalId\x127\n" +
 	"\n" +
 	"properties\x18\x03 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"properties\";\n" +
+	"properties\"g\n" +
 	"\fUserFlowNode\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
-	"\tis_others\x18\x02 \x01(\bR\bisOthers\"]\n" +
+	"\tis_others\x18\x02 \x01(\bR\bisOthers\x12\x14\n" +
+	"\x05depth\x18\x03 \x01(\x05R\x05depth\x12\x14\n" +
+	"\x05label\x18\x04 \x01(\tR\x05label\"]\n" +
 	"\fUserFlowLink\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x1d\n" +

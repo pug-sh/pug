@@ -15,8 +15,8 @@ import (
 
 const (
 	defaultUserFlowMaxHops  = 5
-	defaultUserFlowMaxNodes = 20
-	defaultUserFlowMaxLinks = 100
+	defaultUserFlowMaxNodes = 20 // per step (per depth)
+	defaultUserFlowMaxLinks = 250
 
 	// defaultUserFlowNodeKind is the resolved value when NodeKind is UNSPECIFIED.
 	// Not a silent fallback — resolved explicitly in resolveUserFlowParams, not via
@@ -92,27 +92,34 @@ func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string, resolved
 		).
 		GroupBy(groupKeyCol)
 
+	// idx is 1-based (arrayEnumerate); toInt32(idx-1) is the 0-based depth of the
+	// source node — the Sankey column. The edge connects depth (idx-1) → idx.
 	pairsCTE := chq.NewQuery().
 		Select(
 			"group_key",
+			"toInt32(idx - 1) AS step",
 			"nodes[idx] AS source",
 			"nodes[idx + 1] AS target",
 		).
 		From("session_nodes ARRAY JOIN arrayEnumerate(nodes) AS idx").
 		Where(chq.RawCond("idx < length(nodes)"))
 
+	// Group by step as well as source/target: the same label at two positions is
+	// two distinct nodes, so transitions are position-scoped (Rybbit-style steps).
+	// No "source != target" filter — a session that fires the same event twice in a
+	// row is a legitimate depth d → d+1 step, never a self-loop (the endpoints sit
+	// at different depths).
 	return chq.NewQuery().
 		With("session_nodes", sessionNodesCTE).
 		With("pairs", pairsCTE).
-		Select("source", "target", "count(DISTINCT group_key) AS value").
+		Select("step", "source", "target", "count(DISTINCT group_key) AS value").
 		From("pairs").
 		Where(
 			chq.Neq("source", ""),
 			chq.Neq("target", ""),
-			chq.RawCond("source != target"),
 		).
-		GroupBy("source", "target").
-		OrderBy("value DESC"), nil
+		GroupBy("step", "source", "target").
+		OrderBy("step ASC", "value DESC"), nil
 }
 
 // userFlowNodesArrayExpr returns the arraySlice/arraySort/groupArray expression.
@@ -153,23 +160,38 @@ func userFlowScopeCondition(uf *insightsv1.UserFlowQuery, projectID string) (chq
 	return chq.EventConditionAliased([]*commonv1.EventFilter{uf.GetScope()}, projectID, "")
 }
 
-// nodeRef is the internal identity of a flow-graph node. The synthetic overflow
-// bucket (others=true) is a DISTINCT identity from every real node — including a
-// real node whose id is literally userFlowOthersNodeID — so collapsing pruned
-// nodes never merges their traffic into, or steals it from, a real "$others"
-// node. Real nodes carry others=false.
-type nodeRef struct {
-	id     string
+// depthLabel keys a real node by its (0-based depth, label). The same label at
+// two depths is two distinct nodes — that layering is what makes the graph a
+// clean DAG (every edge goes depth d → d+1), the property a Sankey needs.
+type depthLabel struct {
+	depth int32
+	label string
+}
+
+// stepNodeRef is the internal identity of a flow-graph node: a label at a
+// specific depth, plus whether it is that depth's synthetic overflow bucket.
+// The bucket (others=true) is a DISTINCT identity from every real node at the
+// same depth — including a real node literally named userFlowOthersNodeID — so
+// collapsing pruned nodes never merges their traffic with a real "$others" node.
+type stepNodeRef struct {
+	depth  int32
+	label  string
 	others bool
 }
 
-// GroupUserFlowResult applies top-N pruning, $others collapse, and link truncation
-// to raw ClickHouse rows and returns a ready-to-serialize UserFlowResult.
+// GroupUserFlowResult applies per-step top-N pruning, per-step $others collapse,
+// and link truncation to raw step-scoped ClickHouse rows, returning a
+// ready-to-serialize UserFlowResult.
 //
-// The overflow bucket is tracked as a distinct identity (see nodeRef) and reported
-// to clients via UserFlowNode.is_others — never by matching the id string. Its
-// emitted id is normally userFlowOthersNodeID, but is disambiguated when a real
-// surviving node already uses that id so emitted link endpoints stay unambiguous.
+// Each row is an edge from (Step, Source) at depth d to (Step+1, Target) at depth
+// d+1. Ranking and the $others bucket are computed PER DEPTH, so each Sankey
+// column keeps its own busiest nodes (a node ranked low globally but high at its
+// step still survives in that column).
+//
+// The overflow bucket is tracked as a distinct identity (see stepNodeRef) and
+// reported to clients via UserFlowNode.is_others — never by matching the id or
+// label string. Each node also carries its depth so the client lays out columns
+// directly instead of inferring them from the graph.
 //
 // No error return: this function is pure Go with no I/O. It always returns a
 // non-nil result. On empty input it returns an empty but valid UserFlowResult.
@@ -179,58 +201,58 @@ func GroupUserFlowResult(_ context.Context, rows []UserFlowRow, maxNodes, maxLin
 		return empty
 	}
 
-	// Weight each real node by total edge value touching it, from the raw rows
-	// (before any collapse). The bucket is synthetic and never weighted here.
-	nodeWeight := map[string]int64{}
+	// Weight each real (depth,label) node by total edge value touching it.
+	nodeWeight := map[depthLabel]int64{}
 	for _, row := range rows {
-		nodeWeight[row.Source] += row.Value
-		nodeWeight[row.Target] += row.Value
+		nodeWeight[depthLabel{row.Step, row.Source}] += row.Value
+		nodeWeight[depthLabel{row.Step + 1, row.Target}] += row.Value
 	}
 
-	nodeIDs := slices.Collect(maps.Keys(nodeWeight))
-	sort.Slice(nodeIDs, func(i, j int) bool {
-		wi, wj := nodeWeight[nodeIDs[i]], nodeWeight[nodeIDs[j]]
-		if wi != wj {
-			return wi > wj
+	// Per-step top-N: rank each depth's labels independently and keep the top
+	// maxNodes; the rest collapse into that depth's $others bucket.
+	labelsByDepth := map[int32][]depthLabel{}
+	for dl := range nodeWeight {
+		labelsByDepth[dl.depth] = append(labelsByDepth[dl.depth], dl)
+	}
+	kept := map[depthLabel]struct{}{}
+	for _, dls := range labelsByDepth {
+		sort.Slice(dls, func(i, j int) bool {
+			if wi, wj := nodeWeight[dls[i]], nodeWeight[dls[j]]; wi != wj {
+				return wi > wj
+			}
+			return dls[i].label < dls[j].label
+		})
+		limit := len(dls)
+		if maxNodes > 0 && maxNodes < limit {
+			limit = maxNodes
 		}
-		return nodeIDs[i] < nodeIDs[j]
-	})
-
-	topSet := map[string]struct{}{}
-	if maxNodes > 0 && len(nodeIDs) > maxNodes {
-		for _, id := range nodeIDs[:maxNodes] {
-			topSet[id] = struct{}{}
-		}
-	} else {
-		for _, id := range nodeIDs {
-			topSet[id] = struct{}{}
+		for _, dl := range dls[:limit] {
+			kept[dl] = struct{}{}
 		}
 	}
 
-	// remap routes each raw id to a node identity: kept ids keep their own
-	// identity (others=false); pruned ids collapse into the single synthetic
-	// bucket, which stays distinct from a real node of the same id.
-	bucket := nodeRef{id: userFlowOthersNodeID, others: true}
-	remap := func(id string) nodeRef {
-		if _, ok := topSet[id]; ok {
-			return nodeRef{id: id}
+	// remap routes a raw (depth,label) to a node identity: kept labels keep their
+	// own identity (others=false); pruned labels collapse into their depth's
+	// bucket, which stays distinct from a real node of the same label+depth.
+	remap := func(depth int32, label string) stepNodeRef {
+		if _, ok := kept[depthLabel{depth, label}]; ok {
+			return stepNodeRef{depth: depth, label: label}
 		}
-		return bucket
+		return stepNodeRef{depth: depth, label: userFlowOthersNodeID, others: true}
 	}
 
-	aggregated := map[[2]nodeRef]int64{}
+	// Source sits at depth Step, target at depth Step+1 — always different depths,
+	// so a remapped edge can never be a self-loop. Nothing to drop.
+	aggregated := map[[2]stepNodeRef]int64{}
 	for _, row := range rows {
-		src := remap(row.Source)
-		tgt := remap(row.Target)
-		if src == tgt {
-			continue
-		}
-		aggregated[[2]nodeRef{src, tgt}] += row.Value
+		src := remap(row.Step, row.Source)
+		tgt := remap(row.Step+1, row.Target)
+		aggregated[[2]stepNodeRef{src, tgt}] += row.Value
 	}
 
 	type flowLink struct {
-		source nodeRef
-		target nodeRef
+		source stepNodeRef
+		target stepNodeRef
 		value  int64
 	}
 	links := make([]flowLink, 0, len(aggregated))
@@ -245,14 +267,17 @@ func GroupUserFlowResult(_ context.Context, rows []UserFlowRow, maxNodes, maxLin
 		if links[i].value != links[j].value {
 			return links[i].value > links[j].value
 		}
-		if links[i].source.id != links[j].source.id {
-			return links[i].source.id < links[j].source.id
+		if links[i].source.depth != links[j].source.depth {
+			return links[i].source.depth < links[j].source.depth
+		}
+		if links[i].source.label != links[j].source.label {
+			return links[i].source.label < links[j].source.label
 		}
 		if links[i].source.others != links[j].source.others {
 			return !links[i].source.others // real before bucket
 		}
-		if links[i].target.id != links[j].target.id {
-			return links[i].target.id < links[j].target.id
+		if links[i].target.label != links[j].target.label {
+			return links[i].target.label < links[j].target.label
 		}
 		return !links[i].target.others
 	})
@@ -260,73 +285,76 @@ func GroupUserFlowResult(_ context.Context, rows []UserFlowRow, maxNodes, maxLin
 	if maxLinks > 0 && len(links) > maxLinks {
 		links = links[:maxLinks]
 	}
-
 	if len(links) == 0 {
 		return empty
 	}
 
 	// Surviving node identities (after link truncation).
-	nodeSet := map[nodeRef]struct{}{}
+	nodeSet := map[stepNodeRef]struct{}{}
 	for _, l := range links {
 		nodeSet[l.source] = struct{}{}
 		nodeSet[l.target] = struct{}{}
 	}
 
-	// Resolve the bucket's emitted id. Normally userFlowOthersNodeID; if a real
-	// surviving node already uses that id, append separators until unique so
-	// emitted link endpoints stay unambiguous. is_others is the authoritative
-	// signal regardless of the id.
-	bucketID := userFlowOthersNodeID
-	if _, ok := nodeSet[bucket]; ok {
-		realIDs := map[string]struct{}{}
-		for ref := range nodeSet {
-			if !ref.others {
-				realIDs[ref.id] = struct{}{}
-			}
+	refs := slices.Collect(maps.Keys(nodeSet))
+	// Assign a unique opaque id per identity. Base form "depth:label"; disambiguate
+	// the rare clash (a real node literally named "$others" sharing a depth with
+	// that depth's bucket) by appending "_". Assign real-before-bucket so the real
+	// node keeps the clean id. is_others stays the authoritative bucket signal.
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].depth != refs[j].depth {
+			return refs[i].depth < refs[j].depth
 		}
+		if refs[i].others != refs[j].others {
+			return !refs[i].others
+		}
+		return refs[i].label < refs[j].label
+	})
+	idByRef := make(map[stepNodeRef]string, len(refs))
+	usedIDs := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		id := fmt.Sprintf("%d:%s", ref.depth, ref.label)
 		for {
-			if _, clash := realIDs[bucketID]; !clash {
+			if _, clash := usedIDs[id]; !clash {
 				break
 			}
-			bucketID += "_"
+			id += "_"
 		}
-	}
-	idOf := func(ref nodeRef) string {
-		if ref.others {
-			return bucketID
-		}
-		return ref.id
+		usedIDs[id] = struct{}{}
+		idByRef[ref] = id
 	}
 
 	protoLinks := make([]*insightsv1.UserFlowLink, 0, len(links))
 	for _, l := range links {
 		protoLinks = append(protoLinks, &insightsv1.UserFlowLink{
-			Source: proto.String(idOf(l.source)),
-			Target: proto.String(idOf(l.target)),
+			Source: proto.String(idByRef[l.source]),
+			Target: proto.String(idByRef[l.target]),
 			Value:  proto.Int64(l.value),
 		})
 	}
 
-	// Emit real nodes sorted by id, then the bucket (if present) last.
-	regularIDs := make([]string, 0, len(nodeSet))
-	hasOthers := false
-	for ref := range nodeSet {
-		if ref.others {
-			hasOthers = true
-			continue
+	// Emit nodes in layout order: depth asc, then weight desc / label asc within a
+	// depth, with that depth's bucket last.
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].depth != refs[j].depth {
+			return refs[i].depth < refs[j].depth
 		}
-		regularIDs = append(regularIDs, ref.id)
-	}
-	sort.Strings(regularIDs)
+		if refs[i].others != refs[j].others {
+			return !refs[i].others // bucket last within its depth
+		}
+		if wi, wj := nodeWeight[depthLabel{refs[i].depth, refs[i].label}], nodeWeight[depthLabel{refs[j].depth, refs[j].label}]; wi != wj {
+			return wi > wj
+		}
+		return refs[i].label < refs[j].label
+	})
 
-	protoNodes := make([]*insightsv1.UserFlowNode, 0, len(regularIDs)+1)
-	for _, id := range regularIDs {
-		protoNodes = append(protoNodes, &insightsv1.UserFlowNode{Id: proto.String(id)})
-	}
-	if hasOthers {
+	protoNodes := make([]*insightsv1.UserFlowNode, 0, len(refs))
+	for _, ref := range refs {
 		protoNodes = append(protoNodes, &insightsv1.UserFlowNode{
-			Id:       proto.String(bucketID),
-			IsOthers: proto.Bool(true),
+			Id:       proto.String(idByRef[ref]),
+			IsOthers: proto.Bool(ref.others),
+			Depth:    proto.Int32(ref.depth),
+			Label:    proto.String(ref.label),
 		})
 	}
 

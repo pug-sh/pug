@@ -544,14 +544,17 @@ message UserFlowQuery {
   // Not a session filter — sessions with no eligible events emit no transitions.
   common.v1.EventFilter scope = 4;
 
-  // Maximum transitions (edges) per session/user. A max_hops = N flow touches at most N+1 nodes.
+  // Maximum transitions (edges) per session/user, i.e. the number of Sankey
+  // steps. A max_hops = N flow touches at most N+1 nodes (depths 0..N).
   // Default 5 in builder. CEL max: 10.
   int32 max_hops = 5;
 
-  // Top-N nodes before $others collapse. Default 20. CEL min 2, max 50 when set.
+  // Top-N nodes to keep PER STEP (per depth) before collapsing the rest of that
+  // step into its $others bucket. Default 20. CEL min 2, max 50 when set.
   int32 max_nodes = 6;
 
-  // Maximum links in response after $others collapse. Default 100. CEL max 500 when set.
+  // Maximum links in response after the per-step $others collapse (lowest-value
+  // links dropped). Default 250. CEL max 500 when set.
   int32 max_links = 7;
 }
 
@@ -638,12 +641,25 @@ message TopKProfile {
 }
 
 message UserFlowNode {
+  // Opaque unique key, referenced by UserFlowLink.source/target. Unique per
+  // (depth, label): the same event kind or property value at two different steps
+  // is two distinct nodes (e.g. "page_view" at step 0 and step 2). Treat as an
+  // opaque token — do not parse it; use label for display and depth for column.
   string id = 1;
-  // is_others marks the synthetic overflow bucket that aggregates the nodes
-  // pruned by max_nodes. Real nodes have is_others=false. Clients must identify
-  // the bucket by this flag, NOT by matching id against "$others" — a real event
-  // kind or property value can legitimately be the literal string "$others".
+  // is_others marks the synthetic per-step overflow bucket that aggregates the
+  // nodes pruned by max_nodes at that depth. Real nodes have is_others=false.
+  // Clients must identify the bucket by this flag, NOT by matching id/label
+  // against "$others" — a real event kind or property value can legitimately be
+  // the literal string "$others".
   bool is_others = 2;
+  // depth is the 0-based step index — the Sankey column. It is the node's
+  // position in each session's time-ordered event sequence. Every link connects
+  // a node at depth d to a node at depth d+1, so the graph is a layered DAG.
+  int32 depth = 3;
+  // label is the display name: the event kind (NODE_KIND_EVENT_KIND) or property
+  // value (NODE_KIND_PROPERTY). The overflow bucket carries "$others" but must be
+  // rendered from is_others, not by matching this string.
+  string label = 4;
 }
 
 message UserFlowLink {
