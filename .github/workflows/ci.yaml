@@ -84,6 +84,9 @@ jobs:
       - name: Download modules and compile tools
         run: go mod download && go install tool
 
+      - name: Check go.mod tidy
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+
       - name: Check sqlc drift
         run: make sqlc && git diff --exit-code internal/gen/repo/
 
