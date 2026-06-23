@@ -1,7 +1,7 @@
 name: Release
 
 # Releases are deliberate, not every push. Pushing a SemVer tag (vX.Y.Z) builds the
-# nine per-role images and pushes them to GHCR (GitHub Container Registry). Plain branch
+# eleven per-role images and pushes them to GHCR (GitHub Container Registry). Plain branch
 # pushes never trigger this — they only run CI (ci.yaml).
 on:
   push:
@@ -34,6 +34,8 @@ jobs:
           - { name: worker-profile-identify, cmd: workers/profile/identify, target: worker }
           - { name: worker-profile-alias,    cmd: workers/profile/alias,    target: worker }
           - { name: worker-profile-upsert,   cmd: workers/profile/upsert,   target: worker }
+          - { name: worker-compliance,       cmd: workers/compliance,       target: worker }
+          - { name: worker-demo,             cmd: workers/demo,             target: worker }
           - { name: migrate-postgres,        cmd: migrate/postgres,         target: migrate }
           - { name: migrate-clickhouse,      cmd: migrate/clickhouse,       target: migrate }
           - { name: migrate-nats,            cmd: migrate/nats,             target: migrate }
@@ -72,6 +74,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Per-name cache scope so the nine parallel builds don't clobber each other.
+          # Per-name cache scope so the eleven parallel builds don't clobber each other.
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,scope=${{ matrix.name }},mode=max
