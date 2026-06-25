@@ -192,6 +192,70 @@ func TestGetMemberRoleCaching(t *testing.T) {
 	})
 }
 
+// TestMemberRoleCachePopulateRaceGuard pins the generation guard that closes the
+// cache-aside repopulation race: a reader that observed a role before a concurrent
+// mutation must NOT be able to write that now-stale role back into the cache after
+// the mutation's invalidation. Without the guard the populate would resurrect the
+// stale (here: elevated ADMIN) role until memberRoleCacheTTL expired.
+func TestMemberRoleCachePopulateRaceGuard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	rd := testutil.SetupRedis(t)
+	ctx := context.Background()
+	w := dbwrite.New(db.PgW)
+	svc := NewServiceWithRoleCache(db.PgRO, db.PgW, nil, rd.Client)
+
+	adminID := seedCacheCustomer(t, w)
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "race-"+adminID)
+	if err != nil {
+		t.Fatalf("CreateOrgWithDefaults: %v", err)
+	}
+	// A second admin so the demotion below is not blocked by the last-admin guard.
+	member := seedCacheCustomer(t, w)
+	if _, err := w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      org.ID,
+		CustomerID: member,
+		Role:       RoleAdmin.String(),
+	}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	roleKey := memberRoleCacheKey(org.ID, member)
+	genKey := memberRoleGenCacheKey(org.ID, member)
+
+	// Slow reader: observe the generation, then "read" role=ADMIN — exactly the
+	// state captured just before a populate.
+	observedGen := rd.Client.Get(ctx, genKey).Val() // "" while the counter is absent
+
+	// A concurrent demotion commits and invalidates before the slow reader populates.
+	if _, err := svc.UpdateMemberRole(ctx, org.ID, member, RoleMember); err != nil {
+		t.Fatalf("UpdateMemberRole: %v", err)
+	}
+
+	// The slow reader now attempts to write the stale ADMIN under its stale
+	// generation. The CAS guard must reject the write.
+	if err := memberRolePopulateScript.Run(ctx, rd.Client,
+		[]string{roleKey, genKey},
+		RoleAdmin.String(), observedGen, int(memberRoleCacheTTL.Seconds()),
+	).Err(); err != nil {
+		t.Fatalf("populate script: %v", err)
+	}
+	if n, _ := rd.Client.Exists(ctx, roleKey).Result(); n != 0 {
+		t.Fatal("stale reader resurrected an invalidated role; generation guard failed")
+	}
+
+	// A genuine read reflects the committed demotion and re-warms the cache.
+	if role, err := svc.GetMemberRole(ctx, org.ID, member); err != nil || role != RoleMember {
+		t.Fatalf("GetMemberRole = (%q, %v), want (MEMBER, nil)", role, err)
+	}
+	if got := rd.Client.Get(ctx, roleKey).Val(); got != RoleMember.String() {
+		t.Fatalf("cache entry = %q, want %q (fresh read should populate under the new generation)", got, RoleMember.String())
+	}
+}
+
 // TestGetMemberRoleCorruptCacheSelfHeals pins the cache-read recovery branch: a
 // cached value outside the recognized role set must NOT be trusted — GetMemberRole
 // drops it and falls through to Postgres, returning the real role (and re-caching

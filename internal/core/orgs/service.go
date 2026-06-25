@@ -274,20 +274,71 @@ func (s *Service) GetMember(ctx context.Context, orgID, customerID string) (dbre
 
 const (
 	// memberRoleCachePrefix namespaces cached (org_id, customer_id) -> role
-	// entries. memberRoleCacheTTL bounds staleness if an invalidation Del is ever
-	// lost (e.g. a Redis blip); under normal operation the explicit invalidation
-	// on every member removal / role change makes a privilege change take effect
-	// immediately. It is purely a backstop — not the consistency mechanism — so it
-	// is deliberately short: it caps the worst-case window in which a removed or
-	// demoted member retains elevated access after a lost invalidation, at the cost
-	// of at most one indexed org_members PK read per key per TTL on the steady path.
+	// entries. memberRoleCacheTTL bounds staleness if an invalidation is ever lost
+	// (e.g. a Redis blip); under normal operation the explicit, generation-guarded
+	// invalidation on every member removal / role change makes a privilege change
+	// take effect immediately. It is purely a backstop — not the consistency
+	// mechanism — so it is deliberately short: it caps the worst-case window in
+	// which a removed or demoted member retains elevated access after a lost
+	// invalidation, at the cost of at most one indexed org_members PK read per key
+	// per TTL on the steady path.
 	memberRoleCachePrefix = "org:member_role:"
 	memberRoleCacheTTL    = time.Minute
+
+	// memberRoleGenCachePrefix namespaces the per-member generation counter that
+	// makes cache population race-safe (see memberRolePopulateScript). A reader
+	// observes the counter before its DB read and only writes the role back if the
+	// counter is unchanged at write time; every mutation bumps it. Without this, a
+	// reader that read a now-stale role could Set it back *after* a concurrent
+	// mutation's invalidation, resurrecting elevated access until the TTL expired.
+	memberRoleGenCachePrefix = "org:member_role_gen:"
+	// memberRoleGenCacheTTL bounds growth of the generation counters (one extra
+	// Redis key per cached member). It only needs to outlive a single
+	// GetMemberRole's observe→DB-read→populate window — an indexed PK lookup is
+	// sub-millisecond — so an hour is vast headroom while still letting the
+	// counters for churned members expire instead of leaking forever.
+	memberRoleGenCacheTTL = time.Hour
 )
 
 func memberRoleCacheKey(orgID, customerID string) string {
 	return memberRoleCachePrefix + orgID + ":" + customerID
 }
+
+func memberRoleGenCacheKey(orgID, customerID string) string {
+	return memberRoleGenCachePrefix + orgID + ":" + customerID
+}
+
+var (
+	// memberRolePopulateScript writes the role value (KEYS[1]) only when the
+	// member's generation counter (KEYS[2]) still equals the value the caller
+	// observed before its DB read (ARGV[2]; "" means the counter was absent). This
+	// closes the cache-aside race: a reader that read a now-stale role — because a
+	// concurrent UpdateMemberRole/RemoveMemberSafe/Leave committed and invalidated
+	// after the read — finds the generation bumped and skips the write, so it can
+	// never resurrect the stale role after invalidation. ARGV[1]=role,
+	// ARGV[3]=value TTL in seconds.
+	memberRolePopulateScript = goredis.NewScript(`
+local cur = redis.call('GET', KEYS[2])
+if cur == false then cur = '' end
+if cur == ARGV[2] then
+  redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[3])
+  return 1
+end
+return 0
+`)
+
+	// memberRoleInvalidateScript bumps the member's generation counter (KEYS[1],
+	// refreshing its TTL) and drops the cached role value (KEYS[2]) atomically. The
+	// INCR is what makes invalidation race-safe: any in-flight reader that observed
+	// the prior generation fails memberRolePopulateScript's compare and skips its
+	// write. ARGV[1]=generation TTL in milliseconds.
+	memberRoleInvalidateScript = goredis.NewScript(`
+redis.call('INCR', KEYS[1])
+redis.call('PEXPIRE', KEYS[1], ARGV[1])
+redis.call('DEL', KEYS[2])
+return 1
+`)
+)
 
 // GetMemberRole returns the calling customer's role for the given org. The
 // raw value is parsed through ParseRole so callers receive a validated Role —
@@ -300,8 +351,20 @@ func memberRoleCacheKey(orgID, customerID string) string {
 // cross-package auth provisioning path) is visible on its next request with no
 // cross-package invalidation. Removals and role changes invalidate the entry
 // explicitly (see invalidateMemberRole).
+//
+// Population is race-safe against a concurrent invalidation: the generation
+// counter is observed *before* the DB read and the role is written back only if
+// it is still unchanged (memberRolePopulateScript). A reader that read a now-stale
+// role therefore cannot resurrect it after a concurrent mutation has invalidated.
 func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (Role, error) {
 	cacheKey := memberRoleCacheKey(orgID, customerID)
+	genKey := memberRoleGenCacheKey(orgID, customerID)
+
+	// observedGen is the member's cache generation captured before the DB read; ""
+	// means the counter is absent (never invalidated), a valid baseline the
+	// populate CAS matches against. It stays "" when caching is disabled or the
+	// read fails, which only makes the later populate skip — never go stale.
+	var observedGen string
 
 	if s.roleCache != nil {
 		cached, err := s.roleCache.Get(ctx, cacheKey).Result()
@@ -322,6 +385,16 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 		default:
 			slog.WarnContext(ctx, "failed to read member-role cache",
 				slogx.Error(err), slog.String("cache_key", cacheKey))
+		}
+
+		// Observe the generation before the DB read so the populate below can
+		// detect a mutation that lands during the read. goredis.Nil (counter never
+		// created) leaves observedGen == "".
+		if g, gerr := s.roleCache.Get(ctx, genKey).Result(); gerr == nil {
+			observedGen = g
+		} else if !errors.Is(gerr, goredis.Nil) {
+			slog.WarnContext(ctx, "failed to read member-role generation",
+				slogx.Error(gerr), slog.String("cache_key", cacheKey))
 		}
 	}
 
@@ -347,7 +420,13 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 	}
 
 	if s.roleCache != nil {
-		if err := s.roleCache.Set(ctx, cacheKey, role.String(), memberRoleCacheTTL).Err(); err != nil {
+		// CAS populate: write only if no invalidation bumped the generation since
+		// observedGen was captured. A skip (stale generation) or error just means
+		// the next read re-queries Postgres — never a stale cached role.
+		if err := memberRolePopulateScript.Run(ctx, s.roleCache,
+			[]string{cacheKey, genKey},
+			role.String(), observedGen, int(memberRoleCacheTTL.Seconds()),
+		).Err(); err != nil {
 			slog.WarnContext(ctx, "failed to cache member role",
 				slogx.Error(err), slog.String("cache_key", cacheKey))
 		}
@@ -355,20 +434,27 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 	return role, nil
 }
 
-// invalidateMemberRole drops the cached role for (orgID, customerID). Call it
-// after every successful member removal or role change. Best-effort by design
-// (mirrors InvalidateProjectKeys): the DB is the source of truth and has already
-// been updated; a failed Del is logged + recorded and the short TTL bounds the
-// residual staleness. No-op when caching is disabled.
+// invalidateMemberRole drops the cached role for (orgID, customerID) and bumps the
+// member's generation counter, atomically (memberRoleInvalidateScript). Call it
+// after every successful member removal or role change. The generation bump is the
+// race guard: any in-flight GetMemberRole that already read a now-stale role will
+// observe the changed generation and skip its populate, so it cannot resurrect the
+// stale role after this invalidation. Best-effort by design (mirrors
+// InvalidateProjectKeys): the DB is the source of truth and has already been
+// updated; a failure is logged + recorded and the short TTL bounds the residual
+// staleness. No-op when caching is disabled.
 func (s *Service) invalidateMemberRole(ctx context.Context, orgID, customerID string) {
 	if s.roleCache == nil {
 		return
 	}
 	cacheKey := memberRoleCacheKey(orgID, customerID)
-	if err := s.roleCache.Del(ctx, cacheKey).Err(); err != nil {
+	if err := memberRoleInvalidateScript.Run(ctx, s.roleCache,
+		[]string{memberRoleGenCacheKey(orgID, customerID), cacheKey},
+		memberRoleGenCacheTTL.Milliseconds(),
+	).Err(); err != nil {
 		// ERROR, not WARN: this is the one cache failure with a security
 		// consequence — a stale (positive) role can outlive a removal/role change
-		// until memberRoleCacheTTL. Read/Set failures stay WARN (they self-heal
+		// until memberRoleCacheTTL. Read/populate failures stay WARN (they self-heal
 		// by falling through to Postgres).
 		slog.ErrorContext(ctx, "failed to invalidate member-role cache",
 			slogx.Error(err), slog.String("cache_key", cacheKey))
