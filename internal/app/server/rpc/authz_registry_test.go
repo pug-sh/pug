@@ -1,60 +1,19 @@
 package rpc
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc/authzspec"
-	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1/orgsv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1/projectsv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/public/auth/v1/authv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/public/dashboards/v1/publicdashboardsv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1/eventsv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/sdk/profiles/v1/sdkprofilesv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1connect"
-	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
 )
 
-// servedServices lists every RPC service mounted by the server (see start() in
-// server.go), paired with its generated handler interface. The contract test
-// derives the served procedures from these interfaces by reflection, so adding,
-// renaming, or removing an RPC method is caught automatically — no hand-kept
-// procedure list to drift.
-var servedServices = []struct {
-	name    string
-	handler reflect.Type
-}{
-	{authv1connect.AuthServiceName, reflect.TypeFor[authv1connect.AuthServiceHandler]()},
-	{publicdashboardsv1connect.SharedDashboardsServiceName, reflect.TypeFor[publicdashboardsv1connect.SharedDashboardsServiceHandler]()},
-	{orgsv1connect.OrgsServiceName, reflect.TypeFor[orgsv1connect.OrgsServiceHandler]()},
-	{projectsv1connect.ProjectsServiceName, reflect.TypeFor[projectsv1connect.ProjectsServiceHandler]()},
-	{dashboardsv1connect.DashboardsServiceName, reflect.TypeFor[dashboardsv1connect.DashboardsServiceHandler]()},
-	{orgemailprovidersv1connect.OrgEmailProvidersServiceName, reflect.TypeFor[orgemailprovidersv1connect.OrgEmailProvidersServiceHandler]()},
-	{customersv1connect.CustomersServiceName, reflect.TypeFor[customersv1connect.CustomersServiceHandler]()},
-	{insightsv1connect.InsightsServiceName, reflect.TypeFor[insightsv1connect.InsightsServiceHandler]()},
-	{activityv1connect.ActivityServiceName, reflect.TypeFor[activityv1connect.ActivityServiceHandler]()},
-	{profilesv1connect.ProfilesServiceName, reflect.TypeFor[profilesv1connect.ProfilesServiceHandler]()},
-	{sdkprofilesv1connect.ProfilesSDKServiceName, reflect.TypeFor[sdkprofilesv1connect.ProfilesSDKServiceHandler]()},
-	{eventsv1connect.EventsServiceName, reflect.TypeFor[eventsv1connect.EventsServiceHandler]()},
-}
-
-func servedProcedures() map[string]bool {
-	procs := map[string]bool{}
-	for _, svc := range servedServices {
-		for i := 0; i < svc.handler.NumMethod(); i++ {
-			procs["/"+svc.name+"/"+svc.handler.Method(i).Name] = true
-		}
-	}
-	return procs
-}
+// servedServices, servedProcedures, and AssertRegistryMatchesServedProcedures live
+// in authz_served.go (non-test): the same procedure-level contract runs at startup
+// (server.start) and here in CI, so the two cannot drift.
 
 // TestPermissionRegistryCoversAllProcedures is the "no RPC ships without an
 // authz decision" contract: every served procedure must have a registry entry,
-// and every registry entry must correspond to a served procedure.
+// and every registry entry must correspond to a served procedure. It reports every
+// mismatch (vs. the first-error startup assertion) for better CI diagnostics.
 func TestPermissionRegistryCoversAllProcedures(t *testing.T) {
 	served := servedProcedures()
 
@@ -67,6 +26,34 @@ func TestPermissionRegistryCoversAllProcedures(t *testing.T) {
 		if !served[proc] {
 			t.Errorf("permissionRegistry has stale entry %q (no such served RPC)", proc)
 		}
+	}
+}
+
+// TestAssertRegistryMatchesServedProcedures exercises the startup assertion itself
+// (the fail-fast guard server.start runs) against the real registry, so a
+// regression in it is caught in CI.
+func TestAssertRegistryMatchesServedProcedures(t *testing.T) {
+	if err := AssertRegistryMatchesServedProcedures(); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestAssertRegistryCoversProcedures pins both rejection paths of the startup
+// guard with synthetic inputs: a served procedure missing from the registry (the
+// "new method on a mounted service" case this whole change targets) and a stale
+// registry entry. Proves the guard actually fails closed, not just that the real
+// sets happen to match.
+func TestAssertRegistryCoversProcedures(t *testing.T) {
+	reg := map[string]authzspec.Spec{"/svc/A": authzspec.Public()}
+
+	if err := assertRegistryCoversProcedures(map[string]bool{"/svc/A": true}, reg); err != nil {
+		t.Errorf("matching sets returned error: %v", err)
+	}
+	if err := assertRegistryCoversProcedures(map[string]bool{"/svc/A": true, "/svc/B": true}, reg); err == nil {
+		t.Error("served procedure with no registry entry was not rejected")
+	}
+	if err := assertRegistryCoversProcedures(map[string]bool{}, reg); err == nil {
+		t.Error("stale registry entry (no served procedure) was not rejected")
 	}
 }
 

@@ -12,11 +12,12 @@ import (
 // authz decision with no mounted service — so start() fails fast rather than
 // serve an unauthorized (or dead) route.
 //
-// This is the RUNTIME half of the "no RPC ships without an authz decision"
-// contract; the compile/test half lives in
-// rpc.TestPermissionRegistryCoversAllProcedures, which pins the registry to the
-// generated handler interfaces. Together they close the loop:
-// mounted ⊆⊇ registry (here) and registry ⊆⊇ generated procedures (there).
+// This is the SERVICE-level half of the "no RPC ships without an authz decision"
+// contract (mounted ⊆⊇ registry). The PROCEDURE-level half — registry ⊆⊇ generated
+// procedures — is rpc.AssertRegistryMatchesServedProcedures, which start() runs
+// right after this and which rpc.TestPermissionRegistryCoversAllProcedures also
+// asserts in CI. Together they close the loop: a service can't be mounted without
+// an authz decision, and a method can't be served without one either.
 func assertServedServicesMatch(mounted map[string]bool) error {
 	authorized := make(map[string]bool, len(mounted))
 	for _, name := range pogrpc.ServedServiceNames() {

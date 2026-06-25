@@ -206,8 +206,11 @@ func start(ctx context.Context, d *deps) error {
 	// AUTHZ CONTRACT: mount every RPC service through handle(), which records the
 	// service name. assertServedServicesMatch (below) then fails startup unless the
 	// mounted set exactly equals the authz permission registry — so no RPC service
-	// can ship mounted-but-unauthorized (or authorized-but-unmounted). Always mount
-	// RPC routes via handle(), never mux.Handle directly.
+	// can ship mounted-but-unauthorized (or authorized-but-unmounted) — and
+	// AssertRegistryMatchesServedProcedures tightens that to the PROCEDURE level, so
+	// a new method on an already-mounted service (invisible to the service-level
+	// check) also fails fast. Always mount RPC routes via handle(), never mux.Handle
+	// directly.
 	mounted := map[string]bool{}
 	handle := func(path string, h http.Handler) {
 		mounted[strings.Trim(path, "/")] = true
@@ -237,6 +240,12 @@ func start(ctx context.Context, d *deps) error {
 	handle(eventsPath, pogrpc.WithSDKCORS(sdkMW.Wrap(eventsHandler)))
 
 	if err := assertServedServicesMatch(mounted); err != nil {
+		return err
+	}
+	// Procedure-level half of the contract: every served RPC method has an authz
+	// decision (and no entry is stale). Catches a method added to an already-mounted
+	// service, which assertServedServicesMatch (service-level) cannot see.
+	if err := pogrpc.AssertRegistryMatchesServedProcedures(); err != nil {
 		return err
 	}
 
