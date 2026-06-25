@@ -13,6 +13,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/authz"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/secret"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
@@ -25,39 +26,31 @@ import (
 )
 
 type server struct {
-	orgs   *coreorgs.Service
-	read   *dbread.Queries
-	write  *dbwrite.Queries
-	cipher *secret.Cipher
-	repo   *coreemail.OrgProviderRepo
-	mailer *coreemail.Service
+	orgs       *coreorgs.Service
+	read       *dbread.Queries
+	write      *dbwrite.Queries
+	cipher     *secret.Cipher
+	repo       *coreemail.OrgProviderRepo
+	mailer     *coreemail.Service
+	authorizer *authz.Authorizer
 }
 
 // NewServer accepts nil cipher/repo/mailer for operator-only mode (no
 // PUG_EMAIL_PROVIDER_SECRET_KEY). In that mode Get/Set return
 // FailedPrecondition via requireCipher and SendTest returns the same on nil
 // mailer.
-func NewServer(orgs *coreorgs.Service, read *dbread.Queries, write *dbwrite.Queries, cipher *secret.Cipher, repo *coreemail.OrgProviderRepo, mailer *coreemail.Service) *server {
-	return &server{orgs: orgs, read: read, write: write, cipher: cipher, repo: repo, mailer: mailer}
+func NewServer(orgs *coreorgs.Service, read *dbread.Queries, write *dbwrite.Queries, cipher *secret.Cipher, repo *coreemail.OrgProviderRepo, mailer *coreemail.Service, authorizer *authz.Authorizer) *server {
+	return &server{orgs: orgs, read: read, write: write, cipher: cipher, repo: repo, mailer: mailer, authorizer: authorizer}
 }
 
+// requireAdmin authorizes org email-provider administration (email_provider is
+// admin-only in the policy: members hold no email_provider permission, so any
+// action denies a non-admin member with ORG_ADMIN_REQUIRED and a non-member with
+// ORG_NOT_A_MEMBER — identical to the prior hand-rolled check).
 func (s *server) requireAdmin(ctx context.Context, orgID string) (*rpc.Principal, error) {
-	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	role, err := s.orgs.GetMemberRole(ctx, orgID, principal.Customer.ID)
-	if err != nil {
-		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
-		}
-		// orgs service logs+records at source per the log-at-source convention.
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	if role != coreorgs.RoleAdmin {
-		return nil, apperr.PermissionDenied(apperr.ReasonOrgAdminRequired, "admin role required")
-	}
-	return principal, nil
+	return rpc.RequirePermission(ctx, s.authorizer, s.orgs, orgID,
+		authz.ResourceEmailProvider, authz.ActionUpdate,
+		apperr.ReasonOrgAdminRequired, "admin role required")
 }
 
 // requireCipher returns FailedPrecondition when no encryption key is

@@ -1,9 +1,3 @@
--- name: IsOrgMember :one
-select exists(
-  select 1 from org_members
-  where org_id = @org_id and customer_id = @customer_id
-);
-
 -- name: GetOrgMembersByOrgID :many
 select
   om.customer_id,

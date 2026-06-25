@@ -24,6 +24,7 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/slogx"
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/rs/xid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -102,6 +103,11 @@ type Service struct {
 	write     *dbwrite.Queries
 	pgW       *pgxpool.Pool
 	publisher JobPublisher
+	// roleCache, when non-nil, memoizes GetMemberRole lookups in Redis.
+	// Positive-only (non-members are never cached) and invalidated on every
+	// member removal / role change, so a stale entry can never outlive a
+	// privilege change beyond memberRoleCacheTTL. Optional: nil disables caching.
+	roleCache *goredis.Client
 }
 
 type JobPublisher interface {
@@ -125,6 +131,17 @@ func NewService(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher JobPublisher) *
 		pgW:       pgW,
 		publisher: publisher,
 	}
+}
+
+// NewServiceWithRoleCache is NewService plus Redis-backed caching of org
+// member-role lookups (GetMemberRole): pass the shared *goredis.Client (e.g.
+// deps.redis.Unwrap()). Plain NewService always hits Postgres. A dedicated
+// constructor (rather than functional options) keeps the optional dependency
+// explicit and matches the email.NewServiceWithResolver precedent.
+func NewServiceWithRoleCache(pgRO *pgxpool.Pool, pgW *pgxpool.Pool, publisher JobPublisher, roleCache *goredis.Client) *Service {
+	s := NewService(pgRO, pgW, publisher)
+	s.roleCache = roleCache
+	return s
 }
 
 // CreateOrgWithDefaultsInTx performs the org + admin member + default project
@@ -231,13 +248,6 @@ func (s *Service) UpdateDisplayName(ctx context.Context, id, displayName string)
 	return org, nil
 }
 
-func (s *Service) IsOrgMember(ctx context.Context, orgID, customerID string) (bool, error) {
-	return s.read.IsOrgMember(ctx, dbread.IsOrgMemberParams{
-		OrgID:      orgID,
-		CustomerID: customerID,
-	})
-}
-
 func (s *Service) ListMembers(ctx context.Context, orgID string) ([]dbread.GetOrgMembersByOrgIDRow, error) {
 	return s.read.GetOrgMembersByOrgID(ctx, orgID)
 }
@@ -263,18 +273,66 @@ func (s *Service) GetMember(ctx context.Context, orgID, customerID string) (dbre
 	return row, nil
 }
 
+const (
+	// memberRoleCachePrefix namespaces cached (org_id, customer_id) -> role
+	// entries. memberRoleCacheTTL bounds staleness if an invalidation Del is ever
+	// lost (e.g. a Redis blip); under normal operation the explicit invalidation
+	// on every member removal / role change makes a privilege change take effect
+	// immediately. It is purely a backstop — not the consistency mechanism — so it
+	// is deliberately short: it caps the worst-case window in which a removed or
+	// demoted member retains elevated access after a lost invalidation, at the cost
+	// of at most one indexed org_members PK read per key per TTL on the steady path.
+	memberRoleCachePrefix = "org:member_role:"
+	memberRoleCacheTTL    = time.Minute
+)
+
+func memberRoleCacheKey(orgID, customerID string) string {
+	return memberRoleCachePrefix + orgID + ":" + customerID
+}
+
 // GetMemberRole returns the calling customer's role for the given org. The
-// raw DB string is parsed through ParseRole so callers receive a validated
-// Role — values that drift outside the recognized set surface as errors at
-// this boundary rather than silently flowing through equality checks.
+// raw value is parsed through ParseRole so callers receive a validated Role —
+// values that drift outside the recognized set surface as errors at this
+// boundary rather than silently flowing through equality checks.
+//
+// When a role cache is wired (WithRoleCache) a hit is served from Redis. Caching
+// is POSITIVE-ONLY: a non-member (ErrMemberNotFound) is never cached, so a
+// freshly-added member (org create, invite acceptance — including the
+// cross-package auth provisioning path) is visible on its next request with no
+// cross-package invalidation. Removals and role changes invalidate the entry
+// explicitly (see invalidateMemberRole).
 func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (Role, error) {
+	cacheKey := memberRoleCacheKey(orgID, customerID)
+
+	if s.roleCache != nil {
+		cached, err := s.roleCache.Get(ctx, cacheKey).Result()
+		switch {
+		case err == nil:
+			if role, perr := ParseRole(cached); perr == nil {
+				return role, nil
+			}
+			// Corrupt/drifted cached value — drop it and fall through to the DB.
+			slog.WarnContext(ctx, "corrupt member-role cache entry; deleting",
+				slog.String("cache_key", cacheKey))
+			if derr := s.roleCache.Del(ctx, cacheKey).Err(); derr != nil {
+				slog.WarnContext(ctx, "failed to delete corrupt member-role cache entry",
+					slogx.Error(derr), slog.String("cache_key", cacheKey))
+			}
+		case errors.Is(err, goredis.Nil):
+			// Cache miss — fall through to the DB.
+		default:
+			slog.WarnContext(ctx, "failed to read member-role cache",
+				slogx.Error(err), slog.String("cache_key", cacheKey))
+		}
+	}
+
 	raw, err := s.read.GetOrgMemberRole(ctx, dbread.GetOrgMemberRoleParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrMemberNotFound
+			return "", ErrMemberNotFound // positive-only: do not cache non-membership
 		}
 		slog.ErrorContext(ctx, "failed to get org member role", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("customer_id", customerID))
@@ -288,7 +346,35 @@ func (s *Service) GetMemberRole(ctx context.Context, orgID, customerID string) (
 		telemetry.RecordError(ctx, err)
 		return "", err
 	}
+
+	if s.roleCache != nil {
+		if err := s.roleCache.Set(ctx, cacheKey, role.String(), memberRoleCacheTTL).Err(); err != nil {
+			slog.WarnContext(ctx, "failed to cache member role",
+				slogx.Error(err), slog.String("cache_key", cacheKey))
+		}
+	}
 	return role, nil
+}
+
+// invalidateMemberRole drops the cached role for (orgID, customerID). Call it
+// after every successful member removal or role change. Best-effort by design
+// (mirrors InvalidateProjectKeys): the DB is the source of truth and has already
+// been updated; a failed Del is logged + recorded and the short TTL bounds the
+// residual staleness. No-op when caching is disabled.
+func (s *Service) invalidateMemberRole(ctx context.Context, orgID, customerID string) {
+	if s.roleCache == nil {
+		return
+	}
+	cacheKey := memberRoleCacheKey(orgID, customerID)
+	if err := s.roleCache.Del(ctx, cacheKey).Err(); err != nil {
+		// ERROR, not WARN: this is the one cache failure with a security
+		// consequence — a stale (positive) role can outlive a removal/role change
+		// until memberRoleCacheTTL. Read/Set failures stay WARN (they self-heal
+		// by falling through to Postgres).
+		slog.ErrorContext(ctx, "failed to invalidate member-role cache",
+			slogx.Error(err), slog.String("cache_key", cacheKey))
+		telemetry.RecordError(ctx, err)
+	}
 }
 
 // RemoveMemberSafe atomically deletes a member, refusing to remove the last admin.
@@ -323,6 +409,7 @@ func (s *Service) RemoveMemberSafe(ctx context.Context, orgID, customerID string
 		}
 		return ErrLastAdmin
 	}
+	s.invalidateMemberRole(ctx, orgID, customerID)
 	return nil
 }
 
@@ -359,6 +446,7 @@ func (s *Service) Leave(ctx context.Context, orgID, customerID string) error {
 		return err
 	}
 	if n == 1 {
+		s.invalidateMemberRole(ctx, orgID, customerID)
 		return nil
 	}
 
@@ -678,6 +766,7 @@ func (s *Service) UpdateMemberRole(
 		telemetry.RecordError(ctx, err)
 		return dbwrite.OrgMember{}, err
 	}
+	s.invalidateMemberRole(ctx, orgID, customerID)
 	return updated, nil
 }
 

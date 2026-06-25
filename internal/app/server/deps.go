@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/otelconnect"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pug-sh/pug/internal/core/authz"
 	chdb "github.com/pug-sh/pug/internal/deps/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -19,6 +20,7 @@ import (
 )
 
 type deps struct {
+	authz           *authz.Authorizer
 	ch              *chdb.Conn
 	closeOtel       func(context.Context) error
 	corsOrigins     []string
@@ -145,8 +147,17 @@ func newDeps(ctx context.Context) (*deps, error) {
 		}
 	})
 
+	// Authorization policy is built from static in-code rules; it has no I/O or
+	// lifecycle, so it is constructed here and injected like any other dep. A
+	// malformed policy fails startup via this error (no panic, no global).
+	authorizer, err := authz.NewAuthorizer()
+	if err != nil {
+		return nil, err
+	}
+
 	success = true
 	return &deps{
+		authz:           authorizer,
 		ch:              chConn,
 		closeOtel:       closeOtel,
 		corsOrigins:     strings.Split(serverCfg.CORSOrigins, ","),

@@ -12,6 +12,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/authz"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	projectsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1"
@@ -19,6 +20,15 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
+
+// testAuthorizer is the real authz policy, shared across these handler tests.
+var testAuthorizer = func() *authz.Authorizer {
+	a, err := authz.NewAuthorizer()
+	if err != nil {
+		panic(err)
+	}
+	return a
+}()
 
 // ctxWithCustomer returns a context with a JWT principal carrying the given customer.
 func ctxWithCustomer(ctx context.Context, c dbread.Customer) context.Context {
@@ -75,7 +85,7 @@ func newIntegrationServer(t *testing.T) (*server, dbread.Customer, string) {
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
 	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc)
+	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
 
 	ctx := context.Background()
 	write := dbwrite.New(db.PgW)
@@ -122,7 +132,7 @@ func TestHandler_Delete_ProjectNotFound(t *testing.T) {
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
 	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc)
+	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
 
 	ctx := context.Background()
 	orgID := xid.New().String()
@@ -155,7 +165,7 @@ func TestHandler_UpdateMeta_ProjectNotFound(t *testing.T) {
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
 	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc)
+	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
 
 	ctx := context.Background()
 	orgID := xid.New().String()
@@ -188,7 +198,7 @@ func TestHandler_UpdateMeta_InvalidTimezone(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 	db := testutil.SetupPostgres(t)
-	srv := NewServer(coreprojects.NewService(db.PgRO, db.PgW, nil), coreorgs.NewService(db.PgRO, db.PgW, nil))
+	srv := NewServer(coreprojects.NewService(db.PgRO, db.PgW, nil), coreorgs.NewService(db.PgRO, db.PgW, nil), testAuthorizer)
 
 	// The zone is validated before any DB access, so an arbitrary principal suffices.
 	principal := dbread.Project{ID: xid.New().String(), OrgID: xid.New().String()}
@@ -215,7 +225,7 @@ func TestHandler_UpdateMeta_ClearsTimezoneToUTC(t *testing.T) {
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
 	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc)
+	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
 
 	ctx := context.Background()
 	write := dbwrite.New(db.PgW)
@@ -304,7 +314,7 @@ func TestHandler_Create_NonAdminReturnsPermissionDenied(t *testing.T) {
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
 	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc)
+	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
 
 	ctx := context.Background()
 	write := dbwrite.New(db.PgW)
@@ -392,7 +402,7 @@ func TestHandler_BatchGet_NotMemberReturnsPermissionDenied(t *testing.T) {
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
 	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc)
+	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
 
 	ctx := context.Background()
 	write := dbwrite.New(db.PgW)
@@ -518,7 +528,7 @@ func TestHandler_UpdateMeta_EmptyStringResetsTimezoneToUTC(t *testing.T) {
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
 	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc)
+	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
 
 	ctx := context.Background()
 	write := dbwrite.New(db.PgW)

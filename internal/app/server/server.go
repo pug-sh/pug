@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"connectrpc.com/authn"
@@ -88,7 +89,7 @@ func start(ctx context.Context, d *deps) error {
 	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
 	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
 	dashboardsSvc := coredashboards.NewService(d.pgRo, d.pgW)
-	orgsSvc := coreorgs.NewService(d.pgRo, d.pgW, d.nats)
+	orgsSvc := coreorgs.NewServiceWithRoleCache(d.pgRo, d.pgW, d.nats, d.redis.Unwrap())
 	insightsExecutor := coreinsights.NewExecutor(d.ch)
 	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
 
@@ -111,9 +112,9 @@ func start(ctx context.Context, d *deps) error {
 
 	// Dashboard
 	orgsPath, orgsHandler := orgsv1connect.NewOrgsServiceHandler(
-		orgsrpc.NewServer(orgsSvc), handlerOpts)
+		orgsrpc.NewServer(orgsSvc, d.authz), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
+		projects.NewServer(projectsSvc, orgsSvc, d.authz), handlerOpts)
 	dashboardsPath, dashboardsHandler := dashboardsv1connect.NewDashboardsServiceHandler(
 		dashboardsrpc.NewServer(dashboardsSvc, insightsExecutor), handlerOpts)
 	sharedDashboardsPath, sharedDashboardsHandler := publicdashboardsv1connect.NewSharedDashboardsServiceHandler(
@@ -163,7 +164,7 @@ func start(ctx context.Context, d *deps) error {
 	}
 
 	orgEmailProvidersPath, orgEmailProvidersHandler := orgemailprovidersv1connect.NewOrgEmailProvidersServiceHandler(
-		orgemailproviders.NewServer(orgsSvc, queriesRo, dbwrite.New(d.pgW), emailCipher, orgEmailRepo, emailMailer),
+		orgemailproviders.NewServer(orgsSvc, queriesRo, dbwrite.New(d.pgW), emailCipher, orgEmailRepo, emailMailer, d.authz),
 		handlerOpts)
 
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
@@ -196,48 +197,46 @@ func start(ctx context.Context, d *deps) error {
 	mux.HandleFunc("/healthz", livenessHandler)
 	mux.HandleFunc("/readyz", d.readinessHandler)
 
+	// AUTHZ CONTRACT: mount every RPC service through handle(), which records the
+	// service name. assertServedServicesMatch (below) then fails startup unless the
+	// mounted set exactly equals the authz permission registry — so no RPC service
+	// can ship mounted-but-unauthorized (or authorized-but-unmounted). Always mount
+	// RPC routes via handle(), never mux.Handle directly.
+	mounted := map[string]bool{}
+	handle := func(path string, h http.Handler) {
+		mounted[strings.Trim(path, "/")] = true
+		mux.Handle(path, h)
+	}
+
 	// Public (CORS, no auth)
-	mux.Handle(authPath, pogrpc.WithCORS(d.corsOrigins, authHandler))
-	mux.Handle(sharedDashboardsPath, pogrpc.WithCORS(d.corsOrigins, sharedDashboardsHandler))
+	handle(authPath, pogrpc.WithCORS(d.corsOrigins, authHandler))
+	handle(sharedDashboardsPath, pogrpc.WithCORS(d.corsOrigins, sharedDashboardsHandler))
 
 	// Dashboard only (CORS + JWT auth)
-	mux.Handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
-	mux.Handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
-	mux.Handle(dashboardsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
-	mux.Handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
-	mux.Handle(customersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(customersHandler)))
+	handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
+	handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
+	handle(dashboardsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
+	handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
+	handle(customersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(customersHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
-	mux.Handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
-	mux.Handle(activityPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
-	mux.Handle(sharedProfilesPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
+	handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
+	handle(activityPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
+	handle(sharedProfilesPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
 
 	// SDK only (API key auth). CORS is wildcard with credentials disabled because
 	// customer sites embedding the SDK have arbitrary origins; auth lives entirely
 	// in the x-api-key header, so there are no ambient credentials to protect.
-	mux.Handle(sdkProfilesPath, pogrpc.WithSDKCORS(sdkMW.Wrap(sdkProfilesHandler)))
-	mux.Handle(eventsPath, pogrpc.WithSDKCORS(sdkMW.Wrap(eventsHandler)))
+	handle(sdkProfilesPath, pogrpc.WithSDKCORS(sdkMW.Wrap(sdkProfilesHandler)))
+	handle(eventsPath, pogrpc.WithSDKCORS(sdkMW.Wrap(eventsHandler)))
 
-	// Reflection
-	services := []string{
-		// Public
-		authv1connect.AuthServiceName,
-		publicdashboardsv1connect.SharedDashboardsServiceName,
-		// Dashboard
-		orgsv1connect.OrgsServiceName,
-		projectsv1connect.ProjectsServiceName,
-		dashboardsv1connect.DashboardsServiceName,
-		orgemailprovidersv1connect.OrgEmailProvidersServiceName,
-		customersv1connect.CustomersServiceName,
-		// Shared
-		insightsv1connect.InsightsServiceName,
-		activityv1connect.ActivityServiceName,
-		profilesv1connect.ProfilesServiceName,
-		// SDK
-		sdkprofilesv1connect.ProfilesSDKServiceName,
-		eventsv1connect.EventsServiceName,
+	if err := assertServedServicesMatch(mounted); err != nil {
+		return err
 	}
-	reflector := grpcreflect.NewStaticReflector(services...)
+
+	// Reflection advertises exactly the authorized services — same source
+	// (pogrpc.ServedServiceNames) as the AUTHZ CONTRACT check above.
+	reflector := grpcreflect.NewStaticReflector(pogrpc.ServedServiceNames()...)
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))
 	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
 

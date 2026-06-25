@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/authz"
 	"github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -22,10 +23,11 @@ import (
 type server struct {
 	service     *projects.Service
 	orgsService *orgs.Service
+	authorizer  *authz.Authorizer
 }
 
-func NewServer(service *projects.Service, orgsService *orgs.Service) *server {
-	return &server{service: service, orgsService: orgsService}
+func NewServer(service *projects.Service, orgsService *orgs.Service, authorizer *authz.Authorizer) *server {
+	return &server{service: service, orgsService: orgsService, authorizer: authorizer}
 }
 
 // Get returns the project specified by x-project-id header.
@@ -54,20 +56,11 @@ func (s *server) BatchGet(
 		return nil, err
 	}
 
-	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	orgID := req.Msg.GetOrgId()
-	isMember, err := s.orgsService.IsOrgMember(ctx, orgID, principal.Customer.ID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	if !isMember {
-		return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
+	if _, err := rpc.RequirePermission(ctx, s.authorizer, s.orgsService, orgID,
+		authz.ResourceProject, authz.ActionRead,
+		apperr.ReasonOrgNotAMember, "not a member of this org"); err != nil {
+		return nil, err
 	}
 
 	projectsData, err := s.service.GetProjectsByOrgID(ctx, orgID)

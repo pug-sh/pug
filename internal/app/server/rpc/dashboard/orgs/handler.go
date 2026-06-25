@@ -10,6 +10,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/authz"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -18,53 +19,35 @@ import (
 )
 
 type server struct {
-	service *coreorgs.Service
+	service    *coreorgs.Service
+	authorizer *authz.Authorizer
 }
 
-func NewServer(service *coreorgs.Service) *server {
-	return &server{service: service}
+func NewServer(service *coreorgs.Service, authorizer *authz.Authorizer) *server {
+	return &server{service: service, authorizer: authorizer}
 }
 
+// requireOrgMember authorizes any member of the org (org:read). Non-members get
+// PermissionDenied(ORG_NOT_A_MEMBER). Enforcement is centralized in the authz
+// policy via rpc.RequirePermission (role resolved fresh from the DB).
+//
+// Unlike the prior IsOrgMember existence check, this resolves+parses the stored
+// role, so a member row carrying an unrecognized role string now fails closed
+// (CodeInternal) instead of passing. Bounded by the org_members role CHECK
+// constraint; the fail-closed deviation is deliberate.
 func (s *server) requireOrgMember(ctx context.Context, orgID string) (*rpc.Principal, error) {
-	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	isMember, err := s.service.IsOrgMember(ctx, orgID, principal.Customer.ID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	if !isMember {
-		return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
-	}
-
-	return principal, nil
+	return rpc.RequirePermission(ctx, s.authorizer, s.service, orgID,
+		authz.ResourceOrg, authz.ActionRead,
+		apperr.ReasonOrgNotAMember, "not a member of this org")
 }
 
-// requireOrgAdmin extracts the principal and verifies admin role via a single GetMemberRole call.
-// Returns "not a member" if the customer has no membership, or "admin role required" if member but not admin.
+// requireOrgAdmin authorizes org administration (org:update — admin-only in the
+// policy). Non-members get ORG_NOT_A_MEMBER; non-admin members get
+// ORG_ADMIN_REQUIRED — identical to the prior hand-rolled check.
 func (s *server) requireOrgAdmin(ctx context.Context, orgID string) (*rpc.Principal, error) {
-	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	role, err := s.service.GetMemberRole(ctx, orgID, principal.Customer.ID)
-	if err != nil {
-		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
-		}
-		// Service logs+records at source per the log-at-source convention.
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	if role != coreorgs.RoleAdmin {
-		return nil, apperr.PermissionDenied(apperr.ReasonOrgAdminRequired, "admin role required")
-	}
-
-	return principal, nil
+	return rpc.RequirePermission(ctx, s.authorizer, s.service, orgID,
+		authz.ResourceOrg, authz.ActionUpdate,
+		apperr.ReasonOrgAdminRequired, "admin role required")
 }
 
 func (s *server) List(

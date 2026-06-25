@@ -15,6 +15,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/core/authz"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/secret"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
@@ -23,6 +24,15 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
+
+// testAuthorizer is the real authz policy, shared across these handler tests.
+var testAuthorizer = func() *authz.Authorizer {
+	a, err := authz.NewAuthorizer()
+	if err != nil {
+		panic(err)
+	}
+	return a
+}()
 
 func setupCipher(t *testing.T) *secret.Cipher {
 	t.Helper()
@@ -71,7 +81,7 @@ func TestSetGetRoundTripRedactsSecret(t *testing.T) {
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -141,7 +151,7 @@ func TestSetRequiresAdmin(t *testing.T) {
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -197,7 +207,7 @@ func TestGetRequiresAdmin(t *testing.T) {
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -247,7 +257,7 @@ func TestGetWithoutCipherReturnsFailedPrecondition(t *testing.T) {
 
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, nil, repo, nil)
+	srv := orgemailproviders.NewServer(orgs, read, write, nil, repo, nil, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -297,7 +307,7 @@ func TestGetReturnsNotFoundWhenNoProvider(t *testing.T) {
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -350,7 +360,7 @@ func TestSetInvalidatesCache(t *testing.T) {
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -432,7 +442,7 @@ func TestSetGetRoundTripSMTP(t *testing.T) {
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -514,7 +524,7 @@ func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
 
 	adminCtx := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -598,7 +608,7 @@ func TestSendTestRequiresAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -652,7 +662,7 @@ func TestSendTestWithoutMailerReturnsFailedPrecondition(t *testing.T) {
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -714,7 +724,7 @@ func TestSendTestRejectsForeignRecipient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -781,7 +791,7 @@ func TestSendTestSurfacesProviderError(t *testing.T) {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
 
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer, testAuthorizer)
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
 		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
@@ -864,7 +874,7 @@ func TestSendTestHappyPath(t *testing.T) {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
 
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer, testAuthorizer)
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
 		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
@@ -931,7 +941,7 @@ func TestSendTestUsesFreshIdempotencyKeyPerAttempt(t *testing.T) {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
 
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer, testAuthorizer)
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
 		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
@@ -1005,7 +1015,7 @@ func TestSetReturnsInternalOnInvalidateFailure(t *testing.T) {
 	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, broken)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil)
+	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
