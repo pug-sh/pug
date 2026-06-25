@@ -284,52 +284,75 @@ func TestAuthzInterceptorRegistryEntriesEnforced(t *testing.T) {
 }
 
 // TestRoleGatedAdminOnlyRPCs pins the admin-only control-plane RPCs: a member is
-// denied and an admin allowed. This catches a (resource, action) drift that would
-// silently let a member perform org/project/email administration — which the
-// generic monotonicity check in the test above cannot, since it does not know an
-// RPC's intended privilege level.
+// denied and an admin allowed. adminOnly is an INDEPENDENT oracle (separate from
+// the policy), so a (resource, action) drift that downgrades one of these to
+// member-accessible is caught — which the generic monotonicity check in the test
+// above cannot, since it does not know an RPC's intended privilege level.
+//
+// The loop iterates the whole registry so the oracle is checked for completeness
+// in BOTH directions: a listed RPC that stops denying members fails, and an
+// UNLISTED role-gated RPC that denies a member fails too (a new admin-only RPC
+// must be added here, not silently escape the oracle). A trailing pass catches a
+// listed proc that is not a real role-gated entry (a typo or removed RPC).
 func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 	authorizer := mustAuthorizer(t)
 
-	adminOnly := []string{
-		"/dashboard.orgs.v1.OrgsService/UpdateDisplayName",
-		"/dashboard.orgs.v1.OrgsService/InviteMember",
-		"/dashboard.orgs.v1.OrgsService/ResendInvite",
-		"/dashboard.orgs.v1.OrgsService/ListInvitations",
-		"/dashboard.orgs.v1.OrgsService/RemoveMember",
-		"/dashboard.orgs.v1.OrgsService/UpdateMemberRole",
-		"/dashboard.projects.v1.ProjectsService/Create",
-		"/dashboard.projects.v1.ProjectsService/Delete",
-		"/dashboard.projects.v1.ProjectsService/UpdateMeta",
-		"/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON",
-		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Get",
-		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Set",
-		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove",
-		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/SendTest",
+	adminOnly := map[string]bool{
+		"/dashboard.orgs.v1.OrgsService/UpdateDisplayName":                  true,
+		"/dashboard.orgs.v1.OrgsService/InviteMember":                       true,
+		"/dashboard.orgs.v1.OrgsService/ResendInvite":                       true,
+		"/dashboard.orgs.v1.OrgsService/ListInvitations":                    true,
+		"/dashboard.orgs.v1.OrgsService/RemoveMember":                       true,
+		"/dashboard.orgs.v1.OrgsService/UpdateMemberRole":                   true,
+		"/dashboard.projects.v1.ProjectsService/Create":                    true,
+		"/dashboard.projects.v1.ProjectsService/Delete":                    true,
+		"/dashboard.projects.v1.ProjectsService/UpdateMeta":                true,
+		"/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON":      true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Get":     true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Set":     true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":  true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/SendTest": true,
 	}
 
-	for _, proc := range adminOnly {
-		spec, ok := permissionRegistry[proc]
-		if !ok || !spec.IsRoleGated() {
-			t.Errorf("%s: expected a role-gated registry entry", proc)
+	for proc, spec := range permissionRegistry {
+		if !spec.IsRoleGated() {
 			continue
 		}
 		req := reqFor(spec)
-		if err := authorizeRoleGated(jwtProjectCtx(), authorizer,
-			fakeRoleLookup{role: coreorgs.RoleMember}, req, spec); apperrCode(err) != connect.CodePermissionDenied {
-			t.Errorf("%s: member NOT denied (got %v) — this admin-only RPC must reject a member", proc, err)
+		memberErr := authorizeRoleGated(jwtProjectCtx(), authorizer,
+			fakeRoleLookup{role: coreorgs.RoleMember}, req, spec)
+
+		if adminOnly[proc] {
+			if apperrCode(memberErr) != connect.CodePermissionDenied {
+				t.Errorf("%s: member NOT denied (got %v) — this admin-only RPC must reject a member", proc, memberErr)
+			}
+			if err := authorizeRoleGated(jwtProjectCtx(), authorizer,
+				fakeRoleLookup{role: coreorgs.RoleAdmin}, req, spec); err != nil {
+				t.Errorf("%s: admin denied (%v) — this admin-only RPC must allow an admin", proc, err)
+			}
+			continue
 		}
-		if err := authorizeRoleGated(jwtProjectCtx(), authorizer,
-			fakeRoleLookup{role: coreorgs.RoleAdmin}, req, spec); err != nil {
-			t.Errorf("%s: admin denied (%v) — this admin-only RPC must allow an admin", proc, err)
+
+		// Completeness: a role-gated RPC that denies a member but is NOT listed is a
+		// new admin-only RPC missing from adminOnly (or one that is wrongly gated).
+		if memberErr != nil {
+			t.Errorf("%s: denies a member but is not in adminOnly — add it there (or it is wrongly gated)", proc)
+		}
+	}
+
+	// Every listed proc must be a real role-gated registry entry (catch a typo or a
+	// removed RPC left behind in adminOnly).
+	for proc := range adminOnly {
+		if spec, ok := permissionRegistry[proc]; !ok || !spec.IsRoleGated() {
+			t.Errorf("%s: listed in adminOnly but is not a role-gated registry entry", proc)
 		}
 	}
 }
 
 // TestAuthzInterceptorPassesThrough verifies the dispatch: a procedure that is not
-// a domainRoleGated entry (here, an empty/unknown procedure) is passed straight to
-// next without consulting the role lookup, so public/self/SDK and domainProject
-// RPCs are untouched.
+// a role-gated entry (here, an empty/unknown procedure) is passed straight to next
+// without consulting the role lookup, so the non-role-gated RPCs (public / self /
+// SDK / project) are untouched.
 func TestAuthzInterceptorPassesThrough(t *testing.T) {
 	authorizer := mustAuthorizer(t)
 
