@@ -17,9 +17,11 @@ func TestNewAuthorizer(t *testing.T) {
 	}
 }
 
-// TestAuthorizeMatrix is the spec of "who can do what" in the foundation policy.
-// It must mirror today's behavior exactly: member = full CRUD on project-scoped
-// resources + read-only org view; admin = org administration on top (inherited).
+// TestAuthorizeMatrix is the spec of "who can do what". viewer = read-only floor
+// (project-scoped reads + read-only org view); member = full CRUD on
+// project-scoped resources on top of that floor (inherited); admin = org
+// administration on top of member (inherited). member/admin keep the exact
+// effective permissions they had before viewer was introduced.
 func TestAuthorizeMatrix(t *testing.T) {
 	a := newTestAuthorizer(t)
 
@@ -75,6 +77,26 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"admin dashboard read", roleAdmin, ResourceDashboard, ActionRead, true},
 		{"admin dashboard delete", roleAdmin, ResourceDashboard, ActionDelete, true},
 		{"admin profile delete", roleAdmin, ResourceProfile, ActionDelete, true},
+
+		// viewer — read-only floor: project-scoped reads + the org-level view.
+		{"viewer dashboard read", roleViewer, ResourceDashboard, ActionRead, true},
+		{"viewer insight read", roleViewer, ResourceInsight, ActionRead, true},
+		{"viewer activity read", roleViewer, ResourceActivity, ActionRead, true},
+		{"viewer profile read", roleViewer, ResourceProfile, ActionRead, true},
+		{"viewer org read", roleViewer, ResourceOrg, ActionRead, true},
+		{"viewer member read", roleViewer, ResourceMember, ActionRead, true},
+		{"viewer project read", roleViewer, ResourceProject, ActionRead, true},
+
+		// viewer — denied every write, plus the admin-only org reads.
+		{"viewer dashboard create", roleViewer, ResourceDashboard, ActionCreate, false},
+		{"viewer dashboard update", roleViewer, ResourceDashboard, ActionUpdate, false},
+		{"viewer dashboard delete", roleViewer, ResourceDashboard, ActionDelete, false},
+		{"viewer profile delete", roleViewer, ResourceProfile, ActionDelete, false},
+		{"viewer project create", roleViewer, ResourceProject, ActionCreate, false},
+		{"viewer project delete", roleViewer, ResourceProject, ActionDelete, false},
+		{"viewer org update", roleViewer, ResourceOrg, ActionUpdate, false},
+		{"viewer invitation read", roleViewer, ResourceInvitation, ActionRead, false},
+		{"viewer email_provider read", roleViewer, ResourceEmailProvider, ActionRead, false},
 
 		// unknown role gets nothing.
 		{"unknown role dashboard read", "ORG_ROLE_BOGUS", ResourceDashboard, ActionRead, false},

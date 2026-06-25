@@ -28,6 +28,7 @@ const (
 	OrgRole_ORG_ROLE_UNSPECIFIED OrgRole = 0
 	OrgRole_ORG_ROLE_ADMIN       OrgRole = 1
 	OrgRole_ORG_ROLE_MEMBER      OrgRole = 2
+	OrgRole_ORG_ROLE_VIEWER      OrgRole = 3
 )
 
 // Enum value maps for OrgRole.
@@ -36,11 +37,13 @@ var (
 		0: "ORG_ROLE_UNSPECIFIED",
 		1: "ORG_ROLE_ADMIN",
 		2: "ORG_ROLE_MEMBER",
+		3: "ORG_ROLE_VIEWER",
 	}
 	OrgRole_value = map[string]int32{
 		"ORG_ROLE_UNSPECIFIED": 0,
 		"ORG_ROLE_ADMIN":       1,
 		"ORG_ROLE_MEMBER":      2,
+		"ORG_ROLE_VIEWER":      3,
 	}
 )
 
@@ -1423,11 +1426,12 @@ const file_dashboard_orgs_v1_orgs_proto_rawDesc = "" +
 	"\x04role\x18\x03 \x01(\x0e2\x1a.dashboard.orgs.v1.OrgRoleB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x04role\"P\n" +
 	"\x18UpdateMemberRoleResponse\x124\n" +
-	"\x06member\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgMemberR\x06member*L\n" +
+	"\x06member\x18\x01 \x01(\v2\x1c.dashboard.orgs.v1.OrgMemberR\x06member*a\n" +
 	"\aOrgRole\x12\x18\n" +
 	"\x14ORG_ROLE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eORG_ROLE_ADMIN\x10\x01\x12\x13\n" +
-	"\x0fORG_ROLE_MEMBER\x10\x02*t\n" +
+	"\x0fORG_ROLE_MEMBER\x10\x02\x12\x13\n" +
+	"\x0fORG_ROLE_VIEWER\x10\x03*t\n" +
 	"\x10InvitationStatus\x12!\n" +
 	"\x1dINVITATION_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19INVITATION_STATUS_PENDING\x10\x01\x12\x1e\n" +

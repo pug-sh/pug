@@ -15,24 +15,13 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgemailproviders"
 	"github.com/pug-sh/pug/internal/apperr"
-	"github.com/pug-sh/pug/internal/core/authz"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/secret"
-	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	orgemailprovidersv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
-
-// testAuthorizer is the real authz policy, shared across these handler tests.
-var testAuthorizer = func() *authz.Authorizer {
-	a, err := authz.NewAuthorizer()
-	if err != nil {
-		panic(err)
-	}
-	return a
-}()
 
 func setupCipher(t *testing.T) *secret.Cipher {
 	t.Helper()
@@ -78,10 +67,9 @@ func TestSetGetRoundTripRedactsSecret(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, nil)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -122,110 +110,6 @@ func TestSetGetRoundTripRedactsSecret(t *testing.T) {
 	}
 }
 
-func TestSetRequiresAdmin(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration test")
-	}
-	db := testutil.SetupPostgres(t)
-	rds := testutil.SetupRedis(t)
-	ctx := context.Background()
-
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgRO)
-	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: "cust-member-1", Email: "member@acme.com", DisplayName: "Member", PasswordHash: "h", PictureUri: "",
-	})
-	if err != nil {
-		t.Fatalf("CreateCustomer: %v", err)
-	}
-	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-member-1", DisplayName: "Acme"})
-	if err != nil {
-		t.Fatalf("CreateOrg: %v", err)
-	}
-	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_MEMBER",
-	}); err != nil {
-		t.Fatalf("CreateOrgMember: %v", err)
-	}
-
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	cipher := setupCipher(t)
-	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
-
-	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
-		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
-	})
-	_, err = srv.Set(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SetRequest{
-		OrgId:       strPtr(org.ID),
-		FromAddress: strPtr("x@acme.com"),
-		Config: &orgemailprovidersv1.SetRequest_Resend{
-			Resend: &orgemailprovidersv1.ResendConfig{ApiKey: strPtr("sk_test_abcdef1234567890")},
-		},
-	}))
-	if err == nil {
-		t.Fatal("expected admin error")
-	}
-	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
-		t.Fatalf("expected PermissionDenied *apperr.Error, got %v", err)
-	}
-	if ae.Reason() != apperr.ReasonOrgAdminRequired {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
-	}
-}
-
-// TestGetRequiresAdmin verifies a non-admin member cannot read the org's
-// configured provider (which would include the redacted secret).
-func TestGetRequiresAdmin(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration test")
-	}
-	db := testutil.SetupPostgres(t)
-	rds := testutil.SetupRedis(t)
-	ctx := context.Background()
-
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgRO)
-	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: "cust-get-member", Email: "getmember@acme.com", DisplayName: "Member", PasswordHash: "h", PictureUri: "",
-	})
-	if err != nil {
-		t.Fatalf("CreateCustomer: %v", err)
-	}
-	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-get-member", DisplayName: "Acme"})
-	if err != nil {
-		t.Fatalf("CreateOrg: %v", err)
-	}
-	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_MEMBER",
-	}); err != nil {
-		t.Fatalf("CreateOrgMember: %v", err)
-	}
-
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	cipher := setupCipher(t)
-	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
-
-	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
-		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
-	})
-	_, err = srv.Get(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.GetRequest{OrgId: strPtr(org.ID)}))
-	if err == nil {
-		t.Fatal("expected admin error on Get")
-	}
-	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
-		t.Fatalf("expected PermissionDenied *apperr.Error, got %v", err)
-	}
-	if ae.Reason() != apperr.ReasonOrgAdminRequired {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
-	}
-}
-
 // TestGetWithoutCipherReturnsFailedPrecondition verifies the NewServer
 // contract that Get refuses to operate when the operator has not configured
 // PUG_EMAIL_PROVIDER_SECRET_KEY (server constructed with cipher=nil).
@@ -255,9 +139,8 @@ func TestGetWithoutCipherReturnsFailedPrecondition(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, nil, repo, nil, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, nil, repo, nil)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -304,10 +187,9 @@ func TestGetReturnsNotFoundWhenNoProvider(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, nil)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -357,10 +239,9 @@ func TestSetInvalidatesCache(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, nil)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -439,10 +320,9 @@ func TestSetGetRoundTripSMTP(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, nil)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -483,7 +363,11 @@ func TestSetGetRoundTripSMTP(t *testing.T) {
 
 // TestRemoveRequiresAdminAndInvalidates verifies non-admins can't remove the
 // row, and that a successful remove makes a subsequent lookup return absent.
-func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
+// TestRemoveInvalidates pins that Remove deletes the provider row and leaves the
+// cache empty. The admin-only ROLE gate now lives in the AuthzInterceptor (see
+// rpc.TestRoleGatedAdminOnlyRPCs), so this exercises the handler's own behavior
+// for an authorized caller.
+func TestRemoveInvalidates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test")
 	}
@@ -500,12 +384,6 @@ func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCustomer admin: %v", err)
 	}
-	memberCust, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: "cust-rem-mem", Email: "rmmem@acme.com", DisplayName: "Member", PasswordHash: "h", PictureUri: "",
-	})
-	if err != nil {
-		t.Fatalf("CreateCustomer member: %v", err)
-	}
 	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-rem-1", DisplayName: "Acme"})
 	if err != nil {
 		t.Fatalf("CreateOrg: %v", err)
@@ -515,24 +393,14 @@ func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateOrgMember admin: %v", err)
 	}
-	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID: org.ID, CustomerID: memberCust.ID, Role: "ORG_ROLE_MEMBER",
-	}); err != nil {
-		t.Fatalf("CreateOrgMember member: %v", err)
-	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, nil)
 
 	adminCtx := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
 		Customer: &dbread.Customer{ID: adminCust.ID, Email: adminCust.Email},
-	})
-	memberCtx := authn.SetInfo(ctx, &rpc.Principal{
-		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: memberCust.ID, Email: memberCust.Email},
 	})
 
 	if _, err := srv.Set(adminCtx, connect.NewRequest(&orgemailprovidersv1.SetRequest{
@@ -545,18 +413,6 @@ func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
 		t.Fatalf("Set: %v", err)
 	}
 
-	if _, removeErr := srv.Remove(memberCtx, connect.NewRequest(&orgemailprovidersv1.RemoveRequest{OrgId: strPtr(org.ID)})); removeErr == nil {
-		t.Fatal("expected admin error on Remove for member")
-	} else {
-		var ae *apperr.Error
-		if !errors.As(removeErr, &ae) || ae.Code() != connect.CodePermissionDenied {
-			t.Fatalf("expected PermissionDenied *apperr.Error, got %v", removeErr)
-		}
-		if ae.Reason() != apperr.ReasonOrgAdminRequired {
-			t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
-		}
-	}
-
 	if _, err := srv.Remove(adminCtx, connect.NewRequest(&orgemailprovidersv1.RemoveRequest{OrgId: strPtr(org.ID)})); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
@@ -566,67 +422,6 @@ func TestRemoveRequiresAdminAndInvalidates(t *testing.T) {
 	}
 	if entry.Present {
 		t.Fatal("expected provider absent after Remove")
-	}
-}
-
-// TestSendTestRequiresAdmin verifies a non-admin member cannot trigger a
-// test send (which would use the operator's reputation domain).
-func TestSendTestRequiresAdmin(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration test")
-	}
-	db := testutil.SetupPostgres(t)
-	rds := testutil.SetupRedis(t)
-	ctx := context.Background()
-
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgRO)
-	customer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: "cust-st-mem", Email: "stmember@acme.com", DisplayName: "Member", PasswordHash: "h", PictureUri: "",
-	})
-	if err != nil {
-		t.Fatalf("CreateCustomer: %v", err)
-	}
-	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-st-mem", DisplayName: "Acme"})
-	if err != nil {
-		t.Fatalf("CreateOrg: %v", err)
-	}
-	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID: org.ID, CustomerID: customer.ID, Role: "ORG_ROLE_MEMBER",
-	}); err != nil {
-		t.Fatalf("CreateOrgMember: %v", err)
-	}
-
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	cipher := setupCipher(t)
-	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	resolver := &coreemail.OperatorOnlyResolver{Provider: &capturingProvider{}, From: "noreply@example.com"}
-	mailer, err := coreemail.NewServiceWithResolver(coreemail.Config{
-		DashboardBaseURL: "https://dashboard.example",
-		From:             "noreply@example.com",
-	}, resolver)
-	if err != nil {
-		t.Fatalf("NewServiceWithResolver: %v", err)
-	}
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer, testAuthorizer)
-
-	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
-		AuthType: rpc.AuthTypeJWT,
-		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
-	})
-	_, err = srv.SendTest(ctxWithPrincipal, connect.NewRequest(&orgemailprovidersv1.SendTestRequest{
-		OrgId:     strPtr(org.ID),
-		Recipient: strPtr(customer.Email),
-	}))
-	if err == nil {
-		t.Fatal("expected admin error")
-	}
-	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
-		t.Fatalf("expected PermissionDenied *apperr.Error, got %v", err)
-	}
-	if ae.Reason() != apperr.ReasonOrgAdminRequired {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
 	}
 }
 
@@ -659,10 +454,9 @@ func TestSendTestWithoutMailerReturnsFailedPrecondition(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, nil)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -713,7 +507,6 @@ func TestSendTestRejectsForeignRecipient(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
 	resolver := &coreemail.OperatorOnlyResolver{Provider: &capturingProvider{}, From: "noreply@example.com"}
@@ -724,7 +517,7 @@ func TestSendTestRejectsForeignRecipient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, mailer)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
@@ -778,7 +571,6 @@ func TestSendTestSurfacesProviderError(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
 
@@ -791,7 +583,7 @@ func TestSendTestSurfacesProviderError(t *testing.T) {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
 
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, mailer)
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
 		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
@@ -860,7 +652,6 @@ func TestSendTestHappyPath(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
 
@@ -874,7 +665,7 @@ func TestSendTestHappyPath(t *testing.T) {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
 
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, mailer)
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
 		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
@@ -927,7 +718,6 @@ func TestSendTestUsesFreshIdempotencyKeyPerAttempt(t *testing.T) {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, rds.Client)
 
@@ -941,7 +731,7 @@ func TestSendTestUsesFreshIdempotencyKeyPerAttempt(t *testing.T) {
 		t.Fatalf("NewServiceWithResolver: %v", err)
 	}
 
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, mailer, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, mailer)
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
 		Customer: &dbread.Customer{ID: customer.ID, Email: customer.Email},
@@ -1012,10 +802,9 @@ func TestSetReturnsInternalOnInvalidateFailure(t *testing.T) {
 	})
 	t.Cleanup(func() { _ = broken.Close() })
 
-	orgs := coreorgs.NewService(db.PgRO, db.PgW, nil)
 	cipher := setupCipher(t)
 	repo := coreemail.NewOrgProviderRepo(read, broken)
-	srv := orgemailproviders.NewServer(orgs, read, write, cipher, repo, nil, testAuthorizer)
+	srv := orgemailproviders.NewServer(read, write, cipher, repo, nil)
 
 	ctxWithPrincipal := authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,

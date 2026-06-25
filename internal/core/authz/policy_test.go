@@ -33,17 +33,11 @@ func TestPolicyRoleStringsMatchOrgRoles(t *testing.T) {
 // resource/action outside the declared taxonomy (e.g. a future raw-string rule).
 func TestPolicyResourcesAndActionsAreKnown(t *testing.T) {
 	knownResources := map[string]struct{}{}
-	for _, r := range []Resource{
-		ResourceOrg, ResourceMember, ResourceInvitation, ResourceEmailProvider,
-		ResourceProject, ResourceDashboard, ResourceInsight, ResourceActivity,
-		ResourceProfile,
-	} {
+	for _, r := range allResources {
 		knownResources[string(r)] = struct{}{}
 	}
 	knownActions := map[string]struct{}{}
-	for _, act := range []Action{
-		ActionCreate, ActionRead, ActionUpdate, ActionDelete,
-	} {
+	for _, act := range allActions {
 		knownActions[string(act)] = struct{}{}
 	}
 
@@ -53,6 +47,26 @@ func TestPolicyResourcesAndActionsAreKnown(t *testing.T) {
 		}
 		if _, ok := knownActions[rule[2]]; !ok {
 			t.Errorf("policy rule %v uses unknown action %q", rule, rule[2])
+		}
+	}
+}
+
+// TestEveryDeclaredResourceIsGranted is the forward complement of the test above:
+// it catches a Resource const that is declared but never granted to any role. A
+// resource missing from the policy is not a compile error and not caught by the
+// "known" check (which only validates rules that exist) — every check against it
+// would just fail closed and SILENTLY, denying a real feature with no signal. If
+// a resource is intentionally not yet granted, add it to the policy (even read-
+// only) or remove the const; do not silence this test.
+func TestEveryDeclaredResourceIsGranted(t *testing.T) {
+	granted := map[string]struct{}{}
+	for _, rule := range policyRules {
+		granted[rule[1]] = struct{}{}
+	}
+	for _, r := range allResources {
+		if _, ok := granted[string(r)]; !ok {
+			t.Errorf("resource %q is declared but never granted in the policy "+
+				"(every check against it would silently fail closed)", r)
 		}
 	}
 }

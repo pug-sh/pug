@@ -191,3 +191,40 @@ func TestGetMemberRoleCaching(t *testing.T) {
 		}
 	})
 }
+
+// TestGetMemberRoleCorruptCacheSelfHeals pins the cache-read recovery branch: a
+// cached value outside the recognized role set must NOT be trusted — GetMemberRole
+// drops it and falls through to Postgres, returning the real role (and re-caching
+// the valid value). Guards against a poisoned/format-drifted cache silently
+// fabricating or denying a role.
+func TestGetMemberRoleCorruptCacheSelfHeals(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	rd := testutil.SetupRedis(t)
+	ctx := context.Background()
+	w := dbwrite.New(db.PgW)
+	svc := NewServiceWithRoleCache(db.PgRO, db.PgW, nil, rd.Client)
+
+	adminID := seedCacheCustomer(t, w)
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "corrupt-cache-"+adminID)
+	if err != nil {
+		t.Fatalf("CreateOrgWithDefaults: %v", err)
+	}
+
+	// Poison the cache with a value outside the recognized role set.
+	if err := rd.Client.Set(ctx, memberRoleCacheKey(org.ID, adminID), "ORG_ROLE_BOGUS", 0).Err(); err != nil {
+		t.Fatalf("seed corrupt cache: %v", err)
+	}
+
+	role, err := svc.GetMemberRole(ctx, org.ID, adminID)
+	if err != nil || role != RoleAdmin {
+		t.Fatalf("GetMemberRole = (%q, %v), want (ADMIN, nil) — corrupt cache not self-healed", role, err)
+	}
+	// The bad entry must have been dropped and then repopulated with the valid role.
+	if got := rd.Client.Get(ctx, memberRoleCacheKey(org.ID, adminID)).Val(); got != RoleAdmin.String() {
+		t.Errorf("cache entry = %q, want %q (self-heal should rewrite it)", got, RoleAdmin.String())
+	}
+}

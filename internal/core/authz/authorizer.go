@@ -50,7 +50,7 @@ func NewAuthorizer() (*Authorizer, error) {
 // Authorize reports whether role permits action on resource.
 //
 // role is the stored role string (e.g. "ORG_ROLE_ADMIN"). Callers pass an
-// already-validated role (RequirePermission resolves it via orgs.ParseRole); an
+// already-validated role (the rpc layer resolves it via orgs.GetMemberRole); an
 // unknown or empty role matches no policy rule and fails closed (deny). A non-nil
 // error indicates an enforcement failure (malformed input or a broken policy),
 // never an ordinary denial — callers map it to an internal error.

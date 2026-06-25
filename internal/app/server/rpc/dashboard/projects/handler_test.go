@@ -12,23 +12,12 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
-	"github.com/pug-sh/pug/internal/core/authz"
-	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	projectsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/projects/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
-
-// testAuthorizer is the real authz policy, shared across these handler tests.
-var testAuthorizer = func() *authz.Authorizer {
-	a, err := authz.NewAuthorizer()
-	if err != nil {
-		panic(err)
-	}
-	return a
-}()
 
 // ctxWithCustomer returns a context with a JWT principal carrying the given customer.
 func ctxWithCustomer(ctx context.Context, c dbread.Customer) context.Context {
@@ -42,6 +31,17 @@ func ctxWithCustomer(ctx context.Context, c dbread.Customer) context.Context {
 func ctxWithProject(ctx context.Context, p dbread.Project) context.Context {
 	return authn.SetInfo(ctx, &rpc.Principal{
 		AuthType: rpc.AuthTypeJWT,
+		Project:  &p,
+	})
+}
+
+// ctxWithCustomerProject carries BOTH a customer and a project, mirroring the real
+// JWT+x-project-id principal. Project-lifecycle handlers need it: the admin gate
+// resolves the caller's role from the project's org, which requires the customer.
+func ctxWithCustomerProject(ctx context.Context, c dbread.Customer, p dbread.Project) context.Context {
+	return authn.SetInfo(ctx, &rpc.Principal{
+		AuthType: rpc.AuthTypeJWT,
+		Customer: &c,
 		Project:  &p,
 	})
 }
@@ -84,8 +84,7 @@ func newIntegrationServer(t *testing.T) (*server, dbread.Customer, string) {
 	t.Helper()
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
-	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
+	srv := NewServer(projectsSvc)
 
 	ctx := context.Background()
 	write := dbwrite.New(db.PgW)
@@ -129,27 +128,13 @@ func TestHandler_Delete_ProjectNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	db := testutil.SetupPostgres(t)
-	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
-	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
-
+	// newIntegrationServer seeds the customer as org admin, so the admin gate
+	// passes and the handler reaches the not-found path.
+	srv, customer, orgID := newIntegrationServer(t)
 	ctx := context.Background()
-	orgID := xid.New().String()
-	nonexistentProjectID := xid.New().String()
 
-	if _, err := db.PgW.Exec(ctx,
-		`INSERT INTO orgs (id, display_name) VALUES ($1, $2)`,
-		orgID, "test-org-del"); err != nil {
-		t.Fatalf("insert org: %v", err)
-	}
-
-	principal := dbread.Project{
-		ID:    nonexistentProjectID,
-		OrgID: orgID,
-	}
 	_, err := srv.Delete(
-		ctxWithProject(ctx, principal),
+		ctxWithCustomerProject(ctx, customer, dbread.Project{ID: xid.New().String(), OrgID: orgID}),
 		connect.NewRequest(&projectsv1.DeleteRequest{}),
 	)
 	assertCode(t, err, connect.CodeNotFound)
@@ -162,27 +147,11 @@ func TestHandler_UpdateMeta_ProjectNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	db := testutil.SetupPostgres(t)
-	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
-	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
-
+	srv, customer, orgID := newIntegrationServer(t)
 	ctx := context.Background()
-	orgID := xid.New().String()
-	nonexistentProjectID := xid.New().String()
 
-	if _, err := db.PgW.Exec(ctx,
-		`INSERT INTO orgs (id, display_name) VALUES ($1, $2)`,
-		orgID, "test-org-upd"); err != nil {
-		t.Fatalf("insert org: %v", err)
-	}
-
-	principal := dbread.Project{
-		ID:    nonexistentProjectID,
-		OrgID: orgID,
-	}
 	_, err := srv.UpdateMeta(
-		ctxWithProject(ctx, principal),
+		ctxWithCustomerProject(ctx, customer, dbread.Project{ID: xid.New().String(), OrgID: orgID}),
 		connect.NewRequest(&projectsv1.UpdateMetaRequest{
 			DisplayName: proto.String("new name"),
 		}),
@@ -197,13 +166,11 @@ func TestHandler_UpdateMeta_InvalidTimezone(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-	db := testutil.SetupPostgres(t)
-	srv := NewServer(coreprojects.NewService(db.PgRO, db.PgW, nil), coreorgs.NewService(db.PgRO, db.PgW, nil), testAuthorizer)
-
-	// The zone is validated before any DB access, so an arbitrary principal suffices.
-	principal := dbread.Project{ID: xid.New().String(), OrgID: xid.New().String()}
+	// Admin caller so the gate passes; the zone is validated before any DB access,
+	// so the project need not exist.
+	srv, customer, orgID := newIntegrationServer(t)
 	_, err := srv.UpdateMeta(
-		ctxWithProject(context.Background(), principal),
+		ctxWithCustomerProject(context.Background(), customer, dbread.Project{ID: xid.New().String(), OrgID: orgID}),
 		connect.NewRequest(&projectsv1.UpdateMetaRequest{
 			DisplayName:       proto.String("name"),
 			ReportingTimezone: proto.String("Not/A/Zone"), // passes proto charset, unknown to tzdata
@@ -224,8 +191,7 @@ func TestHandler_UpdateMeta_ClearsTimezoneToUTC(t *testing.T) {
 	}
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
-	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
+	srv := NewServer(projectsSvc)
 
 	ctx := context.Background()
 	write := dbwrite.New(db.PgW)
@@ -281,7 +247,7 @@ func TestHandler_UpdateMeta_ClearsTimezoneToUTC(t *testing.T) {
 	}
 
 	updated, err := srv.UpdateMeta(
-		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID}),
+		ctxWithCustomerProject(ctx, customer, dbread.Project{ID: projectID, OrgID: orgID}),
 		connect.NewRequest(&projectsv1.UpdateMetaRequest{
 			DisplayName:       proto.String("tz project"),
 			ReportingTimezone: proto.String("UTC"), // must clear to "", not preserve Asia/Kolkata
@@ -307,34 +273,22 @@ func TestHandler_UpdateMeta_ClearsTimezoneToUTC(t *testing.T) {
 
 // ----- Create: admin required → CodePermissionDenied + ReasonOrgAdminRequired ----
 
+// TestHandler_Create_NonAdminReturnsPermissionDenied verifies the admin gate on
+// project Create that lives in the CreateProjectAsAdmin SQL CTE — a race-safe,
+// service-level check distinct from (and defense-in-depth behind) the
+// AuthzInterceptor. Every non-admin role — member AND viewer — is rejected at the
+// CTE with ORG_ADMIN_REQUIRED.
 func TestHandler_Create_NonAdminReturnsPermissionDenied(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
-	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
+	srv := NewServer(projectsSvc)
 
 	ctx := context.Background()
 	write := dbwrite.New(db.PgW)
 	read := dbread.New(db.PgRO)
-
-	// Create a member (not admin) customer.
-	memberID := xid.New().String()
-	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID:           memberID,
-		Email:        memberID + "@test.example.com",
-		DisplayName:  "Member User",
-		PictureUri:   "",
-		PasswordHash: "x",
-	}); err != nil {
-		t.Fatalf("seed customer: %v", err)
-	}
-	member, err := read.GetCustomerByID(ctx, memberID)
-	if err != nil {
-		t.Fatalf("read customer: %v", err)
-	}
 
 	orgID := xid.New().String()
 	if _, err := db.PgW.Exec(ctx,
@@ -342,23 +296,40 @@ func TestHandler_Create_NonAdminReturnsPermissionDenied(t *testing.T) {
 		orgID, "test-org-perm"); err != nil {
 		t.Fatalf("insert org: %v", err)
 	}
-	if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-		OrgID:      orgID,
-		CustomerID: memberID,
-		Role:       "ORG_ROLE_MEMBER",
-	}); err != nil {
-		t.Fatalf("insert org member: %v", err)
+
+	seedRole := func(role string) dbread.Customer {
+		id := xid.New().String()
+		if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+			ID: id, Email: id + "@test.example.com", DisplayName: "U", PasswordHash: "x",
+		}); err != nil {
+			t.Fatalf("seed customer: %v", err)
+		}
+		if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+			OrgID: orgID, CustomerID: id, Role: role,
+		}); err != nil {
+			t.Fatalf("seed member: %v", err)
+		}
+		c, err := read.GetCustomerByID(ctx, id)
+		if err != nil {
+			t.Fatalf("read customer: %v", err)
+		}
+		return c
 	}
 
-	_, err = srv.Create(
-		ctxWithCustomer(ctx, member),
-		connect.NewRequest(&projectsv1.CreateRequest{
-			OrgId:       proto.String(orgID),
-			DisplayName: proto.String("new project"),
-		}),
-	)
-	assertCode(t, err, connect.CodePermissionDenied)
-	assertReason(t, err, apperr.ReasonOrgAdminRequired)
+	for _, role := range []string{"ORG_ROLE_MEMBER", "ORG_ROLE_VIEWER"} {
+		t.Run(role, func(t *testing.T) {
+			caller := seedRole(role)
+			_, err := srv.Create(
+				ctxWithCustomer(ctx, caller),
+				connect.NewRequest(&projectsv1.CreateRequest{
+					OrgId:       proto.String(orgID),
+					DisplayName: proto.String("new project " + role),
+				}),
+			)
+			assertCode(t, err, connect.CodePermissionDenied)
+			assertReason(t, err, apperr.ReasonOrgAdminRequired)
+		})
+	}
 }
 
 // ----- Create: duplicate project name → CodeAlreadyExists + ReasonProjectNameTaken ----
@@ -393,54 +364,6 @@ func TestHandler_Create_DuplicateNameReturnsAlreadyExists(t *testing.T) {
 	assertReason(t, err, apperr.ReasonProjectNameTaken)
 }
 
-// ----- BatchGet: not a member → CodePermissionDenied + ReasonOrgNotAMember ----
-
-func TestHandler_BatchGet_NotMemberReturnsPermissionDenied(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-	db := testutil.SetupPostgres(t)
-	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
-	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
-
-	ctx := context.Background()
-	write := dbwrite.New(db.PgW)
-	read := dbread.New(db.PgRO)
-
-	// Customer who is NOT a member of the org.
-	outsiderID := xid.New().String()
-	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID:           outsiderID,
-		Email:        outsiderID + "@test.example.com",
-		DisplayName:  "Outsider",
-		PictureUri:   "",
-		PasswordHash: "x",
-	}); err != nil {
-		t.Fatalf("seed customer: %v", err)
-	}
-	outsider, err := read.GetCustomerByID(ctx, outsiderID)
-	if err != nil {
-		t.Fatalf("read customer: %v", err)
-	}
-
-	orgID := xid.New().String()
-	if _, err := db.PgW.Exec(ctx,
-		`INSERT INTO orgs (id, display_name) VALUES ($1, $2)`,
-		orgID, "test-org-member"); err != nil {
-		t.Fatalf("insert org: %v", err)
-	}
-
-	_, err = srv.BatchGet(
-		ctxWithCustomer(ctx, outsider),
-		connect.NewRequest(&projectsv1.BatchGetRequest{
-			OrgId: proto.String(orgID),
-		}),
-	)
-	assertCode(t, err, connect.CodePermissionDenied)
-	assertReason(t, err, apperr.ReasonOrgNotAMember)
-}
-
 // ----- UpdateMeta: name-only update preserves the stored timezone -----
 //
 // Regression guard for the partial update: omitting reporting_timezone must NOT
@@ -464,7 +387,7 @@ func TestHandler_UpdateMeta_NameOnlyPreservesTimezone(t *testing.T) {
 	projectID := created.Msg.GetProject().GetId()
 
 	updated, err := srv.UpdateMeta(
-		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID}),
+		ctxWithCustomerProject(ctx, customer, dbread.Project{ID: projectID, OrgID: orgID}),
 		connect.NewRequest(&projectsv1.UpdateMetaRequest{
 			DisplayName: proto.String("renamed"), // reporting_timezone omitted (nil)
 		}),
@@ -498,7 +421,7 @@ func TestHandler_UpdateMeta_TimezoneOnlyPreservesName(t *testing.T) {
 	projectID := created.Msg.GetProject().GetId()
 
 	updated, err := srv.UpdateMeta(
-		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID}),
+		ctxWithCustomerProject(ctx, customer, dbread.Project{ID: projectID, OrgID: orgID}),
 		connect.NewRequest(&projectsv1.UpdateMetaRequest{
 			ReportingTimezone: proto.String("Asia/Kolkata"), // display_name omitted (nil)
 		}),
@@ -527,8 +450,7 @@ func TestHandler_UpdateMeta_EmptyStringResetsTimezoneToUTC(t *testing.T) {
 	}
 	db := testutil.SetupPostgres(t)
 	projectsSvc := coreprojects.NewService(db.PgRO, db.PgW, nil)
-	orgsSvc := coreorgs.NewService(db.PgRO, db.PgW, nil)
-	srv := NewServer(projectsSvc, orgsSvc, testAuthorizer)
+	srv := NewServer(projectsSvc)
 
 	ctx := context.Background()
 	write := dbwrite.New(db.PgW)
@@ -563,7 +485,7 @@ func TestHandler_UpdateMeta_EmptyStringResetsTimezoneToUTC(t *testing.T) {
 	projectID := created.Msg.GetProject().GetId()
 
 	updated, err := srv.UpdateMeta(
-		ctxWithProject(ctx, dbread.Project{ID: projectID, OrgID: orgID}),
+		ctxWithCustomerProject(ctx, customer, dbread.Project{ID: projectID, OrgID: orgID}),
 		connect.NewRequest(&projectsv1.UpdateMetaRequest{
 			ReportingTimezone: proto.String(""), // explicit empty → reset to UTC (display_name omitted)
 		}),
@@ -585,5 +507,39 @@ func TestHandler_UpdateMeta_EmptyStringResetsTimezoneToUTC(t *testing.T) {
 	}
 	if stored.ReportingTimezone != "" {
 		t.Errorf("after empty-string reset, stored ReportingTimezone = %q, want \"\" (UTC)", stored.ReportingTimezone)
+	}
+}
+
+// TestHandler_ProjectLifecycle_AdminAllowed exercises the admin happy path for the
+// project-lifecycle handlers (Delete / UpdateMeta / UpdateFCMServiceJSON). The
+// admin-only ROLE gate now lives in the AuthzInterceptor (see
+// rpc.TestRoleGatedAdminOnlyRPCs), so this no longer asserts denials — it only
+// confirms the handlers themselves run for an authorized caller.
+func TestHandler_ProjectLifecycle_AdminAllowed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	srv, customer, orgID := newIntegrationServer(t)
+	ctx := context.Background()
+
+	newProject := func() dbread.Project {
+		created, err := srv.Create(ctxWithCustomer(ctx, customer), connect.NewRequest(&projectsv1.CreateRequest{
+			OrgId: proto.String(orgID), DisplayName: proto.String("p-" + xid.New().String()),
+		}))
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		return dbread.Project{ID: created.Msg.GetProject().GetId(), OrgID: orgID}
+	}
+
+	p := newProject()
+	if _, err := srv.UpdateMeta(ctxWithCustomerProject(ctx, customer, p), connect.NewRequest(&projectsv1.UpdateMetaRequest{DisplayName: proto.String("renamed")})); err != nil {
+		t.Fatalf("admin UpdateMeta: %v", err)
+	}
+	if _, err := srv.UpdateFCMServiceJSON(ctxWithCustomerProject(ctx, customer, p), connect.NewRequest(&projectsv1.UpdateFCMServiceJSONRequest{FcmServiceJson: proto.String("{}")})); err != nil {
+		t.Fatalf("admin UpdateFCMServiceJSON: %v", err)
+	}
+	if _, err := srv.Delete(ctxWithCustomerProject(ctx, customer, p), connect.NewRequest(&projectsv1.DeleteRequest{})); err != nil {
+		t.Fatalf("admin Delete: %v", err)
 	}
 }

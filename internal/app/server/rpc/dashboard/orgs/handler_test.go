@@ -14,22 +14,12 @@ import (
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	orgshandler "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/orgs"
 	"github.com/pug-sh/pug/internal/apperr"
-	"github.com/pug-sh/pug/internal/core/authz"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 	"github.com/pug-sh/pug/internal/testutil"
 )
-
-// testAuthorizer is the real authz policy, shared across these handler tests.
-var testAuthorizer = func() *authz.Authorizer {
-	a, err := authz.NewAuthorizer()
-	if err != nil {
-		panic(err)
-	}
-	return a
-}()
 
 func ctxWithCustomer(ctx context.Context, c dbread.Customer) context.Context {
 	return authn.SetInfo(ctx, &rpc.Principal{
@@ -66,7 +56,7 @@ func TestCreateOrgHandlerHappyPath(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	id := xid.New().String()
 	if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
@@ -103,7 +93,7 @@ func TestLeaveHandlerHappyPath(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	ownerID := seedRawCustomer(t, ctx, write, "owner")
 	memberID := seedRawCustomer(t, ctx, write, "member")
@@ -136,7 +126,7 @@ func TestLeaveHandlerLastAdminReturnsFailedPrecondition(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "sole-admin")
 	memberID := seedRawCustomer(t, ctx, write, "tag-along")
@@ -188,7 +178,7 @@ func TestUpdateMemberRoleHandlerPromote(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	// Inline the member's customer row so we can assert display_name and email
@@ -251,61 +241,58 @@ func TestUpdateMemberRoleHandlerPromote(t *testing.T) {
 	}
 }
 
-func TestUpdateMemberRoleHandlerNonAdminRejected(t *testing.T) {
+// TestUpdateMemberRoleHandlerLastAdminDemoteRejected: the sole admin cannot
+// demote themselves to a non-admin role — the handler surfaces ErrLastAdmin as
+// FailedPrecondition(CANNOT_DEMOTE_LAST_ADMIN). With a second admin present the
+// same demotion is allowed (see TestUpdateMemberRoleHandlerDemoteCoAdmin).
+func TestUpdateMemberRoleHandlerLastAdminDemoteRejected(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
-	adminID := seedRawCustomer(t, ctx, write, "real-admin")
-	imposterID := seedRawCustomer(t, ctx, write, "imposter")
-	targetID := seedRawCustomer(t, ctx, write, "target")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "nonadmin-handler")
+	adminID := seedRawCustomer(t, ctx, write, "admin")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "last-admin-handler")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	for _, id := range []string{imposterID, targetID} {
-		if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
-			OrgID: org.ID, CustomerID: id, Role: orgsv1.OrgRole_ORG_ROLE_MEMBER.String(),
-		}); err != nil {
-			t.Fatalf("seed member: %v", err)
-		}
-	}
 
-	imposter, err := read.GetCustomerByID(ctx, imposterID)
+	admin, err := read.GetCustomerByID(ctx, adminID)
 	if err != nil {
-		t.Fatalf("read imposter: %v", err)
+		t.Fatalf("read admin: %v", err)
 	}
 	_, err = srv.UpdateMemberRole(
-		ctxWithCustomer(ctx, imposter),
+		ctxWithCustomer(ctx, admin),
 		connect.NewRequest(&orgsv1.UpdateMemberRoleRequest{
 			OrgId:      proto.String(org.ID),
-			CustomerId: proto.String(targetID),
-			Role:       orgsv1.OrgRole_ORG_ROLE_ADMIN.Enum(),
+			CustomerId: proto.String(adminID),
+			Role:       orgsv1.OrgRole_ORG_ROLE_MEMBER.Enum(),
 		}),
 	)
 	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
-		t.Fatalf("want apperr CodePermissionDenied, got %v (%T)", err, err)
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeFailedPrecondition {
+		t.Fatalf("want apperr CodeFailedPrecondition, got %v (%T)", err, err)
 	}
-	if ae.Reason() != apperr.ReasonOrgAdminRequired {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
+	if ae.Reason() != apperr.ReasonCannotDemoteLastAdmin {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonCannotDemoteLastAdmin)
 	}
 }
 
-func TestUpdateMemberRoleHandlerDemoteRejected(t *testing.T) {
+// TestUpdateMemberRoleHandlerDemoteCoAdmin: with two admins, an admin may demote
+// the other to member; the handler returns the updated, joined member.
+func TestUpdateMemberRoleHandlerDemoteCoAdmin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	coadminID := seedRawCustomer(t, ctx, write, "coadmin")
-	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "demote-handler")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "demote-coadmin-handler")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -319,7 +306,7 @@ func TestUpdateMemberRoleHandlerDemoteRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read admin: %v", err)
 	}
-	_, err = srv.UpdateMemberRole(
+	resp, err := srv.UpdateMemberRole(
 		ctxWithCustomer(ctx, admin),
 		connect.NewRequest(&orgsv1.UpdateMemberRoleRequest{
 			OrgId:      proto.String(org.ID),
@@ -327,12 +314,11 @@ func TestUpdateMemberRoleHandlerDemoteRejected(t *testing.T) {
 			Role:       orgsv1.OrgRole_ORG_ROLE_MEMBER.Enum(),
 		}),
 	)
-	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != connect.CodeInvalidArgument {
-		t.Fatalf("want apperr CodeInvalidArgument, got %v (%T)", err, err)
+	if err != nil {
+		t.Fatalf("demote co-admin via handler: %v", err)
 	}
-	if ae.Reason() != apperr.ReasonOrgUnsupportedRoleTransit {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgUnsupportedRoleTransit)
+	if got := resp.Msg.GetMember().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_MEMBER {
+		t.Errorf("member role = %v, want ORG_ROLE_MEMBER", got)
 	}
 }
 
@@ -342,7 +328,7 @@ func TestLeaveHandlerNonMemberReturnsNotFound(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	ownerID := seedRawCustomer(t, ctx, write, "owner")
 	strangerID := seedRawCustomer(t, ctx, write, "stranger")
@@ -374,7 +360,7 @@ func TestInviteMemberHandlerAcceptsRole(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, &acceptStubPublisher{})
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "role-inviter")
 	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "role-invite-handler")
@@ -402,6 +388,44 @@ func TestInviteMemberHandlerAcceptsRole(t *testing.T) {
 	}
 }
 
+// TestInviteMemberHandlerAcceptsViewerRole pins the primary path for creating a
+// viewer: an admin invites someone as ORG_ROLE_VIEWER. Exercises
+// inviteRoleFromProto/roleFromProto handling the viewer enum and the widened
+// org_invitations role check constraint accepting the stored value.
+func TestInviteMemberHandlerAcceptsViewerRole(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	h := setupOrgsBackend(t, &acceptStubPublisher{})
+	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
+	srv := orgshandler.NewServer(svc)
+
+	adminID := seedRawCustomer(t, ctx, write, "viewer-inviter")
+	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "viewer-invite-handler")
+	if err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	admin, err := read.GetCustomerByID(ctx, adminID)
+	if err != nil {
+		t.Fatalf("read admin: %v", err)
+	}
+
+	resp, err := srv.InviteMember(
+		ctxWithCustomer(ctx, admin),
+		connect.NewRequest(&orgsv1.InviteMemberRequest{
+			Email: proto.String("viewer-invitee@example.com"),
+			OrgId: proto.String(org.ID),
+			Role:  orgsv1.OrgRole_ORG_ROLE_VIEWER.Enum(),
+		}),
+	)
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+	if got := resp.Msg.GetInvitation().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_VIEWER {
+		t.Fatalf("invitation role = %v, want VIEWER", got)
+	}
+}
+
 // InviteMember with the role field omitted (UNSPECIFIED on the wire) must default
 // to ORG_ROLE_MEMBER via inviteRoleFromProto — not be rejected. This is the whole
 // reason inviteRoleFromProto differs from roleFromProto.
@@ -411,7 +435,7 @@ func TestInviteMemberHandlerDefaultsOmittedRoleToMember(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, &acceptStubPublisher{})
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "norole-inviter")
 	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "norole-invite-handler")
@@ -455,7 +479,7 @@ func TestGetHandlerReturnsRoleAndMapsNonMemberToNotFound(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	memberID := seedRawCustomer(t, ctx, write, "member")
 	strangerID := seedRawCustomer(t, ctx, write, "stranger")
@@ -507,7 +531,7 @@ func TestGetHandlerReturnsMemberRoleForActualMember(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	ownerID := seedRawCustomer(t, ctx, write, "owner")
 	memberID := seedRawCustomer(t, ctx, write, "member")
@@ -538,16 +562,16 @@ func TestGetHandlerReturnsMemberRoleForActualMember(t *testing.T) {
 }
 
 // TestUpdateDisplayNameHandlerReturnsAdminRole pins that the updated-org
-// response carries the caller's role (ADMIN, since requireOrgAdmin gates this
-// path). A regression that hardcoded UNSPECIFIED would silently drop the
-// field for the dashboard.
+// response carries the ADMIN role the handler stamps on its write response. A
+// regression that hardcoded UNSPECIFIED would silently drop the field for the
+// dashboard.
 func TestUpdateDisplayNameHandlerReturnsAdminRole(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "old-name")
@@ -573,7 +597,7 @@ func TestUpdateDisplayNameHandlerReturnsAdminRole(t *testing.T) {
 		t.Errorf("want display_name=new-name, got %q", got)
 	}
 	if got := resp.Msg.GetOrg().GetRole(); got != orgsv1.OrgRole_ORG_ROLE_ADMIN {
-		t.Errorf("want role=ADMIN (caller is gated by requireOrgAdmin), got %v", got)
+		t.Errorf("want role=ADMIN (stamped on the write response), got %v", got)
 	}
 }
 
@@ -589,7 +613,7 @@ func TestLeaveHandlerLastMemberReturnsFailedPrecondition(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	lonerID := seedRawCustomer(t, ctx, write, "loner")
@@ -631,7 +655,7 @@ func TestListHandlerRoleFieldPerOrg(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	// The caller is ADMIN of orgA (created via CreateOrgWithDefaults) and MEMBER
 	// of orgB (added via CreateOrgMember after a different customer creates it).
@@ -689,7 +713,7 @@ func TestLeaveHandlerSoloAdminReturnsFailedPrecondition(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "solo-admin")
 	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "solo-admin-leave")
@@ -731,7 +755,7 @@ func TestUpdateMemberRoleHandlerRejectsUnspecifiedRole(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	memberID := seedRawCustomer(t, ctx, write, "member")
@@ -775,7 +799,7 @@ func TestHandlersRejectUnauthenticated(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	h := setupOrgsBackend(t, nil)
-	srv := orgshandler.NewServer(h.svc, testAuthorizer)
+	srv := orgshandler.NewServer(h.svc)
 	ctx := context.Background() // intentionally no authn.SetInfo
 
 	cases := []struct {
@@ -790,10 +814,9 @@ func TestHandlersRejectUnauthenticated(t *testing.T) {
 			_, err := srv.Leave(ctx, connect.NewRequest(&orgsv1.LeaveRequest{OrgId: proto.String("any")}))
 			return err
 		}},
-		{"UpdateMemberRole", func() error {
-			_, err := srv.UpdateMemberRole(ctx, connect.NewRequest(&orgsv1.UpdateMemberRoleRequest{
+		{"RemoveMember", func() error {
+			_, err := srv.RemoveMember(ctx, connect.NewRequest(&orgsv1.RemoveMemberRequest{
 				OrgId: proto.String("any"), CustomerId: proto.String("any"),
-				Role: orgsv1.OrgRole_ORG_ROLE_ADMIN.Enum(),
 			}))
 			return err
 		}},
@@ -821,7 +844,7 @@ func TestRemoveMemberHandlerHappyPath(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	memberID := seedRawCustomer(t, ctx, write, "to-remove")
@@ -859,7 +882,7 @@ func TestRemoveMemberHandlerSelfRemovalRejected(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	org, err := svc.CreateOrgWithDefaults(ctx, adminID, "remove-self")
@@ -892,7 +915,7 @@ func TestRemoveMemberHandlerSelfRemovalRejected(t *testing.T) {
 //
 // Note on ErrLastAdmin coverage: a sole-admin attempting to remove themself
 // is caught by the InvalidArgument self-removal guard before reaching the
-// CTE, and a non-admin cannot pass requireOrgAdmin. ErrLastAdmin via
+// CTE, and a non-admin cannot pass the admin gate (the AuthzInterceptor). ErrLastAdmin via
 // RemoveMember is therefore only reachable in a transient concurrent-race
 // state covered by the service layer; the handler's FailedPrecondition
 // mapping is mirrored by TestLeaveHandlerLastAdminReturnsFailedPrecondition
@@ -903,7 +926,7 @@ func TestRemoveMemberHandlerNotFound(t *testing.T) {
 	}
 	h := setupOrgsBackend(t, nil)
 	svc, write, read, ctx := h.svc, h.write, h.read, h.ctx
-	srv := orgshandler.NewServer(svc, testAuthorizer)
+	srv := orgshandler.NewServer(svc)
 
 	adminID := seedRawCustomer(t, ctx, write, "admin")
 	strangerID := seedRawCustomer(t, ctx, write, "stranger")
@@ -1001,7 +1024,7 @@ func TestResendInviteHandler_HappyPath(t *testing.T) {
 		t.Skip("integration test")
 	}
 	f := newHandlerFixture(t)
-	srv := orgshandler.NewServer(f.svc, testAuthorizer)
+	srv := orgshandler.NewServer(f.svc)
 	resp, err := srv.ResendInvite(
 		principalCtx(context.Background(), f.adminCustomer),
 		connect.NewRequest(&orgsv1.ResendInviteRequest{
@@ -1020,31 +1043,6 @@ func TestResendInviteHandler_HappyPath(t *testing.T) {
 	}
 }
 
-// TestResendInviteHandler_RequiresAdmin pins the admin authz check at the
-// handler boundary. A member who is not admin must be rejected before the
-// service is touched.
-func TestResendInviteHandler_RequiresAdmin(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration test")
-	}
-	f := newHandlerFixture(t)
-	srv := orgshandler.NewServer(f.svc, testAuthorizer)
-	_, err := srv.ResendInvite(
-		principalCtx(context.Background(), f.memberCust),
-		connect.NewRequest(&orgsv1.ResendInviteRequest{
-			InvitationId: proto.String(f.invitationID),
-			OrgId:        proto.String(f.org.ID),
-		}),
-	)
-	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != connect.CodePermissionDenied {
-		t.Fatalf("want apperr CodePermissionDenied, got %v (%T)", err, err)
-	}
-	if ae.Reason() != apperr.ReasonOrgAdminRequired {
-		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOrgAdminRequired)
-	}
-}
-
 // TestResendInviteHandler_UnknownReturnsNotFound pins ErrInviteNotFound →
 // CodeNotFound mapping for a bogus invitation_id.
 func TestResendInviteHandler_UnknownReturnsNotFound(t *testing.T) {
@@ -1052,7 +1050,7 @@ func TestResendInviteHandler_UnknownReturnsNotFound(t *testing.T) {
 		t.Skip("integration test")
 	}
 	f := newHandlerFixture(t)
-	srv := orgshandler.NewServer(f.svc, testAuthorizer)
+	srv := orgshandler.NewServer(f.svc)
 	_, err := srv.ResendInvite(
 		principalCtx(context.Background(), f.adminCustomer),
 		connect.NewRequest(&orgsv1.ResendInviteRequest{
@@ -1070,10 +1068,9 @@ func TestResendInviteHandler_UnknownReturnsNotFound(t *testing.T) {
 }
 
 // TestResendInviteHandler_CrossOrgReturnsNotFound pins that an admin of orgA
-// cannot resend an orgB invitation by guessing the invitation_id. The service
-// returns ErrInviteNotFound rather than PermissionDenied (anti-enumeration);
-// the handler must preserve that and map to CodeNotFound — but only after the
-// admin authz check, which passes because the caller IS an admin of otherOrg.
+// cannot resend an orgB invitation by guessing the invitation_id: the service
+// scopes the lookup by org and returns ErrInviteNotFound rather than
+// PermissionDenied (anti-enumeration), which the handler maps to CodeNotFound.
 func TestResendInviteHandler_CrossOrgReturnsNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test")
@@ -1091,7 +1088,7 @@ func TestResendInviteHandler_CrossOrgReturnsNotFound(t *testing.T) {
 		t.Fatalf("CreateOrgMember other: %v", err)
 	}
 
-	srv := orgshandler.NewServer(f.svc, testAuthorizer)
+	srv := orgshandler.NewServer(f.svc)
 	// Admin claims to act on otherOrg, but the invitation_id belongs to f.org.
 	_, err = srv.ResendInvite(
 		principalCtx(ctx, f.adminCustomer),
@@ -1128,7 +1125,7 @@ func TestResendInviteHandler_AcceptedReturnsFailedPrecondition(t *testing.T) {
 		t.Fatalf("flip invitation to ACCEPTED: %v", err)
 	}
 
-	srv := orgshandler.NewServer(f.svc, testAuthorizer)
+	srv := orgshandler.NewServer(f.svc)
 	_, err := srv.ResendInvite(
 		principalCtx(ctx, f.adminCustomer),
 		connect.NewRequest(&orgsv1.ResendInviteRequest{

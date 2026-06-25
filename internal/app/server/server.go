@@ -68,6 +68,13 @@ func Run(ctx context.Context) error {
 func start(ctx context.Context, d *deps) error {
 	queriesRo := dbread.New(d.pgRo)
 
+	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
+	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
+	dashboardsSvc := coredashboards.NewService(d.pgRo, d.pgW)
+	orgsSvc := coreorgs.NewServiceWithRoleCache(d.pgRo, d.pgW, d.nats, d.redis.Unwrap())
+	insightsExecutor := coreinsights.NewExecutor(d.ch)
+	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
+
 	// Interceptor order matters. ErrorInterceptor must wrap validate.NewInterceptor():
 	// validate short-circuits on a bad request (returns the error without calling the
 	// inner chain), so ErrorInterceptor has to be OUTSIDE it to attach error details
@@ -77,6 +84,11 @@ func start(ctx context.Context, d *deps) error {
 	// OUTSIDE ErrorInterceptor so it observes the final *connect.Error with its
 	// resolved code for client-vs-server log-level classification (isClientError also
 	// reads *apperr.Error directly as a safety net, but order keeps that path moot).
+	// AuthzInterceptor is innermost — the last gate before the handler — and is the
+	// single authorization gate: it enforces the org role recorded in the permission
+	// registry for every role-gated RPC (orgsSvc resolves the caller's role), and is
+	// a no-op for public/self/SDK procedures and the API-key path. Handlers carry no
+	// authorization of their own.
 	handlerOpts := connect.WithInterceptors(
 		pogrpc.CorrelationInterceptor(),
 		d.otelInterceptor,
@@ -84,14 +96,8 @@ func start(ctx context.Context, d *deps) error {
 		pogrpc.ErrorInterceptor(),
 		validate.NewInterceptor(validate.WithoutErrorDetails()),
 		pogrpc.PrincipalInterceptor(),
+		pogrpc.AuthzInterceptor(d.authz, orgsSvc),
 	)
-
-	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
-	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
-	dashboardsSvc := coredashboards.NewService(d.pgRo, d.pgW)
-	orgsSvc := coreorgs.NewServiceWithRoleCache(d.pgRo, d.pgW, d.nats, d.redis.Unwrap())
-	insightsExecutor := coreinsights.NewExecutor(d.ch)
-	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
 
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)
@@ -112,9 +118,9 @@ func start(ctx context.Context, d *deps) error {
 
 	// Dashboard
 	orgsPath, orgsHandler := orgsv1connect.NewOrgsServiceHandler(
-		orgsrpc.NewServer(orgsSvc, d.authz), handlerOpts)
+		orgsrpc.NewServer(orgsSvc), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-		projects.NewServer(projectsSvc, orgsSvc, d.authz), handlerOpts)
+		projects.NewServer(projectsSvc), handlerOpts)
 	dashboardsPath, dashboardsHandler := dashboardsv1connect.NewDashboardsServiceHandler(
 		dashboardsrpc.NewServer(dashboardsSvc, insightsExecutor), handlerOpts)
 	sharedDashboardsPath, sharedDashboardsHandler := publicdashboardsv1connect.NewSharedDashboardsServiceHandler(
@@ -164,7 +170,7 @@ func start(ctx context.Context, d *deps) error {
 	}
 
 	orgEmailProvidersPath, orgEmailProvidersHandler := orgemailprovidersv1connect.NewOrgEmailProvidersServiceHandler(
-		orgemailproviders.NewServer(orgsSvc, queriesRo, dbwrite.New(d.pgW), emailCipher, orgEmailRepo, emailMailer, d.authz),
+		orgemailproviders.NewServer(queriesRo, dbwrite.New(d.pgW), emailCipher, orgEmailRepo, emailMailer),
 		handlerOpts)
 
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(

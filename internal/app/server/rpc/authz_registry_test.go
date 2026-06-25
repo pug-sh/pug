@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/pug-sh/pug/internal/app/server/rpc/authzspec"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/customers/v1/customersv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/dashboards/v1/dashboardsv1connect"
 	"github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1/orgemailprovidersv1connect"
@@ -69,20 +70,25 @@ func TestPermissionRegistryCoversAllProcedures(t *testing.T) {
 	}
 }
 
-// TestPermissionRegistryOrgRoleEntriesAreComplete asserts every domainOrgRole
-// entry carries a resource+action (its semantic permission), and that no other
-// domain sets them.
-func TestPermissionRegistryOrgRoleEntriesAreComplete(t *testing.T) {
+// TestPermissionRegistryRoleEntriesAreComplete asserts every entry is built by an
+// authzspec constructor (not a bare Spec{}) and that every role-gated entry
+// carries the full triple the interceptor enforces (resource + action +
+// orgSource). The reverse — a non-role-gated entry carrying a stray triple — is
+// now impossible to express (authzspec.Spec's fields are unexported and only the
+// constructors set them), so it needs no check.
+func TestPermissionRegistryRoleEntriesAreComplete(t *testing.T) {
 	for proc, spec := range permissionRegistry {
-		switch spec.domain {
-		case domainOrgRole:
-			if spec.resource == "" || spec.action == "" {
-				t.Errorf("domainOrgRole entry %q must set resource and action", proc)
-			}
-		default:
-			if spec.resource != "" || spec.action != "" {
-				t.Errorf("non-org-role entry %q must not set resource/action", proc)
-			}
+		if !spec.Defined() {
+			t.Errorf("registry entry %q is an undefined (zero) Spec — build it with an authzspec constructor", proc)
+		}
+		if !spec.IsRoleGated() {
+			continue
+		}
+		if spec.Resource() == "" || spec.Action() == "" {
+			t.Errorf("role-gated entry %q must set resource and action", proc)
+		}
+		if spec.OrgSource() != authzspec.OrgFromMessage && spec.OrgSource() != authzspec.OrgFromProject {
+			t.Errorf("role-gated entry %q must set a valid orgSource", proc)
 		}
 	}
 }

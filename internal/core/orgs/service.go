@@ -65,19 +65,18 @@ var (
 	ErrInviteExpired        = errors.New("invitation has expired")
 	ErrInviteNotFound       = errors.New("invitation not found")
 	ErrInviteNotPending     = errors.New("invitation is not pending")
-	// ErrLastAdmin is returned by both RemoveMemberSafe and Leave when the
-	// target is an admin and removing them would leave the org with zero
-	// admins. In Leave, this also takes precedence over ErrLastMember when
-	// the caller is an admin who is also the sole member of the org.
-	// Handlers build their own client-facing message (different wording for
-	// remove vs leave) — never pass this sentinel directly into
-	// connect.NewError, as the neutral phrasing here is not a substitute for
-	// the verb-specific message.
-	ErrLastAdmin                 = errors.New("blocked: last admin of org")
-	ErrLastMember                = errors.New("blocked: only member of org")
-	ErrMemberNotFound            = errors.New("member not found")
-	ErrOrgNotFound               = errors.New("org not found")
-	ErrUnsupportedRoleTransition = errors.New("role transition not supported")
+	// ErrLastAdmin is returned by RemoveMemberSafe, Leave, and UpdateMemberRole
+	// when the target is the org's last admin and the operation would leave the
+	// org with zero admins (removal, leaving, or demotion to a non-admin role).
+	// In Leave, this also takes precedence over ErrLastMember when the caller is
+	// an admin who is also the sole member of the org. Handlers build their own
+	// client-facing message (different wording for remove vs leave vs demote) —
+	// never pass this sentinel directly into connect.NewError, as the neutral
+	// phrasing here is not a substitute for the verb-specific message.
+	ErrLastAdmin      = errors.New("blocked: last admin of org")
+	ErrLastMember     = errors.New("blocked: only member of org")
+	ErrMemberNotFound = errors.New("member not found")
+	ErrOrgNotFound    = errors.New("org not found")
 )
 
 const (
@@ -295,7 +294,7 @@ func memberRoleCacheKey(orgID, customerID string) string {
 // values that drift outside the recognized set surface as errors at this
 // boundary rather than silently flowing through equality checks.
 //
-// When a role cache is wired (WithRoleCache) a hit is served from Redis. Caching
+// When a role cache is wired (NewServiceWithRoleCache) a hit is served from Redis. Caching
 // is POSITIVE-ONLY: a non-member (ErrMemberNotFound) is never cached, so a
 // freshly-added member (org create, invite acceptance — including the
 // cross-package auth provisioning path) is visible on its next request with no
@@ -709,56 +708,54 @@ func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvi
 	}
 }
 
-// UpdateMemberRole changes a member's role. In this scope, only the
-// MEMBER -> ADMIN transition is permitted. Other transitions return
-// ErrUnsupportedRoleTransition (mapped to CodeInvalidArgument at the handler).
+// UpdateMemberRole sets a member's role to newRole. Any role may be assigned —
+// promotion or demotion — with one exception: the org's last admin cannot be
+// demoted to a non-admin role (returns ErrLastAdmin), preserving the "every org
+// has at least one admin" invariant. Returns ErrMemberNotFound if the target is
+// not a member of the org.
 //
-// Returns ErrMemberNotFound if the target is not a member of the org.
+// The whole transition is decided inside UpdateOrgMemberRoleIfNotLastAdmin, whose
+// 'locked' CTE row-locks the org's members so the admin-count check is race-free
+// without a surrounding transaction (mirrors RemoveMemberSafe). A blocked
+// last-admin demotion and a missing member both surface as "no row updated"; a
+// follow-up read disambiguates them so the caller returns the right error.
 //
-// This read-modify-write is intentionally non-transactional: it is safe only
-// because the lone allowed transition (MEMBER → ADMIN) is monotonic — a
-// concurrent re-promotion is a no-op, a concurrent removal yields ErrNoRows
-// → ErrMemberNotFound, and demotion is not permitted. If any non-monotonic
-// transition is added (e.g. demote, transfer-ownership), wrap in a tx with
-// SELECT ... FOR UPDATE on the org_members row.
+// newRole is expected to be a recognized role (handlers validate via
+// roleFromProto + protovalidate first); the IsValid guard is a defensive
+// backstop that also keeps a bad value from reaching the DB check constraint as
+// an opaque error.
 func (s *Service) UpdateMemberRole(
 	ctx context.Context,
 	orgID, customerID string,
 	newRole Role,
 ) (dbwrite.OrgMember, error) {
-	rawCurrent, err := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+	if !newRole.IsValid() {
+		return dbwrite.OrgMember{}, fmt.Errorf("orgs: invalid target role %q", newRole)
+	}
+
+	updated, err := s.write.UpdateOrgMemberRoleIfNotLastAdmin(ctx, dbwrite.UpdateOrgMemberRoleIfNotLastAdminParams{
 		OrgID:      orgID,
 		CustomerID: customerID,
+		NewRole:    newRole.String(),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return dbwrite.OrgMember{}, ErrMemberNotFound
-		}
-		slog.ErrorContext(ctx, "failed to look up current role", slogx.Error(err),
-			slog.String("org_id", orgID), slog.String("customer_id", customerID))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.OrgMember{}, err
-	}
-	current, err := ParseRole(rawCurrent)
-	if err != nil {
-		slog.ErrorContext(ctx, "unrecognized current role in org_members", slogx.Error(err),
-			slog.String("org_id", orgID), slog.String("customer_id", customerID))
-		telemetry.RecordError(ctx, err)
-		return dbwrite.OrgMember{}, err
-	}
-
-	if current != RoleMember || newRole != RoleAdmin {
-		return dbwrite.OrgMember{}, ErrUnsupportedRoleTransition
-	}
-
-	updated, err := s.write.UpdateOrgMemberRole(ctx, dbwrite.UpdateOrgMemberRoleParams{
-		OrgID:      orgID,
-		CustomerID: customerID,
-		Role:       newRole.String(),
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return dbwrite.OrgMember{}, ErrMemberNotFound
+			// No row updated: either the member is absent, or the change would
+			// demote the org's last admin. A read tells the two apart.
+			if _, gerr := s.write.GetOrgMemberRole(ctx, dbwrite.GetOrgMemberRoleParams{
+				OrgID:      orgID,
+				CustomerID: customerID,
+			}); gerr != nil {
+				if errors.Is(gerr, pgx.ErrNoRows) {
+					return dbwrite.OrgMember{}, ErrMemberNotFound
+				}
+				slog.ErrorContext(ctx, "failed to disambiguate blocked role update", slogx.Error(gerr),
+					slog.String("org_id", orgID), slog.String("customer_id", customerID))
+				telemetry.RecordError(ctx, gerr)
+				return dbwrite.OrgMember{}, gerr
+			}
+			// The member exists, so the guard blocked a last-admin demotion.
+			return dbwrite.OrgMember{}, ErrLastAdmin
 		}
 		slog.ErrorContext(ctx, "failed to update member role", slogx.Error(err),
 			slog.String("org_id", orgID), slog.String("customer_id", customerID),

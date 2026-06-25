@@ -22,28 +22,24 @@ type memberRoleLookup interface {
 	GetMemberRole(ctx context.Context, orgID, customerID string) (coreorgs.Role, error)
 }
 
-// RequirePermission is the single authorization entry point for dashboard
-// (JWT/customer) handlers. It (1) requires a customer principal, (2) resolves
-// that customer's role in orgID fresh from the DB, and (3) asks the shared authz
-// policy whether that role may perform action on resource.
+// requirePermission is the core authorization check, called only by
+// AuthzInterceptor. It (1) requires a customer principal, (2) resolves that
+// customer's role in orgID fresh from the DB (Redis-cached), and (3) asks the
+// shared authz policy whether that role may perform action on resource.
 //
 // Role assignment is resolved per request (roles are deliberately NOT in the
-// JWT); the policy comes from the injected Authorizer. On failure it returns the
-// SAME typed apperr the hand-rolled requireOrgAdmin/requireOrgMember helpers
-// returned, so the migration is behavior-preserving:
+// JWT); the policy comes from the injected Authorizer. Denials are uniform:
 //
 //   - not a member            -> PermissionDenied(ORG_NOT_A_MEMBER)
-//   - member lacking the perm -> PermissionDenied(deniedReason, deniedMsg)
+//   - member lacking the perm -> PermissionDenied(ORG_ROLE_FORBIDDEN)
 //   - role-lookup / enforce failure -> CodeInternal
-func RequirePermission(
+func requirePermission(
 	ctx context.Context,
 	authorizer *authz.Authorizer,
 	lookup memberRoleLookup,
 	orgID string,
 	resource authz.Resource,
 	action authz.Action,
-	deniedReason apperr.Reason,
-	deniedMsg string,
 ) (*Principal, error) {
 	principal, err := MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
@@ -53,9 +49,9 @@ func RequirePermission(
 	role, err := lookup.GetMemberRole(ctx, orgID, principal.Customer.ID)
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			// Non-membership is always ORG_NOT_A_MEMBER, regardless of the
-			// caller's deniedReason/deniedMsg (those describe the lacks-permission
-			// case below) — matching every prior hand-rolled check.
+			// Non-membership is reported identically whether the org exists or
+			// not (GetMemberRole finds no row either way), so this never leaks
+			// org existence to a non-member.
 			return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
 		}
 		// The lookup logs + records non-sentinel failures at source.
@@ -72,7 +68,7 @@ func RequirePermission(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	if !ok {
-		return nil, apperr.PermissionDenied(deniedReason, deniedMsg)
+		return nil, apperr.PermissionDenied(apperr.ReasonOrgRoleForbidden, "your role does not permit this action")
 	}
 
 	return principal, nil

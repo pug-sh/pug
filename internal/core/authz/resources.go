@@ -28,22 +28,21 @@ type Resource string
 type Action string
 
 const (
-	// Org-scoped resources, all backing real dashboard org/admin RPCs. org,
-	// email_provider, and project are checked directly via RequirePermission with
-	// this resource (project's Create additionally gates in SQL); member and
-	// invitation are recorded as the semantic permission in authz_registry.go but
-	// their RPCs gate coarsely on org:* (requireOrgAdmin/requireOrgMember) today —
-	// see the permissionSpec note.
+	// Org-scoped resources, all backing real dashboard org/admin RPCs. Each is
+	// enforced by AuthzInterceptor from the (resource, action) recorded in
+	// authz_registry.go — org/member/invitation/email_provider/project all gate on
+	// their own resource (project's Create additionally gates race-safe in SQL).
 	ResourceOrg           Resource = "org"
 	ResourceMember        Resource = "member"
 	ResourceInvitation    Resource = "invitation"
 	ResourceEmailProvider Resource = "email_provider"
 	ResourceProject       Resource = "project"
 
-	// Granted to member in the policy (full CRUD) but not yet gated at the
-	// handler: project-scoped RPCs currently apply no org-role check (see the
-	// domainProject note in authz_registry.go). Present so the policy can encode
-	// member's full project-data access today.
+	// Project-data resources, enforced by AuthzInterceptor from the (resource,
+	// action) recorded in authz_registry.go's projGated entries (org resolved from
+	// the x-project-id project). viewer holds read on each (the read-only floor);
+	// member holds full CRUD. The API-key path is a deliberate no-op (coarse
+	// project scope).
 	ResourceDashboard Resource = "dashboard"
 	ResourceInsight   Resource = "insight"
 	ResourceActivity  Resource = "activity"
@@ -56,3 +55,16 @@ const (
 	ActionUpdate Action = "update"
 	ActionDelete Action = "delete"
 )
+
+// allResources and allActions are the declared taxonomy — the single source of
+// truth the policy tests iterate. Every declared resource must be granted to at
+// least one role: a declared-but-ungranted resource would make every check
+// against it fail closed but SILENTLY (Casbin simply never matches), so
+// policy_test.go asserts full coverage. Keep these in sync when adding a const.
+var allResources = []Resource{
+	ResourceOrg, ResourceMember, ResourceInvitation, ResourceEmailProvider,
+	ResourceProject, ResourceDashboard, ResourceInsight, ResourceActivity,
+	ResourceProfile,
+}
+
+var allActions = []Action{ActionCreate, ActionRead, ActionUpdate, ActionDelete}

@@ -9,8 +9,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
-	"github.com/pug-sh/pug/internal/core/authz"
-	"github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -20,14 +18,16 @@ import (
 	"github.com/pug-sh/pug/internal/tzx"
 )
 
+// Authorization (project-role gating) is enforced centrally by
+// rpc.AuthzInterceptor from the permission registry, before any handler runs —
+// project lifecycle writes are admin-only, BatchGet is member+, all resolved
+// from the registry. Create additionally has a race-safe admin check in its CTE.
 type server struct {
-	service     *projects.Service
-	orgsService *orgs.Service
-	authorizer  *authz.Authorizer
+	service *projects.Service
 }
 
-func NewServer(service *projects.Service, orgsService *orgs.Service, authorizer *authz.Authorizer) *server {
-	return &server{service: service, orgsService: orgsService, authorizer: authorizer}
+func NewServer(service *projects.Service) *server {
+	return &server{service: service}
 }
 
 // Get returns the project specified by x-project-id header.
@@ -57,12 +57,6 @@ func (s *server) BatchGet(
 	}
 
 	orgID := req.Msg.GetOrgId()
-	if _, err := rpc.RequirePermission(ctx, s.authorizer, s.orgsService, orgID,
-		authz.ResourceProject, authz.ActionRead,
-		apperr.ReasonOrgNotAMember, "not a member of this org"); err != nil {
-		return nil, err
-	}
-
 	projectsData, err := s.service.GetProjectsByOrgID(ctx, orgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("org_id", orgID))

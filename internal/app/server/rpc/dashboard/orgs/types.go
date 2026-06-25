@@ -24,6 +24,8 @@ func roleFromProto(p orgsv1.OrgRole) (coreorgs.Role, bool) {
 		return coreorgs.RoleAdmin, true
 	case orgsv1.OrgRole_ORG_ROLE_MEMBER:
 		return coreorgs.RoleMember, true
+	case orgsv1.OrgRole_ORG_ROLE_VIEWER:
+		return coreorgs.RoleViewer, true
 	default:
 		return "", false
 	}
@@ -81,6 +83,8 @@ func toRPCRole(role coreorgs.Role) orgsv1.OrgRole {
 		return orgsv1.OrgRole_ORG_ROLE_ADMIN
 	case coreorgs.RoleMember:
 		return orgsv1.OrgRole_ORG_ROLE_MEMBER
+	case coreorgs.RoleViewer:
+		return orgsv1.OrgRole_ORG_ROLE_VIEWER
 	default:
 		return orgsv1.OrgRole_ORG_ROLE_UNSPECIFIED
 	}

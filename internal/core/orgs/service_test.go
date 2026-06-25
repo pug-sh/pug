@@ -424,7 +424,6 @@ func TestResendInviteRejectsCrossOrg(t *testing.T) {
 	}
 }
 
-
 // TestResendInviteExtendsExpiresAt pins the "resurrect expired invite" flow:
 // resending a still-PENDING invitation whose expires_at is in the past must
 // push expires_at forward by inviteTTL. ResendInvite intentionally does NOT
@@ -642,8 +641,6 @@ func newInviteFixture(t *testing.T, inviteeEmail string) *inviteFixture {
 	}
 }
 
-
-
 // backdateInvitation overrides a pending invitation's expires_at via raw SQL.
 // Used only by the expired-invitation test — there's no production code path
 // to back-date, which is exactly why we bypass sqlc.
@@ -805,7 +802,10 @@ func TestUpdateMemberRolePromote(t *testing.T) {
 	}
 }
 
-func TestUpdateMemberRoleRejectsDemote(t *testing.T) {
+// TestUpdateMemberRoleDemoteCoAdmin: an admin may be demoted to a non-admin role
+// while another admin remains — the last-admin guard fires only for the *sole*
+// admin (see TestUpdateMemberRoleRejectsLastAdminDemotion).
+func TestUpdateMemberRoleDemoteCoAdmin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -816,24 +816,24 @@ func TestUpdateMemberRoleRejectsDemote(t *testing.T) {
 
 	admin := seedCustomer(t, ctx, write, "admin")
 	co := seedCustomer(t, ctx, write, "coadmin")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "demote-test")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "demote-coadmin")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	mustAddMember(t, ctx, write, org.ID, co, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
 
-	if _, err := svc.UpdateMemberRole(ctx, org.ID, co, orgs.RoleMember); !errors.Is(err, orgs.ErrUnsupportedRoleTransition) {
-		t.Fatalf("want ErrUnsupportedRoleTransition for demote, got %v", err)
+	got, err := svc.UpdateMemberRole(ctx, org.ID, co, orgs.RoleMember)
+	if err != nil {
+		t.Fatalf("demote co-admin: %v", err)
+	}
+	if got.Role != orgs.RoleMember.String() {
+		t.Fatalf("want role=MEMBER, got %q", got.Role)
 	}
 }
 
-// TestUpdateMemberRoleRejectsNoOpMemberToMember and
-// TestUpdateMemberRoleRejectsNoOpAdminToAdmin pin the *unallowed* same-role
-// "no-op" transitions. Together with the promote/demote tests they cover the
-// full 2×2 {current,new} ∈ {MEMBER,ADMIN} matrix — a regression that
-// accidentally permits any transition other than MEMBER→ADMIN would fail
-// one of these four cases regardless of how the guard is written.
-func TestUpdateMemberRoleRejectsNoOpMemberToMember(t *testing.T) {
+// TestUpdateMemberRoleDemoteMemberToViewer: a member can be downgraded to the
+// read-only viewer role (no admin invariant involved).
+func TestUpdateMemberRoleDemoteMemberToViewer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -844,18 +844,24 @@ func TestUpdateMemberRoleRejectsNoOpMemberToMember(t *testing.T) {
 
 	admin := seedCustomer(t, ctx, write, "admin")
 	member := seedCustomer(t, ctx, write, "member")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "noop-mm")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "demote-viewer")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	mustAddMember(t, ctx, write, org.ID, member, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())
 
-	if _, err := svc.UpdateMemberRole(ctx, org.ID, member, orgs.RoleMember); !errors.Is(err, orgs.ErrUnsupportedRoleTransition) {
-		t.Fatalf("want ErrUnsupportedRoleTransition for MEMBER->MEMBER, got %v", err)
+	got, err := svc.UpdateMemberRole(ctx, org.ID, member, orgs.RoleViewer)
+	if err != nil {
+		t.Fatalf("demote member to viewer: %v", err)
+	}
+	if got.Role != orgs.RoleViewer.String() {
+		t.Fatalf("want role=VIEWER, got %q", got.Role)
 	}
 }
 
-func TestUpdateMemberRoleRejectsNoOpAdminToAdmin(t *testing.T) {
+// TestUpdateMemberRolePromoteViewer: a viewer can be promoted up the ladder
+// straight to admin.
+func TestUpdateMemberRolePromoteViewer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -865,15 +871,71 @@ func TestUpdateMemberRoleRejectsNoOpAdminToAdmin(t *testing.T) {
 	ctx := context.Background()
 
 	admin := seedCustomer(t, ctx, write, "admin")
-	coadmin := seedCustomer(t, ctx, write, "coadmin")
-	org, err := svc.CreateOrgWithDefaults(ctx, admin, "noop-aa")
+	viewer := seedCustomer(t, ctx, write, "viewer")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "promote-viewer")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	mustAddMember(t, ctx, write, org.ID, coadmin, orgsv1.OrgRole_ORG_ROLE_ADMIN.String())
+	mustAddMember(t, ctx, write, org.ID, viewer, orgsv1.OrgRole_ORG_ROLE_VIEWER.String())
 
-	if _, err := svc.UpdateMemberRole(ctx, org.ID, coadmin, orgs.RoleAdmin); !errors.Is(err, orgs.ErrUnsupportedRoleTransition) {
-		t.Fatalf("want ErrUnsupportedRoleTransition for ADMIN->ADMIN, got %v", err)
+	got, err := svc.UpdateMemberRole(ctx, org.ID, viewer, orgs.RoleAdmin)
+	if err != nil {
+		t.Fatalf("promote viewer to admin: %v", err)
+	}
+	if got.Role != orgs.RoleAdmin.String() {
+		t.Fatalf("want role=ADMIN, got %q", got.Role)
+	}
+}
+
+// TestUpdateMemberRoleRejectsLastAdminDemotion: demoting the org's sole admin to
+// any non-admin role is blocked (ErrLastAdmin), preserving the "at least one
+// admin" invariant. Exercises both demotion targets.
+func TestUpdateMemberRoleRejectsLastAdminDemotion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	for _, target := range []orgs.Role{orgs.RoleMember, orgs.RoleViewer} {
+		admin := seedCustomer(t, ctx, write, "admin")
+		org, err := svc.CreateOrgWithDefaults(ctx, admin, "last-admin-"+target.String())
+		if err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		if _, err := svc.UpdateMemberRole(ctx, org.ID, admin, target); !errors.Is(err, orgs.ErrLastAdmin) {
+			t.Fatalf("demote sole admin to %s: want ErrLastAdmin, got %v", target, err)
+		}
+	}
+}
+
+// TestUpdateMemberRoleNoOpSucceeds: assigning a member's current role is an
+// idempotent no-op that succeeds — including sole admin -> admin, which is not a
+// demotion and so is not caught by the last-admin guard.
+func TestUpdateMemberRoleNoOpSucceeds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := testutil.SetupPostgres(t)
+	write := dbwrite.New(db.PgW)
+	svc := orgs.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+
+	admin := seedCustomer(t, ctx, write, "admin")
+	member := seedCustomer(t, ctx, write, "member")
+	org, err := svc.CreateOrgWithDefaults(ctx, admin, "noop")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	mustAddMember(t, ctx, write, org.ID, member, orgsv1.OrgRole_ORG_ROLE_MEMBER.String())
+
+	if got, err := svc.UpdateMemberRole(ctx, org.ID, admin, orgs.RoleAdmin); err != nil || got.Role != orgs.RoleAdmin.String() {
+		t.Fatalf("sole admin->admin no-op = (%q, %v), want (ADMIN, nil)", got.Role, err)
+	}
+	if got, err := svc.UpdateMemberRole(ctx, org.ID, member, orgs.RoleMember); err != nil || got.Role != orgs.RoleMember.String() {
+		t.Fatalf("member->member no-op = (%q, %v), want (MEMBER, nil)", got.Role, err)
 	}
 }
 
