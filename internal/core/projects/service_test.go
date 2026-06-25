@@ -272,6 +272,14 @@ func TestCreateProjectAsAdmin(t *testing.T) {
 			if _, err := svc.CreateProjectAsAdmin(ctx, org.ID, tc.customerID, "p-"+tc.name, ""); !errors.Is(err, projects.ErrAdminRequired) {
 				t.Fatalf("want ErrAdminRequired, got %v", err)
 			}
+			// The CTE must skip the INSERT on a failed admin check. The denial
+			// cases all run before the admin succeeds, so the org stays empty —
+			// confirm no row leaked through.
+			if projs, err := svc.GetProjectsByOrgID(ctx, org.ID); err != nil {
+				t.Fatalf("GetProjectsByOrgID: %v", err)
+			} else if len(projs) != 0 {
+				t.Fatalf("expected no projects after denied create, got %d", len(projs))
+			}
 		})
 	}
 

@@ -99,6 +99,18 @@ func TestAuthorizeRoleGated(t *testing.T) {
 			spec:   authzspec.ProjGated(authz.ResourceProfile, authz.ActionDelete),
 		},
 		{
+			// The coarse no-customer bypass is project-scoped only: an org-control
+			// (orgFromMessage) RPC reached without a customer fails closed rather than
+			// skipping the role gate. Those services are JWT-only, so this guards a
+			// wiring regression (a control-plane RPC exposed over an API key).
+			name:     "api-key path is denied an org-control (orgFromMessage) RPC — must not hit the coarse bypass",
+			ctx:      apiKeyCtx(),
+			lookup:   fakeRoleLookup{err: errors.New("lookup must not be called on the api-key path")},
+			req:      msgReq("org-1"),
+			spec:     authzspec.OrgGated(authz.ResourceInvitation, authz.ActionCreate),
+			wantCode: connect.CodePermissionDenied, wantReason: apperr.ReasonOrgNotAMember,
+		},
+		{
 			name:     "no principal at all is unauthenticated",
 			ctx:      context.Background(),
 			lookup:   fakeRoleLookup{err: errors.New("lookup must not be called without a principal")},
@@ -304,13 +316,13 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 		"/dashboard.orgs.v1.OrgsService/ListInvitations":                    true,
 		"/dashboard.orgs.v1.OrgsService/RemoveMember":                       true,
 		"/dashboard.orgs.v1.OrgsService/UpdateMemberRole":                   true,
-		"/dashboard.projects.v1.ProjectsService/Create":                    true,
-		"/dashboard.projects.v1.ProjectsService/Delete":                    true,
-		"/dashboard.projects.v1.ProjectsService/UpdateMeta":                true,
-		"/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON":      true,
-		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Get":     true,
-		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Set":     true,
-		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":  true,
+		"/dashboard.projects.v1.ProjectsService/Create":                     true,
+		"/dashboard.projects.v1.ProjectsService/Delete":                     true,
+		"/dashboard.projects.v1.ProjectsService/UpdateMeta":                 true,
+		"/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON":       true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Get":      true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Set":      true,
+		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":   true,
 		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/SendTest": true,
 	}
 
@@ -349,11 +361,19 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 	}
 }
 
-// TestAuthzInterceptorPassesThrough verifies the dispatch: a procedure that is not
-// a role-gated entry (here, an empty/unknown procedure) is passed straight to next
-// without consulting the role lookup, so the non-role-gated RPCs (public / self /
-// SDK / project) are untouched.
-func TestAuthzInterceptorPassesThrough(t *testing.T) {
+// TestAuthzInterceptorFailsClosedOnUnknownProcedure pins the runtime fail-closed
+// backstop: a procedure with NO permissionRegistry entry is DENIED (CodeInternal)
+// and never reaches next. TestPermissionRegistryCoversAllProcedures keeps the
+// registry complete, so this only fires for a procedure that shipped without an
+// authz decision — including a new procedure added to an already-mounted service,
+// which the service-level startup check (assertServedServicesMatch) does not catch.
+// The interceptor refuses to serve it rather than passing it through with
+// authentication but no authorization.
+//
+// A client-built request's Spec().Procedure is "" (connect populates it only during
+// real dispatch, and the field is unexported so a test cannot set it); "" is absent
+// from the registry, so it is a faithful stand-in for an unregistered procedure.
+func TestAuthzInterceptorFailsClosedOnUnknownProcedure(t *testing.T) {
 	authorizer := mustAuthorizer(t)
 
 	called := false
@@ -361,15 +381,14 @@ func TestAuthzInterceptorPassesThrough(t *testing.T) {
 		called = true
 		return connect.NewResponse(&emptypb.Empty{}), nil
 	})
-	// A client-built request has an empty Spec().Procedure, which is not a
-	// domainRoleGated entry — the lookup must be skipped entirely.
 	req := connect.NewRequest(&emptypb.Empty{})
 	wrapped := AuthzInterceptor(authorizer, fakeRoleLookup{err: errors.New("lookup must not be called")})(next)
 
-	if _, err := wrapped(jwtProjectCtx(), req); err != nil {
-		t.Fatalf("pass-through returned error: %v", err)
+	_, err := wrapped(jwtProjectCtx(), req)
+	if apperrCode(err) != connect.CodeInternal {
+		t.Fatalf("code = %v, want Internal (an unregistered procedure must fail closed)", apperrCode(err))
 	}
-	if !called {
-		t.Fatal("next was not called for a non-role-gated procedure")
+	if called {
+		t.Fatal("next was called for an unregistered procedure — the interceptor must fail closed")
 	}
 }
