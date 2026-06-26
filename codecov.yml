@@ -1,8 +1,10 @@
 # Codecov configuration — https://docs.codecov.com/docs/codecov-yaml
-# Exclude generated code and binary entrypoints so coverage reflects
-# hand-written, testable code.
+# Exclude generated code, binary entrypoints, and demo-traffic tooling so
+# coverage reflects hand-written, testable product code.
 ignore:
-  - "internal/gen/**"      # generated protobuf + sqlc
-  - "**/*_templ.go"        # generated templ email templates
-  - "cmd/**"               # binary entrypoints and CLI wiring
-  - "internal/testutil/**" # test helpers, not product code
+  - "internal/gen/**"              # generated protobuf + sqlc
+  - "**/*_templ.go"                # generated templ email templates
+  - "cmd/**"                       # binary entrypoints and CLI wiring
+  - "internal/testutil/**"         # test helpers, not product code
+  - "internal/app/seed/**"         # demo-traffic seeders, not product code
+  - "internal/app/workers/demo/**" # demo-traffic generator, not product code
