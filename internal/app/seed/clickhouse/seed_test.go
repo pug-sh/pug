@@ -1,6 +1,7 @@
 package seed
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"reflect"
@@ -548,6 +549,239 @@ func TestToLiveEventsCopiesAllFields(t *testing.T) {
 	}
 	if ne, nl := reflect.TypeOf(event{}).NumField(), reflect.TypeOf(LiveEvent{}).NumField(); ne != nl {
 		t.Errorf("event has %d fields, LiveEvent has %d — toLiveEvents must map all of them", ne, nl)
+	}
+}
+
+// TestHumanUserIndex pins the distinct-id → user-index parse the backfill uses
+// to record which users produced events: human ids in range resolve; bot ids,
+// junk, trailing garbage and out-of-range indices do not (so a bot never gets a
+// profile and ok=true is safe to feed straight into DemoUserAt).
+func TestHumanUserIndex(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+		ok   bool
+	}{
+		{"user-00000", 0, true},
+		{"user-00042", 42, true},
+		{"user-09999", 9999, true},
+		{"bot-0001", 0, false},
+		{"", 0, false},
+		{"user-", 0, false},
+		{"user-10000", 0, false},    // == pool size: out of range
+		{"user-99999999", 0, false}, // far out of range
+		{"user-12x", 0, false},      // trailing garbage
+		{"user--1", 0, false},       // negative
+	}
+	for _, c := range cases {
+		got, ok := HumanUserIndex(c.in)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("HumanUserIndex(%q) = %d, %v; want %d, %v", c.in, got, ok, c.want, c.ok)
+		}
+	}
+	// Every in-range index that ok=true reports must be safe for DemoUserAt
+	// (no out-of-range panic), since the live worker chains the two.
+	for _, id := range []string{"user-00000", "user-09999"} {
+		idx, ok := HumanUserIndex(id)
+		if !ok {
+			t.Fatalf("HumanUserIndex(%q) unexpectedly not ok", id)
+		}
+		_ = DemoUserAt(idx) // must not panic
+	}
+}
+
+// TestRecordActiveUser pins the recording decision the no-profile-without-events
+// guarantee rests on: a human id is recorded, a bot or out-of-range id is not,
+// and a nil set is a no-op (the CLI path passes nil).
+func TestRecordActiveUser(t *testing.T) {
+	active := map[int]struct{}{}
+	recordActiveUser(active, "user-00042")
+	recordActiveUser(active, "bot-0001")   // bots never get a profile
+	recordActiveUser(active, "user-99999") // out of range: not a valid human id
+	recordActiveUser(active, "garbage")    // junk
+	if _, ok := active[42]; !ok || len(active) != 1 {
+		t.Fatalf("active = %v, want exactly {42}", active)
+	}
+	recordActiveUser(nil, "user-00001") // must not panic
+}
+
+// TestAutoAnyMapToVariantMap pins the Go-type → ClickHouse-Variant routing the
+// backfill and live insert both share (the contract the deleted proto-mapping
+// tests used to guard, relocated here). A mis-slotted type would silently
+// mistype a ClickHouse column on every demo event.
+func TestAutoAnyMapToVariantMap(t *testing.T) {
+	ctx := context.Background()
+	out := autoAnyMapToVariantMap(ctx, "proj", map[string]any{
+		"i":    7,           // int   → Int64
+		"i64":  int64(9),    // int64 → Int64
+		"b":    true,        // bool  → Bool
+		"f":    3.14,        // float → Float64
+		"plan": "pro",       // custom string → String
+		"junk": []int{1, 2}, // unhandled → String
+	})
+	want := map[string]struct {
+		chType string
+		value  any
+	}{
+		"i":    {"Int64", int64(7)},
+		"i64":  {"Int64", int64(9)},
+		"b":    {"Bool", true},
+		"f":    {"Float64", 3.14},
+		"plan": {"String", "pro"},
+		"junk": {"String", "[1 2]"},
+	}
+	for k, w := range want {
+		v, ok := out[k]
+		if !ok {
+			t.Errorf("key %q missing from variant map", k)
+			continue
+		}
+		if v.Type() != w.chType || v.Any() != w.value {
+			t.Errorf("key %q = %s(%v), want %s(%v)", k, v.Type(), v.Any(), w.chType, w.value)
+		}
+	}
+	// Empty/nil input yields a nil map so the column is omitted on the wire.
+	if got := autoAnyMapToVariantMap(ctx, "proj", nil); got != nil {
+		t.Errorf("autoAnyMapToVariantMap(nil) = %v, want nil", got)
+	}
+	if got := autoAnyMapToVariantMap(ctx, "proj", map[string]any{}); got != nil {
+		t.Errorf("autoAnyMapToVariantMap(empty) = %v, want nil", got)
+	}
+}
+
+// TestPageViewInjectedOnWebNavigation pins the storefront page_view emission: a
+// web step that lands on a new page gets a page_view injected immediately before
+// it carrying the same url (so page_view stays the dominant kind), while a step
+// that doesn't move the page (scroll) gets none. In browse, product_list_viewed
+// always navigates to a collection page and scroll always follows it without
+// moving, so both are deterministic regardless of which products are sampled.
+func TestPageViewInjectedOnWebNavigation(t *testing.T) {
+	f := newSessionFactory()
+	u := &f.users[2]
+	web := deviceProfiles[0] // desktop web
+	t0 := u.join.Add(30 * 24 * time.Hour)
+
+	sess := buildSession(u, web, journeyByName(webJourneys, "browse"), t0, t0.Add(time.Hour), f.memory(u))
+
+	// product_list_viewed always changes the page, so it is preceded by an
+	// injected page_view sharing its url (the explicit home page_view sits on
+	// "/", so a matching-url predecessor is necessarily the injected one).
+	j := indexOfKind(sess, "product_list_viewed")
+	if j < 1 || sess[j-1].kind != "page_view" {
+		t.Fatalf("product_list_viewed (at %d) not preceded by a page_view: %v", j, kindsOf(sess))
+	}
+	if sess[j-1].autoProperties["$url"] != sess[j].autoProperties["$url"] {
+		t.Errorf("injected page_view url %v != following event url %v",
+			sess[j-1].autoProperties["$url"], sess[j].autoProperties["$url"])
+	}
+	// scroll doesn't move the page (it follows product_list_viewed directly), so
+	// no page_view is injected for it.
+	k := indexOfKind(sess, "scroll")
+	if k < 1 || sess[k-1].kind == "page_view" {
+		t.Errorf("scroll (at %d) was preceded by a page_view; scroll must not inject one: %v", k, kindsOf(sess))
+	}
+}
+
+func indexOfKind(sess []event, kind string) int {
+	for i, e := range sess {
+		if e.kind == kind {
+			return i
+		}
+	}
+	return -1
+}
+
+func kindsOf(sess []event) []string {
+	out := make([]string, len(sess))
+	for i, e := range sess {
+		out[i] = e.kind
+	}
+	return out
+}
+
+// TestPageViewNotInjectedOnApp pins that the page_view injection is web-only:
+// an app session never gets synthetic page_view events.
+func TestPageViewNotInjectedOnApp(t *testing.T) {
+	f := newSessionFactory()
+	u := &f.users[2]
+	app := deviceProfiles[len(deviceProfiles)-1] // android app
+	t0 := u.join.Add(30 * 24 * time.Hour)
+
+	sess := buildSession(u, app, journeyByName(appJourneys, "app-browse"), t0, t0.Add(time.Hour), f.memory(u))
+	for _, e := range sess {
+		if e.kind == "page_view" {
+			t.Fatalf("app session emitted a page_view (web-only injection leaked)")
+		}
+	}
+}
+
+// TestDemoUserAtPanics pins the documented out-of-range contract DemoUserAt
+// relies on as a fail-fast (the live worker treats a bad index as a bug).
+func TestDemoUserAtPanics(t *testing.T) {
+	for _, i := range []int{-1, DistinctIDPool} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("DemoUserAt(%d) did not panic", i)
+				}
+			}()
+			_ = DemoUserAt(i)
+		}()
+	}
+}
+
+// TestSignupForcedOnce pins the signup cap: a user's first in-window session is
+// forced onto the signup/install journey, but a second in-window session is not
+// — so a user emits at most one signup and acquisition counts aren't inflated.
+func TestSignupForcedOnce(t *testing.T) {
+	f := newSessionFactory()
+	u := &f.users[0]
+	prof := u.devices[0]
+	inWindow := u.join.Add(time.Hour) // within firstSessionWindow of join
+
+	jd1 := f.journeyFor(u, prof, inWindow)
+	if jd1.name != webSignupJourney.name && jd1.name != appInstallJourney.name {
+		t.Fatalf("first in-window journey = %q, want a signup/install journey", jd1.name)
+	}
+	// Building the session records the signup.
+	buildSession(u, prof, jd1, inWindow, inWindow.Add(time.Hour), f.memory(u))
+
+	jd2 := f.journeyFor(u, prof, inWindow.Add(2*time.Hour)) // still in window
+	if jd2.name == webSignupJourney.name || jd2.name == appInstallJourney.name {
+		t.Fatalf("second in-window session re-forced signup journey %q", jd2.name)
+	}
+}
+
+// TestActiveSetCollection pins the invariant the no-profile-without-events
+// guarantee rests on: the users a backfill emits events for are all real,
+// in-range pool members that joined before the window end — never a future-join
+// user and never a bot.
+func TestActiveSetCollection(t *testing.T) {
+	f := newSessionFactory()
+	end := time.Now()
+	start := end.AddDate(0, -4, 0)
+
+	active := map[int]struct{}{}
+	for range 5000 {
+		sess := f.session(start, end)
+		if len(sess) == 0 {
+			continue
+		}
+		if idx, ok := HumanUserIndex(sess[0].distinctID); ok {
+			active[idx] = struct{}{}
+		}
+	}
+	if len(active) == 0 {
+		t.Fatal("no active users collected in 5000 sessions")
+	}
+	for idx := range active {
+		if idx < 0 || idx >= DistinctIDPool {
+			t.Fatalf("active index %d out of range [0,%d)", idx, DistinctIDPool)
+		}
+		if f.users[idx].join.After(end) {
+			t.Fatalf("active user %d joined %v, after window end %v (future-join users must stay event-less)",
+				idx, f.users[idx].join, end)
+		}
 	}
 }
 

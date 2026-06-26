@@ -53,18 +53,15 @@ func buildSession(u *userProfile, prof deviceProfile, jd journeyDef, sessionStar
 	sessionID := uuid.New().String()
 
 	occur := sessionStart
-	sess := make([]event, 0, len(jd.steps))
-	for i, stp := range jd.steps {
-		if i > 0 {
-			occur = occur.Add(time.Duration(8+rand.Int64N(95)) * time.Second)
-		}
-		customProps := st.apply(stp)
-
+	sess := make([]event, 0, len(jd.steps)+2)
+	// emit appends one event at the current occur time, stamping the live
+	// web page (url/title) and attaching the referrer to the very first event.
+	emit := func(kind string, customProps map[string]any) {
 		autoProps := copyProps(stableProps)
 		if prof.platform == "web" {
 			autoProps["$url"] = storeURL + st.page
 			autoProps["$pageTitle"] = st.pageTitle
-			if i == 0 {
+			if len(sess) == 0 {
 				if r, ok := autoProps["$referrerCandidate"]; ok && r != "" {
 					autoProps["$referrer"] = r
 				}
@@ -76,17 +73,42 @@ func buildSession(u *userProfile, prof deviceProfile, jd journeyDef, sessionStar
 			eventID:          uuid.New().String(),
 			distinctID:       u.id,
 			sessionID:        sessionID,
-			kind:             stp.kind,
+			kind:             kind,
 			occurTime:        clampOccurTime(occur, end),
 			autoProperties:   autoProps,
 			customProperties: customProps,
 		})
 	}
 
+	for i, stp := range jd.steps {
+		if i > 0 {
+			occur = occur.Add(time.Duration(8+rand.Int64N(95)) * time.Second)
+		}
+		prevPage := st.page
+		customProps := st.apply(stp)
+
+		// A real storefront fires a page_view on every page load; the semantic
+		// event (product_viewed, cart_viewed, …) follows on the same page. Emit
+		// that page_view for web navigations that landed on a new page so
+		// page_view stays the dominant event kind instead of scroll. The
+		// explicit {page_view} steps already are page_views, so skip those.
+		if prof.platform == "web" && stp.kind != "page_view" && st.page != prevPage {
+			emit("page_view", map[string]any{})
+			occur = occur.Add(time.Duration(1+rand.Int64N(4)) * time.Second)
+		}
+		emit(stp.kind, customProps)
+	}
+
 	// A cart left un-purchased is remembered so a later session (push
 	// recovery or an organic return to the cart) can pick it up.
 	if st.mem != nil && len(st.cart) > 0 && !st.purchased {
 		st.mem.rememberAbandonedCart(st.cart, sessionStart)
+	}
+	// Record that the user has signed up so journeyFor won't force the signup
+	// journey again. Keyed on the journey name (set even if the session was
+	// truncated mid-build) so the cap holds regardless of step count.
+	if st.mem != nil && (jd.name == webSignupJourney.name || jd.name == appInstallJourney.name) {
+		st.mem.signedUp = true
 	}
 	return sess
 }

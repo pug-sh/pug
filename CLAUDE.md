@@ -44,11 +44,20 @@ make clickstack
 # Rolling demo-traffic generator. The standalone command always runs; under
 # `pug dev` it starts only when PUG_DEMO_ENABLED=true. It derives the demo
 # project from the demo user (woof@pug.sh) — creating the customer/org/project
-# + profiles on a fresh DB, resolving them otherwise — then backfills ~4 months
-# of ClickHouse history if the project has no events yet, and finally plays
-# "Pug & Pals" sessions in real time through the NATS ingestion pipeline.
-# Self-bootstrapping so a single k8s deployment seeds-then-streams with no
-# manual seed step and no project id to configure.
+# on a fresh DB, resolving it otherwise — then, if the project has no events
+# yet, backfills ~4 months of "Pug & Pals" history and seeds a profile only for
+# the users those events belong to (never for a user with no events). Most of
+# the pool stays profile-less: the ~half whose join date is still in the future
+# (they sign up live as the wall clock crosses their join) plus past users who
+# churned before the backfill window. It then plays sessions out in real time.
+# Both the backfill and
+# the live stream write straight to ClickHouse via the same insert path — the
+# worker owns its ClickHouse connection and uses no NATS, so it depends on no
+# other worker (the rollup MV still fires on the direct inserts). New signups
+# keep appearing as the wall clock crosses each user's join date and the worker
+# creates their profile on first sight. Self-bootstrapping so a single k8s
+# deployment seeds-then-streams with no manual seed step and no project id to
+# configure.
 ./bin/pug worker demo
 ```
 

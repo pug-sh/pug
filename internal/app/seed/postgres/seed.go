@@ -34,20 +34,46 @@ func NewSeeder(deps *deps) *Seeder {
 	return &Seeder{deps: deps}
 }
 
+// Run (CLI: `pug postgres seed`) seeds the demo account and the full profile
+// population. The deployed demo goes through the worker instead, which seeds
+// only the users that actually produced events (SeedAccount +
+// SeedProfilesForUsers with the backfill's active set).
 func (s *Seeder) Run(ctx context.Context) error {
-	_, err := s.run(ctx)
-	return err
+	project, err := s.seedAccount(ctx)
+	if err != nil {
+		return err
+	}
+	// Idempotency: skip profile seeding if this project already has seeded
+	// profiles. Profiles and devices are upserts, but seedMerges mints fresh
+	// xid-keyed anonymous profiles and devices every run, so re-running would
+	// accumulate junk. (The deployed worker doesn't hit this — it seeds once,
+	// gated on the empty ClickHouse event count.)
+	var existing int64
+	if err := s.deps.pg.QueryRow(ctx,
+		"SELECT count(*) FROM profiles WHERE project_id = $1 AND id LIKE 'user-%'", project.ID,
+	).Scan(&existing); err != nil {
+		return fmt.Errorf("count demo profiles: %w", err)
+	}
+	if existing > 0 {
+		slog.InfoContext(ctx, "demo profiles already seeded, skipping",
+			slog.String("project_id", project.ID),
+			slog.Int64("profiles", existing),
+		)
+		return nil
+	}
+	indices := make([]int, profileCount)
+	for i := range indices {
+		indices[i] = i
+	}
+	return s.seedProfilesForUsers(ctx, project.ID, indices)
 }
 
-// run seeds the demo customer/org/project plus profiles, devices and merges,
-// and returns the resulting project. If the demo customer already exists its
-// project is resolved and reused, and profile/device/merge seeding is skipped
-// (assumed already populated) — so this is safe to call on every worker start.
-// Completeness is keyed on the demo customer existing: if a fresh seed is
-// interrupted after the customer commits but before profiles finish, later
-// starts resolve the customer and skip re-seeding, leaving profiles partial
-// (recovery is to delete the demo customer and restart).
-func (s *Seeder) run(ctx context.Context) (dbread.Project, error) {
+// seedAccount ensures the demo customer/org/project exists and returns the
+// project, without seeding any profiles. If the demo customer already exists its
+// project is resolved and reused, so this is safe to call on every worker start.
+// Profile seeding is a separate, event-gated step so a profile is only ever
+// created for a user that has events.
+func (s *Seeder) seedAccount(ctx context.Context) (dbread.Project, error) {
 	read := dbread.New(s.deps.pg)
 
 	slog.InfoContext(ctx, "checking for existing test user")
@@ -56,49 +82,9 @@ func (s *Seeder) run(ctx context.Context) (dbread.Project, error) {
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return dbread.Project{}, fmt.Errorf("failed to check existing user: %w", err)
 	}
-
 	if err == nil {
 		slog.InfoContext(ctx, "test user already exists, resolving project")
-		project, err := s.resolveProject(ctx, read, customer.ID)
-		if err != nil {
-			return dbread.Project{}, err
-		}
-
-		// Completeness is keyed on the customer row, but profiles, devices and
-		// merges are seeded in separate post-customer commits — a crash mid-seed
-		// leaves the customer present with later steps partial. Re-counting the
-		// seeded user-%05d profiles and their devices lets us warn loudly
-		// (mirroring the ClickHouse backfill guard) instead of silently serving
-		// a thin dashboard. Every seeded profile gets at least one device, so a
-		// finished seed has devices >= profiles; a shortfall in either means the
-		// post-customer seed didn't finish.
-		var profiles, devices int64
-		if err := s.deps.pg.QueryRow(ctx,
-			"SELECT count(*) FROM profiles WHERE project_id = $1 AND id LIKE 'user-%'", project.ID,
-		).Scan(&profiles); err != nil {
-			return dbread.Project{}, fmt.Errorf("count demo profiles: %w", err)
-		}
-		if err := s.deps.pg.QueryRow(ctx,
-			"SELECT count(*) FROM profile_devices WHERE project_id = $1", project.ID,
-		).Scan(&devices); err != nil {
-			return dbread.Project{}, fmt.Errorf("count demo devices: %w", err)
-		}
-		if profiles < profileCount || devices < profileCount {
-			slog.WarnContext(ctx, "incomplete demo seed detected, leaving partial data in place",
-				slog.String("project_id", project.ID),
-				slog.Int64("profiles", profiles),
-				slog.Int64("devices", devices),
-				slog.Int("expected", profileCount),
-				slog.String("recovery", "delete the demo customer (woof@pug.sh) and restart the demo worker to re-seed"),
-			)
-		} else {
-			slog.InfoContext(ctx, "skipping profile seed, already populated",
-				slog.String("project_id", project.ID),
-				slog.Int64("profiles", profiles),
-				slog.Int64("devices", devices),
-			)
-		}
-		return project, nil
+		return s.resolveProject(ctx, read, customer.ID)
 	}
 
 	slog.InfoContext(ctx, "creating test user", slog.String("email", testEmail))
@@ -106,27 +92,29 @@ func (s *Seeder) run(ctx context.Context) (dbread.Project, error) {
 	if err != nil {
 		return dbread.Project{}, err
 	}
-
-	identifiedIDs, err := s.seedProfiles(ctx, project.ID)
-	if err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to seed profiles: %w", err)
-	}
-
-	if err := s.seedDevices(ctx, project.ID); err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to seed devices: %w", err)
-	}
-
-	if err := s.seedMerges(ctx, project.ID, identifiedIDs); err != nil {
-		return dbread.Project{}, fmt.Errorf("failed to seed profile merges: %w", err)
-	}
-
-	slog.DebugContext(ctx, "seed complete",
+	slog.DebugContext(ctx, "account seed complete",
 		slog.String("project_id", project.ID),
 		slog.String("public_api_key", project.PublicApiKey),
 		slog.String("private_api_key", project.PrivateApiKey),
 	)
-
 	return project, nil
+}
+
+// seedProfilesForUsers seeds Postgres profiles, devices and merges for exactly
+// the given user indices (parsed from the backfill's emitted distinct ids), so a
+// profile exists only for a user with events.
+func (s *Seeder) seedProfilesForUsers(ctx context.Context, projectID string, indices []int) error {
+	identifiedIDs, err := s.seedProfiles(ctx, projectID, indices)
+	if err != nil {
+		return fmt.Errorf("failed to seed profiles: %w", err)
+	}
+	if err := s.seedDevices(ctx, projectID, indices); err != nil {
+		return fmt.Errorf("failed to seed devices: %w", err)
+	}
+	if err := s.seedMerges(ctx, projectID, identifiedIDs); err != nil {
+		return fmt.Errorf("failed to seed profile merges: %w", err)
+	}
+	return nil
 }
 
 func (s *Seeder) resolveProject(ctx context.Context, read *dbread.Queries, customerID string) (dbread.Project, error) {
@@ -281,12 +269,12 @@ var favoriteTreats = []string{
 	"Whatever the human is eating",
 }
 
-func pickBreed() (string, string) {
+func pickBreedR(r *rand.Rand) (string, string) {
 	total := 0
 	for _, b := range breeds {
 		total += b.weight
 	}
-	n := rand.IntN(total)
+	n := r.IntN(total)
 	for _, b := range breeds {
 		n -= b.weight
 		if n < 0 {
@@ -297,15 +285,27 @@ func pickBreed() (string, string) {
 	return last.name, last.size
 }
 
-// profileProperties builds a dog profile aligned with the user's event data:
-// same home city/country the event generator gives this distinct id, and
-// pug_club membership matching the journeys the user runs.
-func profileProperties(i int, du chseed.DemoUser) map[string]any {
-	first := firstNames[rand.IntN(len(firstNames))]
-	last := lastNames[rand.IntN(len(lastNames))]
-	breed, size := pickBreed()
+// profileSeed keys the deterministic per-user profile-property stream. Distinct
+// from the event generator's userSeed so the two streams don't correlate, but
+// like it, deterministic per index: the backfill seeder and the live worker
+// derive byte-identical properties for the same user, so a live re-create of an
+// already-seeded profile leaves its stored properties unchanged under the
+// ReplacingMergeTree (only update_time advances).
+const profileSeed = 0xC0FFEE
 
-	props := map[string]any{
+// DemoProfileProperties builds a dog profile aligned with the user's event data
+// (same home city/country the event generator gives this distinct id, and
+// pug_club membership matching the journeys the user runs) plus a deterministic
+// identified/anonymous split. Returns the properties and the external id, which
+// is "" for anonymous-only users — so the caller derives identified as
+// externalID != "". Deterministic in i so every caller agrees.
+func DemoProfileProperties(i int, du chseed.DemoUser) (props map[string]any, externalID string) {
+	r := rand.New(rand.NewPCG(profileSeed, uint64(i)))
+	first := firstNames[r.IntN(len(firstNames))]
+	last := lastNames[r.IntN(len(lastNames))]
+	breed, size := pickBreedR(r)
+
+	props = map[string]any{
 		"name":     fmt.Sprintf("%s %s", first, last),
 		"breed":    breed,
 		"dog_size": size,
@@ -316,74 +316,75 @@ func profileProperties(i int, du chseed.DemoUser) map[string]any {
 		props["pug_club"] = true
 	}
 
-	// ~80% of profiles stop there; ~20% have richer CRM-ish fields.
-	if rand.Float32() < 0.80 {
-		return props
+	// ~60% identified (signed up / signed in → external_id), the rest
+	// anonymous-only. Drawn before the optional rich fields so the split is
+	// stable regardless of how many rich-field draws follow.
+	if r.Float32() < 0.60 {
+		externalID = externalIDForProfile(i)
 	}
 
-	props["first_name"] = first
-	props["last_name"] = last
-	props["favorite_treat"] = favoriteTreats[rand.IntN(len(favoriteTreats))]
-	props["age_years"] = 1 + rand.IntN(12)
+	// ~20% of profiles carry richer CRM-ish fields.
+	if r.Float32() < 0.20 {
+		props["first_name"] = first
+		props["last_name"] = last
+		props["favorite_treat"] = favoriteTreats[r.IntN(len(favoriteTreats))]
+		props["age_years"] = 1 + r.IntN(12)
 
-	if rand.Float32() < 0.70 {
-		props["email"] = fmt.Sprintf("%s.%s%d@%s",
-			strings.ToLower(first),
-			strings.ReplaceAll(strings.ToLower(last), " ", ""), i,
-			emailDomains[rand.IntN(len(emailDomains))],
-		)
-	}
-	if rand.Float32() < 0.30 {
-		props["address"] = fmt.Sprintf("%d %s, %s",
-			rand.IntN(9900)+100,
-			streetNames[rand.IntN(len(streetNames))],
-			du.City,
-		)
+		if r.Float32() < 0.70 {
+			props["email"] = fmt.Sprintf("%s.%s%d@%s",
+				strings.ToLower(first),
+				strings.ReplaceAll(strings.ToLower(last), " ", ""), i,
+				emailDomains[r.IntN(len(emailDomains))],
+			)
+		}
+		if r.Float32() < 0.30 {
+			props["address"] = fmt.Sprintf("%d %s, %s",
+				r.IntN(9900)+100,
+				streetNames[r.IntN(len(streetNames))],
+				du.City,
+			)
+		}
 	}
 
-	return props
+	return props, externalID
 }
 
-func (s *Seeder) seedProfiles(ctx context.Context, projectID string) ([]string, error) {
+// seedProfiles inserts a Postgres profile for each given user index, setting
+// create_time to the user's join (their first-seen / anonymous-creation time,
+// before identify) so profiles spread across the timeline. Returns the ids of
+// the identified profiles for the merge-flow simulation.
+func (s *Seeder) seedProfiles(ctx context.Context, projectID string, indices []int) ([]string, error) {
 	slog.InfoContext(ctx, "seeding profiles",
 		slog.String("project_id", projectID),
-		slog.Int("count", profileCount),
+		slog.Int("count", len(indices)),
 	)
 
 	w := dbwrite.New(s.deps.pg)
-	demoUsers := chseed.DemoUsers(profileCount)
 	var identifiedIDs []string
-	for i := range profileCount {
+	for _, i := range indices {
 		id := fmt.Sprintf("user-%05d", i)
-		props := profileProperties(i, demoUsers[i])
+		du := chseed.DemoUserAt(i)
+		props, externalID := DemoProfileProperties(i, du)
 
-		// ~60% identified (with external_id), ~40% anonymous-only.
-		if rand.Float32() < 0.60 {
-			externalID := externalIDForProfile(i)
-			if _, err := w.UpsertProfileByExternalID(ctx, dbwrite.UpsertProfileByExternalIDParams{
-				ID:         id,
-				ProjectID:  projectID,
-				ExternalID: dbtypes.NewText(externalID),
-				Properties: props,
-			}); err != nil {
-				return nil, fmt.Errorf("upsert profile %s: %w", id, err)
-			}
+		if err := w.SeedDemoProfile(ctx, dbwrite.SeedDemoProfileParams{
+			ID:         id,
+			ProjectID:  projectID,
+			ExternalID: dbtypes.NewOptionalText(externalID), // "" → NULL (anonymous)
+			Properties: props,
+			CreateTime: dbtypes.NewTimestamptz(du.Join),
+			UpdateTime: dbtypes.NewTimestamptz(du.Join),
+		}); err != nil {
+			return nil, fmt.Errorf("seed profile %s: %w", id, err)
+		}
+		if externalID != "" {
 			identifiedIDs = append(identifiedIDs, id)
-		} else {
-			if _, err := w.RegisterProfile(ctx, dbwrite.RegisterProfileParams{
-				ID:         id,
-				ProjectID:  projectID,
-				Properties: props,
-			}); err != nil {
-				return nil, fmt.Errorf("insert anonymous profile %s: %w", id, err)
-			}
 		}
 	}
 
 	slog.InfoContext(ctx, "profiles seeded",
-		slog.Int("count", profileCount),
+		slog.Int("count", len(indices)),
 		slog.Int("identified", len(identifiedIDs)),
-		slog.Int("anonymous", profileCount-len(identifiedIDs)),
+		slog.Int("anonymous", len(indices)-len(identifiedIDs)),
 	)
 	return identifiedIDs, nil
 }
@@ -510,13 +511,13 @@ func externalIDForProfile(i int) string {
 	return fmt.Sprintf("cust_%06d", i)
 }
 
-func (s *Seeder) seedDevices(ctx context.Context, projectID string) error {
+func (s *Seeder) seedDevices(ctx context.Context, projectID string, indices []int) error {
 	slog.InfoContext(ctx, "seeding devices", slog.String("project_id", projectID))
 
 	w := dbwrite.New(s.deps.pg)
 	total := 0
 
-	for i := range profileCount {
+	for _, i := range indices {
 		profileID := fmt.Sprintf("user-%05d", i)
 		// 1-3 devices per profile (~55% get 1, ~35% get 2, ~10% get 3)
 		numDevices := 1
@@ -566,10 +567,18 @@ func Run(ctx context.Context) error {
 	return NewSeeder(d).Run(ctx)
 }
 
-// SeedProject ensures the demo customer/org/project (plus profiles, devices and
-// merges) exists and returns it, using a caller-owned pool. It is the
-// programmatic entry point used by the demo worker to derive the demo project
-// from the demo user; the CLI path goes through Run, which owns its own pool.
-func SeedProject(ctx context.Context, pg *pgxpool.Pool) (dbread.Project, error) {
-	return NewSeeder(&deps{pg: pg}).run(ctx)
+// SeedAccount ensures the demo customer/org/project exists and returns it, using
+// a caller-owned pool, WITHOUT seeding any profiles. The demo worker derives the
+// demo project from this and then seeds profiles only for users that produced
+// events (SeedProfilesForUsers). The CLI path goes through Run, which owns its
+// own pool and seeds the full population.
+func SeedAccount(ctx context.Context, pg *pgxpool.Pool) (dbread.Project, error) {
+	return NewSeeder(&deps{pg: pg}).seedAccount(ctx)
+}
+
+// SeedProfilesForUsers seeds Postgres profiles, devices and merges for exactly
+// the given user indices (the backfill's active set), using a caller-owned pool.
+// A profile is created only for a user that has events.
+func SeedProfilesForUsers(ctx context.Context, pg *pgxpool.Pool, projectID string, indices []int) error {
+	return NewSeeder(&deps{pg: pg}).seedProfilesForUsers(ctx, projectID, indices)
 }

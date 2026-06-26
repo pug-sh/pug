@@ -114,6 +114,37 @@ func (q *Queries) RegisterProfile(ctx context.Context, arg RegisterProfileParams
 	return i, err
 }
 
+const seedDemoProfile = `-- name: SeedDemoProfile :exec
+insert into profiles (id, project_id, external_id, properties, create_time, update_time)
+values ($1, $2, $3, coalesce($4::jsonb, '{}'), $5, $6)
+on conflict (id, project_id) do nothing
+`
+
+type SeedDemoProfileParams struct {
+	ID         string
+	ProjectID  string
+	ExternalID pgtype.Text
+	Properties map[string]any
+	CreateTime pgtype.Timestamptz
+	UpdateTime pgtype.Timestamptz
+}
+
+// Seed-only (demo data): inserts a profile with an explicit create_time so demo
+// profiles spread across each user's first-seen timeline (the anonymous
+// profile's creation, before identify) instead of all landing on the seed day.
+// external_id is null for anonymous-only users. Do not use in application code.
+func (q *Queries) SeedDemoProfile(ctx context.Context, arg SeedDemoProfileParams) error {
+	_, err := q.db.Exec(ctx, seedDemoProfile,
+		arg.ID,
+		arg.ProjectID,
+		arg.ExternalID,
+		arg.Properties,
+		arg.CreateTime,
+		arg.UpdateTime,
+	)
+	return err
+}
+
 const softDeleteProfileByIDAndProjectID = `-- name: SoftDeleteProfileByIDAndProjectID :execrows
 update profiles
 set deletion_time = now()
