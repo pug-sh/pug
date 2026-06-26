@@ -11,7 +11,7 @@ create table org_invitations (
   status varchar(30) not null default 'INVITATION_STATUS_PENDING',
   token char(32) not null unique,
   constraint org_invitations_status_check check (status in ('INVITATION_STATUS_PENDING', 'INVITATION_STATUS_ACCEPTED')),
-  constraint org_invitations_role_check check (role in ('ORG_ROLE_ADMIN', 'ORG_ROLE_MEMBER'))
+  constraint org_invitations_role_check check (role in ('ORG_ROLE_ADMIN', 'ORG_ROLE_MEMBER', 'ORG_ROLE_VIEWER'))
 );
 
 create unique index org_invitations_org_email_pending

@@ -9,7 +9,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
-	"github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/core/projects"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -19,13 +18,16 @@ import (
 	"github.com/pug-sh/pug/internal/tzx"
 )
 
+// Authorization (project-role gating) is enforced centrally by
+// rpc.AuthzInterceptor from the permission registry, before any handler runs —
+// project lifecycle writes are admin-only, BatchGet is member+, all resolved
+// from the registry. Create additionally has a race-safe admin check in its CTE.
 type server struct {
-	service     *projects.Service
-	orgsService *orgs.Service
+	service *projects.Service
 }
 
-func NewServer(service *projects.Service, orgsService *orgs.Service) *server {
-	return &server{service: service, orgsService: orgsService}
+func NewServer(service *projects.Service) *server {
+	return &server{service: service}
 }
 
 // Get returns the project specified by x-project-id header.
@@ -54,22 +56,7 @@ func (s *server) BatchGet(
 		return nil, err
 	}
 
-	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	orgID := req.Msg.GetOrgId()
-	isMember, err := s.orgsService.IsOrgMember(ctx, orgID, principal.Customer.ID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	if !isMember {
-		return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
-	}
-
 	projectsData, err := s.service.GetProjectsByOrgID(ctx, orgID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed reading from db", slogx.Error(err), slog.String("org_id", orgID))

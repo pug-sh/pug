@@ -117,22 +117,3 @@ func (q *Queries) GetOrgMembersByOrgID(ctx context.Context, orgID string) ([]Get
 	}
 	return items, nil
 }
-
-const isOrgMember = `-- name: IsOrgMember :one
-select exists(
-  select 1 from org_members
-  where org_id = $1 and customer_id = $2
-)
-`
-
-type IsOrgMemberParams struct {
-	OrgID      string
-	CustomerID string
-}
-
-func (q *Queries) IsOrgMember(ctx context.Context, arg IsOrgMemberParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isOrgMember, arg.OrgID, arg.CustomerID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
