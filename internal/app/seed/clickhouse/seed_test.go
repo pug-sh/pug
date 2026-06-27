@@ -3,6 +3,7 @@ package seed
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"reflect"
 	"strings"
@@ -646,6 +647,17 @@ func TestAutoAnyMapToVariantMap(t *testing.T) {
 	}
 	if got := autoAnyMapToVariantMap(ctx, "proj", map[string]any{}); got != nil {
 		t.Errorf("autoAnyMapToVariantMap(empty) = %v, want nil", got)
+	}
+
+	// Non-finite floats stay in the Float64 slot (ClickHouse Float64 carries
+	// nan/inf natively). This is a deliberate behavior change from the old proto
+	// path, which coerced them to String — a silent column-type flip here would
+	// mistype the property on every affected event.
+	for _, nf := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		got := autoAnyMapToVariantMap(ctx, "proj", map[string]any{"nf": nf})
+		if v, ok := got["nf"]; !ok || v.Type() != "Float64" {
+			t.Errorf("non-finite %v slotted as %q, want Float64", nf, got["nf"].Type())
+		}
 	}
 }
 

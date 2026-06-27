@@ -3,12 +3,14 @@ package demo
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync/atomic"
 	"testing"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
 	seed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
+	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
 )
 
 // TestDecideSeedAction pins the backfill gate's boundary: a completed backfill
@@ -85,6 +87,44 @@ func TestEnsureProfileDedupAndSkipsBots(t *testing.T) {
 	w.ensureProfile(ctx, "bot-0001") // bots never get a profile
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("insert called for a bot id (calls=%d)", got)
+	}
+}
+
+// TestEnsureProfilePayload pins the LiveProfile the worker hands to the insert:
+// the id is the session's distinct id, create_time is the user's join, and the
+// properties + external id are exactly DemoProfileProperties(idx) — the
+// determinism the ReplacingMergeTree re-create relies on. A swapped or wrong-index
+// field here would silently desync the live-created profile from its backfilled
+// twin (flipping properties or create_time on the merge instead of being a no-op).
+func TestEnsureProfilePayload(t *testing.T) {
+	const distinctID = "user-00007"
+	idx, ok := seed.HumanUserIndex(distinctID)
+	if !ok {
+		t.Fatalf("HumanUserIndex(%q) not ok", distinctID)
+	}
+	wantProps, wantExternalID := pgseed.DemoProfileProperties(idx)
+	wantJoin := seed.DemoUserAt(idx).Join
+
+	var got seed.LiveProfile
+	w := &worker{
+		insertProfile: func(_ context.Context, _ driver.Conn, _ string, p seed.LiveProfile) error {
+			got = p
+			return nil
+		},
+	}
+	w.ensureProfile(context.Background(), distinctID)
+
+	if got.ID != distinctID {
+		t.Errorf("ID = %q, want %q", got.ID, distinctID)
+	}
+	if got.ExternalID != wantExternalID {
+		t.Errorf("ExternalID = %q, want %q", got.ExternalID, wantExternalID)
+	}
+	if !got.CreateTime.Equal(wantJoin) {
+		t.Errorf("CreateTime = %v, want %v (user join)", got.CreateTime, wantJoin)
+	}
+	if !reflect.DeepEqual(got.Properties, wantProps) {
+		t.Errorf("Properties = %v, want %v", got.Properties, wantProps)
 	}
 }
 

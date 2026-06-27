@@ -29,6 +29,14 @@ make clickstack
 ./bin/pug nats migrate
 ./bin/pug clickhouse migrate
 
+# Seed the demo project for local dev. Resets Postgres + ClickHouse (pass
+# --no-reset to keep the schema and truncate the demo tables instead), then runs
+# the same event-gated flow as `pug worker demo`: ensure the demo account,
+# backfill events, seed Postgres profiles for ONLY the users that produced
+# events, then copy them to ClickHouse. A profile therefore never exists without
+# events. (Tunables: --count, --batch.)
+./bin/pug seed
+
 # Start development server + workers together
 ./bin/pug dev
 
@@ -50,12 +58,12 @@ make clickstack
 # the pool stays profile-less: the ~half whose join date is still in the future
 # (they sign up live as the wall clock crosses their join) plus past users who
 # churned before the backfill window. It then plays sessions out in real time.
-# Both the backfill and
-# the live stream write straight to ClickHouse via the same insert path — the
-# worker owns its ClickHouse connection and uses no NATS, so it depends on no
-# other worker (the rollup MV still fires on the direct inserts). New signups
-# keep appearing as the wall clock crosses each user's join date and the worker
-# creates their profile on first sight. Self-bootstrapping so a single k8s
+# Both the backfill and the live stream write straight to ClickHouse via the
+# same insert path — the worker owns its ClickHouse connection and uses no NATS,
+# so it depends on no other worker (the rollup MV still fires on the direct
+# inserts). New signups keep appearing as the wall clock crosses each user's
+# join date and the worker creates their profile on first sight.
+# Self-bootstrapping so a single k8s
 # deployment seeds-then-streams with no manual seed step and no project id to
 # configure.
 ./bin/pug worker demo

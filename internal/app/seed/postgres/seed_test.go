@@ -15,8 +15,8 @@ import (
 func TestDemoProfilePropertiesDeterministic(t *testing.T) {
 	for _, i := range []int{0, 1, 42, 100, 999, 5000, chseed.DistinctIDPool - 1} {
 		du := chseed.DemoUserAt(i)
-		p1, e1 := DemoProfileProperties(i, du)
-		p2, e2 := DemoProfileProperties(i, du)
+		p1, e1 := DemoProfileProperties(i)
+		p2, e2 := DemoProfileProperties(i)
 
 		if e1 != e2 || !reflect.DeepEqual(p1, p2) {
 			t.Errorf("user %d not deterministic:\n (%v, %q)\n (%v, %q)", i, p1, e1, p2, e2)
@@ -43,7 +43,7 @@ func TestDemoProfilePropertiesIdentifiedShare(t *testing.T) {
 	const n = 10000
 	identified := 0
 	for i := range n {
-		if _, e := DemoProfileProperties(i, chseed.DemoUserAt(i)); e != "" {
+		if _, e := DemoProfileProperties(i); e != "" {
 			identified++
 		}
 	}

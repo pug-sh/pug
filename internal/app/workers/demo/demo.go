@@ -352,7 +352,7 @@ func (w *worker) ensureProfile(ctx context.Context, distinctID string) {
 		return // bot or non-user id: never gets a profile
 	}
 	du := seed.DemoUserAt(idx)
-	props, externalID := pgseed.DemoProfileProperties(idx, du)
+	props, externalID := pgseed.DemoProfileProperties(idx)
 
 	if err := w.insertProfile(ctx, w.ch, w.projectID, seed.LiveProfile{
 		ID:         distinctID,
@@ -362,6 +362,9 @@ func (w *worker) ensureProfile(ctx context.Context, distinctID string) {
 		UpdateTime: time.Now(),
 	}); err != nil {
 		w.ensured.Delete(distinctID) // allow the next session to retry
+		if ctx.Err() != nil {
+			return // shutting down: context.Canceled isn't a real insert failure
+		}
 		slog.ErrorContext(ctx, "demo: failed to create live profile",
 			slogx.Error(err), slog.String("distinct_id", distinctID))
 		telemetry.RecordError(ctx, err)
@@ -381,6 +384,9 @@ func (w *worker) play(ctx context.Context, sess []seed.LiveEvent) {
 		}
 
 		if err := seed.InsertLiveEvent(ctx, w.ch, w.projectID, e); err != nil {
+			if ctx.Err() != nil {
+				return // shutting down: context.Canceled isn't a real insert failure
+			}
 			// Drop the rest of the session rather than retrying — this is
 			// synthetic traffic and the next session is seconds away.
 			slog.ErrorContext(ctx, "demo: failed to insert live event",

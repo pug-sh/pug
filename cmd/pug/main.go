@@ -26,8 +26,11 @@ import (
 	"github.com/pug-sh/pug/internal/app/workers/profiles/upsert"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/templates"
+	chdeps "github.com/pug-sh/pug/internal/deps/clickhouse"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
+	pgdeps "github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/slogx"
+	"github.com/sethvargo/go-envconfig"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
@@ -336,9 +339,14 @@ var clickhouseMigrateCmd = &cobra.Command{
 	Run:   runMigrate(clickhouse.Up, clickhouse.Down),
 }
 
-var clickhouseSeedCmd = &cobra.Command{
+var seedCmd = &cobra.Command{
 	Use:   "seed",
-	Short: "Seed ClickHouse with events for the first user and project",
+	Short: "Seed the demo project (events first, then profiles for exactly those users)",
+	Long: "Resets Postgres and ClickHouse (unless --no-reset), then runs the same\n" +
+		"event-gated flow as the demo worker: ensure the demo account, backfill\n" +
+		"events, seed Postgres profiles for only the users that produced events,\n" +
+		"and copy them into ClickHouse. Profiles therefore exist only for users\n" +
+		"with events — matching `pug worker demo`.",
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer done()
@@ -351,58 +359,109 @@ var clickhouseSeedCmd = &cobra.Command{
 		batchSize, _ := cmd.Flags().GetInt("batch")
 		noReset, _ := cmd.Flags().GetBool("no-reset")
 
+		// Default: roll both stores' migrations down then up so they start clean.
+		// --no-reset leaves the schema in place; seedDemoData truncates the demo
+		// tables instead.
 		truncate := true
 		if !noReset {
-			slog.InfoContext(ctx, "rolling back all clickhouse migrations")
-			if err := clickhouse.Down(ctx, 0); err != nil {
-				slog.ErrorContext(ctx, "migrate down error", slogx.Error(err))
-				os.Exit(1)
-			}
-			slog.InfoContext(ctx, "applying all clickhouse migrations")
-			if err := clickhouse.Up(ctx, 0); err != nil {
-				slog.ErrorContext(ctx, "migrate up error", slogx.Error(err))
-				os.Exit(1)
+			for _, m := range []struct {
+				name string
+				down func(context.Context, int) error
+				up   func(context.Context, int) error
+			}{
+				{"postgres", postgres.Down, postgres.Up},
+				{"clickhouse", clickhouse.Down, clickhouse.Up},
+			} {
+				slog.InfoContext(ctx, "resetting migrations", slog.String("store", m.name))
+				if err := m.down(ctx, 0); err != nil {
+					slog.ErrorContext(ctx, "migrate down error", slog.String("store", m.name), slogx.Error(err))
+					os.Exit(1)
+				}
+				if err := m.up(ctx, 0); err != nil {
+					slog.ErrorContext(ctx, "migrate up error", slog.String("store", m.name), slogx.Error(err))
+					os.Exit(1)
+				}
 			}
 			truncate = false
 		}
 
-		if err := chseed.Run(ctx, count, batchSize, truncate); err != nil {
+		if err := seedDemoData(ctx, count, batchSize, truncate); err != nil {
 			slog.ErrorContext(ctx, "seed error", slogx.Error(err))
 			os.Exit(1)
 		}
 	},
 }
 
-var postgresSeedCmd = &cobra.Command{
-	Use:   "seed",
-	Short: "Seed PostgreSQL with test user and default project",
-	Run: func(cmd *cobra.Command, args []string) {
-		ctx, done := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer done()
+// seedDemoData runs the same event-gated flow as the demo worker
+// (internal/app/workers/demo): ensure the demo account, backfill events, seed
+// Postgres profiles for exactly the users that produced events, then copy those
+// profiles into ClickHouse. When truncate is set (the --no-reset path) it first
+// clears the demo events + profiles from ClickHouse and the demo profiles from
+// Postgres, so a re-seed starts clean instead of pairing fresh events with stale
+// profiles.
+func seedDemoData(ctx context.Context, count int64, batchSize int, truncate bool) error {
+	var pgCfg pgdeps.Config
+	if err := envconfig.Process(ctx, &pgCfg); err != nil {
+		return err
+	}
+	pg, err := pgdeps.NewWriterPool(ctx, &pgCfg)
+	if err != nil {
+		return err
+	}
+	defer pg.Close()
 
-		if err := godotenv.Load(); err != nil {
-			slog.DebugContext(ctx, "No .env file found, relying on environment variables")
+	var chCfg chdeps.Config
+	if err := envconfig.Process(ctx, &chCfg); err != nil {
+		return err
+	}
+	chDB, err := chdeps.NewFromConfig(ctx, &chCfg)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := chDB.Conn.Close(); err != nil {
+			slog.WarnContext(ctx, "failed to close ClickHouse connection", slogx.Error(err))
 		}
+	}()
+	ch := chDB.Conn
 
-		noReset, _ := cmd.Flags().GetBool("no-reset")
-		if !noReset {
-			slog.InfoContext(ctx, "rolling back all postgres migrations")
-			if err := postgres.Down(ctx, 0); err != nil {
-				slog.ErrorContext(ctx, "migrate down error", slogx.Error(err))
-				os.Exit(1)
+	project, err := pgseed.SeedAccount(ctx, pg)
+	if err != nil {
+		return fmt.Errorf("seed account: %w", err)
+	}
+
+	if truncate {
+		for _, table := range []string{"events", "profiles"} {
+			slog.InfoContext(ctx, "truncating clickhouse table", slog.String("table", table))
+			if err := ch.Exec(ctx, "TRUNCATE TABLE "+table); err != nil {
+				return fmt.Errorf("truncate %s: %w", table, err)
 			}
-			slog.InfoContext(ctx, "applying all postgres migrations")
-			if err := postgres.Up(ctx, 0); err != nil {
-				slog.ErrorContext(ctx, "migrate up error", slogx.Error(err))
-				os.Exit(1)
-			}
 		}
+		// Clear the Postgres demo profiles too. Without this, the leftover rows
+		// trip seedProfilesForUsers' idempotency skip and the fresh backfill's
+		// events get paired with the stale profile set (orphan profiles/events).
+		slog.InfoContext(ctx, "clearing postgres demo profiles", slog.String("project_id", project.ID))
+		if err := pgseed.ResetDemoProfiles(ctx, pg, project.ID); err != nil {
+			return err
+		}
+	}
 
-		if err := pgseed.Run(ctx); err != nil {
-			slog.ErrorContext(ctx, "seed error", slogx.Error(err))
-			os.Exit(1)
-		}
-	},
+	indices, err := chseed.BackfillEvents(ctx, ch, project.ID, count, batchSize)
+	if err != nil {
+		return fmt.Errorf("backfill events: %w", err)
+	}
+	if err := pgseed.SeedProfilesForUsers(ctx, pg, project.ID, indices); err != nil {
+		return fmt.Errorf("seed profiles: %w", err)
+	}
+	if err := chseed.CopyProfilesToClickHouse(ctx, pg, ch, project.ID); err != nil {
+		return fmt.Errorf("copy profiles to clickhouse: %w", err)
+	}
+
+	slog.InfoContext(ctx, "demo seed complete",
+		slog.String("project_id", project.ID),
+		slog.Int("profiles", len(indices)),
+	)
+	return nil
 }
 
 func init() {
@@ -419,6 +478,11 @@ func init() {
 	rootCmd.AddCommand(workerCmd)
 	rootCmd.AddCommand(devCmd)
 
+	seedCmd.Flags().Int64P("count", "c", 500_000, "total number of events to generate")
+	seedCmd.Flags().IntP("batch", "b", 10_000, "number of events per ClickHouse batch")
+	seedCmd.Flags().Bool("no-reset", false, "skip migrate down/up; truncate the demo tables and re-seed instead")
+	rootCmd.AddCommand(seedCmd)
+
 	emailPreviewCmd.Flags().BoolVar(&emailPreviewText, "text", false, "render the plaintext twin instead of HTML")
 	emailPreviewCmd.Flags().StringVar(&emailPreviewOut, "out", "", "write output to a file instead of stdout")
 	emailToolCmd.AddCommand(emailPreviewCmd)
@@ -432,7 +496,6 @@ func init() {
 		Short: "PostgreSQL related commands",
 	}
 	postgresCmd.AddCommand(postgresMigrateCmd)
-	postgresCmd.AddCommand(postgresSeedCmd)
 
 	natsCmd := &cobra.Command{
 		Use:   "nats",
@@ -443,17 +506,11 @@ func init() {
 	clickhouseMigrateCmd.Flags().StringP("direction", "d", "up", "can be any of 'up' or 'down' (default: up)")
 	clickhouseMigrateCmd.Flags().IntP("num", "n", 0, "number of migrations to apply")
 
-	clickhouseSeedCmd.Flags().Int64P("count", "c", 500_000, "total number of events to generate")
-	clickhouseSeedCmd.Flags().IntP("batch", "b", 10_000, "number of events per ClickHouse batch")
-	clickhouseSeedCmd.Flags().Bool("no-reset", false, "skip migrate down/up; truncate events table instead")
-	postgresSeedCmd.Flags().Bool("no-reset", false, "skip migrate down/up before seeding")
-
 	clickhouseCmd := &cobra.Command{
 		Use:   "clickhouse",
 		Short: "ClickHouse related commands",
 	}
 	clickhouseCmd.AddCommand(clickhouseMigrateCmd)
-	clickhouseCmd.AddCommand(clickhouseSeedCmd)
 
 	rootCmd.AddCommand(postgresCmd)
 	rootCmd.AddCommand(natsCmd)

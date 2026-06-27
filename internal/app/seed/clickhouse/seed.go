@@ -73,31 +73,6 @@ func autoAnyMapToVariantMap(ctx context.Context, projectID string, props map[str
 	return out
 }
 
-func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, truncate bool) error {
-	projectID, err := s.resolveProjectID(ctx)
-	if err != nil {
-		return err
-	}
-
-	if err := s.runProfiles(ctx, projectID, truncate); err != nil {
-		return fmt.Errorf("seed profiles: %w", err)
-	}
-
-	if truncate {
-		slog.InfoContext(ctx, "truncating events table")
-		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE events"); err != nil {
-			return fmt.Errorf("truncate failed: %w", err)
-		}
-	} else {
-		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
-	}
-
-	// The CLI seeds the full profile set up front (runProfiles above), so the
-	// active set the backfill discovers is informational here and discarded.
-	_, err = s.backfillEvents(ctx, projectID, count, batchSize)
-	return err
-}
-
 // backfillEvents generates `count` synthetic events for projectID and appends
 // them to the events table. It does not truncate; callers decide reset policy.
 // It returns the set of human user indices that actually produced at least one
@@ -324,8 +299,8 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *ses
 
 // recordActiveUser marks the human user behind a session as having produced
 // events, so the caller seeds a profile for exactly that user. Bot/non-user
-// distinct ids are ignored (they never get a profile). A nil set is a no-op,
-// so the CLI path that discards the active set can pass nil.
+// distinct ids are ignored (they never get a profile). The nil check is a
+// defensive no-op; all current callers pass a non-nil set.
 func recordActiveUser(active map[int]struct{}, distinctID string) {
 	if active == nil {
 		return
@@ -351,21 +326,6 @@ func HumanUserIndex(distinctID string) (int, bool) {
 		return 0, false
 	}
 	return i, true
-}
-
-func (s *Seeder) resolveProjectID(ctx context.Context) (string, error) {
-	var projectID string
-	err := s.deps.pg.QueryRow(ctx,
-		"SELECT p.id FROM projects p JOIN org_members om ON om.org_id = p.org_id JOIN customers c ON c.id = om.customer_id ORDER BY p.create_time LIMIT 1",
-	).Scan(&projectID)
-	if err != nil {
-		return "", fmt.Errorf("no projects found: %w", err)
-	}
-
-	slog.InfoContext(ctx, "resolved target",
-		slog.String("project_id", projectID),
-	)
-	return projectID, nil
 }
 
 func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate bool) error {
@@ -428,14 +388,4 @@ func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate boo
 		slog.Int("count", inserted),
 	)
 	return nil
-}
-
-func Run(ctx context.Context, count int64, batchSize int, truncate bool) error {
-	d, err := newDeps(ctx)
-	if err != nil {
-		return err
-	}
-	defer d.close(ctx)
-
-	return NewSeeder(d).Run(ctx, count, batchSize, truncate)
 }

@@ -34,45 +34,11 @@ func NewSeeder(deps *deps) *Seeder {
 	return &Seeder{deps: deps}
 }
 
-// Run (CLI: `pug postgres seed`) seeds the demo account and the full profile
-// population. The deployed demo goes through the worker instead, which seeds
-// only the users that actually produced events (SeedAccount +
-// SeedProfilesForUsers with the backfill's active set).
-func (s *Seeder) Run(ctx context.Context) error {
-	project, err := s.seedAccount(ctx)
-	if err != nil {
-		return err
-	}
-	// Idempotency: skip profile seeding if this project already has seeded
-	// profiles. Profiles and devices are upserts, but seedMerges mints fresh
-	// xid-keyed anonymous profiles and devices every run, so re-running would
-	// accumulate junk. (The deployed worker doesn't hit this — it seeds once,
-	// gated on the empty ClickHouse event count.)
-	var existing int64
-	if err := s.deps.pg.QueryRow(ctx,
-		"SELECT count(*) FROM profiles WHERE project_id = $1 AND id LIKE 'user-%'", project.ID,
-	).Scan(&existing); err != nil {
-		return fmt.Errorf("count demo profiles: %w", err)
-	}
-	if existing > 0 {
-		slog.InfoContext(ctx, "demo profiles already seeded, skipping",
-			slog.String("project_id", project.ID),
-			slog.Int64("profiles", existing),
-		)
-		return nil
-	}
-	indices := make([]int, profileCount)
-	for i := range indices {
-		indices[i] = i
-	}
-	return s.seedProfilesForUsers(ctx, project.ID, indices)
-}
-
 // seedAccount ensures the demo customer/org/project exists and returns the
 // project, without seeding any profiles. If the demo customer already exists its
 // project is resolved and reused, so this is safe to call on every worker start.
-// Profile seeding is a separate, event-gated step so a profile is only ever
-// created for a user that has events.
+// Profile seeding is a separate, event-gated step (SeedProfilesForUsers) so a
+// profile is only ever created for a user that has events.
 func (s *Seeder) seedAccount(ctx context.Context) (dbread.Project, error) {
 	read := dbread.New(s.deps.pg)
 
@@ -104,6 +70,26 @@ func (s *Seeder) seedAccount(ctx context.Context) (dbread.Project, error) {
 // the given user indices (parsed from the backfill's emitted distinct ids), so a
 // profile exists only for a user with events.
 func (s *Seeder) seedProfilesForUsers(ctx context.Context, projectID string, indices []int) error {
+	// Idempotency: skip if this project already has seeded profiles. seedProfiles
+	// and seedDevices upsert, but seedMerges mints fresh xid-keyed anonymous rows
+	// every run, so re-seeding a populated project would accumulate junk. The
+	// worker never hits this (it seeds once, gated on an empty event count); the
+	// CLI's `seed --no-reset` path clears the demo rows first (ResetDemoProfiles),
+	// so it falls through to a real re-seed rather than relying on this skip.
+	var existing int64
+	if err := s.deps.pg.QueryRow(ctx,
+		"SELECT count(*) FROM profiles WHERE project_id = $1 AND id LIKE 'user-%'", projectID,
+	).Scan(&existing); err != nil {
+		return fmt.Errorf("count demo profiles: %w", err)
+	}
+	if existing > 0 {
+		slog.InfoContext(ctx, "demo profiles already seeded, skipping",
+			slog.String("project_id", projectID),
+			slog.Int64("profiles", existing),
+		)
+		return nil
+	}
+
 	identifiedIDs, err := s.seedProfiles(ctx, projectID, indices)
 	if err != nil {
 		return fmt.Errorf("failed to seed profiles: %w", err)
@@ -210,12 +196,6 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, er
 	}, nil
 }
 
-// profileCount must equal the event generator's user pool so seeded profiles
-// and the events they belong to describe the same distinct ids. Sourced from
-// the exported constant rather than re-declaring the literal so the two cannot
-// drift.
-const profileCount = chseed.DistinctIDPool
-
 // Customers of the Pug & Pals demo store are, naturally, dogs.
 var firstNames = []string{
 	"Biscuit", "Luna", "Max", "Bella", "Charlie", "Cooper", "Daisy", "Milo",
@@ -298,8 +278,11 @@ const profileSeed = 0xC0FFEE
 // pug_club membership matching the journeys the user runs) plus a deterministic
 // identified/anonymous split. Returns the properties and the external id, which
 // is "" for anonymous-only users — so the caller derives identified as
-// externalID != "". Deterministic in i so every caller agrees.
-func DemoProfileProperties(i int, du chseed.DemoUser) (props map[string]any, externalID string) {
+// externalID != "". Keyed only on i (the DemoUser is derived internally from the
+// same index) so a mismatched (i, du) pair can't produce a Frankenstein profile.
+// Deterministic in i so every caller agrees.
+func DemoProfileProperties(i int) (props map[string]any, externalID string) {
+	du := chseed.DemoUserAt(i)
 	r := rand.New(rand.NewPCG(profileSeed, uint64(i)))
 	first := firstNames[r.IntN(len(firstNames))]
 	last := lastNames[r.IntN(len(lastNames))]
@@ -364,7 +347,7 @@ func (s *Seeder) seedProfiles(ctx context.Context, projectID string, indices []i
 	for _, i := range indices {
 		id := fmt.Sprintf("user-%05d", i)
 		du := chseed.DemoUserAt(i)
-		props, externalID := DemoProfileProperties(i, du)
+		props, externalID := DemoProfileProperties(i)
 
 		if err := w.SeedDemoProfile(ctx, dbwrite.SeedDemoProfileParams{
 			ID:         id,
@@ -557,21 +540,10 @@ func (s *Seeder) seedDevices(ctx context.Context, projectID string, indices []in
 	return nil
 }
 
-func Run(ctx context.Context) error {
-	d, err := newDeps(ctx)
-	if err != nil {
-		return err
-	}
-	defer d.close()
-
-	return NewSeeder(d).Run(ctx)
-}
-
 // SeedAccount ensures the demo customer/org/project exists and returns it, using
-// a caller-owned pool, WITHOUT seeding any profiles. The demo worker derives the
-// demo project from this and then seeds profiles only for users that produced
-// events (SeedProfilesForUsers). The CLI path goes through Run, which owns its
-// own pool and seeds the full population.
+// a caller-owned pool, WITHOUT seeding any profiles. Both the demo worker and
+// the `pug seed` CLI derive the demo project from this and then seed profiles
+// only for the users that produced events (SeedProfilesForUsers).
 func SeedAccount(ctx context.Context, pg *pgxpool.Pool) (dbread.Project, error) {
 	return NewSeeder(&deps{pg: pg}).seedAccount(ctx)
 }
@@ -581,4 +553,24 @@ func SeedAccount(ctx context.Context, pg *pgxpool.Pool) (dbread.Project, error) 
 // A profile is created only for a user that has events.
 func SeedProfilesForUsers(ctx context.Context, pg *pgxpool.Pool, projectID string, indices []int) error {
 	return NewSeeder(&deps{pg: pg}).seedProfilesForUsers(ctx, projectID, indices)
+}
+
+// ResetDemoProfiles deletes all seeded profile rows (profiles, their devices, and
+// the anonymous merge artifacts) for the demo project. It is the Postgres
+// counterpart of the CLI's ClickHouse TRUNCATEs on the `seed --no-reset` path:
+// without it the leftover Postgres profiles would trip seedProfilesForUsers'
+// idempotency skip, so the freshly re-backfilled events would be paired with the
+// stale profile set. profile_devices.profile_id is ON DELETE SET NULL (not
+// cascade), so the devices are deleted explicitly; both deletes are scoped to the
+// dedicated demo project_id, which covers user-%05d and xid-keyed merge rows.
+func ResetDemoProfiles(ctx context.Context, pg *pgxpool.Pool, projectID string) error {
+	for _, stmt := range []string{
+		"DELETE FROM profile_devices WHERE project_id = $1",
+		"DELETE FROM profiles WHERE project_id = $1",
+	} {
+		if _, err := pg.Exec(ctx, stmt, projectID); err != nil {
+			return fmt.Errorf("reset demo profiles: %w", err)
+		}
+	}
+	return nil
 }
