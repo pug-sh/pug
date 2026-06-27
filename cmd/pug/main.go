@@ -14,8 +14,7 @@ import (
 	"github.com/pug-sh/pug/internal/app/migrate/clickhouse"
 	migratenats "github.com/pug-sh/pug/internal/app/migrate/nats"
 	"github.com/pug-sh/pug/internal/app/migrate/postgres"
-	chseed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
-	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
+	"github.com/pug-sh/pug/internal/app/seed"
 	"github.com/pug-sh/pug/internal/app/server"
 	"github.com/pug-sh/pug/internal/app/workers/compliance"
 	demoworker "github.com/pug-sh/pug/internal/app/workers/demo"
@@ -26,11 +25,8 @@ import (
 	"github.com/pug-sh/pug/internal/app/workers/profiles/upsert"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/templates"
-	chdeps "github.com/pug-sh/pug/internal/deps/clickhouse"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
-	pgdeps "github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/slogx"
-	"github.com/sethvargo/go-envconfig"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
@@ -359,109 +355,11 @@ var seedCmd = &cobra.Command{
 		batchSize, _ := cmd.Flags().GetInt("batch")
 		noReset, _ := cmd.Flags().GetBool("no-reset")
 
-		// Default: roll both stores' migrations down then up so they start clean.
-		// --no-reset leaves the schema in place; seedDemoData truncates the demo
-		// tables instead.
-		truncate := true
-		if !noReset {
-			for _, m := range []struct {
-				name string
-				down func(context.Context, int) error
-				up   func(context.Context, int) error
-			}{
-				{"postgres", postgres.Down, postgres.Up},
-				{"clickhouse", clickhouse.Down, clickhouse.Up},
-			} {
-				slog.InfoContext(ctx, "resetting migrations", slog.String("store", m.name))
-				if err := m.down(ctx, 0); err != nil {
-					slog.ErrorContext(ctx, "migrate down error", slog.String("store", m.name), slogx.Error(err))
-					os.Exit(1)
-				}
-				if err := m.up(ctx, 0); err != nil {
-					slog.ErrorContext(ctx, "migrate up error", slog.String("store", m.name), slogx.Error(err))
-					os.Exit(1)
-				}
-			}
-			truncate = false
-		}
-
-		if err := seedDemoData(ctx, count, batchSize, truncate); err != nil {
+		if err := seed.Run(ctx, seed.Options{Count: count, BatchSize: batchSize, NoReset: noReset}); err != nil {
 			slog.ErrorContext(ctx, "seed error", slogx.Error(err))
 			os.Exit(1)
 		}
 	},
-}
-
-// seedDemoData runs the same event-gated flow as the demo worker
-// (internal/app/workers/demo): ensure the demo account, backfill events, seed
-// Postgres profiles for exactly the users that produced events, then copy those
-// profiles into ClickHouse. When truncate is set (the --no-reset path) it first
-// clears the demo events + profiles from ClickHouse and the demo profiles from
-// Postgres, so a re-seed starts clean instead of pairing fresh events with stale
-// profiles.
-func seedDemoData(ctx context.Context, count int64, batchSize int, truncate bool) error {
-	var pgCfg pgdeps.Config
-	if err := envconfig.Process(ctx, &pgCfg); err != nil {
-		return err
-	}
-	pg, err := pgdeps.NewWriterPool(ctx, &pgCfg)
-	if err != nil {
-		return err
-	}
-	defer pg.Close()
-
-	var chCfg chdeps.Config
-	if err := envconfig.Process(ctx, &chCfg); err != nil {
-		return err
-	}
-	chDB, err := chdeps.NewFromConfig(ctx, &chCfg)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := chDB.Conn.Close(); err != nil {
-			slog.WarnContext(ctx, "failed to close ClickHouse connection", slogx.Error(err))
-		}
-	}()
-	ch := chDB.Conn
-
-	project, err := pgseed.SeedAccount(ctx, pg)
-	if err != nil {
-		return fmt.Errorf("seed account: %w", err)
-	}
-
-	if truncate {
-		for _, table := range []string{"events", "profiles"} {
-			slog.InfoContext(ctx, "truncating clickhouse table", slog.String("table", table))
-			if err := ch.Exec(ctx, "TRUNCATE TABLE "+table); err != nil {
-				return fmt.Errorf("truncate %s: %w", table, err)
-			}
-		}
-		// Clear the Postgres demo profiles too. Without this, the leftover rows
-		// trip seedProfilesForUsers' idempotency skip and the fresh backfill's
-		// events get paired with the stale profile set (orphan profiles/events).
-		slog.InfoContext(ctx, "clearing postgres demo profiles", slog.String("project_id", project.ID))
-		if err := pgseed.ResetDemoProfiles(ctx, pg, project.ID); err != nil {
-			return err
-		}
-	}
-
-	indices, err := chseed.BackfillEvents(ctx, ch, project.ID, count, batchSize)
-	if err != nil {
-		return fmt.Errorf("backfill events: %w", err)
-	}
-	if err := pgseed.SeedProfilesForUsers(ctx, pg, project.ID, indices); err != nil {
-		return fmt.Errorf("seed profiles: %w", err)
-	}
-	if err := chseed.CopyProfilesToClickHouse(ctx, pg, ch, project.ID); err != nil {
-		return fmt.Errorf("copy profiles to clickhouse: %w", err)
-	}
-
-	slog.InfoContext(ctx, "demo seed complete",
-		slog.String("project_id", project.ID),
-		slog.Int("profiles", len(indices)),
-	)
-	return nil
 }
 
 func init() {

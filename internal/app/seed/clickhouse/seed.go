@@ -179,7 +179,7 @@ func BackfillEvents(ctx context.Context, ch driver.Conn, projectID string, count
 // so only users with events are copied.
 func CopyProfilesToClickHouse(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, projectID string) error {
 	s := &Seeder{deps: &deps{pg: pg, ch: ch}}
-	return s.runProfiles(ctx, projectID, false)
+	return s.runProfiles(ctx, projectID)
 }
 
 // InsertLiveEvent writes a single generated live event straight into the
@@ -328,14 +328,7 @@ func HumanUserIndex(distinctID string) (int, bool) {
 	return i, true
 }
 
-func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate bool) error {
-	if truncate {
-		slog.InfoContext(ctx, "truncating profiles table")
-		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE profiles"); err != nil {
-			return fmt.Errorf("truncate profiles failed: %w", err)
-		}
-	}
-
+func (s *Seeder) runProfiles(ctx context.Context, projectID string) error {
 	slog.InfoContext(ctx, "copying profiles from PostgreSQL to ClickHouse",
 		slog.String("project_id", projectID),
 	)
