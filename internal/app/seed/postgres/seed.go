@@ -82,6 +82,18 @@ func (s *Seeder) seedProfilesForUsers(ctx context.Context, projectID string, ind
 	// worker never hits this (it seeds once, gated on an empty event count); the
 	// CLI's `seed --no-reset` path clears the demo rows first (ResetDemoProfiles),
 	// so it falls through to a real re-seed rather than relying on this skip.
+	//
+	// This is a coarse "any profiles?" gate, not proof that a prior run finished
+	// all three steps (profiles + devices + merges) — and that's deliberate: it
+	// cannot strand a partial seed, because no caller re-enters here with leftover
+	// profiles. The worker only calls in on an empty project (n == 0 events, and a
+	// profile never exists without events ⇒ no profiles to skip on); a crash after
+	// events commit but mid-profile-seed is caught one level up by ensureSeed's
+	// events-present-but-no-profiles check, which warns for a manual TRUNCATE +
+	// restart instead of looping back through here. A finer completion marker
+	// wouldn't help anyway: synthetic events/merges carry random ids that the
+	// ReplacingMergeTree can't dedup across runs, so re-running repairs nothing —
+	// manual reset is the documented recovery, mirroring the partial-backfill gate.
 	var existing int64
 	if err := s.deps.pg.QueryRow(ctx,
 		"SELECT count(*) FROM profiles WHERE project_id = $1 AND id LIKE 'user-%'", projectID,
