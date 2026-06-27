@@ -24,6 +24,12 @@ const (
 	testEmail    = "woof@pug.sh"
 	testPassword = "goodboy"
 	testName     = "Pug"
+
+	// A second demo account with read-only (viewer) access to the same org so the
+	// viewer role can be exercised in the dashboard. Snoop Pugg snoops: looks but
+	// never touches. Reuses testPassword for easy local sign-in.
+	viewerEmail = "snoop@pug.sh"
+	viewerName  = "Snoop Pugg"
 )
 
 type Seeder struct {
@@ -170,6 +176,28 @@ func (s *Seeder) seedCustomerOrgProject(ctx context.Context) (dbread.Project, er
 		Role:       coreorgs.RoleAdmin.String(),
 	}); err != nil {
 		return dbread.Project{}, fmt.Errorf("failed to add customer to org: %w", err)
+	}
+
+	// Snoop Pugg: a read-only companion on the same org so the viewer experience
+	// is demoable out of the box. Same password as the admin, so signing in to
+	// click around as a viewer is trivial.
+	viewer, err := w.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+		ID:           xid.New().String(),
+		Email:        viewerEmail,
+		DisplayName:  viewerName,
+		PasswordHash: string(passwordHash),
+		PictureUri:   "",
+	})
+	if err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to create viewer customer: %w", err)
+	}
+
+	if _, err = w.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+		OrgID:      org.ID,
+		CustomerID: viewer.ID,
+		Role:       coreorgs.RoleViewer.String(),
+	}); err != nil {
+		return dbread.Project{}, fmt.Errorf("failed to add viewer to org: %w", err)
 	}
 
 	p, err := w.CreateProject(ctx, dbwrite.CreateProjectParams{
