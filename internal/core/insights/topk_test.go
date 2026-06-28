@@ -133,6 +133,144 @@ func TestBuildTopKQuery_EventKind(t *testing.T) {
 	}
 }
 
+// TestBuildTopKQuery_OmitOthers verifies the omit-$others fast path for the raw
+// builders: the synthetic bucket is gone (no '$others' literal, no two-pass
+// top_vals), the ranking is pruned by LIMIT (events/kind) or rn<=limit (user),
+// is_others stays projected as a constant 0, and the default keep-$others path
+// is byte-identical whether the flag is unset or explicitly false.
+func TestBuildTopKQuery_OmitOthers(t *testing.T) {
+	t.Run("property_events_single_pass", func(t *testing.T) {
+		req := topKRequest(&insightsv1.TopKQuery{
+			Dimension:  insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+			Property:   proto.String("$browser"),
+			Limit:      proto.Int32(5),
+			OmitOthers: proto.Bool(true),
+		})
+		q, err := insights.BuildTopKQuery(req, "proj_123")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		sql := q.SQL()
+		for _, want := range []string{
+			"0 AS is_others",
+			"GROUP BY dim_value",
+			"ORDER BY value DESC, dim_value ASC",
+			"LIMIT ?",
+		} {
+			if !strings.Contains(sql, want) {
+				t.Errorf("expected %q in SQL, got: %s", want, sql)
+			}
+		}
+		for _, bad := range []string{"'$others'", "top_vals", "is_others ASC"} {
+			if strings.Contains(sql, bad) {
+				t.Errorf("omit-others SQL must not contain %q, got: %s", bad, sql)
+			}
+		}
+		// The events fast path is a single scan (no top_vals CTE re-scan).
+		if got := strings.Count(sql, "FROM events"); got != 1 {
+			t.Errorf("expected exactly 1 events scan, got %d: %s", got, sql)
+		}
+		limitSeen := false
+		for _, a := range q.Args() {
+			if a == int64(5) {
+				limitSeen = true
+			}
+		}
+		if !limitSeen {
+			t.Errorf("expected limit 5 in args, got: %v", q.Args())
+		}
+	})
+
+	t.Run("event_kind", func(t *testing.T) {
+		req := topKRequest(&insightsv1.TopKQuery{
+			Dimension:  insightsv1.TopKQuery_DIMENSION_EVENT_KIND.Enum(),
+			OmitOthers: proto.Bool(true),
+		})
+		q, err := insights.BuildTopKQuery(req, "proj_123")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		sql := q.SQL()
+		if strings.Contains(sql, "'$others'") || strings.Contains(sql, "top_vals") {
+			t.Errorf("omit-others event-kind SQL must not bucket $others, got: %s", sql)
+		}
+		if !strings.Contains(sql, "kind AS dim_value") {
+			t.Errorf("expected kind grouped as dim_value, got: %s", sql)
+		}
+	})
+
+	t.Run("user_prunes_by_rn", func(t *testing.T) {
+		req := topKRequest(&insightsv1.TopKQuery{
+			Dimension:      insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+			Metric:         insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum(),
+			MetricProperty: proto.String("order_amount"),
+			Limit:          proto.Int32(3),
+			OmitOthers:     proto.Bool(true),
+		})
+		q, err := insights.BuildTopKQuery(req, "proj_123")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		sql := q.SQL()
+		// The re-mergeable per_user/ranked CTEs are retained; only the tail
+		// bucketing is replaced by an rn<=limit prune.
+		for _, want := range []string{
+			"per_user AS (",
+			"ranked AS (",
+			"rn <= ?",
+			"0 AS is_others",
+			"sum(sum_num) AS value",
+			"ORDER BY value DESC, dim_value ASC",
+		} {
+			if !strings.Contains(sql, want) {
+				t.Errorf("expected %q in SQL, got: %s", want, sql)
+			}
+		}
+		for _, bad := range []string{"'$others'", "is_others ASC", "if(rn <= ?, user_key"} {
+			if strings.Contains(sql, bad) {
+				t.Errorf("omit-others user SQL must not contain %q, got: %s", bad, sql)
+			}
+		}
+		// limit appears once (the rn prune), not twice (the rank-split needs two).
+		limitArgs := 0
+		for _, a := range q.Args() {
+			if a == int64(3) {
+				limitArgs++
+			}
+		}
+		if limitArgs != 1 {
+			t.Errorf("expected limit once (rn prune), got %d: %v", limitArgs, q.Args())
+		}
+	})
+
+	t.Run("default_path_unchanged_by_explicit_false", func(t *testing.T) {
+		// Zero-value omit_others (false) keeps the $others bucket, and an
+		// explicit false is byte-identical to leaving it unset — the
+		// suppress-flag presence contract that makes every existing caller safe.
+		base := func(omit *bool) *insightsv1.TopKQuery {
+			return &insightsv1.TopKQuery{
+				Dimension:  insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+				Property:   proto.String("$browser"),
+				OmitOthers: omit,
+			}
+		}
+		unset, err := insights.BuildTopKQuery(topKRequest(base(nil)), "proj_123")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		explicitFalse, err := insights.BuildTopKQuery(topKRequest(base(proto.Bool(false))), "proj_123")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if unset.SQL() != explicitFalse.SQL() {
+			t.Errorf("explicit false must be byte-identical to unset:\nunset: %s\nfalse: %s", unset.SQL(), explicitFalse.SQL())
+		}
+		if !strings.Contains(unset.SQL(), "top_vals AS (") || !strings.Contains(unset.SQL(), "'$others'") {
+			t.Errorf("default path must keep the $others two-pass, got: %s", unset.SQL())
+		}
+	})
+}
+
 // TestBuildTopKQuery_ScopeAndFiltersInBothScans verifies the event scope and
 // top-level filter groups (including a profile-source filter) land in both the
 // top_vals CTE and the outer aggregation scan.

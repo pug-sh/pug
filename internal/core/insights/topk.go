@@ -169,6 +169,24 @@ func buildTopKEvents(req *insightsv1.QueryRequest, projectID string, limit int) 
 		return nil, err
 	}
 
+	// Omit-$others fast path: a single aggregation with LIMIT is the natural
+	// "top K, no overflow", so the two-pass top_vals CTE is skipped entirely —
+	// there is no tail to re-aggregate. is_others stays projected (always 0) so
+	// the executor scan and the TopKRow contract are unchanged.
+	if tk.GetOmitOthers() {
+		return chq.NewQuery().
+			Select(
+				dimExpr+" AS dim_value",
+				"0 AS is_others",
+				aggExpr+" AS value",
+			).
+			From("events").
+			Where(conds...).
+			GroupBy("dim_value").
+			OrderBy("value DESC", "dim_value ASC").
+			Limit(int64(limit)), nil
+	}
+
 	topVals := chq.NewQuery().
 		Select(dimExpr+" AS dim_value").
 		From("events").
@@ -263,11 +281,32 @@ WHERE p.is_deleted = 0
 		)...).
 		From("per_user")
 
-	return chq.NewQuery().
+	base := chq.NewQuery().
 		With("latest_profiles", profiles.LatestProfilesCTE(projectID)).
 		With("latest_profile_aliases", profiles.LatestProfileAliasesCTE(projectID)).
 		With("per_user", perUser).
-		With("ranked", ranked).
+		With("ranked", ranked)
+
+	// Omit-$others fast path: prune to the top `limit` ranked rows instead of
+	// bucketing the tail. rn is a window-function alias from the ranked CTE, so
+	// it is filtered on this outer scan over ranked (it cannot be referenced in
+	// the SELECT that defines it). Each ranked row is one user, so the GROUP BY
+	// yields singleton groups and mergeExpr reduces to rankExpr. is_others stays
+	// projected (always 0) so the executor scan and the TopKRow contract hold.
+	if tk.GetOmitOthers() {
+		return base.
+			Select(
+				"user_key AS dim_value",
+				"0 AS is_others",
+				metric.mergeExpr+" AS value",
+			).
+			From("ranked").
+			Where(chq.Lte("rn", int64(limit))).
+			GroupBy("dim_value", "is_others").
+			OrderBy("value DESC", "dim_value ASC"), nil
+	}
+
+	return base.
 		SelectExpr(fmt.Sprintf("if(rn <= ?, user_key, '%s') AS dim_value", topKOthersValue), int64(limit)).
 		SelectExpr("if(rn <= ?, 0, 1) AS is_others", int64(limit)).
 		Select(metric.mergeExpr+" AS value").

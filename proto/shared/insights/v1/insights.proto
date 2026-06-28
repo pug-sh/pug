@@ -601,15 +601,23 @@ message TopKQuery {
   // Pattern uses * (not +) because this field may be empty for count-based metrics.
   string metric_property = 5 [(buf.validate.field).string.pattern = "^\\$?[a-zA-Z0-9_.-]*$"];
 
-  // Number of top rows before the $others bucket. Default 10 in builder. CEL max 100.
+  // Number of top rows to return, followed by the synthetic $others bucket
+  // unless omit_others is set. Default 10 in builder. CEL max 100.
   int32 limit = 6 [(buf.validate.field).int32 = {
     gte: 0
     lte: 100
   }];
+
+  // When true, omit the trailing synthetic $others overflow bucket and return
+  // only the top `limit` rows. Default false preserves the $others bucket, so
+  // every existing caller is unaffected and GetOmitOthers() is safe to read
+  // without a presence check. is_others is still projected on every row (always
+  // false when omitting), so clients keep reading the flag uniformly.
+  bool omit_others = 7;
 }
 
 // TopKResult holds the ranked rows, ordered metric-descending with the
-// synthetic $others bucket (if non-empty) last.
+// synthetic $others bucket last (omitted when empty, or when omit_others is set).
 message TopKResult {
   repeated TopKRow rows = 1;
 }
