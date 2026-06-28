@@ -1125,8 +1125,15 @@ type TopKQuery struct {
 	// Property to aggregate. Required for SUM/AVG/MIN/MAX; ignored otherwise.
 	// Pattern uses * (not +) because this field may be empty for count-based metrics.
 	MetricProperty *string `protobuf:"bytes,5,opt,name=metric_property,json=metricProperty" json:"metric_property,omitempty"`
-	// Number of top rows before the $others bucket. Default 10 in builder. CEL max 100.
-	Limit         *int32 `protobuf:"varint,6,opt,name=limit" json:"limit,omitempty"`
+	// Number of top rows to return, followed by the synthetic $others bucket
+	// unless omit_others is set. Default 10 in builder. CEL max 100.
+	Limit *int32 `protobuf:"varint,6,opt,name=limit" json:"limit,omitempty"`
+	// When true, omit the trailing synthetic $others overflow bucket and return
+	// only the top `limit` rows. Default false preserves the $others bucket, so
+	// every existing caller is unaffected and GetOmitOthers() is safe to read
+	// without a presence check. is_others is still projected on every row (always
+	// false when omitting), so clients keep reading the flag uniformly.
+	OmitOthers    *bool `protobuf:"varint,7,opt,name=omit_others,json=omitOthers" json:"omit_others,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1203,8 +1210,15 @@ func (x *TopKQuery) GetLimit() int32 {
 	return 0
 }
 
+func (x *TopKQuery) GetOmitOthers() bool {
+	if x != nil && x.OmitOthers != nil {
+		return *x.OmitOthers
+	}
+	return false
+}
+
 // TopKResult holds the ranked rows, ordered metric-descending with the
-// synthetic $others bucket (if non-empty) last.
+// synthetic $others bucket last (omitted when empty, or when omit_others is set).
 type TopKResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Rows          []*TopKRow             `protobuf:"bytes,1,rep,name=rows" json:"rows,omitempty"`
@@ -2602,7 +2616,7 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x12NODE_KIND_PROPERTY\x10\x02\"9\n" +
 	"\aGroupBy\x12\x18\n" +
 	"\x14GROUP_BY_UNSPECIFIED\x10\x00\x12\x14\n" +
-	"\x10GROUP_BY_SESSION\x10\x01\"\xe4\x03\n" +
+	"\x10GROUP_BY_SESSION\x10\x01\"\x85\x04\n" +
 	"\tTopKQuery\x12T\n" +
 	"\tdimension\x18\x01 \x01(\x0e2'.shared.insights.v1.TopKQuery.DimensionB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\tdimension\x127\n" +
@@ -2610,7 +2624,9 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x05scope\x18\x03 \x01(\v2\x16.common.v1.EventFilterR\x05scope\x12E\n" +
 	"\x06metric\x18\x04 \x01(\x0e2#.shared.insights.v1.AggregationTypeB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06metric\x12D\n" +
 	"\x0fmetric_property\x18\x05 \x01(\tB\x1b\xbaH\x18r\x162\x14^\\$?[a-zA-Z0-9_.-]*$R\x0emetricProperty\x12\x1f\n" +
-	"\x05limit\x18\x06 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x05limit\"l\n" +
+	"\x05limit\x18\x06 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x05limit\x12\x1f\n" +
+	"\vomit_others\x18\a \x01(\bR\n" +
+	"omitOthers\"l\n" +
 	"\tDimension\x12\x19\n" +
 	"\x15DIMENSION_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12DIMENSION_PROPERTY\x10\x01\x12\x18\n" +

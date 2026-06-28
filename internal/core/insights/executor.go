@@ -418,7 +418,8 @@ func (e *Executor) QueryTopK(ctx context.Context, projectID string, q TopKQuery)
 	var result []TopKRow
 	for rows.Next() {
 		var row TopKRow
-		// is_others is projected as if(..., 0, 1) — a UInt8 in ClickHouse.
+		// is_others is a UInt8 in ClickHouse — if(..., 0, 1) on the default
+		// path, a constant 0 on the omit_others fast path.
 		var isOthers uint8
 		if err := rows.Scan(&row.DimensionValue, &isOthers, &row.Value); err != nil {
 			slog.ErrorContext(ctx, "clickhouse: query top k scan failed", slogx.Error(err),
