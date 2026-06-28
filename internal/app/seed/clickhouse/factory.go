@@ -241,8 +241,8 @@ func newSessionFactory() *sessionFactory {
 }
 
 // demoUserProfile derives user i's stable attributes from the deterministic
-// per-user stream. Shared with DemoUsers / DemoUserAt (the postgres profile
-// seeder) so profile properties agree with event data.
+// per-user stream. Surfaced via DemoUserAt to the postgres profile seeder and
+// the live demo worker so profile properties agree with event data.
 func demoUserProfile(i int) userProfile {
 	r := rand.New(rand.NewPCG(userSeed, uint64(i)))
 

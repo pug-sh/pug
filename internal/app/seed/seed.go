@@ -140,6 +140,13 @@ func seedDemoData(ctx context.Context, count int64, batchSize int, clearDemoRows
 		return fmt.Errorf("copy profiles to clickhouse: %w", err)
 	}
 
+	// Saved showcase dashboards are static config (they reference event kinds /
+	// properties, not rows), so they are ensured idempotently after the data is
+	// in place rather than cleared/recreated on the --no-reset path.
+	if err := pgseed.SeedDemoDashboards(ctx, pg, project.ID); err != nil {
+		return fmt.Errorf("seed demo dashboards: %w", err)
+	}
+
 	slog.InfoContext(ctx, "demo seed complete",
 		slog.String("project_id", project.ID),
 		slog.Int("profiles", len(indices)),

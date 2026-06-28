@@ -606,6 +606,19 @@ func TestRecordActiveUser(t *testing.T) {
 	recordActiveUser(nil, "user-00001") // must not panic
 }
 
+// TestBackfillEventsRejectsBadBatch pins the batch-size guard: a non-positive
+// batch makes the insert loop's size==0 every iteration, so inserted never
+// advances and `for inserted < count` spins until ctx cancel. BackfillEvents
+// must reject it up front — before touching ClickHouse, so a nil conn here
+// returns an error rather than panicking.
+func TestBackfillEventsRejectsBadBatch(t *testing.T) {
+	for _, batch := range []int{0, -1} {
+		if _, err := BackfillEvents(context.Background(), nil, "proj", 100, batch); err == nil {
+			t.Errorf("BackfillEvents(batch=%d) = nil error, want a rejection", batch)
+		}
+	}
+}
+
 // TestAutoAnyMapToVariantMap pins the Go-type → ClickHouse-Variant routing the
 // backfill and live insert both share (the contract the deleted proto-mapping
 // tests used to guard, relocated here). A mis-slotted type would silently

@@ -38,6 +38,33 @@ func TestDecideSeedAction(t *testing.T) {
 	}
 }
 
+// TestDecideProfileHeal pins the restart-reconciliation boundary: an empty
+// Postgres side has nothing to copy from (warn), a ClickHouse count behind
+// Postgres means a copy didn't finish (re-copy), and ClickHouse in sync or
+// ahead (live signups are ClickHouse-only) is healthy (skip).
+func TestDecideProfileHeal(t *testing.T) {
+	tests := []struct {
+		name string
+		ch   uint64
+		pg   int64
+		want profileHealAction
+	}{
+		{"postgres empty", 0, 0, profileHealNoSource},
+		{"postgres empty but clickhouse has live rows", 5, 0, profileHealNoSource},
+		{"clickhouse behind (partial copy)", 1000, 6000, profileHealRecopy},
+		{"clickhouse empty, postgres seeded", 0, 6000, profileHealRecopy},
+		{"in sync", 6000, 6000, profileHealOK},
+		{"clickhouse ahead (live signups)", 6100, 6000, profileHealOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := decideProfileHeal(tt.ch, tt.pg); got != tt.want {
+				t.Errorf("decideProfileHeal(%d, %d) = %d, want %d", tt.ch, tt.pg, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestEnabled pins the boolean parsing of PUG_DEMO_ENABLED, which gates whether
 // `pug dev` auto-starts the demo worker. Note that only Go bool literals enable
 // it: a human-friendly "yes" is intentionally treated as disabled.
@@ -66,16 +93,24 @@ func TestEnabled(t *testing.T) {
 	}
 }
 
+// newTestWorker builds a worker with the ensured-set initialized and a
+// substitute profile inserter — the minimum ensureProfile needs without a
+// ClickHouse connection.
+func newTestWorker(insert func(context.Context, driver.Conn, string, seed.LiveProfile) error) *worker {
+	return &worker{
+		ensured:       make(map[string]struct{}),
+		insertProfile: insert,
+	}
+}
+
 // TestEnsureProfileDedupAndSkipsBots pins that a profile is created once per
 // human user per run and never for a bot id (so bots stay profile-less).
 func TestEnsureProfileDedupAndSkipsBots(t *testing.T) {
 	var calls atomic.Int64
-	w := &worker{
-		insertProfile: func(_ context.Context, _ driver.Conn, _ string, _ seed.LiveProfile) error {
-			calls.Add(1)
-			return nil
-		},
-	}
+	w := newTestWorker(func(_ context.Context, _ driver.Conn, _ string, _ seed.LiveProfile) error {
+		calls.Add(1)
+		return nil
+	})
 	ctx := context.Background()
 
 	w.ensureProfile(ctx, "user-00001")
@@ -106,12 +141,10 @@ func TestEnsureProfilePayload(t *testing.T) {
 	wantJoin := seed.DemoUserAt(idx).Join
 
 	var got seed.LiveProfile
-	w := &worker{
-		insertProfile: func(_ context.Context, _ driver.Conn, _ string, p seed.LiveProfile) error {
-			got = p
-			return nil
-		},
-	}
+	w := newTestWorker(func(_ context.Context, _ driver.Conn, _ string, p seed.LiveProfile) error {
+		got = p
+		return nil
+	})
 	w.ensureProfile(context.Background(), distinctID)
 
 	if got.ID != distinctID {
@@ -133,14 +166,12 @@ func TestEnsureProfilePayload(t *testing.T) {
 // so it isn't created a third time.
 func TestEnsureProfileRetriesOnFailure(t *testing.T) {
 	var calls atomic.Int64
-	w := &worker{
-		insertProfile: func(_ context.Context, _ driver.Conn, _ string, _ seed.LiveProfile) error {
-			if calls.Add(1) == 1 {
-				return errors.New("boom") // first attempt fails
-			}
-			return nil
-		},
-	}
+	w := newTestWorker(func(_ context.Context, _ driver.Conn, _ string, _ seed.LiveProfile) error {
+		if calls.Add(1) == 1 {
+			return errors.New("boom") // first attempt fails
+		}
+		return nil
+	})
 	ctx := context.Background()
 
 	w.ensureProfile(ctx, "user-00002") // fails → unmark

@@ -79,6 +79,12 @@ func autoAnyMapToVariantMap(ctx context.Context, projectID string, props map[str
 // inserted event, so the caller can seed profiles for exactly those users (no
 // profile is ever created for a user with no events).
 func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int64, batchSize int) (map[int]struct{}, error) {
+	// Guard the loop's batch step: a non-positive batchSize makes size==0 every
+	// iteration, so inserted never advances and the `for inserted < count` loop
+	// spins until ctx cancel. Both the CLI and the worker funnel through here.
+	if batchSize <= 0 {
+		return nil, fmt.Errorf("seed: batch size must be > 0, got %d", batchSize)
+	}
 	slog.InfoContext(ctx, "seeding events",
 		slog.String("project_id", projectID),
 		slog.Int64("total", count),
@@ -213,8 +219,9 @@ func InsertLiveEvent(ctx context.Context, ch driver.Conn, projectID string, e Li
 }
 
 // LiveProfile is the payload for InsertLiveProfile — the direct-write
-// counterpart of a backfilled profile row. Named fields keep create/update
-// time (and the id/external-id strings) from being swapped at the call site.
+// counterpart of a backfilled profile row. Named fields make the create/update
+// times and the id/external-id strings harder to mis-order at the call site
+// (they don't prevent a same-typed swap, but they kill positional transposition).
 type LiveProfile struct {
 	ID         string
 	ExternalID string // "" == anonymous

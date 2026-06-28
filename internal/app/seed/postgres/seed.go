@@ -78,22 +78,22 @@ func (s *Seeder) seedAccount(ctx context.Context) (dbread.Project, error) {
 func (s *Seeder) seedProfilesForUsers(ctx context.Context, projectID string, indices []int) error {
 	// Idempotency: skip if this project already has seeded profiles. seedProfiles
 	// and seedDevices upsert, but seedMerges mints fresh xid-keyed anonymous rows
-	// every run, so re-seeding a populated project would accumulate junk. The
-	// worker never hits this (it seeds once, gated on an empty event count); the
-	// CLI's `seed --no-reset` path clears the demo rows first (ResetDemoProfiles),
-	// so it falls through to a real re-seed rather than relying on this skip.
+	// every run, so re-seeding a populated project would accumulate junk.
 	//
-	// This is a coarse "any profiles?" gate, not proof that a prior run finished
-	// all three steps (profiles + devices + merges) — and that's deliberate: it
-	// cannot strand a partial seed, because no caller re-enters here with leftover
-	// profiles. The worker only calls in on an empty project (n == 0 events, and a
-	// profile never exists without events ⇒ no profiles to skip on); a crash after
-	// events commit but mid-profile-seed is caught one level up by ensureSeed's
-	// events-present-but-no-profiles check, which warns for a manual TRUNCATE +
-	// restart instead of looping back through here. A finer completion marker
-	// wouldn't help anyway: synthetic events/merges carry random ids that the
-	// ReplacingMergeTree can't dedup across runs, so re-running repairs nothing —
-	// manual reset is the documented recovery, mirroring the partial-backfill gate.
+	// The skip is a coarse "any profiles?" gate, not proof a prior run finished
+	// all three steps (profiles + devices + merges). That is safe because the
+	// callers that could reach a populated project never want a re-seed here:
+	//   - The worker only calls this on an empty project (gated on zero events,
+	//     and a profile never exists without events). A crash after events commit
+	//     but before/during the ClickHouse copy is reconciled one level up by
+	//     ensureSeed (healDemoProfiles re-drives the idempotent copy from the
+	//     Postgres set) rather than looping back through here — so the worker
+	//     never re-seeds Postgres against a stale partial set.
+	//   - The CLI `seed --no-reset` path clears the demo profiles first
+	//     (ResetDemoProfiles), so it falls through to a real re-seed.
+	// A finer completion marker wouldn't help: synthetic events/merges carry
+	// random ids the ReplacingMergeTree can't dedup across runs, so re-running
+	// repairs nothing — a manual reset (`pug seed`) is the documented recovery.
 	var existing int64
 	if err := s.deps.pg.QueryRow(ctx,
 		"SELECT count(*) FROM profiles WHERE project_id = $1 AND id LIKE 'user-%'", projectID,
@@ -613,4 +613,21 @@ func ResetDemoProfiles(ctx context.Context, pg *pgxpool.Pool, projectID string) 
 		}
 	}
 	return nil
+}
+
+// CountDemoProfiles returns how many live (non-deleted) profiles exist for the
+// demo project. The demo worker compares this against the ClickHouse profile
+// count to detect a CopyProfilesToClickHouse that didn't finish (ClickHouse
+// behind Postgres) and re-drive it. It counts every demo profile — the
+// user-%05d rows and the xid-keyed merge artifacts — and excludes soft-deleted
+// rows, matching exactly what the copy moves (GetAllProfilesByProjectID filters
+// `deletion_time is null`), so a fully-copied project reads equal on both sides.
+func CountDemoProfiles(ctx context.Context, pg *pgxpool.Pool, projectID string) (int64, error) {
+	var n int64
+	if err := pg.QueryRow(ctx,
+		"SELECT count(*) FROM profiles WHERE project_id = $1 AND deletion_time IS NULL", projectID,
+	).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count demo profiles: %w", err)
+	}
+	return n, nil
 }

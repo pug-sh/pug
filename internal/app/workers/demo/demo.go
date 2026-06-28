@@ -19,6 +19,7 @@ package demo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sethvargo/go-envconfig"
 
 	seed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
@@ -87,7 +89,7 @@ func Run(ctx context.Context) error {
 	}
 	defer func() {
 		if err := chDB.Conn.Close(); err != nil {
-			slog.ErrorContext(ctx, "failed to close clickhouse connection", slogx.Error(err))
+			slog.WarnContext(ctx, "failed to close clickhouse connection", slogx.Error(err))
 		}
 	}()
 
@@ -164,35 +166,27 @@ func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error)
 		return "", fmt.Errorf("seed postgres account: %w", err)
 	}
 
+	// Ensure the showcase dashboards on every start (idempotent): they are static
+	// config, independent of the event-backfill state below, so a warm restart
+	// that skips the backfill still converges the demo project's dashboards.
+	if err := pgseed.SeedDemoDashboards(ctx, pg, project.ID); err != nil {
+		return "", fmt.Errorf("seed demo dashboards: %w", err)
+	}
+
 	n, err := seed.EventCount(ctx, ch, project.ID)
 	if err != nil {
 		return "", fmt.Errorf("check demo data: %w", err)
 	}
 	switch action := decideSeedAction(n, cfg.SeedCount); action {
 	case seedSkip:
-		// Events are present, so a prior backfill ran. Profiles are seeded in a
-		// later step (SeedProfilesForUsers + CopyProfilesToClickHouse); if the
-		// worker crashed between the backfill committing and profiles finishing,
-		// the event-count gate alone would silently skip re-seeding and serve a
-		// profile-less dashboard. Surface that loudly (mirroring the partial-
-		// backfill guard). Live traffic still lazily creates profiles for users
-		// it re-sees, so this self-heals for active users over time.
-		profiles, err := seed.ProfileCount(ctx, ch, project.ID)
-		if err != nil {
-			return "", fmt.Errorf("check demo profiles: %w", err)
-		}
-		if profiles == 0 {
-			slog.WarnContext(ctx, "demo events present but no profiles; a prior seed likely crashed mid-run",
-				slog.String("project_id", project.ID),
-				slog.Uint64("events", n),
-				slog.String("recovery", "TRUNCATE TABLE events and TABLE profiles, then restart the demo worker to re-seed"),
-			)
-		} else {
-			slog.InfoContext(ctx, "demo data present, skipping backfill",
-				slog.String("project_id", project.ID),
-				slog.Uint64("events", n),
-				slog.Uint64("profiles", profiles),
-			)
+		// Events are present, so a prior backfill ran. The profile set is seeded
+		// in a later step (SeedProfilesForUsers + CopyProfilesToClickHouse); a
+		// crash between the backfill committing and that copy finishing can leave
+		// the ClickHouse profiles behind Postgres. Reconcile by re-driving the
+		// idempotent copy rather than serving a thin dashboard or demanding a
+		// manual reset.
+		if err := healDemoProfiles(ctx, pg, ch, project.ID, n); err != nil {
+			return "", err
 		}
 		return project.ID, nil
 	case seedWarnPartial:
@@ -243,11 +237,86 @@ func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error)
 	return project.ID, nil
 }
 
+// profileHealAction is the reconciliation decision for the demo profile set on a
+// restart that finds events already present (the backfill ran). Live signups
+// insert into ClickHouse only, so a healthy project has ClickHouse >= Postgres;
+// only a ClickHouse count behind Postgres means a prior copy didn't finish.
+type profileHealAction int
+
+const (
+	profileHealOK       profileHealAction = iota // ClickHouse in sync or ahead — nothing to do
+	profileHealRecopy                            // ClickHouse behind Postgres — re-drive the idempotent copy
+	profileHealNoSource                          // Postgres has no demo profiles — nothing to copy from
+)
+
+// decideProfileHeal maps the two profile counts onto the reconciliation action.
+// Pure (no I/O) so the branch boundaries are unit-tested, mirroring
+// decideSeedAction.
+func decideProfileHeal(chProfiles uint64, pgProfiles int64) profileHealAction {
+	switch {
+	case pgProfiles == 0:
+		return profileHealNoSource
+	case int64(chProfiles) < pgProfiles:
+		return profileHealRecopy
+	default:
+		return profileHealOK
+	}
+}
+
+// healDemoProfiles reconciles the ClickHouse profile set against Postgres when a
+// restart finds events already present. CopyProfilesToClickHouse is idempotent
+// (ReplacingMergeTree + deterministic per-index properties), so a ClickHouse
+// count behind Postgres — a copy that crashed partway, or never ran — is healed
+// by simply re-driving it: already-present rows are untouched and live-created
+// ClickHouse-only profiles are preserved. If Postgres itself has no demo
+// profiles, a prior seed crashed before any profile was written and there is
+// nothing to copy from; warn with the reset recovery and let the event-gated
+// live stream lazily re-create profiles for users it re-sees.
+func healDemoProfiles(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, projectID string, events uint64) error {
+	chProfiles, err := seed.ProfileCount(ctx, ch, projectID)
+	if err != nil {
+		return fmt.Errorf("check clickhouse demo profiles: %w", err)
+	}
+	pgProfiles, err := pgseed.CountDemoProfiles(ctx, pg, projectID)
+	if err != nil {
+		return fmt.Errorf("check postgres demo profiles: %w", err)
+	}
+
+	switch decideProfileHeal(chProfiles, pgProfiles) {
+	case profileHealNoSource:
+		slog.WarnContext(ctx, "demo events present but no postgres profiles; a prior seed likely crashed before seeding profiles",
+			slog.String("project_id", projectID),
+			slog.Uint64("events", events),
+			slog.String("recovery", "run `pug seed --no-reset` to clear and re-seed the demo project"),
+		)
+	case profileHealRecopy:
+		slog.WarnContext(ctx, "demo clickhouse profiles behind postgres; re-copying to self-heal",
+			slog.String("project_id", projectID),
+			slog.Uint64("clickhouse", chProfiles),
+			slog.Int64("postgres", pgProfiles),
+		)
+		if err := seed.CopyProfilesToClickHouse(ctx, pg, ch, projectID); err != nil {
+			return fmt.Errorf("re-copy profiles to clickhouse: %w", err)
+		}
+	default: // profileHealOK
+		slog.InfoContext(ctx, "demo data present, skipping backfill",
+			slog.String("project_id", projectID),
+			slog.Uint64("events", events),
+			slog.Uint64("profiles", chProfiles),
+		)
+	}
+	return nil
+}
+
 type worker struct {
 	ch        driver.Conn
 	gen       *seed.LiveGenerator
 	projectID string
-	ensured   sync.Map // distinctID -> struct{}: profile already created this run
+	// mu guards ensured, the set of distinct ids whose profile this run has
+	// already created. Many session goroutines (spawnLoop → players.Go) touch it
+	// concurrently; the critical sections are a check-and-insert and a delete.
+	mu      sync.Mutex
+	ensured map[string]struct{}
 	// insertProfile writes a live profile to ClickHouse; a field so tests can
 	// substitute a fake. Defaults to seed.InsertLiveProfile in StartWorker.
 	insertProfile func(ctx context.Context, ch driver.Conn, projectID string, p seed.LiveProfile) error
@@ -265,6 +334,7 @@ func StartWorker(ctx context.Context, ch driver.Conn, cfg Config, projectID stri
 		ch:            ch,
 		gen:           seed.NewLiveGenerator(),
 		projectID:     projectID,
+		ensured:       make(map[string]struct{}),
 		insertProfile: seed.InsertLiveProfile,
 	}
 
@@ -344,9 +414,14 @@ func (w *worker) playHuman(ctx context.Context, sess []seed.LiveEvent) {
 // before identify). Bot ids are skipped. Best-effort: on failure the user is
 // unmarked so the next session retries.
 func (w *worker) ensureProfile(ctx context.Context, distinctID string) {
-	if _, seen := w.ensured.LoadOrStore(distinctID, struct{}{}); seen {
+	w.mu.Lock()
+	if _, seen := w.ensured[distinctID]; seen {
+		w.mu.Unlock()
 		return
 	}
+	w.ensured[distinctID] = struct{}{}
+	w.mu.Unlock()
+
 	idx, ok := seed.HumanUserIndex(distinctID)
 	if !ok {
 		return // bot or non-user id: never gets a profile
@@ -361,9 +436,11 @@ func (w *worker) ensureProfile(ctx context.Context, distinctID string) {
 		CreateTime: du.Join,
 		UpdateTime: time.Now(),
 	}); err != nil {
-		w.ensured.Delete(distinctID) // allow the next session to retry
-		if ctx.Err() != nil {
-			return // shutting down: context.Canceled isn't a real insert failure
+		w.mu.Lock()
+		delete(w.ensured, distinctID) // allow the next session to retry
+		w.mu.Unlock()
+		if errors.Is(err, context.Canceled) {
+			return // cancellation during shutdown, not a real insert failure
 		}
 		slog.ErrorContext(ctx, "demo: failed to create live profile",
 			slogx.Error(err), slog.String("distinct_id", distinctID))
@@ -384,8 +461,8 @@ func (w *worker) play(ctx context.Context, sess []seed.LiveEvent) {
 		}
 
 		if err := seed.InsertLiveEvent(ctx, w.ch, w.projectID, e); err != nil {
-			if ctx.Err() != nil {
-				return // shutting down: context.Canceled isn't a real insert failure
+			if errors.Is(err, context.Canceled) {
+				return // cancellation during shutdown, not a real insert failure
 			}
 			// Drop the rest of the session rather than retrying — this is
 			// synthetic traffic and the next session is seconds away.
