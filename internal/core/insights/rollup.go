@@ -482,6 +482,34 @@ func buildTopKFromRollup(req *insightsv1.QueryRequest, projectID string) (TopKQu
 		chq.When(scopeKind != "", chq.Eq("kind", scopeKind)),
 	}
 
+	// Omit-$others fast path mirrors buildTopKEvents: a single aggregation with
+	// LIMIT over the rollup slice, no top_vals re-aggregation of the tail.
+	// is_others stays projected (always 0) so the executor scan is unchanged.
+	if tk.GetOmitOthers() {
+		sql, args, err := chq.NewQuery().
+			Select(
+				dimExpr+" AS dim_bucket",
+				"0 AS is_others",
+				aggExpr+" AS value",
+			).
+			From(rollupTable).
+			Where(conds...).
+			GroupBy("dim_bucket").
+			OrderBy("value DESC", "dim_bucket ASC").
+			Limit(int64(limit)).
+			WithQueryCache(analyticsCacheTTL).
+			Build()
+		if err != nil {
+			return TopKQuery{}, fmt.Errorf("top k rollup: %w", err)
+		}
+		return TopKQuery{
+			sql:       sql,
+			args:      args,
+			limit:     limit,
+			dimension: tk.GetDimension(),
+		}, nil
+	}
+
 	topVals := chq.NewQuery().
 		Select(dimExpr+" AS top_dim").
 		From(rollupTable).
