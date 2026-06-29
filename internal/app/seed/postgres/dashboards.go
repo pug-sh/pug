@@ -825,10 +825,15 @@ func usersCohortsDashboard() dashDef {
 // Seeding
 // ---------------------------------------------------------------------------
 
-// SeedDemoDashboards idempotently ensures the demo project's showcase dashboards
-// exist. It is safe to call on every seed run / worker start: a dashboard is
-// (re)created only when no dashboard with its display name is present, so a full
-// reset recreates them and a warm restart leaves them untouched. Dashboards are
+// SeedDemoDashboards idempotently reconciles the demo project's showcase
+// dashboards to their seed definitions. It is safe to call on every seed run /
+// worker start: a board missing by display name is created, and an existing one
+// is reconciled in place (by id) against the current definition — so a redeploy
+// that changes a tile or layout converges on the next worker start without a
+// full reset, and a partial prior run (dashboard created but its tiles never
+// upserted) self-heals. Reconciling re-replaces a board's tiles each run (the
+// seed tiles carry no ids, so Upsert deletes the old set and inserts the new
+// one); the churn is trivial for the handful of demo boards. Dashboards are
 // static config (they reference event kinds/properties, not specific rows), so
 // they need no clearing on the --no-reset path.
 func SeedDemoDashboards(ctx context.Context, pg *pgxpool.Pool, projectID string) error {
@@ -840,20 +845,21 @@ func SeedDemoDashboards(ctx context.Context, pg *pgxpool.Pool, projectID string)
 	if err != nil {
 		return err
 	}
-	have := make(map[string]struct{}, len(existing))
+	idByName := make(map[string]string, len(existing))
 	for _, d := range existing {
-		have[d.Dashboard.DisplayName] = struct{}{}
+		idByName[d.Dashboard.DisplayName] = d.Dashboard.ID
 	}
 
 	for _, def := range demoDashboards() {
-		if _, ok := have[def.displayName]; ok {
-			continue
+		dashboardID, ok := idByName[def.displayName]
+		if !ok {
+			created, err := svc.CreateDashboard(ctx, projectID, def.displayName, def.description, def.timeRange, def.granularity)
+			if err != nil {
+				return err
+			}
+			dashboardID = created.ID
 		}
-		created, err := svc.CreateDashboard(ctx, projectID, def.displayName, def.description, def.timeRange, def.granularity)
-		if err != nil {
-			return err
-		}
-		if _, err := svc.UpsertDashboard(ctx, projectID, created.ID, coredashboards.UpsertDashboardInput{
+		if _, err := svc.UpsertDashboard(ctx, projectID, dashboardID, coredashboards.UpsertDashboardInput{
 			DisplayName:        def.displayName,
 			Description:        def.description,
 			DefaultTimeRange:   def.timeRange,
