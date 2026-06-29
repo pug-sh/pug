@@ -50,6 +50,8 @@ const (
 	AuthServiceRefreshSessionProcedure = "/public.auth.v1.AuthService/RefreshSession"
 	// AuthServiceSignOutProcedure is the fully-qualified name of the AuthService's SignOut RPC.
 	AuthServiceSignOutProcedure = "/public.auth.v1.AuthService/SignOut"
+	// AuthServiceDemoSignInProcedure is the fully-qualified name of the AuthService's DemoSignIn RPC.
+	AuthServiceDemoSignInProcedure = "/public.auth.v1.AuthService/DemoSignIn"
 )
 
 // AuthServiceClient is a client for the public.auth.v1.AuthService service.
@@ -64,6 +66,11 @@ type AuthServiceClient interface {
 	// SignOut revokes the refresh token's rotation family. Best-effort: a stale or
 	// unknown token still returns success.
 	SignOut(context.Context, *connect.Request[v1.SignOutRequest]) (*connect.Response[v1.SignOutResponse], error)
+	// DemoSignIn mints a session for the read-only demo viewer account with no
+	// credentials, so a visitor landing on the public demo page is authenticated
+	// in viewer mode. Gated by PUG_DEMO_ENABLED on the server; returns UNAVAILABLE
+	// when disabled or when the demo account has not been seeded.
+	DemoSignIn(context.Context, *connect.Request[v1.DemoSignInRequest]) (*connect.Response[v1.DemoSignInResponse], error)
 }
 
 // NewAuthServiceClient constructs a client for the public.auth.v1.AuthService service. By default,
@@ -113,6 +120,12 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("SignOut")),
 			connect.WithClientOptions(opts...),
 		),
+		demoSignIn: connect.NewClient[v1.DemoSignInRequest, v1.DemoSignInResponse](
+			httpClient,
+			baseURL+AuthServiceDemoSignInProcedure,
+			connect.WithSchema(authServiceMethods.ByName("DemoSignIn")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -124,6 +137,7 @@ type authServiceClient struct {
 	completeOAuthSignIn *connect.Client[v1.CompleteOAuthSignInRequest, v1.CompleteOAuthSignInResponse]
 	refreshSession      *connect.Client[v1.RefreshSessionRequest, v1.RefreshSessionResponse]
 	signOut             *connect.Client[v1.SignOutRequest, v1.SignOutResponse]
+	demoSignIn          *connect.Client[v1.DemoSignInRequest, v1.DemoSignInResponse]
 }
 
 // SignInWithEmail calls public.auth.v1.AuthService.SignInWithEmail.
@@ -156,6 +170,11 @@ func (c *authServiceClient) SignOut(ctx context.Context, req *connect.Request[v1
 	return c.signOut.CallUnary(ctx, req)
 }
 
+// DemoSignIn calls public.auth.v1.AuthService.DemoSignIn.
+func (c *authServiceClient) DemoSignIn(ctx context.Context, req *connect.Request[v1.DemoSignInRequest]) (*connect.Response[v1.DemoSignInResponse], error) {
+	return c.demoSignIn.CallUnary(ctx, req)
+}
+
 // AuthServiceHandler is an implementation of the public.auth.v1.AuthService service.
 type AuthServiceHandler interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
@@ -168,6 +187,11 @@ type AuthServiceHandler interface {
 	// SignOut revokes the refresh token's rotation family. Best-effort: a stale or
 	// unknown token still returns success.
 	SignOut(context.Context, *connect.Request[v1.SignOutRequest]) (*connect.Response[v1.SignOutResponse], error)
+	// DemoSignIn mints a session for the read-only demo viewer account with no
+	// credentials, so a visitor landing on the public demo page is authenticated
+	// in viewer mode. Gated by PUG_DEMO_ENABLED on the server; returns UNAVAILABLE
+	// when disabled or when the demo account has not been seeded.
+	DemoSignIn(context.Context, *connect.Request[v1.DemoSignInRequest]) (*connect.Response[v1.DemoSignInResponse], error)
 }
 
 // NewAuthServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -213,6 +237,12 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("SignOut")),
 		connect.WithHandlerOptions(opts...),
 	)
+	authServiceDemoSignInHandler := connect.NewUnaryHandler(
+		AuthServiceDemoSignInProcedure,
+		svc.DemoSignIn,
+		connect.WithSchema(authServiceMethods.ByName("DemoSignIn")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/public.auth.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuthServiceSignInWithEmailProcedure:
@@ -227,6 +257,8 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceRefreshSessionHandler.ServeHTTP(w, r)
 		case AuthServiceSignOutProcedure:
 			authServiceSignOutHandler.ServeHTTP(w, r)
+		case AuthServiceDemoSignInProcedure:
+			authServiceDemoSignInHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -258,4 +290,8 @@ func (UnimplementedAuthServiceHandler) RefreshSession(context.Context, *connect.
 
 func (UnimplementedAuthServiceHandler) SignOut(context.Context, *connect.Request[v1.SignOutRequest]) (*connect.Response[v1.SignOutResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.SignOut is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) DemoSignIn(context.Context, *connect.Request[v1.DemoSignInRequest]) (*connect.Response[v1.DemoSignInResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.DemoSignIn is not implemented"))
 }

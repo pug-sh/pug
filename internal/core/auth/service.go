@@ -95,9 +95,13 @@ type Service struct {
 	jwtKey    []byte
 	publisher JobPublisher
 	oauth     *coreoauth.Service
+	// demoEnabled gates DemoSignIn, the credential-less viewer login. It mirrors
+	// PUG_DEMO_ENABLED so the public demo login is only mintable on a demo
+	// deployment; everywhere else DemoSignIn returns ErrDemoUnavailable.
+	demoEnabled bool
 }
 
-func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, oauthCfg coreoauth.Config) (*Service, error) {
+func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, oauthCfg coreoauth.Config, demoEnabled bool) (*Service, error) {
 	registry, err := coreoauth.NewRegistryFromConfig(ctx, oauthCfg)
 	if err != nil {
 		return nil, err
@@ -105,12 +109,13 @@ func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtK
 	oauthSvc := coreoauth.NewService(oauthCfg, registry)
 
 	return &Service{
-		read:      dbread.New(pgRO),
-		write:     dbwrite.New(pgW),
-		pgW:       pgW,
-		jwtKey:    jwtKey,
-		publisher: publisher,
-		oauth:     oauthSvc,
+		read:        dbread.New(pgRO),
+		write:       dbwrite.New(pgW),
+		pgW:         pgW,
+		jwtKey:      jwtKey,
+		publisher:   publisher,
+		oauth:       oauthSvc,
+		demoEnabled: demoEnabled,
 	}, nil
 }
 

@@ -49,8 +49,10 @@ make clickstack
 ./bin/pug worker profile alias
 ./bin/pug worker profile upsert
 
-# Rolling demo-traffic generator. The standalone command always runs; under
-# `pug dev` it starts only when PUG_DEMO_ENABLED=true. It derives the demo
+# Rolling demo-traffic generator. Gated by PUG_DEMO_ENABLED everywhere: when off
+# (default), `pug dev` skips it and the standalone `pug worker demo` idles (stays
+# running but generates nothing, so a k8s Deployment doesn't restart-loop on
+# exit); when on, it runs. It derives the demo
 # project from the demo user (woof@pug.sh) — creating the customer/org/project
 # on a fresh DB, resolving it otherwise — then, if the project has no events
 # yet, backfills ~4 months of "Pug & Pals" history and seeds a profile only for
@@ -150,6 +152,8 @@ RPC handlers authenticate via `connectrpc.com/authn` middleware. Three auth mode
 - **`WithDualAuth`** — Private API key or JWT fallback. API key path sets `Principal.Project` only; JWT path behaves like `WithJWTAuth`.
 
 **Session tokens (access + refresh):** every sign-in path (`SignInWithEmail`, `CompleteMagicLink`, `CompleteOAuthSignIn`) returns a `coreauth.Session{AccessToken, RefreshToken}`, not a bare JWT. The access JWT is short-lived (`accessTokenTTL`, 1h) — `WithJWTAuth` still verifies it exactly as before. The refresh token is a long-lived (`refreshTokenTTL`, sliding 90 days) opaque crypto-random secret stored **only as a sha256 hash** in the `refresh_tokens` table (migration 014), mirroring `email_action_tokens`. `RefreshSession` (public RPC — it runs *after* the access token has expired, so it can't sit behind JWT auth) exchanges a refresh token for a new pair inside a `FOR UPDATE`-locked tx, **rotating** it: the presented token is consumed and a successor is minted in the same `family_id`. Reuse-detection: presenting an already-consumed token (replay of a leaked token, or a client double-refreshing) revokes the **entire family** and returns `ErrInvalidToken` → both attacker and legitimate client must re-auth. `SignOut` revokes the token's family (best-effort; a stale token is a no-op). For magic-link/OAuth the refresh row commits **inside** the provisioning tx (`issueSessionTx`) so a new account and its first session are atomic; password sign-in uses a standalone insert (`issueSession`). The FE (`../app`) treats refresh-token presence as the authentication signal (`isAuthenticatedAtom`) — NOT access-token expiry — and its transport interceptor silently refreshes (single-flight, to avoid tripping reuse-detection) on expiry or a `401`, so active users are never logged out at the 1h boundary.
+
+**Demo login:** `DemoSignIn` (public, no credentials) mints a full `Session` for the seeded read-only viewer account (`coreauth.DemoViewerEmail` = `snoop@pug.sh`, the demo seeder's single source of truth for that email) plus the demo `project_id` the client scopes to via `x-project-id`, so a visitor landing on the public demo page is authenticated in viewer mode with zero FE auth changes (the returned refresh token rides the same silent-refresh path). Gated by `PUG_DEMO_ENABLED`, now read by `pug server` too — the one flag is the whole demo switch (server demo-login + worker traffic), so set it `true` on every pod of a demo deployment and leave it `false` everywhere else; `DemoSignIn` returns `CodeUnavailable` when off or when the demo account isn't seeded. There is **no** demo-specific authorization path — the minted principal is a genuine `ORG_ROLE_VIEWER` org member, so the existing Casbin RBAC makes it read-only end to end; as defense-in-depth on this credential-less endpoint, `DemoSignIn` additionally refuses to mint unless the resolved account really is a viewer, so a mis-seed or a later promotion of the demo account fails closed.
 
 `Principal.Customer` is `*dbread.Customer` — it is nil for API key auth paths. Always use the appropriate extractor:
 

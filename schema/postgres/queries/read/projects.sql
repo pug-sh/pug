@@ -1,5 +1,5 @@
 -- name: GetProjectsByOrgID :many
-select * from projects where org_id = @org_id;
+select * from projects where org_id = @org_id order by create_time asc;
 
 -- name: GetProjectByID :one
 select * from projects where id = @id;

@@ -9,9 +9,11 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbwrite"
 )
 
-// NewServiceForTest wires an auth Service with empty OAuth provider config.
+// NewServiceForTest wires an auth Service with empty OAuth provider config and
+// the demo login disabled (tests that exercise DemoSignIn flip it on via
+// SetDemoEnabledForTest).
 func NewServiceForTest(ctx context.Context, pgRO, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher) (*Service, error) {
-	return NewService(ctx, pgRO, pgW, jwtKey, publisher, coreoauth.Config{})
+	return NewService(ctx, pgRO, pgW, jwtKey, publisher, coreoauth.Config{}, false)
 }
 
 // NewServiceWithOAuthForTest wires an auth Service with a custom OAuth registry (integration tests).
