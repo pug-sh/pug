@@ -717,8 +717,8 @@ func productHealthDashboard() dashDef {
 	}
 }
 
-// usersCohortsDashboard — "Users, Cohorts & Segments": retention cohorts (with a
-// distinct return event and a breakdown), a USER-dimension top-K with profile
+// usersCohortsDashboard — "Users, Cohorts & Segments": a same-event
+// repeat-purchase retention cohort, a USER-dimension top-K with profile
 // enrichment, and profile-filtered segments (IS SET / BETWEEN on profile props).
 func usersCohortsDashboard() dashDef {
 	return dashDef{
@@ -730,7 +730,7 @@ func usersCohortsDashboard() dashDef {
 			markdownTile(
 				"### 🐾 Users, Cohorts & Segments\n\n"+
 					"Go past pageviews to who actually stays, pays, and comes back.\n\n"+
-					"- **Retention cohorts** for repeat purchases and app opens by OS\n"+
+					"- **Retention cohorts** for repeat purchases\n"+
 					"- **Top customers** enriched with each dog's name, breed & city\n"+
 					"- **VIP orders** from club members or big spenders\n"+
 					"- **Profile segments** like senior dogs, split by country\n\n"+
@@ -738,38 +738,12 @@ func usersCohortsDashboard() dashDef {
 				cell(0, 0, wThird, hStd),
 			),
 
-			// RETENTION · Table · same-event repeat-purchase cohorts — a user's first
-			// purchase in a week defines the cohort; retained by buying again in later
-			// weeks. (signup→purchase was empty: in-window signups are recent joiners
-			// while purchasers are long-tenured, so the two cohorts barely overlap.)
-			insightTile(
-				"Repeat Purchase Retention",
-				"Weekly cohorts of first-time purchasers, retained by whether they buy again.",
-				viewTable, cell(0, 18, wFull, hTall),
-				&insightsv1.InsightQuerySpec{
-					InsightType: itRetention.Enum(),
-					Events:      []*insightsv1.EventQuery{evq("purchase"), evq("purchase")},
-				},
-			),
-
-			// RETENTION · Line · same-event retention with a breakdown (+ limit).
-			insightTile(
-				"App Open Retention by OS",
-				"Weekly app_open retention cohorts, split by $os (top 4 values).",
-				viewLine, cell(0, 42, wFull, hTall),
-				&insightsv1.InsightQuerySpec{
-					InsightType:    itRetention.Enum(),
-					Events:         []*insightsv1.EventQuery{evq("app_open"), evq("app_open")},
-					Breakdowns:     bd("$os"),
-					BreakdownLimit: proto.Int32(4),
-				},
-			),
-
 			// TOP_K · Table · USER dimension — rows carry dog-profile enrichment.
+			// The board's hero, beside the explainer in the top row.
 			insightTile(
 				"Top Customers (whales)",
 				"Users ranked by purchase count. USER-dimension rows are enriched with the dog's profile (name, breed, city).",
-				viewTable, cell(0, 66, wTwoThird, hTall),
+				viewTable, cell(24, 0, wTwoThird, hStd),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTopK.Enum(),
 					TopK: &insightsv1.TopKQuery{
@@ -782,6 +756,20 @@ func usersCohortsDashboard() dashDef {
 				},
 			),
 
+			// RETENTION · Table · same-event repeat-purchase cohorts — a user's first
+			// purchase in a week defines the cohort; retained by buying again in later
+			// weeks. (signup→purchase was empty: in-window signups are recent joiners
+			// while purchasers are long-tenured, so the two cohorts barely overlap.)
+			insightTile(
+				"Repeat Purchase Retention",
+				"Weekly cohorts of first-time purchasers, retained by whether they buy again.",
+				viewTable, cell(0, 18, wTwoThird, hTall),
+				&insightsv1.InsightQuerySpec{
+					InsightType: itRetention.Enum(),
+					Events:      []*insightsv1.EventQuery{evq("purchase"), evq("purchase")},
+				},
+			),
+
 			// TRENDS · KPI · TOTAL(purchase) over a nested OR group mixing a profile
 			// prop with an order amount — a "VIP" order = club member OR big spender.
 			// Distinct VIP *customers* needs segmentation (not rendered by the FE);
@@ -789,7 +777,7 @@ func usersCohortsDashboard() dashDef {
 			insightTile(
 				"VIP Orders (90d)",
 				"Purchases that are VIP — an OR group mixing a profile prop (pug_club is set) with a custom prop (amount ≥ 100).",
-				viewKPI, cell(48, 66, wThird, hTall),
+				viewKPI, cell(48, 18, wThird, hTall),
 				&insightsv1.InsightQuerySpec{
 					InsightType: itTrends.Enum(),
 					Events:      []*insightsv1.EventQuery{evq("purchase")},
@@ -802,11 +790,12 @@ func usersCohortsDashboard() dashDef {
 				},
 			),
 
-			// TRENDS · Bar · profile BETWEEN filter + auto breakdown.
+			// TRENDS · Bar · profile BETWEEN filter + auto breakdown. Full-width row
+			// of its own below the cohorts.
 			insightTile(
 				"Active Senior Dogs by Country",
 				"Distinct active users whose dog is a senior (age_years BETWEEN 8 and 12, a profile prop), broken down by $country.",
-				viewBarGroup, cell(24, 0, wTwoThird, hStd),
+				viewBarGroup, cell(0, 42, wFull, hStd),
 				&insightsv1.InsightQuerySpec{
 					InsightType:    itTrends.Enum(),
 					Events:         []*insightsv1.EventQuery{evqAgg("page_view", aggUniqueUser, "")},
