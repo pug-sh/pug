@@ -233,6 +233,9 @@ func TestDemoSignInUnavailableMapping(t *testing.T) {
 	if ce.Code() != connect.CodeUnavailable {
 		t.Errorf("code = %v, want Unavailable", ce.Code())
 	}
+	if errors.Is(err, coreauth.ErrDemoUnavailable) {
+		t.Error("handler leaked internal sentinel ErrDemoUnavailable to the client")
+	}
 }
 
 // TestDemoSignInInternalError pins that an unexpected (non-sentinel) error maps

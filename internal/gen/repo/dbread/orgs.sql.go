@@ -65,7 +65,7 @@ select o.create_time, o.display_name, o.id, o.update_time
 from orgs o
 join org_members om on om.org_id = o.id
 where om.customer_id = $1
-order by o.create_time asc
+order by o.create_time asc, o.id asc
 `
 
 func (q *Queries) GetOrgsByCustomerID(ctx context.Context, customerID string) ([]Org, error) {
@@ -98,7 +98,7 @@ select o.id, o.display_name, o.create_time, o.update_time, m.role
 from orgs o
 join org_members m on m.org_id = o.id
 where m.customer_id = $1
-order by o.create_time asc
+order by o.create_time asc, o.id asc
 `
 
 type GetOrgsWithRoleByCustomerIDRow struct {

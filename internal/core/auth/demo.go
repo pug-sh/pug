@@ -99,7 +99,16 @@ func (s *Service) resolveDemoProjectID(ctx context.Context, customerID string) (
 	// the role rather than trust the seed: a mis-seed or a later promotion must
 	// fail closed, never silently hand an anonymous caller a write-capable session.
 	role, err := coreorgs.ParseRole(orgs[0].Role)
-	if err != nil || role != coreorgs.RoleViewer {
+	if err != nil {
+		// An unrecognized stored role is corrupted data, not an expected business
+		// state — record it at the detecting layer so it's tracked distinctly from
+		// a valid-but-non-viewer account. Still fail closed.
+		slog.ErrorContext(ctx, "demo sign-in: demo account has an unrecognized stored role; refusing to mint",
+			slogx.Error(err), slog.String("org_id", orgs[0].ID), slog.String("role", orgs[0].Role))
+		telemetry.RecordError(ctx, err)
+		return "", ErrDemoUnavailable
+	}
+	if role != coreorgs.RoleViewer {
 		slog.WarnContext(ctx, "demo sign-in: demo account is not a viewer; refusing to mint",
 			slog.String("org_id", orgs[0].ID), slog.String("role", orgs[0].Role))
 		return "", ErrDemoUnavailable

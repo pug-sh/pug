@@ -57,9 +57,35 @@ type Config struct {
 // reads the same env var to expose AuthService.DemoSignIn. A plain on/off
 // switch; the demo project is derived from the demo user, so no project id is
 // configured.
-func Enabled() bool {
-	v, _ := strconv.ParseBool(os.Getenv("PUG_DEMO_ENABLED"))
-	return v
+//
+// A non-empty value that isn't a bool literal is treated as off (fail closed —
+// this gates a public, credential-less login) but logged as a misconfiguration,
+// so a demo deployment meant to be on isn't silently disabled by a typo. `pug
+// server` reaches the same value through envconfig, which rejects a malformed
+// bool outright; this is the matching guard on the worker side.
+func Enabled(ctx context.Context) bool {
+	raw := os.Getenv("PUG_DEMO_ENABLED")
+	enabled, malformed := parseEnabled(raw)
+	if malformed {
+		slog.WarnContext(ctx, "PUG_DEMO_ENABLED is set to a non-boolean value; treating demo as disabled (use true/false)",
+			slog.String("value", raw))
+	}
+	return enabled
+}
+
+// parseEnabled interprets the raw PUG_DEMO_ENABLED value: enabled reports whether
+// the demo is on; malformed flags a non-empty value that isn't a bool literal (an
+// empty value is the legitimate "off" default, not a misconfiguration). Pure so
+// the parse boundary is unit-tested, mirroring decideSeedAction.
+func parseEnabled(raw string) (enabled, malformed bool) {
+	if raw == "" {
+		return false, false
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, true
+	}
+	return v, false
 }
 
 func Run(ctx context.Context) error {
@@ -77,7 +103,7 @@ func Run(ctx context.Context) error {
 	// work until the flag is flipped on. The worker has no health port, so
 	// idling trips no probe; it holds no resources (no telemetry/ClickHouse set
 	// up below this point).
-	if !Enabled() {
+	if !Enabled(ctx) {
 		slog.WarnContext(ctx, "demo worker disabled (PUG_DEMO_ENABLED not true); idling without generating traffic")
 		<-ctx.Done()
 		return nil
