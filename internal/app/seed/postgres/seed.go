@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	chseed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
+	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/core/projects"
 	dbtypes "github.com/pug-sh/pug/internal/deps/postgres"
@@ -27,8 +28,10 @@ const (
 
 	// A second demo account with read-only (viewer) access to the same org so the
 	// viewer role can be exercised in the dashboard. Snoop Pugg snoops: looks but
-	// never touches. Reuses testPassword for easy local sign-in.
-	viewerEmail = "snoop@pug.sh"
+	// never touches. Reuses testPassword for easy local sign-in. The email is
+	// sourced from coreauth so the seeded account and AuthService.DemoSignIn's
+	// login target are one constant and cannot drift apart.
+	viewerEmail = coreauth.DemoViewerEmail
 	viewerName  = "Snoop Pugg"
 )
 

@@ -16,6 +16,11 @@ service AuthService {
   // SignOut revokes the refresh token's rotation family. Best-effort: a stale or
   // unknown token still returns success.
   rpc SignOut(SignOutRequest) returns (SignOutResponse) {}
+  // DemoSignIn mints a session for the read-only demo viewer account with no
+  // credentials, so a visitor landing on the public demo page is authenticated
+  // in viewer mode. Gated by PUG_DEMO_ENABLED on the server; returns UNAVAILABLE
+  // when disabled or when the demo account has not been seeded.
+  rpc DemoSignIn(DemoSignInRequest) returns (DemoSignInResponse) {}
 }
 
 message SignInWithEmailRequest {
@@ -93,3 +98,13 @@ message SignOutRequest {
 }
 
 message SignOutResponse {}
+
+message DemoSignInRequest {}
+
+message DemoSignInResponse {
+  string token = 1; // short-lived access JWT for the demo viewer
+  string refresh_token = 2; // long-lived opaque refresh token
+  // The demo project to scope reads to; the client sends it back as the
+  // x-project-id header on subsequent dashboard/insights/profile requests.
+  string project_id = 3;
+}

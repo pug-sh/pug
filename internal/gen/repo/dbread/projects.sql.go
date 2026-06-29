@@ -102,7 +102,7 @@ func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, publicApiKey str
 }
 
 const getProjectsByOrgID = `-- name: GetProjectsByOrgID :many
-select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time from projects where org_id = $1
+select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time from projects where org_id = $1 order by create_time asc, id asc
 `
 
 func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Project, error) {

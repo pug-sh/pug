@@ -11,10 +11,13 @@
 // fires on these direct inserts, exactly as for real traffic.
 //
 // The demo project is derived from the demo user (woof@pug.sh), seeded on
-// first run, so no project id needs to be configured. Under `pug dev` the
-// worker is opt-in via PUG_DEMO_ENABLED; the standalone command always runs.
-// Peak volume is controlled by PUG_DEMO_PEAK_SESSIONS_PER_MIN (default 6 ≈
-// 30-50k events/day with the default journey mix).
+// first run, so no project id needs to be configured. The worker is gated by
+// PUG_DEMO_ENABLED everywhere (the same flag `pug server` reads to expose the
+// demo login): when off, `pug dev` never spawns it and the standalone `pug
+// worker demo` idles (stays running, generates nothing — so a k8s Deployment
+// doesn't restart-loop). Peak volume is controlled by
+// PUG_DEMO_PEAK_SESSIONS_PER_MIN (default 6 ≈ 30-50k events/day with the
+// default journey mix).
 package demo
 
 import (
@@ -47,16 +50,65 @@ type Config struct {
 	SeedBatch int   `env:"PUG_DEMO_SEED_BATCH,default=10000"`
 }
 
-// Enabled reports whether `pug dev` should start the demo worker. The
-// standalone `pug worker demo` command always runs. The demo project is
-// derived from the demo user, so no project id is configured — this is a plain
-// on/off switch.
-func Enabled() bool {
-	v, _ := strconv.ParseBool(os.Getenv("PUG_DEMO_ENABLED"))
-	return v
+// Enabled reports whether the demo is turned on, via PUG_DEMO_ENABLED. It is the
+// single demo switch: it gates the rolling worker everywhere — `pug dev` (which
+// also uses it to decide whether to spawn the goroutine and what to print) and
+// the standalone `pug worker demo` (enforced inside Run) — and `pug server`
+// reads the same env var to expose AuthService.DemoSignIn. A plain on/off
+// switch; the demo project is derived from the demo user, so no project id is
+// configured.
+//
+// A non-empty value that isn't a bool literal is treated as off (fail closed —
+// this gates a public, credential-less login) but logged as a misconfiguration,
+// so a demo deployment meant to be on isn't silently disabled by a typo. `pug
+// server` reaches the same value through envconfig, which rejects a malformed
+// bool outright; this is the matching guard on the worker side.
+func Enabled(ctx context.Context) bool {
+	raw := os.Getenv("PUG_DEMO_ENABLED")
+	enabled, malformed := parseEnabled(raw)
+	if malformed {
+		slog.WarnContext(ctx, "PUG_DEMO_ENABLED is set to a non-boolean value; treating demo as disabled (use true/false)",
+			slog.String("value", raw))
+	}
+	return enabled
+}
+
+// parseEnabled interprets the raw PUG_DEMO_ENABLED value: enabled reports whether
+// the demo is on; malformed flags a non-empty value that isn't a bool literal (an
+// empty value is the legitimate "off" default, not a misconfiguration). Pure so
+// the parse boundary is unit-tested, mirroring decideSeedAction.
+func parseEnabled(raw string) (enabled, malformed bool) {
+	if raw == "" {
+		return false, false
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, true
+	}
+	return v, false
 }
 
 func Run(ctx context.Context) error {
+	// PUG_DEMO_ENABLED is the single demo switch: off (the default) means no demo
+	// anywhere — neither the rolling worker here nor the server's DemoSignIn
+	// login. Gating inside Run covers every standalone entry (`pug worker demo`
+	// and the cmd/workers/demo binary); `pug dev` additionally checks Enabled()
+	// before spawning the goroutine.
+	//
+	// When disabled, idle instead of returning: this is a long-lived worker, so
+	// on k8s an immediate exit (even exit 0) is restarted in a loop under the
+	// Deployment's restartPolicy. Block until the process is signalled, then exit
+	// cleanly — the same shutdown semantics as the running worker (StartWorker
+	// also returns nil on ctx cancellation), so the pod stays Running and does no
+	// work until the flag is flipped on. The worker has no health port, so
+	// idling trips no probe; it holds no resources (no telemetry/ClickHouse set
+	// up below this point).
+	if !Enabled(ctx) {
+		slog.WarnContext(ctx, "demo worker disabled (PUG_DEMO_ENABLED not true); idling without generating traffic")
+		<-ctx.Done()
+		return nil
+	}
+
 	closeOtel, err := telemetry.SetupSDK(ctx)
 	if err != nil {
 		return err

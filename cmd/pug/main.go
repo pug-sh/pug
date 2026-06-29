@@ -284,7 +284,7 @@ var devCmd = &cobra.Command{
 		fmt.Println("  "+yellow+"Events:"+reset, "events")
 		emailEnabled, emailStatus := emailDevStatus()
 		fmt.Println("  "+yellow+"Email:"+reset, emailStatus)
-		demoEnabled := demoworker.Enabled()
+		demoEnabled := demoworker.Enabled(sigCtx)
 		if demoEnabled {
 			fmt.Println("  "+yellow+"Demo:"+reset, "rolling traffic for the demo project (seeds on first run)")
 		} else {

@@ -66,28 +66,34 @@ func TestDecideProfileHeal(t *testing.T) {
 }
 
 // TestEnabled pins the boolean parsing of PUG_DEMO_ENABLED, which gates whether
-// `pug dev` auto-starts the demo worker. Note that only Go bool literals enable
-// it: a human-friendly "yes" is intentionally treated as disabled.
+// `pug dev` auto-starts the demo worker. Only Go bool literals enable it; a
+// human-friendly "yes"/"on" stays disabled but is flagged malformed so the
+// misconfiguration is surfaced (warned) rather than silently swallowed.
 func TestEnabled(t *testing.T) {
 	tests := []struct {
-		val  string
-		want bool
+		val           string
+		want          bool
+		wantMalformed bool
 	}{
-		{"true", true},
-		{"1", true},
-		{"t", true},
-		{"TRUE", true},
-		{"false", false},
-		{"0", false},
-		{"", false},
-		{"yes", false},
-		{"on", false},
+		{"true", true, false},
+		{"1", true, false},
+		{"t", true, false},
+		{"TRUE", true, false},
+		{"false", false, false},
+		{"0", false, false},
+		{"", false, false},
+		{"yes", false, true},
+		{"on", false, true},
+		{"ture", false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.val, func(t *testing.T) {
 			t.Setenv("PUG_DEMO_ENABLED", tt.val)
-			if got := Enabled(); got != tt.want {
+			if got := Enabled(context.Background()); got != tt.want {
 				t.Errorf("Enabled() with PUG_DEMO_ENABLED=%q = %v, want %v", tt.val, got, tt.want)
+			}
+			if _, malformed := parseEnabled(tt.val); malformed != tt.wantMalformed {
+				t.Errorf("parseEnabled(%q) malformed = %v, want %v", tt.val, malformed, tt.wantMalformed)
 			}
 		})
 	}

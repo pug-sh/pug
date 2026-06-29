@@ -110,10 +110,16 @@ func start(ctx context.Context, d *deps) error {
 	// Handlers — grouped by auth boundary
 
 	// Public
-	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats)
+	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats, d.demoEnabled)
 	if err != nil {
 		return fmt.Errorf("auth server: %w", err)
 	}
+	// Log the resolved demo-login state once at startup so an operator can confirm
+	// this pod actually picked up PUG_DEMO_ENABLED. The likeliest demo misconfig is
+	// the server pod missing the flag while the worker has it: without this line
+	// DemoSignIn would just return Unavailable to visitors with no server-side
+	// breadcrumb (the per-request gate stays silent to avoid noise when off).
+	slog.InfoContext(ctx, "demo sign-in", slog.Bool("enabled", d.demoEnabled))
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(authServer, handlerOpts)
 
 	// Dashboard

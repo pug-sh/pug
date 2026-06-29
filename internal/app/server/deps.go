@@ -31,6 +31,7 @@ type deps struct {
 	pgW             *pgxpool.Pool
 	redis           *redis.Client
 	port            string
+	demoEnabled     bool
 
 	// readyFailures counts consecutive failed readiness probes. It distinguishes
 	// a transient blip (logged at WARN) from a sustained outage (escalated to
@@ -168,5 +169,6 @@ func newDeps(ctx context.Context) (*deps, error) {
 		pgW:             pgW,
 		redis:           redisClient,
 		port:            serverCfg.Port,
+		demoEnabled:     serverCfg.DemoEnabled,
 	}, nil
 }
