@@ -159,3 +159,89 @@ func TestDemoSignInRejectsNonViewer(t *testing.T) {
 		t.Fatalf("err = %v, want ErrDemoUnavailable (a non-viewer account must not mint a session)", err)
 	}
 }
+
+// TestDemoSignInUnavailableWhenHalfSeeded pins the two half-seeded failure modes
+// resolveDemoProjectID guards: the demo viewer customer exists (so the email
+// lookup succeeds), but the rest of the demo graph is incomplete. A viewer with
+// no org membership, or a viewer whose org has no project, is a mis-/half-seed —
+// and the credential-less endpoint must fail closed with ErrDemoUnavailable
+// rather than mint a session it cannot scope to a demo project.
+func TestDemoSignInUnavailableWhenHalfSeeded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+
+	t.Run("viewer customer exists but has no org", func(t *testing.T) {
+		db := testutil.SetupPostgres(t)
+		svcOn := mustNewTestAuthService(t, db, &stubPublisher{})
+		svcOn.SetDemoEnabledForTest(true)
+
+		write := dbwrite.New(db.PgW)
+		if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+			ID: "cust-demo-viewer", Email: auth.DemoViewerEmail, DisplayName: "Snoop Pugg",
+		}); err != nil {
+			t.Fatalf("CreateCustomer: %v", err)
+		}
+
+		if _, err := svcOn.DemoSignIn(ctx); !errors.Is(err, auth.ErrDemoUnavailable) {
+			t.Fatalf("err = %v, want ErrDemoUnavailable (a viewer with no org must not mint)", err)
+		}
+	})
+
+	t.Run("viewer in an org but the org has no project", func(t *testing.T) {
+		db := testutil.SetupPostgres(t)
+		svcOn := mustNewTestAuthService(t, db, &stubPublisher{})
+		svcOn.SetDemoEnabledForTest(true)
+
+		write := dbwrite.New(db.PgW)
+		viewer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+			ID: "cust-demo-viewer", Email: auth.DemoViewerEmail, DisplayName: "Snoop Pugg",
+		})
+		if err != nil {
+			t.Fatalf("CreateCustomer: %v", err)
+		}
+		org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-demo", DisplayName: "default"})
+		if err != nil {
+			t.Fatalf("CreateOrg: %v", err)
+		}
+		if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+			OrgID: org.ID, CustomerID: viewer.ID, Role: coreorgs.RoleViewer.String(),
+		}); err != nil {
+			t.Fatalf("CreateOrgMember: %v", err)
+		}
+		// Deliberately create no project for the org.
+
+		if _, err := svcOn.DemoSignIn(ctx); !errors.Is(err, auth.ErrDemoUnavailable) {
+			t.Fatalf("err = %v, want ErrDemoUnavailable (a viewer whose org has no project must not mint)", err)
+		}
+	})
+}
+
+// TestDemoSignInPropagatesLookupError pins that a transient infrastructure error
+// during the demo account lookup (forced here with a cancelled context) surfaces
+// as the raw error — which the handler maps to CodeInternal — and is NOT collapsed
+// into ErrDemoUnavailable. ErrDemoUnavailable is reserved for the demo being off
+// or genuinely unseeded (pgx.ErrNoRows); a DB outage is a distinct, retryable
+// state, so DemoSignIn must not make a failing database look like an unseeded one.
+func TestDemoSignInPropagatesLookupError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	svcOn := mustNewTestAuthService(t, db, &stubPublisher{})
+	svcOn.SetDemoEnabledForTest(true)
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := svcOn.DemoSignIn(cancelled)
+	if err == nil {
+		t.Fatal("expected an error from a cancelled context, got nil")
+	}
+	if errors.Is(err, auth.ErrDemoUnavailable) {
+		t.Fatalf("err = %v, want a non-ErrDemoUnavailable infrastructure error (a DB failure must not look like 'unseeded')", err)
+	}
+}
