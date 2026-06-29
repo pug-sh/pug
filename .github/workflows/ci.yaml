@@ -25,7 +25,7 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             /home/runner/go/pkg/mod
@@ -40,7 +40,7 @@ jobs:
         run: make cover
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: coverage.out
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -56,7 +56,7 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             /home/runner/go/pkg/mod
@@ -80,7 +80,7 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             /home/runner/go/pkg/mod
