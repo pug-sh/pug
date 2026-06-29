@@ -42,3 +42,12 @@ returning *;
 -- properties jsonb can hold PII, so the row is physically removed, not soft-deleted.
 delete from profiles
 where id = @id and project_id = @project_id;
+
+-- name: SeedDemoProfile :exec
+-- Seed-only (demo data): inserts a profile with an explicit create_time so demo
+-- profiles spread across each user's first-seen timeline (the anonymous
+-- profile's creation, before identify) instead of all landing on the seed day.
+-- external_id is null for anonymous-only users. Do not use in application code.
+insert into profiles (id, project_id, external_id, properties, create_time, update_time)
+values (@id, @project_id, @external_id, coalesce(@properties::jsonb, '{}'), @create_time, @update_time)
+on conflict (id, project_id) do nothing;

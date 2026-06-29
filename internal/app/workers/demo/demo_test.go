@@ -2,12 +2,15 @@ package demo
 
 import (
 	"context"
-	"math"
+	"errors"
+	"reflect"
+	"sync/atomic"
 	"testing"
-	"time"
+
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
 	seed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
-	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
+	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
 )
 
 // TestDecideSeedAction pins the backfill gate's boundary: a completed backfill
@@ -30,6 +33,33 @@ func TestDecideSeedAction(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := decideSeedAction(tt.n, seedCount); got != tt.want {
 				t.Errorf("decideSeedAction(%d, %d) = %d, want %d", tt.n, seedCount, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDecideProfileHeal pins the restart-reconciliation boundary: an empty
+// Postgres side has nothing to copy from (warn), a ClickHouse count behind
+// Postgres means a copy didn't finish (re-copy), and ClickHouse in sync or
+// ahead (live signups are ClickHouse-only) is healthy (skip).
+func TestDecideProfileHeal(t *testing.T) {
+	tests := []struct {
+		name string
+		ch   uint64
+		pg   int64
+		want profileHealAction
+	}{
+		{"postgres empty", 0, 0, profileHealNoSource},
+		{"postgres empty but clickhouse has live rows", 5, 0, profileHealNoSource},
+		{"clickhouse behind (partial copy)", 1000, 6000, profileHealRecopy},
+		{"clickhouse empty, postgres seeded", 0, 6000, profileHealRecopy},
+		{"in sync", 6000, 6000, profileHealOK},
+		{"clickhouse ahead (live signups)", 6100, 6000, profileHealOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := decideProfileHeal(tt.ch, tt.pg); got != tt.want {
+				t.Errorf("decideProfileHeal(%d, %d) = %d, want %d", tt.ch, tt.pg, got, tt.want)
 			}
 		})
 	}
@@ -63,97 +93,91 @@ func TestEnabled(t *testing.T) {
 	}
 }
 
-// pvKindValue reports which PropertyValue oneof slot is set and its value, so
-// the type-mapping table test can assert both in a single comparison.
-func pvKindValue(pv *commonv1.PropertyValue) (string, any) {
-	switch v := pv.GetValue().(type) {
-	case *commonv1.PropertyValue_StringValue:
-		return "string", v.StringValue
-	case *commonv1.PropertyValue_BoolValue:
-		return "bool", v.BoolValue
-	case *commonv1.PropertyValue_IntValue:
-		return "int", v.IntValue
-	case *commonv1.PropertyValue_DoubleValue:
-		return "double", v.DoubleValue
-	default:
-		return "none", nil
+// newTestWorker builds a worker with the ensured-set initialized and a
+// substitute profile inserter — the minimum ensureProfile needs without a
+// ClickHouse connection.
+func newTestWorker(insert func(context.Context, driver.Conn, string, seed.LiveProfile) error) *worker {
+	return &worker{
+		ensured:       make(map[string]struct{}),
+		insertProfile: insert,
 	}
 }
 
-// TestToPropertyValue pins the typed-value mapping the live worker applies to
-// every property before publishing — especially the non-obvious NaN/Inf guard
-// (a non-finite float can't ride a DoubleValue through protojson, so it falls
-// back to a string). A refactor that drops the guard or reorders the type
-// switch would silently mistype a ClickHouse column; this catches it.
-func TestToPropertyValue(t *testing.T) {
-	tests := []struct {
-		name      string
-		in        any
-		wantKind  string
-		wantValue any
-	}{
-		{"string", "hi", "string", "hi"},
-		{"bool", true, "bool", true},
-		{"int", 7, "int", int64(7)},
-		{"int64", int64(9), "int", int64(9)},
-		{"finite float", 3.14, "double", 3.14},
-		{"NaN to string", math.NaN(), "string", "NaN"},
-		{"pos inf to string", math.Inf(1), "string", "+Inf"},
-		{"neg inf to string", math.Inf(-1), "string", "-Inf"},
-		{"unhandled type to string", []int{1}, "string", "[1]"},
+// TestEnsureProfileDedupAndSkipsBots pins that a profile is created once per
+// human user per run and never for a bot id (so bots stay profile-less).
+func TestEnsureProfileDedupAndSkipsBots(t *testing.T) {
+	var calls atomic.Int64
+	w := newTestWorker(func(_ context.Context, _ driver.Conn, _ string, _ seed.LiveProfile) error {
+		calls.Add(1)
+		return nil
+	})
+	ctx := context.Background()
+
+	w.ensureProfile(ctx, "user-00001")
+	w.ensureProfile(ctx, "user-00001") // same user this run: deduped
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("insert called %d times for one user, want 1", got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotKind, gotValue := pvKindValue(toPropertyValue(context.Background(), tt.name, tt.in))
-			if gotKind != tt.wantKind || gotValue != tt.wantValue {
-				t.Errorf("toPropertyValue(%#v) = %s(%v), want %s(%v)", tt.in, gotKind, gotValue, tt.wantKind, tt.wantValue)
-			}
-		})
+
+	w.ensureProfile(ctx, "bot-0001") // bots never get a profile
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("insert called for a bot id (calls=%d)", got)
 	}
 }
 
-// TestToPropertyValuesEmpty pins that empty/nil property maps produce a nil
-// proto map (so the field is omitted on the wire) rather than an empty map.
-func TestToPropertyValuesEmpty(t *testing.T) {
-	if got := toPropertyValues(context.Background(), nil); got != nil {
-		t.Errorf("toPropertyValues(nil) = %v, want nil", got)
+// TestEnsureProfilePayload pins the LiveProfile the worker hands to the insert:
+// the id is the session's distinct id, create_time is the user's join, and the
+// properties + external id are exactly DemoProfileProperties(idx) — the
+// determinism the ReplacingMergeTree re-create relies on. A swapped or wrong-index
+// field here would silently desync the live-created profile from its backfilled
+// twin (flipping properties or create_time on the merge instead of being a no-op).
+func TestEnsureProfilePayload(t *testing.T) {
+	const distinctID = "user-00007"
+	idx, ok := seed.HumanUserIndex(distinctID)
+	if !ok {
+		t.Fatalf("HumanUserIndex(%q) not ok", distinctID)
 	}
-	if got := toPropertyValues(context.Background(), map[string]any{}); got != nil {
-		t.Errorf("toPropertyValues(empty) = %v, want nil", got)
+	wantProps, wantExternalID := pgseed.DemoProfileProperties(idx)
+	wantJoin := seed.DemoUserAt(idx).Join
+
+	var got seed.LiveProfile
+	w := newTestWorker(func(_ context.Context, _ driver.Conn, _ string, p seed.LiveProfile) error {
+		got = p
+		return nil
+	})
+	w.ensureProfile(context.Background(), distinctID)
+
+	if got.ID != distinctID {
+		t.Errorf("ID = %q, want %q", got.ID, distinctID)
+	}
+	if got.ExternalID != wantExternalID {
+		t.Errorf("ExternalID = %q, want %q", got.ExternalID, wantExternalID)
+	}
+	if !got.CreateTime.Equal(wantJoin) {
+		t.Errorf("CreateTime = %v, want %v (user join)", got.CreateTime, wantJoin)
+	}
+	if !reflect.DeepEqual(got.Properties, wantProps) {
+		t.Errorf("Properties = %v, want %v", got.Properties, wantProps)
 	}
 }
 
-// TestToProtoEvent pins the LiveEvent → proto field mapping (identity fields,
-// timestamp, and typed properties) so a new LiveEvent field can't silently go
-// unmapped on the publish path.
-func TestToProtoEvent(t *testing.T) {
-	e := seed.LiveEvent{
-		EventID:          "evt-1",
-		DistinctID:       "user-1",
-		SessionID:        "sess-1",
-		Kind:             "purchase",
-		OccurTime:        time.Unix(1_700_000_000, 0).UTC(),
-		AutoProperties:   map[string]any{"$bot_score": 90, "$latitude": 51.5},
-		CustomProperties: map[string]any{"amount": 12.5, "currency": "USD"},
-	}
-	pe := toProtoEvent(context.Background(), e)
-	if pe.GetEventId() != e.EventID || pe.GetDistinctId() != e.DistinctID ||
-		pe.GetSessionId() != e.SessionID || pe.GetKind() != e.Kind {
-		t.Fatalf("identity fields mismatch: %+v", pe)
-	}
-	if !pe.GetOccurTime().AsTime().Equal(e.OccurTime) {
-		t.Errorf("occur_time = %v, want %v", pe.GetOccurTime().AsTime(), e.OccurTime)
-	}
-	if got := pe.GetAutoProperties()["$bot_score"].GetIntValue(); got != 90 {
-		t.Errorf("$bot_score = %d, want 90", got)
-	}
-	if got := pe.GetAutoProperties()["$latitude"].GetDoubleValue(); got != 51.5 {
-		t.Errorf("$latitude = %v, want 51.5", got)
-	}
-	if got := pe.GetCustomProperties()["amount"].GetDoubleValue(); got != 12.5 {
-		t.Errorf("amount = %v, want 12.5", got)
-	}
-	if got := pe.GetCustomProperties()["currency"].GetStringValue(); got != "USD" {
-		t.Errorf("currency = %q, want USD", got)
+// TestEnsureProfileRetriesOnFailure pins the best-effort retry: a failed insert
+// unmarks the user so the next session re-attempts, and a later success marks it
+// so it isn't created a third time.
+func TestEnsureProfileRetriesOnFailure(t *testing.T) {
+	var calls atomic.Int64
+	w := newTestWorker(func(_ context.Context, _ driver.Conn, _ string, _ seed.LiveProfile) error {
+		if calls.Add(1) == 1 {
+			return errors.New("boom") // first attempt fails
+		}
+		return nil
+	})
+	ctx := context.Background()
+
+	w.ensureProfile(ctx, "user-00002") // fails → unmark
+	w.ensureProfile(ctx, "user-00002") // retries → succeeds, marks
+	w.ensureProfile(ctx, "user-00002") // already marked → no further call
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("insert called %d times, want 2 (one failure + one success)", got)
 	}
 }

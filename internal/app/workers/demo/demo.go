@@ -3,10 +3,12 @@
 // dashboard and live map always show fresh data.
 //
 // Sessions are spawned at a Poisson-ish rate shaped by the seed generator's
-// diurnal/weekly curve, and each session's events are published one at a
-// time — at their generated timestamps — through the same NATS subject the
-// SDK ingestion path uses, so the events worker and the rollup materialized
-// view ingest them exactly like real traffic.
+// diurnal/weekly curve, and each session's events are written one at a time —
+// at their generated timestamps — straight into ClickHouse via the same insert
+// path the historical backfill uses. The worker is fully self-contained: it
+// owns its ClickHouse connection and depends on no other workers (no NATS hop),
+// so a single deployment seeds-then-streams. The rollup materialized view still
+// fires on these direct inserts, exactly as for real traffic.
 //
 // The demo project is derived from the demo user (woof@pug.sh), seeded on
 // first run, so no project id needs to be configured. Under `pug dev` the
@@ -17,27 +19,24 @@ package demo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"math/rand/v2"
 	"os"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sethvargo/go-envconfig"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	seed "github.com/pug-sh/pug/internal/app/seed/clickhouse"
 	pgseed "github.com/pug-sh/pug/internal/app/seed/postgres"
-	"github.com/pug-sh/pug/internal/core/events"
 	clickhousedeps "github.com/pug-sh/pug/internal/deps/clickhouse"
-	"github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
-	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
-	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
@@ -78,18 +77,28 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("PUG_DEMO_PEAK_SESSIONS_PER_MIN must be > 0, got %v", cfg.PeakSessionsPerMin)
 	}
 
-	projectID, err := ensureSeed(ctx, cfg)
+	// The worker owns the ClickHouse connection for both the one-time backfill
+	// and the eternal live stream, so it writes traffic directly (no NATS).
+	var chCfg clickhousedeps.Config
+	if err := envconfig.Process(ctx, &chCfg); err != nil {
+		return err
+	}
+	chDB, err := clickhousedeps.NewFromConfig(ctx, &chCfg)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := chDB.Conn.Close(); err != nil {
+			slog.WarnContext(ctx, "failed to close clickhouse connection", slogx.Error(err))
+		}
+	}()
+
+	projectID, err := ensureSeed(ctx, cfg, chDB.Conn)
 	if err != nil {
 		return err
 	}
 
-	natsClient, err := nats.New(ctx)
-	if err != nil {
-		return err
-	}
-	defer natsClient.Close()
-
-	return StartWorker(ctx, natsClient, cfg, projectID)
+	return StartWorker(ctx, chDB.Conn, cfg, projectID)
 }
 
 type seedAction int
@@ -122,10 +131,12 @@ func decideSeedAction(n uint64, seedCount int64) seedAction {
 }
 
 // ensureSeed derives the demo project from the demo user and backfills it the
-// first time the worker starts against an empty ClickHouse. It always ensures
-// the Postgres customer/org/project + profiles exist (creating them on a fresh
-// database, resolving them otherwise), then backfills a few months of
-// historical events so the public dashboard has history behind the live feed.
+// first time the worker starts against an empty ClickHouse. It ensures the
+// Postgres customer/org/project exists (creating it on a fresh database,
+// resolving it otherwise), backfills a few months of historical events, and
+// then seeds profiles for exactly the users those events belong to — so a
+// profile never exists for a user with no events. Users whose join date is
+// still in the future stay profile-less until they sign up live.
 //
 // The backfill runs only when the project has fewer than SeedCount events. A
 // finished backfill inserts exactly SeedCount rows and live traffic only grows
@@ -137,7 +148,9 @@ func decideSeedAction(n uint64, seedCount int64) seedAction {
 // logs a warning and leaves the partial history in place (recovery is to
 // truncate the events table and restart). Returns the demo project id to play
 // live traffic into.
-func ensureSeed(ctx context.Context, cfg Config) (string, error) {
+func ensureSeed(ctx context.Context, cfg Config, ch driver.Conn) (string, error) {
+	// Postgres is only needed while seeding (account + active-set profiles), so it
+	// is opened and closed here; the caller owns the long-lived ClickHouse conn.
 	var pgCfg postgres.Config
 	if err := envconfig.Process(ctx, &pgCfg); err != nil {
 		return "", err
@@ -148,35 +161,33 @@ func ensureSeed(ctx context.Context, cfg Config) (string, error) {
 	}
 	defer pg.Close()
 
-	var chCfg clickhousedeps.Config
-	if err := envconfig.Process(ctx, &chCfg); err != nil {
-		return "", err
-	}
-	chDB, err := clickhousedeps.NewFromConfig(ctx, &chCfg)
+	project, err := pgseed.SeedAccount(ctx, pg)
 	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if err := chDB.Conn.Close(); err != nil {
-			slog.ErrorContext(ctx, "failed to close clickhouse connection", slogx.Error(err))
-		}
-	}()
-
-	project, err := pgseed.SeedProject(ctx, pg)
-	if err != nil {
-		return "", fmt.Errorf("seed postgres: %w", err)
+		return "", fmt.Errorf("seed postgres account: %w", err)
 	}
 
-	n, err := seed.EventCount(ctx, chDB.Conn, project.ID)
+	// Ensure the showcase dashboards on every start (idempotent): they are static
+	// config, independent of the event-backfill state below, so a warm restart
+	// that skips the backfill still converges the demo project's dashboards.
+	if err := pgseed.SeedDemoDashboards(ctx, pg, project.ID); err != nil {
+		return "", fmt.Errorf("seed demo dashboards: %w", err)
+	}
+
+	n, err := seed.EventCount(ctx, ch, project.ID)
 	if err != nil {
 		return "", fmt.Errorf("check demo data: %w", err)
 	}
 	switch action := decideSeedAction(n, cfg.SeedCount); action {
 	case seedSkip:
-		slog.InfoContext(ctx, "demo data present, skipping backfill",
-			slog.String("project_id", project.ID),
-			slog.Uint64("events", n),
-		)
+		// Events are present, so a prior backfill ran. The profile set is seeded
+		// in a later step (SeedProfilesForUsers + CopyProfilesToClickHouse); a
+		// crash between the backfill committing and that copy finishing can leave
+		// the ClickHouse profiles behind Postgres. Reconcile by re-driving the
+		// idempotent copy rather than serving a thin dashboard or demanding a
+		// manual reset.
+		if err := healDemoProfiles(ctx, pg, ch, project.ID, n); err != nil {
+			return "", err
+		}
 		return project.ID, nil
 	case seedWarnPartial:
 		// A previous backfill was interrupted before it finished. Re-running
@@ -201,18 +212,114 @@ func ensureSeed(ctx context.Context, cfg Config) (string, error) {
 		slog.Int64("count", cfg.SeedCount),
 	)
 
-	if err := seed.Backfill(ctx, pg, chDB.Conn, project.ID, cfg.SeedCount, cfg.SeedBatch); err != nil {
-		return "", fmt.Errorf("backfill clickhouse: %w", err)
+	// Backfill events first and collect the users that actually produced events,
+	// then seed Postgres profiles for exactly those users and copy them to
+	// ClickHouse. This ordering is what guarantees a profile only ever exists for
+	// a user with events. Most of the pool stays profile-less: the ~half whose
+	// join date is still in the future (they sign up live as the wall clock
+	// crosses their join) plus past users who churned before the backfill window.
+	indices, err := seed.BackfillEvents(ctx, ch, project.ID, cfg.SeedCount, cfg.SeedBatch)
+	if err != nil {
+		return "", fmt.Errorf("backfill events: %w", err)
 	}
 
-	slog.InfoContext(ctx, "demo backfill complete", slog.String("project_id", project.ID))
+	if err := pgseed.SeedProfilesForUsers(ctx, pg, project.ID, indices); err != nil {
+		return "", fmt.Errorf("seed profiles for active users: %w", err)
+	}
+	if err := seed.CopyProfilesToClickHouse(ctx, pg, ch, project.ID); err != nil {
+		return "", fmt.Errorf("copy profiles to clickhouse: %w", err)
+	}
+
+	slog.InfoContext(ctx, "demo backfill complete",
+		slog.String("project_id", project.ID),
+		slog.Int("profiles", len(indices)),
+	)
 	return project.ID, nil
 }
 
+// profileHealAction is the reconciliation decision for the demo profile set on a
+// restart that finds events already present (the backfill ran). Live signups
+// insert into ClickHouse only, so a healthy project has ClickHouse >= Postgres;
+// only a ClickHouse count behind Postgres means a prior copy didn't finish.
+type profileHealAction int
+
+const (
+	profileHealOK       profileHealAction = iota // ClickHouse in sync or ahead — nothing to do
+	profileHealRecopy                            // ClickHouse behind Postgres — re-drive the idempotent copy
+	profileHealNoSource                          // Postgres has no demo profiles — nothing to copy from
+)
+
+// decideProfileHeal maps the two profile counts onto the reconciliation action.
+// Pure (no I/O) so the branch boundaries are unit-tested, mirroring
+// decideSeedAction.
+func decideProfileHeal(chProfiles uint64, pgProfiles int64) profileHealAction {
+	switch {
+	case pgProfiles == 0:
+		return profileHealNoSource
+	case int64(chProfiles) < pgProfiles:
+		return profileHealRecopy
+	default:
+		return profileHealOK
+	}
+}
+
+// healDemoProfiles reconciles the ClickHouse profile set against Postgres when a
+// restart finds events already present. CopyProfilesToClickHouse is idempotent
+// (ReplacingMergeTree + deterministic per-index properties), so a ClickHouse
+// count behind Postgres — a copy that crashed partway, or never ran — is healed
+// by simply re-driving it: already-present rows are untouched and live-created
+// ClickHouse-only profiles are preserved. If Postgres itself has no demo
+// profiles, a prior seed crashed before any profile was written and there is
+// nothing to copy from; warn with the reset recovery and let the event-gated
+// live stream lazily re-create profiles for users it re-sees.
+func healDemoProfiles(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, projectID string, events uint64) error {
+	chProfiles, err := seed.ProfileCount(ctx, ch, projectID)
+	if err != nil {
+		return fmt.Errorf("check clickhouse demo profiles: %w", err)
+	}
+	pgProfiles, err := pgseed.CountDemoProfiles(ctx, pg, projectID)
+	if err != nil {
+		return fmt.Errorf("check postgres demo profiles: %w", err)
+	}
+
+	switch decideProfileHeal(chProfiles, pgProfiles) {
+	case profileHealNoSource:
+		slog.WarnContext(ctx, "demo events present but no postgres profiles; a prior seed likely crashed before seeding profiles",
+			slog.String("project_id", projectID),
+			slog.Uint64("events", events),
+			slog.String("recovery", "run `pug seed --no-reset` to clear and re-seed the demo project"),
+		)
+	case profileHealRecopy:
+		slog.WarnContext(ctx, "demo clickhouse profiles behind postgres; re-copying to self-heal",
+			slog.String("project_id", projectID),
+			slog.Uint64("clickhouse", chProfiles),
+			slog.Int64("postgres", pgProfiles),
+		)
+		if err := seed.CopyProfilesToClickHouse(ctx, pg, ch, projectID); err != nil {
+			return fmt.Errorf("re-copy profiles to clickhouse: %w", err)
+		}
+	default: // profileHealOK
+		slog.InfoContext(ctx, "demo data present, skipping backfill",
+			slog.String("project_id", projectID),
+			slog.Uint64("events", events),
+			slog.Uint64("profiles", chProfiles),
+		)
+	}
+	return nil
+}
+
 type worker struct {
-	publisher *events.Publisher
+	ch        driver.Conn
 	gen       *seed.LiveGenerator
 	projectID string
+	// mu guards ensured, the set of distinct ids whose profile this run has
+	// already created. Many session goroutines (spawnLoop → players.Go) touch it
+	// concurrently; the critical sections are a check-and-insert and a delete.
+	mu      sync.Mutex
+	ensured map[string]struct{}
+	// insertProfile writes a live profile to ClickHouse; a field so tests can
+	// substitute a fake. Defaults to seed.InsertLiveProfile in StartWorker.
+	insertProfile func(ctx context.Context, ch driver.Conn, projectID string, p seed.LiveProfile) error
 }
 
 // liveBotShare sets the flat crawler session rate as a fraction of the
@@ -222,11 +329,13 @@ type worker struct {
 // naturally rises at night when human traffic dips.
 const liveBotShare = 0.04
 
-func StartWorker(ctx context.Context, natsClient *nats.NATSClient, cfg Config, projectID string) error {
+func StartWorker(ctx context.Context, ch driver.Conn, cfg Config, projectID string) error {
 	w := &worker{
-		publisher: events.NewPublisher(natsClient.GetJetStream()),
-		gen:       seed.NewLiveGenerator(),
-		projectID: projectID,
+		ch:            ch,
+		gen:           seed.NewLiveGenerator(),
+		projectID:     projectID,
+		ensured:       make(map[string]struct{}),
+		insertProfile: seed.InsertLiveProfile,
 	}
 
 	slog.InfoContext(ctx, "Starting demo traffic generator",
@@ -253,7 +362,7 @@ func StartWorker(ctx context.Context, natsClient *nats.NATSClient, cfg Config, p
 		w.spawnLoop(ctx, &players, func() float64 {
 			return cfg.PeakSessionsPerMin * seed.TrafficFactor(time.Now())
 		}, func() {
-			w.play(ctx, w.gen.LiveSession(time.Now()))
+			w.playHuman(ctx, w.gen.LiveSession(time.Now()))
 		})
 	})
 
@@ -264,7 +373,7 @@ func StartWorker(ctx context.Context, natsClient *nats.NATSClient, cfg Config, p
 // spawnLoop spawns sessions as a Poisson process whose rate (sessions/min)
 // is re-evaluated before each arrival. Delays are clamped so a quiet curve
 // still emits something and a spike can't busy-loop. Each spawned session is
-// tracked on players so shutdown can wait for in-flight publishes.
+// tracked on players so shutdown can wait for in-flight sessions.
 func (w *worker) spawnLoop(ctx context.Context, players *sync.WaitGroup, rate func() float64, spawn func()) {
 	for {
 		mean := time.Duration(float64(time.Minute) / rate())
@@ -281,8 +390,66 @@ func (w *worker) spawnLoop(ctx context.Context, players *sync.WaitGroup, rate fu
 	}
 }
 
-// play publishes a session's events as their timestamps come due, so the
-// live feed sees a believable human pace.
+// playHuman ensures the session's user has a profile, then plays the session.
+// Creating the profile here — the first time a user appears in this run — is how
+// fresh signups keep showing up on the demo dashboard over time: as the wall
+// clock crosses a user's join date the live generator forces their signup
+// journey, and this attaches a profile to it. A profile is only ever created
+// once there is a session of events to back it.
+func (w *worker) playHuman(ctx context.Context, sess []seed.LiveEvent) {
+	if len(sess) == 0 {
+		return
+	}
+	w.ensureProfile(ctx, sess[0].DistinctID)
+	w.play(ctx, sess)
+}
+
+// ensureProfile creates a ClickHouse profile for distinctID the first time it is
+// seen this run, so the user appears on the (CH-backed) profiles page. Properties
+// are deterministic per user, so re-creating an already-backfilled user leaves
+// its properties, external_id and create_time unchanged — the profiles
+// ReplacingMergeTree is versioned on insert_time, so this later write wins the
+// merge and only its update_time (set to now) differs from the backfilled row.
+// create_time is the user's join (their first-seen / anonymous-creation time,
+// before identify). Bot ids are skipped. Best-effort: on failure the user is
+// unmarked so the next session retries.
+func (w *worker) ensureProfile(ctx context.Context, distinctID string) {
+	w.mu.Lock()
+	if _, seen := w.ensured[distinctID]; seen {
+		w.mu.Unlock()
+		return
+	}
+	w.ensured[distinctID] = struct{}{}
+	w.mu.Unlock()
+
+	idx, ok := seed.HumanUserIndex(distinctID)
+	if !ok {
+		return // bot or non-user id: never gets a profile
+	}
+	du := seed.DemoUserAt(idx)
+	props, externalID := pgseed.DemoProfileProperties(idx)
+
+	if err := w.insertProfile(ctx, w.ch, w.projectID, seed.LiveProfile{
+		ID:         distinctID,
+		ExternalID: externalID,
+		Properties: props,
+		CreateTime: du.Join,
+		UpdateTime: time.Now(),
+	}); err != nil {
+		w.mu.Lock()
+		delete(w.ensured, distinctID) // allow the next session to retry
+		w.mu.Unlock()
+		if errors.Is(err, context.Canceled) {
+			return // cancellation during shutdown, not a real insert failure
+		}
+		slog.ErrorContext(ctx, "demo: failed to create live profile",
+			slogx.Error(err), slog.String("distinct_id", distinctID))
+		telemetry.RecordError(ctx, err)
+	}
+}
+
+// play writes a session's events straight into ClickHouse as their timestamps
+// come due, so the live feed sees a believable human pace.
 func (w *worker) play(ctx context.Context, sess []seed.LiveEvent) {
 	for _, e := range sess {
 		if wait := time.Until(e.OccurTime); wait > 0 {
@@ -293,72 +460,16 @@ func (w *worker) play(ctx context.Context, sess []seed.LiveEvent) {
 			}
 		}
 
-		if err := w.publisher.Publish(ctx, w.projectID, []*eventsv1.Event{toProtoEvent(ctx, e)}); err != nil {
-			// Publisher already logged and recorded the error; drop the rest
-			// of the session rather than retrying — this is synthetic
-			// traffic and the next session is seconds away.
+		if err := seed.InsertLiveEvent(ctx, w.ch, w.projectID, e); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return // cancellation during shutdown, not a real insert failure
+			}
+			// Drop the rest of the session rather than retrying — this is
+			// synthetic traffic and the next session is seconds away.
+			slog.ErrorContext(ctx, "demo: failed to insert live event",
+				slogx.Error(err), slog.String("distinct_id", e.DistinctID))
+			telemetry.RecordError(ctx, err)
 			return
 		}
-	}
-}
-
-func toProtoEvent(ctx context.Context, e seed.LiveEvent) *eventsv1.Event {
-	return &eventsv1.Event{
-		EventId:          &e.EventID,
-		DistinctId:       &e.DistinctID,
-		SessionId:        &e.SessionID,
-		Kind:             &e.Kind,
-		OccurTime:        timestamppb.New(e.OccurTime),
-		AutoProperties:   toPropertyValues(ctx, e.AutoProperties),
-		CustomProperties: toPropertyValues(ctx, e.CustomProperties),
-	}
-}
-
-func toPropertyValues(ctx context.Context, props map[string]any) map[string]*commonv1.PropertyValue {
-	if len(props) == 0 {
-		return nil
-	}
-	out := make(map[string]*commonv1.PropertyValue, len(props))
-	for k, v := range props {
-		out[k] = toPropertyValue(ctx, k, v)
-	}
-	return out
-}
-
-// nonFiniteWarned rate-limits the non-finite-float warning to one log per
-// property key so a regression that starts emitting NaN/Inf surfaces without
-// flooding the hot publish path.
-var nonFiniteWarned sync.Map
-
-// toPropertyValue maps the generator's typed Go values onto PropertyValue
-// slots, matching the typing the enrichment pipeline applies to real traffic
-// (bot scores/screens → Int, lat/long/amounts → Double, flags → Bool).
-func toPropertyValue(ctx context.Context, key string, v any) *commonv1.PropertyValue {
-	switch x := v.(type) {
-	case string:
-		return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_StringValue{StringValue: x}}
-	case bool:
-		return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_BoolValue{BoolValue: x}}
-	case int:
-		return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_IntValue{IntValue: int64(x)}}
-	case int64:
-		return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_IntValue{IntValue: x}}
-	case float64:
-		if math.IsNaN(x) || math.IsInf(x, 0) {
-			// A non-finite float can't survive a DoubleValue through protojson,
-			// so fall back to a string. No current generator formula produces
-			// NaN/Inf; warn once per key so a future one that does isn't a
-			// silent Double→String column flip in ClickHouse.
-			if _, seen := nonFiniteWarned.LoadOrStore(key, struct{}{}); !seen {
-				slog.WarnContext(ctx, "non-finite demo property coerced to string",
-					slog.String("key", key),
-					slog.String("value", fmt.Sprint(x)),
-				)
-			}
-			return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_StringValue{StringValue: fmt.Sprint(x)}}
-		}
-		return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_DoubleValue{DoubleValue: x}}
-	default:
-		return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_StringValue{StringValue: fmt.Sprint(x)}}
 	}
 }

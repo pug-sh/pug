@@ -10,6 +10,7 @@ import (
 	"buf.build/go/protovalidate"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/nats-io/nats.go/jetstream"
+	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	"github.com/pug-sh/pug/internal/deps/clickhouse"
 	natsworker "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
@@ -126,7 +127,7 @@ func handleUpsert(ctx context.Context, ch driver.Conn, data []byte) error {
 	createTime := msg.GetCreateTime().AsTime()
 	updateTime := msg.GetUpdateTime().AsTime()
 
-	batch, err := ch.PrepareBatch(ctx, "INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time)")
+	batch, err := ch.PrepareBatch(ctx, chq.ProfilesInsertStmt)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to prepare ClickHouse batch", slogx.Error(err),
 			slog.String("profile_id", msg.GetProfileId()))

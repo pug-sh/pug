@@ -50,7 +50,7 @@ var webJourneys = []journeyDef{
 	}},
 	{name: "browse", weight: 22, steps: []step{
 		{"page_view", "home"}, {"product_list_viewed", ""}, {"scroll", ""},
-		{"product_viewed", ""}, {"scroll", ""}, {"product_viewed", ""},
+		{"product_viewed", ""}, {"product_viewed", ""},
 	}},
 	{name: "browse-filter", weight: 6, steps: []step{
 		{"page_view", "home"}, {"product_list_viewed", ""}, {"filter_applied", ""},
@@ -137,7 +137,7 @@ var webJourneys = []journeyDef{
 var appJourneys = []journeyDef{
 	{name: "app-browse", weight: 22, steps: []step{
 		{"app_open", ""}, {"screen_view", "Home"}, {"scroll", ""},
-		{"screen_view", "Product Detail"}, {"product_viewed", ""}, {"scroll", ""},
+		{"screen_view", "Product Detail"}, {"product_viewed", ""},
 		{"app_close", ""},
 	}},
 	{name: "app-search", weight: 8, steps: []step{

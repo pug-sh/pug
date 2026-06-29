@@ -30,17 +30,32 @@ func DemoUsers(n int) []DemoUser {
 	}
 	out := make([]DemoUser, n)
 	for i := range out {
-		u := demoUserProfile(i)
-		out[i] = DemoUser{
-			ID:       u.id,
-			Member:   u.member,
-			City:     u.geo.city,
-			Region:   u.geo.region,
-			Country:  u.geo.country,
-			Timezone: u.geo.timezone,
-			Locale:   u.geo.locale,
-			Join:     u.join,
-		}
+		out[i] = demoUserAt(i)
 	}
 	return out
+}
+
+// DemoUserAt returns the single demo user at index i. Used by the live demo
+// worker to build a just-joined user's profile without materializing the whole
+// pool. Panics on an out-of-range index (the caller derives i from a
+// generator-emitted user-%05d id, so a bad index is a bug, not bad input).
+func DemoUserAt(i int) DemoUser {
+	if i < 0 || i >= DistinctIDPool {
+		panic(fmt.Sprintf("seed: DemoUserAt(%d) out of range [0,%d)", i, DistinctIDPool))
+	}
+	return demoUserAt(i)
+}
+
+func demoUserAt(i int) DemoUser {
+	u := demoUserProfile(i)
+	return DemoUser{
+		ID:       u.id,
+		Member:   u.member,
+		City:     u.geo.city,
+		Region:   u.geo.region,
+		Country:  u.geo.country,
+		Timezone: u.geo.timezone,
+		Locale:   u.geo.locale,
+		Join:     u.join,
+	}
 }

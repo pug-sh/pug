@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
@@ -16,11 +20,6 @@ import (
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 )
 
-// profilesInsertStmt is the column list for copying profiles into ClickHouse.
-// Shared between the initial batch and each re-prepared flush so the two can't
-// drift.
-const profilesInsertStmt = "INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time)"
-
 type Seeder struct {
 	deps *deps
 }
@@ -28,6 +27,11 @@ type Seeder struct {
 func NewSeeder(deps *deps) *Seeder {
 	return &Seeder{deps: deps}
 }
+
+// nonFiniteWarned rate-limits the non-finite-float warning to one log per
+// property key so a future generator formula that starts emitting NaN/Inf
+// surfaces without flooding the insert path.
+var nonFiniteWarned sync.Map
 
 // autoAnyMapToVariantMap wraps a map[string]any into the chcol.Variant map
 // shape the clickhouse-go driver expects for Map(String, Variant(...)) columns.
@@ -50,6 +54,17 @@ func autoAnyMapToVariantMap(ctx context.Context, projectID string, props map[str
 		case int64:
 			out[k] = chcol.NewVariantWithType(x, "Int64")
 		case float64:
+			// ClickHouse Float64 carries nan/inf natively, so keep the Float64
+			// slot — coercing to String would flip the column type per-value. No
+			// current generator formula produces a non-finite float; warn once
+			// per key so a future one that does surfaces instead of silently
+			// storing nan.
+			if math.IsNaN(x) || math.IsInf(x, 0) {
+				if _, seen := nonFiniteWarned.LoadOrStore(k, struct{}{}); !seen {
+					slog.WarnContext(ctx, "non-finite demo property",
+						slog.String("key", k), slog.String("value", fmt.Sprint(x)))
+				}
+			}
 			out[k] = chcol.NewVariantWithType(x, "Float64")
 		default:
 			out[k] = chcol.NewVariantWithType(fmt.Sprint(x), "String")
@@ -58,31 +73,18 @@ func autoAnyMapToVariantMap(ctx context.Context, projectID string, props map[str
 	return out
 }
 
-func (s *Seeder) Run(ctx context.Context, count int64, batchSize int, truncate bool) error {
-	projectID, err := s.resolveProjectID(ctx)
-	if err != nil {
-		return err
-	}
-
-	if err := s.runProfiles(ctx, projectID, truncate); err != nil {
-		return fmt.Errorf("seed profiles: %w", err)
-	}
-
-	if truncate {
-		slog.InfoContext(ctx, "truncating events table")
-		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE events"); err != nil {
-			return fmt.Errorf("truncate failed: %w", err)
-		}
-	} else {
-		slog.InfoContext(ctx, "skipping truncation, appending to existing data")
-	}
-
-	return s.backfillEvents(ctx, projectID, count, batchSize)
-}
-
 // backfillEvents generates `count` synthetic events for projectID and appends
 // them to the events table. It does not truncate; callers decide reset policy.
-func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int64, batchSize int) error {
+// It returns the set of human user indices that actually produced at least one
+// inserted event, so the caller can seed profiles for exactly those users (no
+// profile is ever created for a user with no events).
+func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int64, batchSize int) (map[int]struct{}, error) {
+	// Guard the loop's batch step: a non-positive batchSize makes size==0 every
+	// iteration, so inserted never advances and the `for inserted < count` loop
+	// spins until ctx cancel. Both the CLI and the worker funnel through here.
+	if batchSize <= 0 {
+		return nil, fmt.Errorf("seed: batch size must be > 0, got %d", batchSize)
+	}
 	slog.InfoContext(ctx, "seeding events",
 		slog.String("project_id", projectID),
 		slog.Int64("total", count),
@@ -96,6 +98,7 @@ func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int
 	factory := newSessionFactory()
 	slog.InfoContext(ctx, "session factory ready", slog.Int("users", len(factory.users)))
 
+	active := make(map[int]struct{})
 	var inserted int64
 	startTime := time.Now()
 
@@ -103,7 +106,7 @@ func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int
 		select {
 		case <-ctx.Done():
 			slog.InfoContext(ctx, "seed interrupted", slog.Int64("inserted", inserted))
-			return ctx.Err()
+			return nil, ctx.Err()
 		default:
 		}
 
@@ -112,9 +115,9 @@ func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int
 		// a stale seed-start instant (long runs can otherwise leave a recent dead zone).
 		end := time.Now()
 
-		n, err := s.insertBatch(ctx, projectID, factory, int(size), start, end)
+		n, err := s.insertBatch(ctx, projectID, factory, int(size), start, end, active)
 		if err != nil {
-			return fmt.Errorf("batch insert failed at offset %d: %w", inserted, err)
+			return nil, fmt.Errorf("batch insert failed at offset %d: %w", inserted, err)
 		}
 
 		inserted += int64(n)
@@ -130,9 +133,10 @@ func (s *Seeder) backfillEvents(ctx context.Context, projectID string, count int
 
 	slog.InfoContext(ctx, "seed complete",
 		slog.Int64("inserted", inserted),
+		slog.Int("active_users", len(active)),
 		slog.String("elapsed", time.Since(startTime).Round(time.Second).String()),
 	)
-	return nil
+	return active, nil
 }
 
 // EventCount returns how many events are stored for projectID. The demo worker
@@ -145,19 +149,110 @@ func EventCount(ctx context.Context, ch driver.Conn, projectID string) (uint64, 
 	return n, nil
 }
 
-// Backfill copies profiles from Postgres to ClickHouse and appends `count`
-// synthetic historical events for projectID, without truncating. It is the
-// programmatic entry point used by the demo worker to populate an empty demo
-// project; the CLI path goes through Run (which also handles truncation).
-func Backfill(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, projectID string, count int64, batchSize int) error {
-	s := &Seeder{deps: &deps{pg: pg, ch: ch}}
-	if err := s.runProfiles(ctx, projectID, false); err != nil {
-		return fmt.Errorf("seed profiles: %w", err)
+// ProfileCount returns how many profiles are stored for projectID. The demo
+// worker uses it to detect the events-present-but-profiles-missing state left by
+// a seed that crashed after the event backfill but before profiles finished.
+func ProfileCount(ctx context.Context, ch driver.Conn, projectID string) (uint64, error) {
+	var n uint64
+	if err := ch.QueryRow(ctx, "SELECT count() FROM profiles WHERE project_id = ?", projectID).Scan(&n); err != nil {
+		return 0, err
 	}
-	return s.backfillEvents(ctx, projectID, count, batchSize)
+	return n, nil
 }
 
-func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *sessionFactory, size int, start, end time.Time) (int, error) {
+// BackfillEvents appends `count` synthetic historical events for projectID
+// (without truncating) and returns the ascending list of human user indices
+// that produced at least one event. The demo worker pairs it with
+// SeedProfilesForUsers + CopyProfilesToClickHouse so a profile is created only
+// for a user who has events. It needs only a ClickHouse connection.
+func BackfillEvents(ctx context.Context, ch driver.Conn, projectID string, count int64, batchSize int) ([]int, error) {
+	s := &Seeder{deps: &deps{ch: ch}}
+	active, err := s.backfillEvents(ctx, projectID, count, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	indices := make([]int, 0, len(active))
+	for i := range active {
+		indices = append(indices, i)
+	}
+	sort.Ints(indices)
+	return indices, nil
+}
+
+// CopyProfilesToClickHouse copies the project's Postgres profiles into
+// ClickHouse (the profiles read API is CH-backed) without truncating. The demo
+// worker calls it after the active-set profiles have been written to Postgres,
+// so only users with events are copied.
+func CopyProfilesToClickHouse(ctx context.Context, pg *pgxpool.Pool, ch driver.Conn, projectID string) error {
+	s := &Seeder{deps: &deps{pg: pg, ch: ch}}
+	return s.runProfiles(ctx, projectID)
+}
+
+// InsertLiveEvent writes a single generated live event straight into the
+// ClickHouse events table using the exact path the backfill uses (promoted
+// column split + variant typing), so the live demo worker can stream traffic
+// without the NATS ingestion hop. The demo worker paces these inserts to each
+// event's occur time, so the live feed updates in real time.
+func InsertLiveEvent(ctx context.Context, ch driver.Conn, projectID string, e LiveEvent) error {
+	batch, err := ch.PrepareBatch(ctx, chq.EventsInsertStmt)
+	if err != nil {
+		return fmt.Errorf("prepare events batch: %w", err)
+	}
+	promoted, restAuto := chq.SplitPromotedAutoAnyProperties(e.AutoProperties)
+	args := []any{
+		e.EventID,
+		projectID,
+		e.DistinctID,
+		e.Kind,
+		autoAnyMapToVariantMap(ctx, projectID, restAuto),
+		autoAnyMapToVariantMap(ctx, projectID, e.CustomProperties),
+	}
+	args = append(args, promoted.AppendArgs()...)
+	args = append(args, e.OccurTime, e.SessionID)
+	if err := batch.Append(args...); err != nil {
+		return fmt.Errorf("append event: %w", err)
+	}
+	if err := batch.Send(); err != nil {
+		return fmt.Errorf("send events batch: %w", err)
+	}
+	return nil
+}
+
+// LiveProfile is the payload for InsertLiveProfile — the direct-write
+// counterpart of a backfilled profile row. Named fields make the create/update
+// times and the id/external-id strings harder to mis-order at the call site
+// (they don't prevent a same-typed swap, but they kill positional transposition).
+type LiveProfile struct {
+	ID         string
+	ExternalID string // "" == anonymous
+	Properties map[string]any
+	CreateTime time.Time
+	UpdateTime time.Time
+}
+
+// InsertLiveProfile writes a single profile straight into ClickHouse — the
+// direct-write counterpart of CopyProfilesToClickHouse, without Postgres. The
+// demo worker uses it to create a profile the first time it emits live events
+// for a user, so a profile only ever exists for a user that has events.
+func InsertLiveProfile(ctx context.Context, ch driver.Conn, projectID string, p LiveProfile) error {
+	propsJSON, err := json.Marshal(p.Properties)
+	if err != nil {
+		return fmt.Errorf("marshal properties: %w", err)
+	}
+	batch, err := ch.PrepareBatch(ctx, chq.ProfilesInsertStmt)
+	if err != nil {
+		return fmt.Errorf("prepare profiles batch: %w", err)
+	}
+	if err := batch.Append(p.ID, projectID, p.ExternalID, string(propsJSON), uint8(0), p.CreateTime, p.UpdateTime); err != nil {
+		return fmt.Errorf("append profile: %w", err)
+	}
+	if err := batch.Send(); err != nil {
+		return fmt.Errorf("send profiles batch: %w", err)
+	}
+	return nil
+}
+
+func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *sessionFactory, size int, start, end time.Time, active map[int]struct{}) (int, error) {
 	batch, err := s.deps.ch.PrepareBatch(ctx, chq.EventsInsertStmt)
 	if err != nil {
 		return 0, err
@@ -175,6 +270,7 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *ses
 			// lives one level up in backfillEvents.
 			break
 		}
+		before := inserted
 		for _, e := range sess {
 			if inserted >= size {
 				break
@@ -196,34 +292,50 @@ func (s *Seeder) insertBatch(ctx context.Context, projectID string, factory *ses
 			}
 			inserted++
 		}
+		// Record the human user behind this session so the caller seeds a profile
+		// for them — but only if at least one of their events was actually
+		// appended (a session truncated to zero rows at the batch cap must not
+		// count it as active). recordActiveUser ignores bot ids.
+		if inserted > before {
+			recordActiveUser(active, sess[0].distinctID)
+		}
 	}
 
 	return inserted, batch.Send()
 }
 
-func (s *Seeder) resolveProjectID(ctx context.Context) (string, error) {
-	var projectID string
-	err := s.deps.pg.QueryRow(ctx,
-		"SELECT p.id FROM projects p JOIN org_members om ON om.org_id = p.org_id JOIN customers c ON c.id = om.customer_id ORDER BY p.create_time LIMIT 1",
-	).Scan(&projectID)
-	if err != nil {
-		return "", fmt.Errorf("no projects found: %w", err)
+// recordActiveUser marks the human user behind a session as having produced
+// events, so the caller seeds a profile for exactly that user. Bot/non-user
+// distinct ids are ignored (they never get a profile). The nil check is a
+// defensive no-op; all current callers pass a non-nil set.
+func recordActiveUser(active map[int]struct{}, distinctID string) {
+	if active == nil {
+		return
 	}
-
-	slog.InfoContext(ctx, "resolved target",
-		slog.String("project_id", projectID),
-	)
-	return projectID, nil
+	if idx, ok := HumanUserIndex(distinctID); ok {
+		active[idx] = struct{}{}
+	}
 }
 
-func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate bool) error {
-	if truncate {
-		slog.InfoContext(ctx, "truncating profiles table")
-		if err := s.deps.ch.Exec(ctx, "TRUNCATE TABLE profiles"); err != nil {
-			return fmt.Errorf("truncate profiles failed: %w", err)
-		}
+// HumanUserIndex extracts the integer index i from a generator-emitted human
+// distinct id ("user-%05d"). Bot sessions ("bot-%04d"), junk, and any index
+// outside the pool return ok=false so they never get a profile. Because ok=true
+// guarantees i is in [0, DistinctIDPool), the result feeds DemoUserAt without
+// risking its out-of-range panic. The format is owned by demoUserProfile. The
+// live worker uses it to map a session's distinct id back to its demo user.
+func HumanUserIndex(distinctID string) (int, bool) {
+	rest, ok := strings.CutPrefix(distinctID, "user-")
+	if !ok {
+		return 0, false
 	}
+	i, err := strconv.Atoi(rest)
+	if err != nil || i < 0 || i >= DistinctIDPool {
+		return 0, false
+	}
+	return i, true
+}
 
+func (s *Seeder) runProfiles(ctx context.Context, projectID string) error {
 	slog.InfoContext(ctx, "copying profiles from PostgreSQL to ClickHouse",
 		slog.String("project_id", projectID),
 	)
@@ -234,7 +346,7 @@ func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate boo
 		return fmt.Errorf("query profiles: %w", err)
 	}
 
-	batch, err := s.deps.ch.PrepareBatch(ctx, profilesInsertStmt)
+	batch, err := s.deps.ch.PrepareBatch(ctx, chq.ProfilesInsertStmt)
 	if err != nil {
 		return fmt.Errorf("prepare profiles batch: %w", err)
 	}
@@ -261,7 +373,7 @@ func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate boo
 			slog.InfoContext(ctx, "profiles copied",
 				slog.Int("inserted", inserted),
 			)
-			batch, err = s.deps.ch.PrepareBatch(ctx, profilesInsertStmt)
+			batch, err = s.deps.ch.PrepareBatch(ctx, chq.ProfilesInsertStmt)
 			if err != nil {
 				return fmt.Errorf("prepare profiles batch: %w", err)
 			}
@@ -276,14 +388,4 @@ func (s *Seeder) runProfiles(ctx context.Context, projectID string, truncate boo
 		slog.Int("count", inserted),
 	)
 	return nil
-}
-
-func Run(ctx context.Context, count int64, batchSize int, truncate bool) error {
-	d, err := newDeps(ctx)
-	if err != nil {
-		return err
-	}
-	defer d.close(ctx)
-
-	return NewSeeder(d).Run(ctx, count, batchSize, truncate)
 }
