@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/pug-sh/pug/actions/workflows/ci.yaml/badge.svg)](https://github.com/pug-sh/pug/actions/workflows/ci.yaml)
 [![codecov](https://codecov.io/gh/pug-sh/pug/branch/main/graph/badge.svg)](https://codecov.io/gh/pug-sh/pug)
+[![Discord](https://img.shields.io/badge/Discord-Join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/kDNHDWcBHP)
 
 Pug is an open-source product analytics platform. Capture events, identify the
 people behind them, and explore behavior through funnels, retention, trends,
