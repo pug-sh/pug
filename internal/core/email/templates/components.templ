@@ -16,10 +16,12 @@ templ Divider() {
 	<hr class="divider"/>
 }
 
-// Button renders a bulletproof, table-wrapped anchor. bgcolor on the cell
-// keeps Outlook happy; premailer inlines the .btn / .btn-cell classes.
+// Button renders a bulletproof, table-wrapped anchor. The table is full-width
+// and .btn is display:block so the anchor fills the card, mirroring the app's
+// full-width primary CTA (Button className="w-full"). bgcolor on the cell keeps
+// Outlook happy; premailer inlines the .btn / .btn-cell classes.
 templ Button(label, url string) {
-	<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+	<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
 		<tr>
 			<td class="btn-cell" align="center" bgcolor="#3c68d9">
 				<a class="btn" href={ templ.URL(url) } target="_blank" rel="noopener noreferrer">{ label }</a>

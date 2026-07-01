@@ -21,21 +21,26 @@ type Brand struct {
 // ProductName is the wordmark shown in the header and footer.
 const ProductName = "Pug"
 
-// Palette — frozen hex from the cotton-w light-theme OKLCH tokens.
+// Palette — the exact sRGB conversion of the app's light-theme OKLCH tokens
+// (the CSS var each maps to is named in the trailing comment). Regenerate with
+// the same OKLab→sRGB math whenever :root in src/index.css moves.
 const (
-	ColorPrimary           = "#3c68d9" // brand: buttons, links, accents
-	ColorPrimaryForeground = "#f7f8fc" // button text
-	ColorForeground        = "#070b14" // headings, body text
-	ColorMutedForeground   = "#6b727e" // secondary text, footer
-	ColorBackground        = "#f7f8fa" // email canvas
-	ColorCard              = "#ffffff" // content card
-	ColorBorder            = "#d4d8de" // dividers, card border
-	ColorMutedBackground   = "#e7ebf2" // code / fallback-URL chip
+	ColorPrimary           = "#3c68d9" // --primary: buttons, links, accents
+	ColorPrimaryForeground = "#f7f8fc" // --primary-foreground: button text
+	ColorForeground        = "#151b24" // --foreground: headings, body text
+	ColorMutedForeground   = "#6b727e" // --muted-foreground: secondary text, footer
+	ColorBackground        = "#f7f8fa" // --background: email canvas
+	ColorCard              = "#fdfdfe" // --card: content card
+	ColorBorder            = "#d4d8de" // --border: dividers, card border
+	ColorMutedBackground   = "#e7ebf2" // --muted: code / fallback-URL chip
 )
 
-// Font stacks. Geist will not load in most clients; the system fallback is
-// what actually renders.
+// Font stacks, mirroring --font-sans / --font-mono in src/index.css. The named
+// brand faces (Apfel Grotezk, JetBrains Mono) are self-hosted and will not load
+// in most email clients; the system fallback is what actually renders. Leading
+// with them keeps the stack identical to the app so clients that DO honor web
+// fonts (e.g. Apple Mail) can track it, and documents the intended face.
 const (
-	FontSans = `"Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`
-	FontMono = `ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace`
+	FontSans = `"Apfel Grotezk", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`
+	FontMono = `"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace`
 )
