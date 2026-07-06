@@ -79,6 +79,9 @@ func (s *Server) DeleteDataSubject(
 	externalID := req.Msg.GetExternalId()
 	requestID, status, err := s.service.RequestErasureByExternalID(ctx, principal.Project.ID, externalID, requestedBy(principal))
 	if err != nil {
+		if errors.Is(err, coreprofiles.ErrProfileNotFound) {
+			return nil, apperr.NotFound(apperr.ReasonProfileNotFound, "profile not found", apperr.Resource("profile", externalID))
+		}
 		// Already logged + recorded at the service layer; only translate for the client.
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to erase data subject"))
 	}

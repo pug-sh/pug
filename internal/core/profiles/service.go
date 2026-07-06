@@ -23,6 +23,12 @@ import (
 
 var unrecognisedJSONTypeCounter metric.Int64Counter
 
+// degradedAliasErasureCounter counts erase-by-id requests whose alias resolved
+// to a canonical with no live profile row. Tagged with outcome: "failed_closed"
+// (a chained alias we refuse to partially erase — alert on this) or
+// "residual_cleanup" (a terminal canonical already erased; benign).
+var degradedAliasErasureCounter metric.Int64Counter
+
 func init() {
 	meter := otel.Meter("github.com/pug-sh/pug/internal/core/profiles")
 	var err error
@@ -40,6 +46,25 @@ func init() {
 		// subsequent .Add() calls are safe.
 		slog.ErrorContext(context.Background(), "failed to register profiles.unrecognised_json_type_total counter", slogx.Error(err))
 	}
+
+	// Monitoring guidance: alert on outcome="failed_closed" — a data-integrity
+	// anomaly where an erase-by-id spanned an alias chain we could not fully
+	// resolve and refused to partially erase. outcome="residual_cleanup" is the
+	// benign post-erasure case and does not need alerting.
+	degradedAliasErasureCounter, err = meter.Int64Counter(
+		"profiles.degraded_alias_erasure_total",
+		metric.WithDescription("Erase-by-id requests whose alias resolved to a canonical with no live profile row. Tagged with outcome (failed_closed|residual_cleanup)."),
+	)
+	if err != nil {
+		slog.ErrorContext(context.Background(), "failed to register profiles.degraded_alias_erasure_total counter", slogx.Error(err))
+	}
+}
+
+// recordDegradedAliasErasure bumps degradedAliasErasureCounter with the outcome
+// tag. Kept here so the OTel metric imports stay in one file; erasure.go calls
+// it without importing the metric/attribute packages.
+func recordDegradedAliasErasure(ctx context.Context, outcome string) {
+	degradedAliasErasureCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
 }
 
 var ErrProfileNotFound = errors.New("profile not found")
@@ -232,6 +257,11 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Profile, error
 // LatestProfilesCTE projects the latest state of each profile row
 // (argMax by insert_time over the ReplacingMergeTree), project-scoped.
 // Exported for reuse by insights queries that resolve canonical users.
+//
+// WARNING: personsCTE unions this projection by POSITION — keep this Select's
+// column order (create_time, external_id, id, project_id, properties,
+// update_time, is_deleted) in sync with personsCTE's anon branch, or the union
+// will silently transpose data rather than error.
 func LatestProfilesCTE(projectID string) *chq.Query {
 	return chq.NewQuery().
 		Select(
@@ -289,10 +319,12 @@ func personsQuery(projectID string) *chq.Query {
 // pipeline, i.e. the ids that must NOT surface as their own anonymous person:
 //
 //   - alias_ids — anonymous identities absorbed into an identified profile by
-//     an identify merge. This is also what makes the exclusion resurrection-
-//     proof: a late event for a merged distinct_id re-fires the activity MV,
-//     but the alias keeps the id claimed, so nothing reappears (there is no
-//     row to un-delete — persons are derived, not written).
+//     an identify merge. This is also what makes a MERGED identity's exclusion
+//     resurrection-proof: a late event for a merged distinct_id re-fires the
+//     activity MV, but the alias keeps the id claimed, so nothing reappears
+//     (there is no row to un-delete — persons are derived, not written). (An
+//     erased *unmerged* anon person is not claimed and may re-materialize on
+//     genuinely new post-erasure activity — that is correct, not a resurrection.)
 //   - profile ids — including soft-deleted tombstones (is_deleted is not
 //     consulted): a tombstoned id must stay invisible, not resurface as a
 //     derived person.
@@ -317,8 +349,10 @@ SELECT external_id AS claimed_id FROM latest_profiles WHERE external_id != ''
 // anonPersonsCTE derives one person row per unclaimed distinct_id from the
 // distinct_id_activity_states rollup — the identity materialization already
 // maintained per (project_id, distinct_id) off the event stream. create_time
-// is the merged first-seen (immutable except for out-of-order backfills, so
-// the keyset cursor stays stable), update_time the merged last-seen. The
+// is the merged first-seen — stable in the common case, but an out-of-order
+// backfill can shift it earlier and drop the person from one keyset pass
+// (bounded; the same class of race the events explorer accepts, per
+// docs/architecture/profiles.md). update_time is the merged last-seen. The
 // activity fields are aliased exactly as profileActivitySummaryCTE's output so
 // personsActivityCTE can union the two by position.
 //
@@ -463,6 +497,10 @@ func (s *Service) resolveAliasTarget(ctx context.Context, projectID, aliasID str
 // (total_events, pageviews) double-count, while sessions (HyperLogLog) and
 // the min/max/argMax columns are idempotent under repeated merging and
 // remain correct.
+//
+// WARNING: personsActivityCTE unions this output by POSITION with anonPersonsCTE
+// — keep this Select's column order in sync with both, or the activity summary
+// will silently bind to the wrong columns.
 func profileActivitySummaryCTE(projectID string) *chq.Query {
 	return chq.NewQuery().
 		Select(

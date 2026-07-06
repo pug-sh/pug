@@ -919,3 +919,236 @@ func TestErasure_ByID_EmptyIDReturnsNotFound(t *testing.T) {
 		t.Errorf("compliance_requests rows = %d, want 0 (no ledger row for empty id)", got)
 	}
 }
+
+// TestErasure_ByID_ChainedAliasFailsClosed pins the degraded-alias fail-closed
+// path. A -> B -> C is an alias chain where the intermediate canonical B has no
+// live Postgres row (soft-deleted as a later merge source) yet is itself an
+// alias to C. Single-level fan-out cannot freeze the whole chain from A, so
+// erasing by A must NOT silently erase only A's residual events and report the
+// DSAR completed — it must fail closed with ErrDegradedAliasErasure and write
+// no ledger row, surfacing the inconsistency for manual reconciliation.
+func TestErasure_ByID_ChainedAliasFailsClosed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	tn := testutil.SetupNATS(t)
+	t.Setenv("NATS_URL", tn.URL)
+
+	natsClient, err := natsdeps.New(ctx)
+	if err != nil {
+		t.Fatalf("create nats client: %v", err)
+	}
+	defer natsClient.Close()
+
+	projectID := seedProject(t, ctx, pg)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	const (
+		aID = "anon-chain-a"
+		bID = "anon-chain-b"
+		cID = "canonical-chain-c"
+	)
+	// A -> B and B -> C: A resolves to B, and B is itself an alias (the chain).
+	// Neither A nor B has a live Postgres profile row.
+	for _, e := range []struct{ alias, profile string }{{aID, bID}, {bID, cID}} {
+		if err := ch.Conn.Exec(ctx,
+			`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+			e.alias, e.profile, "", projectID,
+		); err != nil {
+			t.Fatalf("seed alias %s->%s: %v", e.alias, e.profile, err)
+		}
+	}
+	// Residual activity for the presented id, so the fall-through would otherwise
+	// find something to (partially) erase.
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, aID, "page_view", uuid.NewString(),
+		map[string]string{}, map[string]string{}, now)
+
+	// A real nats client so the pre-fix fall-through (which would publish an
+	// erase) fails as a clean assertion rather than a nil-client panic; post-fix
+	// the request fails closed before any publish.
+	svc := profiles.NewService(pg.PgW, ch.Conn, natsClient)
+
+	requestID, _, err := svc.RequestErasureByID(ctx, projectID, aID, "")
+	if !errors.Is(err, profiles.ErrDegradedAliasErasure) {
+		t.Fatalf("RequestErasureByID(chained alias) err = %v, want ErrDegradedAliasErasure", err)
+	}
+	if requestID != "" {
+		t.Errorf("requestID = %q, want empty on fail-closed", requestID)
+	}
+	if got := pgCount(t, ctx, pg, "SELECT count(*) FROM compliance_requests WHERE project_id = $1", projectID); got != 0 {
+		t.Errorf("compliance_requests rows = %d, want 0 (fail closed writes no ledger row)", got)
+	}
+}
+
+// TestErasure_ByID_TerminalAliasResidualCleanup guards the other side of the
+// discriminator: an alias A -> B where B has no live Postgres row and is NOT
+// itself an alias (a real canonical whose own erasure already completed) is the
+// benign case. Erasing by A must still clean up A's residual events via a
+// bare-id erasure (ledger row keyed by A), not fail closed.
+func TestErasure_ByID_TerminalAliasResidualCleanup(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	tn := testutil.SetupNATS(t)
+	t.Setenv("NATS_URL", tn.URL)
+
+	natsClient, err := natsdeps.New(ctx)
+	if err != nil {
+		t.Fatalf("create nats client: %v", err)
+	}
+	defer natsClient.Close()
+
+	projectID := seedProject(t, ctx, pg)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	const (
+		aID = "anon-terminal-a"
+		bID = "canonical-terminal-b"
+	)
+	// A -> B only; B is a terminal (no B -> anything), and no live PG row for B.
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profile_aliases (alias_id, profile_id, external_id, project_id) VALUES (?, ?, ?, ?)`,
+		aID, bID, "", projectID,
+	); err != nil {
+		t.Fatalf("seed alias: %v", err)
+	}
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, aID, "page_view", uuid.NewString(),
+		map[string]string{}, map[string]string{}, now)
+
+	svc := profiles.NewService(pg.PgW, ch.Conn, natsClient)
+
+	requestID, _, err := svc.RequestErasureByID(ctx, projectID, aID, "")
+	if err != nil {
+		t.Fatalf("RequestErasureByID(terminal alias) err = %v, want nil (residual cleanup)", err)
+	}
+	dr, err := svc.GetDeletionRequest(ctx, projectID, requestID)
+	if err != nil {
+		t.Fatalf("GetDeletionRequest: %v", err)
+	}
+	if !dr.ProfileID.Valid || dr.ProfileID.String != aID {
+		t.Errorf("ledger profile_id = %v, want bare id %q", dr.ProfileID, aID)
+	}
+	if err := svc.ExecuteErasure(ctx, projectID, requestID); err != nil {
+		t.Fatalf("ExecuteErasure: %v", err)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM events WHERE project_id = ? AND distinct_id = ?", projectID, aID); got != 0 {
+		t.Errorf("residual events remain: %d", got)
+	}
+}
+
+// TestErasureByExternalID_EmptyReturnsNotFound closes the asymmetry with the
+// read path's GetByExternalID(""): an empty external_id can never name a
+// subject, so DeleteDataSubject("") must return a clean ErrProfileNotFound and
+// write no ledger row — not trip the compliance_requests CHECK constraint and
+// surface as an opaque internal error.
+func TestErasureByExternalID_EmptyReturnsNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+
+	// nats/ch unused: the guard returns before any resolution or publish.
+	svc := profiles.NewService(pg.PgW, nil, nil)
+
+	if _, _, err := svc.RequestErasureByExternalID(ctx, projectID, "", ""); !errors.Is(err, profiles.ErrProfileNotFound) {
+		t.Errorf("RequestErasureByExternalID(\"\") err = %v, want ErrProfileNotFound", err)
+	}
+	if got := pgCount(t, ctx, pg, "SELECT count(*) FROM compliance_requests WHERE project_id = $1", projectID); got != 0 {
+		t.Errorf("compliance_requests rows = %d, want 0 (no ledger row for empty external_id)", got)
+	}
+}
+
+// TestProfilesList_TombstoneClaimExclusionNoAlias isolates the profile-id
+// branch of claimedIDsCTE. A soft-deleted (is_deleted=1) profile row whose
+// distinct_id still has residual events, and which carries NO alias, must not
+// resurface as a derived anonymous person — the tombstoned id is claimed by
+// virtue of being a profile id (is_deleted is not consulted by claimedIDsCTE).
+// Without this the "deleted user reappears" regression would pass unnoticed.
+func TestProfilesList_TombstoneClaimExclusionNoAlias(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	projectID := "proj-tomb-noalias"
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// Control: a live identified profile so the list is never trivially empty
+	// (an empty result must not false-pass the exclusion assertion).
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"keep-1", projectID, "ext-keep", map[string]any{}, uint8(0), now, now,
+	); err != nil {
+		t.Fatalf("seed control profile: %v", err)
+	}
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "ext-keep", "page_view", uuid.NewString(),
+		map[string]string{}, map[string]string{}, now)
+
+	// Tombstone: soft-deleted profile, no external_id, no alias, but residual
+	// events keyed by its id.
+	if err := ch.Conn.Exec(ctx,
+		`INSERT INTO profiles (id, project_id, external_id, properties, is_deleted, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"tomb-1", projectID, "", map[string]any{}, uint8(1), now, now,
+	); err != nil {
+		t.Fatalf("seed tombstone profile: %v", err)
+	}
+	for range 2 {
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "tomb-1", "page_view", uuid.NewString(),
+			map[string]string{}, map[string]string{}, now)
+	}
+
+	service := profiles.NewService(nil, ch.Conn, nil)
+	got, err := service.List(ctx, profiles.ListParams{ProjectID: projectID, PageSize: 100})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	ids := make([]string, len(got))
+	for i, p := range got {
+		ids[i] = p.ID
+	}
+	if len(got) != 1 || got[0].ID != "keep-1" {
+		t.Fatalf("persons = %v, want exactly [keep-1] (tombstoned id must not resurface as an anon person)", ids)
+	}
+}
+
+// TestErasure_ByID_NilClickHouseFailsLoud pins the deliberate removal of the
+// nil-ClickHouse shortcut: an id with no Postgres profile row can only be
+// resolved against the derived-person store, so with no ClickHouse conn the
+// erasure must fail loudly rather than misreport ErrProfileNotFound — a false
+// "not found" on a DSAR would tell a controller the subject has no data when
+// the system merely could not check.
+func TestErasure_ByID_NilClickHouseFailsLoud(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	projectID := seedProject(t, ctx, pg)
+
+	svc := profiles.NewService(pg.PgW, nil, nil)
+
+	_, _, err := svc.RequestErasureByID(ctx, projectID, "no-pg-row-id", "")
+	if err == nil {
+		t.Fatal("RequestErasureByID with nil ClickHouse err = nil, want a loud error")
+	}
+	if errors.Is(err, profiles.ErrProfileNotFound) {
+		t.Errorf("err = %v, want a non-NotFound error (must not misreport a subject as absent)", err)
+	}
+	if got := pgCount(t, ctx, pg, "SELECT count(*) FROM compliance_requests WHERE project_id = $1", projectID); got != 0 {
+		t.Errorf("compliance_requests rows = %d, want 0", got)
+	}
+}

@@ -42,6 +42,14 @@ var (
 	// delete with no surviving audit row; the completion guard prevents reporting a
 	// phantom 'completed' that never landed in the ledger.
 	ErrComplianceRequestVanished = errors.New("profiles: compliance request row vanished before write")
+	// ErrDegradedAliasErasure is returned when an erase-by-id resolves through an
+	// alias to a canonical that has no live profile row AND is itself an alias —
+	// i.e. the subject spans an alias CHAIN whose full identifier fan-out cannot
+	// be frozen by single-level resolution. Rather than silently erase only the
+	// presented id's residual events and report the DSAR 'completed' (a partial
+	// erasure misreported as fulfilled), the request fails closed so the
+	// inconsistency is surfaced for manual reconciliation.
+	ErrDegradedAliasErasure = errors.New("profiles: erase-by-id resolved to a chained alias with no live canonical")
 	// ErrInvalidComplianceStatus is returned by ParseComplianceStatus when a DB value
 	// is not a recognized lifecycle status, so a corrupt column surfaces loudly
 	// instead of flowing through as an unchecked cast. (There is no kind parse: the
@@ -215,13 +223,38 @@ func (s *Service) requestErasureByUnresolvedID(ctx context.Context, projectID, i
 		case err == nil:
 			return s.requestErasure(ctx, projectID, canonical.ExternalID.String, canonical.ID, requestedBy)
 		case errors.Is(err, pgx.ErrNoRows):
-			// Canonical row already gone (normally: its own erasure completed,
-			// in which case the bare-alias fall-through finds no residual
-			// activity and returns ErrProfileNotFound). If the alias→canonical
-			// mapping is instead inconsistent, the fall-through erases only this
-			// alias id's residual events — a partial erase reported as complete —
-			// so WARN it: the degradation is intended but should be observable.
-			slog.WarnContext(ctx, "alias resolved to a canonical profile with no Postgres row; degrading to bare-alias erasure",
+			// The canonical has no live profile row. Discriminate two shapes by
+			// asking whether the canonical is ITSELF an alias:
+			//   - terminal (not an alias): a real canonical whose own erasure
+			//     already completed. The bare-id fall-through cleans up any
+			//     residual events for the presented id and returns
+			//     ErrProfileNotFound when there are none — correct and safe.
+			//   - chained (itself an alias): the subject spans an alias chain
+			//     (id → canonicalID → …) whose full identifier fan-out
+			//     single-level resolution cannot freeze. Erasing only the
+			//     presented id's residual events and reporting the DSAR completed
+			//     would be a partial erase misreported as fulfilled, so fail
+			//     closed and surface it for reconciliation.
+			_, canonicalIsAlias, aerr := s.resolveAliasTarget(ctx, projectID, canonicalID)
+			if aerr != nil {
+				aerr = fmt.Errorf("resolve alias chain for erasure: %w", aerr)
+				slog.ErrorContext(ctx, "failed resolving alias chain for erasure", slogx.Error(aerr),
+					slog.String("alias_id", id), slog.String("canonical_id", canonicalID),
+					slog.String("project_id", projectID))
+				telemetry.RecordError(ctx, aerr)
+				return "", "", aerr
+			}
+			if canonicalIsAlias {
+				recordDegradedAliasErasure(ctx, "failed_closed")
+				slog.ErrorContext(ctx, "erase-by-id resolved to a chained alias with no live canonical; failing closed",
+					slog.String("alias_id", id), slog.String("canonical_id", canonicalID),
+					slog.String("project_id", projectID))
+				telemetry.RecordError(ctx, ErrDegradedAliasErasure)
+				return "", "", ErrDegradedAliasErasure
+			}
+			// Terminal canonical: observable but safe residual cleanup.
+			recordDegradedAliasErasure(ctx, "residual_cleanup")
+			slog.WarnContext(ctx, "alias resolved to a terminal canonical with no Postgres row; degrading to bare-alias erasure",
 				slog.String("alias_id", id), slog.String("canonical_id", canonicalID),
 				slog.String("project_id", projectID))
 		default:
@@ -284,6 +317,14 @@ func (s *Service) hasActivity(ctx context.Context, projectID, distinctID string)
 // row resolves — events can be keyed directly by external_id, and those must
 // still be erased.
 func (s *Service) RequestErasureByExternalID(ctx context.Context, projectID, externalID, requestedBy string) (string, ComplianceStatus, error) {
+	// An empty external_id can never name a subject: anonymous rows carry a NULL
+	// external_id, and the compliance_requests CHECK forbids an all-null row.
+	// Mirror GetByExternalID and the by-id empty guard — report a clean
+	// not-found rather than tripping the CHECK constraint as an opaque internal
+	// error.
+	if externalID == "" {
+		return "", "", ErrProfileNotFound
+	}
 	// Idempotency / re-drive: reuse an existing non-completed erase request for
 	// this external_id rather than creating a duplicate ledger row.
 	if requestID, status, ok, err := s.reopenErasure(ctx, projectID, "", externalID); err != nil {
@@ -1014,8 +1055,9 @@ func chInClause(values []string) (string, []any) {
 // chBatchSize bounds the IN-list size per ClickHouse statement (S1). A subject with
 // a large alias/session fan-out would otherwise produce one giant (?, ?, …) query
 // that can exceed max_query_size / the max-AST-elements limit and fail the mutation
-// — retried forever until the DLQ, never completing. A char(20) id binds as ~1
-// placeholder + ~20-byte value, so 1000 ids stays well under the 256 KiB default.
+// — retried forever until the DLQ, never completing. A distinct_id binds as ~1
+// placeholder + a few dozen bytes (a 20-byte xid, a ~41-byte anon-<uuid>), so
+// 1000 ids stays well under the 256 KiB default.
 const chBatchSize = 1000
 
 // forEachBatch splits values into chunks of at most chBatchSize and invokes fn per
