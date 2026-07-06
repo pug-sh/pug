@@ -240,6 +240,7 @@ func TestDelete_NonExistent(t *testing.T) {
 
 	ctx := context.Background()
 	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
 	tn := testutil.SetupNATS(t)
 	t.Setenv("NATS_URL", tn.URL)
 
@@ -251,7 +252,11 @@ func TestDelete_NonExistent(t *testing.T) {
 
 	projectID := seedProject(t, ctx, pg)
 
-	s := NewServer(coreprofiles.NewService(pg.PgW, nil, natsClient))
+	// A real ClickHouse (no alias / no activity for the id) so Delete exercises
+	// the full resolution ladder — Postgres miss → CH alias miss → external_id
+	// miss → activity-probe miss → NotFound — rather than the removed nil-ch
+	// shortcut.
+	s := NewServer(coreprofiles.NewService(pg.PgW, ch.Conn, natsClient))
 
 	delID := proto.String("nonexistent-id")
 	_, err = s.Delete(authCtx(projectID), connect.NewRequest(&profilesv1.DeleteRequest{Id: delID}))
