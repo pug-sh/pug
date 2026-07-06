@@ -42,6 +42,14 @@ var (
 	// delete with no surviving audit row; the completion guard prevents reporting a
 	// phantom 'completed' that never landed in the ledger.
 	ErrComplianceRequestVanished = errors.New("profiles: compliance request row vanished before write")
+	// ErrDegradedAliasErasure is returned when an erase-by-id resolves through an
+	// alias to a canonical that has no live profile row AND is itself an alias —
+	// i.e. the subject spans an alias CHAIN whose full identifier fan-out cannot
+	// be frozen by single-level resolution. Rather than silently erase only the
+	// presented id's residual events and report the DSAR 'completed' (a partial
+	// erasure misreported as fulfilled), the request fails closed so the
+	// inconsistency is surfaced for manual reconciliation.
+	ErrDegradedAliasErasure = errors.New("profiles: erase-by-id resolved to a chained alias with no live canonical")
 	// ErrInvalidComplianceStatus is returned by ParseComplianceStatus when a DB value
 	// is not a recognized lifecycle status, so a corrupt column surfaces loudly
 	// instead of flowing through as an unchecked cast. (There is no kind parse: the
@@ -125,9 +133,13 @@ func isComplianceOpenRequestConflict(err error) bool {
 			pgErr.ConstraintName == complianceOpenExternalUnique)
 }
 
-// RequestErasureByID enqueues erasure of the data subject identified by profile
-// id (the dashboard "delete this profile" path). The profile must exist; a
-// missing or already-deleted profile returns ErrProfileNotFound.
+// RequestErasureByID enqueues erasure of the data subject identified by a
+// person id (the dashboard "delete this profile" path). The id can name an
+// identified profile (PostgreSQL row), a derived anonymous person (the id IS
+// the events distinct_id — no Postgres row exists), an alias claimed by an
+// identify merge (the canonical data subject is erased), or an external_id a
+// caller picked up from an events row. An id that resolves to none of these
+// returns ErrProfileNotFound.
 func (s *Service) RequestErasureByID(ctx context.Context, projectID, profileID, requestedBy string) (string, ComplianceStatus, error) {
 	// Idempotency / re-drive: reuse an existing non-completed erase request for
 	// this profile rather than creating a duplicate ledger row. This must run
@@ -144,16 +156,160 @@ func (s *Service) RequestErasureByID(ctx context.Context, projectID, profileID, 
 		ID:        profileID,
 		ProjectID: projectID,
 	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", "", ErrProfileNotFound
-		}
+	switch {
+	case err == nil:
+		return s.requestErasure(ctx, projectID, profile.ExternalID.String, profile.ID, requestedBy)
+	case errors.Is(err, pgx.ErrNoRows):
+		// No PostgreSQL profile — the id may still name a real person in
+		// ClickHouse. Resolve below.
+		return s.requestErasureByUnresolvedID(ctx, projectID, profileID, requestedBy)
+	default:
 		slog.ErrorContext(ctx, "failed resolving profile for erasure", slogx.Error(err),
 			slog.String("profile_id", profileID), slog.String("project_id", projectID))
 		telemetry.RecordError(ctx, err)
 		return "", "", err
 	}
-	return s.requestErasure(ctx, projectID, profile.ExternalID.String, profile.ID, requestedBy)
+}
+
+// requestErasureByUnresolvedID handles a by-id erasure whose id has no
+// PostgreSQL profile row. Three legitimate shapes reach here, tried in order:
+//
+//  1. an alias claimed by an identify merge — the data subject is the
+//     canonical profile, so erase that (its fan-out covers this alias);
+//  2. an id that is actually an external_id (event rows display external_ids
+//     as the user key post-identify) — route to the external_id path, which
+//     resolves the profile and its full fan-out itself;
+//  3. a derived anonymous person — the id IS the events distinct_id; erase by
+//     the bare id, which touches no Postgres profile/device rows: the ledger
+//     row is written as for every shape, but the prelude's soft-delete +
+//     device-deactivate and the worker's hard-deletes all match zero rows for
+//     an id with no Postgres profile. Its ClickHouse profiles/aliases deletes
+//     cover any stray rows keyed by this id.
+func (s *Service) requestErasureByUnresolvedID(ctx context.Context, projectID, id, requestedBy string) (string, ComplianceStatus, error) {
+	if id == "" {
+		// An empty id can never name a person; without this guard a stray
+		// empty-distinct_id activity row would make Delete("") erasable.
+		return "", "", ErrProfileNotFound
+	}
+	if s.ch == nil {
+		// No ClickHouse conn wired: the derived-person store is unreachable, so
+		// we cannot tell whether this id names a subject. Fail loud (matching
+		// getSingle) rather than reporting ErrProfileNotFound — on an erasure a
+		// false "not found" would tell a controller the subject has no data when
+		// the system merely could not check.
+		return "", "", errors.New("profiles: clickhouse conn is nil")
+	}
+	canonicalID, isAlias, err := s.resolveAliasTarget(ctx, projectID, id)
+	if err != nil {
+		err = fmt.Errorf("resolve alias for erasure: %w", err)
+		slog.ErrorContext(ctx, "failed resolving alias target for erasure", slogx.Error(err),
+			slog.String("id", id), slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return "", "", err
+	}
+	if isAlias && canonicalID != id {
+		// Re-drive an open request for the canonical subject before creating a
+		// fresh one (the caller's reopen check was keyed by the alias id).
+		if requestID, status, ok, err := s.reopenErasure(ctx, projectID, canonicalID, ""); err != nil {
+			return requestID, status, err
+		} else if ok {
+			return requestID, status, nil
+		}
+		canonical, err := s.read.GetProfileByIDAndProjectID(ctx, dbread.GetProfileByIDAndProjectIDParams{
+			ID:        canonicalID,
+			ProjectID: projectID,
+		})
+		switch {
+		case err == nil:
+			return s.requestErasure(ctx, projectID, canonical.ExternalID.String, canonical.ID, requestedBy)
+		case errors.Is(err, pgx.ErrNoRows):
+			// The canonical has no live profile row. Discriminate two shapes by
+			// asking whether the canonical is ITSELF an alias:
+			//   - terminal (not an alias): a real canonical whose own erasure
+			//     already completed. The bare-id fall-through cleans up any
+			//     residual events for the presented id and returns
+			//     ErrProfileNotFound when there are none — correct and safe.
+			//   - chained (itself an alias): the subject spans an alias chain
+			//     (id → canonicalID → …) whose full identifier fan-out
+			//     single-level resolution cannot freeze. Erasing only the
+			//     presented id's residual events and reporting the DSAR completed
+			//     would be a partial erase misreported as fulfilled, so fail
+			//     closed and surface it for reconciliation.
+			_, canonicalIsAlias, aerr := s.resolveAliasTarget(ctx, projectID, canonicalID)
+			if aerr != nil {
+				aerr = fmt.Errorf("resolve alias chain for erasure: %w", aerr)
+				slog.ErrorContext(ctx, "failed resolving alias chain for erasure", slogx.Error(aerr),
+					slog.String("alias_id", id), slog.String("canonical_id", canonicalID),
+					slog.String("project_id", projectID))
+				telemetry.RecordError(ctx, aerr)
+				return "", "", aerr
+			}
+			if canonicalIsAlias {
+				recordDegradedAliasErasure(ctx, "failed_closed")
+				slog.ErrorContext(ctx, "erase-by-id resolved to a chained alias with no live canonical; failing closed",
+					slog.String("alias_id", id), slog.String("canonical_id", canonicalID),
+					slog.String("project_id", projectID))
+				telemetry.RecordError(ctx, ErrDegradedAliasErasure)
+				return "", "", ErrDegradedAliasErasure
+			}
+			// Terminal canonical: observable but safe residual cleanup.
+			recordDegradedAliasErasure(ctx, "residual_cleanup")
+			slog.WarnContext(ctx, "alias resolved to a terminal canonical with no Postgres row; degrading to bare-alias erasure",
+				slog.String("alias_id", id), slog.String("canonical_id", canonicalID),
+				slog.String("project_id", projectID))
+		default:
+			slog.ErrorContext(ctx, "failed resolving canonical profile for erasure", slogx.Error(err),
+				slog.String("profile_id", canonicalID), slog.String("project_id", projectID))
+			telemetry.RecordError(ctx, err)
+			return "", "", err
+		}
+	}
+
+	_, err = s.read.GetProfileByProjectAndExternalID(ctx, dbread.GetProfileByProjectAndExternalIDParams{
+		ProjectID:  projectID,
+		ExternalID: id,
+	})
+	switch {
+	case err == nil:
+		return s.RequestErasureByExternalID(ctx, projectID, id, requestedBy)
+	case errors.Is(err, pgx.ErrNoRows):
+		// Not an external_id either — last shape below.
+	default:
+		slog.ErrorContext(ctx, "failed resolving profile by external_id for erasure", slogx.Error(err),
+			slog.String("external_id", id), slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return "", "", err
+	}
+
+	has, err := s.hasActivity(ctx, projectID, id)
+	if err != nil {
+		err = fmt.Errorf("probe activity for erasure: %w", err)
+		slog.ErrorContext(ctx, "failed probing activity for erasure", slogx.Error(err),
+			slog.String("id", id), slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
+		return "", "", err
+	}
+	if !has {
+		return "", "", ErrProfileNotFound
+	}
+	return s.requestErasure(ctx, projectID, "", id, requestedBy)
+}
+
+// hasActivity reports whether any activity rollup rows exist for the
+// distinct_id — the same source that surfaces it as a derived anonymous person
+// on the read path, so erasure-by-id accepts every id Profiles surfaces from
+// that rollup. It is a superset, not an exact match: it does not re-apply the
+// read path's claim exclusion, so (e.g.) a distinct_id reached via the
+// degraded-alias fall-through is erasable without being separately listed.
+func (s *Service) hasActivity(ctx context.Context, projectID, distinctID string) (bool, error) {
+	var n uint64
+	if err := s.ch.QueryRow(ctx,
+		"SELECT count() FROM distinct_id_activity_states WHERE project_id = ? AND distinct_id = ?",
+		projectID, distinctID,
+	).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // RequestErasureByExternalID enqueues erasure of the data subject identified by
@@ -161,6 +317,14 @@ func (s *Service) RequestErasureByID(ctx context.Context, projectID, profileID, 
 // row resolves — events can be keyed directly by external_id, and those must
 // still be erased.
 func (s *Service) RequestErasureByExternalID(ctx context.Context, projectID, externalID, requestedBy string) (string, ComplianceStatus, error) {
+	// An empty external_id can never name a subject: anonymous rows carry a NULL
+	// external_id, and the compliance_requests CHECK forbids an all-null row.
+	// Mirror GetByExternalID and the by-id empty guard — report a clean
+	// not-found rather than tripping the CHECK constraint as an opaque internal
+	// error.
+	if externalID == "" {
+		return "", "", ErrProfileNotFound
+	}
 	// Idempotency / re-drive: reuse an existing non-completed erase request for
 	// this external_id rather than creating a duplicate ledger row.
 	if requestID, status, ok, err := s.reopenErasure(ctx, projectID, "", externalID); err != nil {
@@ -790,12 +954,18 @@ func (s *Service) eraseClickHouse(ctx context.Context, projectID, profileID stri
 		); err != nil {
 			return s.recordEraseError(ctx, "erase profile aliases", projectID, err)
 		}
-		if err := s.execMutation(ctx,
-			"ALTER TABLE profiles DELETE WHERE project_id = ? AND id = ?",
-			projectID, profileID,
-		); err != nil {
-			return s.recordEraseError(ctx, "erase profile", projectID, err)
-		}
+	}
+	// Profile rows are deleted for EVERY subject distinct_id, not just the
+	// canonical profile id (which is always in the frozen set when resolved):
+	// merge-tombstoned alias rows physically remain in the ReplacingMergeTree
+	// until a mutation removes them, and anonymous persons' ids can be keyed
+	// as profile rows by the demo seeder. For a no-profile external_id erasure
+	// this also removes any stray row keyed by that external_id. Ids that key
+	// no profile row simply match nothing.
+	if err := s.eraseByBatch(ctx, "erase profiles", projectID, scope.distinctIDs, func(in string) string {
+		return "ALTER TABLE profiles DELETE WHERE project_id = ? AND id IN " + in
+	}); err != nil {
+		return err
 	}
 	return nil
 }
@@ -885,8 +1055,9 @@ func chInClause(values []string) (string, []any) {
 // chBatchSize bounds the IN-list size per ClickHouse statement (S1). A subject with
 // a large alias/session fan-out would otherwise produce one giant (?, ?, …) query
 // that can exceed max_query_size / the max-AST-elements limit and fail the mutation
-// — retried forever until the DLQ, never completing. A char(20) id binds as ~1
-// placeholder + ~20-byte value, so 1000 ids stays well under the 256 KiB default.
+// — retried forever until the DLQ, never completing. A distinct_id binds as ~1
+// placeholder + a few dozen bytes (a 20-byte xid, a ~41-byte anon-<uuid>), so
+// 1000 ids stays well under the 256 KiB default.
 const chBatchSize = 1000
 
 // forEachBatch splits values into chunks of at most chBatchSize and invokes fn per
