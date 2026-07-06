@@ -103,11 +103,35 @@ func NewService(pgW *pgxpool.Pool, ch driver.Conn, producer *natsdeps.NATSClient
 	}
 }
 
+// GetByID resolves a person by id: an identified profile row, a derived
+// anonymous person (the id IS the distinct_id), or — when the id is an alias
+// claimed by an identify merge — the canonical profile it was merged into, so
+// pre-identify URLs and event links keep working after the merge.
 func (s *Service) GetByID(ctx context.Context, projectID, id string) (Profile, error) {
-	return s.getSingle(ctx, projectID, chq.Eq("p.id", id))
+	profile, err := s.getSingle(ctx, projectID, chq.Eq("p.id", id))
+	if err == nil || !errors.Is(err, ErrProfileNotFound) {
+		return profile, err
+	}
+	canonicalID, ok, err := s.resolveAliasTarget(ctx, projectID, id)
+	if err != nil {
+		return Profile{}, err
+	}
+	// The redirect is single-hop because there is no recursion here; the
+	// canonicalID == id guard additionally skips a pointless re-query of the
+	// same id that already missed (a self-alias).
+	if !ok || canonicalID == id {
+		return Profile{}, ErrProfileNotFound
+	}
+	return s.getSingle(ctx, projectID, chq.Eq("p.id", canonicalID))
 }
 
 func (s *Service) GetByExternalID(ctx context.Context, projectID, externalID string) (Profile, error) {
+	// An empty string is never a legitimate external_id, so treat it as a miss
+	// rather than a lookup: anonymous persons carry an empty external_id by
+	// construction, and matching one arbitrarily would be wrong.
+	if externalID == "" {
+		return Profile{}, ErrProfileNotFound
+	}
 	return s.getSingle(ctx, projectID, chq.Eq("p.external_id", externalID))
 }
 
@@ -116,12 +140,7 @@ func (s *Service) getSingle(ctx context.Context, projectID string, extra chq.Con
 		return Profile{}, errors.New("profiles: clickhouse conn is nil")
 	}
 
-	sql, args, err := chq.NewQuery().
-		Select(profileSelectColumns()...).
-		From("latest_profiles p LEFT JOIN profile_activity_summary activity_summary ON activity_summary.project_id = p.project_id AND activity_summary.profile_id = p.id").
-		With("latest_profiles", LatestProfilesCTE(projectID)).
-		With("latest_profile_aliases", LatestProfileAliasesCTE(projectID)).
-		With("profile_activity_summary", profileActivitySummaryCTE(projectID)).
+	sql, args, err := personsQuery(projectID).
 		Where(
 			chq.Eq("p.is_deleted", uint8(0)),
 			extra,
@@ -176,12 +195,7 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Profile, error
 		wheres = append(wheres, params.Filter)
 	}
 
-	sql, args, err := chq.NewQuery().
-		Select(profileSelectColumns()...).
-		From("latest_profiles p LEFT JOIN profile_activity_summary activity_summary ON activity_summary.project_id = p.project_id AND activity_summary.profile_id = p.id").
-		With("latest_profiles", LatestProfilesCTE(params.ProjectID)).
-		With("latest_profile_aliases", LatestProfileAliasesCTE(params.ProjectID)).
-		With("profile_activity_summary", profileActivitySummaryCTE(params.ProjectID)).
+	sql, args, err := personsQuery(params.ProjectID).
 		Where(wheres...).
 		OrderBy("p.create_time DESC", "p.id DESC").
 		Limit(int64(params.PageSize)).
@@ -249,10 +263,200 @@ func LatestProfileAliasesCTE(projectID string) *chq.Query {
 		GroupBy("project_id", "alias_id")
 }
 
-// profileActivitySummaryCTE aggregates per-profile activity by unioning every
-// distinct_id that maps to the profile — profile.id, profile.external_id, and
-// all alias_ids — then joining to the distinct_id_activity_states rollup and
-// re-aggregating to one row per profile. The external_id != p.id guard avoids
+// personsQuery assembles the shared skeleton of every person read (List and
+// getSingle): the CTE chain that unions identified profiles with derived
+// anonymous persons, joined to the per-person activity summary under the
+// `p` / `activity_summary` aliases that the caller-supplied filter conditions
+// bind against. Callers add WHERE / ORDER BY / LIMIT.
+//
+// CTE order is dependency order: claimed_ids reads the latest_* CTEs,
+// anon_persons reads claimed_ids, and persons / persons_activity read
+// anon_persons (plus identified_activity for the latter).
+func personsQuery(projectID string) *chq.Query {
+	return chq.NewQuery().
+		Select(profileSelectColumns()...).
+		From("persons p LEFT JOIN persons_activity activity_summary ON activity_summary.project_id = p.project_id AND activity_summary.profile_id = p.id").
+		With("latest_profiles", LatestProfilesCTE(projectID)).
+		With("latest_profile_aliases", LatestProfileAliasesCTE(projectID)).
+		With("claimed_ids", claimedIDsCTE()).
+		With("anon_persons", anonPersonsCTE(projectID)).
+		With("persons", personsCTE()).
+		With("identified_activity", profileActivitySummaryCTE(projectID)).
+		With("persons_activity", personsActivityCTE())
+}
+
+// claimedIDsCTE projects every distinct_id already owned by the identify
+// pipeline, i.e. the ids that must NOT surface as their own anonymous person:
+//
+//   - alias_ids — anonymous identities absorbed into an identified profile by
+//     an identify merge. This is also what makes the exclusion resurrection-
+//     proof: a late event for a merged distinct_id re-fires the activity MV,
+//     but the alias keeps the id claimed, so nothing reappears (there is no
+//     row to un-delete — persons are derived, not written).
+//   - profile ids — including soft-deleted tombstones (is_deleted is not
+//     consulted): a tombstoned id must stay invisible, not resurface as a
+//     derived person.
+//   - non-empty external_ids — post-identify events are keyed by external_id;
+//     without this every identified user would grow a trait-less anonymous
+//     doppelgänger.
+//
+// All three sets are identified-population-sized, so the anti-join stays cheap
+// even when the anonymous population dominates.
+func claimedIDsCTE() *chq.Query {
+	return chq.NewQuery().
+		Select("claimed_id").
+		From(`(
+SELECT alias_id AS claimed_id FROM latest_profile_aliases
+UNION ALL
+SELECT id AS claimed_id FROM latest_profiles
+UNION ALL
+SELECT external_id AS claimed_id FROM latest_profiles WHERE external_id != ''
+) c`)
+}
+
+// anonPersonsCTE derives one person row per unclaimed distinct_id from the
+// distinct_id_activity_states rollup — the identity materialization already
+// maintained per (project_id, distinct_id) off the event stream. create_time
+// is the merged first-seen (immutable except for out-of-order backfills, so
+// the keyset cursor stays stable), update_time the merged last-seen. The
+// activity fields are aliased exactly as profileActivitySummaryCTE's output so
+// personsActivityCTE can union the two by position.
+//
+// Cost posture: this is a streaming GROUP BY over the states table's own
+// primary key, and only the state columns a reference actually uses are read.
+// It is O(project distinct_ids) per query — same class as the identified
+// summary CTE — with a dedicated first-seen-ordered person index as the
+// documented escape hatch if per-project cardinality outgrows it.
+func anonPersonsCTE(projectID string) *chq.Query {
+	return chq.NewQuery().
+		Select(
+			"states.project_id AS project_id",
+			"states.distinct_id AS id",
+			"minMerge(states.first_seen_state) AS first_seen",
+			"maxMerge(states.last_seen_state) AS last_seen",
+			"countMerge(states.total_events_state) AS total_events",
+			"sumMerge(states.pageviews_state) AS pageviews",
+			"uniqMerge(states.sessions_state) AS sessions",
+			"argMaxMerge(states.latest_browser_state) AS latest_browser",
+			"argMaxMerge(states.latest_browser_version_state) AS latest_browser_version",
+			"argMaxMerge(states.latest_os_state) AS latest_os",
+			"argMaxMerge(states.latest_os_version_state) AS latest_os_version",
+			"argMaxMerge(states.latest_device_state) AS latest_device",
+			"argMaxMerge(states.latest_country_state) AS latest_country",
+			"argMaxMerge(states.latest_region_state) AS latest_region",
+			"argMaxMerge(states.latest_city_state) AS latest_city",
+		).
+		From("distinct_id_activity_states states").
+		Where(
+			chq.Eq("states.project_id", projectID),
+			// distinct_id != '': a blank-distinct_id event stream would otherwise
+			// materialize a single id='' person; keep it out of the person set.
+			chq.RawCond("states.distinct_id != ''"),
+			chq.RawCond("states.distinct_id NOT IN claimed_ids"),
+		).
+		GroupBy("states.project_id", "states.distinct_id")
+}
+
+// personsCTE unions identified profiles with derived anonymous persons into
+// the single relation the read queries page over. Column order mirrors
+// LatestProfilesCTE's projection (UNION ALL matches by position). The
+// properties literal is cast to the profiles column's exact JSON type so the
+// union types line up and profile-property filters (dot-path access,
+// IS_NOT_SET, numeric subcolumns) evaluate against an anonymous person the
+// same way they evaluate against a trait-less identified profile.
+func personsCTE() *chq.Query {
+	return chq.NewQuery().
+		Select("create_time", "external_id", "id", "project_id", "properties", "update_time", "is_deleted").
+		From(`(
+SELECT
+    create_time,
+    external_id,
+    id,
+    project_id,
+    properties,
+    update_time,
+    is_deleted
+FROM latest_profiles
+UNION ALL
+SELECT
+    first_seen  AS create_time,
+    ''          AS external_id,
+    id,
+    project_id,
+    CAST('{}', 'JSON(max_dynamic_paths = 1000)') AS properties,
+    last_seen   AS update_time,
+    toUInt8(0)  AS is_deleted
+FROM anon_persons
+) u`)
+}
+
+// personsActivityCTE unions the identified activity summary with the derived
+// anonymous persons' activity (already one row per distinct_id — no alias
+// fan-out to re-aggregate). Keys are disjoint by construction: anon_persons
+// excludes every claimed id, so the LEFT JOIN in personsQuery stays 1:≤1.
+func personsActivityCTE() *chq.Query {
+	return chq.NewQuery().
+		Select(
+			"project_id", "profile_id", "first_seen", "last_seen",
+			"total_events", "pageviews", "sessions",
+			"latest_browser", "latest_browser_version", "latest_os", "latest_os_version",
+			"latest_device", "latest_country", "latest_region", "latest_city",
+		).
+		From(`(
+SELECT
+    project_id, profile_id, first_seen, last_seen,
+    total_events, pageviews, sessions,
+    latest_browser, latest_browser_version, latest_os, latest_os_version,
+    latest_device, latest_country, latest_region, latest_city
+FROM identified_activity
+UNION ALL
+SELECT
+    project_id, id AS profile_id, first_seen, last_seen,
+    total_events, pageviews, sessions,
+    latest_browser, latest_browser_version, latest_os, latest_os_version,
+    latest_device, latest_country, latest_region, latest_city
+FROM anon_persons
+) s`)
+}
+
+// resolveAliasTarget returns the canonical profile id an alias maps to,
+// mirroring LatestProfileAliasesCTE's argMax-by-insert_time semantics for a
+// single alias_id. ok is false when the id is not an alias.
+func (s *Service) resolveAliasTarget(ctx context.Context, projectID, aliasID string) (string, bool, error) {
+	rows, err := s.ch.Query(ctx,
+		"SELECT argMax(profile_id, insert_time) AS profile_id FROM profile_aliases WHERE project_id = ? AND alias_id = ? GROUP BY alias_id",
+		projectID, aliasID,
+	)
+	if err != nil {
+		return "", false, err
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.ErrorContext(ctx, "failed to close ClickHouse rows", slogx.Error(err))
+			telemetry.RecordError(ctx, err)
+		}
+	}()
+
+	if !rows.Next() {
+		return "", false, rows.Err()
+	}
+	var profileID string
+	if err := rows.Scan(&profileID); err != nil {
+		return "", false, err
+	}
+	if err := rows.Err(); err != nil {
+		return "", false, err
+	}
+	return profileID, profileID != "", nil
+}
+
+// profileActivitySummaryCTE aggregates per-IDENTIFIED-profile activity
+// (registered as identified_activity in personsQuery; derived anonymous
+// persons carry their own single-distinct_id summary via anonPersonsCTE) by
+// unioning every distinct_id that maps to the profile — profile.id,
+// profile.external_id, and all alias_ids — then joining to the
+// distinct_id_activity_states rollup and re-aggregating to one row per
+// profile. The external_id != p.id guard avoids
 // double-merging the same state when an SDK uses the same UUID for both
 // columns. If a profile's external_id happens to coincide with one of its
 // alias_ids, the aggregate state is merged twice: the additive aggregates
