@@ -24,6 +24,36 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
 - **Privacy & compliance** — GDPR/DPDP data-subject erasure of a person's
   events and profile.
 
+<p>
+  <img src="docs/assets/dashboards.webp" alt="A Pug dashboard composed of insight and markdown tiles" />
+  <br /><sub><b>Dashboards</b> — compose insight and markdown tiles on a time-windowed grid.</sub>
+</p>
+
+<p>
+  <img src="docs/assets/live-demo.webp" alt="Pug's live map zooming across continents into real-time events" />
+  <br /><sub><b>Live view</b> — every event on a live world map; zoom in for the page, browser, device, and the profile behind it.</sub>
+</p>
+
+<p>
+  <img src="docs/assets/insights.webp" alt="The Pug insights query builder with a filter open" />
+  <br /><sub><b>Insights</b> — build trends, funnels, retention, and more with filters and breakdowns.</sub>
+</p>
+
+<p>
+  <img src="docs/assets/retention.webp" alt="A Pug retention insight showing a cohort retention heatmap" />
+  <br /><sub><b>Retention</b> — cohort heatmaps that track how each day's users come back over time.</sub>
+</p>
+
+<p>
+  <img src="docs/assets/profiles.webp" alt="A Pug user profile showing traits and recent activity" />
+  <br /><sub><b>Profiles</b> — the person behind the events, with traits, sessions, and activity.</sub>
+</p>
+
+<p>
+  <img src="docs/assets/events.webp" alt="The Pug raw-events explorer with an expanded event" />
+  <br /><sub><b>Events</b> — inspect the raw stream, enriched with geo, device, and bot signals.</sub>
+</p>
+
 ## Tech stack
 
 - **Go** — backend services and workers, exposed over [Connect RPC](https://connectrpc.com/) (HTTP/2)
