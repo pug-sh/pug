@@ -1,5 +1,5 @@
 // Package templates holds the typed templ components and frozen design tokens
-// for transactional emails. Tokens are converted once from cotton-w's OKLCH
+// for transactional emails. Tokens are converted once from the frontend's OKLCH
 // design system (src/index.css) to hex, because no email client understands
 // oklch().
 //
