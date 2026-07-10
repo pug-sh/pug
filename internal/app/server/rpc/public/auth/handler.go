@@ -21,7 +21,7 @@ type authService interface {
 	SignInWithEmail(ctx context.Context, email, password string) (coreauth.Session, error)
 	RequestMagicLink(ctx context.Context, email string) error
 	CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (coreauth.Session, error)
-	CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (coreauth.Session, error)
+	CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential, reportingTimezone string) (coreauth.Session, error)
 	RefreshSession(ctx context.Context, refreshToken string) (coreauth.Session, error)
 	RevokeSession(ctx context.Context, refreshToken string) error
 	DemoSignIn(ctx context.Context) (coreauth.DemoSession, error)
@@ -99,7 +99,7 @@ func (s *server) CompleteOAuthSignIn(
 		return nil, apperr.Invalid(apperr.ReasonOAuthProviderDisabled, "oauth provider is not configured")
 	}
 
-	session, err := s.service.CompleteOAuthSignIn(ctx, provider, req.Msg.GetCredential())
+	session, err := s.service.CompleteOAuthSignIn(ctx, provider, req.Msg.GetCredential(), req.Msg.GetTimezone())
 	if err != nil {
 		return nil, mapOAuthHandlerError(err)
 	}
