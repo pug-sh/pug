@@ -33,7 +33,7 @@ func (f fakeAuthService) RequestMagicLink(context.Context, string) error { retur
 func (f fakeAuthService) CompleteMagicLink(context.Context, string, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.completeErr
 }
-func (f fakeAuthService) CompleteOAuthSignIn(context.Context, coreoauth.ProviderName, string) (coreauth.Session, error) {
+func (f fakeAuthService) CompleteOAuthSignIn(context.Context, coreoauth.ProviderName, string, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.completeOAuthErr
 }
 func (f fakeAuthService) RefreshSession(context.Context, string) (coreauth.Session, error) {

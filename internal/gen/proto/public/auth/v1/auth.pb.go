@@ -365,7 +365,13 @@ type CompleteOAuthSignInRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Provider *OAuthProvider         `protobuf:"varint,1,opt,name=provider,enum=public.auth.v1.OAuthProvider" json:"provider,omitempty"`
 	// Google id_token JWT from @react-oauth/google GoogleLogin onSuccess credential.
-	Credential    *string `protobuf:"bytes,2,opt,name=credential" json:"credential,omitempty"`
+	Credential *string `protobuf:"bytes,2,opt,name=credential" json:"credential,omitempty"`
+	// Optional IANA timezone captured from the browser completing sign-in. When the
+	// sign-in provisions a new account (default org + project), it is stored as that
+	// project's reporting_timezone; on a returning sign-in — including one that links
+	// this identity to an existing account — it is ignored. Empty = UTC; a malformed
+	// value is coerced to UTC.
+	Timezone      *string `protobuf:"bytes,3,opt,name=timezone" json:"timezone,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -410,6 +416,13 @@ func (x *CompleteOAuthSignInRequest) GetProvider() OAuthProvider {
 func (x *CompleteOAuthSignInRequest) GetCredential() string {
 	if x != nil && x.Credential != nil {
 		return *x.Credential
+	}
+	return ""
+}
+
+func (x *CompleteOAuthSignInRequest) GetTimezone() string {
+	if x != nil && x.Timezone != nil {
+		return *x.Timezone
 	}
 	return ""
 }
@@ -764,13 +777,14 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\btimezone\x18\x02 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"V\n" +
 	"\x19CompleteMagicLinkResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\x8b\x01\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\xc4\x01\n" +
 	"\x1aCompleteOAuthSignInRequest\x12E\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x1d.public.auth.v1.OAuthProviderB\n" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\bprovider\x12&\n" +
 	"\n" +
 	"credential\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"credential\"X\n" +
+	"credential\x127\n" +
+	"\btimezone\x18\x03 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"X\n" +
 	"\x1bCompleteOAuthSignInResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
 	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"D\n" +

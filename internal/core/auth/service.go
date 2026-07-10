@@ -311,7 +311,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 	return session, nil
 }
 
-func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (Session, error) {
+func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential, reportingTimezone string) (Session, error) {
 	ident, err := s.oauth.VerifyIdentity(ctx, provider, credential)
 	if err != nil {
 		// Client-input errors (ErrInvalidCredential / ErrUnverifiedEmail) are
@@ -322,8 +322,10 @@ func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.Pr
 
 	var session Session
 	_, _, err = coreoauth.WithIdentityTx(ctx, s.pgW, provider, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
-		// OAuth sign-in carries no browser timezone; default the project to UTC.
-		if err := FinishSignup(ctx, w, customerID, createdNew, nil, ""); err != nil {
+		// On first sign-in this seeds the new default project's reporting timezone
+		// from the browser that completed sign-in (coerced to UTC if malformed); on
+		// a returning sign-in FinishSignup is a no-op and the value is ignored.
+		if err := FinishSignup(ctx, w, customerID, createdNew, nil, reportingTimezone); err != nil {
 			return err // coreorgs records this at its detect site; don't re-record.
 		}
 		if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {
