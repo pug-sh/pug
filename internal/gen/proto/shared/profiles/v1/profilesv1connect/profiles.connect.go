@@ -63,7 +63,7 @@ type ProfilesServiceClient interface {
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 	// DeleteDataSubject erases a data subject identified by external_id (the
 	// controller-facing handle). Proceeds even when no profile row exists, since
-	// events can be keyed directly by external_id. See docs/compliance/4.1-erasure-scope.md.
+	// events can be keyed directly by external_id.
 	DeleteDataSubject(context.Context, *connect.Request[v1.DeleteDataSubjectRequest]) (*connect.Response[v1.DeleteDataSubjectResponse], error)
 	// GetDeletionRequest returns the status of an erasure request so a controller
 	// can prove fulfilment within the statutory window (the DSAR audit trail).
@@ -173,7 +173,7 @@ type ProfilesServiceHandler interface {
 	Delete(context.Context, *connect.Request[v1.DeleteRequest]) (*connect.Response[v1.DeleteResponse], error)
 	// DeleteDataSubject erases a data subject identified by external_id (the
 	// controller-facing handle). Proceeds even when no profile row exists, since
-	// events can be keyed directly by external_id. See docs/compliance/4.1-erasure-scope.md.
+	// events can be keyed directly by external_id.
 	DeleteDataSubject(context.Context, *connect.Request[v1.DeleteDataSubjectRequest]) (*connect.Response[v1.DeleteDataSubjectResponse], error)
 	// GetDeletionRequest returns the status of an erasure request so a controller
 	// can prove fulfilment within the statutory window (the DSAR audit trail).

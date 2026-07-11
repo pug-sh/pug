@@ -28,9 +28,7 @@ import (
 // Erasure (§4.1) is the first tenant; the genuinely-async retention/TTL purge
 // (§4.5) adds a sibling consumer in StartWorker. Data-subject export (§4.2)
 // deliberately does NOT join here — it needs no async job and stays out of the
-// worker (see docs/compliance/4.2-export-scope.md decision 2). The heavy ClickHouse
-// mutations run here, never inline in an RPC. See
-// docs/compliance/4.1-erasure-scope.md.
+// worker. The heavy ClickHouse mutations run here, never inline in an RPC.
 
 func Run(ctx context.Context) error {
 	closeOtel, err := telemetry.SetupSDK(ctx)

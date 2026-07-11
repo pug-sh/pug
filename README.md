@@ -95,9 +95,8 @@ make templ   # regenerate templ email templates
 ## Architecture
 
 Per-subsystem documentation lives in [`docs/architecture/`](docs/architecture/)
-(insights, ClickHouse, profiles, ingestion, email, telemetry) and
-[`docs/compliance/`](docs/compliance/). Contributor guidance and conventions are
-in [`CLAUDE.md`](CLAUDE.md).
+(insights, ClickHouse, profiles, ingestion, email, telemetry). Contributor
+guidance and conventions are in [`CLAUDE.md`](CLAUDE.md).
 
 ## License
 
