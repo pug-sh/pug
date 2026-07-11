@@ -28,7 +28,7 @@ import (
 // delete events + derived rollups + the profile from every store). The worker's
 // ClickHouse profile delete is the authoritative read-hide; the prelude does not
 // publish a separate ClickHouse tombstone (it would race the worker's delete and
-// could resurrect a hidden row). See docs/compliance/4.1-erasure-scope.md.
+// could resurrect a hidden row).
 
 var (
 	ErrDeletionRequestNotFound = errors.New("profiles: deletion request not found")
@@ -665,8 +665,7 @@ func (s *Service) GetDeletionRequest(ctx context.Context, projectID, requestID s
 // (max_age 720h) sits open with nothing to re-drive it, so the subject looks
 // erased (profile hidden) while PII is physically intact. Surface these to
 // alerting; an operator re-drives erasure rows via a fresh RequestErasure* call
-// (frozen identifiers keep the re-drive correct). See
-// docs/compliance/4.1-erasure-scope.md.
+// (frozen identifiers keep the re-drive correct).
 func (s *Service) ListStuckComplianceRequests(ctx context.Context, olderThan time.Time, limit int32) ([]dbread.ComplianceRequest, error) {
 	rows, err := s.read.ListStuckComplianceRequests(ctx, dbread.ListStuckComplianceRequestsParams{
 		OlderThan: postgres.NewTimestamptz(olderThan),

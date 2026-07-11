@@ -7,8 +7,7 @@ option go_package = "github.com/pug-sh/pug/internal/gen/proto/workers/compliance
 
 // Messages for the compliance worker — the home for slow, low-volume GDPR/DPDP
 // jobs (erasure now; retention §4.5 joins later). Export §4.2 needs no async job
-// and stays out of the worker (4.2 decision 2). See
-// docs/compliance/4.1-erasure-scope.md.
+// and stays out of the worker.
 
 // EraseMessage is published to compliance.erase by the deletion RPCs to trigger
 // asynchronous hard erasure of a data subject — events across every distinct_id,
