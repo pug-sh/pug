@@ -52,15 +52,22 @@ type InsightsServiceClient interface {
 	// Query runs a product-analytics insight over the project's events and returns
 	// the computed result. A single call covers every insight type — trends,
 	// segmentation, funnel, retention, user flow (Sankey) and top-K — chosen by the
-	// InsightQuerySpec (insight_type, events, breakdowns, filters). The request also
-	// carries the time range and granularity; per-granularity range caps apply.
+	// InsightQuerySpec (its insight_type, events, breakdowns and filters, among
+	// others). The request also carries the time range and granularity, and it is the
+	// right tool for any project-wide or over-time question; per-granularity range
+	// caps apply.
 	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
-	// SegmentUsers returns the distinct ids of the users who performed a given set
-	// of events (with optional filters) in a time range — the "who" behind a number
-	// on a chart. Use it to drill from an aggregate into the individual users that
-	// make it up.
+	// SegmentUsers returns a paginated page of the distinct ids of the users who
+	// performed a given set of events (with optional filters) in a time range — the
+	// "who" behind a number on a chart. Not exposed as an MCP tool while the
+	// drill-down insight is still WIP; see toolPolicy in
+	// internal/app/server/mcp/rename.go.
 	SegmentUsers(context.Context, *connect.Request[v1.SegmentUsersRequest]) (*connect.Response[v1.SegmentUsersResponse], error)
+	// GetFilterSchema lists the event kinds and the property keys/types available to
+	// filter and break down by. Call it before query_insights so that filters and
+	// breakdowns reference keys that actually exist in this project.
+	//
 	// The filter-schema concept is service-agnostic; both shared.insights and
 	// shared.activity expose the same shape via common.v1.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
@@ -144,15 +151,22 @@ type InsightsServiceHandler interface {
 	// Query runs a product-analytics insight over the project's events and returns
 	// the computed result. A single call covers every insight type — trends,
 	// segmentation, funnel, retention, user flow (Sankey) and top-K — chosen by the
-	// InsightQuerySpec (insight_type, events, breakdowns, filters). The request also
-	// carries the time range and granularity; per-granularity range caps apply.
+	// InsightQuerySpec (its insight_type, events, breakdowns and filters, among
+	// others). The request also carries the time range and granularity, and it is the
+	// right tool for any project-wide or over-time question; per-granularity range
+	// caps apply.
 	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
-	// SegmentUsers returns the distinct ids of the users who performed a given set
-	// of events (with optional filters) in a time range — the "who" behind a number
-	// on a chart. Use it to drill from an aggregate into the individual users that
-	// make it up.
+	// SegmentUsers returns a paginated page of the distinct ids of the users who
+	// performed a given set of events (with optional filters) in a time range — the
+	// "who" behind a number on a chart. Not exposed as an MCP tool while the
+	// drill-down insight is still WIP; see toolPolicy in
+	// internal/app/server/mcp/rename.go.
 	SegmentUsers(context.Context, *connect.Request[v1.SegmentUsersRequest]) (*connect.Response[v1.SegmentUsersResponse], error)
+	// GetFilterSchema lists the event kinds and the property keys/types available to
+	// filter and break down by. Call it before query_insights so that filters and
+	// breakdowns reference keys that actually exist in this project.
+	//
 	// The filter-schema concept is service-agnostic; both shared.insights and
 	// shared.activity expose the same shape via common.v1.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME

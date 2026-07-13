@@ -59,22 +59,40 @@ func maskKey(key string) string {
 // NormalizeBearerAPIKey ensures a private API key presented as an
 // `Authorization: Bearer prv_...` credential — the only header form many MCP
 // clients can send — is also readable from the x-api-key header the API-key auth
-// funcs expect, and returns the effective private key ("" if none). If x-api-key
-// is already set it wins and is returned unchanged. Otherwise the Bearer scheme
-// is matched case-insensitively (RFC 9110 §11.1, via authn.BearerToken) and the
-// token is promoted to x-api-key only when it carries the private-key prefix; a
-// non-private or absent credential is left untouched for the downstream auth
-// boundary to reject. This keeps the "Bearer" scheme string and the private-key
-// prefix owned solely by package rpc.
+// funcs expect. It returns the effective *private* key, or "" if the request
+// carries none. This keeps the "Bearer" scheme string and the private-key prefix
+// owned solely by package rpc.
+//
+// It MUTATES req.Header in place when it promotes a Bearer token: that side effect
+// is the whole mechanism by which the downstream WithPrivateKeyAuth sees the key.
+//
+// x-api-key, if present, always wins — a Bearer must never be able to override an
+// explicit x-api-key, or anything that can inject an Authorization header (a proxy,
+// a misconfigured gateway) could swap the caller onto a different project's key.
+// Otherwise the Bearer scheme is matched case-insensitively (RFC 9110 §11.1, via
+// authn.BearerToken).
+//
+// Either way the key is returned only when it carries the private-key prefix. A
+// public key is extractable from client apps, so it must never become the effective
+// credential — callers stash this value in the request context and later re-inject
+// it as the credential on in-process calls, and it fails closed at the auth boundary
+// regardless. A non-private or absent credential is left in place, untouched, for
+// that boundary to reject.
 func NormalizeBearerAPIKey(req *http.Request) string {
-	key := req.Header.Get(HeaderAPIKey)
-	if key == "" {
-		if token, ok := authn.BearerToken(req); ok && strings.HasPrefix(token, privateKeyPrefix) {
-			key = token
-			req.Header.Set(HeaderAPIKey, key)
+	if key := req.Header.Get(HeaderAPIKey); key != "" {
+		if !strings.HasPrefix(key, privateKeyPrefix) {
+			return ""
 		}
+		return key
 	}
-	return key
+
+	token, ok := authn.BearerToken(req)
+	if !ok || !strings.HasPrefix(token, privateKeyPrefix) {
+		return ""
+	}
+	req.Header.Set(HeaderAPIKey, token)
+
+	return token
 }
 
 // resolvePrivateKeyPrincipal resolves an already-prefix-validated private
@@ -112,6 +130,12 @@ type projectKeyLookup interface {
 	GetProjectByPrivateApiKey(ctx context.Context, key string) (dbread.Project, error)
 	InvalidateProjectKeys(ctx context.Context, privateKey, publicKey string)
 }
+
+// ProjectKeyLookup is the exported view of projectKeyLookup. It lets a package
+// that mounts an API-key-authenticated endpoint (mcp.Mount) name the dependency
+// it needs to build its own auth func, without package rpc having to hand out an
+// authn.AuthFunc that the caller could then apply to the wrong endpoint.
+type ProjectKeyLookup = projectKeyLookup
 
 // unauthenticated builds an auth-rejection error carrying the standard error
 // details (reason + correlation id). Auth runs in the authn middleware, OUTSIDE

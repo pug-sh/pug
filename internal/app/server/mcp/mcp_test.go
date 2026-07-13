@@ -13,9 +13,11 @@ import (
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"connectrpc.com/validate"
+	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
+	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	"github.com/pug-sh/pug/internal/core/authz"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/activity/v1/activityv1connect"
@@ -24,6 +26,7 @@ import (
 	insightsv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1/insightsv1mcp"
 	profilesv1 "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1"
 	"github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1connect"
+	profilesv1mcp "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1/profilesv1mcp"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	mcpruntime "github.com/redpanda-data/protoc-gen-go-mcp/pkg/runtime"
 	"google.golang.org/protobuf/proto"
@@ -31,9 +34,33 @@ import (
 
 const testPrivateKey = "prv_testkey"
 
+// testJWTKey signs the dashboard tokens the shared services accept, so the /mcp
+// rejection tests can present a genuinely valid dashboard credential rather than
+// a malformed one.
+var testJWTKey = []byte("test-jwt-key")
+
+// signDashboardJWT mints a real dashboard access token — the exact shape
+// WithJWTAuth accepts. /mcp must refuse it: MCP clients hold a static credential,
+// so a 1h-expiry access token is useless there, and admitting JWTs would widen the
+// endpoint from project-scoped to customer-scoped.
+func signDashboardJWT(t *testing.T) string {
+	t.Helper()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": "cust-mcp",
+		"aud": coreauth.Audience,
+		"iss": coreauth.Issuer,
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	signed, err := token.SignedString(testJWTKey)
+	if err != nil {
+		t.Fatalf("sign dashboard JWT: %v", err)
+	}
+	return signed
+}
+
 // curatedToolNames is the pinned public contract: exactly the tools /mcp exposes.
-// Kept as a literal (not derived from toolRenames) so an accidental edit to the
-// rename table is caught here.
+// Kept as a literal (deliberately NOT derived from toolPolicy) so an accidental
+// edit to the policy table is caught here — a derived list would pass tautologically.
 var curatedToolNames = []string{
 	"explore_events",
 	"get_activity_feed",
@@ -91,16 +118,27 @@ type stubActivity struct {
 
 type stubProfiles struct {
 	profilesv1connect.UnimplementedProfilesServiceHandler
-	gotID      string
-	sawProject bool
-	getResp    *profilesv1.GetResponse // if set, returned from Get
-	getErr     error                   // if set, returned from Get (takes precedence)
+	gotID       string
+	sawProject  bool
+	sawDeadline bool
+	getResp     *profilesv1.GetResponse // if set, returned from Get
+	getErr      error                   // if set, returned from Get (takes precedence)
+	getPanic    bool                    // if set, Get panics (takes precedence over all)
 }
 
 func (s *stubProfiles) Get(ctx context.Context, req *connect.Request[profilesv1.GetRequest]) (*connect.Response[profilesv1.GetResponse], error) {
 	s.gotID = req.Msg.GetId()
 	if p, err := pogrpc.MustGetPrincipalWithProject(ctx); err == nil && p.Project != nil {
 		s.sawProject = true
+	}
+	_, s.sawDeadline = ctx.Deadline()
+	if s.getPanic {
+		// Stands in for a latent nil deref / nil-map write / out-of-range index in a
+		// real handler — the class of bug an LLM's arbitrary-but-schema-valid arguments
+		// are most likely to find. Reached through /mcp it unwinds on a go-sdk jsonrpc2
+		// goroutine that net/http's per-connection recover does not cover, so without
+		// containment it kills the process.
+		panic("simulated handler bug")
 	}
 	if s.getErr != nil {
 		return nil, s.getErr
@@ -134,18 +172,26 @@ func newTestServer(t *testing.T) testDeps {
 	// The real interceptor sandwich (minus otel, which needs SDK setup and does
 	// not affect these assertions). validate proves protovalidate runs on the
 	// loopback path; authz proves the API-key no-op path; principal proves the
-	// handler sees an authenticated Principal.
-	handlerOpts := connect.WithInterceptors(
-		pogrpc.CorrelationInterceptor(),
-		pogrpc.LoggingInterceptor(),
-		pogrpc.ErrorInterceptor(),
-		validate.NewInterceptor(validate.WithoutErrorDetails()),
-		pogrpc.PrincipalInterceptor(),
-		pogrpc.AuthzInterceptor(authorizer, stubRoleLookup{}),
+	// handler sees an authenticated Principal; WithRecover mirrors production so
+	// TestE2E_HandlerPanicSurfacesAsToolError exercises the real panic containment
+	// rather than a harness-only approximation.
+	handlerOpts := connect.WithHandlerOptions(
+		connect.WithInterceptors(
+			pogrpc.CorrelationInterceptor(),
+			pogrpc.LoggingInterceptor(),
+			pogrpc.ErrorInterceptor(),
+			validate.NewInterceptor(validate.WithoutErrorDetails()),
+			pogrpc.PrincipalInterceptor(),
+			pogrpc.AuthzInterceptor(authorizer, stubRoleLookup{}),
+		),
+		connect.WithRecover(pogrpc.RecoverHandlerPanic),
 	)
 
 	mux := http.NewServeMux()
-	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth([]byte("test-jwt-key"), nil, repo))
+	// The shared services keep dual auth (private key OR dashboard JWT), exactly as
+	// in production — which is what gives the /mcp JWT-rejection test its teeth: the
+	// same JWT that these handlers would accept must still be refused at /mcp.
+	sharedMW := authn.NewMiddleware(pogrpc.WithDualAuth(testJWTKey, nil, repo))
 
 	ip, ih := insightsv1connect.NewInsightsServiceHandler(insights, handlerOpts)
 	mux.Handle(ip, sharedMW.Wrap(ih))
@@ -154,11 +200,13 @@ func newTestServer(t *testing.T) testDeps {
 	pp, ph := profilesv1connect.NewProfilesServiceHandler(profiles, handlerOpts)
 	mux.Handle(pp, sharedMW.Wrap(ph))
 
-	mcpHandler, err := NewHandler(mux)
-	if err != nil {
-		t.Fatalf("NewHandler: %v", err)
+	// Identical to the production call in server.start. Mount builds the handler and
+	// the private-key-only auth boundary itself, so the harness cannot wire /mcp
+	// differently than production does — the bug that let an earlier version of this
+	// suite stay green with the endpoint pointed at WithDualAuth.
+	if err := Mount(mux, mux, repo); err != nil {
+		t.Fatalf("Mount: %v", err)
 	}
-	Mount(mux, mcpHandler, pogrpc.WithPrivateKeyAuth(repo))
 
 	srv := httptest.NewServer(pogrpc.WithCorrelationID(mux))
 	t.Cleanup(srv.Close)
@@ -300,6 +348,63 @@ func TestE2E_GetProfileHandlerErrorSurfaces(t *testing.T) {
 	}
 }
 
+// TestE2E_HandlerPanicSurfacesAsToolError is the regression guard for the
+// loopback's worst failure mode. A handler panic on the ordinary Connect path is
+// contained by net/http's per-connection recover, but a tool call runs the
+// handler on a go-sdk jsonrpc2 goroutine that recover never reaches — so an
+// escaping panic took down the whole process (every tenant), remotely triggerable
+// by any private-key holder. The panic must surface as a tool error and the
+// process must live.
+func TestE2E_HandlerPanicSurfacesAsToolError(t *testing.T) {
+	deps := newTestServer(t)
+	deps.profiles.getPanic = true
+	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
+
+	res, err := session.CallTool(ctx, &gomcp.CallToolParams{
+		Name:      "get_profile",
+		Arguments: map[string]any{"id": "user-boom"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned a protocol error, want a tool error result: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected the handler panic surfaced as a tool error, got success: %s", toolText(res))
+	}
+	// The client must not be handed the panic value or a stack trace.
+	if text := toolText(res); strings.Contains(text, "simulated handler bug") {
+		t.Errorf("tool error text %q leaks the panic value; it must be a generic internal error", text)
+	}
+}
+
+// TestLoopbackRecoversPanicOutsideConnect covers the second layer. connect's
+// WithRecover only contains panics inside the Connect handler chain; a panic in
+// the authn middleware or in mux routing unwinds past it and still reaches the
+// jsonrpc2 goroutine. Do is the backstop that must catch anything, so it is
+// exercised here against a raw panicking handler with no Connect chain at all.
+func TestLoopbackRecoversPanicOutsideConnect(t *testing.T) {
+	lb := &loopbackClient{handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("boom outside the connect chain")
+	})}
+
+	req, err := http.NewRequestWithContext(
+		withAPIKey(context.Background(), testPrivateKey),
+		http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	resp, doErr := lb.Do(req) // must not panic
+	if doErr == nil {
+		t.Fatal("Do returned nil error after a handler panic; the panic must be contained and reported")
+	}
+	if resp != nil {
+		t.Errorf("Do returned a response alongside the panic error: %v", resp)
+	}
+	if !strings.Contains(doErr.Error(), "panic") {
+		t.Errorf("error = %q, want it to mention the panic", doErr.Error())
+	}
+}
+
 func TestE2E_QueryInsightsValidationRejected(t *testing.T) {
 	deps := newTestServer(t)
 	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
@@ -355,6 +460,10 @@ func TestE2E_UnauthorizedRawPOST(t *testing.T) {
 		{"public key", pogrpc.HeaderAPIKey, "pub_something"},
 		{"unknown private key", pogrpc.HeaderAPIKey, "prv_unknown"},
 		{"non-prv bearer", "Authorization", "Bearer pub_something"},
+		// A valid dashboard JWT — one the shared Connect services would accept —
+		// must still be refused at /mcp. Mount builds WithPrivateKeyAuth itself, so
+		// there is no wiring in which this endpoint admits a JWT.
+		{"valid dashboard jwt", "Authorization", "Bearer " + signDashboardJWT(t)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -378,6 +487,24 @@ func TestE2E_UnauthorizedRawPOST(t *testing.T) {
 	}
 }
 
+// TestE2E_TrailingSlashServed pins both spellings of the endpoint. Go 1.22's
+// ServeMux exact-matches a pattern with no trailing slash, and the subtree
+// redirect only fires the other way, so "/mcp/" would 404 — an opaque failure for
+// anyone who pastes the URL with a slash or sits behind an ingress that appends
+// one. MCP clients POST byte-for-byte what they are configured with.
+func TestE2E_TrailingSlashServed(t *testing.T) {
+	deps := newTestServer(t)
+	session, ctx := connectMCP(t, deps.server.URL+"/mcp/", pogrpc.HeaderAPIKey, testPrivateKey)
+
+	res, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools over /mcp/: %v", err)
+	}
+	if len(res.Tools) != len(curatedToolNames) {
+		t.Errorf("tools over /mcp/ = %d, want %d", len(res.Tools), len(curatedToolNames))
+	}
+}
+
 // ---------- unit ----------
 
 type recordingServer struct{ names []string }
@@ -388,12 +515,12 @@ func (r *recordingServer) AddTool(tool mcpruntime.Tool, _ mcpruntime.ToolHandler
 
 func TestRegisterToolsPinsCuratedSurface(t *testing.T) {
 	rec := &recordingServer{}
-	srv := newRenamer(rec)
 	// Registration only builds tool descriptors; the loopback is never dialed.
-	registerTools(srv, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-
-	if err := srv.checkComplete(); err != nil {
-		t.Fatalf("rename table drifted from generated tools: %v", err)
+	err := registerRenamed(rec, func(srv mcpruntime.MCPServer) {
+		registerTools(srv, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	})
+	if err != nil {
+		t.Fatalf("tool policy drifted from generated tools: %v", err)
 	}
 
 	got := append([]string(nil), rec.names...)
@@ -403,59 +530,132 @@ func TestRegisterToolsPinsCuratedSurface(t *testing.T) {
 	}
 }
 
-// TestRenamerRejectsUnnamedTool exercises the FAILURE direction of the drift
-// guard: a generated tool with no curated name must make checkComplete error
-// (and must NOT reach the inner server). This is the case a codegen change that
-// adds a new shared RPC would hit — it should fail startup, not ship unnamed.
-func TestRenamerRejectsUnnamedTool(t *testing.T) {
+// TestRenamerRejectsUnknownTool exercises the FAILURE direction of the drift
+// guard: a generated tool with no policy row must make registration error (and
+// must NOT reach the inner server). This is the case a codegen change that adds a
+// new shared RPC hits — it must fail startup, not ship unnamed.
+func TestRenamerRejectsUnknownTool(t *testing.T) {
 	rec := &recordingServer{}
-	r := newRenamer(rec)
-	r.AddTool(mcpruntime.Tool{Name: "shared_bogus_v1_BogusService_Frobnicate"}, nil)
+	err := registerRenamed(rec, func(srv mcpruntime.MCPServer) {
+		srv.AddTool(mcpruntime.Tool{Name: "shared_bogus_v1_BogusService_Frobnicate"}, nil)
+	})
 
-	err := r.checkComplete()
 	if err == nil {
-		t.Fatal("checkComplete = nil, want an error for a tool with no curated name")
+		t.Fatal("registerRenamed = nil, want an error for a tool with no policy entry")
 	}
-	if !strings.Contains(err.Error(), "no curated name") {
-		t.Errorf("error = %q, want it to mention %q", err.Error(), "no curated name")
+	if !strings.Contains(err.Error(), "no entry in the tool policy table") {
+		t.Errorf("error = %q, want it to mention the missing policy entry", err.Error())
 	}
 	if len(rec.names) != 0 {
-		t.Errorf("unnamed tool was forwarded to the inner server (%v); it must be dropped", rec.names)
+		t.Errorf("unknown tool was forwarded to the inner server (%v); it must be dropped", rec.names)
 	}
 }
 
-// TestRenamerRejectsStaleEntry exercises the other FAILURE direction: a rename
-// table entry that no generated tool consumed (a stale entry left behind after
-// an RPC is removed upstream) must make checkComplete error. Registering only
-// one of the curated tools leaves the rest stale.
+// TestRenamerRejectsStaleEntry exercises the other FAILURE direction: an exposed
+// policy row that no generated tool consumed (left behind after an RPC is removed
+// upstream) must error. Registering only one tool leaves the rest stale.
 func TestRenamerRejectsStaleEntry(t *testing.T) {
-	r := newRenamer(&recordingServer{})
-	r.AddTool(insightsv1mcp.InsightsService_QueryTool, nil)
+	err := registerRenamed(&recordingServer{}, func(srv mcpruntime.MCPServer) {
+		srv.AddTool(insightsv1mcp.InsightsService_QueryTool, nil)
+	})
 
-	err := r.checkComplete()
 	if err == nil {
-		t.Fatal("checkComplete = nil, want an error for unconsumed (stale) rename entries")
+		t.Fatal("registerRenamed = nil, want an error for unconsumed (stale) policy entries")
 	}
 	if !strings.Contains(err.Error(), "stale") {
 		t.Errorf("error = %q, want it to mention %q", err.Error(), "stale")
 	}
 }
 
-func TestKeepProfileToolExcludesErasure(t *testing.T) {
-	// The two GDPR erasure tools must be filtered; every curated profiles read
-	// must pass. Referencing the generated Tool vars keeps this in lockstep with
-	// codegen.
-	excluded := map[string]bool{
-		"shared_profiles_v1_ProfilesService_Delete":            true,
-		"shared_profiles_v1_ProfilesService_DeleteDataSubject": true,
+// TestRenamerRejectsHiddenToolReachingRegistration is the belt-and-braces guard.
+// keepTool already withholds hidden tools, so this state is unreachable in
+// production — which is exactly why it must fail loudly if it ever happens: a
+// regressed filter must not silently hand GDPR erasure to an LLM agent.
+func TestRenamerRejectsHiddenToolReachingRegistration(t *testing.T) {
+	rec := &recordingServer{}
+	err := registerRenamed(rec, func(srv mcpruntime.MCPServer) {
+		srv.AddTool(profilesv1mcp.ProfilesService_DeleteTool, nil) // bypasses keepTool
+	})
+
+	if err == nil {
+		t.Fatal("registerRenamed = nil, want an error for a hidden tool reaching registration")
 	}
-	for name, wantExcluded := range excluded {
-		if keepProfileTool(name) == wantExcluded {
-			t.Errorf("keepProfileTool(%q) = %v, want %v", name, keepProfileTool(name), !wantExcluded)
+	if !strings.Contains(err.Error(), "hidden tool") {
+		t.Errorf("error = %q, want it to mention the hidden tool", err.Error())
+	}
+	if len(rec.names) != 0 {
+		t.Errorf("hidden tool %v was forwarded to the inner server; erasure must never be exposed", rec.names)
+	}
+}
+
+// TestRenamerRejectsCuratedNameCollision guards a failure the old rename table was
+// blind to: two generated tools mapping to one curated name. checkComplete saw no
+// stale entry and no unnamed tool, while the go-sdk's feature set silently REPLACED
+// the first registration with the second — quietly dropping a tool from the surface.
+func TestRenamerRejectsCuratedNameCollision(t *testing.T) {
+	rec := &recordingServer{}
+	// Two real generated tools, both forced through the same curated name.
+	err := registerRenamed(rec, func(srv mcpruntime.MCPServer) {
+		r, ok := srv.(*renamer)
+		if !ok {
+			t.Fatalf("registerRenamed passed a %T, want *renamer", srv)
+		}
+		r.claimed["query_insights"] = "shared_insights_v1_InsightsService_Impostor"
+		srv.AddTool(insightsv1mcp.InsightsService_QueryTool, nil)
+	})
+
+	if err == nil {
+		t.Fatal("registerRenamed = nil, want an error for a duplicate curated name")
+	}
+	if !strings.Contains(err.Error(), "claimed by both") {
+		t.Errorf("error = %q, want it to report the collision", err.Error())
+	}
+}
+
+func TestKeepToolWithholdsErasureAndSegmentUsers(t *testing.T) {
+	// The irreversible erasure RPCs and the WIP SegmentUsers must be withheld; every
+	// curated read must pass. Referencing the generated Tool vars (rather than string
+	// literals) keeps this in lockstep with codegen at compile time.
+	for _, tl := range []mcpruntime.Tool{
+		profilesv1mcp.ProfilesService_DeleteTool,
+		profilesv1mcp.ProfilesService_DeleteDataSubjectTool,
+		insightsv1mcp.InsightsService_SegmentUsersTool,
+	} {
+		if keepTool(tl.Name) {
+			t.Errorf("keepTool(%q) = true, want it withheld", tl.Name)
 		}
 	}
-	if !keepProfileTool("shared_profiles_v1_ProfilesService_Get") {
-		t.Error("keepProfileTool excluded a read RPC")
+	for _, tl := range []mcpruntime.Tool{
+		profilesv1mcp.ProfilesService_GetTool,
+		insightsv1mcp.InsightsService_QueryTool,
+	} {
+		if !keepTool(tl.Name) {
+			t.Errorf("keepTool(%q) = false, want it exposed", tl.Name)
+		}
+	}
+	// An unrecognised tool must PASS the filter so the renamer rejects it and startup
+	// fails. Silently dropping it would ship a hole in the tool surface.
+	if !keepTool("shared_bogus_v1_BogusService_Frobnicate") {
+		t.Error("keepTool dropped an unknown tool; it must pass so the renamer can reject it")
+	}
+}
+
+// TestInstructionsMatchToolPolicy pins the server's LLM-facing instructions against
+// the tool surface. instructions is prose and has no compile-time link to the
+// policy table, so without this a curated rename leaves the server telling agents
+// to call a tool that no longer exists, and a newly exposed tool goes unmentioned.
+//
+// Only the exposed direction is checkable: a hidden tool has no curated name, so
+// there is no string whose absence could be asserted.
+func TestInstructionsMatchToolPolicy(t *testing.T) {
+	for generated, d := range toolPolicy {
+		if !d.exposed() {
+			continue
+		}
+		if !strings.Contains(instructions, d.curated) {
+			t.Errorf("instructions never mention exposed tool %q (%s); an agent is never told it exists",
+				d.curated, generated)
+		}
 	}
 }
 
@@ -467,6 +667,11 @@ func TestWithAPIKeyPassthrough(t *testing.T) {
 		wantKey    string // expected x-api-key seen downstream + stashed
 	}{
 		{"x-api-key passes through", testPrivateKey, "", testPrivateKey},
+		// Precedence matters for more than tidiness: NormalizeBearerAPIKey MUTATES the
+		// request header, so if a Bearer could overwrite an explicit x-api-key, anything
+		// able to inject an Authorization header (a proxy, a misconfigured gateway) could
+		// swap the caller onto another project's key. x-api-key must win.
+		{"x-api-key wins over a conflicting bearer", testPrivateKey, "Bearer prv_otherproject", testPrivateKey},
 		{"bearer prv normalized", "", "Bearer " + testPrivateKey, testPrivateKey},
 		{"lowercase bearer prv normalized", "", "bearer " + testPrivateKey, testPrivateKey},
 		{"uppercase BEARER prv normalized", "", "BEARER " + testPrivateKey, testPrivateKey},
@@ -499,6 +704,120 @@ func TestWithAPIKeyPassthrough(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestE2E_ToolCallContextIsBounded pins the deadline the loopback imposes. The
+// go-sdk runs tool handlers on a jsonrpc2 context with cancellation detached
+// (Done and Deadline are nil/zero, though Values still resolve), so a client that
+// hangs up mid-query cancels nothing: without a deadline of our own, a wide
+// query_insights keeps a ClickHouse query running to completion with nobody
+// waiting for it. Every insight and profile handler threads ctx into its query, so
+// a deadline here is what bounds them.
+func TestE2E_ToolCallContextIsBounded(t *testing.T) {
+	deps := newTestServer(t)
+	session, ctx := connectMCP(t, deps.server.URL+"/mcp", pogrpc.HeaderAPIKey, testPrivateKey)
+
+	if _, err := session.CallTool(ctx, &gomcp.CallToolParams{
+		Name:      "get_profile",
+		Arguments: map[string]any{"id": "user-123"},
+	}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+
+	if !deps.profiles.sawDeadline {
+		t.Error("inner handler ran with no deadline; a tool call must be bounded or a runaway query has nothing to stop it")
+	}
+}
+
+// TestLoopbackFailsLoudWithoutAPIKey covers the wiring-bug path. /mcp is
+// private-key-only and withAPIKeyPassthrough stashes the key outside the authn
+// boundary, so every request that reaches a tool handler provably carries one —
+// key == "" is unreachable in production and therefore means the endpoint was
+// mounted wrong. It must say so, not silently omit the header and let the inner
+// auth answer with a 401 that (being outside the interceptor chain) logs nothing
+// and tells the operator their credential is bad.
+func TestLoopbackFailsLoudWithoutAPIKey(t *testing.T) {
+	lb := &loopbackClient{handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("inner handler ran without an API key; the loopback must refuse first")
+	})}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	if _, doErr := lb.Do(req); doErr == nil {
+		t.Fatal("Do returned nil error with no API key in context; a missing key is a wiring bug and must not degrade into a mystery 401")
+	}
+}
+
+func TestResponseRecorder(t *testing.T) {
+	t.Run("defaults to 200 when WriteHeader is never called", func(t *testing.T) {
+		rec := newResponseRecorder()
+		if _, err := rec.Write([]byte("body")); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+		if got := rec.result(nil).StatusCode; got != http.StatusOK {
+			t.Errorf("StatusCode = %d, want 200", got)
+		}
+	})
+
+	t.Run("first WriteHeader wins", func(t *testing.T) {
+		rec := newResponseRecorder()
+		rec.WriteHeader(http.StatusNotFound)
+		rec.WriteHeader(http.StatusInternalServerError)
+		if got := rec.result(nil).StatusCode; got != http.StatusNotFound {
+			t.Errorf("StatusCode = %d, want the first status (404)", got)
+		}
+	})
+
+	t.Run("a late WriteHeader after a body write is ignored", func(t *testing.T) {
+		rec := newResponseRecorder()
+		if _, err := rec.Write([]byte("body")); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+		rec.WriteHeader(http.StatusInternalServerError)
+		if got := rec.result(nil).StatusCode; got != http.StatusOK {
+			t.Errorf("StatusCode = %d; the implicit 200 committed by Write must stand", got)
+		}
+	})
+
+	t.Run("Status carries the numeric code", func(t *testing.T) {
+		// connect surfaces Response.Status verbatim as the error message when the body
+		// is not connect-wire JSON (an inner-mux 404, say), and that string is all the
+		// operator and the model ever see on a path that logs nothing.
+		rec := newResponseRecorder()
+		rec.WriteHeader(http.StatusNotFound)
+		if got := rec.result(nil).Status; got != "404 Not Found" {
+			t.Errorf("Status = %q, want %q", got, "404 Not Found")
+		}
+	})
+
+	t.Run("ContentLength reports the buffered body", func(t *testing.T) {
+		rec := newResponseRecorder()
+		if _, err := rec.Write([]byte("hello")); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+		if got := rec.result(nil).ContentLength; got != int64(len("hello")) {
+			t.Errorf("ContentLength = %d, want %d", got, len("hello"))
+		}
+	})
+
+	t.Run("the response does not alias the recorder's header map", func(t *testing.T) {
+		// net/http snapshots headers when the status commits. A live map would let a
+		// header set after the fact appear on an already-returned response.
+		rec := newResponseRecorder()
+		rec.Header().Set("X-Before", "1")
+		resp := rec.result(nil)
+		rec.Header().Set("X-After", "2")
+
+		if resp.Header.Get("X-Before") != "1" {
+			t.Error("committed header was lost")
+		}
+		if resp.Header.Get("X-After") != "" {
+			t.Error("a header set after result() leaked into the returned response; it must be a snapshot")
+		}
+	})
 }
 
 func TestLoopbackInjectsAPIKey(t *testing.T) {

@@ -56,9 +56,8 @@ type ProfilesServiceClient interface {
 	// properties and an activity summary. A claimed anonymous id is redirected to
 	// its canonical profile.
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
-	// GetByExternalId returns a single user profile looked up by the external_id
-	// your application assigned (the customer-facing user handle) rather than pug's
-	// internal profile id.
+	// GetByExternalId returns a single user profile looked up by the external_id your
+	// application assigned to its end user, rather than by pug's internal profile id.
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	// List returns a page of user profiles for the project. Server-streaming, so it
 	// is not exposed as an MCP tool.
@@ -174,9 +173,8 @@ type ProfilesServiceHandler interface {
 	// properties and an activity summary. A claimed anonymous id is redirected to
 	// its canonical profile.
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
-	// GetByExternalId returns a single user profile looked up by the external_id
-	// your application assigned (the customer-facing user handle) rather than pug's
-	// internal profile id.
+	// GetByExternalId returns a single user profile looked up by the external_id your
+	// application assigned to its end user, rather than by pug's internal profile id.
 	GetByExternalId(context.Context, *connect.Request[v1.GetByExternalIdRequest]) (*connect.Response[v1.GetByExternalIdResponse], error)
 	// List returns a page of user profiles for the project. Server-streaming, so it
 	// is not exposed as an MCP tool.

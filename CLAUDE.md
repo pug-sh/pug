@@ -83,11 +83,13 @@ make sqlc
 # Runs three buf plugins: protoc-gen-go, protoc-gen-connect-go, and
 # protoc-gen-mcp (an in-repo wrapper — cmd/protoc-gen-mcp — that adds editions
 # support to redpanda-data/protoc-gen-go-mcp, which upstream
-# lacks). The MCP plugin emits a `<pkg>mcp` subpackage for every service (buf has
-# no per-plugin path filter, so every proto is fed to it); only the
+# lacks). The MCP plugin emits a `<pkg>mcp` subpackage for every proto package (buf
+# has no per-plugin path filter, so every proto is fed to it); only the
 # insights/activity/profiles packages are linked into the /mcp endpoint (see MCP
 # subsystem), the rest go unused. An RPC's leading comment becomes its MCP tool
-# description. Delete the wrapper and point buf at upstream once it declares editions.
+# description — for those three services a proto comment is shipped to the model, so
+# treat it as runtime behavior. Delete the wrapper and point buf at upstream once it
+# declares editions.
 make rpc
 
 # Generate templ email templates (after modifying .templ files)
@@ -153,11 +155,14 @@ Dashboards belong to a **project** (`dashboard.dashboards.v1.DashboardsService`,
 
 ### Auth & Principal
 
-RPC handlers authenticate via `connectrpc.com/authn` middleware. Three auth modes are supported:
+RPC handlers authenticate via `connectrpc.com/authn` middleware. Four auth modes are supported:
 
 - **`WithJWTAuth`** — Dashboard auth. Sets `Principal.Customer` (always non-nil). Optionally sets `Principal.Project` if `x-project-id` header is provided and the customer is an org member.
 - **`WithSDKAuth`** — API key auth (public or private key). Sets `Principal.Project` only. `Principal.Customer` is nil.
 - **`WithDualAuth`** — Private API key or JWT fallback. API key path sets `Principal.Project` only; JWT path behaves like `WithJWTAuth`.
+- **`WithPrivateKeyAuth`** — Private (`prv_`) API key in `x-api-key` only: no public-key branch, no `api_key` query-param fallback, no JWT fallback. The auth boundary for `/mcp` (MCP clients hold a static credential, so a 1h access JWT is useless there and a public key is extractable from client apps). Sets `Principal.Project` only; `Principal.Customer` is nil. Not passed around as an `authn.AuthFunc` — `mcp.Mount` constructs it internally from the projects repo, so `/mcp` cannot be wired to any other auth mode.
+
+`resolvePrivateKeyPrincipal` is the shared private-key → `Principal` resolution behind `WithDualAuth` and `WithPrivateKeyAuth`. **`RecoverHandlerPanic`** (wired once via `connect.WithRecover` in `handlerOpts`) converts a panic escaping any handler into `CodeInternal` with a log + `telemetry.RecordError`, never leaking the panic value; it is required, not cosmetic, because the `/mcp` loopback invokes handlers off net/http's panic-recovering goroutine (see MCP subsystem).
 
 **Session tokens (access + refresh):** every sign-in path (`SignInWithEmail`, `CompleteMagicLink`, `CompleteOAuthSignIn`) returns a `coreauth.Session{AccessToken, RefreshToken}`, not a bare JWT. The access JWT is short-lived (`accessTokenTTL`, 1h) — `WithJWTAuth` still verifies it exactly as before. The refresh token is a long-lived (`refreshTokenTTL`, sliding 90 days) opaque crypto-random secret stored **only as a sha256 hash** in the `refresh_tokens` table (migration 014), mirroring `email_action_tokens`. `RefreshSession` (public RPC — it runs *after* the access token has expired, so it can't sit behind JWT auth) exchanges a refresh token for a new pair inside a `FOR UPDATE`-locked tx, **rotating** it: the presented token is consumed and a successor is minted in the same `family_id`. Reuse-detection: presenting an already-consumed token (replay of a leaked token, or a client double-refreshing) revokes the **entire family** and returns `ErrInvalidToken` → both attacker and legitimate client must re-auth. `SignOut` revokes the token's family (best-effort; a stale token is a no-op). For magic-link/OAuth the refresh row commits **inside** the provisioning tx (`issueSessionTx`) so a new account and its first session are atomic; password sign-in uses a standalone insert (`issueSession`). The FE (`../app`) treats refresh-token presence as the authentication signal (`isAuthenticatedAtom`) — NOT access-token expiry — and its transport interceptor silently refreshes (single-flight, to avoid tripping reuse-detection) on expiry or a `401`, so active users are never logged out at the 1h boundary.
 
@@ -207,7 +212,11 @@ Deep per-subsystem documentation lives in [`docs/architecture/`](docs/architectu
 - **Event ingestion enrichment** — geo, user-agent, and bot-management auto-properties → [`docs/architecture/ingestion.md`](docs/architecture/ingestion.md)
 - **Email templating** — templ + go-premailer rendering, frozen brand tokens, preview CLI → [`docs/architecture/email.md`](docs/architecture/email.md)
 - **OpenTelemetry** — `internal/deps/telemetry/` (`SetupSDK`; OTLP-vs-stdout auto-detected from the `OTEL_EXPORTER_OTLP_*` endpoint vars, no `PUG_OTEL`), per-component instrumentation, slog bridge vs stdout handler, error-recording convention and exceptions → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md)
-- **MCP server** — the read-only shared analytics API (insights + activity + profile reads = 12 tools) exposed as Model Context Protocol tools at `/mcp`, private-API-key auth only. A thin adapter in `internal/app/server/mcp/`: every tool call re-enters the real Connect stack in-process via a loopback client, so validation/auth/authz run identically to an external API call (no duplicated logic). Tools are generated from the shared protos by `protoc-gen-go-mcp` (the `*v1mcp` packages) and given curated names by a rename table that fails startup on codegen drift. Excluded via `runtime.WithToolFilter` (see `keepProfileTool`/`keepInsightsTool`): the GDPR erasure RPCs and the WIP insights `SegmentUsers` (still served as a Connect RPC, just off the tool surface); `List` (server-streaming) is never generated.
+- **MCP server** — the read-only shared analytics API (insights + activity + profile reads = 12 tools) exposed as Model Context Protocol tools at `/mcp`. A thin adapter in `internal/app/server/mcp/`: every tool call re-enters the real Connect stack in-process via a loopback client, so validation/auth/authz run identically to an external API call (no duplicated logic).
+  - **`mcp.Mount(mux, loopback, repo)` is the single entry point** — it builds the tool handler, builds its own private-key-only auth boundary (`WithPrivateKeyAuth`) from the repo, registers both `/mcp` and `/mcp/`, and fails startup on codegen drift. It does **not** accept an `authn.AuthFunc`: admitting a dashboard JWT or a public key is unrepresentable by construction, and `server.start` and the test harness go through the identical call so the endpoint can't be wired one way in tests and another in production.
+  - **`toolPolicy` (`rename.go`) is the single source of truth for the tool surface** — one row per generated tool, either `expose("curated_name")` or `hide("why")`. Naming and exclusion are the same cell, so they cannot disagree. Keyed off the generated `Tool` vars, so an upstream rename/removal breaks it at **compile** time; a tool with no row, a stale row, a duplicate curated name, and a hidden tool that reaches registration all fail **startup** (`registerRenamed` → `checkComplete`; the `*renamer` never escapes, so the check can't be skipped). Hidden today: the GDPR erasure RPCs (irreversible — never LLM-callable) and the WIP insights `SegmentUsers` (still served as a Connect RPC). `List` (server-streaming) is never generated.
+  - **An RPC's leading proto comment becomes its MCP tool description**, shipped verbatim to the model — proto comments on these three services are runtime behavior, not documentation. The server's `instructions` string is pinned against `toolPolicy` by a test, since prose has no compile-time link to the table.
+  - **Panics must be contained** (`connect.WithRecover` + a backstop `recover` in `loopbackClient.Do`) and **tool calls are deadline-bounded** (`toolCallTimeout`): the go-sdk runs tool handlers on a jsonrpc2 goroutine with no panic recovery and with cancellation detached, so an uncontained panic would kill the process for every tenant and an abandoned call would leave its ClickHouse query running. `Stateless: true` is load-bearing — it is what binds each tool call's API key to its own request context.
 
 ## Code Style
 

@@ -41,13 +41,42 @@ func withAPIKeyPassthrough(next http.Handler) http.Handler {
 	})
 }
 
-// Mount installs the read-only /mcp handler on mux behind authFunc, wrapped in
-// the Bearer-prv passthrough. It is the single definition of the /mcp middleware
-// sandwich, shared by server.start and the test harness so the endpoint can't be
-// reconstructed differently in tests than in production. authFunc MUST be
-// private-key-only (rpc.WithPrivateKeyAuth): /mcp admits neither dashboard JWTs
-// nor public keys.
-func Mount(mux *http.ServeMux, handler http.Handler, authFunc authn.AuthFunc) {
-	authMW := authn.NewMiddleware(authFunc)
-	mux.Handle("/mcp", withAPIKeyPassthrough(authMW.Wrap(handler)))
+// Mount installs the read-only /mcp endpoint on mux. It is the single entry point
+// for the whole subsystem — it builds the tool handler, constructs the auth
+// boundary, and assembles the middleware sandwich — and server.start and the test
+// harness both go through it, so the endpoint cannot be wired one way in
+// production and another in tests.
+//
+// loopback is the mux each tool call is replayed through in-process (in practice
+// the same mux being mounted on).
+//
+// Auth is private-key-only and is built here from repo rather than accepted as a
+// parameter, so it holds BY CONSTRUCTION: there is no wiring in which /mcp admits
+// a dashboard JWT (MCP clients hold a static credential, so a 1h access token is
+// useless there, and a JWT would widen the endpoint from project- to
+// customer-scoped) or a public key (extractable from client apps). An earlier
+// shape took an authn.AuthFunc, which let the test harness pass its own — so the
+// suite stayed green even when the endpoint was pointed at WithDualAuth.
+//
+// It returns an error if the generated tool set has drifted from the curated
+// policy table, so a codegen change that adds or renames a shared RPC fails server
+// startup rather than silently shipping an unnamed or missing tool — the same
+// fail-fast culture as the authz registry.
+//
+// Both "/mcp" and "/mcp/" are registered: Go 1.22's ServeMux exact-matches a
+// pattern with no trailing slash and only redirects the other way, so a client
+// configured with a trailing slash (or an ingress that appends one) would
+// otherwise get an opaque 404.
+func Mount(mux *http.ServeMux, loopback http.Handler, repo rpc.ProjectKeyLookup) error {
+	handler, err := newHandler(loopback)
+	if err != nil {
+		return err
+	}
+
+	authMW := authn.NewMiddleware(rpc.WithPrivateKeyAuth(repo))
+	mounted := withAPIKeyPassthrough(authMW.Wrap(handler))
+	mux.Handle("/mcp", mounted)
+	mux.Handle("/mcp/", mounted)
+
+	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -630,4 +631,48 @@ func TestWithPrivateKeyAuth(t *testing.T) {
 			t.Errorf("error = %q, want to contain %q", got, "failed to validate API key")
 		}
 	})
+}
+
+// TestNormalizeBearerAPIKey pins the credential normalisation /mcp relies on. It
+// lives here, at the owner, rather than only being covered transitively from the
+// mcp package: the value this returns is stashed in the request context and later
+// re-injected as the credential on every in-process tool call, so "what counts as
+// the effective key" is a security-relevant contract.
+func TestNormalizeBearerAPIKey(t *testing.T) {
+	cases := []struct {
+		name       string
+		apiKey     string // x-api-key header
+		authHeader string // Authorization header
+		want       string // returned key AND the resulting x-api-key header
+	}{
+		{"private x-api-key passes through", "prv_a", "", "prv_a"},
+		// x-api-key must win. The function MUTATES the header, so if a Bearer could
+		// overwrite an explicit x-api-key, anything able to inject an Authorization
+		// header (a proxy, a gateway) could swap the caller onto another project's key.
+		{"x-api-key wins over a conflicting bearer", "prv_a", "Bearer prv_b", "prv_a"},
+		{"bearer prv is promoted", "", "Bearer prv_a", "prv_a"},
+		{"bearer scheme is case-insensitive", "", "bEaReR prv_a", "prv_a"},
+		// A public key is extractable from client apps and must never become the
+		// effective credential, from either header.
+		{"public x-api-key is not an effective key", "pub_a", "", ""},
+		{"bearer pub is not promoted", "", "Bearer pub_a", ""},
+		{"a JWT bearer is not promoted", "", "Bearer eyJhbGciOiJIUzI1NiJ9.e30.x", ""},
+		{"no credential", "", "", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+			if tc.apiKey != "" {
+				req.Header.Set(HeaderAPIKey, tc.apiKey)
+			}
+			if tc.authHeader != "" {
+				req.Header.Set("Authorization", tc.authHeader)
+			}
+
+			if got := NormalizeBearerAPIKey(req); got != tc.want {
+				t.Errorf("NormalizeBearerAPIKey() = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
