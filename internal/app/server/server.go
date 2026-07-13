@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"connectrpc.com/validate"
+	"github.com/pug-sh/pug/internal/app/server/mcp"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/customers"
 	dashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/dashboards"
@@ -89,14 +90,24 @@ func start(ctx context.Context, d *deps) error {
 	// registry for every role-gated RPC (orgsSvc resolves the caller's role), and is
 	// a no-op for public/self/SDK procedures and the API-key path. Handlers carry no
 	// authorization of their own.
-	handlerOpts := connect.WithInterceptors(
-		pogrpc.CorrelationInterceptor(),
-		d.otelInterceptor,
-		pogrpc.LoggingInterceptor(),
-		pogrpc.ErrorInterceptor(),
-		validate.NewInterceptor(validate.WithoutErrorDetails()),
-		pogrpc.PrincipalInterceptor(),
-		pogrpc.AuthzInterceptor(d.authz, orgsSvc),
+	//
+	// WithRecover turns a handler panic into a CodeInternal error instead of letting
+	// it unwind. On the network path net/http would contain it per connection (at the
+	// cost of a reset connection and zero telemetry); on the /mcp loopback path the
+	// handler runs on a go-sdk jsonrpc2 goroutine that no recover reaches, so an
+	// escaping panic would kill the process. mcp.loopbackClient.Do keeps a second
+	// recover as a backstop for panics outside this chain.
+	handlerOpts := connect.WithHandlerOptions(
+		connect.WithInterceptors(
+			pogrpc.CorrelationInterceptor(),
+			d.otelInterceptor,
+			pogrpc.LoggingInterceptor(),
+			pogrpc.ErrorInterceptor(),
+			validate.NewInterceptor(validate.WithoutErrorDetails()),
+			pogrpc.PrincipalInterceptor(),
+			pogrpc.AuthzInterceptor(d.authz, orgsSvc),
+		),
+		connect.WithRecover(pogrpc.RecoverHandlerPanic),
 	)
 
 	// Middleware
@@ -260,6 +271,20 @@ func start(ctx context.Context, d *deps) error {
 	reflector := grpcreflect.NewStaticReflector(pogrpc.ServedServiceNames()...)
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))
 	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
+
+	// MCP: the read-only shared analytics API as Model Context Protocol tools at
+	// /mcp. mcp.Mount owns the whole endpoint — it builds the tool handler, builds
+	// its own private-key-only auth boundary from projectsRepo (so /mcp cannot be
+	// wired to admit a dashboard JWT or a public key), and normalises a
+	// `Bearer prv_...` credential into the x-api-key the loopback re-injects when it
+	// replays each tool call through this same mux, so validation, auth and authz run
+	// identically to an external API request. Mounted directly on the mux (like
+	// reflection), NOT via handle(): it is not a Connect service, so the
+	// authz-registry contract does not apply to it. It fails fast if the generated
+	// tool set drifts from the curated policy table.
+	if err := mcp.Mount(mux, mux, projectsRepo); err != nil {
+		return fmt.Errorf("mount mcp: %w", err)
+	}
 
 	// WithCorrelationID wraps the whole mux so a correlation id exists before the
 	// authn middleware runs on any route — auth rejections happen outside the
