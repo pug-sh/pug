@@ -643,21 +643,28 @@ func TestNormalizeBearerAPIKey(t *testing.T) {
 		name       string
 		apiKey     string // x-api-key header
 		authHeader string // Authorization header
-		want       string // returned key AND the resulting x-api-key header
+		want       string // returned key: the effective credential
+		// wantHeader is the x-api-key header left on the request, and it is asserted
+		// separately from want because the two legitimately disagree: a public key is
+		// never an effective credential (want "") yet stays on the request untouched for
+		// the auth boundary to reject. It is the header, not the return value, that the
+		// outer WithPrivateKeyAuth reads — so dropping the Set in NormalizeBearerAPIKey
+		// would break Bearer auth for every MCP client while every want below still held.
+		wantHeader string
 	}{
-		{"private x-api-key passes through", "prv_a", "", "prv_a"},
+		{"private x-api-key passes through", "prv_a", "", "prv_a", "prv_a"},
 		// x-api-key must win. The function MUTATES the header, so if a Bearer could
 		// overwrite an explicit x-api-key, anything able to inject an Authorization
 		// header (a proxy, a gateway) could swap the caller onto another project's key.
-		{"x-api-key wins over a conflicting bearer", "prv_a", "Bearer prv_b", "prv_a"},
-		{"bearer prv is promoted", "", "Bearer prv_a", "prv_a"},
-		{"bearer scheme is case-insensitive", "", "bEaReR prv_a", "prv_a"},
+		{"x-api-key wins over a conflicting bearer", "prv_a", "Bearer prv_b", "prv_a", "prv_a"},
+		{"bearer prv is promoted", "", "Bearer prv_a", "prv_a", "prv_a"},
+		{"bearer scheme is case-insensitive", "", "bEaReR prv_a", "prv_a", "prv_a"},
 		// A public key is extractable from client apps and must never become the
 		// effective credential, from either header.
-		{"public x-api-key is not an effective key", "pub_a", "", ""},
-		{"bearer pub is not promoted", "", "Bearer pub_a", ""},
-		{"a JWT bearer is not promoted", "", "Bearer eyJhbGciOiJIUzI1NiJ9.e30.x", ""},
-		{"no credential", "", "", ""},
+		{"public x-api-key is not an effective key", "pub_a", "", "", "pub_a"},
+		{"bearer pub is not promoted", "", "Bearer pub_a", "", ""},
+		{"a JWT bearer is not promoted", "", "Bearer eyJhbGciOiJIUzI1NiJ9.e30.x", "", ""},
+		{"no credential", "", "", "", ""},
 	}
 
 	for _, tc := range cases {
@@ -672,6 +679,9 @@ func TestNormalizeBearerAPIKey(t *testing.T) {
 
 			if got := NormalizeBearerAPIKey(req); got != tc.want {
 				t.Errorf("NormalizeBearerAPIKey() = %q, want %q", got, tc.want)
+			}
+			if got := req.Header.Get(HeaderAPIKey); got != tc.wantHeader {
+				t.Errorf("resulting %s header = %q, want %q", HeaderAPIKey, got, tc.wantHeader)
 			}
 		})
 	}
