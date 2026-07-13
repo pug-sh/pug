@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/correlation"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	"github.com/pug-sh/pug/internal/slogx"
 )
@@ -61,12 +62,20 @@ func (c *loopbackClient) Do(req *http.Request) (_ *http.Response, err error) {
 	// rather than a dropped connection.
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("mcp loopback: recovered panic serving %s: %v", req.URL.Path, r)
+			// The panic value stays server-side. protoc-gen-go-mcp's runtime.HandleError
+			// prefers the full wrapped chain over the connect.Error's own message, so
+			// whatever is assigned to err here becomes the tool error text the model reads
+			// — and a panic value can carry internal detail (a query fragment, a struct
+			// dump). This layer is the one that catches panics from the authn middleware,
+			// where that detail is the most likely to be credential-adjacent.
+			detail := fmt.Errorf("mcp loopback: recovered panic serving %s: %v", req.URL.Path, r)
 			slog.ErrorContext(ctx, "recovered panic in mcp loopback handler",
-				slogx.Error(err),
+				slogx.Error(detail),
 				slog.String("path", req.URL.Path),
 				slog.String("stack", string(debug.Stack())))
-			telemetry.RecordError(ctx, err)
+			telemetry.RecordError(ctx, detail)
+
+			err = panicToolError(ctx)
 		}
 	}()
 
@@ -94,6 +103,27 @@ func (c *loopbackClient) Do(req *http.Request) (_ *http.Response, err error) {
 	c.handler.ServeHTTP(rec, req)
 
 	return rec.result(req), nil
+}
+
+// panicToolError is everything a recovered panic reports to the caller: a static
+// message, plus the correlation id that leads an operator back to the log line
+// holding the panic value and stack. It mirrors rpc.RecoverHandlerPanic's bare
+// "internal error" — the same sanitisation, one layer up — while keeping that handle.
+//
+// The id rides the message rather than the google.rpc.RequestInfo detail that
+// rpc.attachDetails would normally carry it in: this is a transport error, so it
+// never becomes a connect.Error and no details survive into the tool result.
+// Disclosing it costs nothing and is already the contract everywhere else — it is a
+// random xid, and every RPC error returns one today.
+//
+// WithCorrelationID wraps the whole mux, outside authn, so a real /mcp request always
+// has an id; the bare fallback covers a Do invoked off that path (a unit test).
+func panicToolError(ctx context.Context) error {
+	if id := correlation.IDFromContext(ctx); id != "" {
+		return fmt.Errorf("mcp loopback: internal error serving tool call (correlation id: %s)", id)
+	}
+
+	return errors.New("mcp loopback: internal error serving tool call")
 }
 
 // responseRecorder is a minimal http.ResponseWriter that buffers an in-process

@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
+	"github.com/pug-sh/pug/internal/correlation"
 	coreauth "github.com/pug-sh/pug/internal/core/auth"
 	"github.com/pug-sh/pug/internal/core/authz"
 	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
@@ -381,13 +382,20 @@ func TestE2E_HandlerPanicSurfacesAsToolError(t *testing.T) {
 // the authn middleware or in mux routing unwinds past it and still reaches the
 // jsonrpc2 goroutine. Do is the backstop that must catch anything, so it is
 // exercised here against a raw panicking handler with no Connect chain at all.
+//
+// It is also the only place the sanitisation on this layer can be pinned.
+// TestE2E_HandlerPanicSurfacesAsToolError panics *inside* a handler, so
+// RecoverHandlerPanic contains it first and the recover here never runs — that test
+// guards a path which is already safe. Only a panic from outside the Connect chain
+// reaches the error Do builds, and runtime.HandleError renders that error straight
+// into the tool text the model reads.
 func TestLoopbackRecoversPanicOutsideConnect(t *testing.T) {
 	lb := &loopbackClient{handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		panic("boom outside the connect chain")
 	})}
 
 	req, err := http.NewRequestWithContext(
-		withAPIKey(context.Background(), testPrivateKey),
+		correlation.WithID(withAPIKey(context.Background(), testPrivateKey), "test-correlation-id"),
 		http.MethodPost, loopbackBaseURL+"/shared.x/Y", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
@@ -400,8 +408,26 @@ func TestLoopbackRecoversPanicOutsideConnect(t *testing.T) {
 	if resp != nil {
 		t.Errorf("Do returned a response alongside the panic error: %v", resp)
 	}
-	if !strings.Contains(doErr.Error(), "panic") {
-		t.Errorf("error = %q, want it to mention the panic", doErr.Error())
+	if strings.Contains(doErr.Error(), "boom outside the connect chain") {
+		t.Errorf("error = %q leaks the panic value; it must be a generic internal error", doErr.Error())
+	}
+	// The id is what makes the sanitised error actionable: without it nothing ties the
+	// model's "internal error" back to the log line holding the panic value and stack.
+	if !strings.Contains(doErr.Error(), "test-correlation-id") {
+		t.Errorf("error = %q, want it to carry the correlation id", doErr.Error())
+	}
+}
+
+// TestPanicToolError pins the fallback branch the loopback test cannot reach: with no
+// correlation id in context the message must degrade cleanly, not trail an empty
+// "(correlation id: )".
+func TestPanicToolError(t *testing.T) {
+	got := panicToolError(context.Background()).Error()
+	if !strings.Contains(got, "internal error") {
+		t.Errorf("error = %q, want a generic internal error", got)
+	}
+	if strings.Contains(got, "correlation id") {
+		t.Errorf("error = %q, want no correlation-id clause when the context carries none", got)
 	}
 }
 
