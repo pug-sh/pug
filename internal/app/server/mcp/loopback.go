@@ -35,11 +35,13 @@ func (c *loopbackClient) Do(req *http.Request) (*http.Response, error) {
 // status at most once, so a plain buffer + status code is sufficient; we avoid
 // net/http/httptest to keep test-only helpers out of the server binary. The
 // status defaults to 200 (set in newResponseRecorder) when WriteHeader is never
-// called, matching net/http.
+// called, and only the first WriteHeader (or the implicit commit on first Write)
+// takes effect — both matching net/http.
 type responseRecorder struct {
 	header http.Header
 	buf    bytes.Buffer
 	code   int
+	wrote  bool
 }
 
 func newResponseRecorder() *responseRecorder {
@@ -48,9 +50,18 @@ func newResponseRecorder() *responseRecorder {
 
 func (r *responseRecorder) Header() http.Header { return r.header }
 
-func (r *responseRecorder) WriteHeader(code int) { r.code = code }
+func (r *responseRecorder) WriteHeader(code int) {
+	if r.wrote {
+		return
+	}
+	r.code = code
+	r.wrote = true
+}
 
-func (r *responseRecorder) Write(p []byte) (int, error) { return r.buf.Write(p) }
+func (r *responseRecorder) Write(p []byte) (int, error) {
+	r.wrote = true
+	return r.buf.Write(p)
+}
 
 func (r *responseRecorder) result(req *http.Request) *http.Response {
 	return &http.Response{

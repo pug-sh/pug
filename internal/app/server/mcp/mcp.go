@@ -40,7 +40,7 @@ const (
 const instructions = `pug is a product-analytics platform. These tools are read-only and scoped to a single project (the one your private API key belongs to).
 
 Start by discovering what data exists:
-- get_activity_filter_schema lists the event kinds and the property keys/types available to filter and break down by.
+- get_activity_filter_schema (or get_insights_filter_schema) lists the event kinds and the property keys/types available to filter and break down by.
 - get_activity_property_values (or get_insights_property_values) lists the observed values for a given property key.
 
 Then answer questions:
