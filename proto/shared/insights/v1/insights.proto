@@ -12,7 +12,17 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1;insightsv1";
 
 service InsightsService {
+  // Query runs a product-analytics insight over the project's events and returns
+  // the computed result. A single call covers every insight type — trends,
+  // segmentation, funnel, retention, user flow (Sankey) and top-K — chosen by the
+  // InsightQuerySpec (insight_type, events, breakdowns, filters). The request also
+  // carries the time range and granularity; per-granularity range caps apply.
+  // Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
   rpc Query(QueryRequest) returns (QueryResponse);
+  // SegmentUsers returns the distinct ids of the users who performed a given set
+  // of events (with optional filters) in a time range — the "who" behind a number
+  // on a chart. Use it to drill from an aggregate into the individual users that
+  // make it up.
   rpc SegmentUsers(SegmentUsersRequest) returns (SegmentUsersResponse);
   // The filter-schema concept is service-agnostic; both shared.insights and
   // shared.activity expose the same shape via common.v1.
@@ -20,6 +30,9 @@ service InsightsService {
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc GetFilterSchema(common.v1.GetFilterSchemaRequest) returns (common.v1.GetFilterSchemaResponse);
+  // GetPropertyValues lists the observed values of an event or user property
+  // (e.g. the countries seen for "$country") so filters and breakdowns can be
+  // populated with real values before running query_insights.
   rpc GetPropertyValues(GetPropertyValuesRequest) returns (GetPropertyValuesResponse);
 }
 

@@ -26,10 +26,12 @@ require (
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
+	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/nats-io/nats.go v1.52.0
 	github.com/pressly/goose/v3 v3.27.2
 	github.com/redis/go-redis/extra/redisotel/v9 v9.21.0
 	github.com/redis/go-redis/v9 v9.21.0
+	github.com/redpanda-data/protoc-gen-go-mcp v0.0.0-20260709214304-372b2d56e470
 	github.com/resend/resend-go/v3 v3.10.1
 	github.com/rs/cors v1.11.1
 	github.com/rs/xid v1.6.0
@@ -58,6 +60,7 @@ require (
 	golang.org/x/sync v0.22.0
 	google.golang.org/api v0.288.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260630182238-925bb5da69e7
+	google.golang.org/grpc v1.82.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -70,6 +73,7 @@ require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.20.0-20260610134905-7e419c5bd258.1 // indirect
 	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.11-20260610134905-7e419c5bd258.1 // indirect
 	buf.build/gen/go/pluginrpc/pluginrpc/protocolbuffers/go v1.36.11-20241007202033-cf42259fcbfc.1 // indirect
+	buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.34.2-20240917150400-3f349e63f44a.2 // indirect
 	buf.build/go/app v0.2.1-0.20260407195847-833f8f978cda // indirect
 	buf.build/go/bufplugin v0.10.0 // indirect
 	buf.build/go/bufprivateusage v0.1.0 // indirect
@@ -242,6 +246,7 @@ require (
 	github.com/golangci/unconvert v0.0.0-20250410112200-a129a6e6413e // indirect
 	github.com/google/cel-go v0.28.1 // indirect
 	github.com/google/go-containerregistry v0.21.6 // indirect
+	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.17 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
@@ -358,6 +363,7 @@ require (
 	github.com/quic-go/quic-go v0.60.0 // indirect
 	github.com/raeperd/recvcheck v0.3.0 // indirect
 	github.com/redis/go-redis/extra/rediscmd/v9 v9.21.0 // indirect
+	github.com/redpanda-data/common-go/api v0.0.0-20250801174835-9eea07f1ea06 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/riza-io/grpc-go v0.2.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
@@ -414,6 +420,7 @@ require (
 	github.com/yagipy/maintidx v1.0.0 // indirect
 	github.com/yeya24/promlinter v0.3.0 // indirect
 	github.com/ykadowak/zerologlint v0.1.5 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	gitlab.com/bosi/decorder v0.4.2 // indirect
 	go-simpler.org/musttag v0.14.0 // indirect
@@ -447,7 +454,6 @@ require (
 	google.golang.org/appengine/v2 v2.0.6 // indirect
 	google.golang.org/genproto v0.0.0-20260519071638-aa98bba5eb94 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260610212136-7ab31c22f7ad // indirect
-	google.golang.org/grpc v1.82.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	honnef.co/go/tools v0.7.0 // indirect
 	mvdan.cc/gofumpt v0.10.0 // indirect
@@ -462,6 +468,7 @@ tool (
 	github.com/bufbuild/buf/cmd/buf
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 	github.com/pseudomuto/protoc-gen-doc/cmd/protoc-gen-doc
+	github.com/pug-sh/pug/cmd/protoc-gen-mcp
 	github.com/sqlc-dev/sqlc/cmd/sqlc
 	google.golang.org/protobuf/cmd/protoc-gen-go
 )

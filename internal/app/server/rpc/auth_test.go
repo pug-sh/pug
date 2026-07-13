@@ -548,3 +548,86 @@ func TestWithDualAuth(t *testing.T) {
 		}
 	})
 }
+
+func TestWithPrivateKeyAuth(t *testing.T) {
+	stub := newStubLookup()
+	authFunc := WithPrivateKeyAuth(stub)
+	ctx := context.Background()
+
+	t.Run("private key via header succeeds", func(t *testing.T) {
+		result, err := authFunc(ctx, newRequest("prv_valid456", ""))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		p := result.(*Principal)
+		if p.Project.ID != "proj-2" {
+			t.Errorf("project ID = %q, want %q", p.Project.ID, "proj-2")
+		}
+		if p.Customer != nil {
+			t.Error("expected Customer to be nil for private key auth")
+		}
+		if p.AuthType != AuthTypePrivateKey {
+			t.Errorf("AuthType = %v, want %v", p.AuthType, AuthTypePrivateKey)
+		}
+		if p.MaskedAPIKey == "" {
+			t.Error("expected MaskedAPIKey to be set for API key auth")
+		}
+	})
+
+	t.Run("public key via header rejected", func(t *testing.T) {
+		if _, err := authFunc(ctx, newRequest("pub_valid123", "")); err == nil {
+			t.Fatal("expected error for public key on private key auth")
+		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
+			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
+		}
+	})
+
+	t.Run("private key via query param rejected (header only)", func(t *testing.T) {
+		// A query-param credential is never read: the header is empty, so this
+		// fails as a missing key regardless of the ?api_key value.
+		if _, err := authFunc(ctx, newRequest("", "prv_valid456")); err == nil {
+			t.Fatal("expected error for query-param key on private key auth")
+		} else if got := err.Error(); !strings.Contains(got, "x-api-key header not present") {
+			t.Errorf("error = %q, want to contain %q", got, "x-api-key header not present")
+		}
+	})
+
+	t.Run("missing key returns error", func(t *testing.T) {
+		if _, err := authFunc(ctx, newRequest("", "")); err == nil {
+			t.Fatal("expected error for missing key")
+		} else if got := err.Error(); !strings.Contains(got, "x-api-key header not present") {
+			t.Errorf("error = %q, want to contain %q", got, "x-api-key header not present")
+		}
+	})
+
+	t.Run("invalid prefix rejected", func(t *testing.T) {
+		if _, err := authFunc(ctx, newRequest("xyz_invalid", "")); err == nil {
+			t.Fatal("expected error for invalid prefix")
+		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
+			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
+		}
+	})
+
+	t.Run("nonexistent private key returns error", func(t *testing.T) {
+		if _, err := authFunc(ctx, newRequest("prv_doesnotexist", "")); err == nil {
+			t.Fatal("expected error for nonexistent private key")
+		} else if got := err.Error(); !strings.Contains(got, "invalid API key") {
+			t.Errorf("error = %q, want to contain %q", got, "invalid API key")
+		}
+	})
+
+	t.Run("database error returns failed to validate", func(t *testing.T) {
+		errStub := &stubProjectKeyLookup{
+			publicProjects:  map[string]dbread.Project{},
+			privateProjects: map[string]dbread.Project{},
+			forceErr:        errors.New("connection refused"),
+		}
+		errAuthFunc := WithPrivateKeyAuth(errStub)
+
+		if _, err := errAuthFunc(ctx, newRequest("prv_valid456", "")); err == nil {
+			t.Fatal("expected error for database failure")
+		} else if got := err.Error(); !strings.Contains(got, "failed to validate API key") {
+			t.Errorf("error = %q, want to contain %q", got, "failed to validate API key")
+		}
+	})
+}

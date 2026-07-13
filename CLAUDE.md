@@ -80,6 +80,14 @@ Environment variables are documented in `.env.example`. **Telemetry export is au
 make sqlc
 
 # Generate protobuf code (after modifying .proto files)
+# Runs three buf plugins: protoc-gen-go, protoc-gen-connect-go, and
+# protoc-gen-mcp (an in-repo wrapper — cmd/protoc-gen-mcp — that adds editions
+# support to redpanda-data/protoc-gen-go-mcp, which upstream
+# lacks). The MCP plugin emits a `<pkg>mcp` subpackage for every service (buf has
+# no per-plugin path filter, so every proto is fed to it); only the
+# insights/activity/profiles packages are linked into the /mcp endpoint (see MCP
+# subsystem), the rest go unused. An RPC's leading comment becomes its MCP tool
+# description. Delete the wrapper and point buf at upstream once it declares editions.
 make rpc
 
 # Generate templ email templates (after modifying .templ files)
@@ -199,6 +207,7 @@ Deep per-subsystem documentation lives in [`docs/architecture/`](docs/architectu
 - **Event ingestion enrichment** — geo, user-agent, and bot-management auto-properties → [`docs/architecture/ingestion.md`](docs/architecture/ingestion.md)
 - **Email templating** — templ + go-premailer rendering, frozen brand tokens, preview CLI → [`docs/architecture/email.md`](docs/architecture/email.md)
 - **OpenTelemetry** — `internal/deps/telemetry/` (`SetupSDK`; OTLP-vs-stdout auto-detected from the `OTEL_EXPORTER_OTLP_*` endpoint vars, no `PUG_OTEL`), per-component instrumentation, slog bridge vs stdout handler, error-recording convention and exceptions → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md)
+- **MCP server** — the read-only shared analytics API (insights + activity + profile reads = 12 tools) exposed as Model Context Protocol tools at `/mcp`, private-API-key auth only. A thin adapter in `internal/app/server/mcp/`: every tool call re-enters the real Connect stack in-process via a loopback client, so validation/auth/authz run identically to an external API call (no duplicated logic). Tools are generated from the shared protos by `protoc-gen-go-mcp` (the `*v1mcp` packages) and given curated names by a rename table that fails startup on codegen drift. Excluded via `runtime.WithToolFilter` (see `keepProfileTool`/`keepInsightsTool`): the GDPR erasure RPCs and the WIP insights `SegmentUsers` (still served as a Connect RPC, just off the tool surface); `List` (server-streaming) is never generated.
 
 ## Code Style
 
