@@ -40,6 +40,49 @@ func userTopKResult(t *testing.T, executor *Executor) (*insightsv1.TopKResult, e
 	return buildTopKResult(context.Background(), executor, "proj_top_k", q, rows)
 }
 
+// omitTopKResult mirrors userTopKResult for the omit-$others shape: every row is
+// a real ranked user (no synthetic bucket), so every row is eligible for profile
+// enrichment.
+func omitTopKResult(t *testing.T, executor *Executor) (*insightsv1.TopKResult, error) {
+	t.Helper()
+	q := TopKQuery{dimension: insightsv1.TopKQuery_DIMENSION_USER}
+	rows := []TopKRow{
+		{DimensionValue: "alice", Value: 175},
+		{DimensionValue: "bob", Value: 120},
+	}
+	return buildTopKResult(context.Background(), executor, "proj_top_k", q, rows)
+}
+
+// TestBuildTopKResult_OmitOthersAllRowsPreserved pins the omit-$others shape (no
+// is_others row) through buildTopKResult: every row is collected for enrichment
+// (none skipped as the synthetic bucket), and a (non-context) enrichment failure
+// degrades every row to un-enriched while preserving the full ranking. No
+// synthetic bucket is expected or required.
+func TestBuildTopKResult_OmitOthersAllRowsPreserved(t *testing.T) {
+	res, err := omitTopKResult(t, NewExecutor(fakeConn{}))
+	if err != nil {
+		t.Fatalf("enrichment failure should degrade, not error; got %v", err)
+	}
+	got := res.GetRows()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 rows preserved, got %d", len(got))
+	}
+	for i, want := range []struct {
+		dim string
+		val float64
+	}{{"alice", 175}, {"bob", 120}} {
+		if got[i].GetDimensionValue() != want.dim || got[i].GetValue() != want.val {
+			t.Errorf("row %d: expected %s/%v, got %v", i, want.dim, want.val, got[i])
+		}
+		if got[i].GetIsOthers() {
+			t.Errorf("row %d: omit shape must not flag is_others, got %v", i, got[i])
+		}
+		if got[i].GetProfile() != nil {
+			t.Errorf("row %d: expected un-enriched row after enrichment failure, got %v", i, got[i].GetProfile())
+		}
+	}
+}
+
 // TestBuildTopKResult_EnrichmentFailureDegrades asserts that a (non-context)
 // failure of the USER-row profile enrichment query degrades to un-enriched rows
 // rather than discarding the already-computed ranking. The ranked rows + values

@@ -48,7 +48,7 @@ func TestCompleteOAuthSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	session, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "google-credential")
+	session, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "google-credential", "Asia/Kolkata")
 	if err != nil {
 		t.Fatalf("CompleteOAuthSignIn: %v", err)
 	}
@@ -78,6 +78,17 @@ func TestCompleteOAuthSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
 	if err != nil || len(orgs) != 1 {
 		t.Fatalf("expected one default org, got %d orgs (err=%v)", len(orgs), err)
 	}
+
+	// The browser timezone passed to sign-in must seed the new default project's
+	// reporting zone — the regression this covers is OAuth signup silently
+	// defaulting every project to UTC.
+	projects, err := read.GetProjectsByOrgID(ctx, orgs[0].ID)
+	if err != nil || len(projects) != 1 {
+		t.Fatalf("expected one default project, got %d projects (err=%v)", len(projects), err)
+	}
+	if projects[0].ReportingTimezone != "Asia/Kolkata" {
+		t.Fatalf("reporting_timezone = %q, want Asia/Kolkata", projects[0].ReportingTimezone)
+	}
 }
 
 func TestCompleteOAuthSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
@@ -105,7 +116,7 @@ func TestCompleteOAuthSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "google-credential"); err != nil {
+	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "google-credential", ""); err != nil {
 		t.Fatalf("CompleteOAuthSignIn: %v", err)
 	}
 	// Linking a verified Google identity must NOT clear the existing password.
@@ -139,14 +150,16 @@ func TestCompleteOAuthSignIn_RejectsUnverifiedEmail(t *testing.T) {
 	registry := coreoauth.NewRegistry(mockOAuthProvider{err: coreoauth.ErrUnverifiedEmail})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	_, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "credential")
+	_, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "credential", "")
 	if !errors.Is(err, coreoauth.ErrUnverifiedEmail) {
 		t.Fatalf("err = %v, want ErrUnverifiedEmail", err)
 	}
 }
 
 // TestCompleteOAuthSignIn_RepeatedSignInIsIdempotent pins that a returning user
-// is not re-provisioned: a second sign-in keeps exactly one org.
+// is not re-provisioned: a second sign-in keeps exactly one org and does not
+// overwrite the project's reporting zone with a browser timezone sent on the
+// returning sign-in (FinishSignup no-ops for a returning user).
 func TestCompleteOAuthSignIn_RepeatedSignInIsIdempotent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -160,10 +173,13 @@ func TestCompleteOAuthSignIn_RepeatedSignInIsIdempotent(t *testing.T) {
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "credential"); err != nil {
+	// First sign-in provisions the account with a Kolkata reporting zone.
+	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "credential", "Asia/Kolkata"); err != nil {
 		t.Fatalf("first CompleteOAuthSignIn: %v", err)
 	}
-	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "credential"); err != nil {
+	// A returning sign-in carrying a *different* browser zone must neither
+	// re-provision nor reset the existing project's reporting zone.
+	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "credential", "America/New_York"); err != nil {
 		t.Fatalf("second CompleteOAuthSignIn: %v", err)
 	}
 
@@ -178,5 +194,17 @@ func TestCompleteOAuthSignIn_RepeatedSignInIsIdempotent(t *testing.T) {
 	}
 	if len(orgs) != 1 {
 		t.Fatalf("repeat sign-in provisioned %d orgs, want 1 (no re-provisioning)", len(orgs))
+	}
+
+	// The returning sign-in's America/New_York must be ignored: the project keeps
+	// the Asia/Kolkata zone seeded at signup. A regression that applied a returning
+	// user's browser zone would silently rewrite an existing customer's reporting
+	// zone on every login.
+	projects, err := read.GetProjectsByOrgID(ctx, orgs[0].ID)
+	if err != nil || len(projects) != 1 {
+		t.Fatalf("expected one default project, got %d projects (err=%v)", len(projects), err)
+	}
+	if projects[0].ReportingTimezone != "Asia/Kolkata" {
+		t.Fatalf("reporting_timezone = %q, want Asia/Kolkata (returning sign-in must not overwrite)", projects[0].ReportingTimezone)
 	}
 }

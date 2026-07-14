@@ -9,6 +9,15 @@ plugins:
     out: internal/gen/proto
     opt: paths=source_relative
 
+  # MCP tool codegen (redpanda-data/protoc-gen-go-mcp via an in-repo editions
+  # wrapper — see cmd/protoc-gen-mcp). Generates a <pkg>mcp subpackage per proto
+  # package. buf v2 has no per-plugin path filter, so every proto is fed to the
+  # plugin; unused *v1mcp packages are simply never linked into a binary.
+  # Swap this for the upstream protoc-gen-go-mcp once it advertises editions.
+  - local: ["go", "tool", "protoc-gen-mcp"]
+    out: internal/gen/proto
+    opt: paths=source_relative
+
   # TypeScript plugin (requires: pnpm add -D @bufbuild/protoc-gen-es)
   # - local: protoc-gen-es
   #   out: clients/typescript

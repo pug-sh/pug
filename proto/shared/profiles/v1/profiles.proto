@@ -9,8 +9,15 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/shared/profiles/v1;profilesv1";
 
 service ProfilesService {
+  // Get returns a single user profile by its pug profile id, including identity
+  // properties and an activity summary. A claimed anonymous id is redirected to
+  // its canonical profile.
   rpc Get(GetRequest) returns (GetResponse) {}
+  // GetByExternalId returns a single user profile looked up by the external_id your
+  // application assigned to its end user, rather than by pug's internal profile id.
   rpc GetByExternalId(GetByExternalIdRequest) returns (GetByExternalIdResponse) {}
+  // List returns a page of user profiles for the project. Server-streaming, so it
+  // is not exposed as an MCP tool.
   rpc List(ListRequest) returns (stream ListResponse) {}
   // Delete erases a data subject identified by profile id. Like
   // DeleteDataSubject, it enqueues asynchronous hard erasure that reaches the
@@ -20,7 +27,7 @@ service ProfilesService {
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
   // DeleteDataSubject erases a data subject identified by external_id (the
   // controller-facing handle). Proceeds even when no profile row exists, since
-  // events can be keyed directly by external_id. See docs/compliance/4.1-erasure-scope.md.
+  // events can be keyed directly by external_id.
   rpc DeleteDataSubject(DeleteDataSubjectRequest) returns (DeleteDataSubjectResponse) {}
   // GetDeletionRequest returns the status of an erasure request so a controller
   // can prove fulfilment within the statutory window (the DSAR audit trail).

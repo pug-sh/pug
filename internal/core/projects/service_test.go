@@ -220,3 +220,76 @@ func TestProjectsService(t *testing.T) {
 		}
 	})
 }
+
+// TestCreateProjectAsAdmin pins the race-safe admin gate that lives in the
+// CreateProjectAsAdmin SQL CTE — the authoritative check behind projects.Create
+// (the AuthzInterceptor is the coarse pre-check; this CTE is the atomic one). Only
+// an org ADMIN may create a project: a member, a viewer, and a non-member each get
+// ErrAdminRequired (no row inserted), and the admin succeeds.
+func TestCreateProjectAsAdmin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	db := testutil.SetupPostgres(t)
+	svc := projects.NewService(db.PgRO, db.PgW, nil)
+	ctx := context.Background()
+	write := dbwrite.New(db.PgW)
+
+	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{ID: "org-cpa", DisplayName: "CPA Org"})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+
+	// seed creates a customer and, when role != "", an org_members row carrying it.
+	seed := func(id, role string) string {
+		if _, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
+			ID: id, Email: id + "@cpa.test", DisplayName: id, PasswordHash: "h", PictureUri: "",
+		}); err != nil {
+			t.Fatalf("CreateCustomer %s: %v", id, err)
+		}
+		if role != "" {
+			if _, err := write.CreateOrgMember(ctx, dbwrite.CreateOrgMemberParams{
+				OrgID: org.ID, CustomerID: id, Role: role,
+			}); err != nil {
+				t.Fatalf("CreateOrgMember %s: %v", id, err)
+			}
+		}
+		return id
+	}
+
+	admin := seed("cpa-admin", "ORG_ROLE_ADMIN")
+	member := seed("cpa-member", "ORG_ROLE_MEMBER")
+	viewer := seed("cpa-viewer", "ORG_ROLE_VIEWER")
+	nonMember := seed("cpa-outsider", "")
+
+	for _, tc := range []struct{ name, customerID string }{
+		{"member", member},
+		{"viewer", viewer},
+		{"non-member", nonMember},
+	} {
+		t.Run(tc.name+" is denied", func(t *testing.T) {
+			if _, err := svc.CreateProjectAsAdmin(ctx, org.ID, tc.customerID, "p-"+tc.name, ""); !errors.Is(err, projects.ErrAdminRequired) {
+				t.Fatalf("want ErrAdminRequired, got %v", err)
+			}
+			// The CTE must skip the INSERT on a failed admin check. The denial
+			// cases all run before the admin succeeds, so the org stays empty —
+			// confirm no row leaked through.
+			if projs, err := svc.GetProjectsByOrgID(ctx, org.ID); err != nil {
+				t.Fatalf("GetProjectsByOrgID: %v", err)
+			} else if len(projs) != 0 {
+				t.Fatalf("expected no projects after denied create, got %d", len(projs))
+			}
+		})
+	}
+
+	t.Run("admin is allowed", func(t *testing.T) {
+		proj, err := svc.CreateProjectAsAdmin(ctx, org.ID, admin, "admin project", "")
+		if err != nil {
+			t.Fatalf("admin CreateProjectAsAdmin: %v", err)
+		}
+		if proj.ID == "" || proj.OrgID != org.ID {
+			t.Fatalf("unexpected project %+v", proj)
+		}
+	})
+}

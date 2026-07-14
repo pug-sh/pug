@@ -142,6 +142,16 @@ type userMemory struct {
 	trialID        string
 	trialStartedAt time.Time
 	orders         []pastOrder // most recent last, capped
+
+	// signedUp caps the forced signup/app-install journey at one per user.
+	// The forcing is time-windowed (any session within firstSessionWindow of
+	// join), so without this flag a high-activity or recently-joined user
+	// emits several signup events. Set the first time a signup journey is
+	// built and read by journeyFor to suppress later forces. Because the
+	// backfill generates sessions out of order, "first" means first-generated,
+	// not strictly-earliest — but every forced signup still lands inside the
+	// join window, so the single retained signup is always near cohort entry.
+	signedUp bool
 }
 
 const maxRememberedOrders = 5
@@ -231,8 +241,8 @@ func newSessionFactory() *sessionFactory {
 }
 
 // demoUserProfile derives user i's stable attributes from the deterministic
-// per-user stream. Shared with DemoUsers (the postgres profile seeder) so
-// profile properties agree with event data.
+// per-user stream. Surfaced via DemoUserAt to the postgres profile seeder and
+// the live demo worker so profile properties agree with event data.
 func demoUserProfile(i int) userProfile {
 	r := rand.New(rand.NewPCG(userSeed, uint64(i)))
 
@@ -465,7 +475,12 @@ func (f *sessionFactory) sampleStart(geo geoEntry, mobile bool, start, end time.
 func (f *sessionFactory) journeyFor(u *userProfile, prof deviceProfile, sessionStart time.Time) journeyDef {
 	app := isApp(prof.platform)
 
-	if sessionStart.Sub(u.join) < firstSessionWindow {
+	// Force the signup/install journey on a user's first in-window session, but
+	// only once: buildSession sets mem.signedUp when it emits the signup, so
+	// later sessions inside the window fall through to the normal mix instead of
+	// re-firing signup (which would inflate acquisition counts and put the user
+	// in multiple day-0 cohorts).
+	if sessionStart.Sub(u.join) < firstSessionWindow && !f.memory(u).signedUp {
 		if app {
 			return appInstallJourney
 		}

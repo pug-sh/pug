@@ -9,6 +9,7 @@ enum OrgRole {
   ORG_ROLE_UNSPECIFIED = 0;
   ORG_ROLE_ADMIN = 1;
   ORG_ROLE_MEMBER = 2;
+  ORG_ROLE_VIEWER = 3;
 }
 
 enum InvitationStatus {

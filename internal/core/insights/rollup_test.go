@@ -799,6 +799,40 @@ func TestBuildTopKFromRollup(t *testing.T) {
 			t.Errorf("expected LIMIT arg %d in args, got: %v", defaultTopKLimit, q.Args())
 		}
 	})
+
+	t.Run("omit_others", func(t *testing.T) {
+		// Mirrors buildTopKEvents' fast path: single aggregation + LIMIT, no
+		// top_vals re-aggregation, is_others projected as a constant 0. The
+		// query cache stays on; the spill threshold stays off (bounded rollup).
+		req := rollupDayReq(rollupTopKSpec(insightsv1.TopKQuery_DIMENSION_PROPERTY, "$browser", "page_view", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL))
+		req.Spec.TopK.Limit = proto.Int32(5)
+		req.Spec.TopK.OmitOthers = proto.Bool(true)
+		q, err := buildTopKFromRollup(req, "proj_123")
+		if err != nil {
+			t.Fatalf("buildTopKFromRollup: %v", err)
+		}
+		sql := q.SQL()
+		for _, want := range []string{
+			"dim_value AS dim_bucket",
+			"0 AS is_others",
+			"GROUP BY dim_bucket",
+			"ORDER BY value DESC, dim_bucket ASC",
+			"LIMIT ?",
+			"SETTINGS use_query_cache = 1, query_cache_ttl = 60",
+		} {
+			if !strings.Contains(sql, want) {
+				t.Errorf("expected SQL to contain %q\nSQL:\n%s", want, sql)
+			}
+		}
+		for _, bad := range []string{"top_vals", "'$others'", "is_others ASC", "max_bytes_before_external_group_by"} {
+			if strings.Contains(sql, bad) {
+				t.Errorf("omit-others rollup SQL must not contain %q\nSQL:\n%s", bad, sql)
+			}
+		}
+		if q.Limit() != 5 {
+			t.Errorf("expected Limit 5, got %d", q.Limit())
+		}
+	})
 }
 
 func TestTopKQueryForExecution_Dispatch(t *testing.T) {
@@ -814,6 +848,27 @@ func TestTopKQueryForExecution_Dispatch(t *testing.T) {
 		}
 		if !usedRollup || !strings.Contains(q.SQL(), rollupTable) {
 			t.Errorf("expected rollup-served query, usedRollup=%v SQL: %s", usedRollup, q.SQL())
+		}
+	})
+
+	t.Run("omit_others_uses_rollup", func(t *testing.T) {
+		// omit_others is orthogonal to eligibility: an eligible query still
+		// routes to the rollup, and the dispatcher threads the flag through to
+		// the omit fast path (single agg + LIMIT, no top_vals re-aggregation).
+		// This is the routing guard the integration rollup_parity case can't be:
+		// with no duplicate deliveries the raw and rollup omit paths are
+		// byte-identical, so output parity alone can't catch a silent raw fallback.
+		req := eligible()
+		req.Spec.TopK.OmitOthers = proto.Bool(true)
+		q, usedRollup, err := topKQueryForExecution(req, "proj_123", now)
+		if err != nil {
+			t.Fatalf("topKQueryForExecution: %v", err)
+		}
+		if !usedRollup || !strings.Contains(q.SQL(), rollupTable) {
+			t.Errorf("omit query must route to rollup, usedRollup=%v SQL: %s", usedRollup, q.SQL())
+		}
+		if strings.Contains(q.SQL(), "top_vals") {
+			t.Errorf("rollup omit must skip the top_vals re-aggregation, got: %s", q.SQL())
 		}
 	})
 

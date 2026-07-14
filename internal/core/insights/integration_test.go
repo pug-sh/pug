@@ -2294,6 +2294,109 @@ func TestIntegration(t *testing.T) {
 				t.Errorf("row 1: expected solo/1/is_others=false, got %+v", rows[1])
 			}
 		})
+
+		t.Run("omit_others", func(t *testing.T) {
+			// One case per builder. Each asserts the omit fast path returns
+			// exactly the default path's top `limit` rows — no trailing $others
+			// bucket, no row flagged is_others.
+
+			t.Run("property_raw", func(t *testing.T) {
+				// Same tk_view browsers as property_basic (chrome 5, safari 3,
+				// firefox 2, edge 1); K=2 omit keeps exactly the top two.
+				rows := runTopK(t, &insightsv1.TopKQuery{
+					Dimension:  insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+					Property:   proto.String("$browser"),
+					Scope:      &commonv1.EventFilter{Kind: proto.String("tk_view")},
+					Limit:      proto.Int32(2),
+					OmitOthers: proto.Bool(true),
+				})
+				want := []insights.TopKRow{
+					{DimensionValue: "chrome", IsOthers: false, Value: 5},
+					{DimensionValue: "safari", IsOthers: false, Value: 3},
+				}
+				if !reflect.DeepEqual(rows, want) {
+					t.Errorf("expected %+v, got %+v", want, rows)
+				}
+			})
+
+			t.Run("user_raw_with_enrichment", func(t *testing.T) {
+				// Same tk_purchase users as user_sum_alias_resolution (alice 175,
+				// bob 120, ghost 80); K=2 omit drops ghost's $others entirely and
+				// keeps alice/bob enriched.
+				resp, err := insights.ExecuteQuery(ctx, executor, testProjectID, topKReq(&insightsv1.TopKQuery{
+					Dimension:      insightsv1.TopKQuery_DIMENSION_USER.Enum(),
+					Scope:          &commonv1.EventFilter{Kind: proto.String("tk_purchase")},
+					Metric:         insightsv1.AggregationType_AGGREGATION_TYPE_SUM.Enum(),
+					MetricProperty: proto.String("order_amount"),
+					Limit:          proto.Int32(2),
+					OmitOthers:     proto.Bool(true),
+				}), time.Now())
+				if err != nil {
+					t.Fatalf("ExecuteQuery: %v", err)
+				}
+				rows := resp.GetTopK().GetRows()
+				if len(rows) != 2 {
+					t.Fatalf("expected 2 rows (no $others), got %d: %v", len(rows), rows)
+				}
+				if rows[0].GetDimensionValue() != "alice" || rows[0].GetValue() != 175 || rows[0].GetIsOthers() {
+					t.Errorf("row 0: expected alice/175/is_others=false, got %v", rows[0])
+				}
+				if rows[0].GetProfile().GetExternalId() != "alice_ext" {
+					t.Errorf("row 0: expected enrichment external_id alice_ext, got %v", rows[0].GetProfile())
+				}
+				if rows[1].GetDimensionValue() != "bob" || rows[1].GetValue() != 120 || rows[1].GetIsOthers() {
+					t.Errorf("row 1: expected bob/120/is_others=false, got %v", rows[1])
+				}
+				for _, r := range rows {
+					if r.GetIsOthers() {
+						t.Errorf("omit must not emit an is_others row, got %v", r)
+					}
+				}
+			})
+
+			t.Run("rollup_parity", func(t *testing.T) {
+				// The day-aligned Sept window makes this query rollup-eligible
+				// (materialized dim, kind-only scope, TOTAL), so ExecuteQuery
+				// serves it via buildTopKFromRollup; BuildTopKQuery forces the raw
+				// omit path. With no duplicate deliveries the two omit paths must
+				// agree exactly. (Parity alone can't distinguish rollup from a
+				// silent raw fallback — both omit paths are identical here;
+				// routing is pinned by TestTopKQueryForExecution_Dispatch.)
+				tk := func() *insightsv1.TopKQuery {
+					return &insightsv1.TopKQuery{
+						Dimension:  insightsv1.TopKQuery_DIMENSION_PROPERTY.Enum(),
+						Property:   proto.String("$browser"),
+						Scope:      &commonv1.EventFilter{Kind: proto.String("tk_view")},
+						Limit:      proto.Int32(2),
+						OmitOthers: proto.Bool(true),
+					}
+				}
+				rawRows := runTopK(t, tk())
+				resp, err := insights.ExecuteQuery(ctx, executor, testProjectID, topKReq(tk()), time.Now())
+				if err != nil {
+					t.Fatalf("ExecuteQuery: %v", err)
+				}
+				var rollupRows []insights.TopKRow
+				for _, r := range resp.GetTopK().GetRows() {
+					rollupRows = append(rollupRows, insights.TopKRow{
+						DimensionValue: r.GetDimensionValue(),
+						IsOthers:       r.GetIsOthers(),
+						Value:          r.GetValue(),
+					})
+				}
+				if !reflect.DeepEqual(rawRows, rollupRows) {
+					t.Errorf("raw and rollup omit paths diverge:\nraw:    %+v\nrollup: %+v", rawRows, rollupRows)
+				}
+				if len(rollupRows) != 2 {
+					t.Errorf("expected exactly 2 rows (no $others), got %d: %+v", len(rollupRows), rollupRows)
+				}
+				for _, r := range rollupRows {
+					if r.IsOthers {
+						t.Errorf("rollup omit must not emit an is_others row, got %+v", r)
+					}
+				}
+			})
+		})
 	})
 }
 

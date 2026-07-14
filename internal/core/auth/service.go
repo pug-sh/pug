@@ -95,9 +95,13 @@ type Service struct {
 	jwtKey    []byte
 	publisher JobPublisher
 	oauth     *coreoauth.Service
+	// demoEnabled gates DemoSignIn, the credential-less viewer login. It mirrors
+	// PUG_DEMO_ENABLED so the public demo login is only mintable on a demo
+	// deployment; everywhere else DemoSignIn returns ErrDemoUnavailable.
+	demoEnabled bool
 }
 
-func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, oauthCfg coreoauth.Config) (*Service, error) {
+func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher JobPublisher, oauthCfg coreoauth.Config, demoEnabled bool) (*Service, error) {
 	registry, err := coreoauth.NewRegistryFromConfig(ctx, oauthCfg)
 	if err != nil {
 		return nil, err
@@ -105,12 +109,13 @@ func NewService(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtK
 	oauthSvc := coreoauth.NewService(oauthCfg, registry)
 
 	return &Service{
-		read:      dbread.New(pgRO),
-		write:     dbwrite.New(pgW),
-		pgW:       pgW,
-		jwtKey:    jwtKey,
-		publisher: publisher,
-		oauth:     oauthSvc,
+		read:        dbread.New(pgRO),
+		write:       dbwrite.New(pgW),
+		pgW:         pgW,
+		jwtKey:      jwtKey,
+		publisher:   publisher,
+		oauth:       oauthSvc,
+		demoEnabled: demoEnabled,
 	}, nil
 }
 
@@ -306,7 +311,7 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 	return session, nil
 }
 
-func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (Session, error) {
+func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential, reportingTimezone string) (Session, error) {
 	ident, err := s.oauth.VerifyIdentity(ctx, provider, credential)
 	if err != nil {
 		// Client-input errors (ErrInvalidCredential / ErrUnverifiedEmail) are
@@ -317,8 +322,10 @@ func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.Pr
 
 	var session Session
 	_, _, err = coreoauth.WithIdentityTx(ctx, s.pgW, provider, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
-		// OAuth sign-in carries no browser timezone; default the project to UTC.
-		if err := FinishSignup(ctx, w, customerID, createdNew, nil, ""); err != nil {
+		// On first sign-in this seeds the new default project's reporting timezone
+		// from the browser that completed sign-in (coerced to UTC if malformed); on
+		// a returning sign-in FinishSignup is a no-op and the value is ignored.
+		if err := FinishSignup(ctx, w, customerID, createdNew, nil, reportingTimezone); err != nil {
 			return err // coreorgs records this at its detect site; don't re-record.
 		}
 		if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {

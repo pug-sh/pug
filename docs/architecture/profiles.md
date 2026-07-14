@@ -12,14 +12,26 @@ Profiles store properties as a single JSONB field (`properties`) rather than sep
 
 - `Get`, `GetByExternalId`, and `List` all return the same `Profile` shape from `proto/shared/profiles/v1/profiles.proto`.
 - `Profile` includes the base profile record (`id`, `external_id`, `properties`, timestamps, `project_id`) plus an optional nested `activity` summary.
-- `Delete` is different: it is a write path that soft-deletes in PostgreSQL, deactivates devices in the same transaction, then publishes a `ProfileUpsertMessage` so ClickHouse converges asynchronously.
+- `Delete` is different: it enqueues GDPR/DPDP erasure (see [`../compliance/4.1-erasure-scope.md`](../compliance/4.1-erasure-scope.md)); the synchronous prelude soft-deletes the PostgreSQL profile and deactivates devices.
+
+**The person model: identified profiles ∪ derived anonymous persons.**
+
+Reads serve *persons*, not just profile rows. An app that never calls `identify` still has real users — every unclaimed `distinct_id` with activity is a first-class person:
+
+- **Identified profiles** are rows in ClickHouse `profiles`, written only by the identify pipeline (`profile-upsert` worker).
+- **Derived anonymous persons** are synthesized at read time from `distinct_id_activity_states` — one person per unclaimed `distinct_id`, with `id = distinct_id`, empty `external_id`, empty `properties`, `create_time` = merged first-seen, `update_time` = merged last-seen. No row is ever written for them; the rollup **is** the materialization.
+- A `distinct_id` is **claimed** (must not surface as its own person) when it appears in `claimed_ids` (`claimedIDsCTE` in `internal/core/profiles/service.go`): alias_ids from `profile_aliases`, profile ids (including soft-deleted tombstones), and non-empty external_ids (post-identify events are keyed by `external_id` — without this every identified user would grow a trait-less anonymous doppelgänger).
+- The derived design is **resurrection-proof by construction**: a late event for a merged (aliased) `distinct_id` re-fires the activity MV, but the alias keeps the id claimed and its activity folds into the canonical profile. There is no anon row to un-delete — the failure mode that would exist if anon profiles were materialized into the `ReplacingMergeTree`.
 
 **Read data sources.**
 
-- Base profile fields come from ClickHouse `profiles` (`schema/clickhouse/migrations/003_create_profiles.sql`), queried through the `latest_profiles` CTE in `internal/core/profiles/service.go`. This is the current-state projection of the `ReplacingMergeTree(insert_time)` table.
+- Base identified-profile fields come from ClickHouse `profiles` (`schema/clickhouse/migrations/003_create_profiles.sql`), queried through the `latest_profiles` CTE in `internal/core/profiles/service.go`. This is the current-state projection of the `ReplacingMergeTree(insert_time)` table.
 - Alias resolution comes from ClickHouse `profile_aliases` (`schema/clickhouse/migrations/002_create_profile_aliases.sql`), queried through `latest_profile_aliases`.
 - Activity fields come from `distinct_id_activity_states` (`schema/clickhouse/migrations/005_create_profile_activity_summary.sql`), an incremental `AggregatingMergeTree` rollup keyed by `(project_id, distinct_id)`.
-- The per-profile activity summary is built by `profileActivitySummaryCTE`: it unions the canonical profile ID and all alias IDs for that profile, joins those identities to `distinct_id_activity_states`, then re-aggregates to one row per `(project_id, profile_id)`.
+- The per-IDENTIFIED-profile activity summary is built by `profileActivitySummaryCTE`: it unions the canonical profile ID, the external_id, and all alias IDs for that profile, joins those identities to `distinct_id_activity_states`, then re-aggregates to one row per `(project_id, profile_id)`. Derived anonymous persons carry their own single-`distinct_id` summary from `anonPersonsCTE` — no alias fan-out to re-aggregate.
+- Every read query is assembled by `personsQuery`: `persons` (union of `latest_profiles` and `anon_persons`) LEFT JOIN `persons_activity` (union of the identified summary and the anon summaries), under the `p` / `activity_summary` aliases that filter conditions bind against. The anon-side `properties` is a `CAST('{}', 'JSON(...)')` matching the profiles column type, so profile-property filters (dot paths, `IS_NOT_SET`, numeric subcolumns) treat an anonymous person exactly like a trait-less profile.
+- **Get resolution order** (`GetByID`): identified profile or derived anon person via the union → if NotFound, alias lookup (`resolveAliasTarget`) redirects a claimed anon id to its canonical profile (single-hop by construction), so pre-identify URLs and event links keep working after a merge → NotFound. `GetByExternalID("")` fails fast — an empty external_id would otherwise arbitrarily match an anonymous person.
+- **Cost posture:** the anon branch is a streaming GROUP BY over the states table's own primary key, O(project distinct_ids) per query — the same class as the identified summary CTE. If per-project anonymous cardinality outgrows this (order 10⁷), the escape hatch is a dedicated first-seen-ordered person index maintained by an insert-once writer; a pure ClickHouse MV cannot maintain one (per-batch first-seen drifts under `ReplacingMergeTree` merge collapse, which is why anon persons are derived rather than materialized into `profiles`).
 
 **`Profile.activity` semantics.**
 
@@ -34,6 +46,7 @@ Profiles store properties as a single JSONB field (`properties`) rather than sep
 - `ProfilesService.List` is a server-streaming RPC. The server emits `ListResponse` pages until exhaustion.
 - Page size is server-controlled (`const pageSize = 100` in `internal/app/server/rpc/shared/profiles/handler.go`); the client cannot request a custom size.
 - Pagination is keyset-based on `(create_time DESC, id DESC)`. `next_page_token` is an opaque base64url cursor carrying the last row's `create_time` and `id`.
+- For derived anonymous persons `create_time` is the merged first-seen — immutable except when a backfill delivers an *older* event mid-pagination (the person can shift earlier and be missed on that pass; bounded, same class of race the events explorer accepts).
 
 **Profiles filter logic.**
 
@@ -49,7 +62,9 @@ Profiles store properties as a single JSONB field (`properties`) rather than sep
 
 Profiles use soft-delete via a `deletion_time timestamptz` column (NULL = active). All read queries filter `deletion_time IS NULL`. The `SoftDeleteProfileByIDAndProjectID` query sets `deletion_time = now()`; the `deletion_time IS NULL` guard makes it idempotent (0 rows if already deleted). Soft-delete is the normal path **and** phase 1 of GDPR/DPDP erasure — the compliance worker additionally **hard-deletes** the row via `HardDeleteProfileByIDAndProjectID` (see [`../compliance/4.1-erasure-scope.md`](../compliance/4.1-erasure-scope.md)).
 
-ClickHouse profiles use `is_deleted UInt8` for the same purpose; the identify worker publishes `ProfileUpsertMessage` with `is_deleted=true` to sync soft-deletes. The erasure path does **not** publish a ClickHouse tombstone — the compliance worker physically deletes the ClickHouse profile row instead (a separate tombstone would race that delete and could resurrect a hidden row).
+ClickHouse profiles use `is_deleted UInt8` for the same purpose; the identify worker publishes `ProfileUpsertMessage` with `is_deleted=true` to sync soft-deletes. The erasure path does **not** publish a ClickHouse tombstone — the compliance worker physically deletes the ClickHouse profile rows instead (a separate tombstone would race that delete and could resurrect a hidden row). The worker's profiles delete covers **every frozen distinct_id**, not just the canonical profile id, so merge-tombstone rows keyed by absorbed anon ids are physically removed too.
+
+Erasure **by id** (`Delete`) also accepts non-profile person ids via a resolution ladder — claimed alias → canonical subject, external_id-shaped id → external_id path, derived anonymous person (`id` IS the `distinct_id`) → bare-id erasure with no Postgres side effects. See [`../compliance/4.1-erasure-scope.md`](../compliance/4.1-erasure-scope.md).
 
 ## Device Subscriptions
 

@@ -56,6 +56,67 @@ func maskKey(key string) string {
 	return "***"
 }
 
+// NormalizeBearerAPIKey ensures a private API key presented as an
+// `Authorization: Bearer prv_...` credential — the only header form many MCP
+// clients can send — is also readable from the x-api-key header the API-key auth
+// funcs expect. It returns the effective *private* key, or "" if the request
+// carries none. This keeps the "Bearer" scheme string and the private-key prefix
+// owned solely by package rpc.
+//
+// It MUTATES req.Header in place when it promotes a Bearer token: that side effect
+// is the whole mechanism by which the downstream WithPrivateKeyAuth sees the key.
+//
+// x-api-key, if present, always wins — a Bearer must never be able to override an
+// explicit x-api-key, or anything that can inject an Authorization header (a proxy,
+// a misconfigured gateway) could swap the caller onto a different project's key.
+// Otherwise the Bearer scheme is matched case-insensitively (RFC 9110 §11.1, via
+// authn.BearerToken).
+//
+// Either way the key is returned only when it carries the private-key prefix. A
+// public key is extractable from client apps, so it must never become the effective
+// credential — callers stash this value in the request context and later re-inject
+// it as the credential on in-process calls, and it fails closed at the auth boundary
+// regardless. A non-private or absent credential is left in place, untouched, for
+// that boundary to reject.
+func NormalizeBearerAPIKey(req *http.Request) string {
+	if key := req.Header.Get(HeaderAPIKey); key != "" {
+		if !strings.HasPrefix(key, privateKeyPrefix) {
+			return ""
+		}
+		return key
+	}
+
+	token, ok := authn.BearerToken(req)
+	if !ok || !strings.HasPrefix(token, privateKeyPrefix) {
+		return ""
+	}
+	req.Header.Set(HeaderAPIKey, token)
+
+	return token
+}
+
+// resolvePrivateKeyPrincipal resolves an already-prefix-validated private
+// ("prv_") API key to its project and builds the matching Principal (AuthType
+// private, Project set, Customer nil). pgx.ErrNoRows becomes an "invalid API
+// key" rejection; any other DB failure becomes "failed to validate API key"
+// (the repo logs/records those at source). Shared by the private-key paths of
+// WithDualAuth and WithPrivateKeyAuth.
+func resolvePrivateKeyPrincipal(ctx context.Context, repo projectKeyLookup, apiKey string) (*Principal, error) {
+	project, err := repo.GetProjectByPrivateApiKey(ctx, apiKey)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, unauthenticated(ctx, "invalid API key")
+		}
+		// Repo logs + records non-ErrNoRows DB failures at source.
+		return nil, unauthenticated(ctx, "failed to validate API key")
+	}
+	return &Principal{
+		AuthType:     AuthTypePrivateKey,
+		Project:      &project,
+		MaskedAPIKey: maskKey(apiKey),
+	}, nil
+}
+
 // projectKeyLookup abstracts API key → project resolution for auth functions.
 // Implementations must return pgx.ErrNoRows when no project matches the key, and must
 // log + record non-ErrNoRows DB failures at source per CLAUDE.md (the auth boundary
@@ -69,6 +130,12 @@ type projectKeyLookup interface {
 	GetProjectByPrivateApiKey(ctx context.Context, key string) (dbread.Project, error)
 	InvalidateProjectKeys(ctx context.Context, privateKey, publicKey string)
 }
+
+// ProjectKeyLookup is the exported view of projectKeyLookup. It lets a package
+// that mounts an API-key-authenticated endpoint (mcp.Mount) name the dependency
+// it needs to build its own auth func, without package rpc having to hand out an
+// authn.AuthFunc that the caller could then apply to the wrong endpoint.
+type ProjectKeyLookup = projectKeyLookup
 
 // unauthenticated builds an auth-rejection error carrying the standard error
 // details (reason + correlation id). Auth runs in the authn middleware, OUTSIDE
@@ -239,21 +306,39 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup)
 			if !strings.HasPrefix(apiKey, privateKeyPrefix) {
 				return nil, unauthenticated(ctx, "invalid API key")
 			}
-			project, err := repo.GetProjectByPrivateApiKey(ctx, apiKey)
-			if err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					return nil, unauthenticated(ctx, "invalid API key")
-				}
-				// Repo logs + records non-ErrNoRows DB failures at source.
-				return nil, unauthenticated(ctx, "failed to validate API key")
-			}
-			return &Principal{
-				AuthType:     AuthTypePrivateKey,
-				Project:      &project,
-				MaskedAPIKey: maskKey(apiKey),
-			}, nil
+			return resolvePrivateKeyPrincipal(ctx, repo, apiKey)
 		}
 		return jwtAuth(ctx, req)
+	}
+}
+
+// WithPrivateKeyAuth authenticates via a private ("secret") API key in the
+// x-api-key header only. It is the auth boundary for the /mcp endpoint: MCP
+// clients configure a static credential, so access JWTs (hourly expiry) are
+// useless there and public keys (extractable from client apps) are refused.
+//
+// Unlike WithSDKAuth there is no public-key branch and no api_key query-param
+// fallback; unlike WithDualAuth there is no JWT fallback. The resulting
+// Principal has Project set and Customer nil, so the authz interceptor keeps the
+// same coarse project-scoping as the rest of the private-key API.
+func WithPrivateKeyAuth(repo projectKeyLookup) authn.AuthFunc {
+	return func(ctx context.Context, req *http.Request) (any, error) {
+		apiKey := req.Header.Get(HeaderAPIKey)
+		if apiKey == "" {
+			return nil, unauthenticated(ctx, "x-api-key header not present")
+		}
+		if !strings.HasPrefix(apiKey, privateKeyPrefix) {
+			return nil, unauthenticated(ctx, "invalid API key")
+		}
+
+		principal, err := resolvePrivateKeyPrincipal(ctx, repo, apiKey)
+		if err != nil {
+			return nil, err
+		}
+
+		slog.DebugContext(ctx, "private key auth succeeded", slog.String("project_id", principal.Project.ID))
+
+		return principal, nil
 	}
 }
 

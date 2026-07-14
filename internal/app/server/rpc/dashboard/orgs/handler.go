@@ -17,54 +17,15 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
+// Authorization (org-role gating) is enforced centrally by rpc.AuthzInterceptor
+// from the permission registry, before any handler runs — these handlers assume
+// the caller is already authorized for the (resource, action) recorded there.
 type server struct {
 	service *coreorgs.Service
 }
 
 func NewServer(service *coreorgs.Service) *server {
 	return &server{service: service}
-}
-
-func (s *server) requireOrgMember(ctx context.Context, orgID string) (*rpc.Principal, error) {
-	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	isMember, err := s.service.IsOrgMember(ctx, orgID, principal.Customer.ID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to check org membership", slogx.Error(err), slog.String("org_id", orgID), slog.String("customer_id", principal.Customer.ID))
-		telemetry.RecordError(ctx, err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	if !isMember {
-		return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
-	}
-
-	return principal, nil
-}
-
-// requireOrgAdmin extracts the principal and verifies admin role via a single GetMemberRole call.
-// Returns "not a member" if the customer has no membership, or "admin role required" if member but not admin.
-func (s *server) requireOrgAdmin(ctx context.Context, orgID string) (*rpc.Principal, error) {
-	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	role, err := s.service.GetMemberRole(ctx, orgID, principal.Customer.ID)
-	if err != nil {
-		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
-		}
-		// Service logs+records at source per the log-at-source convention.
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	if role != coreorgs.RoleAdmin {
-		return nil, apperr.PermissionDenied(apperr.ReasonOrgAdminRequired, "admin role required")
-	}
-
-	return principal, nil
 }
 
 func (s *server) List(
@@ -131,10 +92,6 @@ func (s *server) UpdateDisplayName(
 		return nil, err
 	}
 
-	if _, err := s.requireOrgAdmin(ctx, req.Msg.GetOrgId()); err != nil {
-		return nil, err
-	}
-
 	org, err := s.service.UpdateDisplayName(ctx, req.Msg.GetOrgId(), req.Msg.GetDisplayName())
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrOrgNotFound) {
@@ -153,10 +110,6 @@ func (s *server) ListMembers(
 	req *connect.Request[orgsv1.ListMembersRequest],
 ) (*connect.Response[orgsv1.ListMembersResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	if _, err := s.requireOrgMember(ctx, req.Msg.GetOrgId()); err != nil {
 		return nil, err
 	}
 
@@ -189,7 +142,7 @@ func (s *server) RemoveMember(
 		return nil, err
 	}
 
-	principal, err := s.requireOrgAdmin(ctx, req.Msg.GetOrgId())
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +173,7 @@ func (s *server) InviteMember(
 		return nil, err
 	}
 
-	principal, err := s.requireOrgAdmin(ctx, req.Msg.GetOrgId())
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -253,10 +206,6 @@ func (s *server) ResendInvite(
 		return nil, err
 	}
 
-	if _, err := s.requireOrgAdmin(ctx, req.Msg.GetOrgId()); err != nil {
-		return nil, err
-	}
-
 	dispatch, err := s.service.ResendInvite(ctx, req.Msg.GetOrgId(), req.Msg.GetInvitationId())
 	if err != nil {
 		if errors.Is(err, coreorgs.ErrInviteNotFound) {
@@ -276,10 +225,6 @@ func (s *server) ListInvitations(
 	req *connect.Request[orgsv1.ListInvitationsRequest],
 ) (*connect.Response[orgsv1.ListInvitationsResponse], error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	if _, err := s.requireOrgAdmin(ctx, req.Msg.GetOrgId()); err != nil {
 		return nil, err
 	}
 
@@ -368,10 +313,6 @@ func (s *server) UpdateMemberRole(
 		return nil, err
 	}
 
-	if _, err := s.requireOrgAdmin(ctx, req.Msg.GetOrgId()); err != nil {
-		return nil, err
-	}
-
 	newRole, ok := roleFromProto(req.Msg.GetRole())
 	if !ok {
 		return nil, apperr.Invalid(apperr.ReasonOrgUnsupportedRole, "role enum value not supported by this server")
@@ -386,8 +327,8 @@ func (s *server) UpdateMemberRole(
 		if errors.Is(err, coreorgs.ErrMemberNotFound) {
 			return nil, apperr.NotFound(apperr.ReasonOrgMemberNotFound, "member not found", apperr.Resource("org_member", req.Msg.GetCustomerId()))
 		}
-		if errors.Is(err, coreorgs.ErrUnsupportedRoleTransition) {
-			return nil, apperr.Invalid(apperr.ReasonOrgUnsupportedRoleTransit, "role transition not supported")
+		if errors.Is(err, coreorgs.ErrLastAdmin) {
+			return nil, apperr.FailedPrecondition(apperr.ReasonCannotDemoteLastAdmin, "cannot demote the last admin")
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}

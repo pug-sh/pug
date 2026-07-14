@@ -49,14 +49,34 @@ const (
 
 // InsightsServiceClient is a client for the shared.insights.v1.InsightsService service.
 type InsightsServiceClient interface {
+	// Query runs a product-analytics insight over the project's events and returns
+	// the computed result. A single call covers every insight type — trends,
+	// segmentation, funnel, retention, user flow (Sankey) and top-K — chosen by the
+	// InsightQuerySpec (its insight_type, events, breakdowns and filters, among
+	// others). The request also carries the time range and granularity, and it is the
+	// right tool for any project-wide or over-time question; per-granularity range
+	// caps apply.
+	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
+	// SegmentUsers returns a paginated page of the distinct ids of the users who
+	// performed a given set of events (with optional filters) in a time range — the
+	// "who" behind a number on a chart. Not exposed as an MCP tool while the
+	// drill-down insight is still WIP; see toolPolicy in
+	// internal/app/server/mcp/rename.go.
 	SegmentUsers(context.Context, *connect.Request[v1.SegmentUsersRequest]) (*connect.Response[v1.SegmentUsersResponse], error)
+	// GetFilterSchema lists the event kinds and the property keys/types available to
+	// filter and break down by. Call it before query_insights so that filters and
+	// breakdowns reference keys that actually exist in this project.
+	//
 	// The filter-schema concept is service-agnostic; both shared.insights and
 	// shared.activity expose the same shape via common.v1.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetFilterSchema(context.Context, *connect.Request[v11.GetFilterSchemaRequest]) (*connect.Response[v11.GetFilterSchemaResponse], error)
+	// GetPropertyValues lists the observed values of an event or user property
+	// (e.g. the countries seen for "$country") so filters and breakdowns can be
+	// populated with real values before running query_insights.
 	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 }
 
@@ -128,14 +148,34 @@ func (c *insightsServiceClient) GetPropertyValues(ctx context.Context, req *conn
 
 // InsightsServiceHandler is an implementation of the shared.insights.v1.InsightsService service.
 type InsightsServiceHandler interface {
+	// Query runs a product-analytics insight over the project's events and returns
+	// the computed result. A single call covers every insight type — trends,
+	// segmentation, funnel, retention, user flow (Sankey) and top-K — chosen by the
+	// InsightQuerySpec (its insight_type, events, breakdowns and filters, among
+	// others). The request also carries the time range and granularity, and it is the
+	// right tool for any project-wide or over-time question; per-granularity range
+	// caps apply.
+	// Discover valid event kinds and property keys with the get_insights_filter_schema tool first.
 	Query(context.Context, *connect.Request[v1.QueryRequest]) (*connect.Response[v1.QueryResponse], error)
+	// SegmentUsers returns a paginated page of the distinct ids of the users who
+	// performed a given set of events (with optional filters) in a time range — the
+	// "who" behind a number on a chart. Not exposed as an MCP tool while the
+	// drill-down insight is still WIP; see toolPolicy in
+	// internal/app/server/mcp/rename.go.
 	SegmentUsers(context.Context, *connect.Request[v1.SegmentUsersRequest]) (*connect.Response[v1.SegmentUsersResponse], error)
+	// GetFilterSchema lists the event kinds and the property keys/types available to
+	// filter and break down by. Call it before query_insights so that filters and
+	// breakdowns reference keys that actually exist in this project.
+	//
 	// The filter-schema concept is service-agnostic; both shared.insights and
 	// shared.activity expose the same shape via common.v1.
 	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetFilterSchema(context.Context, *connect.Request[v11.GetFilterSchemaRequest]) (*connect.Response[v11.GetFilterSchemaResponse], error)
+	// GetPropertyValues lists the observed values of an event or user property
+	// (e.g. the countries seen for "$country") so filters and breakdowns can be
+	// populated with real values before running query_insights.
 	GetPropertyValues(context.Context, *connect.Request[v1.GetPropertyValuesRequest]) (*connect.Response[v1.GetPropertyValuesResponse], error)
 }
 

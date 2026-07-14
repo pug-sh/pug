@@ -365,7 +365,13 @@ type CompleteOAuthSignInRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Provider *OAuthProvider         `protobuf:"varint,1,opt,name=provider,enum=public.auth.v1.OAuthProvider" json:"provider,omitempty"`
 	// Google id_token JWT from @react-oauth/google GoogleLogin onSuccess credential.
-	Credential    *string `protobuf:"bytes,2,opt,name=credential" json:"credential,omitempty"`
+	Credential *string `protobuf:"bytes,2,opt,name=credential" json:"credential,omitempty"`
+	// Optional IANA timezone captured from the browser completing sign-in. When the
+	// sign-in provisions a new account (default org + project), it is stored as that
+	// project's reporting_timezone; on a returning sign-in — including one that links
+	// this identity to an existing account — it is ignored. Empty = UTC; a malformed
+	// value is coerced to UTC.
+	Timezone      *string `protobuf:"bytes,3,opt,name=timezone" json:"timezone,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -410,6 +416,13 @@ func (x *CompleteOAuthSignInRequest) GetProvider() OAuthProvider {
 func (x *CompleteOAuthSignInRequest) GetCredential() string {
 	if x != nil && x.Credential != nil {
 		return *x.Credential
+	}
+	return ""
+}
+
+func (x *CompleteOAuthSignInRequest) GetTimezone() string {
+	if x != nil && x.Timezone != nil {
+		return *x.Timezone
 	}
 	return ""
 }
@@ -644,6 +657,104 @@ func (*SignOutResponse) Descriptor() ([]byte, []int) {
 	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{11}
 }
 
+type DemoSignInRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DemoSignInRequest) Reset() {
+	*x = DemoSignInRequest{}
+	mi := &file_public_auth_v1_auth_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DemoSignInRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DemoSignInRequest) ProtoMessage() {}
+
+func (x *DemoSignInRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_public_auth_v1_auth_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DemoSignInRequest.ProtoReflect.Descriptor instead.
+func (*DemoSignInRequest) Descriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{12}
+}
+
+type DemoSignInResponse struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Token        *string                `protobuf:"bytes,1,opt,name=token" json:"token,omitempty"`                                   // short-lived access JWT for the demo viewer
+	RefreshToken *string                `protobuf:"bytes,2,opt,name=refresh_token,json=refreshToken" json:"refresh_token,omitempty"` // long-lived opaque refresh token
+	// The demo project to scope reads to; the client sends it back as the
+	// x-project-id header on subsequent dashboard/insights/profile requests.
+	ProjectId     *string `protobuf:"bytes,3,opt,name=project_id,json=projectId" json:"project_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DemoSignInResponse) Reset() {
+	*x = DemoSignInResponse{}
+	mi := &file_public_auth_v1_auth_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DemoSignInResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DemoSignInResponse) ProtoMessage() {}
+
+func (x *DemoSignInResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_public_auth_v1_auth_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DemoSignInResponse.ProtoReflect.Descriptor instead.
+func (*DemoSignInResponse) Descriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DemoSignInResponse) GetToken() string {
+	if x != nil && x.Token != nil {
+		return *x.Token
+	}
+	return ""
+}
+
+func (x *DemoSignInResponse) GetRefreshToken() string {
+	if x != nil && x.RefreshToken != nil {
+		return *x.RefreshToken
+	}
+	return ""
+}
+
+func (x *DemoSignInResponse) GetProjectId() string {
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
+	}
+	return ""
+}
+
 var File_public_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_public_auth_v1_auth_proto_rawDesc = "" +
@@ -666,13 +777,14 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\btimezone\x18\x02 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"V\n" +
 	"\x19CompleteMagicLinkResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\x8b\x01\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\xc4\x01\n" +
 	"\x1aCompleteOAuthSignInRequest\x12E\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x1d.public.auth.v1.OAuthProviderB\n" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\bprovider\x12&\n" +
 	"\n" +
 	"credential\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"credential\"X\n" +
+	"credential\x127\n" +
+	"\btimezone\x18\x03 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"X\n" +
 	"\x1bCompleteOAuthSignInResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
 	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"D\n" +
@@ -683,17 +795,25 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"5\n" +
 	"\x0eSignOutRequest\x12#\n" +
 	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"\x11\n" +
-	"\x0fSignOutResponse*L\n" +
+	"\x0fSignOutResponse\"\x13\n" +
+	"\x11DemoSignInRequest\"n\n" +
+	"\x12DemoSignInResponse\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId*L\n" +
 	"\rOAuthProvider\x12\x1f\n" +
 	"\x1bO_AUTH_PROVIDER_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16O_AUTH_PROVIDER_GOOGLE\x10\x012\xeb\x04\n" +
+	"\x16O_AUTH_PROVIDER_GOOGLE\x10\x012\xc2\x05\n" +
 	"\vAuthService\x12d\n" +
 	"\x0fSignInWithEmail\x12&.public.auth.v1.SignInWithEmailRequest\x1a'.public.auth.v1.SignInWithEmailResponse\"\x00\x12g\n" +
 	"\x10RequestMagicLink\x12'.public.auth.v1.RequestMagicLinkRequest\x1a(.public.auth.v1.RequestMagicLinkResponse\"\x00\x12j\n" +
 	"\x11CompleteMagicLink\x12(.public.auth.v1.CompleteMagicLinkRequest\x1a).public.auth.v1.CompleteMagicLinkResponse\"\x00\x12p\n" +
 	"\x13CompleteOAuthSignIn\x12*.public.auth.v1.CompleteOAuthSignInRequest\x1a+.public.auth.v1.CompleteOAuthSignInResponse\"\x00\x12a\n" +
 	"\x0eRefreshSession\x12%.public.auth.v1.RefreshSessionRequest\x1a&.public.auth.v1.RefreshSessionResponse\"\x00\x12L\n" +
-	"\aSignOut\x12\x1e.public.auth.v1.SignOutRequest\x1a\x1f.public.auth.v1.SignOutResponse\"\x00B@Z>github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1b\beditionsp\xe8\a"
+	"\aSignOut\x12\x1e.public.auth.v1.SignOutRequest\x1a\x1f.public.auth.v1.SignOutResponse\"\x00\x12U\n" +
+	"\n" +
+	"DemoSignIn\x12!.public.auth.v1.DemoSignInRequest\x1a\".public.auth.v1.DemoSignInResponse\"\x00B@Z>github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1b\beditionsp\xe8\a"
 
 var (
 	file_public_auth_v1_auth_proto_rawDescOnce sync.Once
@@ -708,7 +828,7 @@ func file_public_auth_v1_auth_proto_rawDescGZIP() []byte {
 }
 
 var file_public_auth_v1_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_public_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_public_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_public_auth_v1_auth_proto_goTypes = []any{
 	(OAuthProvider)(0),                  // 0: public.auth.v1.OAuthProvider
 	(*SignInWithEmailRequest)(nil),      // 1: public.auth.v1.SignInWithEmailRequest
@@ -723,6 +843,8 @@ var file_public_auth_v1_auth_proto_goTypes = []any{
 	(*RefreshSessionResponse)(nil),      // 10: public.auth.v1.RefreshSessionResponse
 	(*SignOutRequest)(nil),              // 11: public.auth.v1.SignOutRequest
 	(*SignOutResponse)(nil),             // 12: public.auth.v1.SignOutResponse
+	(*DemoSignInRequest)(nil),           // 13: public.auth.v1.DemoSignInRequest
+	(*DemoSignInResponse)(nil),          // 14: public.auth.v1.DemoSignInResponse
 }
 var file_public_auth_v1_auth_proto_depIdxs = []int32{
 	0,  // 0: public.auth.v1.CompleteOAuthSignInRequest.provider:type_name -> public.auth.v1.OAuthProvider
@@ -732,14 +854,16 @@ var file_public_auth_v1_auth_proto_depIdxs = []int32{
 	7,  // 4: public.auth.v1.AuthService.CompleteOAuthSignIn:input_type -> public.auth.v1.CompleteOAuthSignInRequest
 	9,  // 5: public.auth.v1.AuthService.RefreshSession:input_type -> public.auth.v1.RefreshSessionRequest
 	11, // 6: public.auth.v1.AuthService.SignOut:input_type -> public.auth.v1.SignOutRequest
-	2,  // 7: public.auth.v1.AuthService.SignInWithEmail:output_type -> public.auth.v1.SignInWithEmailResponse
-	4,  // 8: public.auth.v1.AuthService.RequestMagicLink:output_type -> public.auth.v1.RequestMagicLinkResponse
-	6,  // 9: public.auth.v1.AuthService.CompleteMagicLink:output_type -> public.auth.v1.CompleteMagicLinkResponse
-	8,  // 10: public.auth.v1.AuthService.CompleteOAuthSignIn:output_type -> public.auth.v1.CompleteOAuthSignInResponse
-	10, // 11: public.auth.v1.AuthService.RefreshSession:output_type -> public.auth.v1.RefreshSessionResponse
-	12, // 12: public.auth.v1.AuthService.SignOut:output_type -> public.auth.v1.SignOutResponse
-	7,  // [7:13] is the sub-list for method output_type
-	1,  // [1:7] is the sub-list for method input_type
+	13, // 7: public.auth.v1.AuthService.DemoSignIn:input_type -> public.auth.v1.DemoSignInRequest
+	2,  // 8: public.auth.v1.AuthService.SignInWithEmail:output_type -> public.auth.v1.SignInWithEmailResponse
+	4,  // 9: public.auth.v1.AuthService.RequestMagicLink:output_type -> public.auth.v1.RequestMagicLinkResponse
+	6,  // 10: public.auth.v1.AuthService.CompleteMagicLink:output_type -> public.auth.v1.CompleteMagicLinkResponse
+	8,  // 11: public.auth.v1.AuthService.CompleteOAuthSignIn:output_type -> public.auth.v1.CompleteOAuthSignInResponse
+	10, // 12: public.auth.v1.AuthService.RefreshSession:output_type -> public.auth.v1.RefreshSessionResponse
+	12, // 13: public.auth.v1.AuthService.SignOut:output_type -> public.auth.v1.SignOutResponse
+	14, // 14: public.auth.v1.AuthService.DemoSignIn:output_type -> public.auth.v1.DemoSignInResponse
+	8,  // [8:15] is the sub-list for method output_type
+	1,  // [1:8] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
@@ -756,7 +880,7 @@ func file_public_auth_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_public_auth_v1_auth_proto_rawDesc), len(file_public_auth_v1_auth_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

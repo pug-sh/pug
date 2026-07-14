@@ -21,21 +21,22 @@ type authService interface {
 	SignInWithEmail(ctx context.Context, email, password string) (coreauth.Session, error)
 	RequestMagicLink(ctx context.Context, email string) error
 	CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (coreauth.Session, error)
-	CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential string) (coreauth.Session, error)
+	CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential, reportingTimezone string) (coreauth.Session, error)
 	RefreshSession(ctx context.Context, refreshToken string) (coreauth.Session, error)
 	RevokeSession(ctx context.Context, refreshToken string) error
+	DemoSignIn(ctx context.Context) (coreauth.DemoSession, error)
 }
 
 type server struct {
 	service authService
 }
 
-func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient) (*server, error) {
+func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient, demoEnabled bool) (*server, error) {
 	oauthCfg, err := coreoauth.LoadConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load oauth config: %w", err)
 	}
-	service, err := coreauth.NewService(ctx, pgRO, pgW, jwtKey, publisher, oauthCfg)
+	service, err := coreauth.NewService(ctx, pgRO, pgW, jwtKey, publisher, oauthCfg, demoEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +99,7 @@ func (s *server) CompleteOAuthSignIn(
 		return nil, apperr.Invalid(apperr.ReasonOAuthProviderDisabled, "oauth provider is not configured")
 	}
 
-	session, err := s.service.CompleteOAuthSignIn(ctx, provider, req.Msg.GetCredential())
+	session, err := s.service.CompleteOAuthSignIn(ctx, provider, req.Msg.GetCredential(), req.Msg.GetTimezone())
 	if err != nil {
 		return nil, mapOAuthHandlerError(err)
 	}
@@ -135,6 +136,26 @@ func (s *server) SignOut(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 	return connect.NewResponse(&authv1.SignOutResponse{}), nil
+}
+
+func (s *server) DemoSignIn(
+	ctx context.Context,
+	_ *connect.Request[authv1.DemoSignInRequest],
+) (*connect.Response[authv1.DemoSignInResponse], error) {
+	demo, err := s.service.DemoSignIn(ctx)
+	if err != nil {
+		if errors.Is(err, coreauth.ErrDemoUnavailable) {
+			// Disabled (PUG_DEMO_ENABLED off) or the demo account isn't seeded.
+			// Unavailable, not Unauthenticated: there are no credentials to be wrong.
+			return nil, connect.NewError(connect.CodeUnavailable, errors.New("demo sign-in is not available"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	}
+	return connect.NewResponse(&authv1.DemoSignInResponse{
+		Token:        &demo.Session.AccessToken,
+		RefreshToken: &demo.Session.RefreshToken,
+		ProjectId:    &demo.ProjectID,
+	}), nil
 }
 
 func mapOAuthHandlerError(err error) error {

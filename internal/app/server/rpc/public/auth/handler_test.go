@@ -22,6 +22,8 @@ type fakeAuthService struct {
 	completeOAuthErr error
 	refreshErr       error
 	revokeErr        error
+	demoSession      coreauth.DemoSession
+	demoErr          error
 }
 
 func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (coreauth.Session, error) {
@@ -31,7 +33,7 @@ func (f fakeAuthService) RequestMagicLink(context.Context, string) error { retur
 func (f fakeAuthService) CompleteMagicLink(context.Context, string, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.completeErr
 }
-func (f fakeAuthService) CompleteOAuthSignIn(context.Context, coreoauth.ProviderName, string) (coreauth.Session, error) {
+func (f fakeAuthService) CompleteOAuthSignIn(context.Context, coreoauth.ProviderName, string, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.completeOAuthErr
 }
 func (f fakeAuthService) RefreshSession(context.Context, string) (coreauth.Session, error) {
@@ -39,6 +41,9 @@ func (f fakeAuthService) RefreshSession(context.Context, string) (coreauth.Sessi
 }
 func (f fakeAuthService) RevokeSession(context.Context, string) error {
 	return f.revokeErr
+}
+func (f fakeAuthService) DemoSignIn(context.Context) (coreauth.DemoSession, error) {
+	return f.demoSession, f.demoErr
 }
 
 // TestSignInCredentialErrorMapping drives the real handler with a service that
@@ -209,4 +214,71 @@ func TestSignOut(t *testing.T) {
 			t.Fatal("expected non-nil response")
 		}
 	})
+}
+
+// TestDemoSignInUnavailableMapping pins that the demo login being off/unseeded
+// (ErrDemoUnavailable) maps to CodeUnavailable — not Unauthenticated, since there
+// are no credentials to be wrong — without leaking the sentinel string.
+func TestDemoSignInUnavailableMapping(t *testing.T) {
+	s := &server{service: fakeAuthService{demoErr: coreauth.ErrDemoUnavailable}}
+
+	_, err := s.DemoSignIn(context.Background(), connect.NewRequest(&authv1.DemoSignInRequest{}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		t.Fatalf("expected *connect.Error, got %T", err)
+	}
+	if ce.Code() != connect.CodeUnavailable {
+		t.Errorf("code = %v, want Unavailable", ce.Code())
+	}
+	if errors.Is(err, coreauth.ErrDemoUnavailable) {
+		t.Error("handler leaked internal sentinel ErrDemoUnavailable to the client")
+	}
+}
+
+// TestDemoSignInInternalError pins that an unexpected (non-sentinel) error maps
+// to a generic CodeInternal without leaking the underlying error string.
+func TestDemoSignInInternalError(t *testing.T) {
+	s := &server{service: fakeAuthService{demoErr: errors.New("db exploded with secret detail")}}
+
+	_, err := s.DemoSignIn(context.Background(), connect.NewRequest(&authv1.DemoSignInRequest{}))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		t.Fatalf("expected *connect.Error, got %T", err)
+	}
+	if ce.Code() != connect.CodeInternal {
+		t.Errorf("code = %v, want Internal", ce.Code())
+	}
+	if strings.Contains(ce.Message(), "secret detail") {
+		t.Errorf("internal error leaked underlying message: %q", ce.Message())
+	}
+}
+
+// TestDemoSignInSuccess pins that a minted demo session is echoed verbatim into
+// the response: access token, refresh token, and the project id the client must
+// send back as x-project-id.
+func TestDemoSignInSuccess(t *testing.T) {
+	s := &server{service: fakeAuthService{demoSession: coreauth.DemoSession{
+		Session:   coreauth.Session{AccessToken: "access-tok", RefreshToken: "refresh-tok"},
+		ProjectID: "proj-demo",
+	}}}
+
+	resp, err := s.DemoSignIn(context.Background(), connect.NewRequest(&authv1.DemoSignInRequest{}))
+	if err != nil {
+		t.Fatalf("DemoSignIn: %v", err)
+	}
+	if got := resp.Msg.GetToken(); got != "access-tok" {
+		t.Errorf("token = %q, want %q", got, "access-tok")
+	}
+	if got := resp.Msg.GetRefreshToken(); got != "refresh-tok" {
+		t.Errorf("refresh token = %q, want %q", got, "refresh-tok")
+	}
+	if got := resp.Msg.GetProjectId(); got != "proj-demo" {
+		t.Errorf("project id = %q, want %q", got, "proj-demo")
+	}
 }

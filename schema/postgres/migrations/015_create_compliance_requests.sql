@@ -4,8 +4,7 @@
 -- (§4.2) — discriminated by `kind`. A row is created synchronously when the
 -- request is made; for erasure the worker then freezes the resolved identifiers,
 -- performs the hard deletes, and marks it completed. Rows are retained after the
--- subject is gone as proof of what was done and when. See
--- docs/compliance/4.1-erasure-scope.md and docs/compliance/4.2-export-scope.md.
+-- subject is gone as proof of what was done and when.
 create table compliance_requests (
   id              char(20)    primary key,
   project_id      char(20)    not null references projects(id) on delete cascade,

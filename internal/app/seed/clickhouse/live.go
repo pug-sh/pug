@@ -11,8 +11,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // LiveEvent is the exported shape of a generated event, consumed by the demo
-// worker which plays sessions out in real time through the ingestion
-// pipeline.
+// worker which plays sessions out in real time straight into ClickHouse.
 type LiveEvent struct {
 	EventID          string
 	DistinctID       string

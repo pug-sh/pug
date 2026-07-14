@@ -69,7 +69,7 @@ The trailing 5-minute lag ensures the most recent bucket is closed before it's r
 
 **Use a Go worker, not an MV, when** the work has external side effects (NATS publish, API calls, Postgres writes — e.g. the campaign scheduler at `internal/app/workers/scheduler/scheduler.go`), needs multi-step orchestration, or reads from non-CH sources.
 
-**Version requirement.** Refreshable MVs went stable in ClickHouse 24.10. Cotton's dev infra pins `clickhouse/clickhouse-server:26.5` (`infra/dev/docker-compose.yaml`), so the requirement is satisfied; verify before relying on the feature in any new environment.
+**Version requirement.** Refreshable MVs went stable in ClickHouse 24.10. Pug's dev infra pins `clickhouse/clickhouse-server:26.5` (`infra/dev/docker-compose.yaml`), so the requirement is satisfied; verify before relying on the feature in any new environment.
 
 New MVs go in `schema/clickhouse/migrations/` as goose migrations; pair the rollup table DDL and the `CREATE MATERIALIZED VIEW` statement in the same migration file.
 

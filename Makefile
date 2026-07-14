@@ -88,6 +88,10 @@ fmt:
 test:
 	go test ./... -race -count=1
 
+.PHONY: cover
+cover:
+	go test ./... -race -count=1 -covermode=atomic -coverprofile=coverage.out
+
 .PHONY: psql
 psql:
 	docker compose -f infra/dev/docker-compose.yaml exec postgres psql -U postgres -d pug

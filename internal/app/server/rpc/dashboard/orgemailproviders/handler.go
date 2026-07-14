@@ -15,7 +15,6 @@ import (
 	"github.com/pug-sh/pug/internal/apperr"
 	coreemail "github.com/pug-sh/pug/internal/core/email"
 	"github.com/pug-sh/pug/internal/core/email/secret"
-	coreorgs "github.com/pug-sh/pug/internal/core/orgs"
 	"github.com/pug-sh/pug/internal/deps/postgres"
 	"github.com/pug-sh/pug/internal/deps/telemetry"
 	orgemailprovidersv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgemailproviders/v1"
@@ -24,8 +23,10 @@ import (
 	"github.com/pug-sh/pug/internal/slogx"
 )
 
+// Authorization (admin-only — email_provider is an admin resource in the policy)
+// is enforced centrally by rpc.AuthzInterceptor from the permission registry,
+// before any handler runs.
 type server struct {
-	orgs   *coreorgs.Service
 	read   *dbread.Queries
 	write  *dbwrite.Queries
 	cipher *secret.Cipher
@@ -37,27 +38,8 @@ type server struct {
 // PUG_EMAIL_PROVIDER_SECRET_KEY). In that mode Get/Set return
 // FailedPrecondition via requireCipher and SendTest returns the same on nil
 // mailer.
-func NewServer(orgs *coreorgs.Service, read *dbread.Queries, write *dbwrite.Queries, cipher *secret.Cipher, repo *coreemail.OrgProviderRepo, mailer *coreemail.Service) *server {
-	return &server{orgs: orgs, read: read, write: write, cipher: cipher, repo: repo, mailer: mailer}
-}
-
-func (s *server) requireAdmin(ctx context.Context, orgID string) (*rpc.Principal, error) {
-	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	role, err := s.orgs.GetMemberRole(ctx, orgID, principal.Customer.ID)
-	if err != nil {
-		if errors.Is(err, coreorgs.ErrMemberNotFound) {
-			return nil, apperr.PermissionDenied(apperr.ReasonOrgNotAMember, "not a member of this org")
-		}
-		// orgs service logs+records at source per the log-at-source convention.
-		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
-	}
-	if role != coreorgs.RoleAdmin {
-		return nil, apperr.PermissionDenied(apperr.ReasonOrgAdminRequired, "admin role required")
-	}
-	return principal, nil
+func NewServer(read *dbread.Queries, write *dbwrite.Queries, cipher *secret.Cipher, repo *coreemail.OrgProviderRepo, mailer *coreemail.Service) *server {
+	return &server{read: read, write: write, cipher: cipher, repo: repo, mailer: mailer}
 }
 
 // requireCipher returns FailedPrecondition when no encryption key is
@@ -72,9 +54,6 @@ func (s *server) requireCipher() error {
 }
 
 func (s *server) Get(ctx context.Context, req *connect.Request[orgemailprovidersv1.GetRequest]) (*connect.Response[orgemailprovidersv1.GetResponse], error) {
-	if _, err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
-		return nil, err
-	}
 	if err := s.requireCipher(); err != nil {
 		return nil, err
 	}
@@ -133,9 +112,6 @@ func (s *server) Get(ctx context.Context, req *connect.Request[orgemailproviders
 }
 
 func (s *server) Set(ctx context.Context, req *connect.Request[orgemailprovidersv1.SetRequest]) (*connect.Response[orgemailprovidersv1.SetResponse], error) {
-	if _, err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
-		return nil, err
-	}
 	if err := s.requireCipher(); err != nil {
 		return nil, err
 	}
@@ -198,9 +174,6 @@ func (s *server) Set(ctx context.Context, req *connect.Request[orgemailproviders
 }
 
 func (s *server) Remove(ctx context.Context, req *connect.Request[orgemailprovidersv1.RemoveRequest]) (*connect.Response[orgemailprovidersv1.RemoveResponse], error) {
-	if _, err := s.requireAdmin(ctx, req.Msg.GetOrgId()); err != nil {
-		return nil, err
-	}
 	if _, err := s.write.DeleteOrgEmailProvider(ctx, req.Msg.GetOrgId()); err != nil {
 		slog.ErrorContext(ctx, "failed to delete org email provider", slogx.Error(err),
 			slog.String("org_id", req.Msg.GetOrgId()))
@@ -222,7 +195,7 @@ func (s *server) Remove(ctx context.Context, req *connect.Request[orgemailprovid
 // the calling admin's own email to keep the operator-default reputation
 // domain from becoming a free open-relay.
 func (s *server) SendTest(ctx context.Context, req *connect.Request[orgemailprovidersv1.SendTestRequest]) (*connect.Response[orgemailprovidersv1.SendTestResponse], error) {
-	principal, err := s.requireAdmin(ctx, req.Msg.GetOrgId())
+	principal, err := rpc.MustGetPrincipalWithCustomer(ctx)
 	if err != nil {
 		return nil, err
 	}

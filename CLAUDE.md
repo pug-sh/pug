@@ -29,6 +29,14 @@ make clickstack
 ./bin/pug nats migrate
 ./bin/pug clickhouse migrate
 
+# Seed the demo project for local dev. Resets Postgres + ClickHouse (pass
+# --no-reset to keep the schema and truncate the demo tables instead), then runs
+# the same event-gated flow as `pug worker demo`: ensure the demo account,
+# backfill events, seed Postgres profiles for ONLY the users that produced
+# events, then copy them to ClickHouse. A profile therefore never exists without
+# events. (Tunables: --count, --batch.)
+./bin/pug seed
+
 # Start development server + workers together
 ./bin/pug dev
 
@@ -41,14 +49,25 @@ make clickstack
 ./bin/pug worker profile alias
 ./bin/pug worker profile upsert
 
-# Rolling demo-traffic generator. The standalone command always runs; under
-# `pug dev` it starts only when PUG_DEMO_ENABLED=true. It derives the demo
+# Rolling demo-traffic generator. Gated by PUG_DEMO_ENABLED everywhere: when off
+# (default), `pug dev` skips it and the standalone `pug worker demo` idles (stays
+# running but generates nothing, so a k8s Deployment doesn't restart-loop on
+# exit); when on, it runs. It derives the demo
 # project from the demo user (woof@pug.sh) — creating the customer/org/project
-# + profiles on a fresh DB, resolving them otherwise — then backfills ~4 months
-# of ClickHouse history if the project has no events yet, and finally plays
-# "Pug & Pals" sessions in real time through the NATS ingestion pipeline.
-# Self-bootstrapping so a single k8s deployment seeds-then-streams with no
-# manual seed step and no project id to configure.
+# on a fresh DB, resolving it otherwise — then, if the project has no events
+# yet, backfills ~4 months of "Pug & Pals" history and seeds a profile only for
+# the users those events belong to (never for a user with no events). Most of
+# the pool stays profile-less: the ~half whose join date is still in the future
+# (they sign up live as the wall clock crosses their join) plus past users who
+# churned before the backfill window. It then plays sessions out in real time.
+# Both the backfill and the live stream write straight to ClickHouse via the
+# same insert path — the worker owns its ClickHouse connection and uses no NATS,
+# so it depends on no other worker (the rollup MV still fires on the direct
+# inserts). New signups keep appearing as the wall clock crosses each user's
+# join date and the worker creates their profile on first sight.
+# Self-bootstrapping so a single k8s
+# deployment seeds-then-streams with no manual seed step and no project id to
+# configure.
 ./bin/pug worker demo
 ```
 
@@ -61,6 +80,16 @@ Environment variables are documented in `.env.example`. **Telemetry export is au
 make sqlc
 
 # Generate protobuf code (after modifying .proto files)
+# Runs three buf plugins: protoc-gen-go, protoc-gen-connect-go, and
+# protoc-gen-mcp (an in-repo wrapper — cmd/protoc-gen-mcp — that adds editions
+# support to redpanda-data/protoc-gen-go-mcp, which upstream
+# lacks). The MCP plugin emits a `<pkg>mcp` subpackage for every proto package (buf
+# has no per-plugin path filter, so every proto is fed to it); only the
+# insights/activity/profiles packages are linked into the /mcp endpoint (see MCP
+# subsystem), the rest go unused. An RPC's leading comment becomes its MCP tool
+# description — for those three services a proto comment is shipped to the model, so
+# treat it as runtime behavior. Delete the wrapper and point buf at upstream once it
+# declares editions.
 make rpc
 
 # Generate templ email templates (after modifying .templ files)
@@ -102,10 +131,10 @@ PostgreSQL uses read/write separation:
 
 ### Org Hierarchy
 
-- **Org** is the top-level entity. Each customer belongs to one or more orgs via `org_members` (role: `ORG_ROLE_ADMIN` | `ORG_ROLE_MEMBER`).
+- **Org** is the top-level entity. Each customer belongs to one or more orgs via `org_members` (role: `ORG_ROLE_ADMIN` | `ORG_ROLE_MEMBER` | `ORG_ROLE_VIEWER`).
 - **Projects** belong to an org (`org_id`). A project is always created within an org context.
 - **Invitations** (`org_invitations`) are pending membership records that expire after 7 days and transition from `INVITATION_STATUS_PENDING` → `INVITATION_STATUS_ACCEPTED`. The redeemable invite secret is stored only as a hash in `email_action_tokens` (`purpose = emailaction.PurposeOrgInvite`, value `"org_invite"` — deliberately distinct from the auth login purpose `emailaction.PurposeMagicLink` / `"magic_link"` so that issuing or superseding a passwordless login link, which invalidates active tokens by `(email, purpose)`, can never consume a pending invite token); `org_invitations.token` is a non-redeemable storage value (rotated on resend via `RefreshOrgInvitationDelivery`) and is never returned by any RPC. Expiry is checked at accept time, not via a status transition. `ResendInvite` rotates the storage token, refreshes `expires_at`, invalidates any prior `email_action_tokens` for the invitation, and issues a fresh redeemable token — it does **not** change `status`; only acceptance flips PENDING → ACCEPTED. Acceptance for a customer who is **already** a member still flips `status` to ACCEPTED (and returns `ErrAlreadyMember`) rather than leaving a stranded PENDING row whose token has been consumed.
-- Admin-only operations: `UpdateDisplayName`, `RemoveMember`, `InviteMember`, `ResendInvite`, `ListInvitations`. All other org endpoints require membership.
+- Admin-only operations: `UpdateDisplayName`, `RemoveMember`, `UpdateMemberRole`, `InviteMember`, `ResendInvite`, `ListInvitations`. Other member-scoped org reads require membership; `List`/`Create`/`Leave` are self-service. `InviteMember` and `UpdateMemberRole` may assign any of the three roles. `UpdateMemberRole` permits **any** transition (promotion or demotion) **except demoting the org's last admin** to a non-admin role (`ErrLastAdmin` → `FailedPrecondition`/`CANNOT_DEMOTE_LAST_ADMIN`), enforced race-free by `UpdateOrgMemberRoleIfNotLastAdmin`'s locked-CTE admin-count guard (the same `FOR UPDATE` pattern as `DeleteOrgMemberIfNotLastAdmin`); a blocked guard and a missing member both surface as "no row updated" and are disambiguated by a follow-up read.
 - New accounts are created by completing a magic link or OAuth sign-in — there is no password-signup endpoint (`SignUpWithEmail` was removed). Completing a *plain* (non-invite) magic link for a new email provisions a default org + project atomically (in `CompleteMagicLink`); an *invite* magic link instead joins the inviting org with the invitation's role. `CompleteMagicLink` looks the token up by hash (unique) and dispatches on its `purpose`: it honors only `"magic_link"` and `"org_invite"`, rejecting any other purpose with `ErrInvalidToken` so a token minted for a future flow can't be redeemed as a login. `CompleteOAuthSignIn` accepts the Google `id_token` credential from `@react-oauth/google` `GoogleLogin`, verifies it server-side via OIDC (`PUG_OAUTH_GOOGLE_CLIENT_ID`), resolves the IdP identity against `customer_identities` (link by verified email or create), then runs the same shared provisioning path as magic link (`FinishSignup` + `FinalizeVerifiedCustomer` in `provision.go`) in a single transaction (with fresh-transaction retries on signup races) via `oauth.WithIdentityTx`. A verified IdP email links to an existing email/password or magic-link account without clearing `password_hash`. Password login (`SignInWithEmail`) and authenticated `SetPassword` remain, so a magic-link account can opt into a password and then sign in with it.
 
 ### Dashboards
@@ -126,13 +155,18 @@ Dashboards belong to a **project** (`dashboard.dashboards.v1.DashboardsService`,
 
 ### Auth & Principal
 
-RPC handlers authenticate via `connectrpc.com/authn` middleware. Three auth modes are supported:
+RPC handlers authenticate via `connectrpc.com/authn` middleware. Four auth modes are supported:
 
 - **`WithJWTAuth`** — Dashboard auth. Sets `Principal.Customer` (always non-nil). Optionally sets `Principal.Project` if `x-project-id` header is provided and the customer is an org member.
 - **`WithSDKAuth`** — API key auth (public or private key). Sets `Principal.Project` only. `Principal.Customer` is nil.
 - **`WithDualAuth`** — Private API key or JWT fallback. API key path sets `Principal.Project` only; JWT path behaves like `WithJWTAuth`.
+- **`WithPrivateKeyAuth`** — Private (`prv_`) API key in `x-api-key` only: no public-key branch, no `api_key` query-param fallback, no JWT fallback. The auth boundary for `/mcp` (MCP clients hold a static credential, so a 1h access JWT is useless there and a public key is extractable from client apps). Sets `Principal.Project` only; `Principal.Customer` is nil. Not passed around as an `authn.AuthFunc` — `mcp.Mount` constructs it internally from the projects repo, so `/mcp` cannot be wired to any other auth mode.
+
+`resolvePrivateKeyPrincipal` is the shared private-key → `Principal` resolution behind `WithDualAuth` and `WithPrivateKeyAuth`. **`RecoverHandlerPanic`** (wired once via `connect.WithRecover` in `handlerOpts`) converts a panic escaping any handler into `CodeInternal` with a log + `telemetry.RecordError`, never leaking the panic value; it is required, not cosmetic, because the `/mcp` loopback invokes handlers off net/http's panic-recovering goroutine (see MCP subsystem).
 
 **Session tokens (access + refresh):** every sign-in path (`SignInWithEmail`, `CompleteMagicLink`, `CompleteOAuthSignIn`) returns a `coreauth.Session{AccessToken, RefreshToken}`, not a bare JWT. The access JWT is short-lived (`accessTokenTTL`, 1h) — `WithJWTAuth` still verifies it exactly as before. The refresh token is a long-lived (`refreshTokenTTL`, sliding 90 days) opaque crypto-random secret stored **only as a sha256 hash** in the `refresh_tokens` table (migration 014), mirroring `email_action_tokens`. `RefreshSession` (public RPC — it runs *after* the access token has expired, so it can't sit behind JWT auth) exchanges a refresh token for a new pair inside a `FOR UPDATE`-locked tx, **rotating** it: the presented token is consumed and a successor is minted in the same `family_id`. Reuse-detection: presenting an already-consumed token (replay of a leaked token, or a client double-refreshing) revokes the **entire family** and returns `ErrInvalidToken` → both attacker and legitimate client must re-auth. `SignOut` revokes the token's family (best-effort; a stale token is a no-op). For magic-link/OAuth the refresh row commits **inside** the provisioning tx (`issueSessionTx`) so a new account and its first session are atomic; password sign-in uses a standalone insert (`issueSession`). The FE (`../app`) treats refresh-token presence as the authentication signal (`isAuthenticatedAtom`) — NOT access-token expiry — and its transport interceptor silently refreshes (single-flight, to avoid tripping reuse-detection) on expiry or a `401`, so active users are never logged out at the 1h boundary.
+
+**Demo login:** `DemoSignIn` (public, no credentials) mints a full `Session` for the seeded read-only viewer account (`coreauth.DemoViewerEmail` = `snoop@pug.sh`, the demo seeder's single source of truth for that email) plus the demo `project_id` the client scopes to via `x-project-id`, so a visitor landing on the public demo page is authenticated in viewer mode with zero FE auth changes (the returned refresh token rides the same silent-refresh path). Gated by `PUG_DEMO_ENABLED`, now read by `pug server` too — the one flag is the whole demo switch (server demo-login + worker traffic), so set it `true` on every pod of a demo deployment and leave it `false` everywhere else; `DemoSignIn` returns `CodeUnavailable` when off or when the demo account isn't seeded. There is **no** demo-specific authorization path — the minted principal is a genuine `ORG_ROLE_VIEWER` org member, so the existing Casbin RBAC makes it read-only end to end; as defense-in-depth on this credential-less endpoint, `DemoSignIn` additionally refuses to mint unless the resolved account really is a viewer, so a mis-seed or a later promotion of the demo account fails closed.
 
 `Principal.Customer` is `*dbread.Customer` — it is nil for API key auth paths. Always use the appropriate extractor:
 
@@ -140,6 +174,18 @@ RPC handlers authenticate via `connectrpc.com/authn` middleware. Three auth mode
 - **`MustGetPrincipalWithProject`** — use in handlers that require a project context (`x-project-id` header). Returns `CodeUnauthenticated` if Project is nil.
 
 Never call `getPrincipalFromContext` directly in handlers.
+
+### Authorization (RBAC via Casbin)
+
+Authentication (above) establishes *who* the caller is; **authorization** (*may this role do this?*) is a Casbin policy in `internal/core/authz/` — all Go, no `.conf`/`.csv`/`go:embed`.
+
+- **Casbin holds only the role→permission matrix + role hierarchy** (`model` const + `policy.go` `[][]string`). Role **assignment stays in Postgres** (`org_members.role`), resolved fresh per request via `coreorgs.GetMemberRole`, then that single role is passed into `Authorizer.Authorize(role, resource, action)`. There is no Casbin↔DB sync and no policy cache to invalidate. The `*authz.Authorizer` is built once in `newDeps` (`authz.NewAuthorizer`; a malformed static policy fails startup via a returned error — no panic, no global) and injected through `server.start` into the single `rpc.AuthzInterceptor` (the dashboard handlers themselves hold no authorizer).
+- **Resources/actions are typed consts** (`authz.Resource` / `authz.Action`). `manage` is authoring sugar that expands to CRUD at load time; the specials `send`/`export`/`erase` are never implied by `manage`. Active roles form a hierarchy (`groupingRules`): `ORG_ROLE_ADMIN` (org administration) inherits `ORG_ROLE_MEMBER` (full CRUD on project-scoped resources) inherits `ORG_ROLE_VIEWER` (read-only floor: project-scoped reads + the read-only org view — org/member/project). The viewer floor is enforced uniformly by the one interceptor across both the org control plane (orgs / projects-lifecycle / email) and the project-data plane (dashboards/insights/activity/profiles) — so a viewer is genuinely read-only on the JWT path: denied dashboard writes and profile erasure, allowed every read. The **API-key path stays coarse** project-scoped (no customer ⇒ no role), so a private key keeps full data access. member and admin keep the **exact** effective permissions they had before viewer existed (viewer only factors the shared reads into a named floor — zero behavior change for those two roles). Every role-gated RPC resolves+parses the stored role and fails **closed** on an unrecognized value, where the prior `IsOrgMember` check passed on row existence alone. `owner`/feature roles remain reserved in comments for the roadmap.
+- **Enforcement is one registry-driven interceptor** (`rpc.AuthzInterceptor`, wired into `handlerOpts`), driven by `internal/app/server/rpc/authz_registry.go`, which maps every served RPC to an `authzspec.Spec` (a reflection-based contract test fails if any served RPC lacks an entry or an entry goes stale). Each Spec is built by a constructor in the `authzspec` package — `Public`/`Self`/`Project`/`SDKKey`, or the role-gated `OrgGated`/`ProjGated`; because `Spec`'s fields are unexported, the "role-gated ⟺ resource+action+orgSource" invariant holds **by construction** (a malformed role-gated entry won't compile, not merely fail a test; a bare `Spec{}` is caught by `Defined()`). For each role-gated entry the interceptor resolves the caller's org — `authzspec.OrgFromMessage` (org control plane: orgs / projects `BatchGet`+`Create` / email — read via the generated `GetOrgId()` accessor) or `OrgFromProject` (project data plane + projects lifecycle writes `Delete`/`UpdateMeta`/`UpdateFCMServiceJSON` — `principal.Project.OrgID`) — then enforces the recorded `(resource, action)` against the policy. The registry's pairs are the **enforced** source of truth everywhere: a new role-gated RPC is gated the moment its entry is added (it can't ship unguarded), and the interceptor tests (`TestAuthzInterceptorRegistryEntriesEnforced`, `TestRoleGatedAdminOnlyRPCs`) catch a drifted pair. **Handlers carry no authorization of their own** — they assume the request reaching them is already authorized; the `require*` helpers and the per-handler `*authz.Authorizer` are gone.
+  - Denials are uniform: a non-member → `PermissionDenied(ORG_NOT_A_MEMBER)`, an insufficient role → `PermissionDenied(ORG_ROLE_FORBIDDEN)`. A non-member is reported identically whether the org exists or not (the role lookup finds no row either way), so existence is never leaked. On the API-key path (no customer) the interceptor is a deliberate **no-op** — API-key access stays coarse project-scoped, exactly as before Casbin.
+  - Two RPCs sit outside the role gate by design: `projects.Get` is `domainProject` (no role check — auth already established membership and the only read it allows is in every role's floor), and `projects.Create`'s admin check is **additionally** enforced race-safe in the `CreateProjectAsAdmin` CTE (the interceptor is the coarse gate; the CTE is the authoritative, atomic one).
+  - Casbin governs the **JWT/customer path only**; API-key (SDK/shared) access stays coarse project-scoped as before.
+- **Role cache:** `coreorgs.GetMemberRole` is Redis-cached when the orgs service is built via `coreorgs.NewServiceWithRoleCache` (wired in `server.start`). It is **positive-only** (non-members are never cached, so member *adds* — incl. the cross-package auth provisioning path — need no invalidation) and invalidated on every role change / removal (`UpdateMemberRole`, `RemoveMemberSafe`, `Leave`); a short TTL backstops a lost invalidation. Best-effort, mirroring `projects.InvalidateProjectKeys`.
 
 ### Proto/RPC
 
@@ -159,13 +205,18 @@ Services defined in `proto/` directory, organized by auth boundary (`public/`, `
 
 Deep per-subsystem documentation lives in [`docs/architecture/`](docs/architecture/). These are **not** loaded by default — read the relevant file when working in that area:
 
-- **Insights** — trends/funnel/retention/segmentation/**user flow (Sankey)**/**top K (ranked dimension + $others bucket)** queries; breakdowns, granularity caps, filter model, funnel timing stats, type-specific query builders → [`docs/architecture/insights.md`](docs/architecture/insights.md), user flow plan → [`docs/architecture/user-flow.md`](docs/architecture/user-flow.md)
+- **Insights** — trends/funnel/retention/segmentation/**user flow (Sankey)**/**top K (ranked dimension + optional $others bucket)** queries; breakdowns, granularity caps, filter model, funnel timing stats, type-specific query builders → [`docs/architecture/insights.md`](docs/architecture/insights.md), user flow plan → [`docs/architecture/user-flow.md`](docs/architecture/user-flow.md)
 - **ClickHouse** — type-safe query builder, events table (dedup key, partitioning, `FINAL` policy), materialized-view flavors, query conventions → [`docs/architecture/clickhouse.md`](docs/architecture/clickhouse.md)
-- **Profiles** — read API (ClickHouse-backed), activity summary, property model, soft-delete, device subscriptions → [`docs/architecture/profiles.md`](docs/architecture/profiles.md)
-- **Compliance (GDPR/DPDP)** — data-subject erasure: a synchronous prelude + the generalized `compliance` worker that hard-deletes events, derived rollups, and the profile; the unified `compliance_requests` DSAR ledger; idempotent re-drive on retry, NATS retry-to-DLQ for the async hard delete → [`docs/compliance/4.1-erasure-scope.md`](docs/compliance/4.1-erasure-scope.md)
+- **Profiles** — read API (ClickHouse-backed) serving identified profiles ∪ **derived anonymous persons** (unclaimed `distinct_id`s synthesized from the activity rollup — no rows written; claim exclusion via aliases/profile-ids/external-ids; `Get` redirects claimed anon ids to the canonical profile), activity summary, property model, soft-delete, device subscriptions → [`docs/architecture/profiles.md`](docs/architecture/profiles.md)
+- **Compliance (GDPR/DPDP)** — data-subject erasure: a synchronous prelude + the generalized `compliance` worker that hard-deletes events, derived rollups, and the profile; the unified `compliance_requests` DSAR ledger; idempotent re-drive on retry, NATS retry-to-DLQ for the async hard delete
 - **Event ingestion enrichment** — geo, user-agent, and bot-management auto-properties → [`docs/architecture/ingestion.md`](docs/architecture/ingestion.md)
 - **Email templating** — templ + go-premailer rendering, frozen brand tokens, preview CLI → [`docs/architecture/email.md`](docs/architecture/email.md)
 - **OpenTelemetry** — `internal/deps/telemetry/` (`SetupSDK`; OTLP-vs-stdout auto-detected from the `OTEL_EXPORTER_OTLP_*` endpoint vars, no `PUG_OTEL`), per-component instrumentation, slog bridge vs stdout handler, error-recording convention and exceptions → [`docs/architecture/telemetry.md`](docs/architecture/telemetry.md)
+- **MCP server** — the read-only shared analytics API (insights + activity + profile reads = 12 tools) exposed as Model Context Protocol tools at `/mcp`. A thin adapter in `internal/app/server/mcp/`: every tool call re-enters the real Connect stack in-process via a loopback client, so validation/auth/authz run identically to an external API call (no duplicated logic).
+  - **`mcp.Mount(mux, loopback, repo)` is the single entry point** — it builds the tool handler, builds its own private-key-only auth boundary (`WithPrivateKeyAuth`) from the repo, registers both `/mcp` and `/mcp/`, and fails startup on codegen drift. It does **not** accept an `authn.AuthFunc`: admitting a dashboard JWT or a public key is unrepresentable by construction, and `server.start` and the test harness go through the identical call so the endpoint can't be wired one way in tests and another in production.
+  - **`toolPolicy` (`rename.go`) is the single source of truth for the tool surface** — one row per generated tool, either `expose("curated_name")` or `hide("why")`. Naming and exclusion are the same cell, so they cannot disagree. Keyed off the generated `Tool` vars, so an upstream rename/removal breaks it at **compile** time; a tool with no row, a stale row, a duplicate curated name, and a hidden tool that reaches registration all fail **startup** (`registerRenamed` → `checkComplete`; the `*renamer` never escapes, so the check can't be skipped). Hidden today: the GDPR erasure RPCs (irreversible — never LLM-callable) and the WIP insights `SegmentUsers` (still served as a Connect RPC). `List` (server-streaming) is never generated.
+  - **An RPC's leading proto comment becomes its MCP tool description**, shipped verbatim to the model — proto comments on these three services are runtime behavior, not documentation. The server's `instructions` string is pinned against `toolPolicy` by a test, since prose has no compile-time link to the table.
+  - **Panics must be contained** (`connect.WithRecover` + a backstop `recover` in `loopbackClient.Do`) and **tool calls are deadline-bounded** (`toolCallTimeout`): the go-sdk runs tool handlers on a jsonrpc2 goroutine with no panic recovery and with cancellation detached, so an uncontained panic would kill the process for every tenant and an abandoned call would leave its ClickHouse query running. `Stateless: true` is load-bearing — it is what binds each tool call's API key to its own request context.
 
 ## Code Style
 

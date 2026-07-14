@@ -148,8 +148,10 @@ func Divider() templ.Component {
 	})
 }
 
-// Button renders a bulletproof, table-wrapped anchor. bgcolor on the cell
-// keeps Outlook happy; premailer inlines the .btn / .btn-cell classes.
+// Button renders a bulletproof, table-wrapped anchor. The table is full-width
+// and .btn is display:block so the anchor fills the card, mirroring the app's
+// full-width primary CTA (Button className="w-full"). bgcolor on the cell keeps
+// Outlook happy; premailer inlines the .btn / .btn-cell classes.
 func Button(label, url string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -171,14 +173,14 @@ func Button(label, url string) templ.Component {
 			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td class=\"btn-cell\" align=\"center\" bgcolor=\"#3c68d9\"><a class=\"btn\" href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"width:100%;\"><tr><td class=\"btn-cell\" align=\"center\" bgcolor=\"#3c68d9\"><a class=\"btn\" href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 templ.SafeURL
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(url))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/core/email/templates/components.templ`, Line: 25, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/core/email/templates/components.templ`, Line: 27, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -191,7 +193,7 @@ func Button(label, url string) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/core/email/templates/components.templ`, Line: 25, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/core/email/templates/components.templ`, Line: 27, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -234,7 +236,7 @@ func LinkFallback(url string) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(url)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/core/email/templates/components.templ`, Line: 33, Col: 24}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/core/email/templates/components.templ`, Line: 35, Col: 24}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {

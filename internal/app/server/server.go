@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"connectrpc.com/validate"
+	"github.com/pug-sh/pug/internal/app/server/mcp"
 	pogrpc "github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/app/server/rpc/dashboard/customers"
 	dashboardsrpc "github.com/pug-sh/pug/internal/app/server/rpc/dashboard/dashboards"
@@ -67,6 +69,13 @@ func Run(ctx context.Context) error {
 func start(ctx context.Context, d *deps) error {
 	queriesRo := dbread.New(d.pgRo)
 
+	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
+	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
+	dashboardsSvc := coredashboards.NewService(d.pgRo, d.pgW)
+	orgsSvc := coreorgs.NewServiceWithRoleCache(d.pgRo, d.pgW, d.nats, d.redis.Unwrap())
+	insightsExecutor := coreinsights.NewExecutor(d.ch)
+	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
+
 	// Interceptor order matters. ErrorInterceptor must wrap validate.NewInterceptor():
 	// validate short-circuits on a bad request (returns the error without calling the
 	// inner chain), so ErrorInterceptor has to be OUTSIDE it to attach error details
@@ -76,21 +85,30 @@ func start(ctx context.Context, d *deps) error {
 	// OUTSIDE ErrorInterceptor so it observes the final *connect.Error with its
 	// resolved code for client-vs-server log-level classification (isClientError also
 	// reads *apperr.Error directly as a safety net, but order keeps that path moot).
-	handlerOpts := connect.WithInterceptors(
-		pogrpc.CorrelationInterceptor(),
-		d.otelInterceptor,
-		pogrpc.LoggingInterceptor(),
-		pogrpc.ErrorInterceptor(),
-		validate.NewInterceptor(validate.WithoutErrorDetails()),
-		pogrpc.PrincipalInterceptor(),
+	// AuthzInterceptor is innermost — the last gate before the handler — and is the
+	// single authorization gate: it enforces the org role recorded in the permission
+	// registry for every role-gated RPC (orgsSvc resolves the caller's role), and is
+	// a no-op for public/self/SDK procedures and the API-key path. Handlers carry no
+	// authorization of their own.
+	//
+	// WithRecover turns a handler panic into a CodeInternal error instead of letting
+	// it unwind. On the network path net/http would contain it per connection (at the
+	// cost of a reset connection and zero telemetry); on the /mcp loopback path the
+	// handler runs on a go-sdk jsonrpc2 goroutine that no recover reaches, so an
+	// escaping panic would kill the process. mcp.loopbackClient.Do keeps a second
+	// recover as a backstop for panics outside this chain.
+	handlerOpts := connect.WithHandlerOptions(
+		connect.WithInterceptors(
+			pogrpc.CorrelationInterceptor(),
+			d.otelInterceptor,
+			pogrpc.LoggingInterceptor(),
+			pogrpc.ErrorInterceptor(),
+			validate.NewInterceptor(validate.WithoutErrorDetails()),
+			pogrpc.PrincipalInterceptor(),
+			pogrpc.AuthzInterceptor(d.authz, orgsSvc),
+		),
+		connect.WithRecover(pogrpc.RecoverHandlerPanic),
 	)
-
-	projectsRepo := coreprojects.NewRepo(queriesRo, d.redis.Unwrap())
-	projectsSvc := coreprojects.NewService(d.pgRo, d.pgW, projectsRepo)
-	dashboardsSvc := coredashboards.NewService(d.pgRo, d.pgW)
-	orgsSvc := coreorgs.NewService(d.pgRo, d.pgW, d.nats)
-	insightsExecutor := coreinsights.NewExecutor(d.ch)
-	insightsSvc := coreinsights.NewService(insightsExecutor, d.redis.Unwrap())
 
 	// Middleware
 	// - Dashboard: JWT auth only (for dashboard-only services)
@@ -103,17 +121,23 @@ func start(ctx context.Context, d *deps) error {
 	// Handlers — grouped by auth boundary
 
 	// Public
-	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats)
+	authServer, err := auth.NewServer(ctx, d.pgRo, d.pgW, d.jwtKey, d.nats, d.demoEnabled)
 	if err != nil {
 		return fmt.Errorf("auth server: %w", err)
 	}
+	// Log the resolved demo-login state once at startup so an operator can confirm
+	// this pod actually picked up PUG_DEMO_ENABLED. The likeliest demo misconfig is
+	// the server pod missing the flag while the worker has it: without this line
+	// DemoSignIn would just return Unavailable to visitors with no server-side
+	// breadcrumb (the per-request gate stays silent to avoid noise when off).
+	slog.InfoContext(ctx, "demo sign-in", slog.Bool("enabled", d.demoEnabled))
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(authServer, handlerOpts)
 
 	// Dashboard
 	orgsPath, orgsHandler := orgsv1connect.NewOrgsServiceHandler(
 		orgsrpc.NewServer(orgsSvc), handlerOpts)
 	projectsPath, projectsHandler := projectsv1connect.NewProjectsServiceHandler(
-		projects.NewServer(projectsSvc, orgsSvc), handlerOpts)
+		projects.NewServer(projectsSvc), handlerOpts)
 	dashboardsPath, dashboardsHandler := dashboardsv1connect.NewDashboardsServiceHandler(
 		dashboardsrpc.NewServer(dashboardsSvc, insightsExecutor), handlerOpts)
 	sharedDashboardsPath, sharedDashboardsHandler := publicdashboardsv1connect.NewSharedDashboardsServiceHandler(
@@ -163,7 +187,7 @@ func start(ctx context.Context, d *deps) error {
 	}
 
 	orgEmailProvidersPath, orgEmailProvidersHandler := orgemailprovidersv1connect.NewOrgEmailProvidersServiceHandler(
-		orgemailproviders.NewServer(orgsSvc, queriesRo, dbwrite.New(d.pgW), emailCipher, orgEmailRepo, emailMailer),
+		orgemailproviders.NewServer(queriesRo, dbwrite.New(d.pgW), emailCipher, orgEmailRepo, emailMailer),
 		handlerOpts)
 
 	customersPath, customersHandler := customersv1connect.NewCustomersServiceHandler(
@@ -196,50 +220,71 @@ func start(ctx context.Context, d *deps) error {
 	mux.HandleFunc("/healthz", livenessHandler)
 	mux.HandleFunc("/readyz", d.readinessHandler)
 
+	// AUTHZ CONTRACT: mount every RPC service through handle(), which records the
+	// service name. assertServedServicesMatch (below) then fails startup unless the
+	// mounted set exactly equals the authz permission registry — so no RPC service
+	// can ship mounted-but-unauthorized (or authorized-but-unmounted) — and
+	// AssertRegistryMatchesServedProcedures tightens that to the PROCEDURE level, so
+	// a new method on an already-mounted service (invisible to the service-level
+	// check) also fails fast. Always mount RPC routes via handle(), never mux.Handle
+	// directly.
+	mounted := map[string]bool{}
+	handle := func(path string, h http.Handler) {
+		mounted[strings.Trim(path, "/")] = true
+		mux.Handle(path, h)
+	}
+
 	// Public (CORS, no auth)
-	mux.Handle(authPath, pogrpc.WithCORS(d.corsOrigins, authHandler))
-	mux.Handle(sharedDashboardsPath, pogrpc.WithCORS(d.corsOrigins, sharedDashboardsHandler))
+	handle(authPath, pogrpc.WithCORS(d.corsOrigins, authHandler))
+	handle(sharedDashboardsPath, pogrpc.WithCORS(d.corsOrigins, sharedDashboardsHandler))
 
 	// Dashboard only (CORS + JWT auth)
-	mux.Handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
-	mux.Handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
-	mux.Handle(dashboardsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
-	mux.Handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
-	mux.Handle(customersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(customersHandler)))
+	handle(orgsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgsHandler)))
+	handle(projectsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(projectsHandler)))
+	handle(dashboardsPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(dashboardsHandler)))
+	handle(orgEmailProvidersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(orgEmailProvidersHandler)))
+	handle(customersPath, pogrpc.WithCORS(d.corsOrigins, dashboardMW.Wrap(customersHandler)))
 
 	// Shared: Dashboard + private API key (CORS + dual auth)
-	mux.Handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
-	mux.Handle(activityPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
-	mux.Handle(sharedProfilesPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
+	handle(insightsPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(insightsHandler)))
+	handle(activityPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(activityHandler)))
+	handle(sharedProfilesPath, pogrpc.WithCORS(d.corsOrigins, sharedMW.Wrap(sharedProfilesHandler)))
 
 	// SDK only (API key auth). CORS is wildcard with credentials disabled because
 	// customer sites embedding the SDK have arbitrary origins; auth lives entirely
 	// in the x-api-key header, so there are no ambient credentials to protect.
-	mux.Handle(sdkProfilesPath, pogrpc.WithSDKCORS(sdkMW.Wrap(sdkProfilesHandler)))
-	mux.Handle(eventsPath, pogrpc.WithSDKCORS(sdkMW.Wrap(eventsHandler)))
+	handle(sdkProfilesPath, pogrpc.WithSDKCORS(sdkMW.Wrap(sdkProfilesHandler)))
+	handle(eventsPath, pogrpc.WithSDKCORS(sdkMW.Wrap(eventsHandler)))
 
-	// Reflection
-	services := []string{
-		// Public
-		authv1connect.AuthServiceName,
-		publicdashboardsv1connect.SharedDashboardsServiceName,
-		// Dashboard
-		orgsv1connect.OrgsServiceName,
-		projectsv1connect.ProjectsServiceName,
-		dashboardsv1connect.DashboardsServiceName,
-		orgemailprovidersv1connect.OrgEmailProvidersServiceName,
-		customersv1connect.CustomersServiceName,
-		// Shared
-		insightsv1connect.InsightsServiceName,
-		activityv1connect.ActivityServiceName,
-		profilesv1connect.ProfilesServiceName,
-		// SDK
-		sdkprofilesv1connect.ProfilesSDKServiceName,
-		eventsv1connect.EventsServiceName,
+	if err := assertServedServicesMatch(mounted); err != nil {
+		return err
 	}
-	reflector := grpcreflect.NewStaticReflector(services...)
+	// Procedure-level half of the contract: every served RPC method has an authz
+	// decision (and no entry is stale). Catches a method added to an already-mounted
+	// service, which assertServedServicesMatch (service-level) cannot see.
+	if err := pogrpc.AssertRegistryMatchesServedProcedures(); err != nil {
+		return err
+	}
+
+	// Reflection advertises exactly the authorized services — same source
+	// (pogrpc.ServedServiceNames) as the AUTHZ CONTRACT check above.
+	reflector := grpcreflect.NewStaticReflector(pogrpc.ServedServiceNames()...)
 	mux.Handle(grpcreflect.NewHandlerV1(reflector))
 	mux.Handle(grpcreflect.NewHandlerV1Alpha(reflector))
+
+	// MCP: the read-only shared analytics API as Model Context Protocol tools at
+	// /mcp. mcp.Mount owns the whole endpoint — it builds the tool handler, builds
+	// its own private-key-only auth boundary from projectsRepo (so /mcp cannot be
+	// wired to admit a dashboard JWT or a public key), and normalises a
+	// `Bearer prv_...` credential into the x-api-key the loopback re-injects when it
+	// replays each tool call through this same mux, so validation, auth and authz run
+	// identically to an external API request. Mounted directly on the mux (like
+	// reflection), NOT via handle(): it is not a Connect service, so the
+	// authz-registry contract does not apply to it. It fails fast if the generated
+	// tool set drifts from the curated policy table.
+	if err := mcp.Mount(mux, mux, projectsRepo); err != nil {
+		return fmt.Errorf("mount mcp: %w", err)
+	}
 
 	// WithCorrelationID wraps the whole mux so a correlation id exists before the
 	// authn middleware runs on any route — auth rejections happen outside the
