@@ -104,8 +104,9 @@ func (r *Repo) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey stri
 	}
 
 	// Observed before the DB read so the populate below can detect a revocation
-	// that lands during it.
-	observedGen := r.observeKeyGen(ctx, token)
+	// that lands during it. An unreadable counter is no baseline at all, so the
+	// populate is skipped rather than risked — see observeKeyGen.
+	observedGen, canPopulate := r.observeKeyGen(ctx, token)
 
 	project, err := r.queries.GetProjectByPrivateApiKey(ctx, token)
 	if err != nil {
@@ -118,7 +119,9 @@ func (r *Repo) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey stri
 		return dbread.Project{}, err
 	}
 
-	r.cacheProject(ctx, cacheKey, token, observedGen, project)
+	if canPopulate {
+		r.cacheProject(ctx, cacheKey, token, observedGen, project)
+	}
 
 	return project, nil
 }
@@ -133,7 +136,7 @@ func (r *Repo) GetProjectByPublicApiKey(ctx context.Context, publicApiKey string
 	}
 
 	// Observed before the DB read — see GetProjectByPrivateApiKey.
-	observedGen := r.observeKeyGen(ctx, token)
+	observedGen, canPopulate := r.observeKeyGen(ctx, token)
 
 	project, err := r.queries.GetProjectByPublicApiKey(ctx, publicApiKey)
 	if err != nil {
@@ -144,7 +147,9 @@ func (r *Repo) GetProjectByPublicApiKey(ctx context.Context, publicApiKey string
 		return dbread.Project{}, err
 	}
 
-	r.cacheProject(ctx, cacheKey, token, observedGen, project)
+	if canPopulate {
+		r.cacheProject(ctx, cacheKey, token, observedGen, project)
+	}
 
 	return project, nil
 }
@@ -180,20 +185,34 @@ func (r *Repo) InvalidateProjectKeys(ctx context.Context, projectID string, toke
 	}
 }
 
-// observeKeyGen returns the token's generation counter, captured before the DB
-// read so cacheProject's compare-and-set can detect a revocation that lands
-// during it. "" means the counter is absent (never invalidated) — a valid
-// baseline the CAS matches against. It stays "" when the read fails, which only
-// makes the later populate skip: never go stale.
-func (r *Repo) observeKeyGen(ctx context.Context, token string) string {
+// observeKeyGen returns the token's generation counter, captured before the DB read
+// so cacheProject's compare-and-set can detect a revocation that lands during it.
+// The bool reports whether that baseline is trustworthy enough to populate from.
+//
+// An absent counter is a real baseline ("", true): the token has never been
+// invalidated, and apiKeyPopulateScript is meant to match "" against a still-absent
+// counter and cache the row. A failed read is emphatically not that — it is
+// "unknown" — and must not borrow the same "" that means absent, because the CAS
+// cannot tell the two apart and would treat the unknown as a match. If the Redis
+// blip that failed this read also swallowed a concurrent DeleteApiKey's INCR, the
+// counter stays absent, the compare passes on recovery, and the reader writes the
+// *revoked* key back into a clean cache for apiKeyCacheTTL — the exact resurrection
+// the generation counter exists to prevent, and worse than a lost invalidation,
+// which at least leaves nothing behind to authenticate with.
+//
+// So an unreadable counter returns false and the caller skips its populate. The
+// whole price is that the next lookup pays a DB round-trip; the cache converges as
+// soon as Redis is healthy again.
+func (r *Repo) observeKeyGen(ctx context.Context, token string) (string, bool) {
 	gen, err := r.cache.Get(ctx, apiKeyGenCacheKey(token)).Result()
 	if err != nil {
-		if !errors.Is(err, goredis.Nil) {
-			slog.WarnContext(ctx, "failed to read api key cache generation", slogx.Error(err))
+		if errors.Is(err, goredis.Nil) {
+			return "", true
 		}
-		return ""
+		slog.WarnContext(ctx, "failed to read api key cache generation", slogx.Error(err))
+		return "", false
 	}
-	return gen
+	return gen, true
 }
 
 // cachedProject returns the project cached under cacheKey. A corrupt entry is

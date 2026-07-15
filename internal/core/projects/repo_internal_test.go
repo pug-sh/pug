@@ -3,9 +3,11 @@ package projects
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/testutil"
+	goredis "github.com/redis/go-redis/v9"
 )
 
 // newCacheRaceRepo builds a Repo with no DB handle: these tests drive the cache
@@ -41,7 +43,7 @@ func TestCacheProjectSkipsPopulateAfterConcurrentInvalidation(t *testing.T) {
 	project := dbread.Project{ID: "proj-race"}
 
 	// 1. The lookup observes the generation, then reads the project from the DB.
-	observedGen := repo.observeKeyGen(ctx, token)
+	observedGen, _ := repo.observeKeyGen(ctx, token)
 
 	// 2. A revocation lands in that window: the cached row is dropped and the
 	//    token's generation bumps.
@@ -69,11 +71,88 @@ func TestCacheProjectPopulatesWhenGenerationIsUnchanged(t *testing.T) {
 	const token = "d00dfeedd00dfeedd00d"
 	cacheKey := privateKeyCachePrefix + token
 
-	observedGen := repo.observeKeyGen(ctx, token)
+	observedGen, _ := repo.observeKeyGen(ctx, token)
 	repo.cacheProject(ctx, cacheKey, token, observedGen, dbread.Project{ID: "proj-quiet"})
 
 	if n := rd.Client.Exists(ctx, cacheKey).Val(); n != 1 {
 		t.Fatal("populate skipped with no invalidation racing it; a live key would never cache")
+	}
+}
+
+// deadRedis returns a client pointing at a port nothing listens on, so every command
+// fails with a connection error rather than goredis.Nil. That is what a Redis blip
+// looks like to observeKeyGen, and it is the one case the generation value alone
+// cannot express: a failed read has no value to report, and "" already means absent.
+func deadRedis(t *testing.T) *goredis.Client {
+	t.Helper()
+	c := goredis.NewClient(&goredis.Options{
+		Addr:        "127.0.0.1:1", // nothing listens here; connections are refused outright
+		DialTimeout: 100 * time.Millisecond,
+		MaxRetries:  -1, // fail fast: the test wants the error, not go-redis's resilience
+	})
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+// TestPopulateSkippedWhenOutageHidGenerationAndInvalidation stages the interleaving
+// the CAS cannot detect for itself, in production order: Redis is unreachable when a
+// lookup observes the counter, so it gets no baseline; the concurrent DeleteApiKey's
+// INCR hits that same dead Redis and is lost, leaving the counter absent; Redis
+// recovers before the lookup populates.
+//
+// If an unreadable counter is reported as merely absent, the compare passes against
+// the still-absent counter and the lookup writes the revoked project into a clean
+// cache for apiKeyCacheTTL. That is worse than the lost invalidation it rides in on:
+// the invalidation had nothing to drop, so declining to populate leaves the next
+// lookup to fall through to Postgres and reject the key correctly.
+func TestPopulateSkippedWhenOutageHidGenerationAndInvalidation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	healthy, rd := newCacheRaceRepo(t)
+	ctx := context.Background()
+
+	const token = "deadbeefdeadbeefdead"
+	cacheKey := privateKeyCachePrefix + token
+
+	// 1. The lookup observes while Redis is unreachable, and resolves a still-live
+	//    key from Postgres.
+	down := NewRepo(nil, deadRedis(t))
+	observedGen, canPopulate := down.observeKeyGen(ctx, token)
+
+	// 2. The revocation lands in that window, but its INCR is swallowed by the same
+	//    outage — modelled by the counter simply never being written.
+
+	// 3. Redis is healthy again by the time the lookup would populate. The caller's
+	//    guard is the only thing that can decline the write here, because the value
+	//    it holds is indistinguishable from a legitimate absent baseline.
+	if canPopulate {
+		healthy.cacheProject(ctx, cacheKey, token, observedGen, dbread.Project{ID: "proj-revoked"})
+	}
+
+	if n := rd.Client.Exists(ctx, cacheKey).Val(); n != 0 {
+		t.Fatal("a lookup that could not read the generation cached its project anyway: with the concurrent revocation's INCR lost to the same outage, the compare passes against the still-absent counter and the revoked key keeps authenticating from cache until apiKeyCacheTTL")
+	}
+}
+
+// TestObserveKeyGenBaselinesOnAbsentGeneration is the control for the test above: an
+// absent counter is a real baseline and must stay usable. Refusing it would be safe
+// but would mean a token that has never been revoked could never be cached, quietly
+// costing every lookup a DB round-trip.
+func TestObserveKeyGenBaselinesOnAbsentGeneration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	repo, _ := newCacheRaceRepo(t)
+
+	gen, canPopulate := repo.observeKeyGen(context.Background(), "cafebabecafebabecafe")
+	if !canPopulate {
+		t.Fatal("an absent generation was refused as a baseline; a key that has never been revoked would never cache")
+	}
+	if gen != "" {
+		t.Errorf("expected an absent generation to observe as %q, got %q", "", gen)
 	}
 }
 
@@ -91,7 +170,7 @@ func TestInvalidateProjectKeysBumpsGenerationPerToken(t *testing.T) {
 	const revoked, kept = "aaaa1111", "bbbb2222"
 
 	// A lookup for the key that is about to survive observes its generation first.
-	keptGen := repo.observeKeyGen(ctx, kept)
+	keptGen, _ := repo.observeKeyGen(ctx, kept)
 
 	repo.InvalidateProjectKeys(ctx, "proj-multi", revoked)
 
