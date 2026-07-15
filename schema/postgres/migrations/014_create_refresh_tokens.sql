@@ -1,8 +1,8 @@
 -- +goose Up
--- Durable, rotating refresh-token store. The access JWT is short-lived (1h); a
--- refresh token is the long-lived (sliding 90-day) secret a client exchanges for
--- a fresh access+refresh pair. Stored as a sha256 hash (never plaintext), exactly
--- like email_action_tokens.
+-- Durable, rotating refresh-token store. The access JWT is short-lived (see
+-- coreauth.accessTokenTTL); a refresh token is the long-lived (sliding 90-day)
+-- secret a client exchanges for a fresh access+refresh pair. Stored as a sha256
+-- hash (never plaintext), exactly like email_action_tokens.
 --
 -- family_id groups one rotation chain: every issue() starts a new family, and each
 -- refresh consumes the current token and inserts its successor in the same family.

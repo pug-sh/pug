@@ -314,8 +314,8 @@ func WithDualAuth(jwtKey []byte, queries *dbread.Queries, repo projectKeyLookup)
 
 // WithPrivateKeyAuth authenticates via a private ("secret") API key in the
 // x-api-key header only. It is the auth boundary for the /mcp endpoint: MCP
-// clients configure a static credential, so access JWTs (hourly expiry) are
-// useless there and public keys (extractable from client apps) are refused.
+// clients configure a static credential, so an expiring access JWT is useless
+// there and public keys (extractable from client apps) are refused.
 //
 // Unlike WithSDKAuth there is no public-key branch and no api_key query-param
 // fallback; unlike WithDualAuth there is no JWT fallback. The resulting

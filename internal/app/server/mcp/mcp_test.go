@@ -42,7 +42,7 @@ var testJWTKey = []byte("test-jwt-key")
 
 // signDashboardJWT mints a real dashboard access token — the exact shape
 // WithJWTAuth accepts. /mcp must refuse it: MCP clients hold a static credential,
-// so a 1h-expiry access token is useless there, and admitting JWTs would widen the
+// so an expiring access token is useless there, and admitting JWTs would widen the
 // endpoint from project-scoped to customer-scoped.
 func signDashboardJWT(t *testing.T) string {
 	t.Helper()
