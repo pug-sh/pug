@@ -1,15 +1,22 @@
 -- name: CreateProject :one
-insert into projects (display_name, id, org_id, private_api_key, public_api_key, reporting_timezone)
-values (@display_name, @id, @org_id, @private_api_key, @public_api_key, @reporting_timezone)
+-- The project row only. Its starter public key is a second statement
+-- (CreateApiKey), which projects.CreateProjectInTx runs in the same transaction
+-- so a project can never commit without one. A project never gets a private key
+-- implicitly; those are created explicitly via CreateApiKey.
+insert into projects (display_name, id, org_id, reporting_timezone)
+values (@display_name, @id, @org_id, @reporting_timezone)
 returning *;
 
 -- name: CreateProjectAsAdmin :one
+-- CreateProject plus the admin guard. Returns no row for a non-admin, which
+-- leaves the caller's transaction without a project — so the starter key insert
+-- that follows never runs either.
 with check_admin as (
   select 1 from org_members
   where org_id = @org_id and customer_id = @customer_id and role = 'ORG_ROLE_ADMIN'
 )
-insert into projects (display_name, id, org_id, private_api_key, public_api_key, reporting_timezone)
-select @display_name, @id, @org_id, @private_api_key, @public_api_key, @reporting_timezone
+insert into projects (display_name, id, org_id, reporting_timezone)
+select @display_name, @id, @org_id, @reporting_timezone
 where exists (select 1 from check_admin)
 returning *;
 

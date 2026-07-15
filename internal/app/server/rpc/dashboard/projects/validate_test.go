@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"strings"
 	"testing"
 
 	"buf.build/go/protovalidate"
@@ -39,5 +40,61 @@ func TestUpdateMetaRequest_OmittedTimezoneIsValid(t *testing.T) {
 func TestUpdateMetaRequest_FullyEmptyIsValid(t *testing.T) {
 	if err := protovalidate.Validate(&projectsv1.UpdateMetaRequest{}); err != nil {
 		t.Fatalf("empty request should be valid (no-op partial update): %v", err)
+	}
+}
+
+// ----- API key requests -----
+
+// kind is the one field a client cannot get wrong quietly: an unset or unknown
+// value would otherwise reach the handler, which fails it closed as an internal
+// error. protovalidate turns both into a clean InvalidArgument at the boundary.
+func TestCreateApiKeyRequest_KindRequired(t *testing.T) {
+	tests := []struct {
+		name string
+		req  *projectsv1.CreateApiKeyRequest
+		ok   bool
+	}{
+		{"public is valid", &projectsv1.CreateApiKeyRequest{Kind: projectsv1.ApiKeyKind_API_KEY_KIND_PUBLIC.Enum()}, true},
+		{"private is valid", &projectsv1.CreateApiKeyRequest{Kind: projectsv1.ApiKeyKind_API_KEY_KIND_PRIVATE.Enum()}, true},
+		{"omitted kind rejected", &projectsv1.CreateApiKeyRequest{}, false},
+		{"unspecified kind rejected", &projectsv1.CreateApiKeyRequest{Kind: projectsv1.ApiKeyKind_API_KEY_KIND_UNSPECIFIED.Enum()}, false},
+		{"undefined kind rejected", &projectsv1.CreateApiKeyRequest{Kind: projectsv1.ApiKeyKind(99).Enum()}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := protovalidate.Validate(tt.req)
+			if tt.ok && err != nil {
+				t.Fatalf("expected valid, got %v", err)
+			}
+			if !tt.ok && err == nil {
+				t.Fatal("expected a validation error, got nil")
+			}
+		})
+	}
+}
+
+func TestCreateApiKeyRequest_DisplayNameBounds(t *testing.T) {
+	req := &projectsv1.CreateApiKeyRequest{
+		Kind:        projectsv1.ApiKeyKind_API_KEY_KIND_PRIVATE.Enum(),
+		DisplayName: proto.String(strings.Repeat("a", 151)),
+	}
+	if err := protovalidate.Validate(req); err == nil {
+		t.Fatal("display_name over 150 chars should fail max_len")
+	}
+
+	// A label is optional — an unnamed key is fine.
+	req.DisplayName = nil
+	if err := protovalidate.Validate(req); err != nil {
+		t.Fatalf("omitted display_name should be valid: %v", err)
+	}
+}
+
+func TestDeleteApiKeyRequest_IDRequired(t *testing.T) {
+	if err := protovalidate.Validate(&projectsv1.DeleteApiKeyRequest{}); err == nil {
+		t.Fatal("omitted id should fail required")
+	}
+	if err := protovalidate.Validate(&projectsv1.DeleteApiKeyRequest{Id: proto.String("key1")}); err != nil {
+		t.Fatalf("present id should be valid: %v", err)
 	}
 }

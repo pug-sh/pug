@@ -47,14 +47,6 @@ func TestDemoSignIn(t *testing.T) {
 	// Seed the demo viewer exactly as the demo seeder does: customer (snoop) +
 	// org + ORG_ROLE_VIEWER membership + project.
 	write := dbwrite.New(db.PgW)
-	privKey, err := projects.NewPrivateKey()
-	if err != nil {
-		t.Fatalf("NewPrivateKey: %v", err)
-	}
-	pubKey, err := projects.NewPublicKey()
-	if err != nil {
-		t.Fatalf("NewPublicKey: %v", err)
-	}
 	viewer, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
 		ID: "cust-demo-viewer", Email: auth.DemoViewerEmail, DisplayName: "Snoop Pugg",
 	})
@@ -70,9 +62,7 @@ func TestDemoSignIn(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
-	proj, err := write.CreateProject(ctx, dbwrite.CreateProjectParams{
-		ID: "proj-demo", OrgID: org.ID, DisplayName: "default", PrivateApiKey: privKey, PublicApiKey: pubKey,
-	})
+	proj, err := projects.CreateProjectInTx(ctx, write, org.ID, "default", "")
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
@@ -126,14 +116,6 @@ func TestDemoSignInRejectsNonViewer(t *testing.T) {
 
 	// Seed snoop exactly as the demo seeder does EXCEPT as a MEMBER, not a viewer.
 	write := dbwrite.New(db.PgW)
-	privKey, err := projects.NewPrivateKey()
-	if err != nil {
-		t.Fatalf("NewPrivateKey: %v", err)
-	}
-	pubKey, err := projects.NewPublicKey()
-	if err != nil {
-		t.Fatalf("NewPublicKey: %v", err)
-	}
 	snoop, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
 		ID: "cust-demo-snoop", Email: auth.DemoViewerEmail, DisplayName: "Snoop Pugg",
 	})
@@ -149,9 +131,7 @@ func TestDemoSignInRejectsNonViewer(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateOrgMember: %v", err)
 	}
-	if _, err := write.CreateProject(ctx, dbwrite.CreateProjectParams{
-		ID: "proj-demo", OrgID: org.ID, DisplayName: "default", PrivateApiKey: privKey, PublicApiKey: pubKey,
-	}); err != nil {
+	if _, err := projects.CreateProjectInTx(ctx, write, org.ID, "default", ""); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
 

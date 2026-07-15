@@ -128,7 +128,7 @@ func resolvePrivateKeyPrincipal(ctx context.Context, repo projectKeyLookup, apiK
 type projectKeyLookup interface {
 	GetProjectByPublicApiKey(ctx context.Context, key string) (dbread.Project, error)
 	GetProjectByPrivateApiKey(ctx context.Context, key string) (dbread.Project, error)
-	InvalidateProjectKeys(ctx context.Context, privateKey, publicKey string)
+	InvalidateProjectKeys(ctx context.Context, projectID string, tokens ...string)
 }
 
 // ProjectKeyLookup is the exported view of projectKeyLookup. It lets a package

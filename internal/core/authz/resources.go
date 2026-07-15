@@ -38,6 +38,14 @@ const (
 	ResourceEmailProvider Resource = "email_provider"
 	ResourceProject       Resource = "project"
 
+	// ResourceAPIKey is a project's API keys. Its org is resolved from the
+	// x-project-id project like the project-data resources below, but minting a
+	// credential for a whole project is an administrative act, so create/delete
+	// sit with admin rather than member. Every role reads (a key list is what the
+	// project settings page shows), and there is deliberately no update action —
+	// a key is created and revoked, never edited.
+	ResourceAPIKey Resource = "api_key"
+
 	// Project-data resources, enforced by AuthzInterceptor from the (resource,
 	// action) recorded in authz_registry.go's projGated entries (org resolved from
 	// the x-project-id project). viewer holds read on each (the read-only floor);
@@ -63,8 +71,8 @@ const (
 // policy_test.go asserts full coverage. Keep these in sync when adding a const.
 var allResources = []Resource{
 	ResourceOrg, ResourceMember, ResourceInvitation, ResourceEmailProvider,
-	ResourceProject, ResourceDashboard, ResourceInsight, ResourceActivity,
-	ResourceProfile,
+	ResourceProject, ResourceAPIKey, ResourceDashboard, ResourceInsight,
+	ResourceActivity, ResourceProfile,
 }
 
 var allActions = []Action{ActionCreate, ActionRead, ActionUpdate, ActionDelete}

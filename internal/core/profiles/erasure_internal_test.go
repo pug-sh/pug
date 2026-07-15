@@ -84,8 +84,8 @@ func TestErasure_FrozenIdentifiersSurviveEventDeletion(t *testing.T) {
 		t.Fatalf("insert org: %v", err)
 	}
 	if _, err := pg.PgW.Exec(ctx,
-		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
-		projectID, orgID, "test-project", xid.New().String()+"priv", xid.New().String()+"pub",
+		`INSERT INTO projects (id, org_id, display_name) VALUES ($1, $2, $3)`,
+		projectID, orgID, "test-project",
 	); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
@@ -171,8 +171,8 @@ func TestErasure_PartialEraseRetryCompletes(t *testing.T) {
 		t.Fatalf("insert org: %v", err)
 	}
 	if _, err := pg.PgW.Exec(ctx,
-		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
-		projectID, orgID, "test-project", xid.New().String()+"priv", xid.New().String()+"pub",
+		`INSERT INTO projects (id, org_id, display_name) VALUES ($1, $2, $3)`,
+		projectID, orgID, "test-project",
 	); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}
@@ -431,8 +431,8 @@ func seedProjectInternal(t *testing.T, ctx context.Context, pg *testutil.TestPos
 		t.Fatalf("insert org: %v", err)
 	}
 	if _, err := pg.PgW.Exec(ctx,
-		`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
-		projectID, orgID, "test-project", xid.New().String()+"priv", xid.New().String()+"pub",
+		`INSERT INTO projects (id, org_id, display_name) VALUES ($1, $2, $3)`,
+		projectID, orgID, "test-project",
 	); err != nil {
 		t.Fatalf("insert project: %v", err)
 	}

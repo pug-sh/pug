@@ -8,6 +8,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ApiKey struct {
+	CreateTime  pgtype.Timestamptz
+	DisplayName string
+	ID          string
+	Kind        string
+	Masked      string
+	ProjectID   string
+	Token       string
+	UpdateTime  pgtype.Timestamptz
+}
+
 type Campaign struct {
 	CreateTime       pgtype.Timestamptz
 	EndTime          pgtype.Timestamptz
@@ -173,8 +184,6 @@ type Project struct {
 	FcmServiceJson    pgtype.Text
 	ID                string
 	OrgID             string
-	PrivateApiKey     string
-	PublicApiKey      string
 	ReportingTimezone string
 	UpdateTime        pgtype.Timestamptz
 }

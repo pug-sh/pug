@@ -1373,10 +1373,8 @@ func newIntegrationServerTwoProjects(t *testing.T) (*Server, string, string, *co
 	}
 	for _, projectID := range []string{projectA, projectB} {
 		if _, err := db.PgW.Exec(ctx,
-			`INSERT INTO projects (id, org_id, display_name, private_api_key, public_api_key) VALUES ($1, $2, $3, $4, $5)`,
+			`INSERT INTO projects (id, org_id, display_name) VALUES ($1, $2, $3)`,
 			projectID, orgID, "test-project-"+projectID,
-			xid.New().String()+"priv",
-			xid.New().String()+"pub",
 		); err != nil {
 			t.Fatalf("insert project: %v", err)
 		}

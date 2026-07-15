@@ -320,6 +320,8 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 		"/dashboard.projects.v1.ProjectsService/Delete":                     true,
 		"/dashboard.projects.v1.ProjectsService/UpdateMeta":                 true,
 		"/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON":       true,
+		"/dashboard.projects.v1.ProjectsService/CreateApiKey":               true,
+		"/dashboard.projects.v1.ProjectsService/DeleteApiKey":               true,
 		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Get":      true,
 		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Set":      true,
 		"/dashboard.orgemailproviders.v1.OrgEmailProvidersService/Remove":   true,
