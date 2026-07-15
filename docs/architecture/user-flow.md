@@ -3,17 +3,41 @@
 Revised plan incorporating all review findings. Supersedes earlier drafts of this document.
 Linked from [`CLAUDE.md`](../../CLAUDE.md) and [`insights.md`](insights.md).
 
-> **Implementation status (shipped).** This document is the original plan; the
-> feature is implemented. Where the shipped code diverges from the pseudo-code
-> below, the code is authoritative. Notable divergences:
-> - **`UserFlowNode` carries `is_others` (bool), not `label`.** The redundant
->   `label` (always equal to `id`) was dropped; the synthetic overflow bucket is
->   identified structurally by `is_others`.
+> **⚠️ Superseded by the step-indexed model.** This document describes the
+> original **page-collapsed** design: one node per event kind / property value,
+> transitions aggregated across all positions (`GROUP BY source, target`). That
+> model is a *cyclic* graph (e.g. `page_view ⇄ click`), which a Sankey cannot lay
+> out — it rendered as spanning arcs and overlapping labels. The shipped code is
+> now **step-indexed** (Rybbit-style): a node is `(depth, label)`, transitions are
+> `GROUP BY step, source, target`, and the same label at two positions is two
+> distinct nodes. This makes the graph a strict layered DAG (every edge `d → d+1`)
+> that renders as clean left→right columns. Read [`insights.md` → User Flow](insights.md#user-flow)
+> for the authoritative shipped description; the sections below are kept for
+> historical context and the parts that still hold (CTE shape, sort-then-slice,
+> scope/filter wiring, no-rollup decision, cost notes).
+>
+> Step-model divergences from the text below:
+> - **Transitions are position-scoped.** `pairs` keeps `toInt32(idx - 1) AS step`;
+>   the outer aggregate is `GROUP BY step, source, target`. The `source != target`
+>   filter is **gone** (consecutive repeats are valid `d → d+1` steps).
+> - **`UserFlowNode` carries `id` + `is_others` + `depth` + `label`.** `id` is an
+>   opaque per-`(depth,label)` key; `label` is the display name; `depth` is the
+>   0-based Sankey column. (`label` was re-added — under the step model `id` is no
+>   longer equal to the label.)
+> - **Top-N and `$others` are per step**, not global — each depth ranks and
+>   collapses its own nodes, so a label pruned at one step can survive at another.
+> - **No self-loop removal** — endpoints always differ in depth.
+> - **Frontend** renders with recharts `<Sankey align="left">` so terminal nodes
+>   stay at their step instead of being pinned to the last column.
+
+> **Implementation status (original plan).** Other divergences from the
+> pseudo-code below, where the shipped code is authoritative:
 > - **The overflow bucket is a distinct internal identity, not just the string
->   `"$others"`.** `GroupUserFlowResult` keys nodes by an internal `nodeRef{id,
->   others}` so a real node literally named `"$others"` never merges with the
->   bucket; the bucket's emitted id is disambiguated if a real node already uses
->   `"$others"`. See §4.3.
+>   `"$others"`.** `GroupUserFlowResult` keys nodes by an internal
+>   `stepNodeRef{depth, label, others}` so a real node literally named `"$others"`
+>   at a given depth never merges with that depth's bucket; the bucket's emitted id
+>   (`"depth:$others"`) is disambiguated with a `_` suffix if a real node already
+>   uses it. See §4.3.
 > - **Default resolution lives in `resolveUserFlowParams`** (called at the top of
 >   `BuildUserFlowQuery`), which returns a `userFlowResolved`; `buildUserFlowQuery`
 >   takes that resolved struct. The session grouping helpers are parameterless and

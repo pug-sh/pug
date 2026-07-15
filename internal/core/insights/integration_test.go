@@ -1027,8 +1027,9 @@ func TestIntegration(t *testing.T) {
 				"C": {"hub", "c"},
 				"D": {"hub", "d"},
 			})
-			// max_nodes=2 keeps {hub, a} (a is the lexicographically-first weight-1
-			// leaf); b, c, d collapse into the synthetic $others bucket.
+			// max_nodes=2 is PER STEP. Depth 1 holds a, b, c, d (each weight 1); the
+			// top 2 by weight then label survive (a, b) and c, d collapse into depth
+			// 1's $others bucket. (hub is the lone depth-0 node and is never pruned.)
 			resp, err := insights.ExecuteQuery(ctx, executor, fanProjectID, userFlowReq(&insightsv1.UserFlowQuery{
 				MaxNodes: proto.Int32(2),
 			}), time.Now())
@@ -1040,25 +1041,31 @@ func TestIntegration(t *testing.T) {
 			if got := linkMap[[2]string{"hub", "a"}]; got != 1 {
 				t.Errorf("hub->a: got %d want 1", got)
 			}
-			if got := linkMap[[2]string{"hub", "$others"}]; got != 3 {
-				t.Errorf("hub->$others: got %d want 3 (b+c+d collapsed and summed)", got)
+			if got := linkMap[[2]string{"hub", "b"}]; got != 1 {
+				t.Errorf("hub->b: got %d want 1 (b survives per-step top-2)", got)
+			}
+			if got := linkMap[[2]string{"hub", "$others"}]; got != 2 {
+				t.Errorf("hub->$others: got %d want 2 (c+d collapsed and summed)", got)
 			}
 			bucket := false
-			nodeIDs := map[string]bool{}
+			realLabels := map[string]bool{}
 			for _, n := range result.GetNodes() {
-				nodeIDs[n.GetId()] = true
 				if n.GetIsOthers() {
 					bucket = true
-					if n.GetId() != "$others" {
-						t.Errorf("bucket id: got %q want $others", n.GetId())
+					// The bucket carries label "$others"; its id is depth-scoped
+					// (e.g. "1:$others"), identified structurally by is_others.
+					if n.GetLabel() != "$others" {
+						t.Errorf("bucket label: got %q want $others", n.GetLabel())
 					}
+					continue
 				}
+				realLabels[n.GetLabel()] = true
 			}
 			if !bucket {
 				t.Error("expected an is_others bucket node")
 			}
-			for _, leaf := range []string{"b", "c", "d"} {
-				if nodeIDs[leaf] {
+			for _, leaf := range []string{"c", "d"} {
+				if realLabels[leaf] {
 					t.Errorf("pruned leaf %q should not appear as a real node", leaf)
 				}
 			}
@@ -3246,13 +3253,21 @@ func seedUserFlowKindSequences(t *testing.T, ctx context.Context, ch *testutil.T
 	}
 }
 
+// userFlowLinkMap keys edges by their endpoint LABELS (resolving the opaque,
+// depth-scoped node ids back through the node list) so assertions read in terms
+// of event kinds / property values. Values sum across steps in the rare case the
+// same (sourceLabel, targetLabel) pair occurs at more than one depth.
 func userFlowLinkMap(result *insightsv1.UserFlowResult) map[[2]string]int64 {
 	out := map[[2]string]int64{}
 	if result == nil {
 		return out
 	}
+	labelByID := map[string]string{}
+	for _, n := range result.GetNodes() {
+		labelByID[n.GetId()] = n.GetLabel()
+	}
 	for _, l := range result.GetLinks() {
-		out[[2]string{l.GetSource(), l.GetTarget()}] = l.GetValue()
+		out[[2]string{labelByID[l.GetSource()], labelByID[l.GetTarget()]}] += l.GetValue()
 	}
 	return out
 }
