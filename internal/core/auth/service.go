@@ -66,10 +66,22 @@ const (
 
 	magicLinkTTL = 15 * time.Minute
 
-	// accessTokenTTL is the lifetime of the session JWT. Kept short so a leaked
-	// access token is useful only briefly; clients silently exchange the
-	// long-lived refresh token for a new pair via RefreshSession.
-	accessTokenTTL = 1 * time.Hour
+	// accessTokenTTL is the lifetime of the session JWT. It is deliberately NOT
+	// tuned as a theft bound: the dashboard keeps both tokens in the same
+	// localStorage, so whoever can steal the JWT also holds the refresh token
+	// below. What it really bounds is how long an already-exfiltrated JWT
+	// outlives SignOut, since WithJWTAuth verifies the signature without
+	// consulting the refresh family. Role changes and member removal take effect
+	// at any TTL — authorization resolves per-request from org_members, never
+	// from a claim.
+	//
+	// The number is therefore set by refresh cost, not leak risk. Every refresh
+	// is a FOR UPDATE-locked tx that inserts a row (see createRefreshToken's
+	// pruning TODO) and rotates the token within its family, and racing rotations
+	// are what trip reuse-detection. 24h puts that at ~once per active user per
+	// day. Keep it far below refreshTokenTTL — nothing enforces that ratio;
+	// service_test.go pins this constant's absolute value at ~24h.
+	accessTokenTTL = 24 * time.Hour
 	// refreshTokenTTL is the sliding lifetime of a refresh token. Every refresh
 	// issues a fresh one, so a user active at least once per window stays signed
 	// in indefinitely; one fully idle for the whole window must sign in again.
@@ -509,7 +521,7 @@ func (s *Service) issueSessionTx(ctx context.Context, w *dbwrite.Queries, custom
 // sole secret needed to mint sessions.
 //
 // TODO(refresh-token-pruning): refresh_tokens grows unbounded. Rotation inserts a
-// new row on every refresh (~hourly per active user, given a 1h access TTL) and
+// new row on every refresh (~daily per active user, given a 24h access TTL) and
 // only marks the predecessor consumed_at — its expires_at stays ~90 days out, so
 // nothing reaps it. Add a periodic prune (e.g. in the scheduler worker, which
 // needs a write pool wired in) deleting rows that can no longer be presented:
