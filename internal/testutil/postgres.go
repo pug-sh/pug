@@ -20,7 +20,6 @@ const testPostgresImage = "postgres@sha256:96d56f7f57c6aacd1fcb908bc83b345ec5f83
 // TestPostgres holds the container and connection pools for a test database.
 type TestPostgres struct {
 	container *tcpostgres.PostgresContainer
-	ConnStr   string
 	PgRO      *pgxpool.Pool
 	PgW       *pgxpool.Pool
 }
@@ -62,41 +61,11 @@ func SetupPostgres(t *testing.T) *TestPostgres {
 		t.Fatalf("testutil: create write pool: %v", err)
 	}
 
-	tp := &TestPostgres{container: ctr, ConnStr: connStr, PgRO: pgRO, PgW: pgW}
+	tp := &TestPostgres{container: ctr, PgRO: pgRO, PgW: pgW}
 
 	t.Cleanup(func() {
 		pgRO.Close()
 		pgW.Close()
-		if err := ctr.Terminate(context.Background()); err != nil {
-			fmt.Printf("testutil: terminate postgres container: %v\n", err)
-		}
-	})
-
-	return tp
-}
-
-// SetupBarePostgres starts a PostgreSQL container without running migrations.
-// Use this when testing migration logic directly. Cleanup is registered via t.Cleanup.
-func SetupBarePostgres(t *testing.T) *TestPostgres {
-	t.Helper()
-	ctx := context.Background()
-
-	ctr, err := tcpostgres.Run(ctx, testPostgresImage,
-		tcpostgres.WithDatabase("pug_test"),
-		tcpostgres.WithUsername("postgres"),
-		tcpostgres.WithPassword("postgres"),
-		tcpostgres.WithSQLDriver("pgx"),
-		tcpostgres.BasicWaitStrategies(),
-	)
-	if err != nil {
-		t.Fatalf("testutil: start postgres container: %v", err)
-	}
-
-	connStr := ctr.MustConnectionString(ctx, "sslmode=disable")
-
-	tp := &TestPostgres{container: ctr, ConnStr: connStr}
-
-	t.Cleanup(func() {
 		if err := ctr.Terminate(context.Background()); err != nil {
 			fmt.Printf("testutil: terminate postgres container: %v\n", err)
 		}
