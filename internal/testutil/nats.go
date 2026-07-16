@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -26,55 +27,80 @@ const (
 	testStreamMaxAge   = 24 * time.Hour
 )
 
-// TestNATS holds a NATS testcontainer for testing.
+// TestNATS holds the connection URL for the package's NATS container.
 type TestNATS struct {
-	container *nats.NATSContainer
-	URL       string
+	URL string
 }
 
-// SetupNATS starts a NATS container with JetStream enabled.
-// It registers a cleanup function on the test to terminate the container.
-// It also runs NATS migrations to create streams and consumers.
+// sharedNATS is the single container backing every test in the package.
+type sharedNATS struct {
+	url string
+}
+
+var natsContainer = &lazyContainer[sharedNATS]{kind: "nats", start: startNATS}
+
+// SetupNATS returns a URL onto the package's NATS container with the configured
+// streams and consumers freshly created. The container is started once per test
+// binary and torn down by Main.
+//
+// Unlike Postgres and ClickHouse, JetStream has no per-test namespace to hand
+// out, so isolation comes from rebuilding the streams on every call: dropping a
+// stream drops its messages and its consumers' ack state along with it, which
+// is the state a test could otherwise inherit from the one before it.
 func SetupNATS(t *testing.T) *TestNATS {
 	t.Helper()
+	// Scoped to the test — see the note in SetupPostgres for why the shared
+	// container uses context.Background instead.
+	ctx := t.Context()
 
+	tn := &TestNATS{URL: natsContainer.get(t).url}
+
+	if err := tn.resetJetStream(ctx); err != nil {
+		t.Fatalf("testutil: reset jetstream: %v", err)
+	}
+	if err := tn.runMigrations(ctx); err != nil {
+		t.Fatalf("testutil: run nats migrations: %v", err)
+	}
+
+	return tn
+}
+
+func startNATS() (_ *sharedNATS, err error) {
+	// Background, not the triggering test's t.Context: this container is shared by
+	// the whole package and outlives whichever test started it.
 	ctx := context.Background()
 
 	ctr, err := nats.Run(ctx, testNATSImage)
+	// Run hands back a created-but-never-ready container alongside its error when
+	// the readiness probe times out, so every failure path below has to terminate
+	// it. TerminateContainer tolerates a nil container.
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, testcontainers.TerminateContainer(ctr))
+		}
+	}()
 	if err != nil {
-		t.Fatalf("testutil: start nats container: %v", err)
+		return nil, fmt.Errorf("start container: %w", err)
 	}
 
 	url, err := ctr.ConnectionString(ctx)
 	if err != nil {
-		_ = testcontainers.TerminateContainer(ctr)
-		t.Fatalf("testutil: get nats connection string: %v", err)
+		return nil, fmt.Errorf("connection string: %w", err)
 	}
 
 	// Wait for NATS to be fully ready by attempting a connection with retries.
-	if err := waitForNATS(url, 30*time.Second); err != nil {
-		_ = testcontainers.TerminateContainer(ctr)
-		t.Fatalf("testutil: wait for nats ready: %v", err)
+	if err = waitForNATS(url, 30*time.Second); err != nil {
+		return nil, fmt.Errorf("wait for nats ready: %w", err)
 	}
 
-	tn := &TestNATS{
-		container: ctr,
-		URL:       url,
-	}
-
-	// Run NATS migrations (create streams and consumers).
-	if err := tn.runMigrations(ctx, t); err != nil {
-		_ = testcontainers.TerminateContainer(ctr)
-		t.Fatalf("testutil: run nats migrations: %v", err)
-	}
-
-	t.Cleanup(func() {
+	teardowns.add(func() error {
 		if err := testcontainers.TerminateContainer(ctr); err != nil {
-			fmt.Printf("testutil: terminate nats container: %v\n", err)
+			return fmt.Errorf("terminate nats container: %w", err)
 		}
+		return nil
 	})
 
-	return tn
+	return &sharedNATS{url: url}, nil
 }
 
 func waitForNATS(url string, timeout time.Duration) error {
@@ -98,7 +124,40 @@ func waitForNATS(url string, timeout time.Duration) error {
 	}
 }
 
-func (tn *TestNATS) runMigrations(ctx context.Context, _ *testing.T) error {
+// resetJetStream drops every stream left behind by an earlier test in this
+// package, along with the consumers that hang off them. runMigrations recreates
+// both.
+func (tn *TestNATS) resetJetStream(ctx context.Context) error {
+	nc, err := natsgo.Connect(tn.URL)
+	if err != nil {
+		return fmt.Errorf("connect to nats: %w", err)
+	}
+	defer nc.Close()
+
+	js, err := jetstream.New(nc)
+	if err != nil {
+		return fmt.Errorf("create jetstream: %w", err)
+	}
+
+	lister := js.StreamNames(ctx)
+	var names []string
+	for name := range lister.Name() {
+		names = append(names, name)
+	}
+	if err := lister.Err(); err != nil {
+		return fmt.Errorf("list streams: %w", err)
+	}
+
+	for _, name := range names {
+		if err := js.DeleteStream(ctx, name); err != nil {
+			return fmt.Errorf("delete stream %s: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
+func (tn *TestNATS) runMigrations(ctx context.Context) error {
 	nc, err := natsgo.Connect(tn.URL)
 	if err != nil {
 		return fmt.Errorf("connect to nats: %w", err)

@@ -129,6 +129,19 @@ PostgreSQL uses read/write separation:
 - SQL syntax and identifiers: lowercase (e.g., `select * from campaigns where project_id = @project_id`)
 - Partial updates: use `coalesce(nullif(@field, ''), field)` to preserve existing values when empty
 
+### Testing
+
+Integration tests run against real Postgres/ClickHouse/NATS/Redis via testcontainers (`internal/testutil`). **Containers are shared per package, not per test** — one per test binary, started lazily on the first `Setup*` call. Isolation is per-test but comes from a namespace inside the shared container, never from a fresh container:
+
+- **`SetupPostgres`** — migrations run **once** into a `pug_template` database; each test gets its own DB via `create database ... template pug_template` (milliseconds, vs seconds for a container start + migration run). `sealTemplate` bars connections to the template afterwards, because `CREATE DATABASE ... TEMPLATE` fails while any session is attached to the source.
+- **`SetupClickHouse`** — ClickHouse has no `TEMPLATE`, so each test gets a fresh database that is migrated on creation.
+- **`SetupNATS`** — JetStream has no per-test namespace, so each call drops every stream (which drops its consumers' ack state too) and recreates them from `schema/nats/*.yaml`.
+- **`SetupRedis`** — each test gets one of the 16 logical databases, flushed on entry and exit.
+
+Every package calling a `Setup*` helper **must** declare `func TestMain(m *testing.M) { testutil.Main(m) }` — the container has no owning test to hang a `t.Cleanup` on, so without it containers outlive the run; `TestSetupCallersWireMain` fails if a package forgets. That teardown only covers a normal finish, so `Main` also **force-enables testcontainers' Ryuk reaper**, overriding a `~/.testcontainers.properties` that disables it: a panicking test, an expired `-timeout` or a Ctrl-C kills the process without `m.Run` ever returning, and Ryuk is the only thing that reaps a package's containers then. Export `TESTCONTAINERS_RYUK_DISABLED` explicitly to opt back out (Ryuk cannot drive every Docker setup). A failed container start is deliberately **not** memoized (`lazyContainer.get`): starts time out when the Docker daemon is saturated, and caching that error would fail every remaining test in the package against a stale message.
+
+Every helper hands out an **empty** namespace, so a test may still assume an empty database — that part of the contract did not change. What the shared container newly forbids is **concurrency**: a package calling a `Setup*` helper must not call `t.Parallel()`. Postgres and ClickHouse would survive it (each test holds a private database), but `SetupNATS` rebuilds streams container-wide and `SetupRedis` recycles its 16 indexes with a flush on entry, so a concurrent test gets its state deleted mid-run — and then either fails somewhere unrelated or passes having asserted over nothing. `TestSetupCallersDoNotUseParallel` fails the build on one. For the same reason a client or goroutine must not outlive the test that created it: the next `Setup*` reclaims the namespace. `go test -short ./...` skips every container test for fast unit-only feedback.
+
 ### Org Hierarchy
 
 - **Org** is the top-level entity. Each customer belongs to one or more orgs via `org_members` (role: `ORG_ROLE_ADMIN` | `ORG_ROLE_MEMBER` | `ORG_ROLE_VIEWER`).
