@@ -57,6 +57,9 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.projects.v1.ProjectsService/Delete":               authzspec.ProjGated(authz.ResourceProject, authz.ActionDelete, "admin-only; org resolved from the x-project-id project"),
 	"/dashboard.projects.v1.ProjectsService/UpdateMeta":           authzspec.ProjGated(authz.ResourceProject, authz.ActionUpdate, "admin-only; org resolved from the x-project-id project"),
 	"/dashboard.projects.v1.ProjectsService/UpdateFCMServiceJSON": authzspec.ProjGated(authz.ResourceProject, authz.ActionUpdate, "admin-only; org resolved from the x-project-id project"),
+	"/dashboard.projects.v1.ProjectsService/ListApiKeys":          authzspec.ProjGated(authz.ResourceAPIKey, authz.ActionRead, "every role; a private key is only ever returned masked"),
+	"/dashboard.projects.v1.ProjectsService/CreateApiKey":         authzspec.ProjGated(authz.ResourceAPIKey, authz.ActionCreate, "admin-only; org resolved from the x-project-id project"),
+	"/dashboard.projects.v1.ProjectsService/DeleteApiKey":         authzspec.ProjGated(authz.ResourceAPIKey, authz.ActionDelete, "admin-only; org resolved from the x-project-id project"),
 
 	// --- dashboard.dashboards.v1.DashboardsService — project-data plane (JWT + x-project-id) ---
 	"/dashboard.dashboards.v1.DashboardsService/Get":            authzspec.ProjGated(authz.ResourceDashboard, authz.ActionRead),

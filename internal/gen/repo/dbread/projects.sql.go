@@ -10,7 +10,7 @@ import (
 )
 
 const getProjectByID = `-- name: GetProjectByID :one
-select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time from projects where id = $1
+select create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time from projects where id = $1
 `
 
 func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error) {
@@ -22,8 +22,6 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 		&i.FcmServiceJson,
 		&i.ID,
 		&i.OrgID,
-		&i.PrivateApiKey,
-		&i.PublicApiKey,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
@@ -31,7 +29,7 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 }
 
 const getProjectByIDAndOrgMember = `-- name: GetProjectByIDAndOrgMember :one
-select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.private_api_key, p.public_api_key, p.reporting_timezone, p.update_time
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time
 from projects p
 join org_members om on om.org_id = p.org_id
 where p.id = $1 and om.customer_id = $2
@@ -51,8 +49,6 @@ func (q *Queries) GetProjectByIDAndOrgMember(ctx context.Context, arg GetProject
 		&i.FcmServiceJson,
 		&i.ID,
 		&i.OrgID,
-		&i.PrivateApiKey,
-		&i.PublicApiKey,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
@@ -60,11 +56,16 @@ func (q *Queries) GetProjectByIDAndOrgMember(ctx context.Context, arg GetProject
 }
 
 const getProjectByPrivateApiKey = `-- name: GetProjectByPrivateApiKey :one
-select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time from projects where private_api_key = $1
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time
+from projects p
+join api_keys k on k.project_id = p.id
+where k.token = $1 and k.kind = 'private'
 `
 
-func (q *Queries) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey string) (Project, error) {
-	row := q.db.QueryRow(ctx, getProjectByPrivateApiKey, privateApiKey)
+// @token is the sha256 hex of the presented prv_ key — private keys are stored
+// hashed, so the caller hashes before looking up (see core/projects.hashKey).
+func (q *Queries) GetProjectByPrivateApiKey(ctx context.Context, token string) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByPrivateApiKey, token)
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
@@ -72,8 +73,6 @@ func (q *Queries) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey s
 		&i.FcmServiceJson,
 		&i.ID,
 		&i.OrgID,
-		&i.PrivateApiKey,
-		&i.PublicApiKey,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
@@ -81,11 +80,15 @@ func (q *Queries) GetProjectByPrivateApiKey(ctx context.Context, privateApiKey s
 }
 
 const getProjectByPublicApiKey = `-- name: GetProjectByPublicApiKey :one
-select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time from projects where public_api_key = $1
+select p.create_time, p.display_name, p.fcm_service_json, p.id, p.org_id, p.reporting_timezone, p.update_time
+from projects p
+join api_keys k on k.project_id = p.id
+where k.token = $1 and k.kind = 'public'
 `
 
-func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, publicApiKey string) (Project, error) {
-	row := q.db.QueryRow(ctx, getProjectByPublicApiKey, publicApiKey)
+// @token is the pub_ key itself — public keys are stored plaintext.
+func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, token string) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByPublicApiKey, token)
 	var i Project
 	err := row.Scan(
 		&i.CreateTime,
@@ -93,8 +96,6 @@ func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, publicApiKey str
 		&i.FcmServiceJson,
 		&i.ID,
 		&i.OrgID,
-		&i.PrivateApiKey,
-		&i.PublicApiKey,
 		&i.ReportingTimezone,
 		&i.UpdateTime,
 	)
@@ -102,7 +103,7 @@ func (q *Queries) GetProjectByPublicApiKey(ctx context.Context, publicApiKey str
 }
 
 const getProjectsByOrgID = `-- name: GetProjectsByOrgID :many
-select create_time, display_name, fcm_service_json, id, org_id, private_api_key, public_api_key, reporting_timezone, update_time from projects where org_id = $1 order by create_time asc, id asc
+select create_time, display_name, fcm_service_json, id, org_id, reporting_timezone, update_time from projects where org_id = $1 order by create_time asc, id asc
 `
 
 func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Project, error) {
@@ -120,8 +121,6 @@ func (q *Queries) GetProjectsByOrgID(ctx context.Context, orgID string) ([]Proje
 			&i.FcmServiceJson,
 			&i.ID,
 			&i.OrgID,
-			&i.PrivateApiKey,
-			&i.PublicApiKey,
 			&i.ReportingTimezone,
 			&i.UpdateTime,
 		); err != nil {

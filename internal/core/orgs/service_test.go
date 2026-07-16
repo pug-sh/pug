@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/core/emailaction"
 	"github.com/pug-sh/pug/internal/core/orgs"
+	coreprojects "github.com/pug-sh/pug/internal/core/projects"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	orgsv1 "github.com/pug-sh/pug/internal/gen/proto/dashboard/orgs/v1"
 	emailworkerv1 "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1"
@@ -75,6 +77,30 @@ func TestCreateOrgWithDefaultsHappyPath(t *testing.T) {
 	}
 	if len(projects) != 1 {
 		t.Fatalf("want 1 default project, got %d", len(projects))
+	}
+
+	// The default project must arrive with a key to send events with. This is the
+	// path every new customer's first project is born on (CompleteMagicLink /
+	// CompleteOAuthSignIn -> FinishSignup -> CreateOrgWithDefaultsInTx ->
+	// CreateProjectInTx), where the starter key is a *second* statement inside the
+	// signup transaction — so the project can commit without one if that insert is
+	// ever moved out or fails silently. The symptom would be a customer who signs up
+	// successfully and can never send an event, which no other test would catch:
+	// the rest of the starter-key coverage goes through Service.CreateProject, a
+	// different function with its own transaction.
+	keys, err := read.GetApiKeysByProjectID(ctx, projects[0].ID)
+	if err != nil {
+		t.Fatalf("GetApiKeysByProjectID: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("want 1 starter key on the default project, got %d", len(keys))
+	}
+	if got := coreprojects.Kind(keys[0].Kind); got != coreprojects.KindPublic {
+		t.Errorf("starter key kind = %q, want %q — a private key is never implicit", got, coreprojects.KindPublic)
+	}
+	// A public key is stored whole, so the token is the key an SDK actually sends.
+	if !strings.HasPrefix(keys[0].Token, "pub_") {
+		t.Errorf("starter key token = %q, want a pub_ key", keys[0].Token)
 	}
 }
 
