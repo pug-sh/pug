@@ -63,18 +63,14 @@ func SetupClickHouse(t *testing.T) *TestClickHouse {
 		t.Fatalf("testutil: create clickhouse database: %v", err)
 	}
 
-	dsn := sc.connFor(name)
-	if err := migrateClickHouse(ctx, dsn); err != nil {
-		t.Fatalf("testutil: run clickhouse migrations: %v", err)
-	}
-
-	conn, err := chdep.NewReaderPool(ctx, &chdep.Config{URL: dsn})
-	if err != nil {
-		t.Fatalf("testutil: create clickhouse connection: %v", err)
-	}
-
+	// Registered before the migration and connection so a failure in either still
+	// drops the database; otherwise it would linger in the shared container for
+	// the rest of the package. The connection is closed only once set.
+	var conn *chdep.Conn
 	t.Cleanup(func() {
-		_ = conn.Close()
+		if conn != nil {
+			_ = conn.Close()
+		}
 		// Background, not t.Context: the test's context is already cancelled once
 		// cleanups run, so the drop would never be sent.
 		//
@@ -89,6 +85,16 @@ func SetupClickHouse(t *testing.T) *TestClickHouse {
 			t.Errorf("testutil: drop clickhouse database %s: %v", name, err)
 		}
 	})
+
+	dsn := sc.connFor(name)
+	if err := migrateClickHouse(ctx, dsn); err != nil {
+		t.Fatalf("testutil: run clickhouse migrations: %v", err)
+	}
+
+	conn, err := chdep.NewReaderPool(ctx, &chdep.Config{URL: dsn})
+	if err != nil {
+		t.Fatalf("testutil: create clickhouse connection: %v", err)
+	}
 
 	return &TestClickHouse{Conn: conn, URL: dsn}
 }

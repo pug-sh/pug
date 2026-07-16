@@ -124,22 +124,17 @@ func SetupPostgres(t *testing.T) *TestPostgres {
 		t.Fatalf("testutil: create test database: %v", err)
 	}
 
-	dsn := poolDSN(sp.base, name)
-
-	pgRO, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("testutil: create read pool: %v", err)
-	}
-
-	pgW, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		pgRO.Close()
-		t.Fatalf("testutil: create write pool: %v", err)
-	}
-
+	// Registered before the pools are built so a failure between here and the
+	// return still drops the database; otherwise it would linger in the shared
+	// container for the rest of the package. Each pool is closed only once set.
+	var pgRO, pgW *pgxpool.Pool
 	t.Cleanup(func() {
-		pgRO.Close()
-		pgW.Close()
+		if pgRO != nil {
+			pgRO.Close()
+		}
+		if pgW != nil {
+			pgW.Close()
+		}
 		// Background, not t.Context: the test's context is already cancelled by
 		// the time cleanups run, so the drop would never be sent and the database
 		// would linger in the shared container for the rest of the package.
@@ -151,6 +146,19 @@ func SetupPostgres(t *testing.T) *TestPostgres {
 			t.Errorf("testutil: drop test database %s: %v", name, err)
 		}
 	})
+
+	dsn := poolDSN(sp.base, name)
+
+	var err error
+	pgRO, err = pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("testutil: create read pool: %v", err)
+	}
+
+	pgW, err = pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("testutil: create write pool: %v", err)
+	}
 
 	return &TestPostgres{PgRO: pgRO, PgW: pgW}
 }

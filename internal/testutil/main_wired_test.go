@@ -185,12 +185,23 @@ func assertScanIsLive(t *testing.T, s pkgScan) {
 
 // skipDir keeps the walk out of trees with no hand-written tests to check.
 //
+// It ignores what standard Go tooling ignores — directory names beginning with
+// "." or "_", plus "testdata" and "vendor" — so a deliberately malformed
+// *_test.go kept as a parser fixture can't fail the ParseFile above; node_modules
+// and bin are dropped for the same reason (".git" falls under the "." rule). The
+// walk root is the repo root, which repoRoot builds through filepath.Join and so
+// is already cleaned, so its own name never trips the "." rule.
+//
 // The generated-code case has to compare the path relative to the root:
 // fs.DirEntry.Name reports the final element alone, so matching "internal/gen"
 // against it would silently never fire.
 func skipDir(root, path string, d fs.DirEntry) bool {
-	switch d.Name() {
-	case ".git", "node_modules", "bin":
+	name := d.Name()
+	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+		return true
+	}
+	switch name {
+	case "testdata", "vendor", "node_modules", "bin":
 		return true
 	}
 	rel, err := filepath.Rel(root, path)

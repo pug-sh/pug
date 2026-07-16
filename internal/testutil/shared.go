@@ -122,16 +122,22 @@ func (r *teardownRegistry) add(fn func() error) {
 //
 // The teardowns run off the lock: each one stops a container, and holding a
 // non-reentrant mutex across that would deadlock a teardown that registered
-// another.
+// another. Re-draining until the registry is empty means such a late
+// registration runs too, rather than being stranded when Main exits.
 func (r *teardownRegistry) run() error {
-	r.mu.Lock()
-	fns := r.fns
-	r.fns = nil
-	r.mu.Unlock()
-
 	var errs []error
-	for i := len(fns) - 1; i >= 0; i-- {
-		errs = append(errs, runTeardown(fns[i]))
+	for {
+		r.mu.Lock()
+		fns := r.fns
+		r.fns = nil
+		r.mu.Unlock()
+
+		if len(fns) == 0 {
+			break
+		}
+		for i := len(fns) - 1; i >= 0; i-- {
+			errs = append(errs, runTeardown(fns[i]))
+		}
 	}
 	return errors.Join(errs...)
 }
