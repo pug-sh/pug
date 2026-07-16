@@ -29,8 +29,8 @@ func randomHex(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// NewPrivateKey generates a 24-char private API key: "prv_" + 20 hex chars (80 bits of entropy).
-func NewPrivateKey() (string, error) {
+// newPrivateKey generates a 24-char private API key: "prv_" + 20 hex chars (80 bits of entropy).
+func newPrivateKey() (string, error) {
 	h, err := randomHex(10)
 	if err != nil {
 		return "", err
@@ -38,8 +38,8 @@ func NewPrivateKey() (string, error) {
 	return "prv_" + h, nil
 }
 
-// NewPublicKey generates a 24-char public API key: "pub_" + 20 hex chars (80 bits of entropy).
-func NewPublicKey() (string, error) {
+// newPublicKey generates a 24-char public API key: "pub_" + 20 hex chars (80 bits of entropy).
+func newPublicKey() (string, error) {
 	h, err := randomHex(10)
 	if err != nil {
 		return "", err
@@ -63,18 +63,20 @@ func hashKey(key string) string {
 // Minting and the token rule are one switch on purpose. Split apart, a kind could
 // be mintable while falling through to "store it whole" — which for a secret means
 // storing plaintext — so the pairing makes that state unrepresentable rather than
-// merely absent. Fails closed on an unrecognized kind rather than defaulting to a
-// flavor the caller did not ask for.
+// merely absent. That is also why the generators below it stay unexported: this is
+// the only way to mint a key, so no caller can reach a raw private key without the
+// digest rule that goes with it. Fails closed on an unrecognized kind rather than
+// defaulting to a flavor the caller did not ask for.
 func mintKey(kind Kind) (raw, token string, err error) {
 	switch kind {
 	case KindPublic:
-		raw, err = NewPublicKey()
+		raw, err = newPublicKey()
 		if err != nil {
 			return "", "", err
 		}
 		return raw, raw, nil
 	case KindPrivate:
-		raw, err = NewPrivateKey()
+		raw, err = newPrivateKey()
 		if err != nil {
 			return "", "", err
 		}
