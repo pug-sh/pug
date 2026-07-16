@@ -6,7 +6,18 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 )
+
+// cleanupDropTimeout bounds the per-test cleanup that drops a database or flushes
+// a Redis index once a test finishes. Those run on context.Background (t.Context
+// is already cancelled by cleanup time), which without a deadline would let a
+// wedged connection block the drop — and with it the rest of the sequentially run
+// package — until go test -timeout fired with a generic goroutine dump. This is
+// the backstop against that hang: deliberately far longer than any real drop (a
+// ClickHouse sync drop under a saturated daemon must have room to finish, or it
+// fails and leaves its data behind) and far shorter than the suite timeout.
+const cleanupDropTimeout = 30 * time.Second
 
 // Main runs a package's tests and then tears down the containers they shared.
 //

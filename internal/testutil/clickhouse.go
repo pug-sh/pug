@@ -80,7 +80,14 @@ func SetupClickHouse(t *testing.T) *TestClickHouse {
 		// wrong — but without sync every test's tables sit in system.dropped_tables
 		// holding their data, and a package's worth of them accumulates in a container
 		// the whole package shares. sync unlinks before returning.
-		if _, err := sc.admin.ExecContext(context.Background(),
+		//
+		// The timeout is a backstop against a wedged connection hanging the drop
+		// until go test -timeout, not a fail-fast: it is generous so a sync drop
+		// under a loaded daemon has room to finish rather than erroring out and
+		// leaving the data it was meant to unlink (cleanupDropTimeout).
+		dropCtx, cancel := context.WithTimeout(context.Background(), cleanupDropTimeout)
+		defer cancel()
+		if _, err := sc.admin.ExecContext(dropCtx,
 			fmt.Sprintf("drop database if exists %s sync", quoteCH(name))); err != nil {
 			t.Errorf("testutil: drop clickhouse database %s: %v", name, err)
 		}

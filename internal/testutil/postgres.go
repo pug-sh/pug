@@ -137,11 +137,15 @@ func SetupPostgres(t *testing.T) *TestPostgres {
 		}
 		// Background, not t.Context: the test's context is already cancelled by
 		// the time cleanups run, so the drop would never be sent and the database
-		// would linger in the shared container for the rest of the package.
+		// would linger in the shared container for the rest of the package. The
+		// timeout backstops a wedged connection hanging the drop — and with it the
+		// rest of the sequential package — until go test -timeout (cleanupDropTimeout).
 		//
 		// force: pgxpool releases connections asynchronously, and a backend that
 		// outlives the pool holds the database open against a plain drop.
-		if _, err := sp.admin.Exec(context.Background(),
+		dropCtx, cancel := context.WithTimeout(context.Background(), cleanupDropTimeout)
+		defer cancel()
+		if _, err := sp.admin.Exec(dropCtx,
 			fmt.Sprintf("drop database if exists %s with (force)", quoted)); err != nil {
 			t.Errorf("testutil: drop test database %s: %v", name, err)
 		}

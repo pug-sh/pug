@@ -71,8 +71,12 @@ func SetupRedis(t *testing.T) *TestRedis {
 	t.Cleanup(func() {
 		// Background, not t.Context: the test's context is already cancelled once
 		// cleanups run, so the flush would never be sent and this index would hand
-		// stale keys to whichever later test recycles it.
-		if err := client.FlushDB(context.Background()).Err(); err != nil {
+		// stale keys to whichever later test recycles it. The timeout backstops a
+		// wedged connection hanging the flush — and with it the rest of the
+		// sequential package — until go test -timeout (cleanupDropTimeout).
+		dropCtx, cancel := context.WithTimeout(context.Background(), cleanupDropTimeout)
+		defer cancel()
+		if err := client.FlushDB(dropCtx).Err(); err != nil {
 			t.Errorf("testutil: flush redis db %d: %v", db, err)
 		}
 		_ = client.Close()
