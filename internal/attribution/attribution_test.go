@@ -365,6 +365,60 @@ func TestStripServerOnly(t *testing.T) {
 	})
 }
 
+// TestServerOnlyKeysMatchDerivedOnlyFields pins serverOnlyKeys to the type
+// shape so the strip can never silently fall behind Output. A server-only key
+// is one Derive computes with no Input field to echo — precisely an Output
+// field whose name has no Input counterpart (today: ReferrerDomain, Channel).
+// The write side never clears a key, so any server-only key left unstripped
+// survives a client-sent copy verbatim into a permanent rollup column. The
+// two-element serverOnlyKeys is correct today, but a future always-server-
+// derived Output field added without a matching entry would leak — and the
+// empty-derivation path (a non-web event) makes that leak invisible, because
+// the write loop skips empty outputs and so never overwrites the client value.
+// This test turns that omission into a build failure instead of a silent leak.
+func TestServerOnlyKeysMatchDerivedOnlyFields(t *testing.T) {
+	inputFields := make(map[string]bool)
+	it := reflect.TypeOf(Input{})
+	for i := range it.NumField() {
+		inputFields[it.Field(i).Name] = true
+	}
+
+	// Output field name → its canonical Prop* key, via the Pairs table: stamp
+	// each field with its own name, then read back which key carries it.
+	var out Output
+	ot := reflect.TypeOf(out)
+	ov := reflect.ValueOf(&out).Elem()
+	for i := range ot.NumField() {
+		ov.Field(i).SetString(ot.Field(i).Name)
+	}
+	fieldToKey := make(map[string]string, ot.NumField())
+	for _, p := range out.Pairs() {
+		fieldToKey[p.Value] = p.Key
+	}
+
+	want := make(map[string]bool)
+	for i := range ot.NumField() {
+		name := ot.Field(i).Name
+		if inputFields[name] {
+			continue // client can supply it: derive-if-absent, not server-only
+		}
+		key, ok := fieldToKey[name]
+		if !ok {
+			t.Fatalf("Output.%s reaches no canonical key via Pairs", name)
+		}
+		want[key] = true
+	}
+
+	got := make(map[string]bool, len(serverOnlyKeys))
+	for _, k := range serverOnlyKeys {
+		got[k] = true
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("serverOnlyKeys = %v, want %v (every Output key with no matching Input field must be stripped)", got, want)
+	}
+}
+
 // keyEchoSource returns a distinct non-empty value for every key, so an Input
 // field InputFrom fails to read stays zero and a cross-wired field carries the
 // wrong key's echo.
