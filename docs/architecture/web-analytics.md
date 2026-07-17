@@ -153,7 +153,7 @@ domain, suffix-matched against the domain sets so `l.facebook.com` matches `face
 
 | # | Rule | Channel |
 |---|---|---|
-| 1 | paid medium (`^(.*cp.*|ppc|retargeting|paid.*)$`) AND search source/ref | `Paid Search` |
+| 1 | paid medium (`^(.*cp.*\|ppc\|retargeting\|paid.*)$`) AND search source/ref | `Paid Search` |
 | 2 | paid medium AND social source/ref | `Paid Social` |
 | 3 | paid medium AND video source/ref | `Paid Video` |
 | 4 | `med ∈ {display, banner, expandable, interstitial, cpm}` | `Display` |
