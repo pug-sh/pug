@@ -45,6 +45,17 @@ func TestClassifyChannelRules(t *testing.T) {
 		{"organic social via hn", Input{URL: page, Referrer: "https://news.ycombinator.com/item?id=1"}, ChannelOrganicSocial},
 		{"organic social via medium sm", Input{URL: page, UTMSource: "buffer", UTMMedium: "sm"}, ChannelOrganicSocial},
 		{"organic social via source", Input{URL: page, UTMSource: "instagram"}, ChannelOrganicSocial},
+		// Domain-shaped utm_source: some tools stamp the full referrer domain
+		// (utm_source=facebook.com), so matchesSource falls through to its
+		// matchesHost arm. Every bare-name source case above takes the
+		// slices.Contains arm and never exercises it — a regression dropping the
+		// domain arm would misfile these into Referral/Unassigned with the suite
+		// green. The subdomain case pins the dot-boundary suffix match too.
+		{"organic social via domain-shaped source", Input{URL: page, UTMSource: "facebook.com"}, ChannelOrganicSocial},
+		{"organic social via subdomain-shaped source", Input{URL: page, UTMSource: "m.facebook.com"}, ChannelOrganicSocial},
+		{"organic search via domain-shaped source", Input{URL: page, UTMSource: "bing.com"}, ChannelOrganicSearch},
+		{"organic video via domain-shaped source", Input{URL: page, UTMSource: "youtube.com"}, ChannelOrganicVideo},
+		{"paid social via domain-shaped source and cpc", Input{URL: page, UTMSource: "facebook.com", UTMMedium: "cpc"}, ChannelPaidSocial},
 		// 8: Organic Video
 		{"organic video via ref", Input{URL: page, Referrer: "https://www.youtube.com/watch?v=1"}, ChannelOrganicVideo},
 		{"organic video via medium", Input{URL: page, UTMSource: "sponsor", UTMMedium: "video"}, ChannelOrganicVideo},
