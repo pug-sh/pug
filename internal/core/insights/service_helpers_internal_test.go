@@ -223,13 +223,20 @@ func TestMergePromotedAutoDimensions(t *testing.T) {
 		liveSeen := time.Unix(9999, 0).UTC()
 		discovered := []AggregateKeyMeta{{Key: "$country", ValueType: "String", Count: 41, LastSeen: frozenSeen}}
 		rollup := []AggregateKeyMeta{{Key: "$country", Count: 9000, LastSeen: liveSeen}}
+		var found bool
 		for _, k := range mergePromotedAutoDimensions(discovered, rollup) {
 			if k.Key != "$country" {
 				continue
 			}
+			found = true
 			if k.Count != 9000 || !k.LastSeen.Equal(liveSeen) {
 				t.Errorf("$country = (count %d, last_seen %v), want the rollup entry (9000, %v)", k.Count, k.LastSeen, liveSeen)
 			}
+		}
+		// Without this the subtest would pass vacuously if the merge ever
+		// stopped emitting the dim at all, asserting nothing.
+		if !found {
+			t.Error("merged keys are missing $country entirely")
 		}
 	})
 
