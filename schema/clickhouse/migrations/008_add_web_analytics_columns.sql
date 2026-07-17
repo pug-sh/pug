@@ -94,6 +94,19 @@ ALTER TABLE events
 --     "www.shop.com" where Go (stripOneWWW after ToLower) stores "shop.com",
 --     defeating self-referral blanking and listing the tenant's own domain as
 --     its top referrer. Lower-then-strip mirrors Go and matches `own` below.
+--   * Host lowercasing uses lowerUTF8, NOT ASCII lower(): Go folds the host
+--     with Unicode-aware strings.ToLower (parsePageURL / referrerDomain), so an
+--     uppercase non-ASCII host ("ÜBER.example.de") must fold to
+--     "über.example.de" here too. ASCII lower() leaves "Ü" intact and stores
+--     "Über.example.de", splitting one site across two permanent
+--     hostname/referrer_domain rollup dim_values (live vs backfilled) from a
+--     one-shot irreversible mutation. Unreachable from a browser's
+--     location.href (hosts arrive punycoded + lowercased) but reachable from a
+--     non-browser SDK; pinned by the non_ascii_uppercase_host/referrer corpus
+--     rows. The utm_source/utm_medium classification lowercasing below stays
+--     ASCII lower() deliberately: it is only matched against the all-ASCII
+--     channel source sets, so its casing can never change a channel and
+--     mirroring ToLower there would be a no-op the parity test cannot observe.
 --   * The locale trim is an explicit regexp, not trimBoth, which strips ONLY
 --     ASCII 0x20. Go's strings.TrimSpace strips the whole unicode.IsSpace set —
 --     [\t\n\v\f\r\x{0085}] plus \pZ (Zs/Zl/Zp) is exactly that set — and a
@@ -161,7 +174,7 @@ ALTER TABLE events UPDATE
         if(match(url, '(?i)^https?://')
            AND domainRFC(replaceRegexpOne(url, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')) != ''
            AND NOT match(concat(path(url), '#', fragment(url)), '%(?:[^0-9A-Fa-f]|[0-9A-Fa-f][^0-9A-Fa-f]|[0-9A-Fa-f]?$)'),
-           lower(domainRFC(replaceRegexpOne(url, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1'))), '')),
+           lowerUTF8(domainRFC(replaceRegexpOne(url, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1'))), '')),
     referrer = if(referrer != '', referrer,
         coalesce(CAST(auto_properties['$referrer'] AS Nullable(String)), '')),
     referrer_domain = if(referrer_domain != '', referrer_domain,
@@ -171,11 +184,11 @@ ALTER TABLE events UPDATE
                     AND domainRFC(replaceRegexpOne(ref, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')) != ''
                     AND NOT match(concat(path(ref), '#', fragment(ref)), '%(?:[^0-9A-Fa-f]|[0-9A-Fa-f][^0-9A-Fa-f]|[0-9A-Fa-f]?$)'),
                     arrayElement(arrayMap(h -> if(startsWith(h, 'www.'), substring(h, 5), h),
-                        [lower(domainRFC(replaceRegexpOne(ref, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')))]), 1),
+                        [lowerUTF8(domainRFC(replaceRegexpOne(ref, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')))]), 1),
                     '')]), 1),
             [if(referrer != '', referrer, coalesce(CAST(auto_properties['$referrer'] AS Nullable(String)), ''))],
             [arrayElement(arrayMap(h -> if(startsWith(h, 'www.'), substring(h, 5), h),
-                [lower(if(match(url, '(?i)^https?://')
+                [lowerUTF8(if(match(url, '(?i)^https?://')
                           AND domainRFC(replaceRegexpOne(url, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')) != ''
                           AND NOT match(concat(path(url), '#', fragment(url)), '%(?:[^0-9A-Fa-f]|[0-9A-Fa-f][^0-9A-Fa-f]|[0-9A-Fa-f]?$)'),
                           domainRFC(replaceRegexpOne(url, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')),
@@ -219,11 +232,11 @@ ALTER TABLE events UPDATE
                             AND domainRFC(replaceRegexpOne(ref2, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')) != ''
                             AND NOT match(concat(path(ref2), '#', fragment(ref2)), '%(?:[^0-9A-Fa-f]|[0-9A-Fa-f][^0-9A-Fa-f]|[0-9A-Fa-f]?$)'),
                             arrayElement(arrayMap(h -> if(startsWith(h, 'www.'), substring(h, 5), h),
-                                [lower(domainRFC(replaceRegexpOne(ref2, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')))]), 1),
+                                [lowerUTF8(domainRFC(replaceRegexpOne(ref2, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')))]), 1),
                             '')]), 1),
                     [if(referrer != '', referrer, coalesce(CAST(auto_properties['$referrer'] AS Nullable(String)), ''))],
                     [arrayElement(arrayMap(h -> if(startsWith(h, 'www.'), substring(h, 5), h),
-                        [lower(if(match(url, '(?i)^https?://')
+                        [lowerUTF8(if(match(url, '(?i)^https?://')
                                   AND domainRFC(replaceRegexpOne(url, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')) != ''
                                   AND NOT match(concat(path(url), '#', fragment(url)), '%(?:[^0-9A-Fa-f]|[0-9A-Fa-f][^0-9A-Fa-f]|[0-9A-Fa-f]?$)'),
                                   domainRFC(replaceRegexpOne(url, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')),

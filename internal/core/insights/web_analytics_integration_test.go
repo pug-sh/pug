@@ -504,6 +504,15 @@ var mutationCorpus = []mutationCorpusRow{
 	// read as evil.com must still attribute to real.com).
 	{name: "ipv6_literal_host", url: "https://[::1]/p"},
 	{name: "userinfo_host_confusion", url: "https://user:pw@evil.com@real.com/p"},
+	// Uppercase non-ASCII host/referrer: Go lowercases with Unicode-aware
+	// strings.ToLower (Ü→ü), so the mutation must use lowerUTF8, not ASCII
+	// lower() — which leaves Ü intact and would split one site into two
+	// permanent hostname/referrer_domain rollup dim_values between live traffic
+	// and backfilled history. Unreachable from a browser's location.href (hosts
+	// arrive punycoded and lowercased), but a non-browser SDK can send it and
+	// the mutation is a one-shot irreversible rewrite.
+	{name: "non_ascii_uppercase_host", url: "https://ÜBER.example.de/x"},
+	{name: "non_ascii_uppercase_referrer", url: "https://pugandpals.example.com/x", referrer: "https://ÜBER.example.de/from"},
 }
 
 func testMutation008DeriveParity(t *testing.T, ctx context.Context, ch *testutil.TestClickHouse) {
