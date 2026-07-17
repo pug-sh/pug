@@ -16,7 +16,7 @@
 // the client value through Input and Derive echoes it back when non-empty;
 // always-server-derived keys ($referrerDomain, $channel) have no Input field
 // at all, so a client value cannot influence them and callers must strip them
-// from client input before persisting Output.
+// from client input via StripServerOnly before persisting Output.
 package attribution
 
 import (
@@ -70,12 +70,24 @@ type Input struct {
 	ScreenHeight int64
 }
 
-// ServerOnlyKeys are the keys Derive always computes itself. They have no
+// serverOnlyKeys are the keys Derive always computes itself. They have no
 // Input field, so a client-sent copy cannot influence derivation — but it
 // would survive untouched into storage, because the write side never clears a
-// key. Callers must delete these from client input before applying Output,
-// mirroring the bot enrichers' strip.
-var ServerOnlyKeys = [...]string{PropReferrerDomain, PropChannel}
+// key. StripServerOnly removes them, mirroring the bot enrichers' strip.
+var serverOnlyKeys = [...]string{PropReferrerDomain, PropChannel}
+
+// StripServerOnly deletes every server-only key from a caller's client-sent
+// property map. Ingest paths must call it before applying Output; owning the
+// deletion here rather than exporting the key list keeps the policy
+// unreachable from outside — a caller cannot strip a stale subset, and no
+// importer can rewrite the list out from under the paths that depend on it.
+// Generic over the value type because the SDK handler holds
+// map[string]*eventsv1.PropertyValue and the seeder map[string]any.
+func StripServerOnly[V any](props map[string]V) {
+	for _, key := range serverOnlyKeys {
+		delete(props, key)
+	}
+}
 
 // Source reads client-sent auto-properties out of whatever map shape a caller
 // holds.

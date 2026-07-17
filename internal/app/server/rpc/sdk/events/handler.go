@@ -215,9 +215,7 @@ func (s *Server) enrichBotScore(ctx context.Context, projectID string, h http.He
 // permanent, so fragmented variants must never reach storage).
 func (s *Server) enrichAttribution(events []*eventsv1.Event) {
 	for _, event := range events {
-		for _, key := range attribution.ServerOnlyKeys {
-			delete(event.AutoProperties, key)
-		}
+		attribution.StripServerOnly(event.AutoProperties)
 
 		out := attribution.Derive(attribution.InputFrom(eventProps(event.AutoProperties)))
 

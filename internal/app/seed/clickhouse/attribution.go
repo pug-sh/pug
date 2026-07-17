@@ -13,11 +13,9 @@ import (
 // the handler, so this is the only place seeded events get their derived
 // web-analytics keys.
 func applyAttribution(props map[string]any) {
-	// Server-only keys are never client-set in the seeder, but mirror the
-	// handler's strip anyway so the two paths cannot drift.
-	for _, key := range attribution.ServerOnlyKeys {
-		delete(props, key)
-	}
+	// Server-only keys are never client-set in the seeder, but run the same
+	// strip anyway so the two paths cannot drift.
+	attribution.StripServerOnly(props)
 
 	out := attribution.Derive(attribution.InputFrom(seedProps(props)))
 
