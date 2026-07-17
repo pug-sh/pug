@@ -456,6 +456,11 @@ var mutationCorpus = []mutationCorpusRow{
 	// slot; live traffic derives a size (autoprop.String renders an integral
 	// double like the Int64 slot), so the mutation must read Float64 too.
 	{name: "screen_dims_as_doubles", url: "https://pugandpals.example.com/x", screenWFloat: 1920, screenHFloat: 1080},
+	// A FRACTIONAL double is not an integer dimension: autoprop.String renders
+	// "1920.5" and ParseInt rejects it, toInt64OrNull rejects it in SQL, so both
+	// derive no $screenSize. Pins that the integral-double path above does not
+	// round or truncate a fractional one into a size.
+	{name: "screen_dims_fractional_double_rejected", url: "https://pugandpals.example.com/x", screenWFloat: 1920.5, screenHFloat: 1080},
 	{name: "garbage_url", url: "not a url", referrer: "https://www.google.com/", locale: "EN"},
 	{name: "no_url_app_event", referrer: "", locale: "zh-hans-cn", screenW: 390, screenH: 844},
 	{name: "term_content_in_map", url: "https://pugandpals.example.com/x", utmTerm: "puppy harness", utmContent: "story-2", pageTitle: "Harness — Pug & Pals"},

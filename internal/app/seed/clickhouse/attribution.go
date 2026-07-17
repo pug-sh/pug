@@ -21,8 +21,13 @@ func applyAttribution(props map[string]any) {
 
 	// Mirrors the handler: $locale is rewritten in place, and the write below
 	// cannot clear a key, so drop the pre-Derive value and let it re-add the
-	// normalized one (if any).
-	delete(props, attribution.PropLocale)
+	// normalized one (if any). Gate the drop on the seed adapter being able to
+	// render the value (a string), exactly as enrichAttribution gates on
+	// autoprop.String: a $locale Derive could not read must be preserved for
+	// storage, not destroyed into neither the column nor the map.
+	if _, ok := props[attribution.PropLocale].(string); ok {
+		delete(props, attribution.PropLocale)
+	}
 
 	for _, p := range out.Pairs() {
 		if p.Value != "" {

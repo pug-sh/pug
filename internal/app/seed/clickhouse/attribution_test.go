@@ -46,3 +46,22 @@ func TestApplyAttributionDerivesLikeHandler(t *testing.T) {
 		}
 	}
 }
+
+// TestApplyAttributionPreservesUnrenderableLocale mirrors the handler's
+// "unrenderable locale slot is preserved not destroyed" case. The
+// delete-then-readd dance only makes sense for a $locale Derive actually read;
+// a value the seed adapter cannot render (a non-string) must survive, since
+// storage would keep it — dropping it unconditionally would leave it in neither
+// the normalized column nor the map, diverging from enrichAttribution.
+func TestApplyAttributionPreservesUnrenderableLocale(t *testing.T) {
+	props := map[string]any{
+		"$url":    "https://pugandpals.example.com/x",
+		"$locale": 42, // not a string: seedProps.String cannot render it
+	}
+
+	applyAttribution(props)
+
+	if got, ok := props["$locale"]; !ok || got != 42 {
+		t.Errorf("$locale = %v (present=%v), want 42 preserved", got, ok)
+	}
+}

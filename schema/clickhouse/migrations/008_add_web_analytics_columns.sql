@@ -144,8 +144,14 @@ ALTER TABLE events
 --     on any drift, including a reordering of the branches (cpm is both a paid
 --     and a display medium, so rule ORDER alone decides its channel). A taxonomy
 --     edit in channel.go is therefore a MIGRATION, not a refactor: update this
---     multiIf, then re-run this mutation + 009's DELETE and delta backfill so
---     historical rows reclassify to match live traffic.
+--     multiIf. But this mutation CANNOT reclassify on its own — every channel
+--     assignment is guarded if(channel != '', channel, …), so a re-run preserves
+--     each already-classified row (that guard is exactly what makes the re-run
+--     safe as an underived-row repair). To reclassify history after a taxonomy
+--     change, ship a NEW forward migration whose channel assignment is
+--     UNCONDITIONAL — it sets channel = <derived> for every row, dropping the
+--     if-guard — then run 009's DELETE + delta backfill so the rollup picks up
+--     the rewrite.
 -- Known limitations — divergences from Go this gate does NOT mirror, all
 -- unreachable from a browser's location.href, so they are accepted rather than
 -- chased into a longer statement:
