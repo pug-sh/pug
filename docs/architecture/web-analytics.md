@@ -164,14 +164,14 @@ domain, suffix-matched against the domain sets so `l.facebook.com` matches `face
 | 9 | `src or med ∈ {email, e-mail, e_mail, newsletter}` | `Email` |
 | 10 | `med = affiliate` | `Affiliate` |
 | 11 | `ref != ""` | `Referral` |
-| 12 | any UTM present but unclassifiable | `Unassigned` |
+| 12 | any UTM present, or a referrer sent but unresolvable, yet unclassifiable | `Unassigned` |
 | 13 | otherwise | `Direct` |
 
 Domain sets live as Go consts in `internal/attribution/channel.go` (search: google + ccTLDs
 matched structurally by a TLD-shaped-tail check rather than enumeration, bing, duckduckgo, yahoo,
 baidu, yandex, ecosia, brave, startpage, perplexity…; social: facebook, instagram, x/twitter,
 t.co, linkedin, tiktok, pinterest, reddit, threads, bsky, news.ycombinator…; video: youtube,
-youtu.be, vimeo, twitch). That file is the **single normative taxonomy** — this satisfies
+youtu.be, vimeo, twitch, dailymotion…). That file is the **single normative taxonomy** — this satisfies
 `profiles.md`'s "no ad hoc channel" rule by defining the stable derivation it demanded; the
 profile API still exposes no channel field.
 

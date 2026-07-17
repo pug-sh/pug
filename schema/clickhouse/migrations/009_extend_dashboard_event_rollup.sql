@@ -83,7 +83,7 @@ GROUP BY project_id, day, kind, dim_name, dim_value;
 -- makes the pair idempotent: a no-op on the first run (no rows carry these
 -- dim_names until the INSERT below), and on a retry the INSERT re-derives
 -- them from `events`, the source of truth. Keep the list equal to
--- newEventRollupDims — TestMigration009BackfillDeleteCoversNewDims.
+-- eventRollupDims009 — TestMigration009BackfillDeleteCoversNewDims.
 ALTER TABLE dashboard_event_rollup_daily DELETE
 WHERE dim_name IN ('$pathname', '$hostname', '$referrerDomain', '$channel', '$locale', '$screenSize', '$utmTerm', '$utmContent', '$browserVersion', '$osVersion')
 SETTINGS mutations_sync = 2;
