@@ -15,8 +15,14 @@
 // expressed by what the caller feeds into Input: derive-if-absent keys pass
 // the client value through Input and Derive echoes it back when non-empty;
 // always-server-derived keys ($referrerDomain, $channel) have no Input field
-// at all, so a client value cannot influence them and callers must strip them
-// from client input via StripServerOnly before persisting Output.
+// of their OWN, so a client-sent $referrerDomain/$channel cannot influence
+// them and callers strip them via StripServerOnly before persisting Output.
+// That is not the same as full client isolation: $referrerDomain is derived
+// from Input.Referrer against Input.URL's host, and when no $url is present it
+// falls back to the client-sent Input.Hostname as the self-referral comparand
+// (see Derive) — a URL-less event can therefore self-blank its own referrer.
+// That is an accepted, documented tradeoff (a tenant degrading only its own
+// analytics), not a general guarantee that no client value reaches these keys.
 package attribution
 
 import (

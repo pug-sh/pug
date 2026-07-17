@@ -17,6 +17,7 @@ import (
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/attribution"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
@@ -667,8 +668,36 @@ func TestBatchCreateWiresAttributionEnricher(t *testing.T) {
 	}
 }
 
+func TestAttributionDegraded(t *testing.T) {
+	cases := []struct {
+		name string
+		in   attribution.Input
+		out  attribution.Output
+		want bool
+	}{
+		// A $url was sent but derived no pathname: it did not parse as an
+		// http(s) URL with a host, so pathname/hostname/channel are all empty.
+		{"url present, nothing derived", attribution.Input{URL: "myapp://screen/home"}, attribution.Output{}, true},
+		{"garbage url", attribution.Input{URL: "not a url"}, attribution.Output{}, true},
+		// No $url at all is a native/non-web event, not a degradation.
+		{"no url", attribution.Input{Referrer: "https://google.com"}, attribution.Output{}, false},
+		// A valid URL yields at least "/" — not degraded.
+		{"valid url", attribution.Input{URL: "https://x.com/p"}, attribution.Output{Pathname: "/p"}, false},
+		// A client-sent pathname means we have one even off a bad url.
+		{"client pathname masks bad url", attribution.Input{URL: "myapp://x"}, attribution.Output{Pathname: "/route"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := attributionDegraded(c.in, c.out); got != c.want {
+				t.Errorf("attributionDegraded = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
 func TestEnrichAttribution(t *testing.T) {
 	s := &Server{}
+	ctx := context.Background()
 
 	t.Run("full web pageview derives everything", func(t *testing.T) {
 		events := []*eventsv1.Event{{
@@ -681,7 +710,7 @@ func TestEnrichAttribution(t *testing.T) {
 		events[0].AutoProperties["$screenWidth"] = &commonv1.PropertyValue{Value: &commonv1.PropertyValue_IntValue{IntValue: 1920}}
 		events[0].AutoProperties["$screenHeight"] = &commonv1.PropertyValue{Value: &commonv1.PropertyValue_IntValue{IntValue: 1080}}
 
-		s.enrichAttribution(events)
+		s.enrichAttribution(ctx, "proj_test", events)
 
 		want := map[string]string{
 			"$pathname":       "/products/ball",
@@ -704,6 +733,22 @@ func TestEnrichAttribution(t *testing.T) {
 		}
 	})
 
+	// A JavaScript SDK has no int/double distinction, so a generic
+	// "any JS number → PropertyValue" helper maps window.screen.width to the
+	// DoubleValue slot. That must derive $screenSize exactly as the IntValue
+	// slot does — reading it the way autoprop.String (the promotion layer's
+	// coercion) renders it, not a hand-rolled slot switch that forgets Double.
+	t.Run("screen dims in the double slot still derive", func(t *testing.T) {
+		events := []*eventsv1.Event{{AutoProperties: map[string]*commonv1.PropertyValue{
+			"$screenWidth":  {Value: &commonv1.PropertyValue_DoubleValue{DoubleValue: 1920}},
+			"$screenHeight": {Value: &commonv1.PropertyValue_DoubleValue{DoubleValue: 1080}},
+		}}}
+		s.enrichAttribution(ctx, "proj_test", events)
+		if got := propString(events[0].AutoProperties["$screenSize"]); got != "1920x1080" {
+			t.Errorf("$screenSize = %q, want 1920x1080 (double-slot dims dropped)", got)
+		}
+	})
+
 	// NormalizeLocale blanks a whitespace-only tag, and the write loop cannot
 	// clear a key — so without the pre-delete the raw client value would reach
 	// the locale column and become a permanent rollup dimension value.
@@ -711,9 +756,25 @@ func TestEnrichAttribution(t *testing.T) {
 		events := []*eventsv1.Event{{
 			AutoProperties: propMap(map[string]string{"$locale": "   "}),
 		}}
-		s.enrichAttribution(events)
+		s.enrichAttribution(ctx, "proj_test", events)
 		if got, ok := events[0].AutoProperties["$locale"]; ok {
 			t.Errorf("$locale = %q, want the un-normalizable client value dropped", propString(got))
+		}
+	})
+
+	// A $locale in a slot autoprop.String can't render (here a timestamp) is
+	// one the promotion layer keeps in the auto_properties map (it returns
+	// !ok and leaves the value in place). The enricher must mirror that: the
+	// unconditional pre-delete would destroy a value storage would have kept,
+	// with the value present in NEITHER the locale column NOR the map. Only a
+	// locale we could actually read may be dropped.
+	t.Run("unrenderable locale slot is preserved not destroyed", func(t *testing.T) {
+		events := []*eventsv1.Event{{AutoProperties: map[string]*commonv1.PropertyValue{
+			"$locale": {Value: &commonv1.PropertyValue_TimestampValue{TimestampValue: timestamppb.Now()}},
+		}}}
+		s.enrichAttribution(ctx, "proj_test", events)
+		if _, ok := events[0].AutoProperties["$locale"]; !ok {
+			t.Error("$locale in an unrenderable slot was destroyed; storage would have kept it in the map")
 		}
 	})
 
@@ -721,7 +782,7 @@ func TestEnrichAttribution(t *testing.T) {
 		events := []*eventsv1.Event{{
 			AutoProperties: propMap(map[string]string{"$locale": "  zh_hans_cn  "}),
 		}}
-		s.enrichAttribution(events)
+		s.enrichAttribution(ctx, "proj_test", events)
 		if got := propString(events[0].AutoProperties["$locale"]); got != "zh-Hans-CN" {
 			t.Errorf("$locale = %q, want %q", got, "zh-Hans-CN")
 		}
@@ -736,7 +797,7 @@ func TestEnrichAttribution(t *testing.T) {
 				"$channel":        "Paid Search",
 			}),
 		}}
-		s.enrichAttribution(events)
+		s.enrichAttribution(ctx, "proj_test", events)
 		if got := propString(events[0].AutoProperties["$referrerDomain"]); got != "reddit.com" {
 			t.Errorf("$referrerDomain = %q, want server-derived reddit.com", got)
 		}
@@ -752,7 +813,7 @@ func TestEnrichAttribution(t *testing.T) {
 				"$channel":        "Email",
 			}),
 		}}
-		s.enrichAttribution(events)
+		s.enrichAttribution(ctx, "proj_test", events)
 		assertProps(t, events[0], map[string]string{})
 	})
 
@@ -766,7 +827,7 @@ func TestEnrichAttribution(t *testing.T) {
 				"$utmSource":  "google",
 			}),
 		}}
-		s.enrichAttribution(events)
+		s.enrichAttribution(ctx, "proj_test", events)
 		for k, v := range map[string]string{
 			"$pathname":   "/logical/route",
 			"$hostname":   "app.pugandpals.example.com",
@@ -786,7 +847,7 @@ func TestEnrichAttribution(t *testing.T) {
 				"$referrer": "https://www.pugandpals.example.com/",
 			}),
 		}}
-		s.enrichAttribution(events)
+		s.enrichAttribution(ctx, "proj_test", events)
 		if _, ok := events[0].AutoProperties["$referrerDomain"]; ok {
 			t.Error("$referrerDomain must be absent for a self-referral")
 		}
@@ -799,13 +860,13 @@ func TestEnrichAttribution(t *testing.T) {
 		events := []*eventsv1.Event{{
 			AutoProperties: propMap(map[string]string{"$platform": "ios", "$osVersion": "17.4"}),
 		}}
-		s.enrichAttribution(events)
+		s.enrichAttribution(ctx, "proj_test", events)
 		assertProps(t, events[0], map[string]string{"$platform": "ios", "$osVersion": "17.4"})
 	})
 
 	t.Run("nil auto properties tolerated", func(t *testing.T) {
 		events := []*eventsv1.Event{{}}
-		s.enrichAttribution(events)
+		s.enrichAttribution(ctx, "proj_test", events)
 		if len(events[0].AutoProperties) != 0 {
 			t.Errorf("expected no auto-properties, got %v", events[0].AutoProperties)
 		}

@@ -352,20 +352,39 @@ type mutationCorpusRow struct {
 	// mutation must read this slot too or history derives nothing while live
 	// traffic derives a size.
 	screenWStr, screenHStr string
+	// Screen dims in the Float64 variant slot: a JS SDK with no int/double
+	// distinction sends window.screen.width as a double. autoprop.String
+	// renders an integral double the same as the Int64 slot, so live traffic
+	// derives a size — the mutation must read Float64 too or history diverges.
+	screenWFloat, screenHFloat float64
 }
 
-// screenDim mirrors handler.go's autoPropInt64: the Int64 slot wins, else a
-// String slot is parsed, else 0. Derive itself takes int64s, so this coercion
-// is the handler's — and the 008 mutation mirrors the pair, not Derive alone.
-func screenDim(n int64, s string) int64 {
+// screenDim mirrors handler.go's autoPropInt64: it reads the first populated
+// variant slot (Int64, then String, then Float64) as the integer the promotion
+// layer would store, matching autoprop.String + ParseInt. Derive itself takes
+// int64s, so this coercion is the handler's — and the 008 mutation mirrors the
+// slots, not Derive alone.
+func screenDim(n int64, s string, f float64) int64 {
 	if n != 0 {
 		return n
 	}
-	v, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 0
+	if s != "" {
+		v, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return 0
+		}
+		return v
 	}
-	return v
+	if f != 0 {
+		// autoprop.String renders a double via FormatFloat('g'); ParseInt then
+		// accepts it only when integral, rejecting a fractional dim.
+		v, err := strconv.ParseInt(strconv.FormatFloat(f, 'g', -1, 64), 10, 64)
+		if err != nil {
+			return 0
+		}
+		return v
+	}
+	return 0
 }
 
 func (r mutationCorpusRow) deriveInput() attribution.Input {
@@ -378,8 +397,8 @@ func (r mutationCorpusRow) deriveInput() attribution.Input {
 		UTMTerm:      r.utmTerm,
 		UTMContent:   r.utmContent,
 		Locale:       r.locale,
-		ScreenWidth:  screenDim(r.screenW, r.screenWStr),
-		ScreenHeight: screenDim(r.screenH, r.screenHStr),
+		ScreenWidth:  screenDim(r.screenW, r.screenWStr, r.screenWFloat),
+		ScreenHeight: screenDim(r.screenH, r.screenHStr, r.screenHFloat),
 	}
 }
 
@@ -398,6 +417,21 @@ var mutationCorpus = []mutationCorpusRow{
 	{name: "email_medium", url: "https://pugandpals.example.com/x", utmSource: "lifecycle", utmMedium: "email"},
 	{name: "campaign_only_unassigned", url: "https://pugandpals.example.com/x", utmCampaign: "brand"},
 	{name: "video_ref", url: "https://pugandpals.example.com/x", referrer: "https://youtu.be/abc"},
+	// Channel branches no other corpus row reaches (Paid Video, Display, Paid
+	// Other, Affiliate), plus both directions of the cpm precedence — cpm is
+	// BOTH a paid medium (matches ^.*cp.*) AND a display medium, so which
+	// channel it books is decided purely by rule ORDER, and that order is the
+	// one thing the Go table and the SQL multiIf must agree on exactly. Without
+	// these, a single-token reordering of the SQL branches passes the parity
+	// test silently and mis-books all pre-008 history.
+	{name: "paid_video", url: "https://pugandpals.example.com/x", utmSource: "youtube", utmMedium: "cpv"},
+	{name: "display_banner", url: "https://pugandpals.example.com/x", utmSource: "adnetwork", utmMedium: "banner"},
+	// cpm + unmatched source: rule 4 (Display) wins over rule 5 (Paid Other).
+	{name: "cpm_display_over_paid_other", url: "https://pugandpals.example.com/x", utmSource: "adnetwork", utmMedium: "cpm"},
+	// cpm + social source: rule 2 (Paid Social) wins over rule 4 (Display).
+	{name: "cpm_paid_social_over_display", url: "https://pugandpals.example.com/x", utmSource: "facebook", utmMedium: "cpm"},
+	{name: "paid_other_unmatched_source", url: "https://pugandpals.example.com/x", utmSource: "partnerx", utmMedium: "cpc"},
+	{name: "affiliate_medium", url: "https://pugandpals.example.com/x", utmSource: "partner", utmMedium: "affiliate"},
 	// Referrers that resolve in ClickHouse's lenient domain() but NOT in Go's
 	// url.Parse (which reads a schemeless string as a path). The mutation must
 	// mirror Go and refuse them, so they book Unassigned rather than silently
@@ -418,6 +452,10 @@ var mutationCorpus = []mutationCorpusRow{
 	// exactly as strconv.ParseInt failing yields 0 in the handler.
 	{name: "screen_dims_as_strings", url: "https://pugandpals.example.com/x", screenWStr: "1920", screenHStr: "1080"},
 	{name: "screen_dims_unparseable_strings", url: "https://pugandpals.example.com/x", screenWStr: "19x20", screenHStr: "1080"},
+	// A JS SDK sending screen dims as doubles lands them in the Float64 variant
+	// slot; live traffic derives a size (autoprop.String renders an integral
+	// double like the Int64 slot), so the mutation must read Float64 too.
+	{name: "screen_dims_as_doubles", url: "https://pugandpals.example.com/x", screenWFloat: 1920, screenHFloat: 1080},
 	{name: "garbage_url", url: "not a url", referrer: "https://www.google.com/", locale: "EN"},
 	{name: "no_url_app_event", referrer: "", locale: "zh-hans-cn", screenW: 390, screenH: 844},
 	{name: "term_content_in_map", url: "https://pugandpals.example.com/x", utmTerm: "puppy harness", utmContent: "story-2", pageTitle: "Harness — Pug & Pals"},
@@ -428,6 +466,14 @@ var mutationCorpus = []mutationCorpusRow{
 	// where live traffic books Direct.
 	{name: "utm_in_hash_route", url: "https://app.example.com/#/dashboard?utm_source=newsletter&utm_medium=email"},
 	{name: "utm_in_fragment_after_query", url: "https://x.com/?a=1#utm_source=google"},
+	// A hash route on the BARE ORIGIN — no path segment before the '#'. path()
+	// excludes the fragment from what it RETURNS but still starts scanning
+	// inside it, so the first '/' it finds is the fragment's: the SPA's
+	// permanent $pathname reads "/dashboard" in backfilled history where live
+	// traffic derives "/". The cases above all carry a '/' before the '#',
+	// which is the only reason they agree.
+	{name: "hash_route_no_path", url: "https://app.example.com#/dashboard"},
+	{name: "hash_route_no_path_after_query", url: "https://x.com?a=1#/r"},
 	// $pathname is the DECODED path (Derive uses url.URL.Path), so a literal
 	// non-ASCII path and its pre-encoded twin must collapse onto ONE Pages-panel
 	// row rather than fragmenting the permanent rollup.
@@ -484,11 +530,15 @@ func testMutation008DeriveParity(t *testing.T, ctx context.Context, ch *testutil
 			auto["$screenWidth"] = chcol.NewVariantWithType(row.screenW, "Int64")
 		} else if row.screenWStr != "" {
 			auto["$screenWidth"] = chcol.NewVariantWithType(row.screenWStr, "String")
+		} else if row.screenWFloat != 0 {
+			auto["$screenWidth"] = chcol.NewVariantWithType(row.screenWFloat, "Float64")
 		}
 		if row.screenH != 0 {
 			auto["$screenHeight"] = chcol.NewVariantWithType(row.screenH, "Int64")
 		} else if row.screenHStr != "" {
 			auto["$screenHeight"] = chcol.NewVariantWithType(row.screenHStr, "String")
+		} else if row.screenHFloat != 0 {
+			auto["$screenHeight"] = chcol.NewVariantWithType(row.screenHFloat, "Float64")
 		}
 		if err := batch.Append(
 			uuid.New().String(), projectID, row.name, "page_view",

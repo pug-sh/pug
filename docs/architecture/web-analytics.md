@@ -56,7 +56,7 @@ emitted `$referrer`/`$locale`/`$screenWidth`/`$screenHeight`/`$pageTitle`; it ga
 
 | Property | Column | Type | Source | Overwrite policy |
 |---|---|---|---|---|
-| `$pathname` | `pathname` | `String` | derived: `url.Parse($url).EscapedPath()`, empty → `/` | derive-if-absent (SDK may send logical/route paths) |
+| `$pathname` | `pathname` | `String` | derived: `url.Parse($url).Path` (decoded, not `EscapedPath` — so the SQL mirror's `decodeURLComponent(path(...))` can reproduce it), empty → `/` | derive-if-absent (SDK may send logical/route paths) |
 | `$hostname` | `hostname` | `LowCardinality(String)` | derived: URL host, lowercased, port stripped | derive-if-absent |
 | `$referrer` | `referrer` | `String` | SDK (`document.referrer`) | as sent, never derived |
 | `$referrerDomain` | `referrer_domain` | `LowCardinality(String)` | derived: referrer host, lowercased, one leading `www.` stripped; **blanked on self-referral** (equals own hostname after `www.`-strip) | **always server-derived** (client value stripped first, like `$bot_score`) |
@@ -196,6 +196,17 @@ events — the session-grain panels make the distinction invisible, and `Interna
 pre-blank referrer signal threaded through the rule table; revisit if event-grain channel widgets
 get real use.
 
+**Known asymmetry (accepted): `referrer_domain` without `channel`.** `$referrerDomain` derives
+from any referrer with a host, but `$channel` derives **only when a valid http(s) `$url` is
+present** (`Derive`). So an event with a non-web `$url` (a native/hybrid app sending
+`capacitor://…`/`myapp://…`) but a resolvable `$referrer` stores a `referrer_domain` with an empty
+`channel` — `sum(channel) < sum(referrer_domain)` on such traffic. This is deliberate: a channel
+for a non-web event would be a guess, and `Unassigned` is not obviously better than absent. The
+event is still visible in the Referrers panel; it is simply absent from Channels. A spike in this
+shape (a `$url` present but nothing derived) is observable via the
+`events.attribution_derive_degraded_total` counter (`reason=url_not_web`). Revisit only if a real
+tenant needs channel attribution for non-web events.
+
 ## Migrations, backfill, and live-deploy safety
 
 The app is live (since 2026-07-13), so all three migrations are written for a hot system. Three
@@ -320,7 +331,7 @@ scope. → [`insights.md`](insights.md) (Property discovery).
 
 - **Contract pins, repointed at the latest MV definition:** `TestMaterializedDimsMatchMigration`
   and `TestMigration009PromotedDimExprsMatch` parse 009's Up section (MODIFY QUERY block = full
-  21-tuple ↔ `materializedDims`+`$__total__`; backfill block = `newEventRollupDims` exactly);
+  21-tuple ↔ `materializedDims`+`$__total__`; backfill block = `eventRollupDims009` exactly);
   `TestMigration006Frozen` / `TestMigration007Frozen` pin the shipped migrations to their
   historical content (guards against editing them). `TestMigration010SessionRollup
   {ColumnsMatchDims,DimExprsMatch}` do the same for the session rollup (old dims stated once in
@@ -356,8 +367,8 @@ entries in lockstep: slice / `EventsInsertPromotedColumns` / `PromotedAutoRow` /
 `internal/app/server/rpc/sdk/events/handler.go` (`enrichAttribution` appended after
 `enrichVerifiedBot`; +tests) · migrations `008_add_web_analytics_columns.sql` /
 `009_extend_dashboard_event_rollup.sql` / `010_extend_dashboard_session_rollup.sql` ·
-`internal/core/insights/rollup.go` (`materializedDims` 10→20 + `newEventRollupDims`) +
-`session_rollup.go` (`sessionMaterializedDims` 11→16 + `newSessionRollupDims`,
+`internal/core/insights/rollup.go` (`materializedDims` 10→20 via `eventRollupDims009`) +
+`session_rollup.go` (`sessionMaterializedDims` 11→16 via `sessionRollupDims010`,
 `sessionRollupDimSuffix`, `canUseSessionRollup` + AVG_EVENTS_PER_SESSION) + `builder.go`
 (`sessionMetricAggExpr` = `if(count()=0, 0, avg(toFloat64(event_count)))`) + `service.go`
 (picker widening) · `proto/shared/insights/v1/insights.proto`

@@ -38,6 +38,51 @@ func TestOutputPairsCoversEveryField(t *testing.T) {
 	}
 }
 
+// TestPairsKeyToFieldMapping pins each canonical key to the SPECIFIC Output
+// field it carries. TestOutputPairsCoversEveryField only checks that every
+// field surfaces somewhere, so swapping two entries — e.g. binding $channel to
+// o.Locale and $locale to o.Channel — leaves both field names present and
+// passes it. A swap would file the channel classifier's output into the
+// permanent locale rollup column (and vice versa) with no error, so the
+// binding, not just the coverage, must be pinned. Same explicit-table shape as
+// TestInputFrom. Adding a derived key means adding a row here.
+func TestPairsKeyToFieldMapping(t *testing.T) {
+	var out Output
+	rt := reflect.TypeOf(out)
+	rv := reflect.ValueOf(&out).Elem()
+	for i := range rt.NumField() {
+		rv.Field(i).SetString(rt.Field(i).Name) // out.Channel = "Channel", etc.
+	}
+
+	// key → the Output field name whose value it must carry.
+	want := map[string]string{
+		PropPathname:       "Pathname",
+		PropHostname:       "Hostname",
+		PropReferrerDomain: "ReferrerDomain",
+		PropChannel:        "Channel",
+		PropScreenSize:     "ScreenSize",
+		PropUTMSource:      "UTMSource",
+		PropUTMMedium:      "UTMMedium",
+		PropUTMCampaign:    "UTMCampaign",
+		PropUTMTerm:        "UTMTerm",
+		PropUTMContent:     "UTMContent",
+		PropLocale:         "Locale",
+	}
+	if len(want) != rt.NumField() {
+		t.Fatalf("want table has %d keys, Output has %d fields — add the new field's row", len(want), rt.NumField())
+	}
+	for _, p := range out.Pairs() {
+		field, ok := want[p.Key]
+		if !ok {
+			t.Errorf("Pairs emits unexpected key %q", p.Key)
+			continue
+		}
+		if p.Value != field {
+			t.Errorf("Pairs[%q] carries Output.%s, want Output.%s", p.Key, p.Value, field)
+		}
+	}
+}
+
 func TestDeriveURLDecomposition(t *testing.T) {
 	cases := []struct {
 		name             string

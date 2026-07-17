@@ -5,7 +5,8 @@
 -- arbitrary-but-bounded tenant text (the utm_campaign precedent), plain String
 -- for genuinely high-cardinality values (pathname/referrer/page_title, like
 -- url/city). ADD COLUMN with DEFAULT '' is metadata-only — no part rewrite —
--- so this is instant on a live table. Keep in sync with
+-- so THIS statement is instant on a live table; the backfill mutation below is
+-- the opposite (it rewrites every part, mutations_sync = 2). Keep in sync with
 -- internal/core/clickhouse/promoted_auto.go (promotedAutoColumns).
 ALTER TABLE events
     ADD COLUMN IF NOT EXISTS pathname        String DEFAULT '',
@@ -36,15 +37,20 @@ ALTER TABLE events
 -- that reads the key it drops.
 -- Notes on Go↔SQL mirroring:
 --   * The host is domainRFC() over a userinfo-stripped string, NOT domain():
---     domain() resolves neither an IPv6 literal ("https://[::1]/p") nor a
---     userinfo-bearing authority, where url.Parse resolves both. The strip is
---     what keeps the SECOND agreeing: Go splits the authority at the LAST '@'
---     and domainRFC at the FIRST, so "https://user:pw@evil.com@real.com/p"
---     would otherwise book evil.com in history and real.com in live traffic —
---     attribution to a host the visitor never reached. One spelling serves both
---     url and referrer: the scheme group is optional, so a protocol-relative
---     "//host/p" strips identically, and "[^/?#]*@" cannot reach past the
---     authority into a path/query/fragment that merely contains an '@'.
+--     domain() resolves an IPv6 literal ("https://[::1]/p") to '' where
+--     url.Parse resolves "::1", so domainRFC is required for that case. The
+--     userinfo strip is a SEPARATE fix and load-bearing on its own: on
+--     "https://user:pw@evil.com@real.com/p" domainRFC resolves evil.com where
+--     Go's url.Parse resolves real.com (net/url splits the authority at the
+--     LAST '@'), so without the strip history would book a host the visitor
+--     never reached. The strip mirrors Go because "[^/?#]*@" is GREEDY: it
+--     consumes through to the last '@' before any /?#, exactly Go's
+--     strings.LastIndex(authority, "@") — do not make it lazy or add '@' to the
+--     class, either reverts to first-'@' semantics and reintroduces the bug.
+--     One spelling serves both url and referrer: the scheme group is optional,
+--     so a protocol-relative "//host/p" strips identically, and the class
+--     cannot reach past the authority into a path/query/fragment that merely
+--     contains an '@'.
 --   * Whether a value resolves at all turns on WHERE an invalid %-escape sits.
 --     url.Parse UNESCAPES the path and the fragment, so a bad escape in either
 --     fails the whole parse and Derive yields nothing — not even a hostname —
@@ -67,8 +73,12 @@ ALTER TABLE events
 --     runs on the RAW value, which is what ParseQuery validates.
 --   * pathname is the DECODED path (Derive uses url.URL.Path, not
 --     EscapedPath), so "/café" and "/caf%C3%A9" collapse onto one Pages-panel
---     row instead of fragmenting the permanent rollup. path() already excludes
---     the fragment and the query, so it needs no cut of its own.
+--     row instead of fragmenting the permanent rollup. path() is fed
+--     cutFragment(url) like every other extraction: it excludes the fragment
+--     from its RESULT but still SCANS into it, so on a bare-origin hash route
+--     ("https://app.example.com#/dashboard", no path segment before '#') its
+--     first '/' is the fragment's — storing "/dashboard" where Derive, reading
+--     url.URL.Path off the already-split fragment, yields "/".
 --   * arrayMap over one-element arrays binds each derived input to a name
 --     exactly once (mutations have no CTEs); arrayElement(..., 1) unwraps.
 --   * `own` (the self-referral comparand) prefers the URL's host over the
@@ -91,8 +101,12 @@ ALTER TABLE events
 --     stores as-is AND misses the length(p)=2 region re-caser ("US\n" is 3
 --     bytes), landing "en-us\n" where live traffic lands "en-US". The class is
 --     codepoint-aware, so it cannot shear a continuation byte off "à".
---   * $screenWidth/$screenHeight read the Int64 slot OR a String slot parsed
---     with toInt64OrNull, mirroring handler.go's autoPropInt64 — client
+--   * $screenWidth/$screenHeight read the Int64 slot, OR a String slot parsed
+--     with toInt64OrNull, OR the Float64 slot (a JS SDK sends dims as doubles)
+--     stringified then parsed the same way — mirroring handler.go's
+--     autoPropInt64, which reads through autoprop.String (FormatFloat for a
+--     double) and ParseInt, so an integral double resolves and a fractional
+--     one does not. Client
 --     auto-properties are never re-typed on the way in, so an SDK sending
 --     stringValue would otherwise derive '' for all history while live traffic
 --     derived "1920x1080". toInt64OrNull rejects " 123"/"12.5" exactly as Go's
@@ -111,15 +125,30 @@ ALTER TABLE events
 --     insights answer "en-US" off the normalized column. The verbatim-copied
 --     keys ($referrer/$utmTerm/$utmContent/$pageTitle) merge to an identical
 --     value and are deliberately left alone.
---   * The channel multiIf is a frozen approximation of the Go rule table in
---     internal/attribution/channel.go: it applies only to pre-deploy rows and
---     deliberately does not chase future taxonomy edits.
--- Known limitations — url.Parse error modes this gate does NOT mirror, all
+--   * The channel multiIf mirrors the Go rule table in
+--     internal/attribution/channel.go EXACTLY and must be kept in sync;
+--     TestIntegrationWebAnalytics/mutation_008_matches_attribution_derive fails
+--     on any drift, including a reordering of the branches (cpm is both a paid
+--     and a display medium, so rule ORDER alone decides its channel). A taxonomy
+--     edit in channel.go is therefore a MIGRATION, not a refactor: update this
+--     multiIf, then re-run this mutation + 009's DELETE and delta backfill so
+--     historical rows reclassify to match live traffic.
+-- Known limitations — divergences from Go this gate does NOT mirror, all
 -- unreachable from a browser's location.href, so they are accepted rather than
--- chased into a longer statement: an invalid port ("https://x.com:abc/p", which
--- Go rejects and this derives from), and a trailing-dot host
--- ("https://x.com./p", which Go resolves to "x.com." and domainRFC to '', so
--- this derives nothing).
+-- chased into a longer statement:
+--   - host parsing: an invalid port ("https://x.com:abc/p", which Go rejects
+--     and this derives from), and a trailing-dot host ("https://x.com./p",
+--     which Go resolves to "x.com." and domainRFC to '', so this derives
+--     nothing).
+--   - UTM extraction, where extractURLParameter is a byte-scanner and Go's
+--     url.ParseQuery is a parser: a legacy ';' separator
+--     ("?utm_source=google;utm_medium=cpc") — Go 1.17+ drops the pair and
+--     yields "", this reads "google;utm_medium=cpc"; a bare '?' inside the
+--     query ("?a=1?utm_source=google") — this reads "google", Go yields "";
+--     and an encoded key ("?utm%5Fsource=google") — Go decodes it to
+--     utm_source, this does not. Each mis-books a UTM (hence a channel) into
+--     history that live traffic would never produce, but none occurs in a
+--     real SDK-emitted URL.
 -- mutations_sync = 2 blocks until the mutation finishes on every replica
 -- (equivalent to 1 on a non-replicated table), so migration order is real.
 ALTER TABLE events UPDATE
@@ -127,7 +156,7 @@ ALTER TABLE events UPDATE
         if(match(url, '(?i)^https?://')
            AND domainRFC(replaceRegexpOne(url, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')) != ''
            AND NOT match(concat(path(url), '#', fragment(url)), '%(?:[^0-9A-Fa-f]|[0-9A-Fa-f][^0-9A-Fa-f]|[0-9A-Fa-f]?$)'),
-           if(path(url) = '', '/', decodeURLComponent(path(url))), '')),
+           if(path(cutFragment(url)) = '', '/', decodeURLComponent(path(cutFragment(url)))), '')),
     hostname = if(hostname != '', hostname,
         if(match(url, '(?i)^https?://')
            AND domainRFC(replaceRegexpOne(url, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')) != ''
@@ -235,9 +264,11 @@ ALTER TABLE events UPDATE
     screen_size = if(screen_size != '', screen_size,
         arrayElement(arrayMap((w, h) -> if(w > 0 AND h > 0, concat(toString(w), 'x', toString(h)), ''),
             [coalesce(variantElement(auto_properties['$screenWidth'], 'Int64'),
-                      toInt64OrNull(variantElement(auto_properties['$screenWidth'], 'String')), 0)],
+                      toInt64OrNull(variantElement(auto_properties['$screenWidth'], 'String')),
+                      toInt64OrNull(toString(variantElement(auto_properties['$screenWidth'], 'Float64'))), 0)],
             [coalesce(variantElement(auto_properties['$screenHeight'], 'Int64'),
-                      toInt64OrNull(variantElement(auto_properties['$screenHeight'], 'String')), 0)]), 1)),
+                      toInt64OrNull(variantElement(auto_properties['$screenHeight'], 'String')),
+                      toInt64OrNull(toString(variantElement(auto_properties['$screenHeight'], 'Float64'))), 0)]), 1)),
     utm_source = if(utm_source != '', utm_source,
         if(match(url, '(?i)^https?://')
            AND domainRFC(replaceRegexpOne(url, '^(([a-zA-Z][a-zA-Z0-9+.-]*:)?//)[^/?#]*@', '\\1')) != ''

@@ -112,6 +112,43 @@ func TestClassifyChannelRules(t *testing.T) {
 	}
 }
 
+// TestChannelValuesFrozen pins the literal string of every channel constant.
+// TestClassifyChannelRules asserts Derive(...).Channel == ChannelPaidSearch,
+// which is tautological on the string — renaming ChannelPaidSearch to a typo
+// changes both sides and stays green. These values land in a
+// LowCardinality(String) rollup dimension and in migration 008's multiIf; a
+// rename would fork history into two irreconcilable dim_values and silently
+// desync the SQL mirror. Editing a value here is therefore a taxonomy
+// MIGRATION (update the 008 multiIf and re-run the backfill), not a refactor —
+// the same freeze contract as the migration-scoped dim lists in insights.
+func TestChannelValuesFrozen(t *testing.T) {
+	frozen := map[string]string{
+		ChannelPaidSearch:    "Paid Search",
+		ChannelPaidSocial:    "Paid Social",
+		ChannelPaidVideo:     "Paid Video",
+		ChannelDisplay:       "Display",
+		ChannelPaidOther:     "Paid Other",
+		ChannelOrganicSearch: "Organic Search",
+		ChannelOrganicSocial: "Organic Social",
+		ChannelOrganicVideo:  "Organic Video",
+		ChannelEmail:         "Email",
+		ChannelAffiliate:     "Affiliate",
+		ChannelReferral:      "Referral",
+		ChannelUnassigned:    "Unassigned",
+		ChannelDirect:        "Direct",
+	}
+	// A rename collapses two keys onto one literal (or frees a literal), so the
+	// count guards against a silent merge as well as a typo.
+	if len(frozen) != 13 {
+		t.Fatalf("expected 13 distinct channel values, got %d — a rename collided two constants", len(frozen))
+	}
+	for got, want := range frozen {
+		if got != want {
+			t.Errorf("channel constant = %q, want frozen value %q", got, want)
+		}
+	}
+}
+
 func TestIsPaidMedium(t *testing.T) {
 	paid := []string{"cpc", "cpm", "cpv", "cpa", "ecpc", "ppc", "retargeting", "paid", "paid_social", "paid-search", "paidsearch"}
 	for _, m := range paid {
