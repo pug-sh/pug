@@ -578,6 +578,7 @@ func (f *sessionFactory) botSession(anchor, end time.Time) []event {
 		auto := copyProps(props)
 		auto["$url"] = storeURL + "/products/" + p.slug
 		auto["$pageTitle"] = p.name + " — Pug & Pals"
+		applyAttribution(auto)
 		sess = append(sess, event{
 			eventID:          uuid.New().String(),
 			distinctID:       distinctID,

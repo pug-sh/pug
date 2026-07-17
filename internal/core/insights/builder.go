@@ -740,8 +740,9 @@ func sessionEventKind(session *insightsv1.SessionQuery) string {
 // sessionMetricAggExpr returns the aggregate applied over the per-session CTE rows
 // (one row per session) to produce the metric value. SESSIONS/ENTRY/EXIT all reduce
 // to count() of sessions — ENTRY/EXIT differ only in the breakdown attribute the CTE
-// already resolved (argMin vs argMax), not in this aggregate. AVG_DURATION and
-// BOUNCE_RATE guard count()=0 so an empty bucket yields 0 rather than NULL/NaN.
+// already resolved (argMin vs argMax), not in this aggregate. AVG_DURATION,
+// BOUNCE_RATE, and AVG_EVENTS_PER_SESSION guard count()=0 so an empty bucket
+// yields 0 rather than NULL/NaN.
 // Identical between the raw and rollup paths so their numbers match.
 func sessionMetricAggExpr(metric insightsv1.SessionMetric) (string, error) {
 	switch metric {
@@ -753,6 +754,8 @@ func sessionMetricAggExpr(metric insightsv1.SessionMetric) (string, error) {
 		return "if(count() = 0, 0, avg(dateDiff('second', start_time, end_time)))", nil
 	case insightsv1.SessionMetric_SESSION_METRIC_BOUNCE_RATE:
 		return "if(count() = 0, 0, toFloat64(countIf(event_count = 1)) * 100.0 / toFloat64(count()))", nil
+	case insightsv1.SessionMetric_SESSION_METRIC_AVG_EVENTS_PER_SESSION:
+		return "if(count() = 0, 0, avg(toFloat64(event_count)))", nil
 	default:
 		return "", fmt.Errorf("unsupported session metric %s", metric)
 	}

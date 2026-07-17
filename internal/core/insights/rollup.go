@@ -19,15 +19,35 @@ const rollupTable = "dashboard_event_rollup_daily"
 // (project, day, kind) carries the no-breakdown / segmentation totals.
 const totalDimName = "$__total__"
 
+// Event-rollup dimensions, grouped by the migration that introduced them.
+// Each group freezes when its migration ships: it names exactly what that
+// migration's ARRAY JOIN — and, for an extension, its DELETE + delta backfill
+// — carries, so a dim may never move between groups and re-inserting an older
+// group's dim would double its cnt (see 009's header). A future migration
+// adds a group and extends the union below; it never appends to one of these.
+var (
+	// eventRollupDims006 are migration 006's originals (TestMigration006Frozen).
+	eventRollupDims006 = []string{
+		"$country", "$region", "$city",
+		"$os", "$browser", "$device", "$platform",
+		"$utmSource", "$utmMedium", "$utmCampaign",
+	}
+	// eventRollupDims009 are the web-analytics dims migration 009 added, and
+	// exactly the set its DELETE + delta backfill INSERT may carry
+	// (TestMigration009BackfillDeleteCoversNewDims).
+	eventRollupDims009 = []string{
+		"$pathname", "$hostname", "$referrerDomain", "$channel", "$locale",
+		"$screenSize", "$utmTerm", "$utmContent", "$browserVersion", "$osVersion",
+	}
+)
+
 // materializedDims are the auto-property breakdown dimensions backed by the
-// rollup. This MUST stay in sync with the ARRAY JOIN list in migration
-// 006_create_dashboard_event_rollup.sql — TestMaterializedDimsMatchMigration
-// checks dim names; TestMigration006PromotedDimExprsMatch checks value expressions.
-var materializedDims = []string{
-	"$country", "$region", "$city",
-	"$os", "$browser", "$device", "$platform",
-	"$utmSource", "$utmMedium", "$utmCampaign",
-}
+// rollup: the union of every applied migration's group, so it matches the
+// LATEST MV definition (009's MODIFY QUERY) by construction rather than by a
+// list restated a third time. TestMaterializedDimsMatchMigration checks the
+// dim names against that MV; TestMigration009PromotedDimExprsMatch checks the
+// value expressions.
+var materializedDims = slices.Concat(eventRollupDims006, eventRollupDims009)
 
 func isMaterializedDim(prop string) bool {
 	return slices.Contains(materializedDims, prop)

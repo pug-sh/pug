@@ -113,13 +113,16 @@ const storeURL = "https://pugandpals.example.com"
 var utmEntries = []struct {
 	source, medium string
 	referrer       string
+	term, content  string
 }{
-	{"google", "cpc", "https://www.google.com"},
-	{"facebook", "paid_social", "https://facebook.com"},
-	{"instagram", "paid_social", "https://instagram.com"},
-	{"tiktok", "paid_social", "https://tiktok.com"},
-	{"pinterest", "social", "https://pinterest.com"},
-	{"newsletter", "email", ""},
+	{"google", "cpc", "https://www.google.com", "dog treats", ""},
+	{"google", "cpc", "https://www.google.com", "puppy harness", "ad-exact"},
+	{"facebook", "paid_social", "https://facebook.com", "", "carousel-1"},
+	{"instagram", "paid_social", "https://instagram.com", "", "story-2"},
+	{"tiktok", "paid_social", "https://tiktok.com", "", "spark-ad"},
+	{"pinterest", "social", "https://pinterest.com", "", ""},
+	{"youtube", "video", "https://www.youtube.com", "", "unboxing-review"},
+	{"newsletter", "email", "", "", "weekly-digest"},
 }
 
 var utmCampaigns = []string{"summer-sale", "new-arrivals", "retargeting", "brand", "back-in-stock", "pug-club-launch"}
@@ -132,6 +135,11 @@ var organicReferrers = []string{
 	"https://duckduckgo.com",
 	"https://instagram.com",
 	"https://reddit.com",
+	"https://news.ycombinator.com",
+	"https://www.youtube.com",
+	// Self-referral: attribution.Derive blanks it (same host as $url), so the
+	// session classifies Direct — keeps the blanking path exercised in demo data.
+	storeURL + "/",
 }
 
 // The shoppers are dogs. Most searches are sensible; some are very much not.

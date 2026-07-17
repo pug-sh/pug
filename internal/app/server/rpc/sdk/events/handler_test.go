@@ -6,19 +6,36 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
+	"github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	coreevents "github.com/pug-sh/pug/internal/core/events"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 	"github.com/pug-sh/pug/internal/gen/repo/dbread"
 	"github.com/pug-sh/pug/internal/geo"
 	"github.com/pug-sh/pug/internal/useragent"
 )
+
+// stubJetStream captures the published batch. Only Publish is exercised, so the
+// embedded nil interface is never dereferenced.
+type stubJetStream struct {
+	jetstream.JetStream
+	data []byte
+}
+
+func (s *stubJetStream) Publish(_ context.Context, _ string, data []byte, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
+	s.data = data
+	return &jetstream.PubAck{}, nil
+}
 
 type stubProvider struct {
 	loc geo.Location
@@ -595,6 +612,202 @@ func TestEnrichBotAndVerified_TypedSlots(t *testing.T) {
 		}
 		if !bv.BoolValue {
 			t.Errorf("BoolValue = false, want true")
+		}
+	})
+}
+
+// TestBatchCreateWiresAttributionEnricher pins that BatchCreate actually RUNS
+// enrichAttribution, by asserting on what reaches the publisher. Every other
+// attribution test invokes the enricher itself — TestEnrichAttribution calls
+// the method directly, and TestEnrichGeoAndUserAgentAndBotScore replays the
+// chain by hand — so all of them keep passing if the call is dropped from the
+// handler, leaving every ingested event with no $channel/$pathname/
+// $referrerDomain forever and no error anywhere. This is the only test that
+// fails when the wiring goes.
+func TestBatchCreateWiresAttributionEnricher(t *testing.T) {
+	js := &stubJetStream{}
+	s := &Server{
+		publisher:   coreevents.NewPublisher(js),
+		geoProvider: stubProvider{},
+	}
+	req := connect.NewRequest(&eventsv1.BatchCreateRequest{
+		Events: []*eventsv1.Event{{
+			EventId:    proto.String(uuid.NewString()),
+			DistinctId: proto.String("u1"),
+			Kind:       proto.String("page_view"),
+			OccurTime:  timestamppb.New(time.Unix(1700000000, 0)),
+			SessionId:  proto.String(uuid.NewString()),
+			AutoProperties: propMap(map[string]string{
+				"$url":      "https://shop.example.com/products/ball",
+				"$referrer": "https://www.google.com/",
+			}),
+		}},
+	})
+
+	if _, err := s.BatchCreate(ctxWithProject(context.Background()), req); err != nil {
+		t.Fatalf("BatchCreate: %v", err)
+	}
+
+	var batch eventsv1.EventBatch
+	if err := proto.Unmarshal(js.data, &batch); err != nil {
+		t.Fatalf("unmarshal published batch: %v", err)
+	}
+	if len(batch.GetEvents()) != 1 {
+		t.Fatalf("published %d events, want 1", len(batch.GetEvents()))
+	}
+	for key, want := range map[string]string{
+		"$pathname":       "/products/ball",
+		"$hostname":       "shop.example.com",
+		"$referrerDomain": "google.com",
+		"$channel":        "Organic Search",
+	} {
+		if got := propString(batch.GetEvents()[0].AutoProperties[key]); got != want {
+			t.Errorf("published event %s = %q, want %q — is enrichAttribution still wired into BatchCreate?", key, got, want)
+		}
+	}
+}
+
+func TestEnrichAttribution(t *testing.T) {
+	s := &Server{}
+
+	t.Run("full web pageview derives everything", func(t *testing.T) {
+		events := []*eventsv1.Event{{
+			AutoProperties: propMap(map[string]string{
+				"$url":      "https://Shop.PugAndPals.example.com/products/ball?utm_source=google&utm_medium=cpc&utm_term=dog+food",
+				"$referrer": "https://www.google.com/",
+				"$locale":   "en_us",
+			}),
+		}}
+		events[0].AutoProperties["$screenWidth"] = &commonv1.PropertyValue{Value: &commonv1.PropertyValue_IntValue{IntValue: 1920}}
+		events[0].AutoProperties["$screenHeight"] = &commonv1.PropertyValue{Value: &commonv1.PropertyValue_IntValue{IntValue: 1080}}
+
+		s.enrichAttribution(events)
+
+		want := map[string]string{
+			"$pathname":       "/products/ball",
+			"$hostname":       "shop.pugandpals.example.com",
+			"$referrerDomain": "google.com",
+			"$channel":        "Paid Search",
+			"$screenSize":     "1920x1080",
+			"$utmSource":      "google",
+			"$utmMedium":      "cpc",
+			"$utmTerm":        "dog food",
+			"$locale":         "en-US",
+		}
+		for k, v := range want {
+			if got := propString(events[0].AutoProperties[k]); got != v {
+				t.Errorf("%s = %q, want %q", k, got, v)
+			}
+		}
+		if _, ok := events[0].AutoProperties["$utmContent"]; ok {
+			t.Error("$utmContent must stay absent when neither client nor URL carries it")
+		}
+	})
+
+	// NormalizeLocale blanks a whitespace-only tag, and the write loop cannot
+	// clear a key — so without the pre-delete the raw client value would reach
+	// the locale column and become a permanent rollup dimension value.
+	t.Run("unnormalizable locale is dropped not stored", func(t *testing.T) {
+		events := []*eventsv1.Event{{
+			AutoProperties: propMap(map[string]string{"$locale": "   "}),
+		}}
+		s.enrichAttribution(events)
+		if got, ok := events[0].AutoProperties["$locale"]; ok {
+			t.Errorf("$locale = %q, want the un-normalizable client value dropped", propString(got))
+		}
+	})
+
+	t.Run("valid locale still normalized in place", func(t *testing.T) {
+		events := []*eventsv1.Event{{
+			AutoProperties: propMap(map[string]string{"$locale": "  zh_hans_cn  "}),
+		}}
+		s.enrichAttribution(events)
+		if got := propString(events[0].AutoProperties["$locale"]); got != "zh-Hans-CN" {
+			t.Errorf("$locale = %q, want %q", got, "zh-Hans-CN")
+		}
+	})
+
+	t.Run("server-only keys stripped and rederived", func(t *testing.T) {
+		events := []*eventsv1.Event{{
+			AutoProperties: propMap(map[string]string{
+				"$url":            "https://pugandpals.example.com/",
+				"$referrer":       "https://reddit.com/r/pugs",
+				"$referrerDomain": "evil.example",
+				"$channel":        "Paid Search",
+			}),
+		}}
+		s.enrichAttribution(events)
+		if got := propString(events[0].AutoProperties["$referrerDomain"]); got != "reddit.com" {
+			t.Errorf("$referrerDomain = %q, want server-derived reddit.com", got)
+		}
+		if got := propString(events[0].AutoProperties["$channel"]); got != "Organic Social" {
+			t.Errorf("$channel = %q, want server-derived Organic Social", got)
+		}
+	})
+
+	t.Run("server-only keys stripped without url stay absent", func(t *testing.T) {
+		events := []*eventsv1.Event{{
+			AutoProperties: propMap(map[string]string{
+				"$referrerDomain": "evil.example",
+				"$channel":        "Email",
+			}),
+		}}
+		s.enrichAttribution(events)
+		assertProps(t, events[0], map[string]string{})
+	})
+
+	t.Run("client values win for derive-if-absent keys", func(t *testing.T) {
+		events := []*eventsv1.Event{{
+			AutoProperties: propMap(map[string]string{
+				"$url":        "https://pugandpals.example.com/real/path?utm_source=bing",
+				"$pathname":   "/logical/route",
+				"$hostname":   "app.pugandpals.example.com",
+				"$screenSize": "390x844",
+				"$utmSource":  "google",
+			}),
+		}}
+		s.enrichAttribution(events)
+		for k, v := range map[string]string{
+			"$pathname":   "/logical/route",
+			"$hostname":   "app.pugandpals.example.com",
+			"$screenSize": "390x844",
+			"$utmSource":  "google",
+		} {
+			if got := propString(events[0].AutoProperties[k]); got != v {
+				t.Errorf("%s = %q, want client value %q", k, got, v)
+			}
+		}
+	})
+
+	t.Run("self-referral blanks referrer domain and lands direct", func(t *testing.T) {
+		events := []*eventsv1.Event{{
+			AutoProperties: propMap(map[string]string{
+				"$url":      "https://pugandpals.example.com/cart",
+				"$referrer": "https://www.pugandpals.example.com/",
+			}),
+		}}
+		s.enrichAttribution(events)
+		if _, ok := events[0].AutoProperties["$referrerDomain"]; ok {
+			t.Error("$referrerDomain must be absent for a self-referral")
+		}
+		if got := propString(events[0].AutoProperties["$channel"]); got != "Direct" {
+			t.Errorf("$channel = %q, want Direct", got)
+		}
+	})
+
+	t.Run("non-web event untouched", func(t *testing.T) {
+		events := []*eventsv1.Event{{
+			AutoProperties: propMap(map[string]string{"$platform": "ios", "$osVersion": "17.4"}),
+		}}
+		s.enrichAttribution(events)
+		assertProps(t, events[0], map[string]string{"$platform": "ios", "$osVersion": "17.4"})
+	})
+
+	t.Run("nil auto properties tolerated", func(t *testing.T) {
+		events := []*eventsv1.Event{{}}
+		s.enrichAttribution(events)
+		if len(events[0].AutoProperties) != 0 {
+			t.Errorf("expected no auto-properties, got %v", events[0].AutoProperties)
 		}
 	})
 }

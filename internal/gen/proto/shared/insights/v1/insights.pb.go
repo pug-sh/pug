@@ -229,6 +229,12 @@ const (
 	// Count sessions by their last matching event's breakdown value (exit page).
 	// Requires TRENDS with exactly one breakdown.
 	SessionMetric_SESSION_METRIC_EXIT SessionMetric = 5
+	// Average number of scoped events per session. With a page_view scope this
+	// is pages per session. A first-class metric (not a client-side division of
+	// a pageview tile by a session tile) because pageviews are windowed on
+	// occurrence day while sessions are keyed on session start and never
+	// clipped — dividing two tiles disagrees visibly on boundary days.
+	SessionMetric_SESSION_METRIC_AVG_EVENTS_PER_SESSION SessionMetric = 6
 )
 
 // Enum value maps for SessionMetric.
@@ -240,14 +246,16 @@ var (
 		3: "SESSION_METRIC_BOUNCE_RATE",
 		4: "SESSION_METRIC_ENTRY",
 		5: "SESSION_METRIC_EXIT",
+		6: "SESSION_METRIC_AVG_EVENTS_PER_SESSION",
 	}
 	SessionMetric_value = map[string]int32{
-		"SESSION_METRIC_UNSPECIFIED":  0,
-		"SESSION_METRIC_SESSIONS":     1,
-		"SESSION_METRIC_AVG_DURATION": 2,
-		"SESSION_METRIC_BOUNCE_RATE":  3,
-		"SESSION_METRIC_ENTRY":        4,
-		"SESSION_METRIC_EXIT":         5,
+		"SESSION_METRIC_UNSPECIFIED":            0,
+		"SESSION_METRIC_SESSIONS":               1,
+		"SESSION_METRIC_AVG_DURATION":           2,
+		"SESSION_METRIC_BOUNCE_RATE":            3,
+		"SESSION_METRIC_ENTRY":                  4,
+		"SESSION_METRIC_EXIT":                   5,
+		"SESSION_METRIC_AVG_EVENTS_PER_SESSION": 6,
 	}
 )
 
@@ -2752,14 +2760,15 @@ const file_shared_insights_v1_insights_proto_rawDesc = "" +
 	"\x14AGGREGATION_TYPE_SUM\x10\x04\x12\x18\n" +
 	"\x14AGGREGATION_TYPE_AVG\x10\x05\x12\x18\n" +
 	"\x14AGGREGATION_TYPE_MIN\x10\x06\x12\x18\n" +
-	"\x14AGGREGATION_TYPE_MAX\x10\a*\xc0\x01\n" +
+	"\x14AGGREGATION_TYPE_MAX\x10\a*\xeb\x01\n" +
 	"\rSessionMetric\x12\x1e\n" +
 	"\x1aSESSION_METRIC_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17SESSION_METRIC_SESSIONS\x10\x01\x12\x1f\n" +
 	"\x1bSESSION_METRIC_AVG_DURATION\x10\x02\x12\x1e\n" +
 	"\x1aSESSION_METRIC_BOUNCE_RATE\x10\x03\x12\x18\n" +
 	"\x14SESSION_METRIC_ENTRY\x10\x04\x12\x17\n" +
-	"\x13SESSION_METRIC_EXIT\x10\x052\x8e\x03\n" +
+	"\x13SESSION_METRIC_EXIT\x10\x05\x12)\n" +
+	"%SESSION_METRIC_AVG_EVENTS_PER_SESSION\x10\x062\x8e\x03\n" +
 	"\x0fInsightsService\x12L\n" +
 	"\x05Query\x12 .shared.insights.v1.QueryRequest\x1a!.shared.insights.v1.QueryResponse\x12a\n" +
 	"\fSegmentUsers\x12'.shared.insights.v1.SegmentUsersRequest\x1a(.shared.insights.v1.SegmentUsersResponse\x12X\n" +

@@ -39,7 +39,7 @@ Reads serve *persons*, not just profile rows. An app that never calls `identify`
 - `first_seen`, `last_seen`, `total_events`, and `sessions` come from aggregate states over all events for the resolved identity set.
 - `pageviews` is derived as `sum(kind = 'page_view')` in the ClickHouse rollup.
 - `browser`, `browser_version`, `os`, `os_version`, `device`, `country`, `region`, and `city` come from the latest event per distinct ID via `argMaxState(..., occur_time)`, then are merged across aliases at the profile level.
-- There is currently no `channel` field in the profile API. Do not invent one ad hoc in handlers without first defining a stable derivation rule and proto field.
+- There is currently no `channel` field in the profile API. The stable channel derivation now exists — `internal/attribution/channel.go` is the single normative taxonomy, feeding the event-level `$channel` auto-property ([ingestion.md](ingestion.md)) — but exposing a profile-level channel still requires a deliberate proto field and an attribution-window decision; do not invent one ad hoc in handlers.
 
 **List / pagination behavior.**
 

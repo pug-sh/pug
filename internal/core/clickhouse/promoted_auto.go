@@ -5,6 +5,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 
+	"github.com/pug-sh/pug/internal/attribution"
 	"github.com/pug-sh/pug/internal/autoprop"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	"github.com/pug-sh/pug/internal/geo"
@@ -24,32 +25,52 @@ const (
 
 // PromotedAutoColumn maps a well-known auto-property key to a dedicated events
 // table column. Order matches EventsInsertPromotedColumns and PromotedAutoRow.
+//
+// Str addresses the row field backing a PromotedString column, and is what
+// makes this table authoritative for the write path rather than merely
+// parallel to it: splitting, merging back, and the filter picker all derive
+// from it, so a new promoted string column is one row here plus one struct
+// field — not a case in each of several hand-written switches, where the one
+// that gets forgotten decides which surface silently loses the value. Nil for
+// the non-string kinds, which have no single string field to address.
 type PromotedAutoColumn struct {
 	Property string
 	Column   string
 	Kind     PromotedAutoColumnKind
+	Str      func(*PromotedAutoRow) *string
 }
 
 // promotedAutoColumns is the authoritative list of auto-properties extracted
 // from auto_properties at ingest. Keep in sync with
-// schema/clickhouse/migrations/001_create_events_table.sql.
+// schema/clickhouse/migrations/001_create_events_table.sql and
+// 008_add_web_analytics_columns.sql.
 var promotedAutoColumns = []PromotedAutoColumn{
 	{Property: autoprop.PropBotScore, Column: "bot_score", Kind: PromotedNullableUInt8},
 	{Property: autoprop.PropVerifiedBot, Column: "verified_bot", Kind: PromotedNullableBool},
 	{Property: autoprop.PropMobile, Column: "mobile", Kind: PromotedBool},
-	{Property: geo.PropCountry, Column: "country", Kind: PromotedString},
-	{Property: geo.PropRegion, Column: "region", Kind: PromotedString},
-	{Property: geo.PropCity, Column: "city", Kind: PromotedString},
-	{Property: useragent.PropBrowser, Column: "browser", Kind: PromotedString},
-	{Property: useragent.PropBrowserVersion, Column: "browser_version", Kind: PromotedString},
-	{Property: useragent.PropOS, Column: "os", Kind: PromotedString},
-	{Property: useragent.PropOSVersion, Column: "os_version", Kind: PromotedString},
-	{Property: useragent.PropDevice, Column: "device", Kind: PromotedString},
-	{Property: "$platform", Column: "platform", Kind: PromotedString},
-	{Property: "$url", Column: "url", Kind: PromotedString},
-	{Property: "$utmSource", Column: "utm_source", Kind: PromotedString},
-	{Property: "$utmMedium", Column: "utm_medium", Kind: PromotedString},
-	{Property: "$utmCampaign", Column: "utm_campaign", Kind: PromotedString},
+	{Property: geo.PropCountry, Column: "country", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Country }},
+	{Property: geo.PropRegion, Column: "region", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Region }},
+	{Property: geo.PropCity, Column: "city", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.City }},
+	{Property: useragent.PropBrowser, Column: "browser", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Browser }},
+	{Property: useragent.PropBrowserVersion, Column: "browser_version", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.BrowserVersion }},
+	{Property: useragent.PropOS, Column: "os", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.OS }},
+	{Property: useragent.PropOSVersion, Column: "os_version", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.OSVersion }},
+	{Property: useragent.PropDevice, Column: "device", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Device }},
+	{Property: "$platform", Column: "platform", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Platform }},
+	{Property: attribution.PropURL, Column: "url", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.URL }},
+	{Property: attribution.PropUTMSource, Column: "utm_source", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.UTMSource }},
+	{Property: attribution.PropUTMMedium, Column: "utm_medium", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.UTMMedium }},
+	{Property: attribution.PropUTMCampaign, Column: "utm_campaign", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.UTMCampaign }},
+	{Property: attribution.PropPathname, Column: "pathname", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Pathname }},
+	{Property: attribution.PropHostname, Column: "hostname", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Hostname }},
+	{Property: attribution.PropReferrer, Column: "referrer", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Referrer }},
+	{Property: attribution.PropReferrerDomain, Column: "referrer_domain", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.ReferrerDomain }},
+	{Property: attribution.PropChannel, Column: "channel", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Channel }},
+	{Property: attribution.PropLocale, Column: "locale", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.Locale }},
+	{Property: attribution.PropScreenSize, Column: "screen_size", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.ScreenSize }},
+	{Property: attribution.PropUTMTerm, Column: "utm_term", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.UTMTerm }},
+	{Property: attribution.PropUTMContent, Column: "utm_content", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.UTMContent }},
+	{Property: attribution.PropPageTitle, Column: "page_title", Kind: PromotedString, Str: func(r *PromotedAutoRow) *string { return &r.PageTitle }},
 }
 
 var promotedAutoByProperty map[string]PromotedAutoColumn
@@ -61,9 +82,38 @@ func init() {
 	}
 }
 
+// PromotedColumnFor returns the events column an auto-property is promoted
+// into. promotedAutoColumns is the authoritative property↔column mapping, so
+// callers that need a column name derive it here rather than restating the
+// pairs — the rollup migrations name their per-dimension artifacts after this
+// column (dashboard_session_rollup's entry_<column>_state), and a second copy
+// of the mapping is a drift source with no compile-time link back.
+func PromotedColumnFor(property string) (string, bool) {
+	col, ok := promotedAutoByProperty[property]
+	if !ok {
+		return "", false
+	}
+	return col.Column, true
+}
+
+// PromotedStringAutoProperties returns the canonical property keys of every
+// PromotedString events column, in declaration order. Ingest strips these
+// keys from the auto_properties map, so the property_keys discovery MV never
+// observes them — the filter-schema picker injects this list to keep them
+// discoverable (insights.mergePromotedAutoDimensions).
+func PromotedStringAutoProperties() []string {
+	out := make([]string, 0, len(promotedAutoColumns))
+	for _, col := range promotedAutoColumns {
+		if col.Kind == PromotedString {
+			out = append(out, col.Property)
+		}
+	}
+	return out
+}
+
 // EventsInsertPromotedColumns lists promoted auto-property columns on the events
 // table, in PromotedAutoRow.AppendArgs / ScanDest order.
-const EventsInsertPromotedColumns = `bot_score, verified_bot, mobile, country, region, city, browser, browser_version, os, os_version, device, platform, url, utm_source, utm_medium, utm_campaign`
+const EventsInsertPromotedColumns = `bot_score, verified_bot, mobile, country, region, city, browser, browser_version, os, os_version, device, platform, url, utm_source, utm_medium, utm_campaign, pathname, hostname, referrer, referrer_domain, channel, locale, screen_size, utm_term, utm_content, page_title`
 
 // EventsInsertColumns is the full INSERT column list for the events table.
 // insert_time is omitted; ClickHouse fills it via DEFAULT now64(3).
@@ -97,6 +147,16 @@ type PromotedAutoRow struct {
 	UTMSource      string
 	UTMMedium      string
 	UTMCampaign    string
+	Pathname       string
+	Hostname       string
+	Referrer       string
+	ReferrerDomain string
+	Channel        string
+	Locale         string
+	ScreenSize     string
+	UTMTerm        string
+	UTMContent     string
+	PageTitle      string
 }
 
 // AppendArgs returns promoted column values in EventsInsertPromotedColumns order.
@@ -118,6 +178,16 @@ func (r PromotedAutoRow) AppendArgs() []any {
 		r.UTMSource,
 		r.UTMMedium,
 		r.UTMCampaign,
+		r.Pathname,
+		r.Hostname,
+		r.Referrer,
+		r.ReferrerDomain,
+		r.Channel,
+		r.Locale,
+		r.ScreenSize,
+		r.UTMTerm,
+		r.UTMContent,
+		r.PageTitle,
 	}
 }
 
@@ -140,6 +210,16 @@ func (r *PromotedAutoRow) ScanDest() []any {
 		&r.UTMSource,
 		&r.UTMMedium,
 		&r.UTMCampaign,
+		&r.Pathname,
+		&r.Hostname,
+		&r.Referrer,
+		&r.ReferrerDomain,
+		&r.Channel,
+		&r.Locale,
+		&r.ScreenSize,
+		&r.UTMTerm,
+		&r.UTMContent,
+		&r.PageTitle,
 	}
 }
 
@@ -168,19 +248,11 @@ func (r PromotedAutoRow) MergeIntoAutoProperties(m map[string]any) map[string]an
 	if r.Mobile {
 		setString(autoprop.PropMobile, "true")
 	}
-	setString(geo.PropCountry, r.Country)
-	setString(geo.PropRegion, r.Region)
-	setString(geo.PropCity, r.City)
-	setString(useragent.PropBrowser, r.Browser)
-	setString(useragent.PropBrowserVersion, r.BrowserVersion)
-	setString(useragent.PropOS, r.OS)
-	setString(useragent.PropOSVersion, r.OSVersion)
-	setString(useragent.PropDevice, r.Device)
-	setString("$platform", r.Platform)
-	setString("$url", r.URL)
-	setString("$utmSource", r.UTMSource)
-	setString("$utmMedium", r.UTMMedium)
-	setString("$utmCampaign", r.UTMCampaign)
+	for _, col := range promotedAutoColumns {
+		if col.Str != nil {
+			setString(col.Property, *col.Str(&r))
+		}
+	}
 	return m
 }
 
@@ -228,11 +300,11 @@ func applyPromotedPropertyValue(row *PromotedAutoRow, col PromotedAutoColumn, pv
 	}
 	switch col.Kind {
 	case PromotedString:
-		s, ok := stringFromPropertyValue(pv)
+		s, ok := autoprop.String(pv)
 		if !ok {
 			return false
 		}
-		setPromotedString(row, col.Property, s)
+		setPromotedString(row, col, s)
 	case PromotedBool:
 		b, ok := boolFromPropertyValue(pv)
 		if !ok {
@@ -256,34 +328,14 @@ func applyPromotedPropertyValue(row *PromotedAutoRow, col PromotedAutoColumn, pv
 	return true
 }
 
-func setPromotedString(row *PromotedAutoRow, property, value string) {
-	switch property {
-	case geo.PropCountry:
-		row.Country = value
-	case geo.PropRegion:
-		row.Region = value
-	case geo.PropCity:
-		row.City = value
-	case useragent.PropBrowser:
-		row.Browser = value
-	case useragent.PropBrowserVersion:
-		row.BrowserVersion = value
-	case useragent.PropOS:
-		row.OS = value
-	case useragent.PropOSVersion:
-		row.OSVersion = value
-	case useragent.PropDevice:
-		row.Device = value
-	case "$platform":
-		row.Platform = value
-	case "$url":
-		row.URL = value
-	case "$utmSource":
-		row.UTMSource = value
-	case "$utmMedium":
-		row.UTMMedium = value
-	case "$utmCampaign":
-		row.UTMCampaign = value
+// setPromotedString writes a value into the row field col addresses. A
+// PromotedString column with no Str accessor is unrepresentable in practice —
+// TestPromotedStringColumnsHaveAccessors rejects the table entry rather than
+// letting the write silently vanish here, which is what the hand-written
+// switch this replaced did on a forgotten case.
+func setPromotedString(row *PromotedAutoRow, col PromotedAutoColumn, value string) {
+	if col.Str != nil {
+		*col.Str(row) = value
 	}
 }
 
@@ -330,7 +382,7 @@ func applyPromotedAnyValue(row *PromotedAutoRow, col PromotedAutoColumn, v any) 
 		if !ok || s == "" {
 			return ok && s == ""
 		}
-		setPromotedString(row, col.Property, s)
+		setPromotedString(row, col, s)
 	case PromotedBool:
 		b, ok := anyToBool(v)
 		if !ok {
@@ -385,7 +437,7 @@ func applyPromotedVariantValue(row *PromotedAutoRow, col PromotedAutoColumn, v c
 		if !ok {
 			return false
 		}
-		setPromotedString(row, col.Property, s)
+		setPromotedString(row, col, s)
 	case PromotedBool:
 		b, ok := v.Any().(bool)
 		if !ok {
@@ -407,21 +459,6 @@ func applyPromotedVariantValue(row *PromotedAutoRow, col PromotedAutoColumn, v c
 		row.BotScore = &u
 	}
 	return true
-}
-
-func stringFromPropertyValue(pv *commonv1.PropertyValue) (string, bool) {
-	switch v := pv.GetValue().(type) {
-	case *commonv1.PropertyValue_StringValue:
-		return v.StringValue, true
-	case *commonv1.PropertyValue_IntValue:
-		return fmt.Sprintf("%d", v.IntValue), true
-	case *commonv1.PropertyValue_DoubleValue:
-		return fmt.Sprintf("%g", v.DoubleValue), true
-	case *commonv1.PropertyValue_BoolValue:
-		return boolString(v.BoolValue), true
-	default:
-		return "", false
-	}
 }
 
 func boolFromPropertyValue(pv *commonv1.PropertyValue) (bool, bool) {

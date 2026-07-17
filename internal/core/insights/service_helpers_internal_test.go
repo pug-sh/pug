@@ -177,6 +177,62 @@ func TestMergePromotedAutoDimensions(t *testing.T) {
 		}
 	})
 
+	t.Run("promoted_but_not_rolled_up_keys_surface", func(t *testing.T) {
+		// $url/$referrer/$pageTitle are promoted string columns with no rollup
+		// dimension, so nothing live can count them. They must still be
+		// injected exactly once so they stay pickable, and where pre-promotion
+		// property_keys history exists it must survive as the count: the SDK
+		// sends $referrer/$pageTitle on every event, so zeroing them would
+		// sort two of the busiest properties to the bottom of the picker.
+		frozenSeen := time.Unix(1700, 0).UTC()
+		discovered := []AggregateKeyMeta{
+			{Key: "$referrer", ValueType: "String", Count: 41, LastSeen: frozenSeen}, // frozen pre-008 history
+		}
+		got := mergePromotedAutoDimensions(discovered, nil)
+		byKey := map[string]AggregateKeyMeta{}
+		counts := map[string]int{}
+		for _, k := range got {
+			byKey[k.Key] = k
+			counts[k.Key]++
+		}
+		for _, key := range []string{"$url", "$referrer", "$pageTitle"} {
+			m, ok := byKey[key]
+			if !ok {
+				t.Fatalf("expected promoted string key %q in merged keys", key)
+			}
+			if counts[key] != 1 {
+				t.Errorf("key %q: expected exactly one entry, got %d", key, counts[key])
+			}
+			if m.ValueType != promotedAutoDimValueType {
+				t.Errorf("key %q: value_type = %q, want %q", key, m.ValueType, promotedAutoDimValueType)
+			}
+		}
+		if m := byKey["$referrer"]; m.Count != 41 || !m.LastSeen.Equal(frozenSeen) {
+			t.Errorf("$referrer = (count %d, last_seen %v), want the frozen property_keys entry (41, %v)", m.Count, m.LastSeen, frozenSeen)
+		}
+		// No history and no rollup dimension: still listed, just at zero.
+		if m := byKey["$pageTitle"]; m.Count != 0 {
+			t.Errorf("$pageTitle count = %d, want 0 with neither rollup nor discovered source", m.Count)
+		}
+	})
+
+	t.Run("rollup_count_beats_frozen_discovered_count", func(t *testing.T) {
+		// For a key that IS a rollup dimension, the rollup is live and
+		// authoritative; the frozen map-era entry must not win.
+		frozenSeen := time.Unix(1700, 0).UTC()
+		liveSeen := time.Unix(9999, 0).UTC()
+		discovered := []AggregateKeyMeta{{Key: "$country", ValueType: "String", Count: 41, LastSeen: frozenSeen}}
+		rollup := []AggregateKeyMeta{{Key: "$country", Count: 9000, LastSeen: liveSeen}}
+		for _, k := range mergePromotedAutoDimensions(discovered, rollup) {
+			if k.Key != "$country" {
+				continue
+			}
+			if k.Count != 9000 || !k.LastSeen.Equal(liveSeen) {
+				t.Errorf("$country = (count %d, last_seen %v), want the rollup entry (9000, %v)", k.Count, k.LastSeen, liveSeen)
+			}
+		}
+	})
+
 	t.Run("map_sourced_duplicate_of_promoted_dim_is_dropped", func(t *testing.T) {
 		// Defensive: if ingest stripping ever regressed and a promoted dim
 		// leaked into property_keys, the authoritative rollup entry must win and

@@ -16,6 +16,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pug-sh/pug/internal/app/server/rpc"
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/attribution"
 	"github.com/pug-sh/pug/internal/autoprop"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
@@ -92,6 +93,7 @@ func (s *Server) BatchCreate(
 	s.enrichUserAgent(ctx, projectID, req.Header(), events)
 	s.enrichBotScore(ctx, projectID, req.Header(), events)
 	s.enrichVerifiedBot(ctx, projectID, req.Header(), events)
+	s.enrichAttribution(events)
 
 	if err := s.publisher.Publish(ctx, principal.Project.ID, events); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to accept events"))
@@ -194,6 +196,90 @@ func (s *Server) enrichBotScore(ctx context.Context, projectID string, h http.He
 		event.AutoProperties[autoprop.PropBotScore] = &commonv1.PropertyValue{
 			Value: &commonv1.PropertyValue_IntValue{IntValue: int64(val)},
 		}
+	}
+}
+
+// enrichAttribution derives the web-analytics auto-properties ($pathname,
+// $hostname, $referrerDomain, $channel, $screenSize, UTM completion from the
+// URL query, $locale normalization) from the client-sent navigation
+// properties via attribution.Derive. Header-independent and per-event, so it
+// runs last in the chain. Unlike the other enrichers it has no failure path:
+// derivation is pure, and absent inputs simply derive nothing.
+//
+// $referrerDomain and $channel are server-only (always server-derived): the
+// client value is stripped first, mirroring the bot enrichers. The remaining
+// keys follow derive-if-absent / only-if-absent semantics, which Derive
+// expresses by echoing a non-empty client value back unchanged — so writing
+// every changed output is exactly the per-key overwrite policy. $locale is
+// the one key rewritten in place (casing normalization; rollup rows are
+// permanent, so fragmented variants must never reach storage).
+func (s *Server) enrichAttribution(events []*eventsv1.Event) {
+	for _, event := range events {
+		for _, key := range attribution.ServerOnlyKeys {
+			delete(event.AutoProperties, key)
+		}
+
+		out := attribution.Derive(attribution.InputFrom(eventProps(event.AutoProperties)))
+
+		// $locale is rewritten in place, so it is dropped AFTER Derive has read
+		// it and re-added below only if it normalized to something. The write
+		// loop can never clear a key — it skips empty outputs — so without this
+		// a client value that NormalizeLocale blanks (whitespace-only) would
+		// survive verbatim into the locale column and become a permanent
+		// rollup dimension value, which is exactly what normalizing before
+		// storage exists to prevent.
+		delete(event.AutoProperties, attribution.PropLocale)
+
+		for _, p := range out.Pairs() {
+			if p.Value == "" || autoPropString(event.AutoProperties, p.Key) == p.Value {
+				continue
+			}
+			if event.AutoProperties == nil {
+				event.AutoProperties = make(map[string]*commonv1.PropertyValue)
+			}
+			event.AutoProperties[p.Key] = &commonv1.PropertyValue{
+				Value: &commonv1.PropertyValue_StringValue{StringValue: p.Value},
+			}
+		}
+	}
+}
+
+// eventProps adapts an event's auto-property map to attribution.Source.
+type eventProps map[string]*commonv1.PropertyValue
+
+func (p eventProps) String(key string) string { return autoPropString(p, key) }
+
+func (p eventProps) ScreenDims() (int64, int64) {
+	return autoPropInt64(p, autoprop.PropScreenWidth), autoPropInt64(p, autoprop.PropScreenHeight)
+}
+
+// autoPropString extracts an auto-property as the string the promotion layer
+// would store, so derivation sees exactly what would otherwise land in the
+// column — autoprop.String is that same coercion, shared rather than mirrored.
+func autoPropString(m map[string]*commonv1.PropertyValue, key string) string {
+	s, _ := autoprop.String(m[key])
+	return s
+}
+
+// autoPropInt64 extracts a numeric auto-property ($screenWidth/$screenHeight
+// arrive as Int64 slots via autoprop; a string slot is parsed as fallback).
+// Returns 0 when absent or unparseable.
+func autoPropInt64(m map[string]*commonv1.PropertyValue, key string) int64 {
+	pv, ok := m[key]
+	if !ok || pv == nil {
+		return 0
+	}
+	switch v := pv.GetValue().(type) {
+	case *commonv1.PropertyValue_IntValue:
+		return v.IntValue
+	case *commonv1.PropertyValue_StringValue:
+		n, err := strconv.ParseInt(v.StringValue, 10, 64)
+		if err != nil {
+			return 0
+		}
+		return n
+	default:
+		return 0
 	}
 }
 
