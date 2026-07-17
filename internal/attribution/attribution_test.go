@@ -273,3 +273,101 @@ func TestDeriveDoesNotMutateInput(t *testing.T) {
 		t.Errorf("Derive mutated its input: %+v != %+v", in, orig)
 	}
 }
+
+// TestStripServerOnly pins the strip both ingest paths rely on. Derive never
+// reads these keys from Input, so a client-sent copy cannot change what is
+// derived — but the write side never clears a key, so anything left in the map
+// survives verbatim into storage. Failing to strip therefore does not produce
+// a wrong derivation, it produces a client-authored $channel sitting in the
+// column analytics reads.
+func TestStripServerOnly(t *testing.T) {
+	t.Run("removes server-only keys and keeps the rest", func(t *testing.T) {
+		props := map[string]string{
+			PropReferrerDomain: "attacker.example",
+			PropChannel:        "Paid Search",
+			PropReferrer:       "https://news.example/a",
+			PropURL:            "https://shop.example/p",
+			PropUTMSource:      "google",
+		}
+		StripServerOnly(props)
+
+		want := map[string]string{
+			PropReferrer:  "https://news.example/a",
+			PropURL:       "https://shop.example/p",
+			PropUTMSource: "google",
+		}
+		if !reflect.DeepEqual(props, want) {
+			t.Errorf("after strip = %v, want %v", props, want)
+		}
+	})
+
+	// The SDK handler holds map[string]*PropertyValue and the seeder
+	// map[string]any; the strip is generic precisely so both call one
+	// implementation rather than mirroring a delete loop each.
+	t.Run("generic over the map value type", func(t *testing.T) {
+		props := map[string]any{PropChannel: "Direct", PropURL: "https://a.example/"}
+		StripServerOnly(props)
+		if _, ok := props[PropChannel]; ok {
+			t.Error("$channel survived the strip on a map[string]any")
+		}
+		if _, ok := props[PropURL]; !ok {
+			t.Error("$url was stripped from a map[string]any")
+		}
+	})
+
+	t.Run("nil map is a no-op", func(t *testing.T) {
+		StripServerOnly(map[string]string(nil))
+	})
+}
+
+// keyEchoSource returns a distinct non-empty value for every key, so an Input
+// field InputFrom fails to read stays zero and a cross-wired field carries the
+// wrong key's echo.
+type keyEchoSource struct{}
+
+func (keyEchoSource) String(key string) string   { return "v:" + key }
+func (keyEchoSource) ScreenDims() (int64, int64) { return 390, 844 }
+
+// TestInputFrom pins InputFrom to Input's shape. InputFrom is the only way the
+// ingest handler and the demo seeder assemble a Derive input — the promise
+// that demo data and production traffic classify identically rests on the
+// inputs matching, not just the derivation — so a field added to Input but
+// never read here would silently stay zero on both paths at once, and the
+// classification would degrade identically in demo and prod with nothing to
+// contradict it.
+func TestInputFrom(t *testing.T) {
+	got := InputFrom(keyEchoSource{})
+
+	t.Run("maps every key to its own field", func(t *testing.T) {
+		want := Input{
+			URL:          "v:" + PropURL,
+			Referrer:     "v:" + PropReferrer,
+			Pathname:     "v:" + PropPathname,
+			Hostname:     "v:" + PropHostname,
+			ScreenSize:   "v:" + PropScreenSize,
+			UTMSource:    "v:" + PropUTMSource,
+			UTMMedium:    "v:" + PropUTMMedium,
+			UTMCampaign:  "v:" + PropUTMCampaign,
+			UTMTerm:      "v:" + PropUTMTerm,
+			UTMContent:   "v:" + PropUTMContent,
+			Locale:       "v:" + PropLocale,
+			ScreenWidth:  390,
+			ScreenHeight: 844,
+		}
+		if got != want {
+			t.Errorf("InputFrom() = %+v, want %+v", got, want)
+		}
+	})
+
+	// The explicit want above cannot catch a NEW Input field: an unread field
+	// is zero in both got and want, so the comparison stays green. Only the
+	// reflection sweep fails when Input grows a field InputFrom never reads.
+	t.Run("reads every Input field", func(t *testing.T) {
+		v := reflect.ValueOf(got)
+		for i := range v.NumField() {
+			if v.Field(i).IsZero() {
+				t.Errorf("Input.%s is zero: InputFrom never reads it from Source", v.Type().Field(i).Name)
+			}
+		}
+	})
+}
