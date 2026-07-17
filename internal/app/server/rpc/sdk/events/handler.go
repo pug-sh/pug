@@ -267,13 +267,17 @@ func (s *Server) enrichAttribution(ctx context.Context, projectID string, events
 	}
 }
 
-// attributionDegraded reports a $url that was sent but derived no pathname —
-// it did not parse as an http(s) URL with a host, so every URL-derived key
-// (pathname/hostname/channel) is empty. Not an error: a native app may
-// legitimately send a non-web $url. It is the one silent-but-visible outcome a
-// pure derivation still has, so a spike is worth a counter.
+// attributionDegraded reports a $url that was sent but did not parse as an
+// http(s) URL with a host, so no channel — and no hostname — could be derived.
+// Not an error: a native app may legitimately send a non-web $url. It keys off
+// out.Channel, NOT out.Pathname: Derive sets a channel iff the URL parsed
+// (classifyChannel's switch always yields at least "Direct"), whereas
+// out.Pathname echoes a client-sent $pathname and stays non-empty — hiding the
+// degradation — for exactly the SPA/native SDKs most likely to send a non-web
+// $url. It is the one silent-but-visible outcome a pure derivation still has,
+// so a spike is worth a counter.
 func attributionDegraded(in attribution.Input, out attribution.Output) bool {
-	return in.URL != "" && out.Pathname == ""
+	return in.URL != "" && out.Channel == ""
 }
 
 // eventProps adapts an event's auto-property map to attribution.Source.

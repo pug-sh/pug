@@ -669,27 +669,38 @@ func TestBatchCreateWiresAttributionEnricher(t *testing.T) {
 }
 
 func TestAttributionDegraded(t *testing.T) {
+	// Drive attributionDegraded from REAL Derive outputs, not hand-built Output
+	// literals: keying it off out.Channel only holds because Derive sets a
+	// channel iff the $url parsed as an http(s) URL with a host, and a hand-built
+	// Output{Pathname: "/p"} with an empty Channel is a state Derive can never
+	// produce (a valid URL always classifies). Testing against Derive keeps the
+	// impossible pairs out.
 	cases := []struct {
 		name string
 		in   attribution.Input
-		out  attribution.Output
 		want bool
 	}{
-		// A $url was sent but derived no pathname: it did not parse as an
-		// http(s) URL with a host, so pathname/hostname/channel are all empty.
-		{"url present, nothing derived", attribution.Input{URL: "myapp://screen/home"}, attribution.Output{}, true},
-		{"garbage url", attribution.Input{URL: "not a url"}, attribution.Output{}, true},
+		// A $url was sent but did not parse as an http(s) URL with a host, so no
+		// hostname/channel could be derived — the exact condition the
+		// events.attribution_derive_degraded_total counter exists to catch.
+		{"non-web url scheme", attribution.Input{URL: "myapp://screen/home"}, true},
+		{"garbage url", attribution.Input{URL: "not a url"}, true},
+		// A non-web $url still counts as degraded even when the client sent a
+		// logical $pathname: the pathname is echoed straight through, but
+		// hostname/channel are still unattributable. Keying the counter off the
+		// client-echoable pathname (the prior bug) blinded it to exactly the
+		// SPA/native SDKs most likely to send a non-web $url.
+		{"non-web url with client pathname", attribution.Input{URL: "myapp://x", Pathname: "/route"}, true},
 		// No $url at all is a native/non-web event, not a degradation.
-		{"no url", attribution.Input{Referrer: "https://google.com"}, attribution.Output{}, false},
-		// A valid URL yields at least "/" — not degraded.
-		{"valid url", attribution.Input{URL: "https://x.com/p"}, attribution.Output{Pathname: "/p"}, false},
-		// A client-sent pathname means we have one even off a bad url.
-		{"client pathname masks bad url", attribution.Input{URL: "myapp://x"}, attribution.Output{Pathname: "/route"}, false},
+		{"no url", attribution.Input{Referrer: "https://google.com"}, false},
+		// A parseable web URL always classifies (at least Direct) — not degraded.
+		{"valid web url", attribution.Input{URL: "https://x.com/p"}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := attributionDegraded(c.in, c.out); got != c.want {
-				t.Errorf("attributionDegraded = %v, want %v", got, c.want)
+			out := attribution.Derive(c.in)
+			if got := attributionDegraded(c.in, out); got != c.want {
+				t.Errorf("attributionDegraded = %v, want %v (out=%+v)", got, c.want, out)
 			}
 		})
 	}
