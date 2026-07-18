@@ -524,6 +524,12 @@ enum SessionMetric {
   // Count sessions by their last matching event's breakdown value (exit page).
   // Requires TRENDS with exactly one breakdown.
   SESSION_METRIC_EXIT = 5;
+  // Average number of scoped events per session. With a page_view scope this
+  // is pages per session. A first-class metric (not a client-side division of
+  // a pageview tile by a session tile) because pageviews are windowed on
+  // occurrence day while sessions are keyed on session start and never
+  // clipped — dividing two tiles disagrees visibly on boundary days.
+  SESSION_METRIC_AVG_EVENTS_PER_SESSION = 6;
 }
 
 message SessionQuery {

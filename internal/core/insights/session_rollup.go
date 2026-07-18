@@ -11,18 +11,33 @@ import (
 
 const sessionRollupTable = "dashboard_session_rollup"
 
-// sessionMaterializedDims are entry/exit breakdown dimensions backed by the
-// session-grain rollup MV. Keep in sync with migration
-// 007_create_dashboard_session_rollup.sql: column NAMES are pinned by
-// TestMigration007SessionRollupColumnsMatchDims, and the MV's argMin/argMaxState
-// value expressions are pinned against the raw builder's projection by
-// TestMigration007SessionRollupDimExprsMatch.
-var sessionMaterializedDims = []string{
-	"$url",
-	"$country", "$region", "$city",
-	"$os", "$browser", "$device", "$platform",
-	"$utmSource", "$utmMedium", "$utmCampaign",
-}
+// Session-rollup entry/exit dimensions, grouped by the migration that
+// introduced them, on the same freeze rule as the event rollup's groups.
+var (
+	// sessionRollupDims007 are migration 007's originals (TestMigration007Frozen).
+	sessionRollupDims007 = []string{
+		"$url",
+		"$country", "$region", "$city",
+		"$os", "$browser", "$device", "$platform",
+		"$utmSource", "$utmMedium", "$utmCampaign",
+	}
+	// sessionRollupDims010 are the dims migration 010 added, and exactly the
+	// entry/exit state pairs its partial-column backfill INSERT may carry:
+	// the omitted state columns rely on empty-state merge identity, so listing
+	// an older group's state there would corrupt merged history (see the
+	// migration header). TestMigration010SessionRollupColumnsMatchDims.
+	sessionRollupDims010 = []string{
+		"$pathname", "$referrerDomain", "$channel", "$utmTerm", "$utmContent",
+	}
+)
+
+// sessionMaterializedDims are the entry/exit breakdown dimensions backed by
+// the session-grain rollup MV: the union of every applied migration's group,
+// matching the LATEST MV definition (010's MODIFY QUERY) by construction.
+// TestMigration010SessionRollupColumnsMatchDims pins the column names against
+// that MV and TestMigration010SessionRollupDimExprsMatch pins the
+// argMin/argMaxState value expressions against the raw builder's projection.
+var sessionMaterializedDims = slices.Concat(sessionRollupDims007, sessionRollupDims010)
 
 func isSessionMaterializedDim(prop string) bool {
 	return slices.Contains(sessionMaterializedDims, prop)
@@ -43,8 +58,10 @@ func isSessionMaterializedDim(prop string) bool {
 // read event_count > 1 — i.e. no longer counted as a bounce. The drift equals the
 // pipeline's redelivery rate (monotonic, never self-correcting). SESSIONS, ENTRY,
 // and EXIT are immune (they count session-id groups, not events); AVG_DURATION is
-// immune (min/max occur_time are idempotent under duplicates). This is an accepted,
-// bounded inaccuracy for dashboard visualization — see docs/architecture/clickhouse.md;
+// immune (min/max occur_time are idempotent under duplicates);
+// AVG_EVENTS_PER_SESSION inflates on the rollup path for the same countState
+// reason while the raw path self-corrects. This is an accepted, bounded
+// inaccuracy for dashboard visualization — see docs/architecture/clickhouse.md;
 // pinned by TestIntegration/session_rollup_bounce_duplicate_overcount_documented.
 func canUseSessionRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Granularity) bool {
 	session := spec.GetSession()
@@ -89,7 +106,8 @@ func canUseSessionRollup(spec *insightsv1.InsightQuerySpec, gran insightsv1.Gran
 	switch session.GetMetric() {
 	case insightsv1.SessionMetric_SESSION_METRIC_SESSIONS,
 		insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION,
-		insightsv1.SessionMetric_SESSION_METRIC_BOUNCE_RATE:
+		insightsv1.SessionMetric_SESSION_METRIC_BOUNCE_RATE,
+		insightsv1.SessionMetric_SESSION_METRIC_AVG_EVENTS_PER_SESSION:
 		return true
 	case insightsv1.SessionMetric_SESSION_METRIC_ENTRY,
 		insightsv1.SessionMetric_SESSION_METRIC_EXIT:
@@ -223,33 +241,19 @@ func sessionBreakdownStateName(metric insightsv1.SessionMetric, prop string) (st
 	return prefix + "_" + suffix + "_state", nil
 }
 
+// sessionRollupDimSuffix maps a session breakdown dimension to the middle of
+// its rollup state-column names (entry_<suffix>_state / exit_<suffix>_state).
+// The suffix IS the events promoted column, so it is read off the
+// authoritative promotedAutoColumns table rather than restated here; a dim
+// listed in sessionMaterializedDims but not backed by a promoted column
+// therefore reports false instead of naming a column migration 010 never
+// created. Both gates matter: without the membership check every promoted
+// property would yield a suffix, including ones with no session state pair.
 func sessionRollupDimSuffix(prop string) (string, bool) {
-	switch prop {
-	case "$url":
-		return "url", true
-	case "$country":
-		return "country", true
-	case "$region":
-		return "region", true
-	case "$city":
-		return "city", true
-	case "$os":
-		return "os", true
-	case "$browser":
-		return "browser", true
-	case "$device":
-		return "device", true
-	case "$platform":
-		return "platform", true
-	case "$utmSource":
-		return "utm_source", true
-	case "$utmMedium":
-		return "utm_medium", true
-	case "$utmCampaign":
-		return "utm_campaign", true
-	default:
+	if !isSessionMaterializedDim(prop) {
 		return "", false
 	}
+	return chq.PromotedColumnFor(prop)
 }
 
 func sessionTrendsQueryForExecution(req *insightsv1.QueryRequest, projectID string, now time.Time) (TrendsQuery, bool, error) {

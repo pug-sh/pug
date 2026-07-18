@@ -1528,6 +1528,7 @@ func TestIntegration(t *testing.T) {
 			insightsv1.SessionMetric_SESSION_METRIC_SESSIONS,
 			insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION,
 			insightsv1.SessionMetric_SESSION_METRIC_BOUNCE_RATE,
+			insightsv1.SessionMetric_SESSION_METRIC_AVG_EVENTS_PER_SESSION,
 		} {
 			req := sessionSegReq(m, from, to)
 			resp, err := insights.ExecuteQuery(ctx, executor, sessionProjectID, req, time.Now())

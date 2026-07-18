@@ -25,7 +25,8 @@ ORDER BY (project_id, kind, dim_name, day, dim_value);
 --
 -- Dimension value expressions MUST read promoted auto-property columns (not
 -- auto_properties map keys) — ingest strips promoted keys into dedicated columns.
--- Keep in sync with PropertyExpr / TestMigration006PromotedDimExprsMatch.
+-- This migration is FROZEN (TestMigration006Frozen); the live dim list is
+-- pinned against migration 009's MODIFY QUERY instead.
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS dashboard_event_rollup_daily_mv
 TO dashboard_event_rollup_daily AS

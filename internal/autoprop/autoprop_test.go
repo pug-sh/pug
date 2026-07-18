@@ -69,6 +69,86 @@ func TestPropertyValue_BackgroundContext(t *testing.T) {
 	}
 }
 
+// TestString pins the coercion both sides of the promoted-column contract
+// depend on: the SDK handler derives $channel/$pathname from this string while
+// applyPromotedPropertyValue files that same value into the column, so a
+// divergence here is a row whose derived columns describe a value the row does
+// not contain. The ok result is the promote/skip decision — false must mean
+// "no slot", never "empty slot", or a client-sent "" would stop reaching the
+// column it belongs in.
+func TestString(t *testing.T) {
+	tests := []struct {
+		name   string
+		pv     *commonv1.PropertyValue
+		want   string
+		wantOK bool
+	}{
+		{"string", stringPV("US"), "US", true},
+		{"empty string is present, not absent", stringPV(""), "", true},
+		{"int", intPV(99), "99", true},
+		{"negative int", intPV(-1), "-1", true},
+		{"double", doublePV(37.7749), "37.7749", true},
+		{"negative double", doublePV(-122.4194), "-122.4194", true},
+		{"double renders without exponent padding", doublePV(390), "390", true},
+		{"bool true", boolPV(true), "true", true},
+		{"bool false", boolPV(false), "false", true},
+		{"nil PropertyValue", nil, "", false},
+		{"no slot set", &commonv1.PropertyValue{}, "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := String(tt.pv)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("String() = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+// TestStringRoundTripsPropertyValue ties String back to PropertyValue: the two
+// are inverse directions of one mapping and live together so they cannot
+// drift, so a typed key must survive the round trip byte-identical.
+func TestStringRoundTripsPropertyValue(t *testing.T) {
+	tests := []struct{ key, value string }{
+		{PropBotScore, "99"},
+		{PropScreenWidth, "390"},
+		{PropMobile, "true"},
+		{PropMobile, "false"},
+		{PropLatitude, "37.7749"},
+		{PropLongitude, "-122.4194"},
+		{"$country", "US"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.key+"="+tt.value, func(t *testing.T) {
+			got, ok := String(PropertyValue(context.Background(), "test-project", tt.key, tt.value))
+			if !ok {
+				t.Fatalf("String() reported no slot for a value PropertyValue just typed")
+			}
+			if got != tt.value {
+				t.Errorf("round trip = %q, want %q", got, tt.value)
+			}
+		})
+	}
+}
+
+func stringPV(s string) *commonv1.PropertyValue {
+	return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_StringValue{StringValue: s}}
+}
+
+func intPV(i int64) *commonv1.PropertyValue {
+	return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_IntValue{IntValue: i}}
+}
+
+func doublePV(f float64) *commonv1.PropertyValue {
+	return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_DoubleValue{DoubleValue: f}}
+}
+
+func boolPV(b bool) *commonv1.PropertyValue {
+	return &commonv1.PropertyValue{Value: &commonv1.PropertyValue_BoolValue{BoolValue: b}}
+}
+
 func assertBool(want bool) func(*testing.T, *commonv1.PropertyValue) {
 	return func(t *testing.T, pv *commonv1.PropertyValue) {
 		t.Helper()

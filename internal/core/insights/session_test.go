@@ -2,8 +2,8 @@ package insights
 
 import (
 	"fmt"
-	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -159,6 +159,22 @@ func TestCanUseSessionRollup(t *testing.T) {
 			r.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_AVG_DURATION.Enum()
 			r.Spec.Breakdowns = nil
 		}, true},
+		{"avg events per session trends", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_AVG_EVENTS_PER_SESSION.Enum()
+			r.Spec.Breakdowns = nil
+		}, true},
+		{"avg events per session segmentation", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.InsightType = insightsv1.InsightType_INSIGHT_TYPE_SEGMENTATION.Enum()
+			r.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_AVG_EVENTS_PER_SESSION.Enum()
+			r.Spec.Breakdowns = nil
+		}, true},
+		{"entry pathname trends", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$pathname")}}
+		}, true},
+		{"sessions by channel", day, func(r *insightsv1.QueryRequest) {
+			r.Spec.Session.Metric = insightsv1.SessionMetric_SESSION_METRIC_SESSIONS.Enum()
+			r.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("$referrerDomain")}}
+		}, true},
 		// --- disqualifiers ---
 		{"custom breakdown rejected", day, func(r *insightsv1.QueryRequest) {
 			r.Spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String("plan")}}
@@ -204,13 +220,84 @@ func TestCanUseSessionRollup(t *testing.T) {
 	}
 }
 
-func TestMigration007SessionRollupColumnsMatchDims(t *testing.T) {
-	const path = "../../../schema/clickhouse/migrations/007_create_dashboard_session_rollup.sql"
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
+const (
+	migration007Path = "../../../schema/clickhouse/migrations/007_create_dashboard_session_rollup.sql"
+	migration010Path = "../../../schema/clickhouse/migrations/010_extend_dashboard_session_rollup.sql"
+)
+
+// sessionRollupDimSourceExpr returns the inner ClickHouse expression the MV is
+// expected to aggregate for a given breakdown dim: bare column for String dims,
+// toString(col) for LowCardinality(String) dims (matching events table column
+// types in migrations 001 and 008). Hand-coupled to the migration intent on purpose.
+func sessionRollupDimSourceExpr(suffix string) string {
+	switch suffix {
+	case "url", "city", "pathname": // String columns
+		return suffix
+	default: // LowCardinality(String) columns
+		return "toString(" + suffix + ")"
 	}
-	sql := string(data)
+}
+
+// countSessionDimStateExprs returns how many times sql states the given dim's
+// entry/exit pair with the correct source expression and merge direction
+// (entry=argMinState, exit=argMaxState); mismatched wiring counts as zero. A
+// state wired to the wrong source column (e.g. region built from city) or a
+// swapped entry/exit aggregate is drift a bare column-name check cannot see.
+// The raw builder projects coalesce(col,”) vs the MV's bare/toString column,
+// which agree only because every dim column is DEFAULT ” (never NULL); this
+// pins the source side of that equivalence.
+func countSessionDimStateExprs(t *testing.T, sql, dim string) int {
+	t.Helper()
+	suffix, ok := sessionRollupDimSuffix(dim)
+	if !ok {
+		t.Fatalf("missing suffix for %q", dim)
+	}
+	inner := sessionRollupDimSourceExpr(suffix)
+	count := func(prefix, fn string) int {
+		// e.g. argMinState(toString(country), occur_time) AS entry_country_state
+		pat := fmt.Sprintf(`%s\(\s*%s\s*,\s*occur_time\s*\)\s+AS\s+%s_%s_state`,
+			fn, regexp.QuoteMeta(inner), prefix, suffix)
+		return len(regexp.MustCompile(pat).FindAllString(sql, -1))
+	}
+	entry, exit := count("entry", "argMinState"), count("exit", "argMaxState")
+	if entry != exit {
+		t.Errorf("dim %s: %d entry state(s) but %d exit state(s) — a dim must gain both or neither", dim, entry, exit)
+	}
+	return entry
+}
+
+// TestMigration007Frozen pins migration 007 to its historical content: the
+// legacy eleven dims, each stated twice (MV + backfill) with the correct
+// source expression and merge direction, and none of the new web-analytics
+// states. Guards against editing a shipped migration instead of adding a new one.
+func TestMigration007Frozen(t *testing.T) {
+	sql := readMigration(t, migration007Path)
+	for _, dim := range sessionRollupDims007 {
+		if got := countSessionDimStateExprs(t, sql, dim); got != 2 {
+			t.Errorf("dim %s: expected MV+backfill = 2 correctly-wired state pairs in 007, found %d", dim, got)
+		}
+	}
+	for _, dim := range sessionRollupDims010 {
+		suffix, ok := sessionRollupDimSuffix(dim)
+		if !ok {
+			t.Fatalf("missing suffix for %q", dim)
+		}
+		for _, prefix := range []string{"entry", "exit"} {
+			if state := prefix + "_" + suffix + "_state"; strings.Contains(sql, state) {
+				t.Errorf("migration 007 must not contain the web-analytics state %s", state)
+			}
+		}
+	}
+}
+
+// TestMigration010SessionRollupColumnsMatchDims pins the Go dim list to
+// migration 010's Up section: every current dim's entry/exit state columns are
+// stated by the MODIFY QUERY, and the NEW dims' state columns appear in both
+// the ADD COLUMN block and the partial backfill's explicit column list (the
+// backfill must list ONLY key columns + new states — an old state column there
+// would corrupt merged history, see the migration header).
+func TestMigration010SessionRollupColumnsMatchDims(t *testing.T) {
+	up := migrationUpSection(t, migration010Path)
 	for _, dim := range sessionMaterializedDims {
 		suffix, ok := sessionRollupDimSuffix(dim)
 		if !ok {
@@ -218,60 +305,62 @@ func TestMigration007SessionRollupColumnsMatchDims(t *testing.T) {
 		}
 		for _, prefix := range []string{"entry", "exit"} {
 			want := prefix + "_" + suffix + "_state"
-			if !strings.Contains(sql, want) {
-				t.Errorf("migration missing %s", want)
+			if !strings.Contains(up, want) {
+				t.Errorf("migration 010 Up missing %s", want)
 			}
 		}
 	}
-}
-
-// sessionRollupDimSourceExpr returns the inner ClickHouse expression the MV is
-// expected to aggregate for a given breakdown dim: bare column for String dims,
-// toString(col) for LowCardinality(String) dims (matching events table column
-// types in migration 001). Hand-coupled to the migration intent on purpose.
-func sessionRollupDimSourceExpr(suffix string) string {
-	switch suffix {
-	case "url", "city": // String columns
-		return suffix
-	default: // LowCardinality(String) columns
-		return "toString(" + suffix + ")"
+	// The backfill INSERT column list must be exactly key columns + new states.
+	insertRe := regexp.MustCompile(`(?s)INSERT INTO dashboard_session_rollup \((.*?)\)`)
+	m := insertRe.FindStringSubmatch(up)
+	if m == nil {
+		t.Fatal("migration 010 Up missing the partial backfill INSERT column list")
 	}
-}
-
-// TestMigration007SessionRollupDimExprsMatch pins, per dimension, BOTH the source
-// column expression AND the merge direction (entry=argMinState, exit=argMaxState)
-// in migration 007. TestMigration007SessionRollupColumnsMatchDims only checks
-// column names exist; this catches a state wired to the wrong source column (e.g.
-// region built from city) or a swapped entry/exit aggregate — drift the name check
-// cannot see. The raw builder projects coalesce(col,”) vs the MV's bare/toString
-// column, which agree only because every dim column is DEFAULT ” (never NULL); this
-// test pins the source side of that equivalence.
-func TestMigration007SessionRollupDimExprsMatch(t *testing.T) {
-	const path = "../../../schema/clickhouse/migrations/007_create_dashboard_session_rollup.sql"
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
+	var cols []string
+	for _, c := range strings.Split(m[1], ",") {
+		cols = append(cols, strings.TrimSpace(c))
 	}
-	sql := string(data)
-	for _, dim := range sessionMaterializedDims {
+	want := []string{"project_id", "kind", "session_id"}
+	for _, dim := range sessionRollupDims010 {
 		suffix, ok := sessionRollupDimSuffix(dim)
 		if !ok {
 			t.Fatalf("missing suffix for %q", dim)
 		}
-		inner := sessionRollupDimSourceExpr(suffix)
-		for _, d := range []struct{ prefix, fn string }{
-			{"entry", "argMinState"},
-			{"exit", "argMaxState"},
-		} {
-			// e.g. argMinState(toString(country), occur_time) AS entry_country_state
-			pat := fmt.Sprintf(`%s\(\s*%s\s*,\s*occur_time\s*\)\s+AS\s+%s_%s_state`,
-				d.fn, regexp.QuoteMeta(inner), d.prefix, suffix)
-			matches := regexp.MustCompile(pat).FindAllString(sql, -1)
-			// MV + backfill = two occurrences expected.
-			if len(matches) < 2 {
-				t.Errorf("dim %s: expected MV+backfill %s_%s_state = %s(%s, occur_time); found %d match(es)",
-					dim, d.prefix, suffix, d.fn, inner, len(matches))
-			}
+		want = append(want, "entry_"+suffix+"_state", "exit_"+suffix+"_state")
+	}
+	slices.Sort(cols)
+	slices.Sort(want)
+	if !slices.Equal(cols, want) {
+		t.Errorf("backfill column list %v != key columns + new states %v", cols, want)
+	}
+	// The per-migration groups must not overlap: an older group's state listed
+	// in 010's partial backfill would be re-inserted over merged history
+	// instead of relying on empty-state merge identity. (sessionMaterializedDims
+	// being their union needs no assertion — slices.Concat makes it so.)
+	for _, dim := range sessionRollupDims010 {
+		if slices.Contains(sessionRollupDims007, dim) {
+			t.Errorf("dim %s is in both the 007 and 010 groups; 010's backfill would corrupt its merged state", dim)
 		}
+	}
+}
+
+// TestMigration010SessionRollupDimExprsMatch pins migration 010's state
+// expressions: in the Up section, pre-existing dims are restated once (the
+// MODIFY QUERY) and the new dims twice (MODIFY QUERY + partial backfill), each
+// with the correct source column and merge direction.
+func TestMigration010SessionRollupDimExprsMatch(t *testing.T) {
+	up := migrationUpSection(t, migration010Path)
+	for _, dim := range sessionRollupDims007 {
+		if got := countSessionDimStateExprs(t, up, dim); got != 1 {
+			t.Errorf("dim %s: expected 1 correctly-wired state pair in 010 Up (MODIFY QUERY), found %d", dim, got)
+		}
+	}
+	for _, dim := range sessionRollupDims010 {
+		if got := countSessionDimStateExprs(t, up, dim); got != 2 {
+			t.Errorf("dim %s: expected 2 correctly-wired state pairs in 010 Up (MODIFY QUERY + backfill), found %d", dim, got)
+		}
+	}
+	if strings.Contains(up, "auto_properties['$") {
+		t.Error("migration 010 must not read promoted keys from the auto_properties map")
 	}
 }
