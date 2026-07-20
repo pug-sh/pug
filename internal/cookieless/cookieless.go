@@ -81,4 +81,3 @@ func (r *Resolver) DistinctID(ctx context.Context, day, projectID, ip, ua string
 	mac.Write([]byte(ua))
 	return IDPrefix + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:16]), nil
 }
-
