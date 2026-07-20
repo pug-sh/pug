@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/pug-sh/pug/internal/cookieless"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
 	commonv1 "github.com/pug-sh/pug/internal/gen/proto/common/v1"
 	insightsv1 "github.com/pug-sh/pug/internal/gen/proto/shared/insights/v1"
@@ -527,6 +528,7 @@ func TestSegmentationExecution_RoutesToRollup(t *testing.T) {
 const (
 	migration006Path = "../../../schema/clickhouse/migrations/006_create_dashboard_event_rollup.sql"
 	migration009Path = "../../../schema/clickhouse/migrations/009_extend_dashboard_event_rollup.sql"
+	migration011Path = "../../../schema/clickhouse/migrations/011_cookieless_identity.sql"
 )
 
 func readMigration(t *testing.T, path string) string {
@@ -600,22 +602,19 @@ func TestCheckDimListHelpers(t *testing.T) {
 	}
 }
 
-// TestMaterializedDimsMatchMigration pins the Go dimension lists to migration
-// 009's Up section: the MODIFY QUERY block must carry exactly
-// materializedDims + $__total__, and the delta backfill block exactly
-// eventRollupDims009 (re-inserting a pre-009 dim would double its cnt). Also
-// pins the internal coherence of the three Go lists.
+// TestMaterializedDimsMatchMigration pins the Go dimension lists to the LATEST
+// event-rollup MV definition — migration 011's restated MODIFY QUERY, which
+// must carry exactly materializedDims + $__total__ (011 changes no dims; it
+// adds the cookieless key column, so it has no backfill block). Also pins the
+// internal coherence of the per-migration Go groups.
 func TestMaterializedDimsMatchMigration(t *testing.T) {
-	up := migrationUpSection(t, migration009Path)
+	up := migrationUpSection(t, migration011Path)
 	blocks := extractArrayJoinBlocks(up)
-	if len(blocks) != 2 {
-		t.Fatalf("expected 2 ARRAY JOIN blocks in 009 Up (MODIFY QUERY + delta backfill), found %d", len(blocks))
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 ARRAY JOIN block in 011 Up (MODIFY QUERY only, no backfill), found %d", len(blocks))
 	}
 	if err := checkDimList(blocks[0], append([]string{totalDimName}, materializedDims...)); err != nil {
 		t.Errorf("MODIFY QUERY block: %v", err)
-	}
-	if err := checkDimList(blocks[1], eventRollupDims009); err != nil {
-		t.Errorf("delta backfill block: %v", err)
 	}
 	// The per-migration groups must not overlap: a dim in two groups would be
 	// backfilled by both, doubling its cnt. (materializedDims being their
@@ -704,26 +703,104 @@ func checkDimExprs(blocks []string, dims []string) error {
 	return nil
 }
 
-// TestMigration009PromotedDimExprsMatch pins migration 009's dim_value
-// expressions to AutoPropertyProjectionFor. The auto_properties ban is scoped
-// to the ARRAY JOIN blocks because reading the map is legitimate in a
-// derivation mutation (008's, over historical rows that were never split) and
-// never in a rollup that must read the promoted columns.
-func TestMigration009PromotedDimExprsMatch(t *testing.T) {
-	up := migrationUpSection(t, migration009Path)
+// TestMigration011PromotedDimExprsMatch pins the latest MV's dim_value
+// expressions (migration 011's restated MODIFY QUERY) to
+// AutoPropertyProjectionFor. The auto_properties ban is scoped to the ARRAY
+// JOIN block because reading the map is legitimate in a derivation mutation
+// (008's, over historical rows that were never split) and never in a rollup
+// that must read the promoted columns.
+func TestMigration011PromotedDimExprsMatch(t *testing.T) {
+	up := migrationUpSection(t, migration011Path)
 	blocks := extractArrayJoinBlocks(up)
-	if len(blocks) != 2 {
-		t.Fatalf("expected 2 ARRAY JOIN blocks in 009 Up, found %d", len(blocks))
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 ARRAY JOIN block in 011 Up, found %d", len(blocks))
 	}
-	if err := checkDimExprs(blocks[:1], materializedDims); err != nil {
+	if err := checkDimExprs(blocks, materializedDims); err != nil {
 		t.Errorf("MODIFY QUERY block: %v", err)
-	}
-	if err := checkDimExprs(blocks[1:], eventRollupDims009); err != nil {
-		t.Errorf("delta backfill block: %v", err)
 	}
 	for i, block := range blocks {
 		if strings.Contains(block, "auto_properties['$") {
 			t.Errorf("ARRAY JOIN block %d reads promoted keys from the auto_properties map", i)
+		}
+	}
+}
+
+// TestMigration009Frozen pins migration 009 to its historical content, exactly
+// as TestMigration006Frozen freezes 006: now that 011 restates the MV, 009's
+// file must never be edited again. Its MODIFY QUERY block carries the full
+// 21-dim list, its delta backfill exactly the 009 group, with promoted-column
+// expressions in both. (The DELETE-guard list is pinned separately by
+// TestMigration009BackfillDeleteCoversNewDims.)
+func TestMigration009Frozen(t *testing.T) {
+	up := migrationUpSection(t, migration009Path)
+	blocks := extractArrayJoinBlocks(up)
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 ARRAY JOIN blocks in 009 Up (MODIFY QUERY + delta backfill), found %d", len(blocks))
+	}
+	if err := checkDimList(blocks[0], append([]string{totalDimName}, materializedDims...)); err != nil {
+		t.Errorf("MODIFY QUERY block: %v", err)
+	}
+	if err := checkDimList(blocks[1], eventRollupDims009); err != nil {
+		t.Errorf("delta backfill block: %v", err)
+	}
+	if err := checkDimExprs(blocks[:1], materializedDims); err != nil {
+		t.Errorf("MODIFY QUERY block exprs: %v", err)
+	}
+	if err := checkDimExprs(blocks[1:], eventRollupDims009); err != nil {
+		t.Errorf("delta backfill block exprs: %v", err)
+	}
+	for i, block := range blocks {
+		if strings.Contains(block, "auto_properties['$") {
+			t.Errorf("ARRAY JOIN block %d reads promoted keys from the auto_properties map", i)
+		}
+	}
+	// 009 predates the cookieless key column; its file must not grow one.
+	if strings.Contains(up, "cookieless") {
+		t.Error("migration 009 is frozen and must not mention cookieless — that is 011's job")
+	}
+}
+
+// TestMigration011CookielessPrefixMatchesGo pins the SQL prefix literals to
+// cookieless.IDPrefix — the id format is permanent storage, so drift between
+// the Go constant and the migration would silently corrupt exclusion.
+func TestMigration011CookielessPrefixMatchesGo(t *testing.T) {
+	up := migrationUpSection(t, migration011Path)
+	want := "startsWith(distinct_id, '" + cookieless.IDPrefix + "')"
+	if got := strings.Count(up, want); got != 2 {
+		t.Errorf("011 Up must reference %q exactly twice (activity WHERE + rollup key), got %d", want, got)
+	}
+}
+
+// TestMigration011ActivityStatesExcludeCookieless pins the derived-persons
+// exclusion: the activity MV must filter cookieless ids or every daily
+// rotation mints a ghost person.
+func TestMigration011ActivityStatesExcludeCookieless(t *testing.T) {
+	up := migrationUpSection(t, migration011Path)
+	if !strings.Contains(up, "ALTER TABLE distinct_id_activity_states_mv MODIFY QUERY") {
+		t.Fatal("011 must MODIFY QUERY the activity-states MV (never DROP->CREATE)")
+	}
+	if !strings.Contains(up, "WHERE NOT startsWith(distinct_id, '"+cookieless.IDPrefix+"')") {
+		t.Error("activity-states MV must exclude cookieless ids")
+	}
+	if !strings.Contains(up, "minState(occur_time)") {
+		t.Error("011 must restate the full 005 state list")
+	}
+}
+
+// TestMigration011RollupCookielessKeyColumn pins the rollup flag: computed
+// from the prefix, part of the sorting key, present in the MV GROUP BY.
+func TestMigration011RollupCookielessKeyColumn(t *testing.T) {
+	up := migrationUpSection(t, migration011Path)
+	for _, want := range []string{
+		// No DEFAULT expression: ClickHouse forbids defaulted columns joining a
+		// sorting key (code 36); the bare UInt8 reads type-default 0 on old rows.
+		"ADD COLUMN IF NOT EXISTS cookieless UInt8,",
+		"MODIFY ORDER BY (project_id, kind, dim_name, day, dim_value, cookieless)",
+		"toUInt8(startsWith(distinct_id, '" + cookieless.IDPrefix + "')) AS cookieless",
+		"GROUP BY project_id, day, kind, dim_name, dim_value, cookieless",
+	} {
+		if !strings.Contains(up, want) {
+			t.Errorf("011 Up missing %q", want)
 		}
 	}
 }
