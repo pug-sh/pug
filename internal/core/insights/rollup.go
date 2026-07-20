@@ -221,6 +221,8 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 				chq.Eq("dim_name", dimName),
 				chq.Gte("day", fromDay),
 				chq.Lte("day", toDay),
+				// Rank over the same population the query's metric counts.
+				chq.When(excludeCookielessForAgg(spec, aggregationType(req)), chq.Eq("cookieless", uint8(0))),
 				chq.Or(kindConds...),
 			).
 			GroupBy("dim_value").
@@ -256,6 +258,9 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 				chq.Eq("kind", ev.GetEvent().GetKind()),
 				chq.Gte("day", fromDay),
 				chq.Lte("day", toDay),
+				// Exclusion = cookieless-0 rows only; inclusion = no predicate
+				// (states merge across both key values). Both stay fast-path.
+				chq.When(excludeCookielessForAgg(spec, ev.GetAggregation()), chq.Eq("cookieless", uint8(0))),
 			)
 
 		groupBy := []string{"t", "event_kind"}
@@ -368,6 +373,7 @@ func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string)
 			chq.Eq("dim_name", totalDimName),
 			chq.Gte("day", fromDay),
 			chq.Lte("day", toDay),
+			chq.When(excludeCookielessForAgg(req.GetSpec(), aggregationType(req)), chq.Eq("cookieless", uint8(0))),
 			chq.Or(kindConds...),
 		).
 		WithQueryCache(analyticsCacheTTL).
@@ -493,13 +499,15 @@ func buildTopKFromRollup(req *insightsv1.QueryRequest, projectID string) (TopKQu
 	fromDay, toDay := rollupDayBounds(req)
 	scopeKind := tk.GetScope().GetKind()
 	// The top_vals CTE and the outer re-aggregation scan the same rollup slice,
-	// so they share one condition set.
+	// so they share one condition set. (No USER-dimension arm needed here:
+	// canUseTopKRollup rejects it, so the rollup never ranks people.)
 	conds := []chq.Condition{
 		chq.Eq("project_id", projectID),
 		chq.Eq("dim_name", dimName),
 		chq.Gte("day", fromDay),
 		chq.Lte("day", toDay),
 		chq.When(scopeKind != "", chq.Eq("kind", scopeKind)),
+		chq.When(excludeCookielessForAgg(req.GetSpec(), tk.GetMetric()), chq.Eq("cookieless", uint8(0))),
 	}
 
 	// Omit-$others fast path mirrors buildTopKEvents: a single aggregation with
