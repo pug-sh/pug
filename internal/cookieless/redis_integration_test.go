@@ -85,3 +85,68 @@ func TestSaltForDay_Integration(t *testing.T) {
 		}
 	})
 }
+
+func TestSessionID_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	ctx := context.Background()
+	base := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	r := New(rd.Client)
+	r.now = func() time.Time { return base }
+	const did = IDPrefix + "abc"
+
+	s1, degraded := r.SessionID(ctx, "p1", did, "20260720", base)
+	if degraded {
+		t.Fatal("healthy Redis must not degrade")
+	}
+	if s1 == "" {
+		t.Fatal("empty session id")
+	}
+
+	t.Run("reuse_within_inactivity", func(t *testing.T) {
+		s2, _ := r.SessionID(ctx, "p1", did, "20260720", base.Add(10*time.Minute))
+		if s2 != s1 {
+			t.Errorf("10min gap must reuse session: %q vs %q", s2, s1)
+		}
+	})
+
+	t.Run("slide_extends_window", func(t *testing.T) {
+		// 10min + 25min = 35min from start but only 25min from last activity.
+		s3, _ := r.SessionID(ctx, "p1", did, "20260720", base.Add(35*time.Minute))
+		if s3 != s1 {
+			t.Errorf("sliding window must extend: %q vs %q", s3, s1)
+		}
+	})
+
+	t.Run("gap_over_inactivity_mints_new", func(t *testing.T) {
+		s4, _ := r.SessionID(ctx, "p1", did, "20260720", base.Add(35*time.Minute).Add(sessionInactivity+time.Minute))
+		if s4 == s1 {
+			t.Error("gap past inactivity must mint a new session")
+		}
+	})
+
+	t.Run("distinct_visitors_do_not_share", func(t *testing.T) {
+		other, _ := r.SessionID(ctx, "p1", IDPrefix+"other", "20260720", base)
+		if other == s1 {
+			t.Error("different distinct_id must get its own session")
+		}
+	})
+
+	t.Run("degraded_fallback_is_deterministic", func(t *testing.T) {
+		cctx, cancel := context.WithCancel(ctx)
+		cancel()
+		f1, deg1 := r.SessionID(cctx, "p1", did, "20260720", base)
+		f2, deg2 := r.SessionID(cctx, "p1", did, "20260720", base.Add(2*time.Hour))
+		if !deg1 || !deg2 {
+			t.Fatal("unreachable Redis must report degraded")
+		}
+		if f1 != f2 {
+			t.Errorf("fallback must be one deterministic session per visitor-day: %q vs %q", f1, f2)
+		}
+		if f1 == s1 {
+			t.Error("fallback must not collide with a minted session")
+		}
+	})
+}
