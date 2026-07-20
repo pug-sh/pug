@@ -406,5 +406,7 @@ session rollup deleted row-level by `session_id`, new states ride along), protov
 
 The FE web-analytics page itself (`../app` — the BE contracts it needs are exactly this design);
 browser-SDK additions (confirm `@pug-sh/browser` sends `$referrer`/`$locale`/`$screenWidth`/
-`$screenHeight`/`$pageTitle`; UTM becomes server-derived either way); cookieless visitor identity
-(compliance 4.10); per-tile bot-exclusion toggles (works today as a filter → raw path).
+`$screenHeight`/`$pageTitle`; UTM becomes server-derived either way); per-tile bot-exclusion
+toggles (works today as a filter → raw path). Cookieless visitor identity — formerly deferred here
+as "compliance 4.10" — is now implemented (migration 011, `internal/cookieless`,
+`include_cookieless`; → [ingestion.md](ingestion.md), [insights.md](insights.md)).
