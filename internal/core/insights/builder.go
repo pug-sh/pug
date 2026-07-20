@@ -428,6 +428,7 @@ func buildTrendsBranchQuery(
 			chq.Gte("occur_time", req.GetTimeRange().GetFrom().AsTime()),
 			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
 			chq.When(ev.GetEvent().GetKind() != "", chq.Eq("kind", ev.GetEvent().GetKind())),
+			cookielessExclusionCond(excludeCookielessForAgg(req.GetSpec(), agg), ""),
 			topLevelFilterCond,
 		)
 
@@ -487,7 +488,11 @@ func buildTrendsMultiEvent(req *insightsv1.QueryRequest, projectID string, event
 		if agg == insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED {
 			agg = insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
 		}
-		valExpr, valArgs, err := aggregationExprIf(cond, agg, ev.GetAggregationProperty())
+		// The cookieless exclusion lives INSIDE this event's countIf/uniqIf
+		// condition, never the shared WHERE: sibling TOTAL branches in the same
+		// scan must keep counting all traffic.
+		aggCond := chq.And(cond, cookielessExclusionCond(excludeCookielessForAgg(req.GetSpec(), agg), ""))
+		valExpr, valArgs, err := aggregationExprIf(aggCond, agg, ev.GetAggregationProperty())
 		if err != nil {
 			return nil, fmt.Errorf("trends: events[%d]: %w", i, err)
 		}
@@ -575,6 +580,7 @@ func buildSegmentation(req *insightsv1.QueryRequest, projectID string) (*chq.Que
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", req.GetTimeRange().GetFrom().AsTime()),
 			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
+			cookielessExclusionCond(excludeCookielessForAgg(req.GetSpec(), aggregationType(req)), ""),
 			topLevelFilterCond,
 			eventCond,
 		), nil
@@ -818,6 +824,7 @@ func buildFunnelWindowFunnel(req *insightsv1.QueryRequest, projectID string) (*c
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", from),
 			chq.Lt("occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
 			stepFilter,
 			topLevelFilterCond,
 		).
@@ -960,6 +967,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 				chq.Eq("project_id", projectID),
 				chq.Gte("occur_time", from),
 				chq.Lt("occur_time", to),
+				cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
 				chq.Or(freshOrConds()...),
 				pfTopLevel,
 			).
@@ -989,6 +997,7 @@ func buildFunnelWithTiming(req *insightsv1.QueryRequest, projectID string) (*chq
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", from),
 			chq.Lt("occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
 			chq.Or(freshOrConds()...),
 			topLevelFilterCond,
 			preFilterCond,
@@ -1080,6 +1089,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", from),
 			chq.Lt("occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
 			startCond,
 			topLevelFilterCond,
 		).
@@ -1119,6 +1129,7 @@ func buildRetention(req *insightsv1.QueryRequest, projectID string) (*chq.Query,
 			chq.Gte("e.occur_time", from),
 			chq.Lt("e.occur_time", to),
 			chq.RawCond("e.occur_time >= c.first_event_time"),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), "e"),
 			returnCondAliased,
 			topLevelFilterCondAliased,
 		).

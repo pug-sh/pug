@@ -107,6 +107,12 @@ func topKBaseConditions(req *insightsv1.QueryRequest, projectID, alias string) (
 		chq.Lt(prefix+"occur_time", req.GetTimeRange().GetTo().AsTime()),
 	}
 
+	// User-counting metrics exclude cookieless ids unless opted in; a top-K of
+	// USERS ranks people themselves, so it is person-based regardless of metric.
+	excludeCookieless := excludeCookielessForAgg(spec, topKMetric(tk)) ||
+		(tk.GetDimension() == insightsv1.TopKQuery_DIMENSION_USER && !spec.GetIncludeCookieless())
+	conds = append(conds, cookielessExclusionCond(excludeCookieless, alias))
+
 	if tk.GetScope() != nil {
 		scopeCond, err := chq.EventConditionAliased([]*commonv1.EventFilter{tk.GetScope()}, projectID, alias)
 		if err != nil {

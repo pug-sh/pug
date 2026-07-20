@@ -86,6 +86,7 @@ func buildUserFlowQuery(req *insightsv1.QueryRequest, projectID string, resolved
 			chq.Eq("project_id", projectID),
 			chq.Gte("occur_time", from),
 			chq.Lt("occur_time", to),
+			cookielessExclusionCond(excludeCookielessForPersons(req.GetSpec()), ""),
 			scopeCond,
 			topLevelFilterCond,
 			userFlowNonEmptySessionKeyCond(),
