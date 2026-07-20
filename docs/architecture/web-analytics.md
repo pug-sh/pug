@@ -293,7 +293,15 @@ fix the rollup — an MV fires only on INSERT — so the blank rows are permanen
 
 **Repair (one procedure, covers every case).** Optional, and sized by the window's traffic rather
 than the table: run migration 008's derivation mutation, then migration 009's `DELETE` of the new
-`dim_name`s followed by its delta backfill INSERT. That rebuilds the new dims from `events`, the
+`dim_name`s followed by its delta backfill INSERT. **Post-011 addendum:** once migration 011 has
+run, the rollup carries a `cookieless` key column, so 009's positional INSERT no longer matches
+the table — a manual repair must name the columns AND compute the flag: use 009's backfill body
+with `INSERT INTO dashboard_event_rollup_daily (project_id, day, kind, dim_name, dim_value, cnt,
+uniq_state, cookieless) SELECT …, toUInt8(startsWith(distinct_id, 'cookieless-')) AS cookieless …
+GROUP BY project_id, day, kind, dim_name, dim_value, cookieless`. (Goose itself never hits this:
+a retried 009 always executes before 011 in migration order —
+`TestIntegrationWebAnalytics/event_rollup_backfill_009_rerunnable` pins the shipped statement's
+idempotency with the seven-column list.) That rebuilds the new dims from `events`, the
 source of truth, and is re-runnable by construction — the same property that makes 009 safe to
 retry. This is deliberately the *only* recovery path: it covers the rollout window above, and it
 covers a 009 retried after a long gap (old-binary rows landing between 008's mutation and the
