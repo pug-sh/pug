@@ -12,6 +12,21 @@ service EventsService {
 }
 
 message BatchCreateRequest {
+  // SDK-boundary rules only. The internal EventBatch envelope re-validates
+  // Event (see event.identity_required_unless_cookieless) but deliberately not
+  // these two: after ingest resolution the server has legitimately filled the
+  // identity fields of cookieless events with 'cookieless-'-prefixed ids.
+  option (buf.validate.message).cel = {
+    id: "batch.cookieless_identity_server_owned"
+    message: "cookieless events must not send distinct_id or session_id"
+    expression: "this.events.all(e, !e.cookieless || (e.distinct_id == '' && e.session_id == ''))"
+  };
+  option (buf.validate.message).cel = {
+    id: "batch.distinct_id_reserved_prefix"
+    message: "distinct_id must not start with the reserved 'cookieless-' prefix"
+    expression: "this.events.all(e, !e.distinct_id.startsWith('cookieless-'))"
+  };
+
   repeated Event events = 1 [(buf.validate.field).repeated.max_items = 1000];
 }
 
@@ -30,6 +45,15 @@ message Event {
     message: "custom_properties keys must not start with '$' (reserved for auto-properties)"
     expression: "this.custom_properties.all(key, !key.startsWith('$'))"
   };
+  // Holds at BOTH validation stages: at the SDK boundary a cookieless event
+  // arrives with empty identity, and in the worker's envelope re-validation it
+  // carries the server-derived identity — either way this rule passes, while a
+  // non-cookieless event without identity fails at both stages.
+  option (buf.validate.message).cel = {
+    id: "event.identity_required_unless_cookieless"
+    message: "distinct_id and session_id are required unless cookieless is true"
+    expression: "this.cookieless || (this.distinct_id != '' && this.session_id != '')"
+  };
 
   string event_id = 1 [
     (buf.validate.field).required = true,
@@ -37,17 +61,23 @@ message Event {
   ];
   map<string, common.v1.PropertyValue> auto_properties   = 2;
   map<string, common.v1.PropertyValue> custom_properties = 3;
-  string distinct_id = 4 [(buf.validate.field).required = true];
+  // Empty only when cookieless (event.identity_required_unless_cookieless);
+  // never client-settable to a 'cookieless-'-prefixed value
+  // (batch.distinct_id_reserved_prefix).
+  string distinct_id = 4;
   // Same character set as common.v1.EventFilter.kind (filters.proto); + requires non-empty at ingest.
   string kind = 5 [(buf.validate.field) = {
     required: true
     string: {pattern: "^[a-zA-Z0-9_.-]+$"}
   }];
   google.protobuf.Timestamp occur_time = 6 [(buf.validate.field).required = true];
-  string session_id = 7 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.uuid = true
-  ];
+  // A UUID whenever set; omit entirely in cookieless mode (an explicit "" is
+  // also rejected — set fields must satisfy the uuid rule).
+  string session_id = 7 [(buf.validate.field).string.uuid = true];
+  // Cookieless (no-consent) mode: the client stores nothing on the device and
+  // sends no identity; the ingest server derives an ephemeral daily-rotating
+  // distinct_id and a stitched session_id. See docs/architecture/ingestion.md.
+  bool cookieless = 8;
 }
 
 message EventBatch {
