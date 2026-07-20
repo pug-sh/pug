@@ -13,7 +13,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"sync"
 	"time"
 
@@ -83,15 +82,3 @@ func (r *Resolver) DistinctID(ctx context.Context, day, projectID, ip, ua string
 	return IDPrefix + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:16]), nil
 }
 
-var errSaltUnavailable = errors.New("cookieless: salt unavailable")
-
-// saltForDay is implemented in salt.go (Redis path); this map-only lookup
-// keeps unit tests salt-injectable until then.
-func (r *Resolver) saltForDay(_ context.Context, day string) ([]byte, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if s, ok := r.salts[day]; ok {
-		return s, nil
-	}
-	return nil, errSaltUnavailable
-}
