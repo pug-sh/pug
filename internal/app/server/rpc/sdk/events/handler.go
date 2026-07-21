@@ -42,6 +42,7 @@ var (
 	attributionDeriveDegradedCounter metric.Int64Counter
 	cookielessDroppedCounter         metric.Int64Counter
 	cookielessSessionDegradedCounter metric.Int64Counter
+	cookielessIdentitySourceCounter  metric.Int64Counter
 )
 
 func init() {
@@ -61,6 +62,10 @@ func init() {
 	cookielessDroppedCounter, _ = meter.Int64Counter(
 		"events.cookieless_dropped_total",
 		metric.WithDescription("A cookieless event was dropped at ingest: reason=day_out_of_range (occur_time outside the today/yesterday UTC salt window — often severe client clock skew), reason=salt_unavailable (Redis unreachable with a cold salt cache; identity cannot be derived and is never fabricated), reason=salt_corrupt (the stored salt could not be decoded — NOT self-healing, since nothing overwrites it; needs manual intervention), or reason=identity_headers_missing (no User-Agent or no resolvable client address, so the whole request was refused — usually a proxy stripping headers)."),
+	)
+	cookielessIdentitySourceCounter, _ = meter.Int64Counter(
+		"events.cookieless_identity_source_total",
+		metric.WithDescription("Which input keyed a cookieless batch's identity: source=cf_connecting_ip|true_client_ip|x_forwarded_for (a proxy header parsed), source=peer (no header parsed, so the CONNECTION address was used — behind a proxy that is one address shared by every visitor, collapsing them onto a single identity per UA per day), or source=rejected_no_peer. A sustained non-zero source=peer on a proxied deployment is a misconfiguration, not a quirk: sessions key on distinct_id and session metrics never exclude cookieless traffic, so it corrupts session counts with no toggle that could explain it."),
 	)
 	cookielessSessionDegradedCounter, _ = meter.Int64Counter(
 		"events.cookieless_session_degraded_total",
@@ -95,6 +100,24 @@ const (
 	// dropped_by_reason — the client learns it from the error instead.
 	dropReasonIdentityHeadersMissing = "identity_headers_missing"
 )
+
+// allDropReasons is the registry of every reason ingest resolution can emit. It
+// exists so the vocabulary can be checked against the source rather than against
+// a hand-maintained copy of it: TestDropReasons_RegistryMatchesDeclaredConstants
+// reads the dropReason* constants out of this file with go/ast and fails if one
+// is declared but never registered here. The predecessor test kept its own map
+// literal, which could only ever agree with itself — adding and emitting a fifth
+// reason left it green.
+//
+// Adding a reason means appending it here AND extending the
+// events.cookieless_dropped_total metric description; the reason is both a metric
+// label and a client-facing wire key, so the two must not drift.
+var allDropReasons = []string{
+	dropReasonDayOutOfRange,
+	dropReasonSaltUnavailable,
+	dropReasonSaltCorrupt,
+	dropReasonIdentityHeadersMissing,
+}
 
 // dropTally counts events refused during ingest resolution, keyed by reason.
 // A nil tally reads fine (total and len are nil-safe) and BatchCreate relies on
@@ -451,10 +474,26 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 	}
 
 	ua := h.Get("User-Agent")
-	ip := geo.ClientIP(h)
+	// Record WHICH input keyed identity, not just that one was found. A proxy
+	// header that is present but unparseable falls through to the connection peer,
+	// which behind a proxy is identical for every visitor — silently merging a
+	// tenant's whole cookieless population into one identity per UA per day, at a
+	// 200 response. Nothing else in the pipeline can see that happen: the ids stay
+	// well-formed, the events are accepted, and the damage lands in session metrics,
+	// which never exclude cookieless traffic and so have no toggle that could
+	// explain the collapse.
+	ip, ipSource := geo.ClientIPWithSource(h)
 	if ip == "" {
-		ip = peerIP(peerAddr)
+		if ip = peerIP(peerAddr); ip != "" {
+			ipSource = "peer"
+		} else {
+			ipSource = "rejected_no_peer"
+		}
 	}
+	cookielessIdentitySourceCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("project_id", projectID),
+		attribute.String("source", ipSource),
+	))
 	if ua == "" || ip == "" {
 		// The design deliberately fails the whole request here (see above), but
 		// "must be loud" was only true for the client: nothing server-side showed
@@ -538,16 +577,31 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 	return kept, drops, nil
 }
 
-// peerIP extracts the bare host from a host:port peer address; a value with no
-// port (or an unparseable one) is returned as-is.
+// peerIP extracts the bare host from a host:port peer address and validates it
+// through the same parser the header path uses, returning "" if it is not an IP.
+//
+// The validation is not decorative. This value keys the cookieless HMAC exactly
+// like a header-derived address, and DistinctID's injectivity argument requires
+// that no field before the last can contain the 0x00 separator. net.SplitHostPort
+// does not provide that: it returns "198.51.100.4\x00x" with a nil error, and the
+// no-port branch previously returned its input verbatim. That was safe only
+// because req.Peer().Addr comes from net/http's kernel-derived RemoteAddr — the
+// property rested on the transport rather than on this function, which is exactly
+// the reasoning the header path rejected when it gained parsing. A Unix socket, an
+// h2c or proxy-protocol shim, or any custom listener reintroduces the hazard.
+//
+// Returning "" routes a bad peer into resolveCookieless's existing ip == ""
+// refusal, which is loud, rather than into a silently mis-derived identity.
 func peerIP(addr string) string {
 	if addr == "" {
 		return ""
 	}
 	if host, _, err := net.SplitHostPort(addr); err == nil {
-		return host
+		ip, _ := geo.ParseClientIP(host)
+		return ip
 	}
-	return addr
+	ip, _ := geo.ParseClientIP(addr)
+	return ip
 }
 
 func (s *Server) enrichVerifiedBot(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {

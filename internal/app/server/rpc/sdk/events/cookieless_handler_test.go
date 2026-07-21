@@ -3,6 +3,12 @@ package events
 import (
 	"context"
 	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -253,12 +259,6 @@ func TestResolveCookieless_NoCookielessEvents_NoResolverNeeded(t *testing.T) {
 	}
 }
 
-// TestResolveCookieless_PassesDayAndProjectInOrder pins the argument order of
-// DistinctID(ctx, day, projectID, ip, ua). Four same-typed strings in a row make
-// any transposition invisible to the compiler, and `day` is the salt's rotation
-// key: swapping it with projectID mints one salt per project that never rotates,
-// which silently voids the "TTL deletion is the privacy guarantee" posture while
-// every other test still passes.
 // TestResolveCookieless_PassesArgumentsInOrder guards the call site's argument
 // order. Its day/projectID half is now enforced by the compiler — cookieless.Day
 // is a distinct type, so transposing those two no longer builds — but ip and ua
@@ -374,34 +374,126 @@ func TestResolveCookieless_DegradedSessionStillPublishes(t *testing.T) {
 	}
 }
 
-// TestDropReasons_AreTheCompleteEmittableSet pins the drop-reason vocabulary.
+// TestResolveCookieless_CorruptSaltReportsDistinctReason pins the CONSUMER half
+// of ErrCorruptSalt. The producer half — storeSalt rejecting an undecodable or
+// wrong-length value — was already pinned; this branch was not. Deleting the
+// errors.Is from resolveCookieless left the entire package green, so a corrupt
+// salt would have been reported to operators and clients as salt_unavailable.
 //
-// The reason strings are shipped to clients as keys of
+// That distinction is the whole reason the sentinel exists. salt_unavailable
+// means "retry may succeed"; retry is exactly wrong here, because SETNX only
+// mints when the key is absent, so nothing ever overwrites a corrupt value and it
+// is re-read and re-rejected until the key expires. One reason says wait, the
+// other says page a human.
+//
+// The stub returns a WRAPPED sentinel rather than the bare one, so this pins
+// errors.Is rather than ==: a future rewrap that breaks the chain fails here.
+func TestResolveCookieless_CorruptSaltReportsDistinctReason(t *testing.T) {
+	js := &stubJetStream{}
+	res := &stubResolver{
+		dayOK:  true,
+		didErr: fmt.Errorf("cookieless: fetch salt for 20260721: %w", cookieless.ErrCorruptSalt),
+	}
+	s := &Server{publisher: coreevents.NewPublisher(js), geoProvider: stubProvider{}, cookieless: res}
+
+	resp, err := s.BatchCreate(ctxWithProject(context.Background()),
+		cookielessReq(testCookielessEvent(), testConsentedEvent("anon-u1")))
+	if err != nil {
+		t.Fatalf("BatchCreate: %v", err)
+	}
+	if got := resp.Msg.GetDroppedByReason()[dropReasonSaltCorrupt]; got != 1 {
+		t.Errorf("dropped_by_reason[%s] = %d, want 1 — a corrupt salt must not be "+
+			"reported as the retryable reason", dropReasonSaltCorrupt, got)
+	}
+	if got := resp.Msg.GetDroppedByReason()[dropReasonSaltUnavailable]; got != 0 {
+		t.Errorf("dropped_by_reason[%s] = %d, want 0 — retrying never clears a corrupt salt",
+			dropReasonSaltUnavailable, got)
+	}
+	if got := resp.Msg.GetAccepted(); got != 1 {
+		t.Errorf("accepted = %d, want 1 — consented traffic is unaffected by a salt fault", got)
+	}
+}
+
+// TestDropReasons_RegistryMatchesDeclaredConstants pins the drop-reason
+// vocabulary against ADDITION — which is precisely what its predecessor could
+// not do.
+//
+// The reason strings ship to clients as keys of
 // BatchCreateResponse.dropped_by_reason, and the proto comment invites branching
-// on them (salt_unavailable is retryable, day_out_of_range is not). But the wire
-// type is map<string, uint32> — protobuf forbids enum map keys — so clients get
-// no generated symbol and the valid set exists only as these constants plus
-// prose. This test is the substitute contract: adding a reason without updating
-// it means the documented vocabulary and the emitted one have drifted.
-func TestDropReasons_AreTheCompleteEmittableSet(t *testing.T) {
-	want := map[string]string{
-		dropReasonDayOutOfRange:          "client clock skew; retrying the same payload drops it again",
-		dropReasonSaltUnavailable:        "Redis unreachable with a cold cache; retry may succeed",
-		dropReasonSaltCorrupt:            "stored salt undecodable; NOT self-healing, needs a human",
-		dropReasonIdentityHeadersMissing: "no UA or client address; whole request refused, metric-only",
+// on them (salt_unavailable is retryable, day_out_of_range is not). The wire type
+// is map<string, uint32> — protobuf forbids enum map keys — so clients get no
+// generated symbol and the valid set exists only as these constants plus prose.
+//
+// The previous version of this test asserted nothing. It built a 4-entry map
+// literal from the constants, then checked `len(want) != 4` — unreachable, since
+// duplicate constant keys in a Go map literal are a COMPILE error, so the literal
+// is always exactly 4 — and a duplicate check over map keys, also unreachable
+// since ranging a map yields unique keys. Only the empty-string check was live.
+// Adding and emitting a fifth reason left it green. Worse, because salt_corrupt
+// appeared in its table the reason READ as covered, while its consumer branch
+// (the errors.Is in resolveCookieless) was in fact unpinned — deleting that
+// branch kept the whole package green. See TestResolveCookieless_CorruptSaltReportsDistinctReason.
+//
+// This version reads the declarations out of the source with go/ast, so a new
+// dropReason* constant that is never registered in allDropReasons fails here.
+func TestDropReasons_RegistryMatchesDeclaredConstants(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "handler.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse handler.go: %v", err)
 	}
-	if len(want) != 4 {
-		t.Fatalf("table has %d reasons; update it deliberately when the set changes", len(want))
+
+	declared := map[string]string{}
+	for _, d := range f.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for i, name := range vs.Names {
+				if !strings.HasPrefix(name.Name, "dropReason") || i >= len(vs.Values) {
+					continue
+				}
+				lit, ok := vs.Values[i].(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					continue
+				}
+				v, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					t.Fatalf("unquote %s: %v", name.Name, err)
+				}
+				declared[name.Name] = v
+			}
+		}
 	}
-	seen := map[string]bool{}
-	for reason := range want {
-		if reason == "" {
+	if len(declared) == 0 {
+		t.Fatal("found no dropReason* constants in handler.go — the AST scan broke, not the code")
+	}
+
+	registered := map[string]bool{}
+	for _, r := range allDropReasons {
+		if r == "" {
 			t.Error("a drop reason must never be empty — it becomes a metric label and a wire key")
 		}
-		if seen[reason] {
-			t.Errorf("duplicate drop reason %q: the metric label and the wire key would collide", reason)
+		if registered[r] {
+			t.Errorf("duplicate drop reason %q: the metric label and the wire key would collide", r)
 		}
-		seen[reason] = true
+		registered[r] = true
+	}
+
+	for name, value := range declared {
+		if !registered[value] {
+			t.Errorf("const %s = %q is declared but missing from allDropReasons; "+
+				"register it and document its retry disposition", name, value)
+		}
+	}
+	if len(registered) != len(declared) {
+		t.Errorf("allDropReasons has %d entries but handler.go declares %d dropReason* constants",
+			len(registered), len(declared))
 	}
 }
 
@@ -415,6 +507,20 @@ func TestPeerIP(t *testing.T) {
 		{"empty", "", ""},
 		{"bare_ipv4_no_port", "198.51.100.4", "198.51.100.4"},
 		{"bare_ipv6_no_port", "2001:db8::1", "2001:db8::1"},
+		// The peer host keys an HMAC exactly like a header-derived IP, so it must
+		// clear the same bar. geo.ClientIP was given parsing precisely so the
+		// NUL-framing argument in DistinctID would hold by construction rather
+		// than by transport accident — but this path bypassed it:
+		// net.SplitHostPort("198.51.100.4\x00x:44321") returns that host with a
+		// nil error, and the no-port branch returns the string verbatim. Safe only
+		// while RemoteAddr is kernel-derived; a Unix socket, an h2c shim or a
+		// proxy-protocol listener reintroduces an unvalidated hash input.
+		// Rejecting here routes it into the existing loud ip == "" refusal.
+		{"nul_in_host_rejected", "198.51.100.4\x00x:44321", ""},
+		{"nul_bare_no_port_rejected", "198.51.100.4\x00x", ""},
+		{"garbage_rejected", "not-an-ip", ""},
+		{"canonicalised_ipv6", "[2001:0DB8::0001]:443", "2001:db8::1"},
+		{"zone_dropped", "[fe80::1%eth0]:443", "fe80::1"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if got := peerIP(c.addr); got != c.want {
