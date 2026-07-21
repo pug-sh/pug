@@ -563,21 +563,6 @@ func pgCount(t *testing.T, ctx context.Context, pg *testutil.TestPostgres, query
 	return n
 }
 
-// TestErasure_ByID_CookielessNotReachable pins a documented gap on a compliance
-// surface. RequestErasureByID gates on hasActivity, which probes
-// distinct_id_activity_states — the rollup migration 011 deliberately keeps
-// 'cookieless-'-prefixed ids out of. The bare-id route therefore reports
-// ErrProfileNotFound and writes NO ledger row while the events sit untouched;
-// only RequestErasureByExternalID / DeleteDataSubject, which carry no activity
-// probe, reach them.
-//
-// A consented anonymous id runs the IDENTICAL call as a control, so a failure
-// here means the activity-MV filter moved rather than that the test drifted.
-// This pins ACCEPTED behavior, not a bug — a cookieless id is unknowable to its
-// own visitor, so no data subject can present one, and re-admitting these ids to
-// the MV would recreate the ghost persons 011 exists to prevent. The point is
-// that the asymmetry must never change silently, in either direction. See
-// docs/architecture/profiles.md.
 // TestErasure_ByID_CookielessIsErasable pins that a controller CAN erase a
 // cookieless id it can see.
 //
