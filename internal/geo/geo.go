@@ -2,6 +2,7 @@ package geo
 
 import (
 	"net/http"
+	"net/netip"
 	"strings"
 )
 
@@ -49,21 +50,48 @@ const (
 // IP-lookup Provider (see Provider) would use — such a provider must hash/use
 // the IP transiently and keep it out of the returned Location, as the raw IP
 // must never be persisted (see PropIP).
+//
+// Every candidate is parsed and re-serialised, and anything unparseable is
+// skipped rather than returned verbatim. Two reasons, both from the HMAC caller:
+//
+//   - Framing. The hash is project ‖ 0x00 ‖ ip ‖ 0x00 ‖ ua, which is injective
+//     only while no field before the last can contain the separator. Parsing is
+//     what makes that true of ip by construction instead of by accident — Go's
+//     HTTP/1.1 and HTTP/2 header validation happen to reject NUL today, so the
+//     property rested on the transport rather than on this function.
+//   - Canonical form. "2001:0DB8::0001" and "2001:db8::1" are one address; left
+//     as written they hash to two different visitors.
+//
+// NOTE: these headers are still CLIENT-SUPPLIED and are not authenticated here.
+// Validation makes the value well-formed, not trustworthy — an origin reachable
+// outside the CDN can be fed any address. Restricting who may set them belongs
+// at the edge (a trusted-proxy allowlist), not in this function.
 func ClientIP(h http.Header) string {
-	if ip := h.Get(HeaderCFConnectingIP); ip != "" {
-		return ip
-	}
-	if ip := h.Get(HeaderTrueClientIP); ip != "" {
-		return ip
+	for _, header := range []string{HeaderCFConnectingIP, HeaderTrueClientIP} {
+		if ip, ok := parseClientIP(h.Get(header)); ok {
+			return ip
+		}
 	}
 	if xff := h.Get(HeaderXForwardedFor); xff != "" {
 		// X-Forwarded-For can be comma-separated; first entry is the client.
-		if first, _, ok := strings.Cut(xff, ","); ok {
-			return strings.TrimSpace(first)
+		first, _, _ := strings.Cut(xff, ",")
+		if ip, ok := parseClientIP(first); ok {
+			return ip
 		}
-		return strings.TrimSpace(xff)
 	}
 	return ""
+}
+
+// parseClientIP validates one header value and returns it in canonical form.
+// The zone on a link-local address ("fe80::1%eth0") is dropped: it names a local
+// interface, not the visitor, and would otherwise split one address into as many
+// identities as there are zone spellings.
+func parseClientIP(raw string) (string, bool) {
+	addr, err := netip.ParseAddr(strings.TrimSpace(raw))
+	if err != nil {
+		return "", false
+	}
+	return addr.WithZone("").String(), true
 }
 
 // Provider resolves geo data from HTTP request headers.
