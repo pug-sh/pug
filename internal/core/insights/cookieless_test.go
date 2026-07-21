@@ -55,3 +55,50 @@ func TestCookielessExclusionCond(t *testing.T) {
 		t.Errorf("aliased cond = %q", sql)
 	}
 }
+
+// TestExcludeCookielessForAgg_IsExhaustive is the enforcement behind
+// excludeCookielessForAgg's switch: it ranges over every AggregationType the
+// proto defines and requires an explicit decision for each.
+//
+// The helper previously used a two-member inclusion list, which failed open — a
+// new aggregation returned false and silently admitted cookieless ids into a
+// metric that might count people. No other layer catches that: protovalidate's
+// enum.defined_only accepts any defined member, and both rollupAggExpr and
+// aggregationExpr have silent defaults. This test is the only thing that turns
+// "someone added a metric and didn't think about cookieless" into a red build.
+func TestExcludeCookielessForAgg_IsExhaustive(t *testing.T) {
+	// Every member must appear here with the decision it was given. Adding a
+	// proto member without adding it below fails the completeness check.
+	decided := map[insightsv1.AggregationType]bool{
+		insightsv1.AggregationType_AGGREGATION_TYPE_UNSPECIFIED:  false,
+		insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL:        false,
+		insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS: true,
+		insightsv1.AggregationType_AGGREGATION_TYPE_PER_USER_AVG: true,
+		insightsv1.AggregationType_AGGREGATION_TYPE_SUM:          false,
+		insightsv1.AggregationType_AGGREGATION_TYPE_AVG:          false,
+		insightsv1.AggregationType_AGGREGATION_TYPE_MIN:          false,
+		insightsv1.AggregationType_AGGREGATION_TYPE_MAX:          false,
+	}
+
+	spec := &insightsv1.InsightQuerySpec{}
+	for num, name := range insightsv1.AggregationType_name {
+		agg := insightsv1.AggregationType(num)
+		want, ok := decided[agg]
+		if !ok {
+			t.Errorf("%s has no cookieless decision: add it to excludeCookielessForAgg's switch AND to this table — does it count people?", name)
+			continue
+		}
+		if got := excludeCookielessForAgg(spec, agg); got != want {
+			t.Errorf("excludeCookielessForAgg(%s) = %v, want %v", name, got, want)
+		}
+	}
+
+	// The toggle must re-admit cookieless ids for every aggregation, including
+	// the ones that exclude by default.
+	on := &insightsv1.InsightQuerySpec{IncludeCookieless: proto.Bool(true)}
+	for num, name := range insightsv1.AggregationType_name {
+		if excludeCookielessForAgg(on, insightsv1.AggregationType(num)) {
+			t.Errorf("include_cookieless=true must admit cookieless ids for %s", name)
+		}
+	}
+}

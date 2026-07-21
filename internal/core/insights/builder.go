@@ -1201,6 +1201,13 @@ func buildFunnelStepCondition(step *insightsv1.EventQuery, projectID string, idx
 
 // BuildSegmentUsersQuery builds a ClickHouse SQL query and args from a SegmentUsersRequest.
 // The generated query returns a paginated, cursor-keyed list of distinct user IDs.
+//
+// Cookieless ids are excluded unconditionally. This is the one builder that
+// enumerates people directly, and SegmentUsersRequest carries no
+// InsightQuerySpec — so there is no include_cookieless toggle to consult, and
+// admitting them would contradict every other read surface: migration 011 keeps
+// cookieless ids out of distinct_id_activity_states_mv, so a caller resolving one
+// of these ids through profiles.GetByID gets ErrProfileNotFound.
 func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID string) (string, []any, error) {
 	topLevelFilterCond, err := buildTopLevelFilterCondition(req.GetFilterGroups(), req.GetFilterGroupsOperator(), projectID, "")
 	if err != nil {
@@ -1226,6 +1233,7 @@ func BuildSegmentUsersQuery(req *insightsv1.SegmentUsersRequest, projectID strin
 			chq.Lt("occur_time", req.GetTimeRange().GetTo().AsTime()),
 			topLevelFilterCond,
 			eventCond,
+			cookielessExclusionCond(true, ""),
 			chq.When(req.GetPageToken() != "", chq.Gt("distinct_id", req.GetPageToken())),
 		).
 		OrderBy("distinct_id ASC").

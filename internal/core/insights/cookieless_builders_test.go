@@ -220,3 +220,29 @@ func TestCookielessExclusion_RawBuilders(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildSegmentUsersQuery_ExcludesCookieless closes the one person-resolving
+// builder that had no exclusion.
+//
+// SegmentUsers is "the who behind a number on a chart": it returns the raw
+// distinct_id list for a window. Without the predicate it returned
+// cookieless- ids that every other read surface says do not exist as people —
+// migration 011 keeps them out of distinct_id_activity_states_mv, so
+// profiles.GetByID on one returns ErrProfileNotFound. A UI listing segment users
+// and linking to profiles therefore rendered dead links.
+//
+// SegmentUsersRequest carries no InsightQuerySpec and so no include_cookieless
+// toggle, which is why the exclusion is unconditional rather than spec-driven.
+func TestBuildSegmentUsersQuery_ExcludesCookieless(t *testing.T) {
+	req := &insightsv1.SegmentUsersRequest{
+		Events:    []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}}},
+		TimeRange: timeRange("2026-07-13T00:00:00Z", "2026-07-20T00:00:00Z"),
+	}
+	sql, _, err := insights.BuildSegmentUsersQuery(req, "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, cookielessNeedle) {
+		t.Errorf("SegmentUsers enumerates people and must exclude cookieless ids:\n%s", sql)
+	}
+}
