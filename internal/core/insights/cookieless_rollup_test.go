@@ -75,14 +75,17 @@ func TestCookielessExclusion_RollupBuilders(t *testing.T) {
 		// The predicate must follow the AGGREGATION, never the position: the
 		// UNIQUE_USERS event's ranking CTE restricts, the TOTAL event's does not,
 		// in both orderings. Counting occurrences alone cannot catch this.
+		//
+		// Asserted on top_grain_<i>, which is where the scan (and therefore the
+		// population predicate) lives; top_vals_<i> only sums that CTE's output.
 		for _, c := range []struct {
 			order      string
 			sql        string
-			restricted string // CTE of the UNIQUE_USERS event
-			open       string // CTE of the TOTAL event
+			restricted string // grain CTE of the UNIQUE_USERS event
+			open       string // grain CTE of the TOTAL event
 		}{
-			{"forward", forward.SQL(), "top_vals_1", "top_vals_0"},
-			{"reversed", reversed.SQL(), "top_vals_0", "top_vals_1"},
+			{"forward", forward.SQL(), "top_grain_1", "top_grain_0"},
+			{"reversed", reversed.SQL(), "top_grain_0", "top_grain_1"},
 		} {
 			if !strings.Contains(cteBody(t, c.sql, c.restricted), rollupCookielessPred) {
 				t.Errorf("%s: UNIQUE_USERS event's ranking CTE (%s) must exclude cookieless:\n%s", c.order, c.restricted, c.sql)

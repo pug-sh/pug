@@ -109,11 +109,20 @@ func TestBuildTrendsFromRollup_TopValsMirrorsApplyTrendsTopN(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// applyTrendsTopN ranks by the series' own running total (executor.go).
-		// Ranking a UNIQUE_USERS breakdown by sum(cnt) would order countries by
-		// page views — a plain "unique users by country" tile naming wrong values.
-		if !strings.Contains(q.SQL(), "ORDER BY toFloat64(uniqMerge(uniq_state)) DESC, dim_value ASC") {
-			t.Errorf("UNIQUE_USERS top-N must rank by uniqMerge, not raw event volume:\n%s", q.SQL())
+		// applyTrendsTopN accumulates `entry.total += r.Value` bucket by bucket, so
+		// the rollup must (a) evaluate this event's metric at the query's own bucket
+		// grain and (b) rank by the SUM of those values.
+		//
+		// Ranking by sum(cnt) would order countries by page views — a plain "unique
+		// users by country" tile naming wrong values. Ranking by a WINDOW-WIDE
+		// uniqMerge is subtler and was the last axis to be fixed: it equals the
+		// per-bucket sum for TOTAL, so only a multi-day non-additive-metric corpus
+		// exposes it (rollup_parity_trends_multiday_unique_users_top_n).
+		if !strings.Contains(cteBody(t, q.SQL(), "top_grain_0"), "toFloat64(uniqMerge(uniq_state)) AS v") {
+			t.Errorf("UNIQUE_USERS grain CTE must evaluate uniqMerge per bucket, not raw event volume:\n%s", q.SQL())
+		}
+		if !strings.Contains(cteBody(t, q.SQL(), "top_vals_0"), "ORDER BY sum(v) DESC, dim_value ASC") {
+			t.Errorf("top-N must rank by the SUM of per-bucket values, matching applyTrendsTopN:\n%s", q.SQL())
 		}
 	})
 
