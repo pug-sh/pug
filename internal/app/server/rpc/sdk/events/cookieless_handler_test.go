@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/pug-sh/pug/internal/apperr"
+	"github.com/pug-sh/pug/internal/cookieless"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
 )
@@ -21,13 +22,23 @@ type stubResolver struct {
 	did      string
 	didErr   error
 	sid      string
-	degraded bool
+	degraded cookieless.DegradeReason
 
-	gotIP, gotUA         string
-	gotDay, gotProjectID string
+	gotIP, gotUA  string
+	gotProjectID  string
+	gotDay        cookieless.Day
+	gotDays       []cookieless.Day
+	distinctCalls int
 }
 
-func (s *stubResolver) DayOf(occur time.Time) (string, bool) { return "20260720", s.dayOK }
+// DayOf derives the day from occur rather than returning a constant. A fixed day
+// made a two-day batch unrepresentable in tests, so the per-day memoisation in
+// resolveCookieless — whose comment promises "a batch can legitimately straddle
+// UTC midnight (two days, two salts, two ids)" — could not be exercised, and
+// collapsing it to a single batch-wide key passed.
+func (s *stubResolver) DayOf(occur time.Time) (cookieless.Day, bool) {
+	return cookieless.Day(occur.UTC().Format("20060102")), s.dayOK
+}
 
 // DistinctID records EVERY argument, not just ip/ua. Discarding day and
 // projectID left the four same-typed string parameters mutually
@@ -35,13 +46,15 @@ func (s *stubResolver) DayOf(occur time.Time) (string, bool) { return "20260720"
 // site kept the whole suite green while keying the salt by project — one salt per
 // project, minted once, never rotating, silently destroying the daily-rotation
 // privacy guarantee this package exists to provide.
-func (s *stubResolver) DistinctID(_ context.Context, day, projectID, ip, ua string) (string, error) {
+func (s *stubResolver) DistinctID(_ context.Context, day cookieless.Day, projectID, ip, ua string) (string, error) {
 	s.gotDay, s.gotProjectID = day, projectID
 	s.gotIP, s.gotUA = ip, ua
+	s.gotDays = append(s.gotDays, day)
+	s.distinctCalls++
 	return s.did, s.didErr
 }
 
-func (s *stubResolver) SessionID(_ context.Context, _, _, _ string, _ time.Time) (string, bool) {
+func (s *stubResolver) SessionID(_ context.Context, _, _ string, _ cookieless.Day, _ time.Time) (string, cookieless.DegradeReason) {
 	return s.sid, s.degraded
 }
 
@@ -246,7 +259,12 @@ func TestResolveCookieless_NoCookielessEvents_NoResolverNeeded(t *testing.T) {
 // key: swapping it with projectID mints one salt per project that never rotates,
 // which silently voids the "TTL deletion is the privacy guarantee" posture while
 // every other test still passes.
-func TestResolveCookieless_PassesDayAndProjectInOrder(t *testing.T) {
+// TestResolveCookieless_PassesArgumentsInOrder guards the call site's argument
+// order. Its day/projectID half is now enforced by the compiler — cookieless.Day
+// is a distinct type, so transposing those two no longer builds — but ip and ua
+// are both plain strings and remain transposable in silence, producing a real id
+// derived from the wrong inputs.
+func TestResolveCookieless_PassesArgumentsInOrder(t *testing.T) {
 	js := &stubJetStream{}
 	res := &stubResolver{dayOK: true, did: "cookieless-x", sid: "f47ac10b-58cc-4372-a567-0e02b2c3d997"}
 	s := &Server{publisher: coreevents.NewPublisher(js), geoProvider: stubProvider{}, cookieless: res}
@@ -257,8 +275,11 @@ func TestResolveCookieless_PassesDayAndProjectInOrder(t *testing.T) {
 		t.Fatalf("resolveCookieless: %v", err)
 	}
 
+	// testCookielessEvent occurs at unix 1700000000 = 2023-11-14T22:13:20Z.
+	if res.gotDay != cookieless.Day("20231114") {
+		t.Errorf("DistinctID day = %q, want %q", res.gotDay, "20231114")
+	}
 	for _, c := range []struct{ name, got, want string }{
-		{"day", res.gotDay, "20260720"},
 		{"projectID", res.gotProjectID, "proj_abc"},
 		{"ip", res.gotIP, "203.0.113.7"},
 		{"ua", res.gotUA, "Mozilla/5.0 TestUA"},
@@ -266,5 +287,139 @@ func TestResolveCookieless_PassesDayAndProjectInOrder(t *testing.T) {
 		if c.got != c.want {
 			t.Errorf("DistinctID %s = %q, want %q (arguments transposed?)", c.name, c.got, c.want)
 		}
+	}
+}
+
+// TestResolveCookieless_BatchStraddlingMidnightGetsTwoIDs exercises the per-day
+// memoisation. resolveCookieless caches the derived id per day precisely because
+// "a batch can legitimately straddle UTC midnight (two days, two salts, two
+// ids)" — and collapsing that cache to one batch-wide key used to pass, because
+// the stub returned a constant day and no test could express a two-day batch.
+//
+// Merging the two days would hand both events one id across the rotation
+// boundary, which is exactly the linkage the daily rotation exists to prevent.
+func TestResolveCookieless_BatchStraddlingMidnightGetsTwoIDs(t *testing.T) {
+	js := &stubJetStream{}
+	res := &stubResolver{dayOK: true, did: "cookieless-x", sid: "f47ac10b-58cc-4372-a567-0e02b2c3d997"}
+	s := &Server{publisher: coreevents.NewPublisher(js), geoProvider: stubProvider{}, cookieless: res}
+
+	before := testCookielessEvent()
+	before.OccurTime = timestamppb.New(time.Date(2026, 7, 20, 23, 59, 0, 0, time.UTC))
+	after := testCookielessEvent()
+	after.OccurTime = timestamppb.New(time.Date(2026, 7, 21, 0, 1, 0, 0, time.UTC))
+
+	req := cookielessReq(before, after)
+	kept, _, err := s.resolveCookieless(ctxWithProject(context.Background()), "proj_abc",
+		req.Header(), "198.51.100.4:44321", req.Msg.GetEvents())
+	if err != nil {
+		t.Fatalf("resolveCookieless: %v", err)
+	}
+	if len(kept) != 2 {
+		t.Fatalf("kept %d events, want 2", len(kept))
+	}
+	if res.distinctCalls != 2 {
+		t.Errorf("DistinctID called %d times, want 2 — a batch spanning midnight needs one id per day", res.distinctCalls)
+	}
+	if len(res.gotDays) == 2 && res.gotDays[0] == res.gotDays[1] {
+		t.Errorf("both events resolved under day %q — the two sides of midnight were merged", res.gotDays[0])
+	}
+}
+
+// TestResolveCookieless_SameDayBatchReusesOneID is the memo's other half: within
+// one day the batch must derive the id once, not once per event.
+func TestResolveCookieless_SameDayBatchReusesOneID(t *testing.T) {
+	js := &stubJetStream{}
+	res := &stubResolver{dayOK: true, did: "cookieless-x", sid: "f47ac10b-58cc-4372-a567-0e02b2c3d997"}
+	s := &Server{publisher: coreevents.NewPublisher(js), geoProvider: stubProvider{}, cookieless: res}
+
+	a, b := testCookielessEvent(), testCookielessEvent()
+	req := cookielessReq(a, b)
+	if _, _, err := s.resolveCookieless(ctxWithProject(context.Background()), "proj_abc",
+		req.Header(), "198.51.100.4:44321", req.Msg.GetEvents()); err != nil {
+		t.Fatalf("resolveCookieless: %v", err)
+	}
+	if res.distinctCalls != 1 {
+		t.Errorf("DistinctID called %d times for a single-day batch, want 1 (memo not reused)", res.distinctCalls)
+	}
+}
+
+// TestResolveCookieless_DegradedSessionStillPublishes pins the degraded contract:
+// a Redis session outage coarsens sessionization but must never drop the event.
+// The stub carried a degraded field that no test ever set, so the handler's
+// degraded branch was never executed.
+func TestResolveCookieless_DegradedSessionStillPublishes(t *testing.T) {
+	js := &stubJetStream{}
+	res := &stubResolver{
+		dayOK:    true,
+		did:      "cookieless-x",
+		sid:      "f47ac10b-58cc-4372-a567-0e02b2c3d997",
+		degraded: cookieless.DegradeGetFailed,
+	}
+	s := &Server{publisher: coreevents.NewPublisher(js), geoProvider: stubProvider{}, cookieless: res}
+
+	req := cookielessReq(testCookielessEvent())
+	kept, drops, err := s.resolveCookieless(ctxWithProject(context.Background()), "proj_abc",
+		req.Header(), "198.51.100.4:44321", req.Msg.GetEvents())
+	if err != nil {
+		t.Fatalf("a degraded session must not fail the request: %v", err)
+	}
+	if len(kept) != 1 {
+		t.Fatalf("kept %d events, want 1 — degraded means coarser sessions, never lost data", len(kept))
+	}
+	if drops.total() != 0 {
+		t.Errorf("dropped %d events on a degraded session, want 0", drops.total())
+	}
+	if kept[0].GetSessionId() != res.sid {
+		t.Errorf("session id = %q, want the fallback %q", kept[0].GetSessionId(), res.sid)
+	}
+}
+
+// TestDropReasons_AreTheCompleteEmittableSet pins the drop-reason vocabulary.
+//
+// The reason strings are shipped to clients as keys of
+// BatchCreateResponse.dropped_by_reason, and the proto comment invites branching
+// on them (salt_unavailable is retryable, day_out_of_range is not). But the wire
+// type is map<string, uint32> — protobuf forbids enum map keys — so clients get
+// no generated symbol and the valid set exists only as these constants plus
+// prose. This test is the substitute contract: adding a reason without updating
+// it means the documented vocabulary and the emitted one have drifted.
+func TestDropReasons_AreTheCompleteEmittableSet(t *testing.T) {
+	want := map[string]string{
+		dropReasonDayOutOfRange:          "client clock skew; retrying the same payload drops it again",
+		dropReasonSaltUnavailable:        "Redis unreachable with a cold cache; retry may succeed",
+		dropReasonSaltCorrupt:            "stored salt undecodable; NOT self-healing, needs a human",
+		dropReasonIdentityHeadersMissing: "no UA or client address; whole request refused, metric-only",
+	}
+	if len(want) != 4 {
+		t.Fatalf("table has %d reasons; update it deliberately when the set changes", len(want))
+	}
+	seen := map[string]bool{}
+	for reason := range want {
+		if reason == "" {
+			t.Error("a drop reason must never be empty — it becomes a metric label and a wire key")
+		}
+		if seen[reason] {
+			t.Errorf("duplicate drop reason %q: the metric label and the wire key would collide", reason)
+		}
+		seen[reason] = true
+	}
+}
+
+// TestPeerIP covers the two fallbacks that only fire without a proxy header.
+// peerIP is the last resort for the cookieless HMAC's ip input, so returning the
+// wrong string here does not fail — it silently derives a different visitor.
+func TestPeerIP(t *testing.T) {
+	for _, c := range []struct{ name, addr, want string }{
+		{"host_port", "198.51.100.4:44321", "198.51.100.4"},
+		{"ipv6_host_port", "[2001:db8::1]:44321", "2001:db8::1"},
+		{"empty", "", ""},
+		{"bare_ipv4_no_port", "198.51.100.4", "198.51.100.4"},
+		{"bare_ipv6_no_port", "2001:db8::1", "2001:db8::1"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := peerIP(c.addr); got != c.want {
+				t.Errorf("peerIP(%q) = %q, want %q", c.addr, got, c.want)
+			}
+		})
 	}
 }

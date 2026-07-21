@@ -60,11 +60,11 @@ func init() {
 	)
 	cookielessDroppedCounter, _ = meter.Int64Counter(
 		"events.cookieless_dropped_total",
-		metric.WithDescription("A cookieless event was dropped at ingest: reason=day_out_of_range (occur_time outside the today/yesterday UTC salt window — often severe client clock skew) or reason=salt_unavailable (Redis unreachable with a cold salt cache; identity cannot be derived and is never fabricated)."),
+		metric.WithDescription("A cookieless event was dropped at ingest: reason=day_out_of_range (occur_time outside the today/yesterday UTC salt window — often severe client clock skew), reason=salt_unavailable (Redis unreachable with a cold salt cache; identity cannot be derived and is never fabricated), reason=salt_corrupt (the stored salt could not be decoded — NOT self-healing, since nothing overwrites it; needs manual intervention), or reason=identity_headers_missing (no User-Agent or no resolvable client address, so the whole request was refused — usually a proxy stripping headers)."),
 	)
 	cookielessSessionDegradedCounter, _ = meter.Int64Counter(
 		"events.cookieless_session_degraded_total",
-		metric.WithDescription("A cookieless event fell back to the deterministic one-session-per-visitor-day id because Redis session state was unreachable. Data is intact; session metrics coarsen for the outage window."),
+		metric.WithDescription("A cookieless event could not be stitched from Redis session state. reason=get_failed/mint_failed/write_failed fell back to the deterministic one-session-per-visitor-day id; reason=slide_failed kept the correct id but could not advance its last-activity watermark (reads working while writes fail — OOM or a read-only replica — which re-splits the session on later events). Data is intact either way; session metrics coarsen. A sustained mint_failed means Redis < 7.0, which rejects SET NX GET outright."),
 	)
 }
 
@@ -82,10 +82,23 @@ const (
 	// identity cannot be derived and is never fabricated. Server-side — the same
 	// payload may succeed on retry.
 	dropReasonSaltUnavailable = "salt_unavailable"
+	// dropReasonSaltCorrupt: the day's stored salt could not be decoded. Shares
+	// the salt path with dropReasonSaltUnavailable but NOT its disposition —
+	// nothing overwrites a corrupt value (SETNX only mints when the key is
+	// absent), so it is re-read and re-rejected until the key expires. Retrying
+	// the same payload drops it again; this one needs a human.
+	dropReasonSaltCorrupt = "salt_corrupt"
+	// dropReasonIdentityHeadersMissing: the request carried no User-Agent or no
+	// resolvable client address, so no cookieless identity can be derived for any
+	// event in it. Unlike its siblings this one rejects the whole request rather
+	// than tallying per event, so it appears on the metric but never in
+	// dropped_by_reason — the client learns it from the error instead.
+	dropReasonIdentityHeadersMissing = "identity_headers_missing"
 )
 
 // dropTally counts events refused during ingest resolution, keyed by reason.
-// The zero value is unusable; construct with make.
+// A nil tally reads fine (total and len are nil-safe) and BatchCreate relies on
+// that for its empty-batch path; only add requires a constructed map.
 type dropTally map[string]uint32
 
 func (d dropTally) add(reason string) { d[reason]++ }
@@ -116,9 +129,9 @@ func batchResponse(accepted int, drops dropTally) *connect.Response[eventsv1.Bat
 // identityResolver is the cookieless identity dependency, satisfied by
 // *cookieless.Resolver; an interface so handler tests stub it without Redis.
 type identityResolver interface {
-	DayOf(occur time.Time) (day string, ok bool)
-	DistinctID(ctx context.Context, day, projectID, ip, ua string) (string, error)
-	SessionID(ctx context.Context, projectID, distinctID, day string, occur time.Time) (id string, degraded bool)
+	DayOf(occur time.Time) (day cookieless.Day, ok bool)
+	DistinctID(ctx context.Context, day cookieless.Day, projectID, ip, ua string) (string, error)
+	SessionID(ctx context.Context, projectID, distinctID string, day cookieless.Day, occur time.Time) (id string, degraded cookieless.DegradeReason)
 }
 
 type Server struct {
@@ -129,7 +142,11 @@ type Server struct {
 	cookieless  identityResolver
 }
 
-func NewServer(producer jetstream.JetStream, geoProvider geo.Provider, uaParser *useragent.Parser, resolver *cookieless.Resolver) *Server {
+// NewServer takes identityResolver rather than *cookieless.Resolver so the nil
+// guard in resolveCookieless can fire: assigning a nil *Resolver to an interface
+// field yields a NON-nil interface, which skips the guard and nil-derefs on the
+// first cookieless event instead of returning the intended error.
+func NewServer(producer jetstream.JetStream, geoProvider geo.Provider, uaParser *useragent.Parser, resolver identityResolver) *Server {
 	return &Server{
 		publisher:   coreevents.NewPublisher(producer),
 		geoProvider: geoProvider,
@@ -426,8 +443,10 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 		return events, drops, nil
 	}
 	if s.cookieless == nil {
+		err := errors.New("cookieless resolver not wired")
 		slog.ErrorContext(ctx, "cookieless events received but no resolver is wired",
-			slog.String("project_id", projectID))
+			slogx.Error(err), slog.String("project_id", projectID))
+		telemetry.RecordError(ctx, err)
 		return nil, drops, connect.NewError(connect.CodeInternal, errors.New("cookieless ingestion unavailable"))
 	}
 
@@ -437,6 +456,20 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 		ip = peerIP(peerAddr)
 	}
 	if ua == "" || ip == "" {
+		// The design deliberately fails the whole request here (see above), but
+		// "must be loud" was only true for the client: nothing server-side showed
+		// that a tenant's proxy had started stripping User-Agent and that every
+		// one of their batches was now being refused. Client input, so it is
+		// counted and logged at warn — not RecordError'd.
+		cookielessDroppedCounter.Add(ctx, int64(len(events)), metric.WithAttributes(
+			attribute.String("project_id", projectID),
+			attribute.String("reason", dropReasonIdentityHeadersMissing),
+		))
+		slog.WarnContext(ctx, "cookieless batch refused: missing User-Agent or client address",
+			slog.String("project_id", projectID),
+			slog.Bool("ua_present", ua != ""),
+			slog.Bool("ip_present", ip != ""),
+			slog.Int("batch_size", len(events)))
 		return nil, drops, apperr.Invalid(apperr.ReasonCookielessIdentityUnavailable,
 			"cookieless events require a User-Agent header and a resolvable client address")
 	}
@@ -447,7 +480,7 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 		distinctID string
 		err        error
 	}
-	byDay := make(map[string]dayIdentity, 2)
+	byDay := make(map[cookieless.Day]dayIdentity, 2)
 	saltFailureLogged := false
 
 	kept := make([]*eventsv1.Event, 0, len(events))
@@ -472,24 +505,30 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 			byDay[day] = id
 		}
 		if id.err != nil {
+			reason := dropReasonSaltUnavailable
+			if errors.Is(id.err, cookieless.ErrCorruptSalt) {
+				reason = dropReasonSaltCorrupt
+			}
 			// Infra failure, not client input: log + record once per request.
 			if !saltFailureLogged {
 				saltFailureLogged = true
 				slog.ErrorContext(ctx, "cookieless identity unavailable, dropping cookieless events",
-					slogx.Error(id.err), slog.String("project_id", projectID))
+					slogx.Error(id.err), slog.String("project_id", projectID),
+					slog.String("reason", reason))
 				telemetry.RecordError(ctx, id.err)
 			}
-			drops.add(dropReasonSaltUnavailable)
+			drops.add(reason)
 			cookielessDroppedCounter.Add(ctx, 1, metric.WithAttributes(
 				attribute.String("project_id", projectID),
-				attribute.String("reason", dropReasonSaltUnavailable),
+				attribute.String("reason", reason),
 			))
 			continue
 		}
 		sid, degraded := s.cookieless.SessionID(ctx, projectID, id.distinctID, day, occur)
-		if degraded {
+		if degraded != cookieless.DegradeNone {
 			cookielessSessionDegradedCounter.Add(ctx, 1, metric.WithAttributes(
 				attribute.String("project_id", projectID),
+				attribute.String("reason", string(degraded)),
 			))
 		}
 		e.DistinctId = proto.String(id.distinctID)
