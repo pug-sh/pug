@@ -338,7 +338,8 @@ scope. → [`insights.md`](insights.md) (Property discovery).
 ## Testing strategy (as implemented)
 
 - **Contract pins, repointed at the latest MV definition:** `TestMaterializedDimsMatchMigration`
-  and `TestMigration009PromotedDimExprsMatch` parse 009's Up section (MODIFY QUERY block = full
+  and `TestMigration011PromotedDimExprsMatch` parse **011's** Up section — the migration that
+  currently defines the MV (MODIFY QUERY block = full
   21-tuple ↔ `materializedDims`+`$__total__`; backfill block = `eventRollupDims009` exactly);
   `TestMigration006Frozen` / `TestMigration007Frozen` pin the shipped migrations to their
   historical content (guards against editing them). `TestMigration010SessionRollup

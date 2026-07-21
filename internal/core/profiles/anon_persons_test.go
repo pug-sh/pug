@@ -795,9 +795,13 @@ func TestProfilesList_PaginationTieBreakAtEqualCreateTime(t *testing.T) {
 	}
 }
 
-// TestProfilesList_ExcludesEmptyDistinctID pins the anonPersonsCTE
-// `distinct_id != ”` guard: an event stream carrying a blank distinct_id must
-// not materialize a single id=” anonymous person.
+// TestProfilesList_ExcludesEmptyDistinctID pins anonPersonsCTE's non-empty
+// distinct_id guard: an event stream carrying a blank distinct_id must not
+// materialize a single anonymous person keyed by the empty string.
+//
+// (Phrased without a doubled single-quote on purpose — gofmt rewrites that pair
+// into a Unicode right-quote in doc comments, which silently turned this very
+// sentence into a citation of a predicate that does not exist.)
 func TestProfilesList_ExcludesEmptyDistinctID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

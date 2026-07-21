@@ -36,7 +36,8 @@
 --           AND occur_time < [011 deploy time]
 --
 -- The session rollup is deliberately untouched: session metrics always count
--- all traffic (spec Decision 1), and session builders never read distinct_id.
+-- all traffic, and session builders never read distinct_id (buildSessionRowsCTE
+-- groups by session_id and never references it).
 
 ALTER TABLE distinct_id_activity_states_mv MODIFY QUERY
 SELECT

@@ -89,7 +89,7 @@ func TestPromotedStringColumnsHaveAccessors(t *testing.T) {
 
 // TestPromotedNonRollupKeysMapToTheirColumns pins the three promoted string
 // keys that have NO rollup dimension. The rollup-backed ten are pinned to their
-// columns by TestMigration009PromotedDimExprsMatch via the MV text; these three
+// columns by TestMigration011PromotedDimExprsMatch via the MV text; these three
 // are not, yet mergePromotedAutoDimensions injects them into the filter picker —
 // so a wrong Property→Column mapping would make every filter and breakdown on
 // them read another column's data with nothing objecting.
