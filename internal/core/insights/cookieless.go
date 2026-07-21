@@ -21,16 +21,19 @@ func excludeCookielessForAgg(spec *insightsv1.InsightQuerySpec, agg insightsv1.A
 }
 
 // excludeCookielessForPersons is the person-based-insight variant: funnel,
-// retention and user flow sequence events per person, which a daily-rotating
-// id structurally breaks across days (retention would be identically zero),
-// so they exclude cookieless unless the spec opts in.
+// retention, user flow and USER-dimension top K resolve events per person,
+// which a daily-rotating id structurally breaks across days (retention would be
+// identically zero), so they exclude cookieless unless the spec opts in.
 func excludeCookielessForPersons(spec *insightsv1.InsightQuerySpec) bool {
 	return !spec.GetIncludeCookieless()
 }
 
 // cookielessExclusionCond is the raw-path predicate. alias "" targets an
-// unaliased events scan; a non-empty alias targets a joined CTE (retention's
-// `e`). Returns the zero Condition when exclude is false, which Where skips.
+// unaliased events scan; a non-empty alias qualifies the column where `events`
+// is joined under a name — retention and top K both join it as `e`. Note `e` is
+// the raw events table, NOT a CTE: in those queries the CTE is `c` (the cohort
+// side of `cohorts c INNER JOIN events e`), and the predicate must land on the
+// event rows. Returns the zero Condition when exclude is false, which Where skips.
 func cookielessExclusionCond(exclude bool, alias string) chq.Condition {
 	col := "distinct_id"
 	if alias != "" {

@@ -298,9 +298,19 @@ func (s *Service) requestErasureByUnresolvedID(ctx context.Context, projectID, i
 // hasActivity reports whether any activity rollup rows exist for the
 // distinct_id — the same source that surfaces it as a derived anonymous person
 // on the read path, so erasure-by-id accepts every id Profiles surfaces from
-// that rollup. It is a superset, not an exact match: it does not re-apply the
-// read path's claim exclusion, so (e.g.) a distinct_id reached via the
-// degraded-alias fall-through is erasable without being separately listed.
+// that rollup.
+//
+// It is neither a superset nor an exact match of "has events", and it errs in
+// BOTH directions. Wider: it does not re-apply the read path's claim exclusion,
+// so (e.g.) a distinct_id reached via the degraded-alias fall-through is
+// erasable without being separately listed. NARROWER, and the one that matters
+// for compliance: migration 011 keeps 'cookieless-'-prefixed ids out of the
+// activity MV entirely, so such an id has real events yet no rollup rows here —
+// this returns false and RequestErasureByID reports ErrProfileNotFound while the
+// events survive. RequestErasureByExternalID / DeleteDataSubject have no
+// activity probe and are the routes that actually reach them. Accepted: a
+// cookieless id is unknowable to its own visitor, so no data subject can present
+// one. See docs/architecture/profiles.md.
 func (s *Service) hasActivity(ctx context.Context, projectID, distinctID string) (bool, error) {
 	var n uint64
 	if err := s.ch.QueryRow(ctx,

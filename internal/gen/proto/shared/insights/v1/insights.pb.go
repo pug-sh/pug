@@ -482,9 +482,10 @@ type InsightQuerySpec struct {
 	// they are EXCLUDED from user-counting metrics (UNIQUE_USERS and
 	// PER_USER_AVG, numerator and denominator alike, wherever those metrics
 	// appear — trends, segmentation, top K) and from person-based insights
-	// (funnel, retention, user flow). Set true to include them. Event totals,
-	// numeric aggregations, and all session metrics always count all traffic
-	// regardless of this flag.
+	// (funnel, retention, user flow, and USER-dimension top K — these resolve
+	// people rather than events, so they exclude regardless of which metric is
+	// selected). Set true to include them. Event totals, numeric aggregations,
+	// and all session metrics always count all traffic regardless of this flag.
 	IncludeCookieless *bool `protobuf:"varint,12,opt,name=include_cookieless,json=includeCookieless" json:"include_cookieless,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache

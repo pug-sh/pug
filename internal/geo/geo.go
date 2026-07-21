@@ -42,11 +42,13 @@ const (
 // Tries CF-Connecting-IP (Cloudflare), then True-Client-IP (CDNs/LBs),
 // then the first address in X-Forwarded-For.
 //
-// It has no production caller today: the Cloudflare provider resolves geo from
-// CF-* headers and never reads the IP. It is retained as the extraction
-// primitive for a future IP-lookup Provider (see Provider) — such a provider
-// must hash/use the IP transiently and keep it out of the returned Location, as
-// the raw IP must never be persisted (see PropIP).
+// No Provider calls it: the Cloudflare provider resolves geo from CF-* headers
+// and never reads the IP. Its one production caller is cookieless identity
+// resolution (resolveCookieless), which feeds the IP into an HMAC and never
+// attaches it to an event. It remains the extraction primitive a future
+// IP-lookup Provider (see Provider) would use — such a provider must hash/use
+// the IP transiently and keep it out of the returned Location, as the raw IP
+// must never be persisted (see PropIP).
 func ClientIP(h http.Header) string {
 	if ip := h.Get(HeaderCFConnectingIP); ip != "" {
 		return ip

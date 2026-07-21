@@ -22,6 +22,19 @@
 --      predate this migration, so THERE IS NOTHING TO BACKFILL (unlike
 --      008-010).
 --
+--      That rests on TWO assumptions, and only the first is self-evident:
+--      (a) ingest minted no such ids before this change, and (b) no tenant
+--      ever sent a distinct_id carrying this prefix of their own accord.
+--      The reserved-prefix rule (batch.distinct_id_reserved_prefix) ships in
+--      the same branch as this migration, so (b) went UNENFORCED for all
+--      prior history. Such a row reads cookieless=0 here while the raw path
+--      excludes it by prefix — a silent rollup/raw parity break, bounded to
+--      tenants who happened to pick this prefix. Before relying on parity for
+--      an existing deployment, check:
+--        SELECT count() FROM events
+--         WHERE startsWith(distinct_id, <cookieless.IDPrefix>)
+--           AND occur_time < [011 deploy time]
+--
 -- The session rollup is deliberately untouched: session metrics always count
 -- all traffic (spec Decision 1), and session builders never read distinct_id.
 

@@ -2,10 +2,12 @@ package profiles_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pug-sh/pug/internal/cookieless"
 	"github.com/pug-sh/pug/internal/core/profiles"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -560,4 +562,106 @@ func pgCount(t *testing.T, ctx context.Context, pg *testutil.TestPostgres, query
 		t.Fatalf("pg count %q: %v", query, err)
 	}
 	return n
+}
+
+// TestErasure_ByID_CookielessNotReachable pins a documented gap on a compliance
+// surface. RequestErasureByID gates on hasActivity, which probes
+// distinct_id_activity_states — the rollup migration 011 deliberately keeps
+// 'cookieless-'-prefixed ids out of. The bare-id route therefore reports
+// ErrProfileNotFound and writes NO ledger row while the events sit untouched;
+// only RequestErasureByExternalID / DeleteDataSubject, which carry no activity
+// probe, reach them.
+//
+// A consented anonymous id runs the IDENTICAL call as a control, so a failure
+// here means the activity-MV filter moved rather than that the test drifted.
+// This pins ACCEPTED behavior, not a bug — a cookieless id is unknowable to its
+// own visitor, so no data subject can present one, and re-admitting these ids to
+// the MV would recreate the ghost persons 011 exists to prevent. The point is
+// that the asymmetry must never change silently, in either direction. See
+// docs/architecture/profiles.md.
+func TestErasure_ByID_CookielessNotReachable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	tn := testutil.SetupNATS(t)
+	t.Setenv("NATS_URL", tn.URL)
+
+	natsClient, err := natsdeps.New(ctx)
+	if err != nil {
+		t.Fatalf("create nats client: %v", err)
+	}
+	defer natsClient.Close()
+
+	projectID := seedProject(t, ctx, pg)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	const (
+		cookielessID = cookieless.IDPrefix + "Zm9vYmFyYmF6cXV4"
+		controlID    = "anon-consented-control"
+	)
+	for _, did := range []string{cookielessID, controlID} {
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, did, "page_view",
+			uuid.NewString(), map[string]string{}, map[string]string{}, now)
+	}
+
+	// Migration 011's WHERE is the entire mechanism: the control reaches the
+	// activity rollup, the cookieless id does not.
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM distinct_id_activity_states WHERE project_id = ? AND distinct_id = ?",
+		projectID, cookielessID); got != 0 {
+		t.Fatalf("cookieless activity rows = %d, want 0 (migration 011 WHERE)", got)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM distinct_id_activity_states WHERE project_id = ? AND distinct_id = ?",
+		projectID, controlID); got != 1 {
+		t.Fatalf("control activity rows = %d, want 1", got)
+	}
+
+	svc := profiles.NewService(pg.PgW, ch.Conn, natsClient)
+
+	// Bare-id erasure of a cookieless id: refused, nothing enqueued, events kept.
+	if _, _, err := svc.RequestErasureByID(ctx, projectID, cookielessID, ""); !errors.Is(err, profiles.ErrProfileNotFound) {
+		t.Fatalf("RequestErasureByID(cookieless) error = %v, want ErrProfileNotFound", err)
+	}
+	if got := pgCount(t, ctx, pg,
+		"SELECT count(*) FROM compliance_requests WHERE project_id = $1", projectID); got != 0 {
+		t.Errorf("ledger rows = %d, want 0 — a refused request must not enqueue", got)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM events WHERE project_id = ? AND distinct_id = ?",
+		projectID, cookielessID); got != 1 {
+		t.Errorf("cookieless events = %d, want 1 (still present after refusal)", got)
+	}
+
+	// The consented control through the identical entry point: accepted.
+	if _, _, err := svc.RequestErasureByID(ctx, projectID, controlID, ""); err != nil {
+		t.Fatalf("RequestErasureByID(consented control) = %v, want success — the "+
+			"activity-MV filter must be the ONLY difference between the two ids", err)
+	}
+
+	// The route that does reach them.
+	requestID, status, err := svc.RequestErasureByExternalID(ctx, projectID, cookielessID, "")
+	if err != nil {
+		t.Fatalf("RequestErasureByExternalID(cookieless): %v", err)
+	}
+	if status != profiles.ComplianceStatusPending {
+		t.Errorf("status = %q, want pending", status)
+	}
+	if err := svc.ExecuteErasure(ctx, projectID, requestID); err != nil {
+		t.Fatalf("ExecuteErasure: %v", err)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM events WHERE project_id = ? AND distinct_id = ?",
+		projectID, cookielessID); got != 0 {
+		t.Errorf("cookieless events = %d after by-external-id erase, want 0", got)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM events WHERE project_id = ? AND distinct_id = ?",
+		projectID, controlID); got != 1 {
+		t.Errorf("control events = %d, want 1 (untouched by the cookieless erase)", got)
+	}
 }
