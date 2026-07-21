@@ -43,10 +43,11 @@ var (
 
 // materializedDims are the auto-property breakdown dimensions backed by the
 // rollup: the union of every applied migration's group, so it matches the
-// LATEST MV definition (009's MODIFY QUERY) by construction rather than by a
-// list restated a third time. TestMaterializedDimsMatchMigration checks the
-// dim names against that MV; TestMigration009PromotedDimExprsMatch checks the
-// value expressions.
+// LATEST MV definition (011's MODIFY QUERY — 011 adds no dims, but it is the
+// migration that now defines the MV) by construction rather than by a list
+// restated a third time. TestMaterializedDimsMatchMigration checks the dim names
+// against that MV; TestMigration009PromotedDimExprsMatch checks the value
+// expressions 009 introduced.
 var materializedDims = slices.Concat(eventRollupDims006, eventRollupDims009)
 
 func isMaterializedDim(prop string) bool {
@@ -182,9 +183,11 @@ func rollupBreakdownLimit(limit int32) int64 {
 }
 
 // buildTrendsFromRollup builds a trends query against the dimensional rollup.
-// Breakdown top-N bucketing happens in SQL (top_vals CTE + $others); the returned
-// TrendsQuery carries breakdownLimit=0 so GroupSeries does not re-bucket.
-// Caller must have checked canUseEventRollup.
+// Breakdown top-N bucketing happens in SQL (a per-event top_vals_<i> CTE +
+// $others); the returned TrendsQuery carries breakdownLimit=0 so GroupSeries does
+// not re-bucket. Because the SQL is then the sole arbiter of top-N membership, it
+// must reproduce applyTrendsTopN exactly — see the CTE comment below for the three
+// axes that has to match. Caller must have checked canUseEventRollup.
 func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
 	granFn, err := granularityFunc(req.GetGranularity())
 	if err != nil {
@@ -206,48 +209,68 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 		dimName = bds[0].GetProperty()
 	}
 
-	// Shared top_vals CTE over all event kinds (only when a breakdown is present).
-	var topVals *chq.Query
-	if len(bds) == 1 {
-		kindConds := make([]chq.Condition, len(events))
-		for i, ev := range events {
-			kindConds[i] = chq.Eq("kind", ev.GetEvent().GetKind())
+	// Resolve every event's value expression up front: the breakdown ranking CTE
+	// and the event's own SELECT must agree on the metric, so neither is built
+	// before an unsupported aggregation has been rejected.
+	aggExprs := make([]string, len(events))
+	for i, ev := range events {
+		expr, ok := rollupAggExpr(ev.GetAggregation())
+		if !ok {
+			return TrendsQuery{}, fmt.Errorf("trends rollup: events[%d]: unsupported aggregation %s", i, ev.GetAggregation())
 		}
-		topVals = chq.NewQuery().
-			Select("dim_value").
-			From(rollupTable).
-			Where(
-				chq.Eq("project_id", projectID),
-				chq.Eq("dim_name", dimName),
-				chq.Gte("day", fromDay),
-				chq.Lte("day", toDay),
-				// Rank over the same population the query's metric counts.
-				chq.When(excludeCookielessForAgg(spec, aggregationType(req)), chq.Eq("cookieless", uint8(0))),
-				chq.Or(kindConds...),
-			).
-			GroupBy("dim_value").
-			// Tie-break on dim_value so the top-N matches the raw Group*Series
-			// top-N (total DESC, breakdown value ASC) and $others is deterministic.
-			OrderBy("sum(cnt) DESC", "dim_value ASC").
-			Limit(rollupBreakdownLimit(spec.GetBreakdownLimit()))
+		aggExprs[i] = expr
+	}
+
+	// Breakdown top-N is bucketed in SQL, with ONE CTE PER EVENT, because the raw
+	// path it must match (applyTrendsTopN) ranks per event kind, by that event's
+	// own metric total, over the population that event's metric counts. A single
+	// shared CTE cannot express any of the three, and diverged on all three:
+	//
+	//   scope      one global top-N over OR'd kinds, not per-kind
+	//   metric     sum(cnt) — raw event volume — so a UNIQUE_USERS series ranked
+	//              its breakdown by page views rather than by unique users
+	//   population events[0]'s cookieless predicate applied to every branch, so
+	//              reordering `events` changed which values the top-N named
+	//
+	// Each branch declares and references only its own CTE. ClickHouse does scope
+	// a leading WITH across the whole UNION ALL, but keeping the declaration on
+	// the branch that uses it also keeps each branch's positional args contiguous.
+	topValNames := make([]string, len(events))
+	topVals := make([]*chq.Query, len(events))
+	if len(bds) == 1 {
+		for i, ev := range events {
+			topValNames[i] = "top_vals_" + strconv.Itoa(i)
+			topVals[i] = chq.NewQuery().
+				Select("dim_value").
+				From(rollupTable).
+				Where(
+					chq.Eq("project_id", projectID),
+					chq.Eq("dim_name", dimName),
+					chq.Eq("kind", ev.GetEvent().GetKind()),
+					chq.Gte("day", fromDay),
+					chq.Lte("day", toDay),
+					// Rank over the same population THIS event's metric counts.
+					chq.When(excludeCookielessForAgg(spec, ev.GetAggregation()), chq.Eq("cookieless", uint8(0))),
+				).
+				GroupBy("dim_value").
+				// Rank by this event's own metric, tie-broken on dim_value ascending,
+				// so top-N membership and $others bucketing equal applyTrendsTopN's.
+				OrderBy(aggExprs[i]+" DESC", "dim_value ASC").
+				Limit(rollupBreakdownLimit(spec.GetBreakdownLimit()))
+		}
 	}
 
 	queries := make([]*chq.Query, 0, len(events))
 	for i, ev := range events {
-		aggExpr, ok := rollupAggExpr(ev.GetAggregation())
-		if !ok {
-			return TrendsQuery{}, fmt.Errorf("trends rollup: events[%d]: unsupported aggregation %s", i, ev.GetAggregation())
-		}
-
 		selectExprs := []string{
 			bucketSQL + " AS t",
 			"kind AS event_kind",
 		}
 		if len(bds) == 1 {
 			selectExprs = append(selectExprs,
-				"if(dim_value IN (SELECT dim_value FROM top_vals), dim_value, '$others') AS breakdown_0")
+				"if(dim_value IN (SELECT dim_value FROM "+topValNames[i]+"), dim_value, '$others') AS breakdown_0")
 		}
-		selectExprs = append(selectExprs, aggExpr+" AS value")
+		selectExprs = append(selectExprs, aggExprs[i]+" AS value")
 
 		q := chq.NewQuery().
 			Select(selectExprs...).
@@ -269,8 +292,8 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 		}
 		q.GroupBy(groupBy...)
 
-		if i == 0 && topVals != nil {
-			q.With("top_vals", topVals)
+		if topVals[i] != nil {
+			q.With(topValNames[i], topVals[i])
 		}
 		queries = append(queries, q)
 	}

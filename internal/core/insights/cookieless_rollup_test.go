@@ -51,6 +51,48 @@ func TestCookielessExclusion_RollupBuilders(t *testing.T) {
 		}
 	})
 
+	t.Run("mixed_agg_breakdown_ranking_is_order_independent", func(t *testing.T) {
+		// The ranking CTE once keyed its cookieless predicate off aggregationType(req)
+		// — events[0] ONLY — while each branch keyed off its own aggregation. With one
+		// TOTAL and one UNIQUE_USERS event, swapping the `events` order flipped whether
+		// the ranking population excluded cookieless traffic, so two dashboard tiles
+		// differing only in event order named different breakdown values. Nothing in
+		// InsightQuerySpec's CEL rules requires uniform aggregation across events, and
+		// the raw path supports mixed explicitly (builder.go: sibling TOTAL branches
+		// must keep counting all traffic), so this shape is reachable and valid.
+		pv := rollupEventSpec{"page_view", insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL}
+		su := rollupEventSpec{"signup", uu}
+
+		forward, err := buildTrendsFromRollup(rollupDayReq(rollupTrendsSpecFor("$country", pv, su)), "proj_123")
+		if err != nil {
+			t.Fatal(err)
+		}
+		reversed, err := buildTrendsFromRollup(rollupDayReq(rollupTrendsSpecFor("$country", su, pv)), "proj_123")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// The predicate must follow the AGGREGATION, never the position: the
+		// UNIQUE_USERS event's ranking CTE restricts, the TOTAL event's does not,
+		// in both orderings. Counting occurrences alone cannot catch this.
+		for _, c := range []struct {
+			order      string
+			sql        string
+			restricted string // CTE of the UNIQUE_USERS event
+			open       string // CTE of the TOTAL event
+		}{
+			{"forward", forward.SQL(), "top_vals_1", "top_vals_0"},
+			{"reversed", reversed.SQL(), "top_vals_0", "top_vals_1"},
+		} {
+			if !strings.Contains(cteBody(t, c.sql, c.restricted), rollupCookielessPred) {
+				t.Errorf("%s: UNIQUE_USERS event's ranking CTE (%s) must exclude cookieless:\n%s", c.order, c.restricted, c.sql)
+			}
+			if strings.Contains(cteBody(t, c.sql, c.open), rollupCookielessPred) {
+				t.Errorf("%s: TOTAL event's ranking CTE (%s) must rank over all traffic:\n%s", c.order, c.open, c.sql)
+			}
+		}
+	})
+
 	t.Run("toggle_keeps_fast_path", func(t *testing.T) {
 		spec := rollupTrendsSpec(uu, "page_view", "")
 		spec.IncludeCookieless = proto.Bool(true)

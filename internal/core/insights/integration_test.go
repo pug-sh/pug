@@ -1704,15 +1704,18 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("rollup_parity_trends_multi_event_others_bucket", func(t *testing.T) {
-		// Multi-event + breakdown + breakdown_limit forcing $others. Seed is shaped
-		// so per-kind counts have no ties and the per-kind top-N ordering
-		// (US > GB > FR for both kinds) matches the shared-across-kinds ordering
-		// (rollup top_vals sums cnt over both kinds: US=9, GB=5, FR=2). Both
-		// strategies pick {US, GB} so parity holds AND zero-fill on $others cells
-		// is exercised end-to-end. A seed with ties or with per-kind orderings
-		// that diverge from the cross-kind ordering would surface a pre-existing
-		// rollup-vs-raw top-N strategy difference (rollup uses one shared top_vals
-		// over OR(kinds); raw uses per-kind top-N) — out of scope here.
+		// Multi-event + breakdown + breakdown_limit forcing $others. The seed has no
+		// ties and both kinds rank US > GB > FR, so rollup and raw pick {US, GB},
+		// parity holds, and zero-fill on $others cells is exercised end-to-end.
+		//
+		// This seed used to ALSO have to avoid per-kind orderings that diverge from
+		// the cross-kind ordering: the rollup ranked one shared top_vals over
+		// OR(kinds) while raw ranked per-kind, so a divergent seed broke parity and
+		// that difference was left out of scope here. It is no longer a constraint —
+		// the rollup now builds one top_vals_<i> per event, scoped to that event's
+		// kind and ranked by that event's own metric, so the two strategies agree by
+		// construction. TestIntegrationRollupBreakdownOrderIndependent
+		// (cookieless_integration_test.go) covers the divergent shape head-on.
 		const projectID = "proj_rollup_multi_others"
 		seed := []struct{ kind, user, cc string }{
 			{"page_view", "u1", "US"}, {"page_view", "u2", "US"}, {"page_view", "u3", "US"},

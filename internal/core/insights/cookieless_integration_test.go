@@ -2,6 +2,7 @@ package insights_test
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -188,4 +189,128 @@ func TestIntegrationCookieless(t *testing.T) {
 			t.Errorf("included funnel steps = (%v, %v), want (2, 2)", rows[0].Value, rows[1].Value)
 		}
 	})
+}
+
+// TestIntegrationRollupBreakdownOrderIndependent is the end-to-end pin for the
+// rollup breakdown ranking: a trends query whose events carry DIFFERENT
+// aggregations must return the same numbers regardless of the order of the
+// `events` array.
+//
+// The shared top_vals CTE keyed its cookieless predicate off events[0] alone
+// while each branch keyed off its own aggregation, so reordering `events`
+// swapped the ranking population out from under every series. The corpus makes
+// that swap maximally visible: C01..C10 carry only cookieless traffic (high
+// event volume, zero consented users) while C11/C12 carry only consented
+// traffic (low volume, real users). Ranked over all traffic the top-10 is
+// C01..C10; ranked over consented-only it is C11/C12 — disjoint, so a
+// regression cannot squeak through on a tie.
+//
+// Note WHAT gets corrupted: the page_view series is TOTAL and carries no
+// cookieless predicate in either ordering, so "TOTAL always counts all traffic"
+// still holds in aggregate. It broke only in the breakdown decomposition, which
+// is why an assertion on totals alone would not catch it.
+func TestIntegrationRollupBreakdownOrderIndependent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	executor := insights.NewExecutor(ch.Conn)
+	const projectID = "proj_breakdown_order"
+
+	day := time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC)
+	seed := func(country, distinctID, kind string, n int) {
+		t.Helper()
+		for i := range n {
+			if err := insertAutoEvent(ctx, ch.Conn, projectID, uuid.NewString(), kind, distinctID,
+				day.Add(time.Duration(i)*time.Minute),
+				variantStringMap(map[string]string{"$country": country}),
+			); err != nil {
+				t.Fatalf("seed %s/%s: %v", country, kind, err)
+			}
+		}
+	}
+	for i := 1; i <= 10; i++ {
+		c := fmt.Sprintf("C%02d", i)
+		seed(c, cookieless.IDPrefix+"v"+c, "page_view", 3)
+		seed(c, cookieless.IDPrefix+"v"+c, "signup", 1)
+	}
+	for _, c := range []string{"C11", "C12"} {
+		seed(c, "anon-"+c, "page_view", 1)
+		seed(c, "anon-"+c, "signup", 1)
+	}
+
+	pv := &insightsv1.EventQuery{
+		Event:       &commonv1.EventFilter{Kind: proto.String("page_view")},
+		Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL.Enum(),
+	}
+	su := &insightsv1.EventQuery{
+		Event:       &commonv1.EventFilter{Kind: proto.String("signup")},
+		Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum(),
+	}
+	req := func(events ...*insightsv1.EventQuery) *insightsv1.QueryRequest {
+		return &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Events:      events,
+				Breakdowns:  []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+			},
+			TimeRange: &commonv1.TimeRange{
+				From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
+				To:   timestamppb.New(time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC)),
+			},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+	}
+
+	// totals maps "<kind>|<breakdown value>" to the series total. Values, not
+	// mere series names: a multi-event response also carries zero-filled cells
+	// synthesized for every (kind, breakdown) pair, so comparing name sets would
+	// compare the union of both kinds' top-Ns rather than each kind's own.
+	totals := func(r *insightsv1.QueryRequest) map[string]float64 {
+		t.Helper()
+		resp, err := insights.ExecuteQuery(ctx, executor, projectID, r, time.Now())
+		if err != nil {
+			t.Fatalf("ExecuteQuery: %v", err)
+		}
+		out := map[string]float64{}
+		for _, s := range resp.GetTrends().GetSeries() {
+			var sum float64
+			for _, p := range s.GetPoints() {
+				sum += p.GetValue()
+			}
+			out[s.GetEventKind()+"|"+s.GetBreakdown()["$country"]] += sum
+		}
+		return out
+	}
+
+	forward := totals(req(pv, su))
+	reversed := totals(req(su, pv))
+
+	if !reflect.DeepEqual(forward, reversed) {
+		t.Fatalf("breakdown results depend on the order of `events`:\n  [page_view,signup] = %v\n  [signup,page_view] = %v",
+			forward, reversed)
+	}
+
+	// Positive checks, so the equality above cannot pass by both sides being
+	// equally wrong. page_view's $others is the discriminator: ranked over ALL
+	// traffic only C11+C12 fold into it (1+1=2). Had it ranked over the
+	// consented-only population — what events[0]=UNIQUE_USERS used to impose —
+	// C01..C10 would fold instead and $others would total 30.
+	if got := forward["page_view|$others"]; got != 2 {
+		t.Errorf("page_view $others = %v, want 2 (only consented-only C11+C12 fold); "+
+			"30 means it ranked over the consented population instead of all traffic", got)
+	}
+	if got := forward["page_view|C01"]; got != 3 {
+		t.Errorf("page_view C01 = %v, want 3 (named by volume across all traffic)", got)
+	}
+	// signup is UNIQUE_USERS, so its own ranking excludes cookieless: the
+	// consented-only countries are the ones it names.
+	if got := forward["signup|C11"]; got != 1 {
+		t.Errorf("signup C11 = %v, want 1 (consented user named by the UNIQUE_USERS ranking)", got)
+	}
+	if got := forward["signup|C01"]; got != 0 {
+		t.Errorf("signup C01 = %v, want 0 (cookieless-only country has no consented users)", got)
+	}
 }

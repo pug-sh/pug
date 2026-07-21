@@ -52,6 +52,92 @@ func rollupMultiEventTrendsSpec(kinds ...string) *insightsv1.InsightQuerySpec {
 	return spec
 }
 
+// rollupEventSpec names one event of a multi-event trends spec. Unlike
+// rollupMultiEventTrendsSpec (which hardcodes TOTAL everywhere) it lets a test
+// vary aggregation ACROSS events — the shape nothing in InsightQuerySpec's CEL
+// rules forbids, and the one the shared top_vals CTE mis-ranked.
+type rollupEventSpec struct {
+	kind string
+	agg  insightsv1.AggregationType
+}
+
+func rollupTrendsSpecFor(breakdown string, evs ...rollupEventSpec) *insightsv1.InsightQuerySpec {
+	spec := &insightsv1.InsightQuerySpec{InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum()}
+	for _, e := range evs {
+		spec.Events = append(spec.Events, &insightsv1.EventQuery{
+			Event:       &commonv1.EventFilter{Kind: proto.String(e.kind)},
+			Aggregation: e.agg.Enum(),
+		})
+	}
+	if breakdown != "" {
+		spec.Breakdowns = []*insightsv1.Breakdown{{Property: proto.String(breakdown)}}
+	}
+	return spec
+}
+
+// cteBody returns the text of the named CTE so an assertion can bind a predicate
+// to the specific event whose ranking it governs, rather than counting
+// occurrences across the whole statement (which cannot tell WHICH event a
+// predicate landed on — exactly the confusion that let C-1 ship).
+func cteBody(t *testing.T, sql, name string) string {
+	t.Helper()
+	open := name + " AS ("
+	i := strings.Index(sql, open)
+	if i < 0 {
+		t.Fatalf("CTE %s not found in:\n%s", name, sql)
+	}
+	rest := sql[i+len(open):]
+	j := strings.Index(rest, "\n)")
+	if j < 0 {
+		t.Fatalf("unterminated CTE %s in:\n%s", name, sql)
+	}
+	return rest[:j]
+}
+
+// TestBuildTrendsFromRollup_TopValsMirrorsApplyTrendsTopN pins the three axes on
+// which the rollup's SQL top-N must equal the raw path's applyTrendsTopN. The
+// rollup returns breakdownLimit=0, so GroupSeries never re-ranks and this SQL is
+// the SOLE arbiter of which breakdown values are named vs folded into $others.
+// Any drift here silently changes chart contents rather than failing a query.
+func TestBuildTrendsFromRollup_TopValsMirrorsApplyTrendsTopN(t *testing.T) {
+	total := insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
+	uu := insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS
+
+	t.Run("ranks_by_each_events_own_metric", func(t *testing.T) {
+		req := rollupDayReq(rollupTrendsSpecFor("$country", rollupEventSpec{"page_view", uu}))
+		q, err := buildTrendsFromRollup(req, "proj_123")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// applyTrendsTopN ranks by the series' own running total (executor.go).
+		// Ranking a UNIQUE_USERS breakdown by sum(cnt) would order countries by
+		// page views — a plain "unique users by country" tile naming wrong values.
+		if !strings.Contains(q.SQL(), "ORDER BY toFloat64(uniqMerge(uniq_state)) DESC, dim_value ASC") {
+			t.Errorf("UNIQUE_USERS top-N must rank by uniqMerge, not raw event volume:\n%s", q.SQL())
+		}
+	})
+
+	t.Run("ranks_per_event_kind", func(t *testing.T) {
+		req := rollupDayReq(rollupTrendsSpecFor("$country",
+			rollupEventSpec{"page_view", total}, rollupEventSpec{"signup", total}))
+		q, err := buildTrendsFromRollup(req, "proj_123")
+		if err != nil {
+			t.Fatal(err)
+		}
+		sql := q.SQL()
+		// applyTrendsTopN partitions byEventKind BEFORE ranking. One global top-N
+		// would let a high-volume kind dictate a low-volume kind's named values.
+		for _, want := range []string{"top_vals_0 AS (", "top_vals_1 AS ("} {
+			if !strings.Contains(sql, want) {
+				t.Errorf("expected per-event ranking CTE %q:\n%s", want, sql)
+			}
+		}
+		if got := strings.Count(sql, "AND kind = ?"); got != 4 {
+			t.Errorf("expected 2 CTEs + 2 branches each scoped to one kind (4), got %d:\n%s", got, sql)
+		}
+	})
+}
+
 func TestRollupAggExpr(t *testing.T) {
 	cases := []struct {
 		agg  insightsv1.AggregationType
@@ -169,9 +255,9 @@ func TestBuildTrendsFromRollup_Breakdown(t *testing.T) {
 	sql := q.SQL()
 	for _, want := range []string{
 		"FROM dashboard_event_rollup_daily",
-		"top_vals",
+		"top_vals_0",
 		"dim_name",
-		"if(dim_value IN (SELECT dim_value FROM top_vals), dim_value, '$others') AS breakdown_0",
+		"if(dim_value IN (SELECT dim_value FROM top_vals_0), dim_value, '$others') AS breakdown_0",
 		"toFloat64(sum(cnt)) AS value",
 		"toStartOfDay(toDateTime(day)) AS t",
 	} {
