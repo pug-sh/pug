@@ -66,6 +66,14 @@ services:
   dragonfly:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.38.1
     restart: always
+    # DEV ONLY: this volume persists the keyspace across `make infra-down` for
+    # local convenience, matching the other services here. Do NOT copy it into a
+    # production manifest — .env.example requires the salt store to be ephemeral
+    # there, because TTL expiry cannot edit a snapshot already on disk and the
+    # daily cookieless salt's deletion is the whole privacy guarantee. Verified
+    # locally: a graceful shutdown writes .dfs dumps from which a seeded salt is
+    # recoverable in plaintext. Harmless for throwaway dev salts; not harmless for
+    # real visitor traffic.
     ports:
       - "${DRAGONFLY_PORT:-6380}:6379"
     volumes:
