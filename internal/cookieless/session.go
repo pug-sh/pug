@@ -3,6 +3,7 @@ package cookieless
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -45,6 +46,17 @@ const (
 	// could not advance. Distinct from the others because the returned id is
 	// still the right one — only the state behind it is stale.
 	DegradeSlideFailed DegradeReason = "slide_failed"
+	// DegradeCorruptState: a session key held a value this package could not
+	// parse. Unlike its siblings this is not a Redis *failure* — the read
+	// succeeded — which is exactly why it needs its own reason: an unparseable
+	// value takes the same mint path as an ordinary inactivity expiry, so without
+	// it the two are indistinguishable and mass re-minting looks like healthy
+	// traffic. dashboard_session_rollup is keyed by session_id (migration 007),
+	// so those rows are permanent and cannot be reconciled afterwards. Produced
+	// by a formatSession encoding change mid-rolling-deploy, an external writer
+	// to cookieless:sess:*, or a truncated write. The returned id is usable and
+	// the corrupt value is overwritten, so this self-heals after one event.
+	DegradeCorruptState DegradeReason = "corrupt_state"
 )
 
 // SessionID returns the stitched session for one cookieless visitor event:
@@ -63,13 +75,25 @@ const (
 func (r *Resolver) SessionID(ctx context.Context, projectID, distinctID string, day Day, occur time.Time) (string, DegradeReason) {
 	key := sessKeyPrefix + projectID + ":" + distinctID
 
+	// Tracks an unparseable stored value seen on either read. It does NOT
+	// short-circuit: the mint proceeds and overwrites the bad value, so the caller
+	// still gets a usable id and the key self-heals. Only the reason changes.
+	corrupt := false
+
 	val, err := r.rdb.Get(ctx, key).Result()
 	switch {
 	case err == nil:
-		if sid, last, ok := parseSession(val); ok && withinInactivity(occur, last) {
+		sid, last, ok := parseSession(val)
+		switch {
+		case ok && withinInactivity(occur, last):
 			return sid, r.slideSession(ctx, key, sid, last, occur)
+		case !ok:
+			// Stored but unparseable — NOT an expiry. Both mint below; only this
+			// one is a fault, so it must not inherit the expiry's silence.
+			corrupt = true
+			r.reportCorruptState(ctx, key, val)
 		}
-		// Present but expired-by-inactivity (or corrupt): mint below.
+		// Parsed cleanly but outside the window: an ordinary expiry. Mint below.
 	case !errors.Is(err, redis.Nil):
 		return r.degrade(ctx, DegradeGetFailed, err, distinctID, day)
 	}
@@ -80,12 +104,20 @@ func (r *Resolver) SessionID(ctx context.Context, projectID, distinctID string, 
 	}).Result()
 	switch {
 	case errors.Is(err, redis.Nil):
-		return fresh, DegradeNone // key was absent; our mint landed
+		// Key was absent; our mint landed. It can still be corrupt if the bad
+		// value expired between the GET above and this SET.
+		return fresh, corruptOrNone(corrupt)
 	case err != nil:
 		return r.degrade(ctx, DegradeMintFailed, err, distinctID, day)
 	}
 	// Key existed (another pod minted, or GET raced an expiry edge): adopt the
 	// prior session when it is still live, else overwrite.
+	if _, _, ok := parseSession(prior); !ok && !corrupt {
+		// A different unparseable value than the one read above, or the first
+		// sighting if the GET missed. Report once per call, not once per read.
+		corrupt = true
+		r.reportCorruptState(ctx, key, prior)
+	}
 	if sid, last, ok := parseSession(prior); ok && withinInactivity(occur, last) {
 		return sid, r.slideSession(ctx, key, sid, last, occur)
 	}
@@ -104,7 +136,35 @@ func (r *Resolver) SessionID(ctx context.Context, projectID, distinctID string, 
 	if err := r.rdb.Set(ctx, key, formatSession(fresh, occur), sessionTTL).Err(); err != nil {
 		return r.degrade(ctx, DegradeWriteFailed, err, distinctID, day)
 	}
-	return fresh, DegradeNone
+	return fresh, corruptOrNone(corrupt)
+}
+
+func corruptOrNone(corrupt bool) DegradeReason {
+	if corrupt {
+		return DegradeCorruptState
+	}
+	return DegradeNone
+}
+
+// reportCorruptState records an unparseable stored session. This package detects
+// it, so per the telemetry convention it is the layer that logs and records; the
+// handler only labels its counter.
+//
+// The value itself is deliberately NOT logged. It is unbounded, and a corrupt key
+// fires for every event belonging to that visitor until it is overwritten — the
+// byte length is enough to tell a truncated write from a foreign encoding without
+// putting arbitrary Redis contents into the log pipeline.
+func (r *Resolver) reportCorruptState(ctx context.Context, key, val string) {
+	// Throttled: one key self-heals on the next event, but the cause is rarely
+	// one key — an encoding change mid-rolling-deploy makes every visitor's
+	// stored session unparseable at once.
+	if !r.shouldReportDegrade(DegradeCorruptState) {
+		return
+	}
+	err := fmt.Errorf("cookieless: unparseable session state at %s (%d bytes)", key, len(val))
+	slog.ErrorContext(ctx, "cookieless session state is corrupt, minting a replacement",
+		slogx.Error(err), slog.String("reason", string(DegradeCorruptState)))
+	telemetry.RecordError(ctx, err)
 }
 
 // degrade records a Redis failure and returns the coarse day fallback.
@@ -114,10 +174,36 @@ func (r *Resolver) SessionID(ctx context.Context, projectID, distinctID string, 
 // Returning just a reason would throw away the underlying error string, which is
 // the one thing that distinguishes a permanent deployment fault from a blip.
 func (r *Resolver) degrade(ctx context.Context, reason DegradeReason, err error, distinctID string, day Day) (string, DegradeReason) {
-	slog.ErrorContext(ctx, "cookieless session state unavailable, falling back to the visitor-day session",
-		slogx.Error(err), slog.String("reason", string(reason)))
-	telemetry.RecordError(ctx, err)
+	if r.shouldReportDegrade(reason) {
+		slog.ErrorContext(ctx, "cookieless session state unavailable, falling back to the visitor-day session",
+			slogx.Error(err), slog.String("reason", string(reason)))
+		telemetry.RecordError(ctx, err)
+	}
 	return r.fallbackSessionID(distinctID, day), reason
+}
+
+// degradeLogInterval bounds how often one repeating degrade reason is logged.
+// Sized for "a human reading logs during an incident", not for sampling fidelity
+// — the per-event counter is the alerting signal and is never throttled.
+const degradeLogInterval = time.Minute
+
+// shouldReportDegrade reports whether this occurrence of reason should be logged
+// and recorded, throttling recurrence to once per degradeLogInterval.
+//
+// The FIRST occurrence of any reason always reports, so a fault is never silent
+// at onset, and the map is keyed by reason so an ongoing get_failed cannot mask a
+// newly appearing write_failed. Throttling only the log keeps the convention
+// intact: this package still detects, logs and records — just not once per event
+// for a fault that by construction affects all of them.
+func (r *Resolver) shouldReportDegrade(reason DegradeReason) bool {
+	now := r.now()
+	r.logMu.Lock()
+	defer r.logMu.Unlock()
+	if last, ok := r.logLast[reason]; ok && now.Sub(last) < degradeLogInterval {
+		return false
+	}
+	r.logLast[reason] = now
+	return true
 }
 
 // staleSessionID names the session for an event that arrived after the visitor
@@ -160,9 +246,13 @@ func (r *Resolver) slideSession(ctx context.Context, key, sid string, last, occu
 		return DegradeNone
 	}
 	if err := r.rdb.Set(ctx, key, formatSession(sid, occur), sessionTTL).Err(); err != nil {
-		slog.ErrorContext(ctx, "cookieless session watermark could not advance",
-			slogx.Error(err), slog.String("reason", string(DegradeSlideFailed)))
-		telemetry.RecordError(ctx, err)
+		// Throttled for the same reason as degrade(): a read-only replica or an
+		// OOM refuses every write, so this fires on every event of every visitor.
+		if r.shouldReportDegrade(DegradeSlideFailed) {
+			slog.ErrorContext(ctx, "cookieless session watermark could not advance",
+				slogx.Error(err), slog.String("reason", string(DegradeSlideFailed)))
+			telemetry.RecordError(ctx, err)
+		}
 		return DegradeSlideFailed
 	}
 	return DegradeNone

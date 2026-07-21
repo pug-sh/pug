@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -448,6 +450,76 @@ func TestResolver_ConcurrentUse(t *testing.T) {
 	}
 }
 
+// failReadsHook makes every GET fail, driving SessionID down the get_failed
+// degrade path on every single call — the shape of a persistent fault.
+type failReadsHook struct{ err error }
+
+func (h *failReadsHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+
+func (h *failReadsHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+func (h *failReadsHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		if cmd.Name() == "get" {
+			cmd.SetErr(h.err)
+			return h.err
+		}
+		return next(ctx, cmd)
+	}
+}
+
+// TestSessionID_RepeatedDegradeIsLoggedOnce pins that a PERSISTENT session-path
+// fault does not emit one ERROR line plus one recorded span exception per event.
+//
+// Every degrade path here fires per event, and the faults that reach them are by
+// construction the ones that affect every event: a read-only replica after
+// failover, OOM under noeviction, or `SET NX GET` rejected outright by a Redis
+// older than 7.0. At ingest volume that is log-pipeline saturation, exception
+// spam, and every other error in the service buried — the counter is the alerting
+// signal, the log is not.
+//
+// The handler already solved exactly this for the salt path with its
+// saltFailureLogged per-request latch; the session path had no equivalent because
+// its logging lives down here, where "per request" is not a thing this package can
+// see. So it is bounded by time per reason instead: the FIRST occurrence is always
+// reported, recurrence is throttled, and a new reason is never suppressed by a
+// different one.
+//
+// The returned DegradeReason is deliberately NOT throttled — the handler's
+// per-event counter must stay exact.
+func TestSessionID_RepeatedDegradeIsLoggedOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	ctx := context.Background()
+	base := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	r := New(rd.Client)
+	r.now = func() time.Time { return base }
+	rd.Client.AddHook(&failReadsHook{err: errors.New("connection refused")})
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	const events = 5
+	for i := range events {
+		_, reason := r.SessionID(ctx, "p1", IDPrefix+"noisy", "20260720",
+			base.Add(time.Duration(i)*time.Second))
+		if reason != DegradeGetFailed {
+			t.Fatalf("event %d reason = %q, want %q — the per-event signal must survive throttling",
+				i, reason, DegradeGetFailed)
+		}
+	}
+
+	if got := strings.Count(buf.String(), "cookieless session state unavailable"); got != 1 {
+		t.Errorf("logged %d times for %d events, want 1 — a persistent fault must not emit "+
+			"an ERROR line and a span exception per event", got, events)
+	}
+}
+
 // failWritesHook lets GET succeed while every SET fails, reproducing the states
 // where Redis serves reads but refuses writes: `maxmemory` reached under
 // noeviction (SET carries the denyoom flag, GET does not), or a read-only
@@ -479,6 +551,57 @@ func (h *failWritesHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
 // measures its gap from the frozen mark until one exceeds sessionInactivity and
 // mints. One visit silently becomes several. Before this, slideSession discarded
 // the error and both callers reported healthy.
+// TestSessionID_CorruptStateIsReported pins that an unparseable stored session is
+// distinguished from an ordinary inactivity expiry.
+//
+// Both take the mint path, so the two were previously indistinguishable — no log,
+// no counter, no DegradeReason, only the comment "Present but expired-by-inactivity
+// (or corrupt): mint below" naming the ambiguity and doing nothing with it. That
+// matters because the failure is silent AND permanent: dashboard_session_rollup is
+// keyed by session_id (migration 007), so every event that re-mints against a
+// corrupt value writes a session row that cannot be reconciled after the fact. A
+// rolling deploy that changes formatSession's encoding, an external writer to
+// cookieless:sess:*, or a truncated write all produce it, and all three look
+// exactly like healthy traffic.
+//
+// The returned id is still correct and usable. Like slide_failed, this reports
+// state that is wrong behind an answer that is right.
+func TestSessionID_CorruptStateIsReported(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	rd := testutil.SetupRedis(t)
+	ctx := context.Background()
+	base := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	r := New(rd.Client)
+	r.now = func() time.Time { return base }
+	const did = IDPrefix + "corrupt"
+
+	key := sessKeyPrefix + "p1:" + did
+	if err := rd.Client.Set(ctx, key, "not-a-session", sessionTTL).Err(); err != nil {
+		t.Fatalf("seed corrupt session: %v", err)
+	}
+
+	sid, reason := r.SessionID(ctx, "p1", did, "20260720", base)
+	if reason != DegradeCorruptState {
+		t.Errorf("reason = %q, want %q — a corrupt value must not be reported as a clean mint",
+			reason, DegradeCorruptState)
+	}
+	if sid == "" {
+		t.Error("a corrupt stored session must still yield a usable id")
+	}
+
+	// The corrupt value must be REPLACED, not left to re-trigger forever: a second
+	// event in the same window rejoins the freshly minted session cleanly.
+	sid2, reason2 := r.SessionID(ctx, "p1", did, "20260720", base.Add(time.Minute))
+	if sid2 != sid {
+		t.Errorf("second event = %q, want the minted session %q — corrupt state was not overwritten", sid2, sid)
+	}
+	if reason2 != DegradeNone {
+		t.Errorf("second event reason = %q, want none — the corrupt value should be gone", reason2)
+	}
+}
+
 func TestSessionID_SlideFailureIsReported(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

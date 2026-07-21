@@ -54,10 +54,23 @@ type Resolver struct {
 
 	mu    sync.Mutex
 	salts map[Day][]byte // pruned to the accepted window
+
+	// Throttles the log + RecordError for a REPEATING session degrade, keyed by
+	// reason. The faults that reach those paths affect every event by
+	// construction, so an unthrottled report is one ERROR line and one span
+	// exception per ingested event. Keyed by reason so a new failure mode is
+	// never suppressed by an ongoing one; see shouldReportDegrade.
+	logMu   sync.Mutex
+	logLast map[DegradeReason]time.Time
 }
 
 func New(rdb redis.Cmdable) *Resolver {
-	return &Resolver{rdb: rdb, now: time.Now, salts: make(map[Day][]byte)}
+	return &Resolver{
+		rdb:     rdb,
+		now:     time.Now,
+		salts:   make(map[Day][]byte),
+		logLast: make(map[DegradeReason]time.Time),
+	}
 }
 
 // DayOf returns the UTC calendar day an occur_time hashes under and whether
