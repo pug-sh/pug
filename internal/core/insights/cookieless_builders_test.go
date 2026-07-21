@@ -132,6 +132,50 @@ func TestCookielessExclusion_RawBuilders(t *testing.T) {
 		}
 	})
 
+	// buildFunnelWithTiming is a SEPARATE entry point from the counts builder,
+	// taken whenever include_step_timing is set, and it scans events TWICE: the
+	// windowFunnel pre-filter (built only when len(steps) >= 2) and the tagged CTE.
+	// Both need the predicate, so this asserts the count rather than mere presence
+	// — covering one scan and not the other leaves cookieless events in the arrays
+	// the timing percentiles are computed from.
+	//
+	// Untested until round 3: deleting BOTH predicates left the whole insights
+	// suite green. The shipping bug was that one consent-rejecting visitor who
+	// enters a funnel before midnight and converts after gets a new daily id, so
+	// they appear as two people — an instant converter and a never-converter —
+	// skewing p50/p90 toward zero and inflating step counts, while the SAME funnel
+	// with the timing checkbox off returned the correct population. One toggle,
+	// two answers.
+	t.Run("funnel_timing_excludes_both_scans", func(t *testing.T) {
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_FUNNEL.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}},
+					{Event: &commonv1.EventFilter{Kind: proto.String("purchase")}},
+				},
+				IncludeStepTiming: proto.Bool(true),
+			},
+			TimeRange: timeRange("2026-07-13T00:00:00Z", "2026-07-20T00:00:00Z"),
+		}
+		q, err := insights.BuildFunnelTimingQuery(req, "p1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Count(q.SQL(), cookielessNeedle); got != 2 {
+			t.Errorf("funnel timing must exclude cookieless in BOTH scans (pre-filter + tagged CTE), got %d:\n%s", got, q.SQL())
+		}
+
+		req.Spec.IncludeCookieless = proto.Bool(true)
+		q, err = insights.BuildFunnelTimingQuery(req, "p1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(q.SQL(), cookielessNeedle) {
+			t.Errorf("toggle must lift funnel timing exclusion in both scans:\n%s", q.SQL())
+		}
+	})
+
 	t.Run("retention_excludes_both_scans", func(t *testing.T) {
 		req := &insightsv1.QueryRequest{
 			Spec: &insightsv1.InsightQuerySpec{
