@@ -32,6 +32,19 @@ message BatchCreateRequest {
 
 message BatchCreateResponse {
   uint32 accepted = 1;
+
+  // Events the server refused to ingest; accepted + dropped equals the number
+  // sent. A drop is deliberately not an error: a batch may legitimately mix
+  // cookieless and consented events, so failing the request would discard
+  // healthy traffic to report a fault affecting only part of it. That makes
+  // this field the only signal to the caller that anything was lost.
+  uint32 dropped = 2;
+
+  // Per-reason breakdown of `dropped`, keyed by a stable reason token. This is
+  // what makes a drop actionable rather than merely visible: `salt_unavailable`
+  // is a server-side fault and the same payload may be retried, whereas
+  // `day_out_of_range` is client clock skew that will drop again on every retry.
+  map<string, uint32> dropped_by_reason = 3;
 }
 
 message Event {

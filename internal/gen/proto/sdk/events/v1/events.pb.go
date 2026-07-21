@@ -69,10 +69,21 @@ func (x *BatchCreateRequest) GetEvents() []*Event {
 }
 
 type BatchCreateResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Accepted      *uint32                `protobuf:"varint,1,opt,name=accepted" json:"accepted,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Accepted *uint32                `protobuf:"varint,1,opt,name=accepted" json:"accepted,omitempty"`
+	// Events the server refused to ingest; accepted + dropped equals the number
+	// sent. A drop is deliberately not an error: a batch may legitimately mix
+	// cookieless and consented events, so failing the request would discard
+	// healthy traffic to report a fault affecting only part of it. That makes
+	// this field the only signal to the caller that anything was lost.
+	Dropped *uint32 `protobuf:"varint,2,opt,name=dropped" json:"dropped,omitempty"`
+	// Per-reason breakdown of `dropped`, keyed by a stable reason token. This is
+	// what makes a drop actionable rather than merely visible: `salt_unavailable`
+	// is a server-side fault and the same payload may be retried, whereas
+	// `day_out_of_range` is client clock skew that will drop again on every retry.
+	DroppedByReason map[string]uint32 `protobuf:"bytes,3,rep,name=dropped_by_reason,json=droppedByReason" json:"dropped_by_reason,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *BatchCreateResponse) Reset() {
@@ -110,6 +121,20 @@ func (x *BatchCreateResponse) GetAccepted() uint32 {
 		return *x.Accepted
 	}
 	return 0
+}
+
+func (x *BatchCreateResponse) GetDropped() uint32 {
+	if x != nil && x.Dropped != nil {
+		return *x.Dropped
+	}
+	return 0
+}
+
+func (x *BatchCreateResponse) GetDroppedByReason() map[string]uint32 {
+	if x != nil {
+		return x.DroppedByReason
+	}
+	return nil
 }
 
 type Event struct {
@@ -281,9 +306,14 @@ const file_sdk_events_v1_events_proto_rawDesc = "" +
 	"\x12BatchCreateRequest\x127\n" +
 	"\x06events\x18\x01 \x03(\v2\x14.sdk.events.v1.EventB\t\xbaH\x06\x92\x01\x03\x10\xe8\aR\x06events:\xe3\x02\xbaH\xdf\x02\x1a\xb5\x01\n" +
 	"&batch.cookieless_identity_server_owned\x129cookieless events must not send distinct_id or session_id\x1aPthis.events.all(e, !e.cookieless || (e.distinct_id == '' && e.session_id == ''))\x1a\xa4\x01\n" +
-	"!batch.distinct_id_reserved_prefix\x12Adistinct_id must not start with the reserved 'cookieless-' prefix\x1a<this.events.all(e, !e.distinct_id.startsWith('cookieless-'))\"1\n" +
+	"!batch.distinct_id_reserved_prefix\x12Adistinct_id must not start with the reserved 'cookieless-' prefix\x1a<this.events.all(e, !e.distinct_id.startsWith('cookieless-'))\"\xf4\x01\n" +
 	"\x13BatchCreateResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\rR\baccepted\"\xec\b\n" +
+	"\baccepted\x18\x01 \x01(\rR\baccepted\x12\x18\n" +
+	"\adropped\x18\x02 \x01(\rR\adropped\x12c\n" +
+	"\x11dropped_by_reason\x18\x03 \x03(\v27.sdk.events.v1.BatchCreateResponse.DroppedByReasonEntryR\x0fdroppedByReason\x1aB\n" +
+	"\x14DroppedByReasonEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\rR\x05value:\x028\x01\"\xec\b\n" +
 	"\x05Event\x12&\n" +
 	"\bevent_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\aeventId\x12Q\n" +
 	"\x0fauto_properties\x18\x02 \x03(\v2(.sdk.events.v1.Event.AutoPropertiesEntryR\x0eautoProperties\x12W\n" +
@@ -328,32 +358,34 @@ func file_sdk_events_v1_events_proto_rawDescGZIP() []byte {
 	return file_sdk_events_v1_events_proto_rawDescData
 }
 
-var file_sdk_events_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_sdk_events_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_sdk_events_v1_events_proto_goTypes = []any{
 	(*BatchCreateRequest)(nil),    // 0: sdk.events.v1.BatchCreateRequest
 	(*BatchCreateResponse)(nil),   // 1: sdk.events.v1.BatchCreateResponse
 	(*Event)(nil),                 // 2: sdk.events.v1.Event
 	(*EventBatch)(nil),            // 3: sdk.events.v1.EventBatch
-	nil,                           // 4: sdk.events.v1.Event.AutoPropertiesEntry
-	nil,                           // 5: sdk.events.v1.Event.CustomPropertiesEntry
-	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
-	(*v1.PropertyValue)(nil),      // 7: common.v1.PropertyValue
+	nil,                           // 4: sdk.events.v1.BatchCreateResponse.DroppedByReasonEntry
+	nil,                           // 5: sdk.events.v1.Event.AutoPropertiesEntry
+	nil,                           // 6: sdk.events.v1.Event.CustomPropertiesEntry
+	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
+	(*v1.PropertyValue)(nil),      // 8: common.v1.PropertyValue
 }
 var file_sdk_events_v1_events_proto_depIdxs = []int32{
 	2, // 0: sdk.events.v1.BatchCreateRequest.events:type_name -> sdk.events.v1.Event
-	4, // 1: sdk.events.v1.Event.auto_properties:type_name -> sdk.events.v1.Event.AutoPropertiesEntry
-	5, // 2: sdk.events.v1.Event.custom_properties:type_name -> sdk.events.v1.Event.CustomPropertiesEntry
-	6, // 3: sdk.events.v1.Event.occur_time:type_name -> google.protobuf.Timestamp
-	2, // 4: sdk.events.v1.EventBatch.events:type_name -> sdk.events.v1.Event
-	7, // 5: sdk.events.v1.Event.AutoPropertiesEntry.value:type_name -> common.v1.PropertyValue
-	7, // 6: sdk.events.v1.Event.CustomPropertiesEntry.value:type_name -> common.v1.PropertyValue
-	0, // 7: sdk.events.v1.EventsService.BatchCreate:input_type -> sdk.events.v1.BatchCreateRequest
-	1, // 8: sdk.events.v1.EventsService.BatchCreate:output_type -> sdk.events.v1.BatchCreateResponse
-	8, // [8:9] is the sub-list for method output_type
-	7, // [7:8] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	4, // 1: sdk.events.v1.BatchCreateResponse.dropped_by_reason:type_name -> sdk.events.v1.BatchCreateResponse.DroppedByReasonEntry
+	5, // 2: sdk.events.v1.Event.auto_properties:type_name -> sdk.events.v1.Event.AutoPropertiesEntry
+	6, // 3: sdk.events.v1.Event.custom_properties:type_name -> sdk.events.v1.Event.CustomPropertiesEntry
+	7, // 4: sdk.events.v1.Event.occur_time:type_name -> google.protobuf.Timestamp
+	2, // 5: sdk.events.v1.EventBatch.events:type_name -> sdk.events.v1.Event
+	8, // 6: sdk.events.v1.Event.AutoPropertiesEntry.value:type_name -> common.v1.PropertyValue
+	8, // 7: sdk.events.v1.Event.CustomPropertiesEntry.value:type_name -> common.v1.PropertyValue
+	0, // 8: sdk.events.v1.EventsService.BatchCreate:input_type -> sdk.events.v1.BatchCreateRequest
+	1, // 9: sdk.events.v1.EventsService.BatchCreate:output_type -> sdk.events.v1.BatchCreateResponse
+	9, // [9:10] is the sub-list for method output_type
+	8, // [8:9] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_sdk_events_v1_events_proto_init() }
@@ -367,7 +399,7 @@ func file_sdk_events_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sdk_events_v1_events_proto_rawDesc), len(file_sdk_events_v1_events_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

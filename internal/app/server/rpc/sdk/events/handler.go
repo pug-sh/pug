@@ -68,6 +68,51 @@ func init() {
 	)
 }
 
+// Drop reasons, reported BOTH as the `reason` attribute on
+// events.cookieless_dropped_total and as keys of
+// BatchCreateResponse.dropped_by_reason. One constant per reason so the metric
+// label an operator alerts on and the token a client branches on cannot drift
+// apart.
+const (
+	// dropReasonDayOutOfRange: occur_time fell outside the today/yesterday UTC
+	// salt window. Client-side (usually severe clock skew) — retrying the same
+	// payload drops it again.
+	dropReasonDayOutOfRange = "day_out_of_range"
+	// dropReasonSaltUnavailable: the daily salt could not be read or minted, so
+	// identity cannot be derived and is never fabricated. Server-side — the same
+	// payload may succeed on retry.
+	dropReasonSaltUnavailable = "salt_unavailable"
+)
+
+// dropTally counts events refused during ingest resolution, keyed by reason.
+// The zero value is unusable; construct with make.
+type dropTally map[string]uint32
+
+func (d dropTally) add(reason string) { d[reason]++ }
+
+func (d dropTally) total() uint32 {
+	var n uint32
+	for _, c := range d {
+		n += c
+	}
+	return n
+}
+
+// batchResponse reports what became of a batch: how many events were published,
+// and how many the server refused, by reason. Every return path builds its
+// response here so a partial or total drop can never surface as a bare
+// accepted=0 that the caller has to infer a fault from.
+func batchResponse(accepted int, drops dropTally) *connect.Response[eventsv1.BatchCreateResponse] {
+	msg := &eventsv1.BatchCreateResponse{
+		Accepted: proto.Uint32(uint32(accepted)),
+		Dropped:  proto.Uint32(drops.total()),
+	}
+	if len(drops) > 0 {
+		msg.DroppedByReason = drops
+	}
+	return connect.NewResponse(msg)
+}
+
 // identityResolver is the cookieless identity dependency, satisfied by
 // *cookieless.Resolver; an interface so handler tests stub it without Redis.
 type identityResolver interface {
@@ -110,7 +155,7 @@ func (s *Server) BatchCreate(
 	if len(events) == 0 {
 		slog.DebugContext(ctx, "received empty event batch",
 			slog.String("project_id", principal.Project.ID))
-		return connect.NewResponse(&eventsv1.BatchCreateResponse{Accepted: proto.Uint32(0)}), nil
+		return batchResponse(0, nil), nil
 	}
 
 	if err := coreevents.ValidateExternalEvents(events); err != nil {
@@ -118,12 +163,15 @@ func (s *Server) BatchCreate(
 	}
 
 	projectID := principal.Project.ID
-	events, err = s.resolveCookieless(ctx, projectID, req.Header(), req.Peer().Addr, events)
+	events, drops, err := s.resolveCookieless(ctx, projectID, req.Header(), req.Peer().Addr, events)
 	if err != nil {
 		return nil, err
 	}
 	if len(events) == 0 {
-		return connect.NewResponse(&eventsv1.BatchCreateResponse{Accepted: proto.Uint32(0)}), nil
+		// Every event was refused. Still OK, not an error — but the response now
+		// carries why, so a caller can tell a retryable salt outage apart from
+		// permanently unusable timestamps instead of seeing a bare accepted=0.
+		return batchResponse(0, drops), nil
 	}
 	s.enrichGeo(ctx, projectID, req.Header(), events)
 	s.enrichUserAgent(ctx, projectID, req.Header(), events)
@@ -135,9 +183,7 @@ func (s *Server) BatchCreate(
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to accept events"))
 	}
 
-	return connect.NewResponse(&eventsv1.BatchCreateResponse{
-		Accepted: proto.Uint32(uint32(len(events))),
-	}), nil
+	return batchResponse(len(events), drops), nil
 }
 
 func (s *Server) enrichUserAgent(ctx context.Context, projectID string, h http.Header, events []*eventsv1.Event) {
@@ -366,7 +412,9 @@ func autoPropInt64(m map[string]*commonv1.PropertyValue, key string) int64 {
 // that must be loud. Per-event conditions (occur_time outside the salt window,
 // salt unavailable) drop only the affected cookieless events, counted by
 // reason; consented traffic in the same batch is never affected.
-func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http.Header, peerAddr string, events []*eventsv1.Event) ([]*eventsv1.Event, error) {
+func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http.Header, peerAddr string, events []*eventsv1.Event) ([]*eventsv1.Event, dropTally, error) {
+	drops := make(dropTally, 2)
+
 	hasCookieless := false
 	for _, e := range events {
 		if e.GetCookieless() {
@@ -375,12 +423,12 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 		}
 	}
 	if !hasCookieless {
-		return events, nil
+		return events, drops, nil
 	}
 	if s.cookieless == nil {
 		slog.ErrorContext(ctx, "cookieless events received but no resolver is wired",
 			slog.String("project_id", projectID))
-		return nil, connect.NewError(connect.CodeInternal, errors.New("cookieless ingestion unavailable"))
+		return nil, drops, connect.NewError(connect.CodeInternal, errors.New("cookieless ingestion unavailable"))
 	}
 
 	ua := h.Get("User-Agent")
@@ -389,7 +437,7 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 		ip = peerIP(peerAddr)
 	}
 	if ua == "" || ip == "" {
-		return nil, apperr.Invalid(apperr.ReasonCookielessIdentityUnavailable,
+		return nil, drops, apperr.Invalid(apperr.ReasonCookielessIdentityUnavailable,
 			"cookieless events require a User-Agent header and a resolvable client address")
 	}
 
@@ -411,9 +459,10 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 		occur := e.GetOccurTime().AsTime()
 		day, ok := s.cookieless.DayOf(occur)
 		if !ok {
+			drops.add(dropReasonDayOutOfRange)
 			cookielessDroppedCounter.Add(ctx, 1, metric.WithAttributes(
 				attribute.String("project_id", projectID),
-				attribute.String("reason", "day_out_of_range"),
+				attribute.String("reason", dropReasonDayOutOfRange),
 			))
 			continue
 		}
@@ -430,9 +479,10 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 					slogx.Error(id.err), slog.String("project_id", projectID))
 				telemetry.RecordError(ctx, id.err)
 			}
+			drops.add(dropReasonSaltUnavailable)
 			cookielessDroppedCounter.Add(ctx, 1, metric.WithAttributes(
 				attribute.String("project_id", projectID),
-				attribute.String("reason", "salt_unavailable"),
+				attribute.String("reason", dropReasonSaltUnavailable),
 			))
 			continue
 		}
@@ -446,7 +496,7 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 		e.SessionId = proto.String(sid)
 		kept = append(kept, e)
 	}
-	return kept, nil
+	return kept, drops, nil
 }
 
 // peerIP extracts the bare host from a host:port peer address; a value with no
