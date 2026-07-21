@@ -74,3 +74,42 @@ func TestDistinctID_DeterministicAndRotating(t *testing.T) {
 		t.Error("different UA must produce a different id")
 	}
 }
+
+// TestParseSession_Corrupt covers both of parseSession's failure returns. A
+// corrupt value is not hypothetical: the session key is a bare string another
+// process could overwrite, and both failures must degrade to "mint a new
+// session" rather than panicking or returning a zero time that withinInactivity
+// would then read as a 56-year gap.
+func TestParseSession_Corrupt(t *testing.T) {
+	const sid = "f47ac10b-58cc-4372-a567-0e02b2c3d999"
+	for _, c := range []struct{ name, val string }{
+		{"empty", ""},
+		{"no_separator", sid},
+		{"non_numeric_timestamp", sid + "|not-a-number"},
+		{"empty_session_id", "|1700000000000"},
+		{"separator_only", "|"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			gotSID, gotLast, ok := parseSession(c.val)
+			if ok {
+				t.Fatalf("parseSession(%q) = (%q, %v, true), want ok=false", c.val, gotSID, gotLast)
+			}
+			if gotSID != "" || !gotLast.IsZero() {
+				t.Errorf("failed parse must return zero values, got (%q, %v)", gotSID, gotLast)
+			}
+		})
+	}
+}
+
+func TestParseSession_RoundTrip(t *testing.T) {
+	const sid = "f47ac10b-58cc-4372-a567-0e02b2c3d999"
+	last := time.UnixMilli(1700000000123).UTC()
+
+	gotSID, gotLast, ok := parseSession(formatSession(sid, last))
+	if !ok {
+		t.Fatal("round-trip must parse")
+	}
+	if gotSID != sid || !gotLast.Equal(last) {
+		t.Errorf("round-trip = (%q, %v), want (%q, %v)", gotSID, gotLast, sid, last)
+	}
+}

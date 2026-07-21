@@ -56,10 +56,41 @@ func (r *Resolver) SessionID(ctx context.Context, projectID, distinctID, day str
 		r.slideSession(ctx, key, sid, last, occur)
 		return sid, false
 	}
+	// The event falls outside the stored session's window, so it gets its own
+	// session — but the DIRECTION decides whether it may become the new watermark.
+	// A backward event (late flush, replayed batch, backfill) that recorded its own
+	// time would rewind last-activity, and every subsequent event already stitched
+	// to the live session would then measure against the rewound mark and re-mint:
+	// two events with the same occur_time end up in different sessions. This is the
+	// same monotonicity slideSession enforces at its own write; the two writes must
+	// agree. Pinned by TestSessionID_OutOfOrderDoesNotFragment.
+	if _, last, ok := parseSession(prior); ok && !occur.After(last) {
+		return r.staleSessionID(distinctID, day, occur), false
+	}
 	if err := r.rdb.Set(ctx, key, formatSession(fresh, occur), sessionTTL).Err(); err != nil {
 		return r.fallbackSessionID(distinctID, day), true
 	}
 	return fresh, false
+}
+
+// staleSessionID names the session for an event that arrived after the visitor
+// had already moved on — it landed more than sessionInactivity BEFORE the stored
+// last-activity, so it cannot join the live session and must not disturb it.
+//
+// No Redis state is written for these events, so whatever this returns is the
+// only thing binding two stranded events together. That makes it a real choice
+// about how late-arriving data is sessionized, not an implementation detail.
+func (r *Resolver) staleSessionID(distinctID, day string, occur time.Time) string {
+	// TODO(session-semantics): decide how stranded events group. See the three
+	// candidate models discussed alongside this change:
+	//   - per-event   : uuid.NewString() — never collides, but two stranded events
+	//                   one minute apart become two sessions (over-fragments).
+	//   - per-day     : r.fallbackSessionID(distinctID, day) — all stranded events
+	//                   in a visitor-day collapse to one, idempotent under replay,
+	//                   but indistinguishable from the Redis-outage fallback.
+	//   - per-window  : deterministic over occur's sessionInactivity bucket —
+	//                   faithful and replay-stable, but a third minting scheme.
+	return uuid.NewString()
 }
 
 // slideSession advances last-activity monotonically; best-effort (a lost slide
