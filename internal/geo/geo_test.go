@@ -97,6 +97,69 @@ func TestClientIP_ValidatesAddresses(t *testing.T) {
 	}
 }
 
+// TestClientIPWithSource pins which header an address came from.
+//
+// ClientIP alone cannot distinguish "no proxy header was sent" from "a proxy
+// header was sent and rejected" — both return "". That difference matters more
+// here than anywhere else the IP is used, because the caller falls back to the
+// connection peer, which behind a proxy is the SAME address for every visitor.
+// A tenant whose ingress prepends a non-IP token (several emit `unknown` in the
+// leading X-Forwarded-For position, which is the xff_rejects_* case below) then
+// silently collapses their entire cookieless population onto one identity per
+// (peer, UA) per day. Sessions are keyed on distinct_id, and session metrics never
+// exclude cookieless traffic, so sessions/bounce-rate/AVG_EVENTS_PER_SESSION
+// corrupt with no toggle that could mask or explain it — at a 200 response.
+//
+// Returning the source lets the caller count it, which is what turns a silent
+// downgrade into an alertable one.
+func TestClientIPWithSource(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		header     string
+		value      string
+		wantIP     string
+		wantSource string
+	}{
+		{"cf_wins", HeaderCFConnectingIP, "203.0.113.7", "203.0.113.7", SourceCFConnectingIP},
+		{"true_client", HeaderTrueClientIP, "198.51.100.4", "198.51.100.4", SourceTrueClientIP},
+		{"xff", HeaderXForwardedFor, "203.0.113.7, 70.41.3.18", "203.0.113.7", SourceXForwardedFor},
+		// The collapse trigger: a header WAS supplied and was rejected.
+		{"xff_rejected_is_not_absent", HeaderXForwardedFor, "unknown, 203.0.113.7", "", SourceRejected},
+		{"cf_rejected_is_not_absent", HeaderCFConnectingIP, "not-an-ip", "", SourceRejected},
+		{"absent", "", "", "", SourceNone},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := http.Header{}
+			if c.value != "" {
+				h.Set(c.header, c.value)
+			}
+			ip, source := ClientIPWithSource(h)
+			if ip != c.wantIP {
+				t.Errorf("ip = %q, want %q", ip, c.wantIP)
+			}
+			if source != c.wantSource {
+				t.Errorf("source = %q, want %q — a rejected header must not look like an absent one",
+					source, c.wantSource)
+			}
+		})
+	}
+}
+
+// ClientIP must stay exactly as it was: same result, just implemented on top of
+// the source-returning variant.
+func TestClientIP_AgreesWithClientIPWithSource(t *testing.T) {
+	for _, v := range []string{"203.0.113.7", "unknown, 203.0.113.7", "not-an-ip", ""} {
+		h := http.Header{}
+		if v != "" {
+			h.Set(HeaderXForwardedFor, v)
+		}
+		ip, _ := ClientIPWithSource(h)
+		if got := ClientIP(h); got != ip {
+			t.Errorf("ClientIP(%q) = %q but ClientIPWithSource gave %q", v, got, ip)
+		}
+	}
+}
+
 // TestClientIP_FallsThroughInvalidHeader pins that a malformed higher-priority
 // header does not mask a valid lower-priority one. Returning "" there would let
 // anyone suppress identity resolution by sending one junk header.

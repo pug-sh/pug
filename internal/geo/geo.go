@@ -67,26 +67,78 @@ const (
 // outside the CDN can be fed any address. Restricting who may set them belongs
 // at the edge (a trusted-proxy allowlist), not in this function.
 func ClientIP(h http.Header) string {
-	for _, header := range []string{HeaderCFConnectingIP, HeaderTrueClientIP} {
-		if ip, ok := parseClientIP(h.Get(header)); ok {
-			return ip
+	ip, _ := ClientIPWithSource(h)
+	return ip
+}
+
+// Identity sources reported by ClientIPWithSource. SourceRejected and SourceNone
+// both yield an empty IP but mean opposite things operationally: nothing was
+// offered, versus something was offered and did not parse. Only the latter is a
+// misconfiguration.
+const (
+	SourceCFConnectingIP = "cf_connecting_ip"
+	SourceTrueClientIP   = "true_client_ip"
+	SourceXForwardedFor  = "x_forwarded_for"
+	SourceRejected       = "rejected"
+	SourceNone           = "none"
+)
+
+// ClientIPWithSource is ClientIP plus which header the address came from, or why
+// there is none.
+//
+// The source exists for one reason: an empty IP is ambiguous, and its two causes
+// need different responses. No proxy header at all is normal for a direct-to-origin
+// deployment. A header that was present and failed to parse is a misconfiguration,
+// and a silent one — the caller falls back to the connection peer, which behind a
+// proxy is one address shared by every visitor, so an entire tenant's cookieless
+// population collapses onto a single identity per (peer, UA) per day while the
+// requests keep returning 200.
+//
+// Note the ordering: CF-Connecting-IP and True-Client-IP are consulted BEFORE
+// X-Forwarded-For, so a Cloudflare-fronted deployment never reaches the XFF branch
+// and is unaffected by a malformed leading entry there.
+func ClientIPWithSource(h http.Header) (ip, source string) {
+	offered := false
+	for _, hdr := range []struct{ name, source string }{
+		{HeaderCFConnectingIP, SourceCFConnectingIP},
+		{HeaderTrueClientIP, SourceTrueClientIP},
+	} {
+		raw := h.Get(hdr.name)
+		if raw == "" {
+			continue
+		}
+		offered = true
+		if ip, ok := ParseClientIP(raw); ok {
+			return ip, hdr.source
 		}
 	}
 	if xff := h.Get(HeaderXForwardedFor); xff != "" {
+		offered = true
 		// X-Forwarded-For can be comma-separated; first entry is the client.
 		first, _, _ := strings.Cut(xff, ",")
-		if ip, ok := parseClientIP(first); ok {
-			return ip
+		if ip, ok := ParseClientIP(first); ok {
+			return ip, SourceXForwardedFor
 		}
 	}
-	return ""
+	if offered {
+		return "", SourceRejected
+	}
+	return "", SourceNone
 }
 
-// parseClientIP validates one header value and returns it in canonical form.
+// ParseClientIP validates one candidate address and returns it in canonical form.
+//
+// Exported because headers are not the only way an address reaches the cookieless
+// HMAC: the connection peer is the fallback when no proxy header parses, and it
+// has to clear the same bar. Any caller feeding an address into identity
+// derivation goes through here, so the "no field before the last can contain the
+// 0x00 separator" framing argument in cookieless.DistinctID holds by construction
+// instead of by trusting whoever produced the string.
+//
 // The zone on a link-local address ("fe80::1%eth0") is dropped: it names a local
 // interface, not the visitor, and would otherwise split one address into as many
 // identities as there are zone spellings.
-func parseClientIP(raw string) (string, bool) {
+func ParseClientIP(raw string) (string, bool) {
 	addr, err := netip.ParseAddr(strings.TrimSpace(raw))
 	if err != nil {
 		return "", false
