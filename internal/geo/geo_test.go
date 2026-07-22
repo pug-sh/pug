@@ -76,6 +76,7 @@ func TestClientIP_ValidatesAddresses(t *testing.T) {
 	}{
 		{"cf_ipv4", HeaderCFConnectingIP, "203.0.113.7", "203.0.113.7"},
 		{"cf_ipv6_canonicalised", HeaderCFConnectingIP, "2001:0DB8::0001", "2001:db8::1"},
+		{"cf_ipv4_mapped_unmapped", HeaderCFConnectingIP, "::ffff:203.0.113.7", "203.0.113.7"},
 		{"cf_rejects_nul", HeaderCFConnectingIP, "203.0.113.7\x005.6.7.8", ""},
 		{"cf_rejects_garbage", HeaderCFConnectingIP, "not-an-ip", ""},
 		{"cf_rejects_empty", HeaderCFConnectingIP, "", ""},
@@ -118,7 +119,7 @@ func TestClientIPWithSource(t *testing.T) {
 		header     string
 		value      string
 		wantIP     string
-		wantSource string
+		wantSource IPSource
 	}{
 		{"cf_wins", HeaderCFConnectingIP, "203.0.113.7", "203.0.113.7", SourceCFConnectingIP},
 		{"true_client", HeaderTrueClientIP, "198.51.100.4", "198.51.100.4", SourceTrueClientIP},
@@ -169,5 +170,19 @@ func TestClientIP_FallsThroughInvalidHeader(t *testing.T) {
 	h.Set(HeaderXForwardedFor, "203.0.113.7")
 	if got := ClientIP(h); got != "203.0.113.7" {
 		t.Errorf("ClientIP = %q, want fall-through to the valid XFF entry %q", got, "203.0.113.7")
+	}
+}
+
+// TestParseClientIP_UnmapsIPv4InIPv6 pins that the two spellings of one IPv4
+// address produce one HMAC input. Dual-stack proxies emit the mapped form in
+// X-Forwarded-For beside the plain one, so without Unmap a single client splits
+// into two cookieless visitors whenever the spelling changes.
+func TestParseClientIP_UnmapsIPv4InIPv6(t *testing.T) {
+	const want = "203.0.113.7"
+	for _, raw := range []string{want, "::ffff:203.0.113.7", "::ffff:cb00:7107"} {
+		got, ok := ParseClientIP(raw)
+		if !ok || got != want {
+			t.Errorf("ParseClientIP(%q) = (%q, %v), want (%q, true)", raw, got, ok, want)
+		}
 	}
 }

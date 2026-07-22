@@ -65,7 +65,7 @@ func init() {
 	)
 	cookielessIdentitySourceCounter, _ = meter.Int64Counter(
 		"events.cookieless_identity_source_total",
-		metric.WithDescription("Which input keyed a cookieless batch's identity: source=cf_connecting_ip|true_client_ip|x_forwarded_for (a proxy header parsed), source=peer (no header parsed, so the CONNECTION address was used — behind a proxy that is one address shared by every visitor, collapsing them onto a single identity per UA per day), or source=rejected_no_peer. A sustained non-zero source=peer on a proxied deployment is a misconfiguration, not a quirk: sessions key on distinct_id and session metrics never exclude cookieless traffic, so it corrupts session counts with no toggle that could explain it."),
+		metric.WithDescription("Which input keyed a cookieless batch's identity (geo.IPSource). source=cf_connecting_ip|true_client_ip|x_forwarded_for: a proxy header parsed. source=peer_no_header: none offered, the CONNECTION address was used — expected direct-to-origin. source=peer_after_rejected_header: a header WAS offered and did not parse — alert on this, since behind a proxy the connection address is shared by every visitor, so the tenant's cookieless population collapses onto one identity per UA per day at a 200, corrupting session metrics (which never exclude cookieless traffic). source=none_no_peer|rejected_no_peer: nothing resolved, batch refused."),
 	)
 	cookielessSessionDegradedCounter, _ = meter.Int64Counter(
 		"events.cookieless_session_degraded_total",
@@ -474,25 +474,10 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 	}
 
 	ua := h.Get("User-Agent")
-	// Record WHICH input keyed identity, not just that one was found. A proxy
-	// header that is present but unparseable falls through to the connection peer,
-	// which behind a proxy is identical for every visitor — silently merging a
-	// tenant's whole cookieless population into one identity per UA per day, at a
-	// 200 response. Nothing else in the pipeline can see that happen: the ids stay
-	// well-formed, the events are accepted, and the damage lands in session metrics,
-	// which never exclude cookieless traffic and so have no toggle that could
-	// explain the collapse.
-	ip, ipSource := geo.ClientIPWithSource(h)
-	if ip == "" {
-		if ip = peerIP(peerAddr); ip != "" {
-			ipSource = "peer"
-		} else {
-			ipSource = "rejected_no_peer"
-		}
-	}
+	ip, ipSource := identitySource(h, peerAddr)
 	cookielessIdentitySourceCounter.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("project_id", projectID),
-		attribute.String("source", ipSource),
+		attribute.String("source", string(ipSource)),
 	))
 	if ua == "" || ip == "" {
 		// The design deliberately fails the whole request here (see above), but
@@ -575,6 +560,31 @@ func (s *Server) resolveCookieless(ctx context.Context, projectID string, h http
 		kept = append(kept, e)
 	}
 	return kept, drops, nil
+}
+
+// identitySource resolves the IP that keys the cookieless HMAC, and which input
+// produced it.
+//
+// Whether the peer fallback is benign depends on WHY the header path yielded
+// nothing, so that survives into the source: behind a proxy the peer is one
+// address shared by every visitor, and a rejected header is the only warning
+// that a whole tenant has just collapsed onto one identity per UA per day.
+func identitySource(h http.Header, peerAddr string) (string, geo.IPSource) {
+	ip, source := geo.ClientIPWithSource(h)
+	if ip != "" {
+		return ip, source
+	}
+	rejected := source == geo.SourceRejected
+	switch ip = peerIP(peerAddr); {
+	case ip != "" && rejected:
+		return ip, geo.SourcePeerAfterRejected
+	case ip != "":
+		return ip, geo.SourcePeerNoHeader
+	case rejected:
+		return "", geo.SourceRejectedNoPeer
+	default:
+		return "", geo.SourceNoneNoPeer
+	}
 }
 
 // peerIP extracts the bare host from a host:port peer address and validates it

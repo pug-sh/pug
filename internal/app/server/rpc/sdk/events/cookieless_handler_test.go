@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/pug-sh/pug/internal/cookieless"
 	coreevents "github.com/pug-sh/pug/internal/core/events"
 	eventsv1 "github.com/pug-sh/pug/internal/gen/proto/sdk/events/v1"
+	"github.com/pug-sh/pug/internal/geo"
 )
 
 type stubResolver struct {
@@ -525,6 +527,43 @@ func TestPeerIP(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if got := peerIP(c.addr); got != c.want {
 				t.Errorf("peerIP(%q) = %q, want %q", c.addr, got, c.want)
+			}
+		})
+	}
+}
+
+// TestIdentitySource pins that a rejected proxy header stays distinguishable
+// from an absent one after the peer fallback. Collapsing the two hides the case
+// where a proxy emits unparseable addresses and every visitor behind it hashes
+// to the proxy's own — one identity per UA per day for the whole tenant, at a
+// 200 response, with no other symptom.
+func TestIdentitySource(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		header     string
+		value      string
+		peer       string
+		wantIP     string
+		wantSource geo.IPSource
+	}{
+		{"cf_header", geo.HeaderCFConnectingIP, "203.0.113.7", "10.0.0.1:1", "203.0.113.7", geo.SourceCFConnectingIP},
+		{"xff_header", geo.HeaderXForwardedFor, "203.0.113.7, 70.41.3.18", "10.0.0.1:1", "203.0.113.7", geo.SourceXForwardedFor},
+		{"no_header_uses_peer", "", "", "198.51.100.4:44321", "198.51.100.4", geo.SourcePeerNoHeader},
+		{"rejected_header_uses_peer", geo.HeaderXForwardedFor, "unknown", "198.51.100.4:44321", "198.51.100.4", geo.SourcePeerAfterRejected},
+		{"rejected_header_no_peer", geo.HeaderCFConnectingIP, "not-an-ip", "", "", geo.SourceRejectedNoPeer},
+		{"no_header_no_peer", "", "", "", "", geo.SourceNoneNoPeer},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := http.Header{}
+			if c.value != "" {
+				h.Set(c.header, c.value)
+			}
+			ip, source := identitySource(h, c.peer)
+			if ip != c.wantIP {
+				t.Errorf("ip = %q, want %q", ip, c.wantIP)
+			}
+			if source != c.wantSource {
+				t.Errorf("source = %q, want %q", source, c.wantSource)
 			}
 		})
 	}
