@@ -38,7 +38,7 @@ func init() {
 	)
 	saltCacheMissCounter, _ = meter.Int64Counter(
 		"cookieless.salt_cache_miss_total",
-		metric.WithDescription("Daily cookieless salt fetched (or minted) from Redis. Expect ~2/day/pod; a sustained elevated rate means the local cache is not retaining salts."),
+		metric.WithDescription("Daily cookieless salt fetched (or minted) from Redis. Expect ~1/day/pod steady state (yesterday's salt is already cached when the day rolls), 2 on the first day after a restart; a sustained elevated rate means the local cache is not retaining salts."),
 	)
 }
 

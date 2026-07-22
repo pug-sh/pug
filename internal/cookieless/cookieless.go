@@ -21,9 +21,10 @@ import (
 
 const (
 	// IDPrefix marks every server-minted cookieless distinct_id. It partitions
-	// the anonymous id space next to the SDK's "anon-" convention and is
-	// load-bearing in ClickHouse migration 011 and the insights builders —
-	// pinned by TestMigration011CookielessPrefixMatchesGo.
+	// the anonymous id space next to the SDK's "anon-" convention. The insights
+	// builders consume this constant directly; migration 011 restates it as a
+	// literal, so only that copy needs pinning —
+	// TestMigration011CookielessPrefixMatchesGo.
 	IDPrefix = "cookieless-"
 
 	dayFormat         = "20060102"
@@ -92,8 +93,9 @@ func (r *Resolver) DayOf(occur time.Time) (Day, bool) {
 //	IDPrefix + base64url-unpadded(HMAC-SHA256(salt_day, project ‖ 0x00 ‖ ip ‖ 0x00 ‖ ua)[:16])
 //
 // 16 bytes under RawURLEncoding is 22 characters (padded would be 24). The
-// framing is injective because geo.ClientIP validates ip, so no field before the
-// last can contain the 0x00 separator.
+// framing is injective because every ip reaching here has been through
+// geo.ParseClientIP and projectID is a DB-issued id, so no field before the last
+// can contain the 0x00 separator.
 //
 // IP and UA are hash inputs only — never stored, never returned. The only
 // error is salt unavailability (Redis unreachable with a cold cache); the

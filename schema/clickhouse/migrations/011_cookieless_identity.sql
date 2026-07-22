@@ -104,7 +104,7 @@ GROUP BY project_id, day, kind, dim_name, dim_value, cookieless;
 
 -- Restore the 005 activity MV (no WHERE) and the 009 rollup MV query. The
 -- cookieless key column cannot be dropped (it is part of the sorting key);
--- after this Down, the MV stops emitting it and new rows take DEFAULT 0 —
+-- after this Down, the MV stops emitting it and new rows take the type default 0 —
 -- fine for dev, where down migrations run against disposable databases.
 
 ALTER TABLE distinct_id_activity_states_mv MODIFY QUERY

@@ -61,8 +61,9 @@ func excludeCookielessForPersons(spec *insightsv1.InsightQuerySpec) bool {
 // is joined under a name — retention and top K both join it as `e`. Note `e` is
 // the raw events table, NOT a CTE, and the predicate must land on those event
 // rows: in retention the CTE is `c` (the cohort side of `cohorts c INNER JOIN
-// events e`), while top K joins a subquery aliased `i` over its own
-// `latest_profiles`/`per_user`/`ranked` CTEs. Returns the zero Condition when
+// events e`), while in top K `e` is joined to an identity subquery aliased `i`
+// over `latest_profiles`/`latest_profile_aliases` — the `per_user` and `ranked`
+// CTEs sit above that join, not inside it. Returns the zero Condition when
 // exclude is false, which Where skips.
 func cookielessExclusionCond(exclude bool, alias string) chq.Condition {
 	col := "distinct_id"
