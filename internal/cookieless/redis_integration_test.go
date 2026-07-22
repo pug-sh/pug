@@ -300,7 +300,10 @@ func TestSaltForDay_LostMintRace_AdoptsWinner(t *testing.T) {
 	}
 	rd := testutil.SetupRedis(t)
 	ctx := context.Background()
-	const day = "20260720"
+	// Day derived from the pinned clock, not written beside it: saltForDay rejects
+	// any day outside DayOf's window, so a literal day on the real clock expires.
+	now := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	day := Day(now.Format(dayFormat))
 
 	winner := make([]byte, saltLen)
 	for i := range winner {
@@ -308,11 +311,12 @@ func TestSaltForDay_LostMintRace_AdoptsWinner(t *testing.T) {
 	}
 	rd.Client.AddHook(&raceHook{
 		rdb:    rd.Client,
-		key:    saltKeyPrefix + day,
+		key:    saltKeyPrefix + string(day),
 		winner: base64.StdEncoding.EncodeToString(winner),
 	})
 
 	r := New(rd.Client)
+	r.now = func() time.Time { return now }
 	got, err := r.saltForDay(ctx, day)
 	if err != nil {
 		t.Fatalf("losing the mint race must adopt the winner, not error: %v", err)
