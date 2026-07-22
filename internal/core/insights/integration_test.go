@@ -1849,6 +1849,62 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("rollup_parity_trends_multi_event_divergent_top_n", func(t *testing.T) {
+		// The seed above shares one ranking across kinds; this one inverts it, so
+		// each kind names a value the other folded into $others. Zero-filling is
+		// per-kind for exactly this reason — a global grid synthesizes page_view|GB=0
+		// while GB's 5 views are already inside page_view|$others.
+		const projectID = "proj_rollup_divergent_topn"
+		seed := func(kind, cc string, n int) {
+			t.Helper()
+			for i := range n {
+				if err := insertAutoEvent(ctx, ch.Conn, projectID, uuid.New().String(), kind, "u-"+cc,
+					time.Date(2024, 1, 1, 12, i, 0, 0, time.UTC),
+					variantStringMap(map[string]string{"$country": cc})); err != nil {
+					t.Fatalf("seed: %v", err)
+				}
+			}
+		}
+		seed("page_view", "FR", 20)
+		seed("page_view", "US", 10)
+		seed("page_view", "GB", 5)
+		seed("signup", "GB", 9)
+		seed("signup", "US", 4)
+		seed("signup", "FR", 1)
+
+		total := insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: total.Enum()},
+					{Event: &commonv1.EventFilter{Kind: proto.String("signup")}, Aggregation: total.Enum()},
+				},
+				Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+				BreakdownLimit: proto.Int32(2),
+			},
+			TimeRange:   &commonv1.TimeRange{From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), To: timestamppb.New(time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC))},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+		assertTrendsParity(t, ctx, executor, projectID, req)
+
+		resp, err := insights.ExecuteQuery(ctx, executor, projectID, req, time.Now())
+		if err != nil {
+			t.Fatalf("ExecuteQuery: %v", err)
+		}
+		want := map[string]float64{
+			"page_view|FR|2024-01-01":      20,
+			"page_view|US|2024-01-01":      10,
+			"page_view|$others|2024-01-01": 5,
+			"signup|GB|2024-01-01":         9,
+			"signup|US|2024-01-01":         4,
+			"signup|$others|2024-01-01":    1,
+		}
+		if got := flattenTrendsResp(resp); !reflect.DeepEqual(got, want) {
+			t.Errorf("divergent per-kind top-N:\nwant=%v\ngot =%v", want, got)
+		}
+	})
+
 	t.Run("rollup_parity_matrix", func(t *testing.T) {
 		// Exhaustive rollup == raw across the eligible grid: trends over
 		// {TOTAL, UNIQUE_USERS, PER_USER_AVG} × {DAY, WEEK, MONTH} × {no-breakdown,

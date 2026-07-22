@@ -668,11 +668,11 @@ func applyTrendsTopN(
 
 	othersBreakdown := make(map[string]string, len(properties))
 	for _, prop := range properties {
-		othersBreakdown[prop] = "$others"
+		othersBreakdown[prop] = othersBucket
 	}
 	othersBreakdownVals := make([]string, len(properties))
 	for i := range othersBreakdownVals {
-		othersBreakdownVals[i] = "$others"
+		othersBreakdownVals[i] = othersBucket
 	}
 	othersBreakdownKey := breakdownKey(othersBreakdownVals)
 

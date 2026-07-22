@@ -12,12 +12,18 @@ import (
 )
 
 // rollupTable is the daily dimensional rollup populated by
-// dashboard_event_rollup_daily_mv (migration 006, MV query extended by 009).
+// dashboard_event_rollup_daily_mv (migration 006; MV query extended by 009 and
+// restated by 011, which is what currently defines it).
 const rollupTable = "dashboard_event_rollup_daily"
 
 // totalDimName is the synthetic dimension whose single empty-string value per
 // (project, day, kind) carries the no-breakdown / segmentation totals.
 const totalDimName = "$__total__"
+
+// othersBucket is the breakdown value carrying everything outside a series' top
+// N. Emitted by the rollup SQL and by applyTrendsTopN, read back by
+// fillMultiEventTrendZeros — all three must agree.
+const othersBucket = "$others"
 
 // Event-rollup dimensions, grouped by the migration that introduced them.
 // Each group freezes when its migration ships: it names exactly what that
@@ -186,8 +192,9 @@ func rollupBreakdownLimit(limit int32) int64 {
 // Breakdown top-N bucketing happens in SQL (a per-event top_vals_<i> CTE +
 // $others); the returned TrendsQuery carries breakdownLimit=0 so GroupSeries does
 // not re-bucket. Because the SQL is then the sole arbiter of top-N membership, it
-// must reproduce applyTrendsTopN exactly — see the CTE comment below for the three
-// axes that has to match. Caller must have checked canUseEventRollup.
+// must reproduce applyTrendsTopN exactly — see the top_grain_<i>/top_vals_<i>
+// construction for the three axes that have to match. Caller must have checked
+// canUseEventRollup.
 func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
 	granFn, err := granularityFunc(req.GetGranularity())
 	if err != nil {
@@ -289,7 +296,7 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 		}
 		if len(bds) == 1 {
 			selectExprs = append(selectExprs,
-				"if(dim_value IN (SELECT dim_value FROM "+topValNames[i]+"), dim_value, '$others') AS breakdown_0")
+				"if(dim_value IN (SELECT dim_value FROM "+topValNames[i]+"), dim_value, '"+othersBucket+"') AS breakdown_0")
 		}
 		selectExprs = append(selectExprs, aggExprs[i]+" AS value")
 
@@ -355,6 +362,11 @@ func trendRowIdentityKey(kind string, gk trendGridKey) string {
 // combinations absent from rollup output. Multi-event raw trends achieve the same via
 // CROSS JOIN unpivot; rollup uses per-kind UNION ALL which omits empty cells.
 //
+// A kind that emitted an othersBucket row is only filled at breakdown values it
+// actually names: top-N membership is per kind, so a value another kind names may
+// already sit inside this one's othersBucket. Filling it would invent a flat-zero
+// series for traffic that is in fact reported.
+//
 // Breakdown slices observed on input rows are preserved verbatim on synthesized rows:
 // breakdownKey(nil) == breakdownKey([]string{""}) == "", so reconstructing from the
 // joined-string key would lose the arity needed by GroupSeries' length check against
@@ -368,12 +380,21 @@ func fillMultiEventTrendZeros(rows []TrendRow, eventKinds []string) []TrendRow {
 	// The slice is cloned so synthesized rows don't alias caller storage.
 	grid := make(map[trendGridKey][]string)
 	existing := make(map[string]struct{}, len(rows))
+	named := make(map[string]map[string]struct{}, len(eventKinds))
+	folded := make(map[string]bool, len(eventKinds))
 	for _, r := range rows {
 		gk := newTrendGridKey(r.Time, r.Breakdowns)
 		if _, ok := grid[gk]; !ok {
 			grid[gk] = append([]string(nil), r.Breakdowns...)
 		}
 		existing[trendRowIdentityKey(r.EventKind, gk)] = struct{}{}
+		if named[r.EventKind] == nil {
+			named[r.EventKind] = make(map[string]struct{})
+		}
+		named[r.EventKind][gk.breakdowns] = struct{}{}
+		if slices.Contains(r.Breakdowns, othersBucket) {
+			folded[r.EventKind] = true
+		}
 	}
 
 	out := append([]TrendRow(nil), rows...)
@@ -382,6 +403,9 @@ func fillMultiEventTrendZeros(rows []TrendRow, eventKinds []string) []TrendRow {
 		// of rollup-returned rows.
 		t := time.Unix(0, gk.unixNano).UTC()
 		for _, kind := range eventKinds {
+			if _, ok := named[kind][gk.breakdowns]; !ok && folded[kind] {
+				continue
+			}
 			id := trendRowIdentityKey(kind, gk)
 			if _, ok := existing[id]; ok {
 				continue

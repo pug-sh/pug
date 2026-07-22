@@ -337,6 +337,44 @@ func TestFillMultiEventTrendZeros(t *testing.T) {
 		}
 	})
 
+	t.Run("does_not_fill_a_value_folded_into_others", func(t *testing.T) {
+		// Top-N is per kind, so page_view can name GB while signup folded it into
+		// $others. Filling signup|GB=0 would invent a flat-zero series for traffic
+		// already counted in signup|$others.
+		rows := []TrendRow{
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{"GB"}, Value: 5},
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{"$others"}, Value: 2},
+			{Time: t1, EventKind: "signup", Breakdowns: []string{"US"}, Value: 4},
+			{Time: t1, EventKind: "signup", Breakdowns: []string{"$others"}, Value: 3},
+		}
+		got := flatten(fillMultiEventTrendZeros(rows, []string{"page_view", "signup"}))
+		want := map[string]float64{
+			"page_view|GB|2024-01-01":      5,
+			"page_view|$others|2024-01-01": 2,
+			"signup|US|2024-01-01":         4,
+			"signup|$others|2024-01-01":    3,
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %v, want %v — signup|GB and page_view|US are inside each kind's $others", got, want)
+		}
+	})
+
+	t.Run("still_fills_across_buckets_when_folded", func(t *testing.T) {
+		// The original purpose survives folding: signup names US, so a bucket where
+		// it has no US row is a genuine gap and must still be zero-filled.
+		rows := []TrendRow{
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{"US"}, Value: 5},
+			{Time: t1, EventKind: "page_view", Breakdowns: []string{"$others"}, Value: 1},
+			{Time: t1, EventKind: "signup", Breakdowns: []string{"US"}, Value: 2},
+			{Time: t1, EventKind: "signup", Breakdowns: []string{"$others"}, Value: 1},
+			{Time: t2, EventKind: "page_view", Breakdowns: []string{"US"}, Value: 3},
+		}
+		got := flatten(fillMultiEventTrendZeros(rows, []string{"page_view", "signup"}))
+		if v, ok := got["signup|US|2024-01-02"]; !ok || v != 0 {
+			t.Errorf("signup|US|2024-01-02 = (%v, %v), want a synthesized 0", v, ok)
+		}
+	})
+
 	t.Run("preserves_empty_string_breakdown_value", func(t *testing.T) {
 		// A breakdown column whose value is the empty string is a legitimate, single-
 		// element slice ([]string{""}). It must NOT be collapsed to a nil breakdown
@@ -821,8 +859,8 @@ func TestMigration011PromotedDimExprsMatch(t *testing.T) {
 }
 
 // TestMigration009Frozen pins migration 009 to its historical content, exactly
-// as TestMigration006Frozen freezes 006: now that 011 restates the MV, 009's
-// file must never be edited again. Its MODIFY QUERY block carries the full
+// as TestMigration006Frozen freezes 006: now that 011 restates the MV, 009's SQL
+// must never be edited again (its header comments are not pinned). Its MODIFY QUERY block carries the full
 // 21-dim list, its delta backfill exactly the 009 group, with promoted-column
 // expressions in both. (The DELETE-guard list is pinned separately by
 // TestMigration009BackfillDeleteCoversNewDims.)
