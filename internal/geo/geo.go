@@ -2,6 +2,7 @@ package geo
 
 import (
 	"net/http"
+	"net/netip"
 	"strings"
 )
 
@@ -42,26 +43,126 @@ const (
 // Tries CF-Connecting-IP (Cloudflare), then True-Client-IP (CDNs/LBs),
 // then the first address in X-Forwarded-For.
 //
-// It has no production caller today: the Cloudflare provider resolves geo from
-// CF-* headers and never reads the IP. It is retained as the extraction
-// primitive for a future IP-lookup Provider (see Provider) — such a provider
-// must hash/use the IP transiently and keep it out of the returned Location, as
-// the raw IP must never be persisted (see PropIP).
+// No Provider calls it, and neither does anything else: the Cloudflare provider
+// resolves geo from CF-* headers and never reads the IP, and cookieless identity
+// resolution needs the source too, so it calls ClientIPWithSource. This is the
+// bare extraction primitive a future IP-lookup Provider (see Provider) would use
+// — such a provider must hash/use the IP transiently and keep it out of the
+// returned Location, as the raw IP must never be persisted (see PropIP).
+//
+// Every candidate is parsed and re-serialised, and anything unparseable is
+// skipped rather than returned verbatim. Two reasons, both from the HMAC caller:
+//
+//   - Framing. The hash is project ‖ 0x00 ‖ ip ‖ 0x00 ‖ ua, which is injective
+//     only while no field before the last can contain the separator. Parsing is
+//     what makes that true of ip by construction instead of by accident — Go's
+//     HTTP/1.1 and HTTP/2 header validation happen to reject NUL today, so the
+//     property rested on the transport rather than on this function.
+//   - Canonical form. "2001:0DB8::0001" and "2001:db8::1" are one address; left
+//     as written they hash to two different visitors.
+//
+// NOTE: these headers are still CLIENT-SUPPLIED and are not authenticated here.
+// Validation makes the value well-formed, not trustworthy — an origin reachable
+// outside the CDN can be fed any address. Restricting who may set them belongs
+// at the edge (a trusted-proxy allowlist), not in this function.
 func ClientIP(h http.Header) string {
-	if ip := h.Get(HeaderCFConnectingIP); ip != "" {
-		return ip
-	}
-	if ip := h.Get(HeaderTrueClientIP); ip != "" {
-		return ip
+	ip, _ := ClientIPWithSource(h)
+	return ip
+}
+
+// IPSource names which input produced a client IP, or why there is none. Named
+// rather than a bare string because ClientIPWithSource returns it beside the IP:
+// transposing the two compiles and HMACs "cf_connecting_ip" as the address.
+type IPSource string
+
+// Header sources, in trust order, plus the two empty-IP outcomes. Rejected (a
+// header was offered and did not parse) is a misconfiguration; None (none
+// offered) is normal direct-to-origin. Callers must not collapse them.
+const (
+	SourceCFConnectingIP IPSource = "cf_connecting_ip"
+	SourceTrueClientIP   IPSource = "true_client_ip"
+	SourceXForwardedFor  IPSource = "x_forwarded_for"
+	SourceRejected       IPSource = "rejected"
+	SourceNone           IPSource = "none"
+)
+
+// Outcomes for a caller that falls back to the connection peer. Kept here so the
+// whole vocabulary is one list. PeerAfterRejected is the alertable one: behind a
+// proxy the peer is one address for every visitor, so a rejected header collapses
+// a tenant onto one identity per UA per day at a 200.
+const (
+	SourcePeerNoHeader      IPSource = "peer_no_header"
+	SourcePeerAfterRejected IPSource = "peer_after_rejected_header"
+	SourceNoneNoPeer        IPSource = "none_no_peer"
+	SourceRejectedNoPeer    IPSource = "rejected_no_peer"
+)
+
+// ClientIPWithSource is ClientIP plus which header the address came from, or why
+// there is none.
+//
+// The source exists for one reason: an empty IP is ambiguous, and its two causes
+// need different responses. No proxy header at all is normal for a direct-to-origin
+// deployment. A header that was present and failed to parse is a misconfiguration,
+// and a silent one — the caller falls back to the connection peer, which behind a
+// proxy is one address shared by every visitor, so an entire tenant's cookieless
+// population collapses onto a single identity per (peer, UA) per day while the
+// requests keep returning 200.
+//
+// Note the ordering: CF-Connecting-IP and True-Client-IP are consulted BEFORE
+// X-Forwarded-For, so a Cloudflare-fronted deployment never reaches the XFF branch
+// and is unaffected by a malformed leading entry there.
+func ClientIPWithSource(h http.Header) (ip string, source IPSource) {
+	offered := false
+	for _, hdr := range []struct {
+		name   string
+		source IPSource
+	}{
+		{HeaderCFConnectingIP, SourceCFConnectingIP},
+		{HeaderTrueClientIP, SourceTrueClientIP},
+	} {
+		raw := h.Get(hdr.name)
+		if raw == "" {
+			continue
+		}
+		offered = true
+		if ip, ok := ParseClientIP(raw); ok {
+			return ip, hdr.source
+		}
 	}
 	if xff := h.Get(HeaderXForwardedFor); xff != "" {
+		offered = true
 		// X-Forwarded-For can be comma-separated; first entry is the client.
-		if first, _, ok := strings.Cut(xff, ","); ok {
-			return strings.TrimSpace(first)
+		first, _, _ := strings.Cut(xff, ",")
+		if ip, ok := ParseClientIP(first); ok {
+			return ip, SourceXForwardedFor
 		}
-		return strings.TrimSpace(xff)
 	}
-	return ""
+	if offered {
+		return "", SourceRejected
+	}
+	return "", SourceNone
+}
+
+// ParseClientIP validates one candidate address and returns it in canonical form.
+//
+// Exported because headers are not the only way an address reaches the cookieless
+// HMAC: the connection peer is the fallback when no proxy header parses, and it
+// has to clear the same bar. Any caller feeding an address into identity
+// derivation goes through here, so the "no field before the last can contain the
+// 0x00 separator" framing argument in cookieless.DistinctID holds by construction
+// instead of by trusting whoever produced the string.
+//
+// Two spellings are collapsed because each would otherwise hash one client to
+// two visitors: the zone on "fe80::1%eth0" (names a local interface, not the
+// visitor), and IPv4-mapped IPv6 — netip renders "::ffff:203.0.113.7" in that
+// form, and dual-stack proxies emit it in X-Forwarded-For beside plain v4.
+// Pinned by TestParseClientIP_UnmapsIPv4InIPv6.
+func ParseClientIP(raw string) (string, bool) {
+	addr, err := netip.ParseAddr(strings.TrimSpace(raw))
+	if err != nil {
+		return "", false
+	}
+	return addr.Unmap().WithZone("").String(), true
 }
 
 // Provider resolves geo data from HTTP request headers.

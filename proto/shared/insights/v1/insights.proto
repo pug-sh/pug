@@ -211,6 +211,17 @@ message InsightQuerySpec {
   // Top-K ranking query. Only valid when insight_type == TOP_K.
   TopKQuery top_k = 11;
 
+  // Cookieless (no-consent) visitors carry server-derived ids that rotate
+  // daily, so one returning human counts as a new user every day. By default
+  // they are EXCLUDED from user-counting metrics (UNIQUE_USERS and
+  // PER_USER_AVG, numerator and denominator alike, wherever those metrics
+  // appear — trends, segmentation, top K) and from person-based insights
+  // (funnel, retention, user flow, and USER-dimension top K — these resolve
+  // people rather than events, so they exclude regardless of which metric is
+  // selected). Set true to include them. Event totals, numeric aggregations,
+  // and all session metrics always count all traffic regardless of this flag.
+  bool include_cookieless = 12;
+
   option (buf.validate.message).cel = {
     id: "insight_query_spec.user_flow_only_for_user_flow"
     message: "user_flow is only valid for user flow insight type"

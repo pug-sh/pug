@@ -1703,16 +1703,101 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("rollup_parity_trends_multiday_unique_users_top_n", func(t *testing.T) {
+		// Top-N ranking over the one intersection the other parity tests miss:
+		// MULTI-DAY window x USER-COUNTING metric x the cut actually firing.
+		//
+		// applyTrendsTopN ranks a series by the SUM OF ITS PER-BUCKET VALUES
+		// (entriesByKey[key].total += r.Value). The rollup CTE groups by dim_value
+		// alone, so it ranks by the WINDOW-WIDE aggregate. Those two coincide for
+		// TOTAL — which is why every pre-existing parity test passed — and diverge
+		// for UNIQUE_USERS whenever a user appears in more than one bucket, since
+		// the sum of daily uniques is not the window unique.
+		//
+		//   US: u1,u2 on BOTH days -> daily 2,2 -> raw total 4 ; window uniq = 2
+		//   GB: g1,g2,g3 on day 1  -> daily 3,0 -> raw total 3 ; window uniq = 3
+		//
+		// At breakdown_limit=1 the paths therefore name OPPOSITE countries: raw
+		// keeps US and buckets GB into $others, the rollup does the reverse.
+		const projectID = "proj_rollup_multiday_uniq"
+		day1 := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		day2 := time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC)
+		seed := []struct {
+			user, cc string
+			at       time.Time
+		}{
+			{"u1", "US", day1}, {"u2", "US", day1},
+			{"u1", "US", day2}, {"u2", "US", day2},
+			{"g1", "GB", day1}, {"g2", "GB", day1}, {"g3", "GB", day1},
+		}
+		for _, e := range seed {
+			if err := insertAutoEvent(ctx, ch.Conn, projectID, uuid.New().String(), "page_view", e.user, e.at,
+				variantStringMap(map[string]string{"$country": e.cc})); err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+		}
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType:    insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Events:         []*insightsv1.EventQuery{{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: insightsv1.AggregationType_AGGREGATION_TYPE_UNIQUE_USERS.Enum()}},
+				Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+				BreakdownLimit: proto.Int32(1),
+			},
+			TimeRange:   &commonv1.TimeRange{From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), To: timestamppb.New(time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC))},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+		resp, err := insights.ExecuteQuery(ctx, executor, projectID, req, time.Now())
+		if err != nil {
+			t.Fatalf("ExecuteQuery (rollup): %v", err)
+		}
+		rollup := flattenTrendsResp(resp)
+
+		rawQ, err := insights.BuildTrendsQuery(req, projectID)
+		if err != nil {
+			t.Fatalf("BuildTrendsQuery (raw): %v", err)
+		}
+		rawRows, err := executor.QueryTrends(ctx, projectID, rawQ)
+		if err != nil {
+			t.Fatalf("QueryTrends (raw): %v", err)
+		}
+		raw, err := flattenTrendsFromRaw(ctx, rawRows, rawQ)
+		if err != nil {
+			t.Fatalf("flattenTrendsFromRaw: %v", err)
+		}
+
+		if !reflect.DeepEqual(rollup, raw) {
+			t.Errorf("multi-day UNIQUE_USERS top-N rollup vs raw mismatch:\nrollup=%v\nraw=%v", rollup, raw)
+		}
+		// Anchor the expectation so a future change cannot make both paths agree on
+		// the WRONG answer: raw's ranking is the contract, and it keeps US.
+		if rollup["page_view|US|2024-01-01"] != 2 {
+			t.Errorf("US must survive the cut with 2 users on day 1, got %v (all: %v)", rollup["page_view|US|2024-01-01"], rollup)
+		}
+		if rollup["page_view|$others|2024-01-01"] != 3 {
+			t.Errorf("GB must collapse into $others=3 on day 1, got %v (all: %v)", rollup["page_view|$others|2024-01-01"], rollup)
+		}
+	})
+
 	t.Run("rollup_parity_trends_multi_event_others_bucket", func(t *testing.T) {
-		// Multi-event + breakdown + breakdown_limit forcing $others. Seed is shaped
-		// so per-kind counts have no ties and the per-kind top-N ordering
-		// (US > GB > FR for both kinds) matches the shared-across-kinds ordering
-		// (rollup top_vals sums cnt over both kinds: US=9, GB=5, FR=2). Both
-		// strategies pick {US, GB} so parity holds AND zero-fill on $others cells
-		// is exercised end-to-end. A seed with ties or with per-kind orderings
-		// that diverge from the cross-kind ordering would surface a pre-existing
-		// rollup-vs-raw top-N strategy difference (rollup uses one shared top_vals
-		// over OR(kinds); raw uses per-kind top-N) — out of scope here.
+		// Multi-event + breakdown + breakdown_limit forcing $others. The seed has no
+		// ties and both kinds rank US > GB > FR, so rollup and raw pick {US, GB},
+		// parity holds, and zero-fill on $others cells is exercised end-to-end.
+		//
+		// This seed used to ALSO have to avoid per-kind orderings that diverge from
+		// the cross-kind ordering: the rollup ranked one shared top_vals over
+		// OR(kinds) while raw ranked per-kind, so a divergent seed broke parity and
+		// that difference was left out of scope here. It is no longer a constraint —
+		// the rollup now builds one top_vals_<i> per event, scoped to that event's
+		// kind, over that event's own population, and ranked by the SUM of that
+		// event's per-bucket values (a top_grain_<i> CTE at the query's own bucket
+		// grain, summed) — which is what applyTrendsTopN accumulates.
+		//
+		// All three axes matter and each broke separately; the metric axis survived
+		// longest because a window-wide aggregate equals the per-bucket sum for
+		// TOTAL, so single-day and TOTAL-only seeds could not see it.
+		// TestIntegrationRollupBreakdownOrderIndependent (cookieless_integration_test.go)
+		// covers the divergent-kind shape; rollup_parity_trends_multiday_unique_users_top_n
+		// covers the non-additive-metric shape.
 		const projectID = "proj_rollup_multi_others"
 		seed := []struct{ kind, user, cc string }{
 			{"page_view", "u1", "US"}, {"page_view", "u2", "US"}, {"page_view", "u3", "US"},
@@ -1761,6 +1846,62 @@ func TestIntegration(t *testing.T) {
 		}
 		if !reflect.DeepEqual(rollup, want) {
 			t.Errorf("multi-event $others rollup mismatch:\nwant=%v\ngot =%v", want, rollup)
+		}
+	})
+
+	t.Run("rollup_parity_trends_multi_event_divergent_top_n", func(t *testing.T) {
+		// The seed above shares one ranking across kinds; this one inverts it, so
+		// each kind names a value the other folded into $others. Zero-filling is
+		// per-kind for exactly this reason — a global grid synthesizes page_view|GB=0
+		// while GB's 5 views are already inside page_view|$others.
+		const projectID = "proj_rollup_divergent_topn"
+		seed := func(kind, cc string, n int) {
+			t.Helper()
+			for i := range n {
+				if err := insertAutoEvent(ctx, ch.Conn, projectID, uuid.New().String(), kind, "u-"+cc,
+					time.Date(2024, 1, 1, 12, i, 0, 0, time.UTC),
+					variantStringMap(map[string]string{"$country": cc})); err != nil {
+					t.Fatalf("seed: %v", err)
+				}
+			}
+		}
+		seed("page_view", "FR", 20)
+		seed("page_view", "US", 10)
+		seed("page_view", "GB", 5)
+		seed("signup", "GB", 9)
+		seed("signup", "US", 4)
+		seed("signup", "FR", 1)
+
+		total := insightsv1.AggregationType_AGGREGATION_TYPE_TOTAL
+		req := &insightsv1.QueryRequest{
+			Spec: &insightsv1.InsightQuerySpec{
+				InsightType: insightsv1.InsightType_INSIGHT_TYPE_TRENDS.Enum(),
+				Events: []*insightsv1.EventQuery{
+					{Event: &commonv1.EventFilter{Kind: proto.String("page_view")}, Aggregation: total.Enum()},
+					{Event: &commonv1.EventFilter{Kind: proto.String("signup")}, Aggregation: total.Enum()},
+				},
+				Breakdowns:     []*insightsv1.Breakdown{{Property: proto.String("$country")}},
+				BreakdownLimit: proto.Int32(2),
+			},
+			TimeRange:   &commonv1.TimeRange{From: timestamppb.New(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), To: timestamppb.New(time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC))},
+			Granularity: insightsv1.Granularity_GRANULARITY_DAY.Enum(),
+		}
+		assertTrendsParity(t, ctx, executor, projectID, req)
+
+		resp, err := insights.ExecuteQuery(ctx, executor, projectID, req, time.Now())
+		if err != nil {
+			t.Fatalf("ExecuteQuery: %v", err)
+		}
+		want := map[string]float64{
+			"page_view|FR|2024-01-01":      20,
+			"page_view|US|2024-01-01":      10,
+			"page_view|$others|2024-01-01": 5,
+			"signup|GB|2024-01-01":         9,
+			"signup|US|2024-01-01":         4,
+			"signup|$others|2024-01-01":    1,
+		}
+		if got := flattenTrendsResp(resp); !reflect.DeepEqual(got, want) {
+			t.Errorf("divergent per-kind top-N:\nwant=%v\ngot =%v", want, got)
 		}
 	})
 

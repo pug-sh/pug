@@ -12,12 +12,18 @@ import (
 )
 
 // rollupTable is the daily dimensional rollup populated by
-// dashboard_event_rollup_daily_mv (migration 006, MV query extended by 009).
+// dashboard_event_rollup_daily_mv (migration 006; MV query extended by 009 and
+// restated by 011, which is what currently defines it).
 const rollupTable = "dashboard_event_rollup_daily"
 
 // totalDimName is the synthetic dimension whose single empty-string value per
 // (project, day, kind) carries the no-breakdown / segmentation totals.
 const totalDimName = "$__total__"
+
+// othersBucket is the breakdown value carrying everything outside a series' top
+// N. Emitted by the rollup SQL and by applyTrendsTopN, read back by
+// fillMultiEventTrendZeros — all three must agree.
+const othersBucket = "$others"
 
 // Event-rollup dimensions, grouped by the migration that introduced them.
 // Each group freezes when its migration ships: it names exactly what that
@@ -43,10 +49,11 @@ var (
 
 // materializedDims are the auto-property breakdown dimensions backed by the
 // rollup: the union of every applied migration's group, so it matches the
-// LATEST MV definition (009's MODIFY QUERY) by construction rather than by a
-// list restated a third time. TestMaterializedDimsMatchMigration checks the
-// dim names against that MV; TestMigration009PromotedDimExprsMatch checks the
-// value expressions.
+// LATEST MV definition (011's MODIFY QUERY — 011 adds no dims, but it is the
+// migration that now defines the MV) by construction rather than by a list
+// restated a third time. TestMaterializedDimsMatchMigration checks the dim names
+// against that MV; TestMigration011PromotedDimExprsMatch checks that every dim's
+// value expression reads its promoted column.
 var materializedDims = slices.Concat(eventRollupDims006, eventRollupDims009)
 
 func isMaterializedDim(prop string) bool {
@@ -182,9 +189,12 @@ func rollupBreakdownLimit(limit int32) int64 {
 }
 
 // buildTrendsFromRollup builds a trends query against the dimensional rollup.
-// Breakdown top-N bucketing happens in SQL (top_vals CTE + $others); the returned
-// TrendsQuery carries breakdownLimit=0 so GroupSeries does not re-bucket.
-// Caller must have checked canUseEventRollup.
+// Breakdown top-N bucketing happens in SQL (a per-event top_vals_<i> CTE +
+// $others); the returned TrendsQuery carries breakdownLimit=0 so GroupSeries does
+// not re-bucket. Because the SQL is then the sole arbiter of top-N membership, it
+// must reproduce applyTrendsTopN exactly — see the top_grain_<i>/top_vals_<i>
+// construction for the three axes that have to match. Caller must have checked
+// canUseEventRollup.
 func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (TrendsQuery, error) {
 	granFn, err := granularityFunc(req.GetGranularity())
 	if err != nil {
@@ -206,46 +216,89 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 		dimName = bds[0].GetProperty()
 	}
 
-	// Shared top_vals CTE over all event kinds (only when a breakdown is present).
-	var topVals *chq.Query
-	if len(bds) == 1 {
-		kindConds := make([]chq.Condition, len(events))
-		for i, ev := range events {
-			kindConds[i] = chq.Eq("kind", ev.GetEvent().GetKind())
+	// Resolve every event's value expression up front: the breakdown ranking CTE
+	// and the event's own SELECT must agree on the metric, so neither is built
+	// before an unsupported aggregation has been rejected.
+	aggExprs := make([]string, len(events))
+	for i, ev := range events {
+		expr, ok := rollupAggExpr(ev.GetAggregation())
+		if !ok {
+			return TrendsQuery{}, fmt.Errorf("trends rollup: events[%d]: unsupported aggregation %s", i, ev.GetAggregation())
 		}
-		topVals = chq.NewQuery().
-			Select("dim_value").
-			From(rollupTable).
-			Where(
-				chq.Eq("project_id", projectID),
-				chq.Eq("dim_name", dimName),
-				chq.Gte("day", fromDay),
-				chq.Lte("day", toDay),
-				chq.Or(kindConds...),
-			).
-			GroupBy("dim_value").
-			// Tie-break on dim_value so the top-N matches the raw Group*Series
-			// top-N (total DESC, breakdown value ASC) and $others is deterministic.
-			OrderBy("sum(cnt) DESC", "dim_value ASC").
-			Limit(rollupBreakdownLimit(spec.GetBreakdownLimit()))
+		aggExprs[i] = expr
+	}
+
+	// Breakdown top-N is bucketed in SQL, with TWO CTEs PER EVENT, because the raw
+	// path it must match (applyTrendsTopN) ranks per event kind, by the SUM OF THAT
+	// EVENT'S PER-BUCKET VALUES, over the population that event's metric counts. A
+	// single shared window-wide CTE cannot express any of the three, and diverged
+	// on all three:
+	//
+	//   scope      one global top-N over OR'd kinds, not per-kind
+	//   population events[0]'s cookieless predicate applied to every branch, so
+	//              reordering `events` changed which values the top-N named
+	//   metric     first sum(cnt) — raw event volume — so a UNIQUE_USERS series
+	//              ranked its breakdown by page views; then the event's own metric
+	//              but evaluated ONCE OVER THE WHOLE WINDOW, which still differs
+	//              from raw whenever the metric is not additive across buckets
+	//
+	// That last one is why the grain CTE exists. applyTrendsTopN accumulates
+	// `entry.total += r.Value` bucket by bucket, so for UNIQUE_USERS it ranks by
+	// the sum of daily uniques — NOT the window-wide unique, which is smaller
+	// whenever a user is active on more than one day. Ranking a two-day US
+	// (u1,u2 both days: raw 4, window 2) against a one-day GB (g1,g2,g3: raw 3,
+	// window 3) inverts the order and the two paths name opposite values.
+	// So: aggregate at the query's own bucket grain first, then sum those.
+	// TOTAL is additive and unaffected; UNIQUE_USERS and PER_USER_AVG are not.
+	// Pinned by TestIntegration/rollup_parity_trends_multiday_unique_users_top_n.
+	//
+	// Each branch declares and references only its own CTEs. ClickHouse does scope
+	// a leading WITH across the whole UNION ALL, but keeping the declarations on
+	// the branch that uses them also keeps each branch's positional args contiguous.
+	topGrainNames := make([]string, len(events))
+	topGrains := make([]*chq.Query, len(events))
+	topValNames := make([]string, len(events))
+	topVals := make([]*chq.Query, len(events))
+	if len(bds) == 1 {
+		for i, ev := range events {
+			topGrainNames[i] = "top_grain_" + strconv.Itoa(i)
+			topGrains[i] = chq.NewQuery().
+				Select("dim_value", bucketSQL+" AS t", aggExprs[i]+" AS v").
+				From(rollupTable).
+				Where(
+					chq.Eq("project_id", projectID),
+					chq.Eq("dim_name", dimName),
+					chq.Eq("kind", ev.GetEvent().GetKind()),
+					chq.Gte("day", fromDay),
+					chq.Lte("day", toDay),
+					// Rank over the same population THIS event's metric counts.
+					chq.When(excludeCookielessForAgg(spec, ev.GetAggregation()), chq.Eq("cookieless", uint8(0))),
+				).
+				GroupBy("dim_value", "t")
+
+			topValNames[i] = "top_vals_" + strconv.Itoa(i)
+			topVals[i] = chq.NewQuery().
+				Select("dim_value").
+				From(topGrainNames[i]).
+				GroupBy("dim_value").
+				// Sum the per-bucket values, tie-broken on dim_value ascending, so
+				// top-N membership and $others bucketing equal applyTrendsTopN's.
+				OrderBy("sum(v) DESC", "dim_value ASC").
+				Limit(rollupBreakdownLimit(spec.GetBreakdownLimit()))
+		}
 	}
 
 	queries := make([]*chq.Query, 0, len(events))
 	for i, ev := range events {
-		aggExpr, ok := rollupAggExpr(ev.GetAggregation())
-		if !ok {
-			return TrendsQuery{}, fmt.Errorf("trends rollup: events[%d]: unsupported aggregation %s", i, ev.GetAggregation())
-		}
-
 		selectExprs := []string{
 			bucketSQL + " AS t",
 			"kind AS event_kind",
 		}
 		if len(bds) == 1 {
 			selectExprs = append(selectExprs,
-				"if(dim_value IN (SELECT dim_value FROM top_vals), dim_value, '$others') AS breakdown_0")
+				"if(dim_value IN (SELECT dim_value FROM "+topValNames[i]+"), dim_value, '"+othersBucket+"') AS breakdown_0")
 		}
-		selectExprs = append(selectExprs, aggExpr+" AS value")
+		selectExprs = append(selectExprs, aggExprs[i]+" AS value")
 
 		q := chq.NewQuery().
 			Select(selectExprs...).
@@ -256,6 +309,9 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 				chq.Eq("kind", ev.GetEvent().GetKind()),
 				chq.Gte("day", fromDay),
 				chq.Lte("day", toDay),
+				// Exclusion = cookieless-0 rows only; inclusion = no predicate
+				// (states merge across both key values). Both stay fast-path.
+				chq.When(excludeCookielessForAgg(spec, ev.GetAggregation()), chq.Eq("cookieless", uint8(0))),
 			)
 
 		groupBy := []string{"t", "event_kind"}
@@ -264,8 +320,10 @@ func buildTrendsFromRollup(req *insightsv1.QueryRequest, projectID string) (Tren
 		}
 		q.GroupBy(groupBy...)
 
-		if i == 0 && topVals != nil {
-			q.With("top_vals", topVals)
+		if topVals[i] != nil {
+			// Declaration order matters: top_vals selects FROM top_grain.
+			q.With(topGrainNames[i], topGrains[i])
+			q.With(topValNames[i], topVals[i])
 		}
 		queries = append(queries, q)
 	}
@@ -304,6 +362,11 @@ func trendRowIdentityKey(kind string, gk trendGridKey) string {
 // combinations absent from rollup output. Multi-event raw trends achieve the same via
 // CROSS JOIN unpivot; rollup uses per-kind UNION ALL which omits empty cells.
 //
+// A kind that emitted an othersBucket row is only filled at breakdown values it
+// actually names: top-N membership is per kind, so a value another kind names may
+// already sit inside this one's othersBucket. Filling it would invent a flat-zero
+// series for traffic that is in fact reported.
+//
 // Breakdown slices observed on input rows are preserved verbatim on synthesized rows:
 // breakdownKey(nil) == breakdownKey([]string{""}) == "", so reconstructing from the
 // joined-string key would lose the arity needed by GroupSeries' length check against
@@ -317,12 +380,21 @@ func fillMultiEventTrendZeros(rows []TrendRow, eventKinds []string) []TrendRow {
 	// The slice is cloned so synthesized rows don't alias caller storage.
 	grid := make(map[trendGridKey][]string)
 	existing := make(map[string]struct{}, len(rows))
+	named := make(map[string]map[string]struct{}, len(eventKinds))
+	folded := make(map[string]bool, len(eventKinds))
 	for _, r := range rows {
 		gk := newTrendGridKey(r.Time, r.Breakdowns)
 		if _, ok := grid[gk]; !ok {
 			grid[gk] = append([]string(nil), r.Breakdowns...)
 		}
 		existing[trendRowIdentityKey(r.EventKind, gk)] = struct{}{}
+		if named[r.EventKind] == nil {
+			named[r.EventKind] = make(map[string]struct{})
+		}
+		named[r.EventKind][gk.breakdowns] = struct{}{}
+		if slices.Contains(r.Breakdowns, othersBucket) {
+			folded[r.EventKind] = true
+		}
 	}
 
 	out := append([]TrendRow(nil), rows...)
@@ -331,6 +403,9 @@ func fillMultiEventTrendZeros(rows []TrendRow, eventKinds []string) []TrendRow {
 		// of rollup-returned rows.
 		t := time.Unix(0, gk.unixNano).UTC()
 		for _, kind := range eventKinds {
+			if _, ok := named[kind][gk.breakdowns]; !ok && folded[kind] {
+				continue
+			}
 			id := trendRowIdentityKey(kind, gk)
 			if _, ok := existing[id]; ok {
 				continue
@@ -368,6 +443,7 @@ func buildSegmentationFromRollup(req *insightsv1.QueryRequest, projectID string)
 			chq.Eq("dim_name", totalDimName),
 			chq.Gte("day", fromDay),
 			chq.Lte("day", toDay),
+			chq.When(excludeCookielessForAgg(req.GetSpec(), aggregationType(req)), chq.Eq("cookieless", uint8(0))),
 			chq.Or(kindConds...),
 		).
 		WithQueryCache(analyticsCacheTTL).
@@ -493,13 +569,20 @@ func buildTopKFromRollup(req *insightsv1.QueryRequest, projectID string) (TopKQu
 	fromDay, toDay := rollupDayBounds(req)
 	scopeKind := tk.GetScope().GetKind()
 	// The top_vals CTE and the outer re-aggregation scan the same rollup slice,
-	// so they share one condition set.
+	// so they share one condition set. (No USER-dimension arm needed here:
+	// canUseTopKRollup rejects it, so the rollup never ranks people.)
 	conds := []chq.Condition{
 		chq.Eq("project_id", projectID),
 		chq.Eq("dim_name", dimName),
 		chq.Gte("day", fromDay),
 		chq.Lte("day", toDay),
 		chq.When(scopeKind != "", chq.Eq("kind", scopeKind)),
+		// topKMetric, not tk.GetMetric(): the raw path (topk.go) normalises
+		// UNSPECIFIED to TOTAL before asking, and both sides must feed the same
+		// helper the same value. They agree today only because both map to false;
+		// feeding the un-normalised value keeps a needless difference alive
+		// between two paths whose whole contract is producing identical answers.
+		chq.When(excludeCookielessForAgg(req.GetSpec(), topKMetric(tk)), chq.Eq("cookieless", uint8(0))),
 	}
 
 	// Omit-$others fast path mirrors buildTopKEvents: a single aggregation with

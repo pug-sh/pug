@@ -6,7 +6,8 @@
 --   1. MODIFY QUERY on the MV — never DROP->CREATE, which would lose ALL dims
 --      (including $__total__) for events inserted in the gap. The full
 --      21-tuple ARRAY JOIN is restated; dim exprs read promoted columns only
---      (TestMigration009PromotedDimExprsMatch) and must match
+--      (TestMigration011PromotedDimExprsMatch, which parses the migration that
+--      currently defines the MV) and must match
 --      AutoPropertyProjectionFor exactly.
 --
 --   2. DELETE the NEW dim_names, so step 3 is re-runnable. Only a no-op on a

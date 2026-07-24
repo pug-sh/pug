@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -777,12 +778,26 @@ func testBackfill009Rerunnable(t *testing.T, ctx context.Context, ch *testutil.T
 		}
 	}
 
-	// Replay 009's guard + backfill verbatim, exactly as a retried migrate would.
-	for _, pattern := range []string{
-		`(?s)ALTER TABLE dashboard_event_rollup_daily DELETE\s+WHERE dim_name IN \(.*?SETTINGS mutations_sync = 2`,
-		`(?s)INSERT INTO dashboard_event_rollup_daily\nSELECT.*?GROUP BY project_id, day, kind, dim_name, dim_value`,
+	// Replay 009's guard + backfill, exactly as a retried migrate would — with
+	// one post-011 adaptation: 009's INSERT is positional (no column list),
+	// which goose can only ever execute against the pre-011 seven-column table
+	// (a 009 retry always precedes 011 in migration order), but THIS database
+	// is fully migrated and carries 011's `cookieless` key column. Naming
+	// 009's seven columns pins the shipped statement's idempotency against the
+	// live schema; the omitted flag takes type-default 0, correct for this
+	// all-consented corpus. The post-011 MANUAL repair must instead use the
+	// cookieless-aware statement in web-analytics.md's runbook.
+	for _, step := range []struct{ pattern, columnList string }{
+		{`(?s)ALTER TABLE dashboard_event_rollup_daily DELETE\s+WHERE dim_name IN \(.*?SETTINGS mutations_sync = 2`, ""},
+		{`(?s)INSERT INTO dashboard_event_rollup_daily\nSELECT.*?GROUP BY project_id, day, kind, dim_name, dim_value`,
+			"(project_id, day, kind, dim_name, dim_value, cnt, uniq_state)"},
 	} {
-		stmt := extractMigrationStatement(t, "009_extend_dashboard_event_rollup.sql", pattern)
+		stmt := extractMigrationStatement(t, "009_extend_dashboard_event_rollup.sql", step.pattern)
+		if step.columnList != "" {
+			stmt = strings.Replace(stmt,
+				"INSERT INTO dashboard_event_rollup_daily\n",
+				"INSERT INTO dashboard_event_rollup_daily "+step.columnList+"\n", 1)
+		}
 		if err := ch.Conn.Exec(ctx, stmt); err != nil {
 			t.Fatalf("exec 009 backfill step: %v", err)
 		}

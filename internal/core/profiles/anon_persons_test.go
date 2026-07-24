@@ -8,6 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	chq "github.com/pug-sh/pug/internal/core/clickhouse"
+	"strings"
+
+	"github.com/pug-sh/pug/internal/cookieless"
 	"github.com/pug-sh/pug/internal/core/profiles"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -792,9 +795,13 @@ func TestProfilesList_PaginationTieBreakAtEqualCreateTime(t *testing.T) {
 	}
 }
 
-// TestProfilesList_ExcludesEmptyDistinctID pins the anonPersonsCTE
-// `distinct_id != ''` guard: an event stream carrying a blank distinct_id must
-// not materialize a single id='' anonymous person.
+// TestProfilesList_ExcludesEmptyDistinctID pins anonPersonsCTE's non-empty
+// distinct_id guard: an event stream carrying a blank distinct_id must not
+// materialize a single anonymous person keyed by the empty string.
+//
+// (Phrased without a doubled single-quote on purpose — gofmt rewrites that pair
+// into a Unicode right-quote in doc comments, which silently turned this very
+// sentence into a citation of a predicate that does not exist.)
 func TestProfilesList_ExcludesEmptyDistinctID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -1150,5 +1157,49 @@ func TestErasure_ByID_NilClickHouseFailsLoud(t *testing.T) {
 	}
 	if got := pgCount(t, ctx, pg, "SELECT count(*) FROM compliance_requests WHERE project_id = $1", projectID); got != 0 {
 		t.Errorf("compliance_requests rows = %d, want 0", got)
+	}
+}
+
+// TestAnonPersons_CookielessIDsNeverBecomePersons pins migration 011's
+// derived-persons exclusion: a cookieless- prefixed distinct_id (rotating
+// daily, see internal/cookieless) must never surface as a person — without the
+// activity-MV WHERE, every visitor-day would mint a ghost. The consented
+// anon- visitor next to it proves the filter is prefix-scoped, not blanket.
+func TestAnonPersons_CookielessIDsNeverBecomePersons(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ch := testutil.SetupClickHouse(t)
+	ctx := context.Background()
+	projectID := "proj-ckl-persons"
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
+
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, "anon-real", "page_view", uuid.NewString(),
+		map[string]string{}, map[string]string{}, now)
+	testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, cookieless.IDPrefix+"ghost", "page_view", uuid.NewString(),
+		map[string]string{}, map[string]string{}, now)
+
+	service := profiles.NewService(nil, ch.Conn, nil)
+
+	got, err := service.List(ctx, profiles.ListParams{ProjectID: projectID, PageSize: 100})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, p := range got {
+		if strings.HasPrefix(p.ID, cookieless.IDPrefix) {
+			t.Errorf("cookieless id %q surfaced as a person — is migration 011's activity-MV WHERE intact?", p.ID)
+		}
+	}
+	if len(got) != 1 || got[0].ID != "anon-real" {
+		ids := make([]string, len(got))
+		for i, p := range got {
+			ids[i] = p.ID
+		}
+		t.Errorf("persons = %v, want exactly [anon-real]", ids)
+	}
+
+	if _, err := service.GetByID(ctx, projectID, cookieless.IDPrefix+"ghost"); !errors.Is(err, profiles.ErrProfileNotFound) {
+		t.Errorf("GetByID(cookieless id) err = %v, want ErrProfileNotFound", err)
 	}
 }

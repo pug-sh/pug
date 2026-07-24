@@ -293,7 +293,15 @@ fix the rollup — an MV fires only on INSERT — so the blank rows are permanen
 
 **Repair (one procedure, covers every case).** Optional, and sized by the window's traffic rather
 than the table: run migration 008's derivation mutation, then migration 009's `DELETE` of the new
-`dim_name`s followed by its delta backfill INSERT. That rebuilds the new dims from `events`, the
+`dim_name`s followed by its delta backfill INSERT. **Post-011 addendum:** once migration 011 has
+run, the rollup carries a `cookieless` key column, so 009's positional INSERT no longer matches
+the table — a manual repair must name the columns AND compute the flag: use 009's backfill body
+with `INSERT INTO dashboard_event_rollup_daily (project_id, day, kind, dim_name, dim_value, cnt,
+uniq_state, cookieless) SELECT …, toUInt8(startsWith(distinct_id, 'cookieless-')) AS cookieless …
+GROUP BY project_id, day, kind, dim_name, dim_value, cookieless`. (Goose itself never hits this:
+a retried 009 always executes before 011 in migration order —
+`TestIntegrationWebAnalytics/event_rollup_backfill_009_rerunnable` pins the shipped statement's
+idempotency with the seven-column list.) That rebuilds the new dims from `events`, the
 source of truth, and is re-runnable by construction — the same property that makes 009 safe to
 retry. This is deliberately the *only* recovery path: it covers the rollout window above, and it
 covers a 009 retried after a long gap (old-binary rows landing between 008's mutation and the
@@ -330,8 +338,11 @@ scope. → [`insights.md`](insights.md) (Property discovery).
 ## Testing strategy (as implemented)
 
 - **Contract pins, repointed at the latest MV definition:** `TestMaterializedDimsMatchMigration`
-  and `TestMigration009PromotedDimExprsMatch` parse 009's Up section (MODIFY QUERY block = full
-  21-tuple ↔ `materializedDims`+`$__total__`; backfill block = `eventRollupDims009` exactly);
+  and `TestMigration011PromotedDimExprsMatch` parse **011's** Up section — the migration that
+  currently defines the MV. 011 restates the MODIFY QUERY block only (full 21-tuple ↔
+  `materializedDims`+`$__total__`) and carries **no backfill**, which the tests assert by
+  requiring exactly one `ARRAY JOIN` block; 009's two-block shape — MODIFY QUERY plus a delta
+  backfill of `eventRollupDims009` exactly — is now pinned by `TestMigration009Frozen`.
   `TestMigration006Frozen` / `TestMigration007Frozen` pin the shipped migrations to their
   historical content (guards against editing them). `TestMigration010SessionRollup
   {ColumnsMatchDims,DimExprsMatch}` do the same for the session rollup (old dims stated once in
@@ -406,5 +417,7 @@ session rollup deleted row-level by `session_id`, new states ride along), protov
 
 The FE web-analytics page itself (`../app` — the BE contracts it needs are exactly this design);
 browser-SDK additions (confirm `@pug-sh/browser` sends `$referrer`/`$locale`/`$screenWidth`/
-`$screenHeight`/`$pageTitle`; UTM becomes server-derived either way); cookieless visitor identity
-(compliance 4.10); per-tile bot-exclusion toggles (works today as a filter → raw path).
+`$screenHeight`/`$pageTitle`; UTM becomes server-derived either way); per-tile bot-exclusion
+toggles (works today as a filter → raw path). Cookieless visitor identity — formerly deferred here
+as "compliance 4.10" — is now implemented (migration 011, `internal/cookieless`,
+`include_cookieless`; → [ingestion.md](ingestion.md), [insights.md](insights.md)).

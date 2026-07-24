@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pug-sh/pug/internal/cookieless"
 	"github.com/pug-sh/pug/internal/core/profiles"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	"github.com/pug-sh/pug/internal/deps/postgres"
@@ -560,4 +561,111 @@ func pgCount(t *testing.T, ctx context.Context, pg *testutil.TestPostgres, query
 		t.Fatalf("pg count %q: %v", query, err)
 	}
 	return n
+}
+
+// TestErasure_ByID_CookielessIsErasable pins that a controller CAN erase a
+// cookieless id it can see.
+//
+// Migration 011 keeps cookieless- ids out of distinct_id_activity_states_mv, and
+// hasActivity probes exactly that rollup — so bare-id erasure used to report
+// ErrProfileNotFound for an id whose events demonstrably exist. The original
+// rationale ("a cookieless id is unknowable to its own visitor, so no data
+// subject can present one") is true of a VISITOR-initiated DSAR but says nothing
+// about a controller: GetEventExplorer and GetActivityFeed both return
+// cookieless ids unfiltered, so an admin can read one off the event explorer and
+// click delete. "Not found" for data that exists is the wrong failure direction
+// for an Art. 17 obligation.
+//
+// The consented control runs the identical entry point, so a regression that
+// broke ordinary erasure could not hide behind this test.
+func TestErasure_ByID_CookielessIsErasable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	pg := testutil.SetupPostgres(t)
+	ch := testutil.SetupClickHouse(t)
+	tn := testutil.SetupNATS(t)
+	t.Setenv("NATS_URL", tn.URL)
+
+	natsClient, err := natsdeps.New(ctx)
+	if err != nil {
+		t.Fatalf("create nats client: %v", err)
+	}
+	defer natsClient.Close()
+
+	projectID := seedProject(t, ctx, pg)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	const (
+		cookielessID = cookieless.IDPrefix + "Zm9vYmFyYmF6cXV4"
+		controlID    = "anon-consented-control"
+	)
+	sessions := map[string]string{cookielessID: uuid.NewString(), controlID: uuid.NewString()}
+	for _, did := range []string{cookielessID, controlID} {
+		testutil.InsertEvent(ctx, t, ch.Conn, uuid.NewString(), projectID, did, "page_view",
+			sessions[did], map[string]string{}, map[string]string{}, now)
+	}
+
+	// Migration 011's WHERE still holds — the id is invisible to the activity
+	// rollup. Erasure must succeed anyway, which is the whole point.
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM distinct_id_activity_states WHERE project_id = ? AND distinct_id = ?",
+		projectID, cookielessID); got != 0 {
+		t.Fatalf("cookieless activity rows = %d, want 0 (migration 011 WHERE)", got)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM distinct_id_activity_states WHERE project_id = ? AND distinct_id = ?",
+		projectID, controlID); got != 1 {
+		t.Fatalf("control activity rows = %d, want 1", got)
+	}
+	// Migration 011 deliberately leaves the session rollup unfiltered, so a
+	// cookieless visitor DOES have rows there — the one store where 011's
+	// "deliberately untouched" decision creates cookieless-specific residue on a
+	// compliance surface. Erasure has to clear it.
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM dashboard_session_rollup WHERE project_id = ? AND session_id = ?",
+		projectID, sessions[cookielessID]); got == 0 {
+		t.Fatal("expected cookieless session-rollup rows to exist before erasure")
+	}
+
+	svc := profiles.NewService(pg.PgW, ch.Conn, natsClient)
+
+	requestID, status, err := svc.RequestErasureByID(ctx, projectID, cookielessID, "")
+	if err != nil {
+		t.Fatalf("RequestErasureByID(cookieless) = %v, want success — an id an admin can SEE must be erasable", err)
+	}
+	if status != profiles.ComplianceStatusPending {
+		t.Errorf("status = %q, want pending", status)
+	}
+	if got := pgCount(t, ctx, pg,
+		"SELECT count(*) FROM compliance_requests WHERE project_id = $1", projectID); got != 1 {
+		t.Errorf("ledger rows = %d, want 1", got)
+	}
+
+	if err := svc.ExecuteErasure(ctx, projectID, requestID); err != nil {
+		t.Fatalf("ExecuteErasure: %v", err)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM events WHERE project_id = ? AND distinct_id = ?",
+		projectID, cookielessID); got != 0 {
+		t.Errorf("cookieless events = %d after erasure, want 0", got)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM dashboard_session_rollup WHERE project_id = ? AND session_id = ?",
+		projectID, sessions[cookielessID]); got != 0 {
+		t.Errorf("cookieless session-rollup rows = %d after erasure, want 0", got)
+	}
+
+	// The consented control through the identical entry point still works, and is
+	// untouched by the cookieless erase.
+	if _, _, err := svc.RequestErasureByID(ctx, projectID, controlID, ""); err != nil {
+		t.Fatalf("RequestErasureByID(consented control) = %v, want success", err)
+	}
+	if got := chCount(t, ctx, ch,
+		"SELECT count() FROM events WHERE project_id = ? AND distinct_id = ?",
+		projectID, controlID); got != 1 {
+		t.Errorf("control events = %d, want 1 (untouched by the cookieless erase)", got)
+	}
 }
