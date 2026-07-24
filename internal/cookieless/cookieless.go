@@ -97,9 +97,13 @@ func (r *Resolver) DayOf(occur time.Time) (Day, bool) {
 // geo.ParseClientIP and projectID is a DB-issued id, so no field before the last
 // can contain the 0x00 separator.
 //
-// IP and UA are hash inputs only — never stored, never returned. The only
-// error is salt unavailability (Redis unreachable with a cold cache); the
-// caller drops those events rather than fabricating identity.
+// IP and UA are hash inputs only — never stored, never returned. Two errors are
+// possible and the caller must tell them apart: salt unavailability (Redis
+// unreachable with a cold cache) is transient and retryable, while ErrCorruptSalt
+// (the stored salt failed to decode) is permanent until the key's TTL expires.
+// handler.go maps them to the distinct salt_unavailable and salt_corrupt drop
+// reasons; either way the caller drops the affected events rather than
+// fabricating identity.
 func (r *Resolver) DistinctID(ctx context.Context, day Day, projectID, ip, ua string) (string, error) {
 	salt, err := r.saltForDay(ctx, day)
 	if err != nil {
