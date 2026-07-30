@@ -43,6 +43,7 @@ func TestProcessorMagicLinkIdempotencyKeyIsStableOnRetry(t *testing.T) {
 	}
 	processor := NewProcessor(nil, mailer)
 	data, err := proto.Marshal(&emailworkerv1.EmailJob{
+		DispatchId: proto.String("dispatch-1"),
 		Payload: &emailworkerv1.EmailJob_MagicLink{
 			MagicLink: &emailworkerv1.MagicLinkPayload{
 				Email: proto.String("retry@example.com"),
@@ -68,6 +69,89 @@ func TestProcessorMagicLinkIdempotencyKeyIsStableOnRetry(t *testing.T) {
 		t.Fatalf("idempotency key differs across retries: %q vs %q",
 			provider.msgs[0].IdempotencyKey, provider.msgs[1].IdempotencyKey)
 	}
+	if strings.Contains(provider.msgs[0].IdempotencyKey, "stable-token") {
+		t.Fatalf("idempotency key leaks the raw token: %q", provider.msgs[0].IdempotencyKey)
+	}
+}
+
+// inviteJob builds an invite job carrying dispatchID, for the key tests below.
+func inviteJob(dispatchID string) *emailworkerv1.EmailJob {
+	return &emailworkerv1.EmailJob{
+		DispatchId: proto.String(dispatchID),
+		Payload: &emailworkerv1.EmailJob_OrgMemberInvite{
+			OrgMemberInvite: &emailworkerv1.OrgMemberInvitePayload{
+				Email:        proto.String("invitee@example.com"),
+				InvitationId: proto.String("invite-1"),
+				Token:        proto.String("a-token"),
+			},
+		},
+	}
+}
+
+// inviteJobWithoutDispatchID builds the same job with the field unset, so
+// protovalidate's `required` has-bit check is what rejects it.
+func inviteJobWithoutDispatchID() *emailworkerv1.EmailJob {
+	job := inviteJob("")
+	job.DispatchId = nil
+	return job
+}
+
+// TestIdempotencyKeyRotatesPerDispatch pins the counterpart to retry stability:
+// a resend keeps the invitation id, so only the per-send dispatch id keeps its
+// key off the original send's and stops the provider deduping it away.
+func TestIdempotencyKeyRotatesPerDispatch(t *testing.T) {
+	first, err := idempotencyKeyForJob(inviteJob("dispatch-1"))
+	if err != nil {
+		t.Fatalf("idempotencyKeyForJob: %v", err)
+	}
+	second, err := idempotencyKeyForJob(inviteJob("dispatch-2"))
+	if err != nil {
+		t.Fatalf("idempotencyKeyForJob: %v", err)
+	}
+	if first == second {
+		t.Fatalf("resend reused the original send's idempotency key: %q", first)
+	}
+}
+
+// TestIdempotencyKeyRejectsBlankDispatchID pins that an unusable key is an error
+// rather than a weak key: providers omit the header when it is blank, so a
+// fallback would disable dedup with no error, no log and no metric. The empty
+// case also covers protovalidate's `required`, which only checks the has-bit.
+func TestIdempotencyKeyRejectsBlankDispatchID(t *testing.T) {
+	for _, dispatchID := range []string{"", "   "} {
+		if _, err := idempotencyKeyForJob(inviteJob(dispatchID)); err == nil {
+			t.Fatalf("expected an error for dispatch id %q", dispatchID)
+		}
+	}
+}
+
+// TestProcessorRejectsJobWithoutDispatchID pins that an unusable dispatch id is
+// rejected before any send — validation runs ahead of the mailer, so a nil
+// mailer is enough to prove nothing was sent.
+//
+// Two guards, not one: protovalidate's `required` catches an absent id, but
+// min_len=1 admits whitespace, which only idempotencyKeyForJob's TrimSpace
+// rejects. Covering just the absent case would leave that second guard unrun.
+func TestProcessorRejectsJobWithoutDispatchID(t *testing.T) {
+	cases := []struct {
+		name string
+		job  *emailworkerv1.EmailJob
+	}{
+		{"absent", inviteJobWithoutDispatchID()},
+		{"whitespace_only", inviteJob("   ")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := proto.Marshal(tc.job)
+			if err != nil {
+				t.Fatalf("proto.Marshal: %v", err)
+			}
+			err = NewProcessor(nil, nil).ProcessMessage(context.Background(), data)
+			if err == nil || !natsworker.IsPermanentError(err) {
+				t.Fatalf("expected permanent error, got %v", err)
+			}
+		})
+	}
 }
 
 func TestProcessorPermanentProviderErrorMapsToDLQ(t *testing.T) {
@@ -81,6 +165,7 @@ func TestProcessorPermanentProviderErrorMapsToDLQ(t *testing.T) {
 	}
 	processor := NewProcessor(nil, mailer)
 	data, err := proto.Marshal(&emailworkerv1.EmailJob{
+		DispatchId: proto.String("dispatch-1"),
 		Payload: &emailworkerv1.EmailJob_MagicLink{
 			MagicLink: &emailworkerv1.MagicLinkPayload{
 				Email: proto.String("test@example.com"),
@@ -140,6 +225,7 @@ func TestProcessorOrgInviteMissingInvitationIsPermanent(t *testing.T) {
 	}
 	processor := NewProcessor(dbread.New(db.PgW), mailer)
 	data, err := proto.Marshal(&emailworkerv1.EmailJob{
+		DispatchId: proto.String("dispatch-1"),
 		Payload: &emailworkerv1.EmailJob_OrgMemberInvite{
 			OrgMemberInvite: &emailworkerv1.OrgMemberInvitePayload{
 				Email:        proto.String("ghost@example.com"),
@@ -208,6 +294,7 @@ func TestProcessorOrgInviteLoadsInvitationContext(t *testing.T) {
 		t.Fatalf("CreateOrgInvitation: %v", err)
 	}
 	data, err := proto.Marshal(&emailworkerv1.EmailJob{
+		DispatchId: proto.String("dispatch-1"),
 		Payload: &emailworkerv1.EmailJob_OrgMemberInvite{
 			OrgMemberInvite: &emailworkerv1.OrgMemberInvitePayload{
 				Email:        proto.String(inv.Email),
@@ -226,8 +313,8 @@ func TestProcessorOrgInviteLoadsInvitationContext(t *testing.T) {
 	if len(provider.msgs) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(provider.msgs))
 	}
-	if provider.msgs[0].IdempotencyKey != "org_member_invite:invite-1" {
-		t.Fatalf("expected org invite idempotency key, got %q", provider.msgs[0].IdempotencyKey)
+	if provider.msgs[0].IdempotencyKey != "dispatch-1" {
+		t.Fatalf("unexpected org invite idempotency key: %q", provider.msgs[0].IdempotencyKey)
 	}
 	if !strings.Contains(provider.msgs[0].TextBody, "Inviter invited you to join Worker Org") {
 		t.Fatalf("unexpected invite body: %q", provider.msgs[0].TextBody)

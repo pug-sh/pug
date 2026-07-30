@@ -214,6 +214,11 @@ func TestInviteMemberPublishesEmailJob(t *testing.T) {
 	if !emailToken.OrgInvitationID.Valid || emailToken.OrgInvitationID.String != inv.ID {
 		t.Fatalf("org invitation id = %v, want %q", emailToken.OrgInvitationID, inv.ID)
 	}
+	// The worker keys the provider send on dispatch_id, so an unset one silently
+	// disables dedup. It is the token row id, which rotates on every send.
+	if got := pub.job.GetDispatchId(); got != emailToken.ID {
+		t.Fatalf("dispatch id = %q, want token row id %q", got, emailToken.ID)
+	}
 	if inv.Token == dispatch.RawToken {
 		t.Fatal("invitation row stored a redeemable token")
 	}
@@ -336,6 +341,10 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first InviteMember: %v", err)
 	}
+	firstDispatchID := pub.job.GetDispatchId()
+	if firstDispatchID == "" {
+		t.Fatal("first invite published a blank dispatch id")
+	}
 	secondDispatch, err := svc.InviteMember(ctx, orgB.ID, customer.ID, "invitee@example.com")
 	if err != nil {
 		t.Fatalf("second InviteMember: %v", err)
@@ -360,6 +369,11 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 	}
 	if got := pub.job.GetOrgMemberInvite().GetToken(); got != resendDispatch.RawToken {
 		t.Fatalf("published token = %q, want %q", got, resendDispatch.RawToken)
+	}
+	// The invitation id is unchanged, so only a rotated dispatch id keeps the
+	// resend's provider idempotency key off the original send's.
+	if got := pub.job.GetDispatchId(); got == "" || got == firstDispatchID {
+		t.Fatalf("resend dispatch id = %q, want a fresh one (first send %q)", got, firstDispatchID)
 	}
 
 	if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
@@ -474,6 +488,148 @@ func TestResendInviteExtendsExpiresAt(t *testing.T) {
 	minFuture := time.Now().Add(6*24*time.Hour + 23*time.Hour)
 	if !resend.Invitation.ExpiresAt.Valid || resend.Invitation.ExpiresAt.Time.Before(minFuture) {
 		t.Fatalf("expires_at not extended: got %v, want after %v", resend.Invitation.ExpiresAt.Time, minFuture)
+	}
+}
+
+// TestResendInviteEnforcesSendLimit pins the cap on how much mail one
+// invitation can direct at an address that need not belong to a pug user:
+// ResendInvite is otherwise unthrottled and there is no rate limiter in the
+// interceptor chain.
+func TestResendInviteEnforcesSendLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newInviteFixture(t, "spam-target@example.com")
+	ctx := context.Background()
+
+	// The invitation was already sent once, so the window allows
+	// maxInviteSendsPerWindow-1 resends before it trips.
+	for i := 0; i < 9; i++ {
+		if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); err != nil {
+			t.Fatalf("ResendInvite %d: %v", i, err)
+		}
+	}
+	if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); !errors.Is(err, orgs.ErrInviteSendLimit) {
+		t.Fatalf("expected ErrInviteSendLimit, got %v", err)
+	}
+}
+
+// TestResendInviteSendLimitClearsAfterWindow pins the reason the cap counts a
+// trailing window instead of a lifetime total: nothing else can unstick a
+// spent invitation. An expired one stays PENDING, the partial unique index
+// blocks a fresh invite for the same (org, email), and there is no revoke RPC.
+func TestResendInviteSendLimitClearsAfterWindow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newInviteFixture(t, "recovers@example.com")
+	ctx := context.Background()
+
+	for i := 0; i < 9; i++ {
+		if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); err != nil {
+			t.Fatalf("ResendInvite %d: %v", i, err)
+		}
+	}
+	if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); !errors.Is(err, orgs.ErrInviteSendLimit) {
+		t.Fatalf("expected ErrInviteSendLimit, got %v", err)
+	}
+
+	// Age every send out of the window. Backdating the rows is the only way to
+	// reach the recovery path without a clock injection seam.
+	if _, err := f.pool.Exec(ctx,
+		`update email_action_tokens set create_time = now() - interval '25 hours' where org_invitation_id = $1`,
+		f.invite.ID,
+	); err != nil {
+		t.Fatalf("backdate sends: %v", err)
+	}
+
+	if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); err != nil {
+		t.Fatalf("ResendInvite after the window: %v", err)
+	}
+}
+
+// TestRevokeInviteFreesTheAddress pins what revoking is for: the invitation row
+// is what blocks a fresh invite for the same (org, email) — an expired one stays
+// PENDING — so revoke must delete it, not flip a status. The token cascade is
+// the other half: a link already in the invitee's inbox has to stop working.
+func TestRevokeInviteFreesTheAddress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newInviteFixture(t, "revoked@example.com")
+	ctx := context.Background()
+
+	if err := f.svc.RevokeInvite(ctx, f.org.ID, f.invite.ID); err != nil {
+		t.Fatalf("RevokeInvite: %v", err)
+	}
+
+	if _, err := f.write.GetOrgInvitationByIDForUpdate(ctx, f.invite.ID); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("invitation row still present after revoke: %v", err)
+	}
+	if _, err := f.read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
+		TokenHash: hashToken(f.rawToken),
+		Purpose:   emailaction.PurposeOrgInvite.String(),
+	}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("emailed link still redeemable after revoke: %v", err)
+	}
+
+	// The address is invitable again — including at a different role, which a
+	// resend of the original invitation could never change.
+	redo, err := f.svc.InviteMemberWithRole(ctx, f.org.ID, f.inviter.ID, "revoked@example.com", orgs.RoleAdmin)
+	if err != nil {
+		t.Fatalf("InviteMemberWithRole after revoke: %v", err)
+	}
+	if redo.Invitation.ID == f.invite.ID {
+		t.Fatal("expected a new invitation row, got the revoked one")
+	}
+	if redo.Invitation.Role != orgs.RoleAdmin.String() {
+		t.Fatalf("role = %q, want %q", redo.Invitation.Role, orgs.RoleAdmin)
+	}
+}
+
+// TestRevokeInviteRejectsAccepted pins that revoke is PENDING-only: deleting an
+// accepted invitation would drop the record while leaving the membership it
+// produced in place.
+func TestRevokeInviteRejectsAccepted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newInviteFixture(t, "accepted@example.com")
+	ctx := context.Background()
+
+	if _, err := f.write.UpdateOrgInvitationStatus(ctx, dbwrite.UpdateOrgInvitationStatusParams{
+		ID:     f.invite.ID,
+		Status: orgsv1.InvitationStatus_INVITATION_STATUS_ACCEPTED.String(),
+	}); err != nil {
+		t.Fatalf("UpdateOrgInvitationStatus: %v", err)
+	}
+
+	if err := f.svc.RevokeInvite(ctx, f.org.ID, f.invite.ID); !errors.Is(err, orgs.ErrInviteNotPending) {
+		t.Fatalf("expected ErrInviteNotPending, got %v", err)
+	}
+}
+
+// TestRevokeInviteRejectsForeignOrg pins the tenant check: an admin of another
+// org may not revoke this org's invitation, and the mismatch is reported as
+// not-found so an invitation id never confirms which org owns it.
+func TestRevokeInviteRejectsForeignOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newInviteFixture(t, "foreign@example.com")
+	ctx := context.Background()
+
+	other, err := f.write.CreateOrg(ctx, dbwrite.CreateOrgParams{
+		ID: xid.New().String(), DisplayName: "Other",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+	if err := f.svc.RevokeInvite(ctx, other.ID, f.invite.ID); !errors.Is(err, orgs.ErrInviteNotFound) {
+		t.Fatalf("expected ErrInviteNotFound, got %v", err)
+	}
+	if _, err := f.write.GetOrgInvitationByIDForUpdate(ctx, f.invite.ID); err != nil {
+		t.Fatalf("invitation must survive a foreign-org revoke: %v", err)
 	}
 }
 
@@ -607,9 +763,10 @@ func TestOrgMembersRoleCheckRejectsInvalidRole(t *testing.T) {
 	}
 }
 
-// inviteFixture sets up an inviter customer + org + invitee customer +
-// pending invitation, and returns the raw invite token. Centralises the
-// boilerplate used by the invite tests below.
+// inviteFixture sets up an inviter customer + org + pending invitation, and
+// returns the raw invite token. Centralises the boilerplate used by the invite
+// tests below. The invitee is deliberately left unregistered — an invite may
+// name any address, and that is the case worth pinning.
 type inviteFixture struct {
 	t        *testing.T
 	svc      *orgs.Service
@@ -617,7 +774,6 @@ type inviteFixture struct {
 	write    *dbwrite.Queries
 	read     *dbread.Queries
 	org      dbwrite.Org
-	invitee  dbwrite.Customer
 	inviter  dbwrite.Customer
 	invite   dbwrite.OrgInvitation
 	rawToken string
@@ -638,13 +794,6 @@ func newInviteFixture(t *testing.T, inviteeEmail string) *inviteFixture {
 	if err != nil {
 		t.Fatalf("CreateCustomer inviter: %v", err)
 	}
-	invitee, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: xid.New().String(), Email: inviteeEmail,
-		DisplayName: "Invitee", PasswordHash: "hash",
-	})
-	if err != nil {
-		t.Fatalf("CreateCustomer invitee: %v", err)
-	}
 	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
 		ID: xid.New().String(), DisplayName: "Acme",
 	})
@@ -663,7 +812,7 @@ func newInviteFixture(t *testing.T, inviteeEmail string) *inviteFixture {
 	}
 	return &inviteFixture{
 		t: t, svc: svc, pool: db.PgW, write: write, read: read,
-		org: org, invitee: invitee, inviter: inviter, invite: dispatch.Invitation, rawToken: dispatch.RawToken,
+		org: org, inviter: inviter, invite: dispatch.Invitation, rawToken: dispatch.RawToken,
 	}
 }
 

@@ -46,6 +46,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/dashboard.orgs.v1.OrgsService/UpdateDisplayName": authzspec.OrgGated(authz.ResourceOrg, authz.ActionUpdate),
 	"/dashboard.orgs.v1.OrgsService/InviteMember":      authzspec.OrgGated(authz.ResourceInvitation, authz.ActionCreate),
 	"/dashboard.orgs.v1.OrgsService/ResendInvite":      authzspec.OrgGated(authz.ResourceInvitation, authz.ActionUpdate),
+	"/dashboard.orgs.v1.OrgsService/RevokeInvite":      authzspec.OrgGated(authz.ResourceInvitation, authz.ActionDelete),
 	"/dashboard.orgs.v1.OrgsService/ListInvitations":   authzspec.OrgGated(authz.ResourceInvitation, authz.ActionRead),
 	"/dashboard.orgs.v1.OrgsService/RemoveMember":      authzspec.OrgGated(authz.ResourceMember, authz.ActionDelete),
 	"/dashboard.orgs.v1.OrgsService/UpdateMemberRole":  authzspec.OrgGated(authz.ResourceMember, authz.ActionUpdate),

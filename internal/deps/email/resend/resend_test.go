@@ -74,6 +74,123 @@ func TestProviderSendEmptyResponseIsPermanent(t *testing.T) {
 	}
 }
 
+// TestProviderSendSplitsIdempotencyConflicts pins the two 409 flavors apart. A
+// replay with an identical payload returns the original 200, so a 409 never
+// means "already sent": a concurrent send clears on retry, a payload mismatch
+// never will, and an unrecognized code falls back to 4xx-is-permanent.
+//
+// wantMessage also pins that errorNameFromBody restores the body — consuming it
+// would leave the SDK decoding nothing and reporting a bare "Conflict".
+func TestProviderSendSplitsIdempotencyConflicts(t *testing.T) {
+	cases := []struct {
+		name        string
+		body        string
+		permanent   bool
+		wantMessage string
+	}{
+		{
+			name:        "concurrent_is_retryable",
+			body:        `{"name":"concurrent_idempotent_requests","message":"request in progress"}`,
+			permanent:   false,
+			wantMessage: "request in progress",
+		},
+		{
+			name:        "payload_mismatch_is_permanent",
+			body:        `{"name":"invalid_idempotent_request","message":"same key, different payload"}`,
+			permanent:   true,
+			wantMessage: "same key, different payload",
+		},
+		{
+			name:        "unknown_code_is_permanent",
+			body:        `{"message":"conflict"}`,
+			permanent:   true,
+			wantMessage: "conflict",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+				return jsonResponse(http.StatusConflict, tc.body), nil
+			}))
+
+			err := provider.Send(context.Background(), emailspec.Message{
+				From:           "noreply@example.com",
+				To:             "test@example.com",
+				Subject:        "Subject",
+				TextBody:       "body",
+				IdempotencyKey: "dispatch-1",
+			})
+			if err == nil {
+				t.Fatal("expected 409 to surface an error")
+			}
+			if got := emailspec.IsPermanentError(err); got != tc.permanent {
+				t.Fatalf("permanent = %v, want %v (err: %v)", got, tc.permanent, err)
+			}
+			if !strings.Contains(err.Error(), tc.wantMessage) {
+				t.Fatalf("error %q lost the provider message %q", err, tc.wantMessage)
+			}
+		})
+	}
+}
+
+// TestProviderSendConflictBodyFallbacks pins the classifier's failure modes.
+// errorNameFromBody can't tell "not a conflict I know" from "couldn't read the
+// body", and both must land on the 4xx-is-permanent default rather than the
+// retry branch — an unbounded retry on an unreadable body would just spin.
+func TestProviderSendConflictBodyFallbacks(t *testing.T) {
+	cases := []struct {
+		name string
+		body io.ReadCloser
+	}{
+		{"not_json", io.NopCloser(strings.NewReader("<html>gateway conflict</html>"))},
+		{"unreadable", io.NopCloser(errReader{})},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+				resp := jsonResponse(http.StatusConflict, "")
+				resp.Body = tc.body
+				return resp, nil
+			}))
+
+			err := provider.Send(context.Background(), emailspec.Message{
+				From: "noreply@example.com", To: "test@example.com",
+				Subject: "Subject", TextBody: "body", IdempotencyKey: "dispatch-1",
+			})
+			if err == nil {
+				t.Fatal("expected 409 to surface an error")
+			}
+			if !emailspec.IsPermanentError(err) {
+				t.Fatalf("expected permanent error, got %v", err)
+			}
+		})
+	}
+}
+
+// TestProviderSendSurvivesTransportError pins that a transport failure — where
+// RoundTrip returns a nil response — classifies off a zero status instead of
+// dereferencing nil. A panic here would take down the worker.
+func TestProviderSendSurvivesTransportError(t *testing.T) {
+	provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return nil, errors.New("dial tcp: connection refused")
+	}))
+
+	err := provider.Send(context.Background(), emailspec.Message{
+		From: "noreply@example.com", To: "test@example.com",
+		Subject: "Subject", TextBody: "body", IdempotencyKey: "dispatch-1",
+	})
+	if err == nil {
+		t.Fatal("expected transport error to surface")
+	}
+	if emailspec.IsPermanentError(err) {
+		t.Fatalf("a connection failure must stay retryable, got %v", err)
+	}
+}
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("body read failed") }
+
 func TestProviderSendKeepsRateLimitsRetryable(t *testing.T) {
 	provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 		return jsonResponse(http.StatusTooManyRequests, `{"message":"rate limited"}`), nil
