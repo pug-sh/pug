@@ -133,6 +133,64 @@ func TestProviderSendSplitsIdempotencyConflicts(t *testing.T) {
 	}
 }
 
+// TestProviderSendConflictBodyFallbacks pins the classifier's failure modes.
+// errorNameFromBody can't tell "not a conflict I know" from "couldn't read the
+// body", and both must land on the 4xx-is-permanent default rather than the
+// retry branch — an unbounded retry on an unreadable body would just spin.
+func TestProviderSendConflictBodyFallbacks(t *testing.T) {
+	cases := []struct {
+		name string
+		body io.ReadCloser
+	}{
+		{"not_json", io.NopCloser(strings.NewReader("<html>gateway conflict</html>"))},
+		{"unreadable", io.NopCloser(errReader{})},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+				resp := jsonResponse(http.StatusConflict, "")
+				resp.Body = tc.body
+				return resp, nil
+			}))
+
+			err := provider.Send(context.Background(), emailspec.Message{
+				From: "noreply@example.com", To: "test@example.com",
+				Subject: "Subject", TextBody: "body", IdempotencyKey: "dispatch-1",
+			})
+			if err == nil {
+				t.Fatal("expected 409 to surface an error")
+			}
+			if !emailspec.IsPermanentError(err) {
+				t.Fatalf("expected permanent error, got %v", err)
+			}
+		})
+	}
+}
+
+// TestProviderSendSurvivesTransportError pins that a transport failure — where
+// RoundTrip returns a nil response — classifies off a zero status instead of
+// dereferencing nil. A panic here would take down the worker.
+func TestProviderSendSurvivesTransportError(t *testing.T) {
+	provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return nil, errors.New("dial tcp: connection refused")
+	}))
+
+	err := provider.Send(context.Background(), emailspec.Message{
+		From: "noreply@example.com", To: "test@example.com",
+		Subject: "Subject", TextBody: "body", IdempotencyKey: "dispatch-1",
+	})
+	if err == nil {
+		t.Fatal("expected transport error to surface")
+	}
+	if emailspec.IsPermanentError(err) {
+		t.Fatalf("a connection failure must stay retryable, got %v", err)
+	}
+}
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("body read failed") }
+
 func TestProviderSendKeepsRateLimitsRetryable(t *testing.T) {
 	provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 		return jsonResponse(http.StatusTooManyRequests, `{"message":"rate limited"}`), nil

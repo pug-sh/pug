@@ -1043,6 +1043,42 @@ func TestResendInviteHandler_HappyPath(t *testing.T) {
 	}
 }
 
+// TestResendInviteHandler_SendLimitReturnsFailedPrecondition pins
+// ErrInviteSendLimit → FailedPrecondition/INVITATION_SEND_LIMIT. The cap is the
+// only bound on mail to an invitee address, so the reason code is a contract
+// the FE keys off to explain why the button stopped working.
+func TestResendInviteHandler_SendLimitReturnsFailedPrecondition(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	f := newHandlerFixture(t)
+	srv := orgshandler.NewServer(f.svc)
+	ctx := principalCtx(context.Background(), f.adminCustomer)
+	req := func() *connect.Request[orgsv1.ResendInviteRequest] {
+		return connect.NewRequest(&orgsv1.ResendInviteRequest{
+			InvitationId: proto.String(f.invitationID),
+			OrgId:        proto.String(f.org.ID),
+		})
+	}
+
+	// The fixture's invitation was already sent once, so the cap allows
+	// maxInviteSends-1 resends before it trips.
+	for i := 0; i < 9; i++ {
+		if _, err := srv.ResendInvite(ctx, req()); err != nil {
+			t.Fatalf("ResendInvite %d: %v", i, err)
+		}
+	}
+
+	_, err := srv.ResendInvite(ctx, req())
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeFailedPrecondition {
+		t.Fatalf("want apperr CodeFailedPrecondition, got %v (%T)", err, err)
+	}
+	if ae.Reason() != apperr.ReasonInvitationSendLimit {
+		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationSendLimit)
+	}
+}
+
 // TestResendInviteHandler_UnknownReturnsNotFound pins ErrInviteNotFound →
 // CodeNotFound mapping for a bogus invitation_id.
 func TestResendInviteHandler_UnknownReturnsNotFound(t *testing.T) {

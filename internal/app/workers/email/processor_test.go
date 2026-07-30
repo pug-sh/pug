@@ -88,6 +88,14 @@ func inviteJob(dispatchID string) *emailworkerv1.EmailJob {
 	}
 }
 
+// inviteJobWithoutDispatchID builds the same job with the field unset, so
+// protovalidate's `required` has-bit check is what rejects it.
+func inviteJobWithoutDispatchID() *emailworkerv1.EmailJob {
+	job := inviteJob("")
+	job.DispatchId = nil
+	return job
+}
+
 // TestIdempotencyKeyRotatesPerDispatch pins the counterpart to retry stability:
 // a resend keeps the invitation id, so only the per-send dispatch id keeps its
 // key off the original send's and stops the provider deduping it away.
@@ -117,26 +125,32 @@ func TestIdempotencyKeyRejectsBlankDispatchID(t *testing.T) {
 	}
 }
 
-// TestProcessorRejectsJobWithoutDispatchID pins that a job missing dispatch_id
-// is rejected before any send — validation runs ahead of the mailer, so a nil
+// TestProcessorRejectsJobWithoutDispatchID pins that an unusable dispatch id is
+// rejected before any send — validation runs ahead of the mailer, so a nil
 // mailer is enough to prove nothing was sent.
+//
+// Two guards, not one: protovalidate's `required` catches an absent id, but
+// min_len=1 admits whitespace, which only idempotencyKeyForJob's TrimSpace
+// rejects. Covering just the absent case would leave that second guard unrun.
 func TestProcessorRejectsJobWithoutDispatchID(t *testing.T) {
-	data, err := proto.Marshal(&emailworkerv1.EmailJob{
-		Payload: &emailworkerv1.EmailJob_OrgMemberInvite{
-			OrgMemberInvite: &emailworkerv1.OrgMemberInvitePayload{
-				Email:        proto.String("invitee@example.com"),
-				InvitationId: proto.String("invite-1"),
-				Token:        proto.String("a-token"),
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("proto.Marshal: %v", err)
+	cases := []struct {
+		name string
+		job  *emailworkerv1.EmailJob
+	}{
+		{"absent", inviteJobWithoutDispatchID()},
+		{"whitespace_only", inviteJob("   ")},
 	}
-
-	err = NewProcessor(nil, nil).ProcessMessage(context.Background(), data)
-	if err == nil || !natsworker.IsPermanentError(err) {
-		t.Fatalf("expected permanent error for missing dispatch_id, got %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := proto.Marshal(tc.job)
+			if err != nil {
+				t.Fatalf("proto.Marshal: %v", err)
+			}
+			err = NewProcessor(nil, nil).ProcessMessage(context.Background(), data)
+			if err == nil || !natsworker.IsPermanentError(err) {
+				t.Fatalf("expected permanent error, got %v", err)
+			}
+		})
 	}
 }
 
