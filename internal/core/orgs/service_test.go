@@ -342,6 +342,9 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 		t.Fatalf("first InviteMember: %v", err)
 	}
 	firstDispatchID := pub.job.GetDispatchId()
+	if firstDispatchID == "" {
+		t.Fatal("first invite published a blank dispatch id")
+	}
 	secondDispatch, err := svc.InviteMember(ctx, orgB.ID, customer.ID, "invitee@example.com")
 	if err != nil {
 		t.Fatalf("second InviteMember: %v", err)
@@ -641,9 +644,10 @@ func TestOrgMembersRoleCheckRejectsInvalidRole(t *testing.T) {
 	}
 }
 
-// inviteFixture sets up an inviter customer + org + invitee customer +
-// pending invitation, and returns the raw invite token. Centralises the
-// boilerplate used by the invite tests below.
+// inviteFixture sets up an inviter customer + org + pending invitation, and
+// returns the raw invite token. Centralises the boilerplate used by the invite
+// tests below. The invitee is deliberately left unregistered — an invite may
+// name any address, and that is the case worth pinning.
 type inviteFixture struct {
 	t        *testing.T
 	svc      *orgs.Service
@@ -651,7 +655,6 @@ type inviteFixture struct {
 	write    *dbwrite.Queries
 	read     *dbread.Queries
 	org      dbwrite.Org
-	invitee  dbwrite.Customer
 	inviter  dbwrite.Customer
 	invite   dbwrite.OrgInvitation
 	rawToken string
@@ -672,13 +675,6 @@ func newInviteFixture(t *testing.T, inviteeEmail string) *inviteFixture {
 	if err != nil {
 		t.Fatalf("CreateCustomer inviter: %v", err)
 	}
-	invitee, err := write.CreateCustomer(ctx, dbwrite.CreateCustomerParams{
-		ID: xid.New().String(), Email: inviteeEmail,
-		DisplayName: "Invitee", PasswordHash: "hash",
-	})
-	if err != nil {
-		t.Fatalf("CreateCustomer invitee: %v", err)
-	}
 	org, err := write.CreateOrg(ctx, dbwrite.CreateOrgParams{
 		ID: xid.New().String(), DisplayName: "Acme",
 	})
@@ -697,7 +693,7 @@ func newInviteFixture(t *testing.T, inviteeEmail string) *inviteFixture {
 	}
 	return &inviteFixture{
 		t: t, svc: svc, pool: db.PgW, write: write, read: read,
-		org: org, invitee: invitee, inviter: inviter, invite: dispatch.Invitation, rawToken: dispatch.RawToken,
+		org: org, inviter: inviter, invite: dispatch.Invitation, rawToken: dispatch.RawToken,
 	}
 }
 

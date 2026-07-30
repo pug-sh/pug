@@ -74,23 +74,62 @@ func TestProviderSendEmptyResponseIsPermanent(t *testing.T) {
 	}
 }
 
-// TestProviderSendTreatsIdempotencyConflictAsSent pins that a 409 is NOT the
-// generic 4xx-is-permanent case: Resend only knows a key it already accepted,
-// so DLQing would strand a message whose email the recipient already has.
-func TestProviderSendTreatsIdempotencyConflictAsSent(t *testing.T) {
-	provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-		return jsonResponse(http.StatusConflict, `{"name":"invalid_idempotent_request","message":"same key, different payload"}`), nil
-	}))
+// TestProviderSendSplitsIdempotencyConflicts pins the two 409 flavors apart. A
+// replay with an identical payload returns the original 200, so a 409 never
+// means "already sent": a concurrent send clears on retry, a payload mismatch
+// never will, and an unrecognized code falls back to 4xx-is-permanent.
+//
+// wantMessage also pins that errorNameFromBody restores the body — consuming it
+// would leave the SDK decoding nothing and reporting a bare "Conflict".
+func TestProviderSendSplitsIdempotencyConflicts(t *testing.T) {
+	cases := []struct {
+		name        string
+		body        string
+		permanent   bool
+		wantMessage string
+	}{
+		{
+			name:        "concurrent_is_retryable",
+			body:        `{"name":"concurrent_idempotent_requests","message":"request in progress"}`,
+			permanent:   false,
+			wantMessage: "request in progress",
+		},
+		{
+			name:        "payload_mismatch_is_permanent",
+			body:        `{"name":"invalid_idempotent_request","message":"same key, different payload"}`,
+			permanent:   true,
+			wantMessage: "same key, different payload",
+		},
+		{
+			name:        "unknown_code_is_permanent",
+			body:        `{"message":"conflict"}`,
+			permanent:   true,
+			wantMessage: "conflict",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+				return jsonResponse(http.StatusConflict, tc.body), nil
+			}))
 
-	err := provider.Send(context.Background(), emailspec.Message{
-		From:           "noreply@example.com",
-		To:             "test@example.com",
-		Subject:        "Subject",
-		TextBody:       "body",
-		IdempotencyKey: "dispatch-1",
-	})
-	if err != nil {
-		t.Fatalf("expected 409 to ack as already sent, got %v", err)
+			err := provider.Send(context.Background(), emailspec.Message{
+				From:           "noreply@example.com",
+				To:             "test@example.com",
+				Subject:        "Subject",
+				TextBody:       "body",
+				IdempotencyKey: "dispatch-1",
+			})
+			if err == nil {
+				t.Fatal("expected 409 to surface an error")
+			}
+			if got := emailspec.IsPermanentError(err); got != tc.permanent {
+				t.Fatalf("permanent = %v, want %v (err: %v)", got, tc.permanent, err)
+			}
+			if !strings.Contains(err.Error(), tc.wantMessage) {
+				t.Fatalf("error %q lost the provider message %q", err, tc.wantMessage)
+			}
+		})
 	}
 }
 

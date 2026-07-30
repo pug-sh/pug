@@ -1,9 +1,12 @@
 package resend
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -47,15 +50,20 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 	ctx = context.WithValue(ctx, responseStatusContextKey{}, status)
 	sent, err := p.client.Emails.SendWithOptions(ctx, params, options)
 	if err != nil {
-		// Resend registers an idempotency key only on a request it accepted, so
-		// a 409 means this key's email is already sent or in flight. Dropping it
-		// to the DLQ would strand a message the recipient has already received.
-		if status.get() == http.StatusConflict {
-			slog.WarnContext(ctx, "resend idempotency key conflict; treating as already sent",
-				slogx.Error(err), slog.String("idempotency_key", msg.IdempotencyKey))
-			return nil
-		}
 		wrappedErr := fmt.Errorf("resend send email: %w", err)
+		// A 409 is never a plain replay — replaying a key with an identical
+		// payload returns the original 200. It is one of two conflicts, and
+		// only the concurrent one clears on a retry.
+		if status.get() == http.StatusConflict {
+			switch status.name() {
+			case errNameConcurrentIdempotentRequests:
+				slog.WarnContext(ctx, "resend idempotency key in flight; retrying",
+					slogx.Error(err), slog.String("idempotency_key", msg.IdempotencyKey))
+				return wrappedErr
+			case errNameInvalidIdempotentRequest:
+				return emailspec.NewPermanentError(wrappedErr)
+			}
+		}
 		if shouldTreatAsPermanent(status.get(), err) {
 			return emailspec.NewPermanentError(wrappedErr)
 		}
@@ -69,19 +77,33 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 
 type responseStatusContextKey struct{}
 
-// responseStatus carries the HTTP status code from the RoundTrip goroutine
-// back to the caller. The Resend SDK does the request on a callee goroutine
-// and the read happens after the SDK returns, so happens-before is
-// established in practice — but a future SDK refactor could break that
-// assumption, so we guard the field with a mutex.
+// Resend's two 409 error codes. The SDK models the `name` field only for
+// 400/422 (InvalidRequestError); every other status falls through to
+// DefaultError, which keeps `message` alone — hence errorNameFromBody.
+const (
+	errNameConcurrentIdempotentRequests = "concurrent_idempotent_requests"
+	errNameInvalidIdempotentRequest     = "invalid_idempotent_request"
+)
+
+// maxErrorBodyPeek bounds the error body we buffer to classify a conflict.
+// Resend's error payloads are a few hundred bytes.
+const maxErrorBodyPeek = 64 << 10
+
+// responseStatus carries the HTTP status code and Resend error code from the
+// RoundTrip goroutine back to the caller. The Resend SDK does the request on a
+// callee goroutine and the read happens after the SDK returns, so
+// happens-before is established in practice — but a future SDK refactor could
+// break that assumption, so we guard the fields with a mutex.
 type responseStatus struct {
-	mu   sync.Mutex
-	code int
+	mu      sync.Mutex
+	code    int
+	errName string
 }
 
-func (s *responseStatus) set(code int) {
+func (s *responseStatus) set(code int, errName string) {
 	s.mu.Lock()
 	s.code = code
+	s.errName = errName
 	s.mu.Unlock()
 }
 
@@ -89,6 +111,12 @@ func (s *responseStatus) get() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.code
+}
+
+func (s *responseStatus) name() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.errName
 }
 
 type observingTransport struct {
@@ -114,10 +142,34 @@ func newClient(httpClient *http.Client, apiKey string) *resendsdk.Client {
 
 func (t observingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
-	if capture, ok := req.Context().Value(responseStatusContextKey{}).(*responseStatus); ok && resp != nil {
-		capture.set(resp.StatusCode)
+	capture, ok := req.Context().Value(responseStatusContextKey{}).(*responseStatus)
+	if !ok || resp == nil {
+		return resp, err
 	}
+	errName := ""
+	if resp.StatusCode == http.StatusConflict {
+		errName = errorNameFromBody(resp)
+	}
+	capture.set(resp.StatusCode, errName)
 	return resp, err
+}
+
+// errorNameFromBody reads Resend's `name` error code off the response and puts
+// the body back for the SDK to parse in turn.
+func errorNameFromBody(resp *http.Response) string {
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyPeek))
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	if readErr != nil {
+		return ""
+	}
+	var parsed struct {
+		Name string `json:"name"`
+	}
+	if json.Unmarshal(body, &parsed) != nil {
+		return ""
+	}
+	return parsed.Name
 }
 
 func shouldTreatAsPermanent(statusCode int, err error) bool {
