@@ -37,23 +37,25 @@ func (q *Queries) ConsumeEmailActionToken(ctx context.Context, id string) (Email
 	return i, err
 }
 
-const countEmailActionTokensByInvitation = `-- name: CountEmailActionTokensByInvitation :one
+const countRecentEmailActionTokensByInvitation = `-- name: CountRecentEmailActionTokensByInvitation :one
 select count(*)
 from email_action_tokens
 where org_invitation_id = $1
   and purpose = $2
+  and create_time > $3
 `
 
-type CountEmailActionTokensByInvitationParams struct {
+type CountRecentEmailActionTokensByInvitationParams struct {
 	OrgInvitationID pgtype.Text
 	Purpose         string
+	Since           pgtype.Timestamptz
 }
 
-// One row per email sent for the invitation (rows are consumed, never deleted),
-// so this is the invitation's lifetime send count. Caps ResendInvite, which
-// mails an address that need not belong to any pug user.
-func (q *Queries) CountEmailActionTokensByInvitation(ctx context.Context, arg CountEmailActionTokensByInvitationParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countEmailActionTokensByInvitation, arg.OrgInvitationID, arg.Purpose)
+// One row per email sent for the invitation, counted over a trailing window so
+// the cap on ResendInvite (which mails an address that need not belong to any
+// pug user) bounds a burst without bricking the invitation forever.
+func (q *Queries) CountRecentEmailActionTokensByInvitation(ctx context.Context, arg CountRecentEmailActionTokensByInvitationParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countRecentEmailActionTokensByInvitation, arg.OrgInvitationID, arg.Purpose, arg.Since)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

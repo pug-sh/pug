@@ -68,6 +68,7 @@ var (
 	// ErrInviteSendLimit caps how much mail one invitation can send to an
 	// address that need not belong to any pug user. ResendInvite is otherwise
 	// unthrottled, and there is no rate limiter in the interceptor chain.
+	// The cap is per rolling window, so it clears on its own.
 	ErrInviteSendLimit = errors.New("invitation has reached its send limit")
 	// ErrLastAdmin is returned by RemoveMemberSafe, Leave, and UpdateMemberRole
 	// when the target is the org's last admin and the operation would leave the
@@ -86,10 +87,14 @@ var (
 const (
 	inviteTTL = 7 * 24 * time.Hour
 
-	// maxInviteSends bounds the emails one invitation may produce, counting the
-	// original send. With no revoke RPC and one PENDING invitation per
-	// (org, email), it caps total mail to an address within an org.
-	maxInviteSends = 10
+	// maxInviteSendsPerWindow bounds the emails one invitation may produce in
+	// inviteSendWindow, counting the original send. A trailing window rather
+	// than a lifetime total because nothing can clear a spent lifetime cap: an
+	// expired invitation stays PENDING, the partial unique index blocks a fresh
+	// invite for the same (org, email), and there is no revoke RPC — so the
+	// address would be permanently uninvitable to that org.
+	maxInviteSendsPerWindow = 10
+	inviteSendWindow        = 24 * time.Hour
 
 	// Postgres constraint / index names used to disambiguate UniqueViolation
 	// errors. Kept narrow on purpose: catching a generic "unique violation"
@@ -682,16 +687,17 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 
 	// Counted under the row lock taken above, so concurrent resends can't both
 	// pass the cap.
-	sends, err := w.CountEmailActionTokensByInvitation(ctx, dbwrite.CountEmailActionTokensByInvitationParams{
+	sends, err := w.CountRecentEmailActionTokensByInvitation(ctx, dbwrite.CountRecentEmailActionTokensByInvitationParams{
 		OrgInvitationID: postgres.NewOptionalText(inv.ID),
 		Purpose:         emailaction.PurposeOrgInvite.String(),
+		Since:           postgres.NewTimestamptz(time.Now().Add(-inviteSendWindow)),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to count invite sends", slogx.Error(err), slog.String("invitation_id", inv.ID))
 		telemetry.RecordError(ctx, err)
 		return InviteDispatch{}, err
 	}
-	if sends >= maxInviteSends {
+	if sends >= maxInviteSendsPerWindow {
 		return InviteDispatch{}, ErrInviteSendLimit
 	}
 
@@ -751,6 +757,62 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 
 	s.publishInviteEmailJob(ctx, inv, rawToken, dispatchID)
 	return InviteDispatch{Invitation: inv, RawToken: rawToken}, nil
+}
+
+// RevokeInvite withdraws a pending invitation: the row is deleted and its
+// email_action_tokens cascade away, so links already in the invitee's inbox stop
+// resolving. Deleting rather than flipping status is what frees the address —
+// org_invitations_org_email_pending would otherwise keep blocking a fresh invite
+// (at a corrected address spelling, or a different role) forever, since an
+// expired invitation stays PENDING.
+//
+// Only a PENDING invitation may be revoked. Deleting an ACCEPTED one would drop
+// the record without touching the membership it produced.
+func (s *Service) RevokeInvite(ctx context.Context, orgID, invitationID string) error {
+	tx, err := s.pgW.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to begin revoke invite transaction", slogx.Error(err))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	defer func() {
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			slog.ErrorContext(ctx, "failed rolling back revoke invite transaction", slogx.Error(rollbackErr))
+			telemetry.RecordError(ctx, rollbackErr)
+		}
+	}()
+
+	w := dbwrite.New(tx)
+	// The same FOR UPDATE lock ResendInvite takes, so a revoke racing a resend
+	// resolves one way or the other rather than deleting a row mid-reissue.
+	inv, err := w.GetOrgInvitationByIDForUpdate(ctx, invitationID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInviteNotFound
+		}
+		slog.ErrorContext(ctx, "failed to get org invitation for revoke", slogx.Error(err), slog.String("invitation_id", invitationID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	if inv.OrgID != orgID {
+		return ErrInviteNotFound
+	}
+	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
+		return ErrInviteNotPending
+	}
+
+	if err := w.DeleteOrgInvitation(ctx, inv.ID); err != nil {
+		slog.ErrorContext(ctx, "failed to delete org invitation", slogx.Error(err), slog.String("invitation_id", inv.ID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to commit revoke invite transaction", slogx.Error(err), slog.String("invitation_id", inv.ID))
+		telemetry.RecordError(ctx, err)
+		return err
+	}
+	return nil
 }
 
 func (s *Service) ListInvitations(ctx context.Context, orgID string) ([]dbread.OrgInvitation, error) {

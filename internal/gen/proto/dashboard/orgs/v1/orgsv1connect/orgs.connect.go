@@ -51,6 +51,9 @@ const (
 	// OrgsServiceResendInviteProcedure is the fully-qualified name of the OrgsService's ResendInvite
 	// RPC.
 	OrgsServiceResendInviteProcedure = "/dashboard.orgs.v1.OrgsService/ResendInvite"
+	// OrgsServiceRevokeInviteProcedure is the fully-qualified name of the OrgsService's RevokeInvite
+	// RPC.
+	OrgsServiceRevokeInviteProcedure = "/dashboard.orgs.v1.OrgsService/RevokeInvite"
 	// OrgsServiceListInvitationsProcedure is the fully-qualified name of the OrgsService's
 	// ListInvitations RPC.
 	OrgsServiceListInvitationsProcedure = "/dashboard.orgs.v1.OrgsService/ListInvitations"
@@ -72,6 +75,7 @@ type OrgsServiceClient interface {
 	RemoveMember(context.Context, *connect.Request[v1.RemoveMemberRequest]) (*connect.Response[v1.RemoveMemberResponse], error)
 	InviteMember(context.Context, *connect.Request[v1.InviteMemberRequest]) (*connect.Response[v1.InviteMemberResponse], error)
 	ResendInvite(context.Context, *connect.Request[v1.ResendInviteRequest]) (*connect.Response[v1.ResendInviteResponse], error)
+	RevokeInvite(context.Context, *connect.Request[v1.RevokeInviteRequest]) (*connect.Response[v1.RevokeInviteResponse], error)
 	ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error)
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Leave(context.Context, *connect.Request[v1.LeaveRequest]) (*connect.Response[v1.LeaveResponse], error)
@@ -131,6 +135,12 @@ func NewOrgsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(orgsServiceMethods.ByName("ResendInvite")),
 			connect.WithClientOptions(opts...),
 		),
+		revokeInvite: connect.NewClient[v1.RevokeInviteRequest, v1.RevokeInviteResponse](
+			httpClient,
+			baseURL+OrgsServiceRevokeInviteProcedure,
+			connect.WithSchema(orgsServiceMethods.ByName("RevokeInvite")),
+			connect.WithClientOptions(opts...),
+		),
 		listInvitations: connect.NewClient[v1.ListInvitationsRequest, v1.ListInvitationsResponse](
 			httpClient,
 			baseURL+OrgsServiceListInvitationsProcedure,
@@ -167,6 +177,7 @@ type orgsServiceClient struct {
 	removeMember      *connect.Client[v1.RemoveMemberRequest, v1.RemoveMemberResponse]
 	inviteMember      *connect.Client[v1.InviteMemberRequest, v1.InviteMemberResponse]
 	resendInvite      *connect.Client[v1.ResendInviteRequest, v1.ResendInviteResponse]
+	revokeInvite      *connect.Client[v1.RevokeInviteRequest, v1.RevokeInviteResponse]
 	listInvitations   *connect.Client[v1.ListInvitationsRequest, v1.ListInvitationsResponse]
 	create            *connect.Client[v1.CreateRequest, v1.CreateResponse]
 	leave             *connect.Client[v1.LeaveRequest, v1.LeaveResponse]
@@ -208,6 +219,11 @@ func (c *orgsServiceClient) ResendInvite(ctx context.Context, req *connect.Reque
 	return c.resendInvite.CallUnary(ctx, req)
 }
 
+// RevokeInvite calls dashboard.orgs.v1.OrgsService.RevokeInvite.
+func (c *orgsServiceClient) RevokeInvite(ctx context.Context, req *connect.Request[v1.RevokeInviteRequest]) (*connect.Response[v1.RevokeInviteResponse], error) {
+	return c.revokeInvite.CallUnary(ctx, req)
+}
+
 // ListInvitations calls dashboard.orgs.v1.OrgsService.ListInvitations.
 func (c *orgsServiceClient) ListInvitations(ctx context.Context, req *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error) {
 	return c.listInvitations.CallUnary(ctx, req)
@@ -237,6 +253,7 @@ type OrgsServiceHandler interface {
 	RemoveMember(context.Context, *connect.Request[v1.RemoveMemberRequest]) (*connect.Response[v1.RemoveMemberResponse], error)
 	InviteMember(context.Context, *connect.Request[v1.InviteMemberRequest]) (*connect.Response[v1.InviteMemberResponse], error)
 	ResendInvite(context.Context, *connect.Request[v1.ResendInviteRequest]) (*connect.Response[v1.ResendInviteResponse], error)
+	RevokeInvite(context.Context, *connect.Request[v1.RevokeInviteRequest]) (*connect.Response[v1.RevokeInviteResponse], error)
 	ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error)
 	Create(context.Context, *connect.Request[v1.CreateRequest]) (*connect.Response[v1.CreateResponse], error)
 	Leave(context.Context, *connect.Request[v1.LeaveRequest]) (*connect.Response[v1.LeaveResponse], error)
@@ -292,6 +309,12 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(orgsServiceMethods.ByName("ResendInvite")),
 		connect.WithHandlerOptions(opts...),
 	)
+	orgsServiceRevokeInviteHandler := connect.NewUnaryHandler(
+		OrgsServiceRevokeInviteProcedure,
+		svc.RevokeInvite,
+		connect.WithSchema(orgsServiceMethods.ByName("RevokeInvite")),
+		connect.WithHandlerOptions(opts...),
+	)
 	orgsServiceListInvitationsHandler := connect.NewUnaryHandler(
 		OrgsServiceListInvitationsProcedure,
 		svc.ListInvitations,
@@ -332,6 +355,8 @@ func NewOrgsServiceHandler(svc OrgsServiceHandler, opts ...connect.HandlerOption
 			orgsServiceInviteMemberHandler.ServeHTTP(w, r)
 		case OrgsServiceResendInviteProcedure:
 			orgsServiceResendInviteHandler.ServeHTTP(w, r)
+		case OrgsServiceRevokeInviteProcedure:
+			orgsServiceRevokeInviteHandler.ServeHTTP(w, r)
 		case OrgsServiceListInvitationsProcedure:
 			orgsServiceListInvitationsHandler.ServeHTTP(w, r)
 		case OrgsServiceCreateProcedure:
@@ -375,6 +400,10 @@ func (UnimplementedOrgsServiceHandler) InviteMember(context.Context, *connect.Re
 
 func (UnimplementedOrgsServiceHandler) ResendInvite(context.Context, *connect.Request[v1.ResendInviteRequest]) (*connect.Response[v1.ResendInviteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.ResendInvite is not implemented"))
+}
+
+func (UnimplementedOrgsServiceHandler) RevokeInvite(context.Context, *connect.Request[v1.RevokeInviteRequest]) (*connect.Response[v1.RevokeInviteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dashboard.orgs.v1.OrgsService.RevokeInvite is not implemented"))
 }
 
 func (UnimplementedOrgsServiceHandler) ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error) {

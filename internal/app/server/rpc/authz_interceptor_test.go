@@ -313,6 +313,7 @@ func TestRoleGatedAdminOnlyRPCs(t *testing.T) {
 		"/dashboard.orgs.v1.OrgsService/UpdateDisplayName":                  true,
 		"/dashboard.orgs.v1.OrgsService/InviteMember":                       true,
 		"/dashboard.orgs.v1.OrgsService/ResendInvite":                       true,
+		"/dashboard.orgs.v1.OrgsService/RevokeInvite":                       true,
 		"/dashboard.orgs.v1.OrgsService/ListInvitations":                    true,
 		"/dashboard.orgs.v1.OrgsService/RemoveMember":                       true,
 		"/dashboard.orgs.v1.OrgsService/UpdateMemberRole":                   true,

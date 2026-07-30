@@ -1061,8 +1061,8 @@ func TestResendInviteHandler_SendLimitReturnsFailedPrecondition(t *testing.T) {
 		})
 	}
 
-	// The fixture's invitation was already sent once, so the cap allows
-	// maxInviteSends-1 resends before it trips.
+	// The fixture's invitation was already sent once, so the window allows
+	// maxInviteSendsPerWindow-1 resends before it trips.
 	for i := 0; i < 9; i++ {
 		if _, err := srv.ResendInvite(ctx, req()); err != nil {
 			t.Fatalf("ResendInvite %d: %v", i, err)
@@ -1076,6 +1076,42 @@ func TestResendInviteHandler_SendLimitReturnsFailedPrecondition(t *testing.T) {
 	}
 	if ae.Reason() != apperr.ReasonInvitationSendLimit {
 		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonInvitationSendLimit)
+	}
+}
+
+// TestRevokeInviteHandler_HappyPath pins that a revoked invitation is gone for
+// good: ListInvitations stops returning it and a second revoke reports
+// not-found rather than succeeding twice.
+func TestRevokeInviteHandler_HappyPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	f := newHandlerFixture(t)
+	srv := orgshandler.NewServer(f.svc)
+	ctx := principalCtx(context.Background(), f.adminCustomer)
+	req := connect.NewRequest(&orgsv1.RevokeInviteRequest{
+		InvitationId: proto.String(f.invitationID),
+		OrgId:        proto.String(f.org.ID),
+	})
+
+	if _, err := srv.RevokeInvite(ctx, req); err != nil {
+		t.Fatalf("RevokeInvite: %v", err)
+	}
+
+	list, err := srv.ListInvitations(ctx, connect.NewRequest(&orgsv1.ListInvitationsRequest{
+		OrgId: proto.String(f.org.ID),
+	}))
+	if err != nil {
+		t.Fatalf("ListInvitations: %v", err)
+	}
+	if got := len(list.Msg.GetInvitations()); got != 0 {
+		t.Fatalf("invitations after revoke = %d, want 0", got)
+	}
+
+	_, err = srv.RevokeInvite(ctx, req)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeNotFound {
+		t.Fatalf("second revoke: want apperr CodeNotFound, got %v (%T)", err, err)
 	}
 }
 

@@ -58,6 +58,18 @@ func (q *Queries) CreateOrgInvitation(ctx context.Context, arg CreateOrgInvitati
 	return i, err
 }
 
+const deleteOrgInvitation = `-- name: DeleteOrgInvitation :exec
+delete from org_invitations where id = $1
+`
+
+// Hard delete: the row is the only thing blocking a fresh invite for the same
+// (org, email), and the email_action_tokens cascade is what makes the invitee's
+// outstanding links unredeemable.
+func (q *Queries) DeleteOrgInvitation(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, deleteOrgInvitation, id)
+	return err
+}
+
 const getOrgInvitationByIDForUpdate = `-- name: GetOrgInvitationByIDForUpdate :one
 select create_time, email, expires_at, id, inviter_id, org_id, role, status, token from org_invitations where id = $1 for update
 `

@@ -57,14 +57,15 @@ where customer_id = @customer_id
   and consumed_at is null
   and expires_at > now();
 
--- name: CountEmailActionTokensByInvitation :one
--- One row per email sent for the invitation (rows are consumed, never deleted),
--- so this is the invitation's lifetime send count. Caps ResendInvite, which
--- mails an address that need not belong to any pug user.
+-- name: CountRecentEmailActionTokensByInvitation :one
+-- One row per email sent for the invitation, counted over a trailing window so
+-- the cap on ResendInvite (which mails an address that need not belong to any
+-- pug user) bounds a burst without bricking the invitation forever.
 select count(*)
 from email_action_tokens
 where org_invitation_id = @org_invitation_id
-  and purpose = @purpose;
+  and purpose = @purpose
+  and create_time > @since;
 
 -- name: InvalidateActiveEmailActionTokensByInvitation :execrows
 update email_action_tokens
