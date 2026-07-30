@@ -214,6 +214,9 @@ func (s *server) ResendInvite(
 		if errors.Is(err, coreorgs.ErrInviteNotPending) {
 			return nil, apperr.FailedPrecondition(apperr.ReasonInvitationNotPending, "invitation is no longer pending")
 		}
+		if errors.Is(err, coreorgs.ErrInviteSendLimit) {
+			return nil, apperr.FailedPrecondition(apperr.ReasonInvitationSendLimit, "this invitation has been sent too many times")
+		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("internal error"))
 	}
 

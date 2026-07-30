@@ -65,6 +65,10 @@ var (
 	ErrInviteExpired        = errors.New("invitation has expired")
 	ErrInviteNotFound       = errors.New("invitation not found")
 	ErrInviteNotPending     = errors.New("invitation is not pending")
+	// ErrInviteSendLimit caps how much mail one invitation can send to an
+	// address that need not belong to any pug user. ResendInvite is otherwise
+	// unthrottled, and there is no rate limiter in the interceptor chain.
+	ErrInviteSendLimit = errors.New("invitation has reached its send limit")
 	// ErrLastAdmin is returned by RemoveMemberSafe, Leave, and UpdateMemberRole
 	// when the target is the org's last admin and the operation would leave the
 	// org with zero admins (removal, leaving, or demotion to a non-admin role).
@@ -81,6 +85,11 @@ var (
 
 const (
 	inviteTTL = 7 * 24 * time.Hour
+
+	// maxInviteSends bounds the emails one invitation may produce, counting the
+	// original send. With no revoke RPC and one PENDING invitation per
+	// (org, email), it caps total mail to an address within an org.
+	maxInviteSends = 10
 
 	// Postgres constraint / index names used to disambiguate UniqueViolation
 	// errors. Kept narrow on purpose: catching a generic "unique violation"
@@ -625,7 +634,7 @@ func (s *Service) InviteMemberWithRole(ctx context.Context, orgID, inviterID, em
 		return InviteDispatch{}, err
 	}
 
-	rawToken, err := s.issueInviteEmailToken(ctx, w, inv)
+	rawToken, dispatchID, err := s.issueInviteEmailToken(ctx, w, inv)
 	if err != nil {
 		return InviteDispatch{}, err
 	}
@@ -636,7 +645,7 @@ func (s *Service) InviteMemberWithRole(ctx context.Context, orgID, inviterID, em
 		return InviteDispatch{}, err
 	}
 
-	s.publishInviteEmailJob(ctx, inv, rawToken)
+	s.publishInviteEmailJob(ctx, inv, rawToken, dispatchID)
 	return InviteDispatch{Invitation: inv, RawToken: rawToken}, nil
 }
 
@@ -669,6 +678,21 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 	}
 	if inv.Status != orgsv1.InvitationStatus_INVITATION_STATUS_PENDING.String() {
 		return InviteDispatch{}, ErrInviteNotPending
+	}
+
+	// Counted under the row lock taken above, so concurrent resends can't both
+	// pass the cap.
+	sends, err := w.CountEmailActionTokensByInvitation(ctx, dbwrite.CountEmailActionTokensByInvitationParams{
+		OrgInvitationID: postgres.NewOptionalText(inv.ID),
+		Purpose:         emailaction.PurposeOrgInvite.String(),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to count invite sends", slogx.Error(err), slog.String("invitation_id", inv.ID))
+		telemetry.RecordError(ctx, err)
+		return InviteDispatch{}, err
+	}
+	if sends >= maxInviteSends {
+		return InviteDispatch{}, ErrInviteSendLimit
 	}
 
 	storageToken, err := newInviteToken()
@@ -714,7 +738,7 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 			slog.String("invitation_id", inv.ID))
 	}
 
-	rawToken, err := s.issueInviteEmailToken(ctx, w, inv)
+	rawToken, dispatchID, err := s.issueInviteEmailToken(ctx, w, inv)
 	if err != nil {
 		return InviteDispatch{}, err
 	}
@@ -725,7 +749,7 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, invitationID string) 
 		return InviteDispatch{}, err
 	}
 
-	s.publishInviteEmailJob(ctx, inv, rawToken)
+	s.publishInviteEmailJob(ctx, inv, rawToken, dispatchID)
 	return InviteDispatch{Invitation: inv, RawToken: rawToken}, nil
 }
 
@@ -741,16 +765,20 @@ func newInviteToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (s *Service) issueInviteEmailToken(ctx context.Context, w *dbwrite.Queries, inv dbwrite.OrgInvitation) (string, error) {
+// issueInviteEmailToken returns the raw token to email and the token row's id.
+// The latter rides the job as its dispatch id: a resend keeps the invitation id,
+// so only a per-send value keeps the provider idempotency key from colliding.
+func (s *Service) issueInviteEmailToken(ctx context.Context, w *dbwrite.Queries, inv dbwrite.OrgInvitation) (string, string, error) {
 	rawToken, err := newInviteToken()
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate invite token", slogx.Error(err),
 			slog.String("org_id", inv.OrgID), slog.String("invitation_id", inv.ID))
 		telemetry.RecordError(ctx, err)
-		return "", fmt.Errorf("generate invite token: %w", err)
+		return "", "", fmt.Errorf("generate invite token: %w", err)
 	}
+	dispatchID := xid.New().String()
 	if _, err := w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
-		ID:              xid.New().String(),
+		ID:              dispatchID,
 		CustomerID:      postgres.NewOptionalText(""),
 		Email:           inv.Email,
 		Purpose:         emailaction.PurposeOrgInvite.String(),
@@ -760,20 +788,21 @@ func (s *Service) issueInviteEmailToken(ctx context.Context, w *dbwrite.Queries,
 	}); err != nil {
 		slog.ErrorContext(ctx, "failed to create org invite email token", slogx.Error(err), slog.String("org_id", inv.OrgID), slog.String("invitation_id", inv.ID))
 		telemetry.RecordError(ctx, err)
-		return "", err
+		return "", "", err
 	}
-	return rawToken, nil
+	return rawToken, dispatchID, nil
 }
 
 // publishInviteEmailJob is best-effort: a NATS failure is recorded via
 // emails.publish_failure_total{kind=org_member_invite} but does NOT fail the
 // calling RPC. The invitation row and its email_action_token are durable, so
 // an admin can click Resend to re-trigger delivery if the metric fires.
-func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvitation, token string) {
+func (s *Service) publishInviteEmailJob(ctx context.Context, inv dbwrite.OrgInvitation, token, dispatchID string) {
 	if s.publisher == nil {
 		return
 	}
 	data, err := proto.Marshal(&emailworkerv1.EmailJob{
+		DispatchId: proto.String(dispatchID),
 		Payload: &emailworkerv1.EmailJob_OrgMemberInvite{
 			OrgMemberInvite: &emailworkerv1.OrgMemberInvitePayload{
 				Email:        proto.String(inv.Email),

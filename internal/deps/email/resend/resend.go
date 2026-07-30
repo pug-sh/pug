@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 
 	emailspec "github.com/pug-sh/pug/internal/core/email/spec"
+	"github.com/pug-sh/pug/internal/slogx"
 	resendsdk "github.com/resend/resend-go/v3"
 )
 
@@ -45,6 +47,14 @@ func (p *Provider) Send(ctx context.Context, msg emailspec.Message) error {
 	ctx = context.WithValue(ctx, responseStatusContextKey{}, status)
 	sent, err := p.client.Emails.SendWithOptions(ctx, params, options)
 	if err != nil {
+		// Resend registers an idempotency key only on a request it accepted, so
+		// a 409 means this key's email is already sent or in flight. Dropping it
+		// to the DLQ would strand a message the recipient has already received.
+		if status.get() == http.StatusConflict {
+			slog.WarnContext(ctx, "resend idempotency key conflict; treating as already sent",
+				slogx.Error(err), slog.String("idempotency_key", msg.IdempotencyKey))
+			return nil
+		}
 		wrappedErr := fmt.Errorf("resend send email: %w", err)
 		if shouldTreatAsPermanent(status.get(), err) {
 			return emailspec.NewPermanentError(wrappedErr)

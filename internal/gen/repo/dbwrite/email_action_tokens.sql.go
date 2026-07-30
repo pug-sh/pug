@@ -37,6 +37,28 @@ func (q *Queries) ConsumeEmailActionToken(ctx context.Context, id string) (Email
 	return i, err
 }
 
+const countEmailActionTokensByInvitation = `-- name: CountEmailActionTokensByInvitation :one
+select count(*)
+from email_action_tokens
+where org_invitation_id = $1
+  and purpose = $2
+`
+
+type CountEmailActionTokensByInvitationParams struct {
+	OrgInvitationID pgtype.Text
+	Purpose         string
+}
+
+// One row per email sent for the invitation (rows are consumed, never deleted),
+// so this is the invitation's lifetime send count. Caps ResendInvite, which
+// mails an address that need not belong to any pug user.
+func (q *Queries) CountEmailActionTokensByInvitation(ctx context.Context, arg CountEmailActionTokensByInvitationParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countEmailActionTokensByInvitation, arg.OrgInvitationID, arg.Purpose)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createEmailActionToken = `-- name: CreateEmailActionToken :one
 insert into email_action_tokens (
   id,

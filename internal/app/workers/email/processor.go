@@ -34,14 +34,18 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 		return natsworker.NewPermanentError(err).With("worker", "misc_email")
 	}
 
-	var err error
+	key, err := idempotencyKeyForJob(job)
+	if err != nil {
+		return natsworker.NewPermanentError(err).With("worker", "misc_email")
+	}
+
 	switch payload := job.Payload.(type) {
 	case *emailworkerv1.EmailJob_MagicLink:
 		err = p.mailer.SendMagicLink(
 			ctx,
 			payload.MagicLink.GetEmail(),
 			payload.MagicLink.GetToken(),
-			idempotencyKeyForJob(job),
+			key,
 		)
 	case *emailworkerv1.EmailJob_OrgMemberInvite:
 		details, lookupErr := p.read.GetOrgInvitationEmailContextByID(ctx, payload.OrgMemberInvite.GetInvitationId())
@@ -60,7 +64,7 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 			details.OrgDisplayName,
 			details.InviterDisplayName,
 			payload.OrgMemberInvite.GetToken(),
-			idempotencyKeyForJob(job),
+			key,
 		)
 	default:
 		return natsworker.NewPermanentError(fmt.Errorf("unknown email job payload %T", job.Payload)).
@@ -76,13 +80,13 @@ func (p *Processor) ProcessMessage(ctx context.Context, data []byte) error {
 	return nil
 }
 
-func idempotencyKeyForJob(job *emailworkerv1.EmailJob) string {
-	switch payload := job.Payload.(type) {
-	case *emailworkerv1.EmailJob_MagicLink:
-		return "magic_link:" + strings.TrimSpace(payload.MagicLink.GetToken())
-	case *emailworkerv1.EmailJob_OrgMemberInvite:
-		return "org_member_invite:" + strings.TrimSpace(payload.OrgMemberInvite.GetInvitationId())
-	default:
-		return ""
+// idempotencyKeyForJob keys the send on the dispatch id: fresh per issuance, so
+// a resend never reuses the original's key, and stable across redeliveries.
+// Errors on a blank id — providers skip the header, silently disabling dedup.
+func idempotencyKeyForJob(job *emailworkerv1.EmailJob) (string, error) {
+	id := strings.TrimSpace(job.GetDispatchId())
+	if id == "" {
+		return "", errors.New("email job has a blank dispatch id")
 	}
+	return id, nil
 }

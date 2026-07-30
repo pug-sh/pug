@@ -74,6 +74,26 @@ func TestProviderSendEmptyResponseIsPermanent(t *testing.T) {
 	}
 }
 
+// TestProviderSendTreatsIdempotencyConflictAsSent pins that a 409 is NOT the
+// generic 4xx-is-permanent case: Resend only knows a key it already accepted,
+// so DLQing would strand a message whose email the recipient already has.
+func TestProviderSendTreatsIdempotencyConflictAsSent(t *testing.T) {
+	provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusConflict, `{"name":"invalid_idempotent_request","message":"same key, different payload"}`), nil
+	}))
+
+	err := provider.Send(context.Background(), emailspec.Message{
+		From:           "noreply@example.com",
+		To:             "test@example.com",
+		Subject:        "Subject",
+		TextBody:       "body",
+		IdempotencyKey: "dispatch-1",
+	})
+	if err != nil {
+		t.Fatalf("expected 409 to ack as already sent, got %v", err)
+	}
+}
+
 func TestProviderSendKeepsRateLimitsRetryable(t *testing.T) {
 	provider := newTestProvider(t, roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 		return jsonResponse(http.StatusTooManyRequests, `{"message":"rate limited"}`), nil

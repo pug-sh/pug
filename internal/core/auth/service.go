@@ -400,8 +400,9 @@ func (s *Service) issueActionTokenAndPublish(ctx context.Context, input issueAct
 		telemetry.RecordError(ctx, err)
 		return err
 	}
+	tokenID := xid.New().String()
 	if _, err := w.CreateEmailActionToken(ctx, dbwrite.CreateEmailActionTokenParams{
-		ID:              xid.New().String(),
+		ID:              tokenID,
 		CustomerID:      postgres.NewOptionalText(input.CustomerID),
 		Email:           input.Email,
 		Purpose:         input.Purpose,
@@ -420,6 +421,11 @@ func (s *Service) issueActionTokenAndPublish(ctx context.Context, input issueAct
 		return err
 	}
 
+	// The token row id is the job's dispatch id, so the provider idempotency key
+	// is fresh per issuance without carrying the raw token.
+	if input.Job != nil {
+		input.Job.DispatchId = proto.String(tokenID)
+	}
 	s.publishEmailJob(ctx, input.Job)
 	return nil
 }

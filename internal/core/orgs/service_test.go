@@ -214,6 +214,11 @@ func TestInviteMemberPublishesEmailJob(t *testing.T) {
 	if !emailToken.OrgInvitationID.Valid || emailToken.OrgInvitationID.String != inv.ID {
 		t.Fatalf("org invitation id = %v, want %q", emailToken.OrgInvitationID, inv.ID)
 	}
+	// The worker keys the provider send on dispatch_id, so an unset one silently
+	// disables dedup. It is the token row id, which rotates on every send.
+	if got := pub.job.GetDispatchId(); got != emailToken.ID {
+		t.Fatalf("dispatch id = %q, want token row id %q", got, emailToken.ID)
+	}
 	if inv.Token == dispatch.RawToken {
 		t.Fatal("invitation row stored a redeemable token")
 	}
@@ -336,6 +341,7 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first InviteMember: %v", err)
 	}
+	firstDispatchID := pub.job.GetDispatchId()
 	secondDispatch, err := svc.InviteMember(ctx, orgB.ID, customer.ID, "invitee@example.com")
 	if err != nil {
 		t.Fatalf("second InviteMember: %v", err)
@@ -360,6 +366,11 @@ func TestResendInviteRotatesOnlyInvitationToken(t *testing.T) {
 	}
 	if got := pub.job.GetOrgMemberInvite().GetToken(); got != resendDispatch.RawToken {
 		t.Fatalf("published token = %q, want %q", got, resendDispatch.RawToken)
+	}
+	// The invitation id is unchanged, so only a rotated dispatch id keeps the
+	// resend's provider idempotency key off the original send's.
+	if got := pub.job.GetDispatchId(); got == "" || got == firstDispatchID {
+		t.Fatalf("resend dispatch id = %q, want a fresh one (first send %q)", got, firstDispatchID)
 	}
 
 	if _, err := read.GetValidEmailActionTokenByHashAndPurpose(ctx, dbread.GetValidEmailActionTokenByHashAndPurposeParams{
@@ -474,6 +485,29 @@ func TestResendInviteExtendsExpiresAt(t *testing.T) {
 	minFuture := time.Now().Add(6*24*time.Hour + 23*time.Hour)
 	if !resend.Invitation.ExpiresAt.Valid || resend.Invitation.ExpiresAt.Time.Before(minFuture) {
 		t.Fatalf("expires_at not extended: got %v, want after %v", resend.Invitation.ExpiresAt.Time, minFuture)
+	}
+}
+
+// TestResendInviteEnforcesSendLimit pins the cap on how much mail one
+// invitation can direct at an address that need not belong to a pug user:
+// ResendInvite is otherwise unthrottled and there is no rate limiter in the
+// interceptor chain.
+func TestResendInviteEnforcesSendLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	f := newInviteFixture(t, "spam-target@example.com")
+	ctx := context.Background()
+
+	// The invitation was already sent once, so the cap allows maxInviteSends-1
+	// resends before it trips.
+	for i := 0; i < 9; i++ {
+		if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); err != nil {
+			t.Fatalf("ResendInvite %d: %v", i, err)
+		}
+	}
+	if _, err := f.svc.ResendInvite(ctx, f.org.ID, f.invite.ID); !errors.Is(err, orgs.ErrInviteSendLimit) {
+		t.Fatalf("expected ErrInviteSendLimit, got %v", err)
 	}
 }
 

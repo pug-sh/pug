@@ -6,11 +6,23 @@ import "buf/validate/validate.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/workers/email/v1;emailworkerv1";
 
 message EmailJob {
+  // Burned by deleted payload types; messages with these tags may still sit in
+  // the 30-day NATS stream, so reuse would decode onto the wrong branch.
+  reserved 1, 2, 4;
+  reserved signup_verify_welcome, password_reset, verification_resend;
+
   oneof payload {
     option (buf.validate.oneof).required = true;
     OrgMemberInvitePayload org_member_invite = 3;
     MagicLinkPayload magic_link = 5;
   }
+
+  // Identifies one send attempt (the email_action_tokens row id) and is the
+  // provider idempotency key: fresh per issuance, stable across NATS retries.
+  string dispatch_id = 6 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1
+  ];
 }
 
 message OrgMemberInvitePayload {
