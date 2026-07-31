@@ -163,7 +163,8 @@ func normalizedTileViewModeProto(kind TileKind, viewMode dashboardsv1.DashboardT
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_BAR_STACKED,
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE,
 			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI,
-			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY:
+			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY,
+			dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE:
 			return viewMode
 		default:
 			return dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_LINE
