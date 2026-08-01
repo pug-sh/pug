@@ -75,11 +75,35 @@ make infra
 ./bin/pug nats migrate
 ./bin/pug clickhouse migrate
 
+# Seed the demo project with events, profiles, and dashboards
+./bin/pug seed
+
 # Start the dev server + workers together
 ./bin/pug dev
 ```
 
 Environment variables are documented in [`.env.example`](.env.example).
+
+### Demo data
+
+`./bin/pug seed` fills a "Pug & Pals" demo project with ~4 months of history, so
+dashboards, insights, and profiles have something to show. Profiles are seeded
+only for users that produced events, so the data is internally consistent.
+
+It **resets Postgres and ClickHouse first** (migrations down, then up) — pass
+`--no-reset` to keep the schema and re-seed just the demo rows. Volume is
+tunable with `--count` (default 500,000 events) and `--batch` (default 10,000
+events per insert). Run it from the repo root; it reads the same `.env` as the
+rest of the CLI.
+
+Two accounts are seeded, both with the password `goodboy`:
+
+- `woof@pug.sh` — org admin
+- `snoop@pug.sh` — read-only viewer
+
+For a live stream of traffic instead of a one-shot backfill, set
+`PUG_DEMO_ENABLED=true`: `./bin/pug dev` then also runs the demo worker, which
+backfills once and plays new sessions out in real time.
 
 ## Development
 
