@@ -216,6 +216,7 @@ func TestTileViewModeToRPC_AllInsightModes(t *testing.T) {
 		{"table", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_TABLE},
 		{"kpi", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_KPI},
 		{"sankey", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_SANKEY},
+		{"pie", dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE.String(), dashboardsv1.DashboardTileViewMode_DASHBOARD_TILE_VIEW_MODE_PIE},
 	}
 
 	for _, tc := range cases {
