@@ -76,6 +76,7 @@ make infra
 ./bin/pug clickhouse migrate
 
 # Seed the demo project with events, profiles, and dashboards
+# (resets the local Postgres and ClickHouse databases — see "Demo data" below)
 ./bin/pug seed
 
 # Start the dev server + workers together
@@ -90,11 +91,18 @@ Environment variables are documented in [`.env.example`](.env.example).
 dashboards, insights, and profiles have something to show. Profiles are seeded
 only for users that produced events, so the data is internally consistent.
 
-It **resets Postgres and ClickHouse first** (migrations down, then up) — pass
-`--no-reset` to keep the schema and re-seed just the demo rows. Volume is
-tunable with `--count` (default 500,000 events) and `--batch` (default 10,000
-events per insert). Run it from the repo root; it reads the same `.env` as the
-rest of the CLI.
+> **Local databases only.** By default `seed` migrates Postgres and ClickHouse
+> all the way down and back up, dropping every table — not just the demo rows.
+> There is no confirmation prompt and no environment check: it connects to
+> whatever `DATABASE_URL` and `CLICKHOUSE_URL` resolve to, and an already
+> exported variable beats `.env`. Point it at a disposable local or demo
+> database.
+
+Pass `--no-reset` to keep the schema; it then deletes the demo project's own
+events and profiles before re-seeding them, leaving other projects untouched.
+Volume is tunable with `--count` (default 500,000 events) and `--batch` (default
+10,000 events per insert). Run it from the repo root; it reads the same `.env`
+as the rest of the CLI.
 
 Two accounts are seeded, both with the password `goodboy`:
 
@@ -102,8 +110,11 @@ Two accounts are seeded, both with the password `goodboy`:
 - `snoop@pug.sh` — read-only viewer
 
 For a live stream of traffic instead of a one-shot backfill, set
-`PUG_DEMO_ENABLED=true`: `./bin/pug dev` then also runs the demo worker, which
-backfills once and plays new sessions out in real time.
+`PUG_DEMO_ENABLED=true`: `./bin/pug dev` then also runs the demo worker. It
+backfills an **empty** project once, so after `pug seed` it skips straight to
+playing new sessions out in real time. If you seed with a smaller `--count`,
+lower `PUG_DEMO_SEED_COUNT` to match — the worker reads a project holding fewer
+events than that as an interrupted backfill and warns rather than topping it up.
 
 ## Development
 
