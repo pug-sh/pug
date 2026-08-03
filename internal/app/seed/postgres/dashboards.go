@@ -386,7 +386,9 @@ func revenueDashboard() dashDef {
 				},
 			),
 
-			// TOP_K · Table · SUM(amount) by brand — revenue leaderboard.
+			// TOP_K · Table · SUM(amount) by brand — revenue leaderboard. Limit
+			// matches the seed's brand count (6) and hRanked: a larger limit would
+			// scroll inside the tile the moment the catalog grew.
 			insightTile(
 				"Revenue by Brand",
 				"Brands ranked by SUM(amount) on purchases.",
@@ -399,7 +401,7 @@ func revenueDashboard() dashDef {
 						Metric:         aggSum.Enum(),
 						MetricProperty: proto.String("amount"),
 						Scope:          efilter("purchase"),
-						Limit:          proto.Int32(8),
+						Limit:          proto.Int32(6),
 						OmitOthers:     proto.Bool(true),
 					},
 				},
