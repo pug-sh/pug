@@ -85,8 +85,8 @@ func TestDemoDashboardTilesValidate(t *testing.T) {
 // TestDemoDashboardTileLayout pins the hand-authored tile geometry against the
 // dashboard FE's 72-column fine grid. The seed was originally authored for a
 // 12-column grid, which squished every board into the leftmost 1/6 and — because
-// the FE clamps any sub-minimum height UP (grid.tsx Math.max(pos.h, minH)) and
-// lays out with compactType:null — cascaded the tiles into an overlapping pile.
+// the FE clamps any sub-minimum height UP (grid.tsx Math.max(pos.h, minH)) —
+// cascaded the tiles into an overlapping pile.
 // This guards against that whole class of regression: every tile must carry a
 // fully-specified position, sit within the 72-col width at >= the FE's min tile
 // width, clear its kind's height floor, and not overlap any sibling on the board.
