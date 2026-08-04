@@ -13,7 +13,11 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
 ## Features
 
 - **Event ingestion** — a NATS-backed capture pipeline with automatic geo,
-  user-agent, and bot-detection enrichment.
+  user-agent, bot-detection, and web-attribution enrichment.
+- **Web analytics** — an overview auto-built from your events: visitors,
+  sessions, pageviews, bounce rate, and traffic sources, with no tile to wire up.
+- **Live view** — every visitor on a real-time world map, down to the person and
+  the event they just fired.
 - **Profiles** — identify and alias the users behind events, with a
   ClickHouse-backed profile and activity API.
 - **Insights** — trends, funnels, retention, segmentation, user flow (Sankey),
@@ -25,33 +29,48 @@ Built in Go on PostgreSQL, ClickHouse, and NATS.
   events and profile.
 
 <p>
-  <img src="docs/assets/dashboards.webp" alt="A Pug dashboard composed of insight and markdown tiles" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/overview-dark.webp" />
+    <img src="docs/assets/overview-light.webp" alt="Pug's overview page showing visitors, sessions, pageviews, and traffic sources" />
+  </picture>
+  <br /><sub><b>Overview</b> — a web-analytics view auto-built from your events, with the previous period alongside.</sub>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/breakdowns-dark.webp" />
+    <img src="docs/assets/breakdowns-light.webp" alt="Pug's overview breakdowns: a choropleth of pageviews by country, plus locations, devices, and events" />
+  </picture>
+  <br /><sub><b>Breakdowns</b> — pageviews by country, plus locations, devices, and events; click any value to filter the whole view.</sub>
+</p>
+
+<p>
+  <img src="docs/assets/live-light.webp" alt="Pug's live map flying between real-time visitors around the world" />
+  <br /><sub><b>Live view</b> — every visitor on a live world map; click one to fly to them and see the page, device, and profile behind it.</sub>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dashboards-dark.webp" />
+    <img src="docs/assets/dashboards-light.webp" alt="A Pug dashboard composed of insight and markdown tiles" />
+  </picture>
   <br /><sub><b>Dashboards</b> — compose insight and markdown tiles on a time-windowed grid.</sub>
 </p>
 
 <p>
-  <img src="docs/assets/live-demo.webp" alt="Pug's live map zooming across continents into real-time events" />
-  <br /><sub><b>Live view</b> — every event on a live world map; zoom in for the page, browser, device, and the profile behind it.</sub>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/insights-dark.webp" />
+    <img src="docs/assets/insights-light.webp" alt="A Pug trends insight broken down by country" />
+  </picture>
+  <br /><sub><b>Insights</b> — trends, filters, and breakdowns; here product views split by country.</sub>
 </p>
 
 <p>
-  <img src="docs/assets/insights.webp" alt="The Pug insights query builder with a filter open" />
-  <br /><sub><b>Insights</b> — build trends, funnels, retention, and more with filters and breakdowns.</sub>
-</p>
-
-<p>
-  <img src="docs/assets/retention.webp" alt="A Pug retention insight showing a cohort retention heatmap" />
-  <br /><sub><b>Retention</b> — cohort heatmaps that track how each day's users come back over time.</sub>
-</p>
-
-<p>
-  <img src="docs/assets/profiles.webp" alt="A Pug user profile showing traits and recent activity" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/profiles-dark.webp" />
+    <img src="docs/assets/profiles-light.webp" alt="A Pug user profile showing traits and recent activity" />
+  </picture>
   <br /><sub><b>Profiles</b> — the person behind the events, with traits, sessions, and activity.</sub>
-</p>
-
-<p>
-  <img src="docs/assets/events.webp" alt="The Pug raw-events explorer with an expanded event" />
-  <br /><sub><b>Events</b> — inspect the raw stream, enriched with geo, device, and bot signals.</sub>
 </p>
 
 ## Tech stack
