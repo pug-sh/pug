@@ -18,10 +18,7 @@ const Version = 1
 
 type ProviderType string
 
-const (
-	ProviderTypeGoogle ProviderType = "google"
-	ProviderTypeOIDC   ProviderType = "oidc"
-)
+const ProviderTypeOIDC ProviderType = "oidc"
 
 // Config is the versioned, file-backed Pug configuration envelope. Operational
 // settings continue to use environment variables; this file is for structured
@@ -37,24 +34,22 @@ type AuthConfig struct {
 }
 
 type AuthProvider struct {
-	ID          string       `json:"id"`
-	Type        ProviderType `json:"type"`
-	DisplayName string       `json:"displayName"`
-	ClientID    string       `json:"clientId"`
-	IssuerURL   string       `json:"issuerUrl,omitempty"`
-	Scopes      []string     `json:"scopes,omitempty"`
+	ID           string       `json:"id"`
+	Type         ProviderType `json:"type"`
+	DisplayName  string       `json:"displayName"`
+	ClientID     string       `json:"clientId"`
+	ClientSecret string       `json:"clientSecret,omitempty"`
+	IssuerURL    string       `json:"issuerUrl,omitempty"`
+	Scopes       []string     `json:"scopes,omitempty"`
 }
 
 type envConfig struct {
-	ConfigFile     string `env:"PUG_CONFIG_FILE"`
-	GoogleClientID string `env:"PUG_OAUTH_GOOGLE_CLIENT_ID"`
+	ConfigFile string `env:"PUG_CONFIG_FILE"`
 }
 
 var providerIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 
-// Load reads the optional PUG_CONFIG_FILE. The legacy Google client-id variable
-// remains supported when no file is configured so existing installations keep
-// working without changes.
+// Load reads the optional PUG_CONFIG_FILE.
 func Load(ctx context.Context) (Config, error) {
 	var env envConfig
 	if err := envconfig.Process(ctx, &env); err != nil {
@@ -62,19 +57,7 @@ func Load(ctx context.Context) (Config, error) {
 	}
 
 	if env.ConfigFile == "" {
-		cfg := Config{Version: Version}
-		if env.GoogleClientID != "" {
-			cfg.Auth.Providers = []AuthProvider{{
-				ID:          "google",
-				Type:        ProviderTypeGoogle,
-				DisplayName: "Google",
-				ClientID:    env.GoogleClientID,
-			}}
-		}
-		return cfg, nil
-	}
-	if env.GoogleClientID != "" {
-		return Config{}, errors.New("PUG_CONFIG_FILE and PUG_OAUTH_GOOGLE_CLIENT_ID cannot be used together")
+		return Config{Version: Version}, nil
 	}
 
 	f, err := os.Open(env.ConfigFile)
@@ -135,10 +118,6 @@ func (c *Config) Validate() error {
 		}
 
 		switch p.Type {
-		case ProviderTypeGoogle:
-			if p.IssuerURL != "" || len(p.Scopes) != 0 {
-				return fmt.Errorf("%s: issuerUrl and scopes are only valid for type oidc", prefix)
-			}
 		case ProviderTypeOIDC:
 			issuer, err := validateIssuer(p.IssuerURL)
 			if err != nil {
@@ -152,7 +131,7 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("%s.scopes: %w", prefix, err)
 			}
 		default:
-			return fmt.Errorf("%s.type must be %q or %q", prefix, ProviderTypeGoogle, ProviderTypeOIDC)
+			return fmt.Errorf("%s.type must be %q", prefix, ProviderTypeOIDC)
 		}
 	}
 	return nil

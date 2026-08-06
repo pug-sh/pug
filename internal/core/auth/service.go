@@ -332,7 +332,20 @@ func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.Pr
 		return Session{}, err
 	}
 
+	return s.completeOAuthIdentity(ctx, ident, reportingTimezone)
+}
+
+func (s *Service) CompleteOIDCSignIn(ctx context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, reportingTimezone string) (Session, error) {
+	ident, err := s.oauth.ExchangeCode(ctx, provider, code)
+	if err != nil {
+		return Session{}, err
+	}
+	return s.completeOAuthIdentity(ctx, ident, reportingTimezone)
+}
+
+func (s *Service) completeOAuthIdentity(ctx context.Context, ident *coreoauth.Identity, reportingTimezone string) (Session, error) {
 	var session Session
+	var err error
 	_, _, err = coreoauth.WithIdentityTx(ctx, s.pgW, ident.Provider(), ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
 		// On first sign-in this seeds the new default project's reporting timezone
 		// from the browser that completed sign-in (coerced to UTC if malformed); on

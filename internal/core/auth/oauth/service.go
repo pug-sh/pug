@@ -34,6 +34,28 @@ func (s *Service) VerifyIdentity(ctx context.Context, provider ProviderName, cre
 	}
 
 	ident, err := p.VerifyCredential(ctx, credential)
+	return s.handleIdentityResult(ctx, provider, ident, err)
+}
+
+func (s *Service) ExchangeCode(ctx context.Context, provider ProviderName, code AuthorizationCode) (*Identity, error) {
+	if !s.cfg.IsProviderEnabled(provider) {
+		return nil, ErrOAuthProviderDisabled
+	}
+
+	p, err := s.registry.Get(provider)
+	if err != nil {
+		return nil, err
+	}
+	codeProvider, ok := p.(AuthorizationCodeProvider)
+	if !ok {
+		return nil, ErrOAuthProviderDisabled
+	}
+
+	ident, err := codeProvider.ExchangeCode(ctx, code)
+	return s.handleIdentityResult(ctx, provider, ident, err)
+}
+
+func (s *Service) handleIdentityResult(ctx context.Context, provider ProviderName, ident *Identity, err error) (*Identity, error) {
 	if err != nil {
 		// Client-input outcomes pass through unchanged so the handler can map
 		// them precisely; the handler keeps the client-facing message vague.
@@ -43,7 +65,7 @@ func (s *Service) VerifyIdentity(ctx context.Context, provider ProviderName, cre
 		// An unexpected verifier error (network, malformed provider response) is
 		// recorded at this detect site and collapsed to ErrInvalidCredential so
 		// provider internals never reach the client.
-		slog.ErrorContext(ctx, "oauth credential verification failed", slogx.Error(err))
+		slog.ErrorContext(ctx, "oauth identity verification failed", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return nil, ErrInvalidCredential
 	}

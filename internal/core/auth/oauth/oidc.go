@@ -5,11 +5,13 @@ import (
 	"fmt"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
 )
 
 type oidcProvider struct {
-	name     ProviderName
-	verifier *oidc.IDTokenVerifier
+	name        ProviderName
+	verifier    *oidc.IDTokenVerifier
+	oauthConfig oauth2.Config
 }
 
 func newOIDCProvider(ctx context.Context, cfg ProviderConfig) (*oidcProvider, error) {
@@ -20,15 +22,43 @@ func newOIDCProvider(ctx context.Context, cfg ProviderConfig) (*oidcProvider, er
 	return &oidcProvider{
 		name:     ProviderName(cfg.ID),
 		verifier: provider.Verifier(&oidc.Config{ClientID: cfg.ClientID}),
+		oauthConfig: oauth2.Config{
+			ClientID:     cfg.ClientID,
+			ClientSecret: cfg.ClientSecret,
+			Endpoint:     provider.Endpoint(),
+			Scopes:       cfg.Scopes,
+		},
 	}, nil
 }
 
 func (p *oidcProvider) Name() ProviderName { return p.name }
 
 func (p *oidcProvider) VerifyCredential(ctx context.Context, credential string) (*Identity, error) {
+	return p.verifyIDToken(ctx, credential, "")
+}
+
+func (p *oidcProvider) ExchangeCode(ctx context.Context, input AuthorizationCode) (*Identity, error) {
+	config := p.oauthConfig
+	config.RedirectURL = input.RedirectURI
+	token, err := config.Exchange(ctx, input.Code, oauth2.VerifierOption(input.CodeVerifier))
+	if err != nil {
+		return nil, fmt.Errorf("%w: authorization code exchange failed", ErrInvalidCredential)
+	}
+
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok || rawIDToken == "" {
+		return nil, fmt.Errorf("%w: token response did not contain an ID token", ErrInvalidCredential)
+	}
+	return p.verifyIDToken(ctx, rawIDToken, input.Nonce)
+}
+
+func (p *oidcProvider) verifyIDToken(ctx context.Context, credential, expectedNonce string) (*Identity, error) {
 	idToken, err := p.verifier.Verify(ctx, credential)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidCredential, err)
+	}
+	if expectedNonce != "" && idToken.Nonce != expectedNonce {
+		return nil, fmt.Errorf("%w: nonce mismatch", ErrInvalidCredential)
 	}
 
 	var claims struct {

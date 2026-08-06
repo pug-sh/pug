@@ -20,7 +20,9 @@ type mockOAuthProvider struct {
 	err      error
 }
 
-func (m mockOAuthProvider) Name() coreoauth.ProviderName { return coreoauth.ProviderGoogle }
+const testOIDCProvider = coreoauth.ProviderName("test_oidc")
+
+func (m mockOAuthProvider) Name() coreoauth.ProviderName { return testOIDCProvider }
 func (m mockOAuthProvider) VerifyCredential(context.Context, string) (*coreoauth.Identity, error) {
 	return m.identity, m.err
 }
@@ -48,7 +50,7 @@ func TestCompleteOAuthSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	session, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "google-credential", "Asia/Kolkata")
+	session, err := svc.CompleteOAuthSignIn(ctx, testOIDCProvider, "oidc-credential", "Asia/Kolkata")
 	if err != nil {
 		t.Fatalf("CompleteOAuthSignIn: %v", err)
 	}
@@ -116,7 +118,7 @@ func TestCompleteOAuthSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "google-credential", ""); err != nil {
+	if _, err := svc.CompleteOAuthSignIn(ctx, testOIDCProvider, "oidc-credential", ""); err != nil {
 		t.Fatalf("CompleteOAuthSignIn: %v", err)
 	}
 	// Linking a verified Google identity must NOT clear the existing password.
@@ -126,7 +128,7 @@ func TestCompleteOAuthSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
 
 	read := dbread.New(db.PgRO)
 	ident, err := read.GetCustomerIdentityByProviderSubject(ctx, dbread.GetCustomerIdentityByProviderSubjectParams{
-		Provider: string(coreoauth.ProviderGoogle), ProviderSubject: "google-sub-link-int",
+		Provider: string(testOIDCProvider), ProviderSubject: "google-sub-link-int",
 	})
 	if err != nil {
 		t.Fatalf("GetCustomerIdentityByProviderSubject: %v", err)
@@ -150,7 +152,7 @@ func TestCompleteOAuthSignIn_RejectsUnverifiedEmail(t *testing.T) {
 	registry := coreoauth.NewRegistry(mockOAuthProvider{err: coreoauth.ErrUnverifiedEmail})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	_, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "credential", "")
+	_, err := svc.CompleteOAuthSignIn(ctx, testOIDCProvider, "credential", "")
 	if !errors.Is(err, coreoauth.ErrUnverifiedEmail) {
 		t.Fatalf("err = %v, want ErrUnverifiedEmail", err)
 	}
@@ -174,12 +176,12 @@ func TestCompleteOAuthSignIn_RepeatedSignInIsIdempotent(t *testing.T) {
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
 	// First sign-in provisions the account with a Kolkata reporting zone.
-	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "credential", "Asia/Kolkata"); err != nil {
+	if _, err := svc.CompleteOAuthSignIn(ctx, testOIDCProvider, "credential", "Asia/Kolkata"); err != nil {
 		t.Fatalf("first CompleteOAuthSignIn: %v", err)
 	}
 	// A returning sign-in carrying a *different* browser zone must neither
 	// re-provision nor reset the existing project's reporting zone.
-	if _, err := svc.CompleteOAuthSignIn(ctx, coreoauth.ProviderGoogle, "credential", "America/New_York"); err != nil {
+	if _, err := svc.CompleteOAuthSignIn(ctx, testOIDCProvider, "credential", "America/New_York"); err != nil {
 		t.Fatalf("second CompleteOAuthSignIn: %v", err)
 	}
 

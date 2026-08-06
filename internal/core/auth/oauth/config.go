@@ -11,8 +11,7 @@ type ProviderConfig = appconfig.AuthProvider
 type ProviderType = appconfig.ProviderType
 
 const (
-	ProviderTypeGoogle = appconfig.ProviderTypeGoogle
-	ProviderTypeOIDC   = appconfig.ProviderTypeOIDC
+	ProviderTypeOIDC = appconfig.ProviderTypeOIDC
 )
 
 func LoadConfig(ctx context.Context) (Config, error) {
@@ -38,9 +37,11 @@ func TestConfig(clientID string) Config {
 		return Config{}
 	}
 	return Config{Providers: []ProviderConfig{{
-		ID:          "google",
-		Type:        ProviderTypeGoogle,
-		DisplayName: "Google",
+		ID:          "test_oidc",
+		Type:        ProviderTypeOIDC,
+		DisplayName: "Test OIDC",
 		ClientID:    clientID,
+		IssuerURL:   "https://idp.example.com",
+		Scopes:      []string{"openid", "profile", "email"},
 	}}}
 }

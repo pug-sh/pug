@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,6 +14,7 @@ import (
 	coreoauth "github.com/pug-sh/pug/internal/core/auth/oauth"
 	natsdeps "github.com/pug-sh/pug/internal/deps/nats"
 	authv1 "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // authService is the coreauth.Service surface the handler depends on, defined
@@ -22,6 +25,7 @@ type authService interface {
 	RequestMagicLink(ctx context.Context, email string) error
 	CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (coreauth.Session, error)
 	CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential, reportingTimezone string) (coreauth.Session, error)
+	CompleteOIDCSignIn(ctx context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, reportingTimezone string) (coreauth.Session, error)
 	RefreshSession(ctx context.Context, refreshToken string) (coreauth.Session, error)
 	RevokeSession(ctx context.Context, refreshToken string) error
 	DemoSignIn(ctx context.Context) (coreauth.DemoSession, error)
@@ -54,19 +58,12 @@ func (s *server) GetAuthConfig(
 ) (*connect.Response[authv1.GetAuthConfigResponse], error) {
 	providers := make([]*authv1.AuthProviderConfig, 0, len(s.oauthCfg.Providers))
 	for _, provider := range s.oauthCfg.Providers {
-		providerType := authv1.AuthProviderType_AUTH_PROVIDER_TYPE_UNSPECIFIED
-		switch provider.Type {
-		case coreoauth.ProviderTypeGoogle:
-			providerType = authv1.AuthProviderType_AUTH_PROVIDER_TYPE_GOOGLE
-		case coreoauth.ProviderTypeOIDC:
-			providerType = authv1.AuthProviderType_AUTH_PROVIDER_TYPE_OIDC
-		}
 		providers = append(providers, &authv1.AuthProviderConfig{
-			Id:          &provider.ID,
-			Type:        &providerType,
-			DisplayName: &provider.DisplayName,
-			ClientId:    &provider.ClientID,
-			IssuerUrl:   &provider.IssuerURL,
+			Id:          proto.String(provider.ID),
+			Type:        authv1.AuthProviderType_AUTH_PROVIDER_TYPE_OIDC.Enum(),
+			DisplayName: proto.String(provider.DisplayName),
+			ClientId:    proto.String(provider.ClientID),
+			IssuerUrl:   proto.String(provider.IssuerURL),
 			Scopes:      provider.Scopes,
 		})
 	}
@@ -138,6 +135,55 @@ func (s *server) CompleteOAuthSignIn(
 		Token:        &session.AccessToken,
 		RefreshToken: &session.RefreshToken,
 	}), nil
+}
+
+func (s *server) CompleteOIDCSignIn(
+	ctx context.Context,
+	req *connect.Request[authv1.CompleteOIDCSignInRequest],
+) (*connect.Response[authv1.CompleteOIDCSignInResponse], error) {
+	redirectURI, err := validateOIDCRedirectURI(req.Msg.GetRedirectUri(), req.Header().Get("Origin"))
+	if err != nil {
+		return nil, apperr.Invalid(apperr.ReasonInvalidArgument, "invalid oauth redirect URI") // apperr:exempt
+	}
+
+	session, err := s.service.CompleteOIDCSignIn(ctx, coreoauth.ProviderName(req.Msg.GetProviderId()), coreoauth.AuthorizationCode{
+		Code:         req.Msg.GetCode(),
+		CodeVerifier: req.Msg.GetCodeVerifier(),
+		RedirectURI:  redirectURI,
+		Nonce:        req.Msg.GetNonce(),
+	}, req.Msg.GetTimezone())
+	if err != nil {
+		return nil, mapOAuthHandlerError(err)
+	}
+	return connect.NewResponse(&authv1.CompleteOIDCSignInResponse{
+		Token:        &session.AccessToken,
+		RefreshToken: &session.RefreshToken,
+	}), nil
+}
+
+func validateOIDCRedirectURI(rawRedirectURI, requestOrigin string) (string, error) {
+	redirectURI, err := url.Parse(rawRedirectURI)
+	if err != nil || redirectURI.Scheme == "" || redirectURI.Host == "" || redirectURI.User != nil || redirectURI.RawQuery != "" || redirectURI.Fragment != "" {
+		return "", errors.New("redirect URI must be absolute and have no credentials, query, or fragment")
+	}
+	localhost := redirectURI.Hostname() == "localhost" || redirectURI.Hostname() == "127.0.0.1" || redirectURI.Hostname() == "::1"
+	if redirectURI.Scheme != "https" && (redirectURI.Scheme != "http" || !localhost) {
+		return "", errors.New("redirect URI must use HTTPS except on localhost")
+	}
+	if redirectURI.Path != "/oauth/callback" {
+		return "", errors.New("unexpected callback path")
+	}
+
+	if requestOrigin != "" {
+		origin, err := url.Parse(requestOrigin)
+		if err != nil || origin.Scheme == "" || origin.Host == "" || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" {
+			return "", errors.New("invalid request origin")
+		}
+		if !strings.EqualFold(origin.Scheme, redirectURI.Scheme) || !strings.EqualFold(origin.Host, redirectURI.Host) {
+			return "", errors.New("request origin does not match redirect URI")
+		}
+	}
+	return redirectURI.String(), nil
 }
 
 func (s *server) RefreshSession(

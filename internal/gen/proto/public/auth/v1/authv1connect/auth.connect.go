@@ -48,6 +48,9 @@ const (
 	// AuthServiceCompleteOAuthSignInProcedure is the fully-qualified name of the AuthService's
 	// CompleteOAuthSignIn RPC.
 	AuthServiceCompleteOAuthSignInProcedure = "/public.auth.v1.AuthService/CompleteOAuthSignIn"
+	// AuthServiceCompleteOIDCSignInProcedure is the fully-qualified name of the AuthService's
+	// CompleteOIDCSignIn RPC.
+	AuthServiceCompleteOIDCSignInProcedure = "/public.auth.v1.AuthService/CompleteOIDCSignIn"
 	// AuthServiceRefreshSessionProcedure is the fully-qualified name of the AuthService's
 	// RefreshSession RPC.
 	AuthServiceRefreshSessionProcedure = "/public.auth.v1.AuthService/RefreshSession"
@@ -66,6 +69,9 @@ type AuthServiceClient interface {
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
 	CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error)
+	// CompleteOIDCSignIn exchanges a browser-issued Authorization Code on the
+	// server, keeping confidential-provider secrets out of the dashboard.
+	CompleteOIDCSignIn(context.Context, *connect.Request[v1.CompleteOIDCSignInRequest]) (*connect.Response[v1.CompleteOIDCSignInResponse], error)
 	// RefreshSession exchanges a valid refresh token for a new access+refresh pair.
 	// Public (no JWT): it runs precisely when the access token has expired.
 	RefreshSession(context.Context, *connect.Request[v1.RefreshSessionRequest]) (*connect.Response[v1.RefreshSessionResponse], error)
@@ -120,6 +126,12 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("CompleteOAuthSignIn")),
 			connect.WithClientOptions(opts...),
 		),
+		completeOIDCSignIn: connect.NewClient[v1.CompleteOIDCSignInRequest, v1.CompleteOIDCSignInResponse](
+			httpClient,
+			baseURL+AuthServiceCompleteOIDCSignInProcedure,
+			connect.WithSchema(authServiceMethods.ByName("CompleteOIDCSignIn")),
+			connect.WithClientOptions(opts...),
+		),
 		refreshSession: connect.NewClient[v1.RefreshSessionRequest, v1.RefreshSessionResponse](
 			httpClient,
 			baseURL+AuthServiceRefreshSessionProcedure,
@@ -148,6 +160,7 @@ type authServiceClient struct {
 	requestMagicLink    *connect.Client[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse]
 	completeMagicLink   *connect.Client[v1.CompleteMagicLinkRequest, v1.CompleteMagicLinkResponse]
 	completeOAuthSignIn *connect.Client[v1.CompleteOAuthSignInRequest, v1.CompleteOAuthSignInResponse]
+	completeOIDCSignIn  *connect.Client[v1.CompleteOIDCSignInRequest, v1.CompleteOIDCSignInResponse]
 	refreshSession      *connect.Client[v1.RefreshSessionRequest, v1.RefreshSessionResponse]
 	signOut             *connect.Client[v1.SignOutRequest, v1.SignOutResponse]
 	demoSignIn          *connect.Client[v1.DemoSignInRequest, v1.DemoSignInResponse]
@@ -178,6 +191,11 @@ func (c *authServiceClient) CompleteOAuthSignIn(ctx context.Context, req *connec
 	return c.completeOAuthSignIn.CallUnary(ctx, req)
 }
 
+// CompleteOIDCSignIn calls public.auth.v1.AuthService.CompleteOIDCSignIn.
+func (c *authServiceClient) CompleteOIDCSignIn(ctx context.Context, req *connect.Request[v1.CompleteOIDCSignInRequest]) (*connect.Response[v1.CompleteOIDCSignInResponse], error) {
+	return c.completeOIDCSignIn.CallUnary(ctx, req)
+}
+
 // RefreshSession calls public.auth.v1.AuthService.RefreshSession.
 func (c *authServiceClient) RefreshSession(ctx context.Context, req *connect.Request[v1.RefreshSessionRequest]) (*connect.Response[v1.RefreshSessionResponse], error) {
 	return c.refreshSession.CallUnary(ctx, req)
@@ -202,6 +220,9 @@ type AuthServiceHandler interface {
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
 	CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error)
+	// CompleteOIDCSignIn exchanges a browser-issued Authorization Code on the
+	// server, keeping confidential-provider secrets out of the dashboard.
+	CompleteOIDCSignIn(context.Context, *connect.Request[v1.CompleteOIDCSignInRequest]) (*connect.Response[v1.CompleteOIDCSignInResponse], error)
 	// RefreshSession exchanges a valid refresh token for a new access+refresh pair.
 	// Public (no JWT): it runs precisely when the access token has expired.
 	RefreshSession(context.Context, *connect.Request[v1.RefreshSessionRequest]) (*connect.Response[v1.RefreshSessionResponse], error)
@@ -252,6 +273,12 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("CompleteOAuthSignIn")),
 		connect.WithHandlerOptions(opts...),
 	)
+	authServiceCompleteOIDCSignInHandler := connect.NewUnaryHandler(
+		AuthServiceCompleteOIDCSignInProcedure,
+		svc.CompleteOIDCSignIn,
+		connect.WithSchema(authServiceMethods.ByName("CompleteOIDCSignIn")),
+		connect.WithHandlerOptions(opts...),
+	)
 	authServiceRefreshSessionHandler := connect.NewUnaryHandler(
 		AuthServiceRefreshSessionProcedure,
 		svc.RefreshSession,
@@ -282,6 +309,8 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceCompleteMagicLinkHandler.ServeHTTP(w, r)
 		case AuthServiceCompleteOAuthSignInProcedure:
 			authServiceCompleteOAuthSignInHandler.ServeHTTP(w, r)
+		case AuthServiceCompleteOIDCSignInProcedure:
+			authServiceCompleteOIDCSignInHandler.ServeHTTP(w, r)
 		case AuthServiceRefreshSessionProcedure:
 			authServiceRefreshSessionHandler.ServeHTTP(w, r)
 		case AuthServiceSignOutProcedure:
@@ -315,6 +344,10 @@ func (UnimplementedAuthServiceHandler) CompleteMagicLink(context.Context, *conne
 
 func (UnimplementedAuthServiceHandler) CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.CompleteOAuthSignIn is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) CompleteOIDCSignIn(context.Context, *connect.Request[v1.CompleteOIDCSignInRequest]) (*connect.Response[v1.CompleteOIDCSignInResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.CompleteOIDCSignIn is not implemented"))
 }
 
 func (UnimplementedAuthServiceHandler) RefreshSession(context.Context, *connect.Request[v1.RefreshSessionRequest]) (*connect.Response[v1.RefreshSessionResponse], error) {

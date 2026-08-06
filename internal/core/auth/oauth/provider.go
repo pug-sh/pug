@@ -85,3 +85,20 @@ type Provider interface {
 	Name() ProviderName
 	VerifyCredential(ctx context.Context, credential string) (*Identity, error)
 }
+
+// AuthorizationCode contains the browser-generated values needed to complete
+// an OIDC Authorization Code + PKCE flow. Provider secrets never cross this
+// boundary to the browser.
+type AuthorizationCode struct {
+	Code         string
+	CodeVerifier string
+	RedirectURI  string
+	Nonce        string
+}
+
+// AuthorizationCodeProvider is implemented by providers that can exchange an
+// authorization code on the server.
+type AuthorizationCodeProvider interface {
+	Provider
+	ExchangeCode(ctx context.Context, code AuthorizationCode) (*Identity, error)
+}

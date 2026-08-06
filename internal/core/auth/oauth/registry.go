@@ -29,18 +29,10 @@ func (r *Registry) Get(name ProviderName) (Provider, error) {
 func NewRegistryFromConfig(ctx context.Context, cfg Config) (*Registry, error) {
 	providers := make([]Provider, 0, len(cfg.Providers))
 	for _, providerCfg := range cfg.Providers {
-		var (
-			provider Provider
-			err      error
-		)
-		switch providerCfg.Type {
-		case ProviderTypeGoogle:
-			provider, err = newGoogleProvider(ctx, ProviderName(providerCfg.ID), providerCfg.ClientID)
-		case ProviderTypeOIDC:
-			provider, err = newOIDCProvider(ctx, providerCfg)
-		default:
+		if providerCfg.Type != ProviderTypeOIDC {
 			return nil, ErrOAuthProviderDisabled
 		}
+		provider, err := newOIDCProvider(ctx, providerCfg)
 		if err != nil {
 			return nil, err
 		}

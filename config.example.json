@@ -4,9 +4,12 @@
     "providers": [
       {
         "id": "google",
-        "type": "google",
+        "type": "oidc",
         "displayName": "Google",
-        "clientId": "YOUR_GOOGLE_CLIENT_ID"
+        "issuerUrl": "https://accounts.google.com",
+        "clientId": "YOUR_GOOGLE_CLIENT_ID",
+        "clientSecret": "YOUR_GOOGLE_CLIENT_SECRET",
+        "scopes": ["openid", "profile", "email"]
       },
       {
         "id": "company_sso",

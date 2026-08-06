@@ -13,17 +13,17 @@ services:
       - ./config.json:/etc/pug/config.json:ro
 ```
 
-See [`config.example.json`](../config.example.json) for Google and generic OIDC examples. Provider IDs must be unique lowercase identifiers. Unknown fields, unsupported versions, duplicate IDs, missing values, and non-HTTPS remote issuers stop the server at startup with a configuration error. `http://localhost` issuers are accepted for development.
+See [`config.example.json`](../config.example.json) for Google and another OIDC provider. Google uses the same generic OIDC path as every other provider. Provider IDs must be unique lowercase identifiers. Unknown fields, unsupported versions, duplicate IDs, missing values, and non-HTTPS remote issuers stop the server at startup with a configuration error. `http://localhost` issuers are accepted for development.
 
 ## Generic OIDC
 
-Create a public SPA client in the identity provider and configure this exact redirect URI:
+Create an OIDC client in the identity provider and configure this exact redirect URI:
 
 ```text
 https://YOUR_PUG_DASHBOARD/oauth/callback
 ```
 
-Enable Authorization Code flow and PKCE (`S256`). Do not create or configure a client secret: the Pug dashboard is a browser application and cannot keep one secret. The provider must expose standard OIDC discovery metadata and return these claims in its ID token:
+Enable Authorization Code flow and PKCE (`S256`). Configure `clientSecret` only when the provider requires a confidential client. Pug keeps it in the server configuration, never returns it from `GetAuthConfig`, and performs the code exchange on the server. Public clients such as a typical Keycloak SPA omit it. The provider must expose standard OIDC discovery metadata and return these claims in its ID token:
 
 - `sub`
 - `email`
@@ -33,6 +33,6 @@ Enable Authorization Code flow and PKCE (`S256`). Do not create or configure a c
 
 The dashboard requests `openid profile email` by default. Override `scopes` only when the provider needs a different set; `openid` is always required. Pug does not request or retain an external refresh token, map provider groups to Pug roles, or initiate provider-wide logout in this first implementation.
 
-## Existing Google configuration
+## Google
 
-`PUG_OAUTH_GOOGLE_CLIENT_ID` remains supported when `PUG_CONFIG_FILE` is unset. Do not set both: Pug rejects the ambiguous configuration at startup. New installations should put Google alongside any OIDC connections in the JSON file.
+Configure Google as an OIDC provider with issuer `https://accounts.google.com`, its client ID, and its client secret, as shown in the example config. Register the same `/oauth/callback` redirect URI in the Google OAuth client. The secret remains server-side; Google otherwise uses the same OIDC flow as every other provider. The former `PUG_OAUTH_GOOGLE_CLIENT_ID` shortcut and Google-specific browser SDK are not used by this configuration model.
