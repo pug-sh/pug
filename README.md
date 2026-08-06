@@ -103,6 +103,9 @@ make infra
 ```
 
 Environment variables are documented in [`.env.example`](.env.example).
+Google and generic OIDC sign-in are documented in
+[`docs/authentication.md`](docs/authentication.md), with a ready-to-copy
+[`config.example.json`](config.example.json).
 
 ### Demo data
 

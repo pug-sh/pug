@@ -23,7 +23,7 @@ func NewService(cfg Config, registry *Registry) *Service {
 	}
 }
 
-func (s *Service) VerifyIdentity(ctx context.Context, provider ProviderName, credential string) (*Identity, error) {
+func (s *Service) ExchangeCode(ctx context.Context, provider ProviderName, code AuthorizationCode) (*Identity, error) {
 	if !s.cfg.IsProviderEnabled(provider) {
 		return nil, ErrOAuthProviderDisabled
 	}
@@ -32,8 +32,16 @@ func (s *Service) VerifyIdentity(ctx context.Context, provider ProviderName, cre
 	if err != nil {
 		return nil, err
 	}
+	codeProvider, ok := p.(AuthorizationCodeProvider)
+	if !ok {
+		return nil, ErrOAuthProviderDisabled
+	}
 
-	ident, err := p.VerifyCredential(ctx, credential)
+	ident, err := codeProvider.ExchangeCode(ctx, code)
+	return s.handleIdentityResult(ctx, provider, ident, err)
+}
+
+func (s *Service) handleIdentityResult(ctx context.Context, provider ProviderName, ident *Identity, err error) (*Identity, error) {
 	if err != nil {
 		// Client-input outcomes pass through unchanged so the handler can map
 		// them precisely; the handler keeps the client-facing message vague.
@@ -43,9 +51,14 @@ func (s *Service) VerifyIdentity(ctx context.Context, provider ProviderName, cre
 		// An unexpected verifier error (network, malformed provider response) is
 		// recorded at this detect site and collapsed to ErrInvalidCredential so
 		// provider internals never reach the client.
-		slog.ErrorContext(ctx, "oauth credential verification failed", slogx.Error(err))
+		slog.ErrorContext(ctx, "oauth identity verification failed", slogx.Error(err))
 		telemetry.RecordError(ctx, err)
 		return nil, ErrInvalidCredential
+	}
+	// Test and third-party providers created against the original interface may
+	// not set a durable namespace. Preserve the previous behavior for them.
+	if ident.Provider() == "" {
+		ident.provider = provider
 	}
 
 	return ident, nil

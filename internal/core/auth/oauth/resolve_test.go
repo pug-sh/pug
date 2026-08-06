@@ -43,7 +43,7 @@ func TestWithIdentityTx_LinksExistingEmailPasswordCustomer(t *testing.T) {
 	}
 
 	ident := mustVerified(t, coreoauth.Claims{Subject: "google-sub-1", Email: "oauth-link@example.com", EmailVerified: true})
-	customerID, createdNew, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, nil)
+	customerID, createdNew, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderOIDC, ident, nil)
 	if err != nil {
 		t.Fatalf("WithIdentityTx: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestWithIdentityTx_LinksExistingEmailPasswordCustomer(t *testing.T) {
 
 	read := dbread.New(db.PgRO)
 	identRow, err := read.GetCustomerIdentityByProviderSubject(ctx, dbread.GetCustomerIdentityByProviderSubjectParams{
-		Provider: string(coreoauth.ProviderGoogle), ProviderSubject: "google-sub-1",
+		Provider: string(coreoauth.ProviderOIDC), ProviderSubject: "google-sub-1",
 	})
 	if err != nil {
 		t.Fatalf("GetCustomerIdentityByProviderSubject: %v", err)
@@ -77,7 +77,7 @@ func TestWithIdentityTx_CreatesNewCustomer(t *testing.T) {
 		Subject: "google-sub-new", Email: "oauth-new@example.com", EmailVerified: true,
 		DisplayName: "OAuth User", PictureURI: "https://example.com/pic.png",
 	})
-	customerID, createdNew, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, nil)
+	customerID, createdNew, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderOIDC, ident, nil)
 	if err != nil {
 		t.Fatalf("WithIdentityTx: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestWithIdentityTx_IdempotentReSignIn(t *testing.T) {
 		Subject: "google-sub-idem", Email: "oauth-idem@example.com", EmailVerified: true,
 	})
 
-	id1, new1, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, nil)
+	id1, new1, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderOIDC, ident, nil)
 	if err != nil {
 		t.Fatalf("first WithIdentityTx: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestWithIdentityTx_IdempotentReSignIn(t *testing.T) {
 		t.Fatal("first sign-in should create a new account")
 	}
 
-	id2, new2, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, nil)
+	id2, new2, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderOIDC, ident, nil)
 	if err != nil {
 		t.Fatalf("second WithIdentityTx: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestWithIdentityTx_ConcurrentSignupSameEmail(t *testing.T) {
 	errCh := make(chan error, len(idents))
 	for _, ident := range idents {
 		go func(ident *coreoauth.Identity) {
-			_, _, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, nil)
+			_, _, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderOIDC, ident, nil)
 			errCh <- err
 		}(ident)
 	}
@@ -168,7 +168,7 @@ func TestWithIdentityTx_ConcurrentSignupSameEmail(t *testing.T) {
 	}
 	for _, subject := range []string{"google-sub-race-a", "google-sub-race-b"} {
 		identRow, err := read.GetCustomerIdentityByProviderSubject(ctx, dbread.GetCustomerIdentityByProviderSubjectParams{
-			Provider: string(coreoauth.ProviderGoogle), ProviderSubject: subject,
+			Provider: string(coreoauth.ProviderOIDC), ProviderSubject: subject,
 		})
 		if err != nil {
 			t.Fatalf("GetCustomerIdentityByProviderSubject(%q): %v", subject, err)
@@ -190,7 +190,7 @@ func TestWithIdentityTx_RollsBackIdentityWhenFinalizeFails(t *testing.T) {
 		Subject: "google-sub-rollback", Email: "oauth-rollback@example.com", EmailVerified: true,
 	})
 	var attempts int
-	_, _, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, func(context.Context, *dbwrite.Queries, string, bool) error {
+	_, _, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderOIDC, ident, func(context.Context, *dbwrite.Queries, string, bool) error {
 		attempts++
 		return errors.New("simulated provisioning failure")
 	})
@@ -206,7 +206,7 @@ func TestWithIdentityTx_RollsBackIdentityWhenFinalizeFails(t *testing.T) {
 		t.Fatalf("expected no customer after rollback, got err=%v", err)
 	}
 
-	_, createdNew, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderGoogle, ident, nil)
+	_, createdNew, err := coreoauth.WithIdentityTx(ctx, db.PgW, coreoauth.ProviderOIDC, ident, nil)
 	if err != nil {
 		t.Fatalf("retry WithIdentityTx: %v", err)
 	}

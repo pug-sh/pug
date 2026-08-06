@@ -6,10 +6,15 @@ import "buf/validate/validate.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1";
 
 service AuthService {
+  // GetAuthConfig returns the non-secret provider settings the browser needs to
+  // render sign-in options and start Authorization Code + PKCE flows.
+  rpc GetAuthConfig(GetAuthConfigRequest) returns (GetAuthConfigResponse) {}
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
   rpc RequestMagicLink(RequestMagicLinkRequest) returns (RequestMagicLinkResponse) {}
   rpc CompleteMagicLink(CompleteMagicLinkRequest) returns (CompleteMagicLinkResponse) {}
-  rpc CompleteOAuthSignIn(CompleteOAuthSignInRequest) returns (CompleteOAuthSignInResponse) {}
+  // CompleteOIDCSignIn exchanges a browser-issued Authorization Code on the
+  // server, keeping confidential-provider secrets out of the dashboard.
+  rpc CompleteOIDCSignIn(CompleteOIDCSignInRequest) returns (CompleteOIDCSignInResponse) {}
   // RefreshSession exchanges a valid refresh token for a new access+refresh pair.
   // Public (no JWT): it runs precisely when the access token has expired.
   rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse) {}
@@ -66,29 +71,63 @@ message CompleteMagicLinkResponse {
   string refresh_token = 2; // long-lived opaque refresh token
 }
 
-enum OAuthProvider {
-  O_AUTH_PROVIDER_UNSPECIFIED = 0;
-  O_AUTH_PROVIDER_GOOGLE = 1;
-}
-
-message CompleteOAuthSignInRequest {
-  OAuthProvider provider = 1 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
-  // Google id_token JWT from @react-oauth/google GoogleLogin onSuccess credential.
-  string credential = 2 [(buf.validate.field).required = true];
-  // Optional IANA timezone captured from the browser completing sign-in. When the
-  // sign-in provisions a new account (default org + project), it is stored as that
-  // project's reporting_timezone; on a returning sign-in — including one that links
-  // this identity to an existing account — it is ignored. Empty = UTC; a malformed
-  // value is coerced to UTC.
-  string timezone = 3 [(buf.validate.field).string = {
+message CompleteOIDCSignInRequest {
+  string provider_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string = {
+      max_len: 63
+      pattern: "^[a-z][a-z0-9_-]*$"
+    }
+  ];
+  string code = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 8192
+  ];
+  string code_verifier = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string = {
+      min_len: 43
+      max_len: 128
+      pattern: "^[A-Za-z0-9._~-]+$"
+    }
+  ];
+  string redirect_uri = 4 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 2048
+  ];
+  string nonce = 5 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 128
+  ];
+  string timezone = 6 [(buf.validate.field).string = {
     max_len: 64
     pattern: "^[A-Za-z0-9_+/-]*$"
   }];
 }
 
-message CompleteOAuthSignInResponse {
-  string token = 1; // short-lived access JWT — sign-in OR sign-up, decided server-side
-  string refresh_token = 2; // long-lived opaque refresh token
+message CompleteOIDCSignInResponse {
+  string token = 1;
+  string refresh_token = 2;
+}
+
+message GetAuthConfigRequest {}
+
+enum AuthProviderType {
+  AUTH_PROVIDER_TYPE_UNSPECIFIED = 0;
+  AUTH_PROVIDER_TYPE_OIDC = 1;
+}
+
+message AuthProviderConfig {
+  string id = 1;
+  AuthProviderType type = 2;
+  string display_name = 3;
+  string client_id = 4;
+  string issuer_url = 5;
+  repeated string scopes = 6;
+}
+
+message GetAuthConfigResponse {
+  repeated AuthProviderConfig providers = 1;
 }
 
 message RefreshSessionRequest {

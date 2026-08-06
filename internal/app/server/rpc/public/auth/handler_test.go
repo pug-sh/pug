@@ -17,13 +17,14 @@ import (
 // fakeAuthService satisfies authService so the handler's error mapping can be
 // unit-tested without a database. Only the methods under test return errors.
 type fakeAuthService struct {
-	signInErr        error
-	completeErr      error
-	completeOAuthErr error
-	refreshErr       error
-	revokeErr        error
-	demoSession      coreauth.DemoSession
-	demoErr          error
+	signInErr       error
+	completeErr     error
+	completeOIDCErr error
+	refreshErr      error
+	revokeErr       error
+	demoSession     coreauth.DemoSession
+	demoErr         error
+	onOIDC          func(coreoauth.ProviderName, coreoauth.AuthorizationCode)
 }
 
 func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (coreauth.Session, error) {
@@ -33,8 +34,11 @@ func (f fakeAuthService) RequestMagicLink(context.Context, string) error { retur
 func (f fakeAuthService) CompleteMagicLink(context.Context, string, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.completeErr
 }
-func (f fakeAuthService) CompleteOAuthSignIn(context.Context, coreoauth.ProviderName, string, string) (coreauth.Session, error) {
-	return coreauth.Session{}, f.completeOAuthErr
+func (f fakeAuthService) CompleteOIDCSignIn(_ context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, _ string) (coreauth.Session, error) {
+	if f.onOIDC != nil {
+		f.onOIDC(provider, code)
+	}
+	return coreauth.Session{}, f.completeOIDCErr
 }
 func (f fakeAuthService) RefreshSession(context.Context, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.refreshErr
@@ -98,13 +102,10 @@ func TestCompleteMagicLinkInvalidTokenMapping(t *testing.T) {
 	}
 }
 
-func TestCompleteOAuthInvalidCredentialMapping(t *testing.T) {
-	s := &server{service: fakeAuthService{completeOAuthErr: coreoauth.ErrInvalidCredential}}
+func TestCompleteOIDCInvalidCredentialMapping(t *testing.T) {
+	s := &server{service: fakeAuthService{completeOIDCErr: coreoauth.ErrInvalidCredential}}
 
-	_, err := s.CompleteOAuthSignIn(context.Background(), connect.NewRequest(&authv1.CompleteOAuthSignInRequest{
-		Provider:   authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
-		Credential: proto.String("bad-credential"),
-	}))
+	_, err := s.CompleteOIDCSignIn(context.Background(), validCompleteOIDCRequest())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -120,13 +121,116 @@ func TestCompleteOAuthInvalidCredentialMapping(t *testing.T) {
 	}
 }
 
-func TestCompleteOAuthUnverifiedEmailMapping(t *testing.T) {
-	s := &server{service: fakeAuthService{completeOAuthErr: coreoauth.ErrUnverifiedEmail}}
+func validCompleteOIDCRequest() *connect.Request[authv1.CompleteOIDCSignInRequest] {
+	req := connect.NewRequest(&authv1.CompleteOIDCSignInRequest{
+		ProviderId:   proto.String("company_sso"),
+		Code:         proto.String("authorization-code"),
+		CodeVerifier: proto.String("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"),
+		RedirectUri:  proto.String("https://pug.example.com/oauth/callback"),
+		Nonce:        proto.String("request-nonce"),
+	})
+	req.Header().Set("Origin", "https://pug.example.com")
+	return req
+}
 
-	_, err := s.CompleteOAuthSignIn(context.Background(), connect.NewRequest(&authv1.CompleteOAuthSignInRequest{
-		Provider:   authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
-		Credential: proto.String("credential"),
-	}))
+func TestCompleteOIDCForwardsAuthorizationCodeValues(t *testing.T) {
+	var gotProvider coreoauth.ProviderName
+	var gotCode coreoauth.AuthorizationCode
+	s := &server{service: fakeAuthService{onOIDC: func(provider coreoauth.ProviderName, code coreoauth.AuthorizationCode) {
+		gotProvider, gotCode = provider, code
+	}}}
+	req := validCompleteOIDCRequest()
+
+	if _, err := s.CompleteOIDCSignIn(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if gotProvider != "company_sso" || gotCode.Code != "authorization-code" || gotCode.CodeVerifier != "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~" || gotCode.RedirectURI != "https://pug.example.com/oauth/callback" || gotCode.Nonce != "request-nonce" {
+		t.Fatalf("provider = %q, code = %+v", gotProvider, gotCode)
+	}
+}
+
+func TestCompleteOIDCRejectsMismatchedRedirectOrigin(t *testing.T) {
+	s := &server{service: fakeAuthService{}}
+	req := connect.NewRequest(&authv1.CompleteOIDCSignInRequest{RedirectUri: proto.String("https://pug.example.com/oauth/callback")})
+	req.Header().Set("Origin", "https://attacker.example.com")
+
+	_, err := s.CompleteOIDCSignIn(context.Background(), req)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != connect.CodeInvalidArgument {
+		t.Fatalf("err = %v, want InvalidArgument", err)
+	}
+}
+
+func TestValidateOIDCRedirectURI(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		redirect string
+		origin   string
+		valid    bool
+	}{
+		{"remote https", "https://pug.example.com/oauth/callback", "https://pug.example.com", true},
+		{"explicit default redirect port", "https://pug.example.com:443/oauth/callback", "https://pug.example.com", true},
+		{"explicit default origin port", "https://pug.example.com/oauth/callback", "https://pug.example.com:443", true},
+		{"localhost http", "http://localhost:3000/oauth/callback", "http://localhost:3000", true},
+		{"remote http", "http://pug.example.com/oauth/callback", "http://pug.example.com", false},
+		{"wrong path", "https://pug.example.com/other", "https://pug.example.com", false},
+		{"query", "https://pug.example.com/oauth/callback?next=evil", "https://pug.example.com", false},
+		{"origin mismatch", "https://pug.example.com/oauth/callback", "https://attacker.example.com", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := validateOIDCRedirectURI(tt.redirect, tt.origin)
+			if (err == nil) != tt.valid {
+				t.Fatalf("err = %v, valid = %v", err, tt.valid)
+			}
+		})
+	}
+}
+
+func TestGetAuthConfigReturnsOnlyPublicProviderSettings(t *testing.T) {
+	s := &server{oauthCfg: coreoauth.Config{Providers: []coreoauth.ProviderConfig{
+		{
+			ID:           "google",
+			Type:         coreoauth.ProviderTypeOIDC,
+			DisplayName:  "Google",
+			ClientID:     "google-client",
+			ClientSecret: "must-never-be-returned",
+			IssuerURL:    "https://accounts.google.com",
+			Scopes:       []string{"openid", "profile", "email"},
+		},
+		{
+			ID:          "company_sso",
+			Type:        coreoauth.ProviderTypeOIDC,
+			DisplayName: "Company SSO",
+			ClientID:    "pug",
+			IssuerURL:   "https://login.example.com/realms/main",
+			Scopes:      []string{"openid", "profile", "email"},
+		},
+	}}}
+
+	response, err := s.GetAuthConfig(context.Background(), connect.NewRequest(&authv1.GetAuthConfigRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	providers := response.Msg.GetProviders()
+	if len(providers) != 2 {
+		t.Fatalf("providers = %d, want 2", len(providers))
+	}
+	google, oidc := providers[0], providers[1]
+	if google.GetId() != "google" || google.GetDisplayName() != "Google" || google.GetClientId() != "google-client" || google.GetIssuerUrl() != "https://accounts.google.com" || google.GetType() != authv1.AuthProviderType_AUTH_PROVIDER_TYPE_OIDC {
+		t.Fatalf("google provider = %+v", google)
+	}
+	if oidc.GetId() != "company_sso" || oidc.GetDisplayName() != "Company SSO" || oidc.GetType() != authv1.AuthProviderType_AUTH_PROVIDER_TYPE_OIDC {
+		t.Fatalf("oidc provider = %+v", oidc)
+	}
+	if oidc.GetClientId() != "pug" || oidc.GetIssuerUrl() == "" || strings.Join(oidc.GetScopes(), " ") != "openid profile email" {
+		t.Fatalf("public browser settings missing: %+v", oidc)
+	}
+}
+
+func TestCompleteOIDCUnverifiedEmailMapping(t *testing.T) {
+	s := &server{service: fakeAuthService{completeOIDCErr: coreoauth.ErrUnverifiedEmail}}
+
+	_, err := s.CompleteOIDCSignIn(context.Background(), validCompleteOIDCRequest())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

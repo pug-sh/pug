@@ -81,7 +81,7 @@ func TestCreateOrgWithDefaultsHappyPath(t *testing.T) {
 
 	// The default project must arrive with a key to send events with. This is the
 	// path every new customer's first project is born on (CompleteMagicLink /
-	// CompleteOAuthSignIn -> FinishSignup -> CreateOrgWithDefaultsInTx ->
+	// CompleteOIDCSignIn -> FinishSignup -> CreateOrgWithDefaultsInTx ->
 	// CreateProjectInTx), where the starter key is a *second* statement inside the
 	// signup transaction — so the project can commit without one if that insert is
 	// ever moved out or fails silently. The symptom would be a customer who signs up
