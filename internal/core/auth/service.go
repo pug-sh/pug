@@ -323,27 +323,15 @@ func (s *Service) CompleteMagicLink(ctx context.Context, token, reportingTimezon
 	return session, nil
 }
 
-func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential, reportingTimezone string) (Session, error) {
-	ident, err := s.oauth.VerifyIdentity(ctx, provider, credential)
-	if err != nil {
-		// Client-input errors (ErrInvalidCredential / ErrUnverifiedEmail) are
-		// mapped by the handler; unexpected verifier errors were already recorded
-		// inside VerifyIdentity. Nothing to log or record here.
-		return Session{}, err
-	}
-
-	return s.completeOAuthIdentity(ctx, ident, reportingTimezone)
-}
-
 func (s *Service) CompleteOIDCSignIn(ctx context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, reportingTimezone string) (Session, error) {
 	ident, err := s.oauth.ExchangeCode(ctx, provider, code)
 	if err != nil {
 		return Session{}, err
 	}
-	return s.completeOAuthIdentity(ctx, ident, reportingTimezone)
+	return s.completeExternalIdentity(ctx, ident, reportingTimezone)
 }
 
-func (s *Service) completeOAuthIdentity(ctx context.Context, ident *coreoauth.Identity, reportingTimezone string) (Session, error) {
+func (s *Service) completeExternalIdentity(ctx context.Context, ident *coreoauth.Identity, reportingTimezone string) (Session, error) {
 	var session Session
 	var err error
 	_, _, err = coreoauth.WithIdentityTx(ctx, s.pgW, ident.Provider(), ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
@@ -354,7 +342,7 @@ func (s *Service) completeOAuthIdentity(ctx context.Context, ident *coreoauth.Id
 			return err // coreorgs records this at its detect site; don't re-record.
 		}
 		if err := FinalizeVerifiedCustomer(ctx, w, customerID); err != nil {
-			slog.ErrorContext(ctx, "failed to mark email verified on oauth sign-in", slogx.Error(err), slog.String("customer_id", customerID))
+			slog.ErrorContext(ctx, "failed to mark email verified on oidc sign-in", slogx.Error(err), slog.String("customer_id", customerID))
 			telemetry.RecordError(ctx, err)
 			return err
 		}

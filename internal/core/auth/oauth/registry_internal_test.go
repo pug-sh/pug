@@ -15,9 +15,6 @@ import (
 type registryTestProvider struct{ name ProviderName }
 
 func (p registryTestProvider) Name() ProviderName { return p.name }
-func (registryTestProvider) VerifyCredential(context.Context, string) (*Identity, error) {
-	return nil, ErrInvalidCredential
-}
 
 func TestRegistryLookup(t *testing.T) {
 	registry := NewRegistry(registryTestProvider{name: "company_sso"})

@@ -45,9 +45,6 @@ const (
 	// AuthServiceCompleteMagicLinkProcedure is the fully-qualified name of the AuthService's
 	// CompleteMagicLink RPC.
 	AuthServiceCompleteMagicLinkProcedure = "/public.auth.v1.AuthService/CompleteMagicLink"
-	// AuthServiceCompleteOAuthSignInProcedure is the fully-qualified name of the AuthService's
-	// CompleteOAuthSignIn RPC.
-	AuthServiceCompleteOAuthSignInProcedure = "/public.auth.v1.AuthService/CompleteOAuthSignIn"
 	// AuthServiceCompleteOIDCSignInProcedure is the fully-qualified name of the AuthService's
 	// CompleteOIDCSignIn RPC.
 	AuthServiceCompleteOIDCSignInProcedure = "/public.auth.v1.AuthService/CompleteOIDCSignIn"
@@ -68,7 +65,6 @@ type AuthServiceClient interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
-	CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error)
 	// CompleteOIDCSignIn exchanges a browser-issued Authorization Code on the
 	// server, keeping confidential-provider secrets out of the dashboard.
 	CompleteOIDCSignIn(context.Context, *connect.Request[v1.CompleteOIDCSignInRequest]) (*connect.Response[v1.CompleteOIDCSignInResponse], error)
@@ -120,12 +116,6 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("CompleteMagicLink")),
 			connect.WithClientOptions(opts...),
 		),
-		completeOAuthSignIn: connect.NewClient[v1.CompleteOAuthSignInRequest, v1.CompleteOAuthSignInResponse](
-			httpClient,
-			baseURL+AuthServiceCompleteOAuthSignInProcedure,
-			connect.WithSchema(authServiceMethods.ByName("CompleteOAuthSignIn")),
-			connect.WithClientOptions(opts...),
-		),
 		completeOIDCSignIn: connect.NewClient[v1.CompleteOIDCSignInRequest, v1.CompleteOIDCSignInResponse](
 			httpClient,
 			baseURL+AuthServiceCompleteOIDCSignInProcedure,
@@ -155,15 +145,14 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // authServiceClient implements AuthServiceClient.
 type authServiceClient struct {
-	getAuthConfig       *connect.Client[v1.GetAuthConfigRequest, v1.GetAuthConfigResponse]
-	signInWithEmail     *connect.Client[v1.SignInWithEmailRequest, v1.SignInWithEmailResponse]
-	requestMagicLink    *connect.Client[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse]
-	completeMagicLink   *connect.Client[v1.CompleteMagicLinkRequest, v1.CompleteMagicLinkResponse]
-	completeOAuthSignIn *connect.Client[v1.CompleteOAuthSignInRequest, v1.CompleteOAuthSignInResponse]
-	completeOIDCSignIn  *connect.Client[v1.CompleteOIDCSignInRequest, v1.CompleteOIDCSignInResponse]
-	refreshSession      *connect.Client[v1.RefreshSessionRequest, v1.RefreshSessionResponse]
-	signOut             *connect.Client[v1.SignOutRequest, v1.SignOutResponse]
-	demoSignIn          *connect.Client[v1.DemoSignInRequest, v1.DemoSignInResponse]
+	getAuthConfig      *connect.Client[v1.GetAuthConfigRequest, v1.GetAuthConfigResponse]
+	signInWithEmail    *connect.Client[v1.SignInWithEmailRequest, v1.SignInWithEmailResponse]
+	requestMagicLink   *connect.Client[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse]
+	completeMagicLink  *connect.Client[v1.CompleteMagicLinkRequest, v1.CompleteMagicLinkResponse]
+	completeOIDCSignIn *connect.Client[v1.CompleteOIDCSignInRequest, v1.CompleteOIDCSignInResponse]
+	refreshSession     *connect.Client[v1.RefreshSessionRequest, v1.RefreshSessionResponse]
+	signOut            *connect.Client[v1.SignOutRequest, v1.SignOutResponse]
+	demoSignIn         *connect.Client[v1.DemoSignInRequest, v1.DemoSignInResponse]
 }
 
 // GetAuthConfig calls public.auth.v1.AuthService.GetAuthConfig.
@@ -184,11 +173,6 @@ func (c *authServiceClient) RequestMagicLink(ctx context.Context, req *connect.R
 // CompleteMagicLink calls public.auth.v1.AuthService.CompleteMagicLink.
 func (c *authServiceClient) CompleteMagicLink(ctx context.Context, req *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error) {
 	return c.completeMagicLink.CallUnary(ctx, req)
-}
-
-// CompleteOAuthSignIn calls public.auth.v1.AuthService.CompleteOAuthSignIn.
-func (c *authServiceClient) CompleteOAuthSignIn(ctx context.Context, req *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error) {
-	return c.completeOAuthSignIn.CallUnary(ctx, req)
 }
 
 // CompleteOIDCSignIn calls public.auth.v1.AuthService.CompleteOIDCSignIn.
@@ -219,7 +203,6 @@ type AuthServiceHandler interface {
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
-	CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error)
 	// CompleteOIDCSignIn exchanges a browser-issued Authorization Code on the
 	// server, keeping confidential-provider secrets out of the dashboard.
 	CompleteOIDCSignIn(context.Context, *connect.Request[v1.CompleteOIDCSignInRequest]) (*connect.Response[v1.CompleteOIDCSignInResponse], error)
@@ -267,12 +250,6 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("CompleteMagicLink")),
 		connect.WithHandlerOptions(opts...),
 	)
-	authServiceCompleteOAuthSignInHandler := connect.NewUnaryHandler(
-		AuthServiceCompleteOAuthSignInProcedure,
-		svc.CompleteOAuthSignIn,
-		connect.WithSchema(authServiceMethods.ByName("CompleteOAuthSignIn")),
-		connect.WithHandlerOptions(opts...),
-	)
 	authServiceCompleteOIDCSignInHandler := connect.NewUnaryHandler(
 		AuthServiceCompleteOIDCSignInProcedure,
 		svc.CompleteOIDCSignIn,
@@ -307,8 +284,6 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceRequestMagicLinkHandler.ServeHTTP(w, r)
 		case AuthServiceCompleteMagicLinkProcedure:
 			authServiceCompleteMagicLinkHandler.ServeHTTP(w, r)
-		case AuthServiceCompleteOAuthSignInProcedure:
-			authServiceCompleteOAuthSignInHandler.ServeHTTP(w, r)
 		case AuthServiceCompleteOIDCSignInProcedure:
 			authServiceCompleteOIDCSignInHandler.ServeHTTP(w, r)
 		case AuthServiceRefreshSessionProcedure:
@@ -340,10 +315,6 @@ func (UnimplementedAuthServiceHandler) RequestMagicLink(context.Context, *connec
 
 func (UnimplementedAuthServiceHandler) CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.CompleteMagicLink is not implemented"))
-}
-
-func (UnimplementedAuthServiceHandler) CompleteOAuthSignIn(context.Context, *connect.Request[v1.CompleteOAuthSignInRequest]) (*connect.Response[v1.CompleteOAuthSignInResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.CompleteOAuthSignIn is not implemented"))
 }
 
 func (UnimplementedAuthServiceHandler) CompleteOIDCSignIn(context.Context, *connect.Request[v1.CompleteOIDCSignInRequest]) (*connect.Response[v1.CompleteOIDCSignInResponse], error) {

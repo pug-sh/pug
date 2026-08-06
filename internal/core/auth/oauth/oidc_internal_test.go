@@ -116,7 +116,7 @@ func signToken(t *testing.T, key *rsa.PrivateKey, claims jwt.MapClaims) string {
 	return token
 }
 
-func TestOIDCVerifyCredential(t *testing.T) {
+func TestOIDCVerifyIDToken(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -125,7 +125,7 @@ func TestOIDCVerifyCredential(t *testing.T) {
 	p := newTestOIDCVerifierProvider(&key.PublicKey, issuer, testOIDCClientID)
 
 	t.Run("accepts a valid token and namespaces the subject by issuer", func(t *testing.T) {
-		identity, err := p.VerifyCredential(context.Background(), signToken(t, key, validOIDCClaims(issuer)))
+		identity, err := p.verifyIDToken(context.Background(), signToken(t, key, validOIDCClaims(issuer)), "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -140,7 +140,7 @@ func TestOIDCVerifyCredential(t *testing.T) {
 	t.Run("rejects a token for another client", func(t *testing.T) {
 		claims := validOIDCClaims(issuer)
 		claims["aud"] = "another-client"
-		_, err := p.VerifyCredential(context.Background(), signToken(t, key, claims))
+		_, err := p.verifyIDToken(context.Background(), signToken(t, key, claims), "")
 		if !errors.Is(err, ErrInvalidCredential) {
 			t.Fatalf("err = %v, want ErrInvalidCredential", err)
 		}
@@ -149,7 +149,7 @@ func TestOIDCVerifyCredential(t *testing.T) {
 	t.Run("rejects malformed claims", func(t *testing.T) {
 		claims := validOIDCClaims(issuer)
 		claims["email"] = map[string]string{"unexpected": "object"}
-		_, err := p.VerifyCredential(context.Background(), signToken(t, key, claims))
+		_, err := p.verifyIDToken(context.Background(), signToken(t, key, claims), "")
 		if !errors.Is(err, ErrInvalidCredential) {
 			t.Fatalf("err = %v, want ErrInvalidCredential", err)
 		}
@@ -158,7 +158,7 @@ func TestOIDCVerifyCredential(t *testing.T) {
 	t.Run("rejects an unverified email", func(t *testing.T) {
 		claims := validOIDCClaims(issuer)
 		claims["email_verified"] = false
-		_, err := p.VerifyCredential(context.Background(), signToken(t, key, claims))
+		_, err := p.verifyIDToken(context.Background(), signToken(t, key, claims), "")
 		if !errors.Is(err, ErrUnverifiedEmail) {
 			t.Fatalf("err = %v, want ErrUnverifiedEmail", err)
 		}

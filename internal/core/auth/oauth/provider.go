@@ -80,10 +80,9 @@ func truncateRunes(s string, max int) string {
 	return string(r[:max])
 }
 
-// Provider verifies IdP credentials for one identity provider.
+// Provider identifies one configured external identity provider.
 type Provider interface {
 	Name() ProviderName
-	VerifyCredential(ctx context.Context, credential string) (*Identity, error)
 }
 
 // AuthorizationCode contains the browser-generated values needed to complete

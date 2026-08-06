@@ -17,16 +17,14 @@ import (
 // fakeAuthService satisfies authService so the handler's error mapping can be
 // unit-tested without a database. Only the methods under test return errors.
 type fakeAuthService struct {
-	signInErr        error
-	completeErr      error
-	completeOAuthErr error
-	completeOIDCErr  error
-	refreshErr       error
-	revokeErr        error
-	demoSession      coreauth.DemoSession
-	demoErr          error
-	onOAuth          func(coreoauth.ProviderName)
-	onOIDC           func(coreoauth.ProviderName, coreoauth.AuthorizationCode)
+	signInErr       error
+	completeErr     error
+	completeOIDCErr error
+	refreshErr      error
+	revokeErr       error
+	demoSession     coreauth.DemoSession
+	demoErr         error
+	onOIDC          func(coreoauth.ProviderName, coreoauth.AuthorizationCode)
 }
 
 func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (coreauth.Session, error) {
@@ -35,12 +33,6 @@ func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (corea
 func (f fakeAuthService) RequestMagicLink(context.Context, string) error { return nil }
 func (f fakeAuthService) CompleteMagicLink(context.Context, string, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.completeErr
-}
-func (f fakeAuthService) CompleteOAuthSignIn(_ context.Context, provider coreoauth.ProviderName, _, _ string) (coreauth.Session, error) {
-	if f.onOAuth != nil {
-		f.onOAuth(provider)
-	}
-	return coreauth.Session{}, f.completeOAuthErr
 }
 func (f fakeAuthService) CompleteOIDCSignIn(_ context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, _ string) (coreauth.Session, error) {
 	if f.onOIDC != nil {
@@ -110,13 +102,10 @@ func TestCompleteMagicLinkInvalidTokenMapping(t *testing.T) {
 	}
 }
 
-func TestCompleteOAuthInvalidCredentialMapping(t *testing.T) {
-	s := &server{service: fakeAuthService{completeOAuthErr: coreoauth.ErrInvalidCredential}}
+func TestCompleteOIDCInvalidCredentialMapping(t *testing.T) {
+	s := &server{service: fakeAuthService{completeOIDCErr: coreoauth.ErrInvalidCredential}}
 
-	_, err := s.CompleteOAuthSignIn(context.Background(), connect.NewRequest(&authv1.CompleteOAuthSignInRequest{
-		Provider:   authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
-		Credential: proto.String("bad-credential"),
-	}))
+	_, err := s.CompleteOIDCSignIn(context.Background(), validCompleteOIDCRequest())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -132,28 +121,7 @@ func TestCompleteOAuthInvalidCredentialMapping(t *testing.T) {
 	}
 }
 
-func TestCompleteOAuthUsesDynamicProviderID(t *testing.T) {
-	var got coreoauth.ProviderName
-	s := &server{service: fakeAuthService{onOAuth: func(provider coreoauth.ProviderName) { got = provider }}}
-
-	_, err := s.CompleteOAuthSignIn(context.Background(), connect.NewRequest(&authv1.CompleteOAuthSignInRequest{
-		ProviderId: proto.String("company_sso"),
-		Credential: proto.String("credential"),
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "company_sso" {
-		t.Fatalf("provider = %q, want company_sso", got)
-	}
-}
-
-func TestCompleteOIDCForwardsAuthorizationCodeValues(t *testing.T) {
-	var gotProvider coreoauth.ProviderName
-	var gotCode coreoauth.AuthorizationCode
-	s := &server{service: fakeAuthService{onOIDC: func(provider coreoauth.ProviderName, code coreoauth.AuthorizationCode) {
-		gotProvider, gotCode = provider, code
-	}}}
+func validCompleteOIDCRequest() *connect.Request[authv1.CompleteOIDCSignInRequest] {
 	req := connect.NewRequest(&authv1.CompleteOIDCSignInRequest{
 		ProviderId:   proto.String("company_sso"),
 		Code:         proto.String("authorization-code"),
@@ -162,11 +130,21 @@ func TestCompleteOIDCForwardsAuthorizationCodeValues(t *testing.T) {
 		Nonce:        proto.String("request-nonce"),
 	})
 	req.Header().Set("Origin", "https://pug.example.com")
+	return req
+}
+
+func TestCompleteOIDCForwardsAuthorizationCodeValues(t *testing.T) {
+	var gotProvider coreoauth.ProviderName
+	var gotCode coreoauth.AuthorizationCode
+	s := &server{service: fakeAuthService{onOIDC: func(provider coreoauth.ProviderName, code coreoauth.AuthorizationCode) {
+		gotProvider, gotCode = provider, code
+	}}}
+	req := validCompleteOIDCRequest()
 
 	if _, err := s.CompleteOIDCSignIn(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
-	if gotProvider != "company_sso" || gotCode.Code != "authorization-code" || gotCode.RedirectURI != "https://pug.example.com/oauth/callback" || gotCode.Nonce != "request-nonce" {
+	if gotProvider != "company_sso" || gotCode.Code != "authorization-code" || gotCode.CodeVerifier != "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~" || gotCode.RedirectURI != "https://pug.example.com/oauth/callback" || gotCode.Nonce != "request-nonce" {
 		t.Fatalf("provider = %q, code = %+v", gotProvider, gotCode)
 	}
 }
@@ -191,6 +169,8 @@ func TestValidateOIDCRedirectURI(t *testing.T) {
 		valid    bool
 	}{
 		{"remote https", "https://pug.example.com/oauth/callback", "https://pug.example.com", true},
+		{"explicit default redirect port", "https://pug.example.com:443/oauth/callback", "https://pug.example.com", true},
+		{"explicit default origin port", "https://pug.example.com/oauth/callback", "https://pug.example.com:443", true},
 		{"localhost http", "http://localhost:3000/oauth/callback", "http://localhost:3000", true},
 		{"remote http", "http://pug.example.com/oauth/callback", "http://pug.example.com", false},
 		{"wrong path", "https://pug.example.com/other", "https://pug.example.com", false},
@@ -247,13 +227,10 @@ func TestGetAuthConfigReturnsOnlyPublicProviderSettings(t *testing.T) {
 	}
 }
 
-func TestCompleteOAuthUnverifiedEmailMapping(t *testing.T) {
-	s := &server{service: fakeAuthService{completeOAuthErr: coreoauth.ErrUnverifiedEmail}}
+func TestCompleteOIDCUnverifiedEmailMapping(t *testing.T) {
+	s := &server{service: fakeAuthService{completeOIDCErr: coreoauth.ErrUnverifiedEmail}}
 
-	_, err := s.CompleteOAuthSignIn(context.Background(), connect.NewRequest(&authv1.CompleteOAuthSignInRequest{
-		Provider:   authv1.OAuthProvider_O_AUTH_PROVIDER_GOOGLE.Enum(),
-		Credential: proto.String("credential"),
-	}))
+	_, err := s.CompleteOIDCSignIn(context.Background(), validCompleteOIDCRequest())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

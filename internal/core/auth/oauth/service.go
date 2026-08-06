@@ -23,20 +23,6 @@ func NewService(cfg Config, registry *Registry) *Service {
 	}
 }
 
-func (s *Service) VerifyIdentity(ctx context.Context, provider ProviderName, credential string) (*Identity, error) {
-	if !s.cfg.IsProviderEnabled(provider) {
-		return nil, ErrOAuthProviderDisabled
-	}
-
-	p, err := s.registry.Get(provider)
-	if err != nil {
-		return nil, err
-	}
-
-	ident, err := p.VerifyCredential(ctx, credential)
-	return s.handleIdentityResult(ctx, provider, ident, err)
-}
-
 func (s *Service) ExchangeCode(ctx context.Context, provider ProviderName, code AuthorizationCode) (*Identity, error) {
 	if !s.cfg.IsProviderEnabled(provider) {
 		return nil, ErrOAuthProviderDisabled

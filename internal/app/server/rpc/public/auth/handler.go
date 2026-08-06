@@ -24,7 +24,6 @@ type authService interface {
 	SignInWithEmail(ctx context.Context, email, password string) (coreauth.Session, error)
 	RequestMagicLink(ctx context.Context, email string) error
 	CompleteMagicLink(ctx context.Context, token, reportingTimezone string) (coreauth.Session, error)
-	CompleteOAuthSignIn(ctx context.Context, provider coreoauth.ProviderName, credential, reportingTimezone string) (coreauth.Session, error)
 	CompleteOIDCSignIn(ctx context.Context, provider coreoauth.ProviderName, code coreoauth.AuthorizationCode, reportingTimezone string) (coreauth.Session, error)
 	RefreshSession(ctx context.Context, refreshToken string) (coreauth.Session, error)
 	RevokeSession(ctx context.Context, refreshToken string) error
@@ -114,29 +113,6 @@ func (s *server) CompleteMagicLink(
 	}), nil
 }
 
-func (s *server) CompleteOAuthSignIn(
-	ctx context.Context,
-	req *connect.Request[authv1.CompleteOAuthSignInRequest],
-) (*connect.Response[authv1.CompleteOAuthSignInResponse], error) {
-	provider := coreoauth.ProviderName(req.Msg.GetProviderId())
-	if provider == "" {
-		var err error
-		provider, err = coreoauth.ProviderFromProto(req.Msg.GetProvider())
-		if err != nil {
-			return nil, apperr.Invalid(apperr.ReasonOAuthProviderDisabled, "oauth provider is not configured")
-		}
-	}
-
-	session, err := s.service.CompleteOAuthSignIn(ctx, provider, req.Msg.GetCredential(), req.Msg.GetTimezone())
-	if err != nil {
-		return nil, mapOAuthHandlerError(err)
-	}
-	return connect.NewResponse(&authv1.CompleteOAuthSignInResponse{
-		Token:        &session.AccessToken,
-		RefreshToken: &session.RefreshToken,
-	}), nil
-}
-
 func (s *server) CompleteOIDCSignIn(
 	ctx context.Context,
 	req *connect.Request[authv1.CompleteOIDCSignInRequest],
@@ -179,11 +155,31 @@ func validateOIDCRedirectURI(rawRedirectURI, requestOrigin string) (string, erro
 		if err != nil || origin.Scheme == "" || origin.Host == "" || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" {
 			return "", errors.New("invalid request origin")
 		}
-		if !strings.EqualFold(origin.Scheme, redirectURI.Scheme) || !strings.EqualFold(origin.Host, redirectURI.Host) {
+		if !sameOrigin(origin, redirectURI) {
 			return "", errors.New("request origin does not match redirect URI")
 		}
 	}
 	return redirectURI.String(), nil
+}
+
+func sameOrigin(left, right *url.URL) bool {
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) &&
+		effectivePort(left) == effectivePort(right)
+}
+
+func effectivePort(value *url.URL) string {
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(value.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 func (s *server) RefreshSession(

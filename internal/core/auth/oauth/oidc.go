@@ -33,10 +33,6 @@ func newOIDCProvider(ctx context.Context, cfg ProviderConfig) (*oidcProvider, er
 
 func (p *oidcProvider) Name() ProviderName { return p.name }
 
-func (p *oidcProvider) VerifyCredential(ctx context.Context, credential string) (*Identity, error) {
-	return p.verifyIDToken(ctx, credential, "")
-}
-
 func (p *oidcProvider) ExchangeCode(ctx context.Context, input AuthorizationCode) (*Identity, error) {
 	config := p.oauthConfig
 	config.RedirectURL = input.RedirectURI

@@ -12,9 +12,4 @@ var (
 // ProviderName identifies an external identity provider stored in customer_identities.
 type ProviderName string
 
-const (
-	// ProviderGoogle is retained as the legacy identity namespace and legacy
-	// proto selector. New Google connections are ordinary OIDC providers.
-	ProviderGoogle ProviderName = "google"
-	ProviderOIDC   ProviderName = "oidc"
-)
+const ProviderOIDC ProviderName = "oidc"

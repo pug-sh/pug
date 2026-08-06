@@ -35,4 +35,6 @@ The dashboard requests `openid profile email` by default. Override `scopes` only
 
 ## Google
 
-Configure Google as an OIDC provider with issuer `https://accounts.google.com`, its client ID, and its client secret, as shown in the example config. Register the same `/oauth/callback` redirect URI in the Google OAuth client. The secret remains server-side; Google otherwise uses the same OIDC flow as every other provider. The former `PUG_OAUTH_GOOGLE_CLIENT_ID` shortcut and Google-specific browser SDK are not used by this configuration model.
+Configure Google as an OIDC provider with issuer `https://accounts.google.com`, its client ID, and its client secret, as shown in the example config. Register the same `/oauth/callback` redirect URI in the Google OAuth client. The secret remains server-side; Google otherwise uses the same OIDC flow as every other provider.
+
+The legacy `PUG_OAUTH_GOOGLE_CLIENT_ID` configuration and Google-specific ID-token endpoint have been removed. This is a breaking change: existing installations using that variable must move Google into `PUG_CONFIG_FILE`.

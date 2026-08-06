@@ -12,7 +12,6 @@ service AuthService {
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
   rpc RequestMagicLink(RequestMagicLinkRequest) returns (RequestMagicLinkResponse) {}
   rpc CompleteMagicLink(CompleteMagicLinkRequest) returns (CompleteMagicLinkResponse) {}
-  rpc CompleteOAuthSignIn(CompleteOAuthSignInRequest) returns (CompleteOAuthSignInResponse) {}
   // CompleteOIDCSignIn exchanges a browser-issued Authorization Code on the
   // server, keeping confidential-provider secrets out of the dashboard.
   rpc CompleteOIDCSignIn(CompleteOIDCSignInRequest) returns (CompleteOIDCSignInResponse) {}
@@ -69,38 +68,6 @@ message CompleteMagicLinkRequest {
 
 message CompleteMagicLinkResponse {
   string token = 1; // short-lived access JWT
-  string refresh_token = 2; // long-lived opaque refresh token
-}
-
-enum OAuthProvider {
-  O_AUTH_PROVIDER_UNSPECIFIED = 0;
-  O_AUTH_PROVIDER_GOOGLE = 1;
-}
-
-message CompleteOAuthSignInRequest {
-  // Legacy provider selector retained for older Google-only clients. New clients
-  // send provider_id, which selects a server-configured connection dynamically.
-  OAuthProvider provider = 1 [(buf.validate.field).enum = {defined_only: true}];
-  // Provider-issued ID token. The server verifies its issuer, audience, signature,
-  // expiry, subject, and verified-email claims before creating a Pug session.
-  string credential = 2 [(buf.validate.field).required = true];
-  // Optional IANA timezone captured from the browser completing sign-in. When the
-  // sign-in provisions a new account (default org + project), it is stored as that
-  // project's reporting_timezone; on a returning sign-in — including one that links
-  // this identity to an existing account — it is ignored. Empty = UTC; a malformed
-  // value is coerced to UTC.
-  string timezone = 3 [(buf.validate.field).string = {
-    max_len: 64
-    pattern: "^[A-Za-z0-9_+/-]*$"
-  }];
-  string provider_id = 4 [(buf.validate.field).string = {
-    max_len: 63
-    pattern: "^[a-z][a-z0-9_-]*$"
-  }];
-}
-
-message CompleteOAuthSignInResponse {
-  string token = 1; // short-lived access JWT — sign-in OR sign-up, decided server-side
   string refresh_token = 2; // long-lived opaque refresh token
 }
 

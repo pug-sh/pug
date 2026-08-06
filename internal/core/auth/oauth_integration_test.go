@@ -23,7 +23,7 @@ type mockOAuthProvider struct {
 const testOIDCProvider = coreoauth.ProviderName("test_oidc")
 
 func (m mockOAuthProvider) Name() coreoauth.ProviderName { return testOIDCProvider }
-func (m mockOAuthProvider) VerifyCredential(context.Context, string) (*coreoauth.Identity, error) {
+func (m mockOAuthProvider) ExchangeCode(context.Context, coreoauth.AuthorizationCode) (*coreoauth.Identity, error) {
 	return m.identity, m.err
 }
 
@@ -36,7 +36,7 @@ func mustVerifiedIdentity(t *testing.T, c coreoauth.Claims) *coreoauth.Identity 
 	return id
 }
 
-func TestCompleteOAuthSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
+func TestCompleteOIDCSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -45,14 +45,14 @@ func TestCompleteOAuthSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
 
 	cfg := coreoauth.TestConfig("client-id")
 	registry := coreoauth.NewRegistry(mockOAuthProvider{identity: mustVerifiedIdentity(t, coreoauth.Claims{
-		Subject: "google-sub-new-int", Email: "oauth-int-new@example.com", EmailVerified: true,
+		Subject: "oidc-sub-new-int", Email: "oauth-int-new@example.com", EmailVerified: true,
 		DisplayName: "OAuth Int", PictureURI: "https://example.com/p.png",
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	session, err := svc.CompleteOAuthSignIn(ctx, testOIDCProvider, "oidc-credential", "Asia/Kolkata")
+	session, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "Asia/Kolkata")
 	if err != nil {
-		t.Fatalf("CompleteOAuthSignIn: %v", err)
+		t.Fatalf("CompleteOIDCSignIn: %v", err)
 	}
 	if session.RefreshToken == "" {
 		t.Fatal("expected non-empty refresh token")
@@ -93,7 +93,7 @@ func TestCompleteOAuthSignIn_NewUserCreatesOrgAndJWT(t *testing.T) {
 	}
 }
 
-func TestCompleteOAuthSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
+func TestCompleteOIDCSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -114,21 +114,21 @@ func TestCompleteOAuthSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
 
 	cfg := coreoauth.TestConfig("client-id")
 	registry := coreoauth.NewRegistry(mockOAuthProvider{identity: mustVerifiedIdentity(t, coreoauth.Claims{
-		Subject: "google-sub-link-int", Email: "oauth-int-link@example.com", EmailVerified: true,
+		Subject: "oidc-sub-link-int", Email: "oauth-int-link@example.com", EmailVerified: true,
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	if _, err := svc.CompleteOAuthSignIn(ctx, testOIDCProvider, "oidc-credential", ""); err != nil {
-		t.Fatalf("CompleteOAuthSignIn: %v", err)
+	if _, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, ""); err != nil {
+		t.Fatalf("CompleteOIDCSignIn: %v", err)
 	}
-	// Linking a verified Google identity must NOT clear the existing password.
+	// Linking a verified OIDC identity must NOT clear the existing password.
 	if _, err := svc.SignInWithEmail(ctx, "oauth-int-link@example.com", "password"); err != nil {
-		t.Fatalf("password sign-in after google link: %v", err)
+		t.Fatalf("password sign-in after oidc link: %v", err)
 	}
 
 	read := dbread.New(db.PgRO)
 	ident, err := read.GetCustomerIdentityByProviderSubject(ctx, dbread.GetCustomerIdentityByProviderSubjectParams{
-		Provider: string(testOIDCProvider), ProviderSubject: "google-sub-link-int",
+		Provider: string(testOIDCProvider), ProviderSubject: "oidc-sub-link-int",
 	})
 	if err != nil {
 		t.Fatalf("GetCustomerIdentityByProviderSubject: %v", err)
@@ -138,10 +138,10 @@ func TestCompleteOAuthSignIn_LinksExistingEmailPasswordAccount(t *testing.T) {
 	}
 }
 
-// TestCompleteOAuthSignIn_RejectsUnverifiedEmail pins the account-takeover guard
+// TestCompleteOIDCSignIn_RejectsUnverifiedEmail pins the account-takeover guard
 // end-to-end: when the provider reports an unverified email, the service returns
 // ErrUnverifiedEmail (not ErrInvalidCredential) and no account is provisioned.
-func TestCompleteOAuthSignIn_RejectsUnverifiedEmail(t *testing.T) {
+func TestCompleteOIDCSignIn_RejectsUnverifiedEmail(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -152,17 +152,17 @@ func TestCompleteOAuthSignIn_RejectsUnverifiedEmail(t *testing.T) {
 	registry := coreoauth.NewRegistry(mockOAuthProvider{err: coreoauth.ErrUnverifiedEmail})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
-	_, err := svc.CompleteOAuthSignIn(ctx, testOIDCProvider, "credential", "")
+	_, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "")
 	if !errors.Is(err, coreoauth.ErrUnverifiedEmail) {
 		t.Fatalf("err = %v, want ErrUnverifiedEmail", err)
 	}
 }
 
-// TestCompleteOAuthSignIn_RepeatedSignInIsIdempotent pins that a returning user
+// TestCompleteOIDCSignIn_RepeatedSignInIsIdempotent pins that a returning user
 // is not re-provisioned: a second sign-in keeps exactly one org and does not
 // overwrite the project's reporting zone with a browser timezone sent on the
 // returning sign-in (FinishSignup no-ops for a returning user).
-func TestCompleteOAuthSignIn_RepeatedSignInIsIdempotent(t *testing.T) {
+func TestCompleteOIDCSignIn_RepeatedSignInIsIdempotent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -171,18 +171,18 @@ func TestCompleteOAuthSignIn_RepeatedSignInIsIdempotent(t *testing.T) {
 
 	cfg := coreoauth.TestConfig("client-id")
 	registry := coreoauth.NewRegistry(mockOAuthProvider{identity: mustVerifiedIdentity(t, coreoauth.Claims{
-		Subject: "google-sub-idem-int", Email: "oauth-int-idem@example.com", EmailVerified: true,
+		Subject: "oidc-sub-idem-int", Email: "oauth-int-idem@example.com", EmailVerified: true,
 	})})
 	svc := coreauth.NewServiceWithOAuthForTest(ctx, db.PgRO, db.PgW, []byte("test-secret-key-for-jwt"), &stubPublisher{}, cfg, registry)
 
 	// First sign-in provisions the account with a Kolkata reporting zone.
-	if _, err := svc.CompleteOAuthSignIn(ctx, testOIDCProvider, "credential", "Asia/Kolkata"); err != nil {
-		t.Fatalf("first CompleteOAuthSignIn: %v", err)
+	if _, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "Asia/Kolkata"); err != nil {
+		t.Fatalf("first CompleteOIDCSignIn: %v", err)
 	}
 	// A returning sign-in carrying a *different* browser zone must neither
 	// re-provision nor reset the existing project's reporting zone.
-	if _, err := svc.CompleteOAuthSignIn(ctx, testOIDCProvider, "credential", "America/New_York"); err != nil {
-		t.Fatalf("second CompleteOAuthSignIn: %v", err)
+	if _, err := svc.CompleteOIDCSignIn(ctx, testOIDCProvider, coreoauth.AuthorizationCode{Code: "authorization-code"}, "America/New_York"); err != nil {
+		t.Fatalf("second CompleteOIDCSignIn: %v", err)
 	}
 
 	read := dbread.New(db.PgRO)
