@@ -33,6 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// AuthServiceGetAuthConfigProcedure is the fully-qualified name of the AuthService's GetAuthConfig
+	// RPC.
+	AuthServiceGetAuthConfigProcedure = "/public.auth.v1.AuthService/GetAuthConfig"
 	// AuthServiceSignInWithEmailProcedure is the fully-qualified name of the AuthService's
 	// SignInWithEmail RPC.
 	AuthServiceSignInWithEmailProcedure = "/public.auth.v1.AuthService/SignInWithEmail"
@@ -56,6 +59,9 @@ const (
 
 // AuthServiceClient is a client for the public.auth.v1.AuthService service.
 type AuthServiceClient interface {
+	// GetAuthConfig returns the non-secret provider settings the browser needs to
+	// render sign-in options and start Authorization Code + PKCE flows.
+	GetAuthConfig(context.Context, *connect.Request[v1.GetAuthConfigRequest]) (*connect.Response[v1.GetAuthConfigResponse], error)
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
@@ -84,6 +90,12 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 	baseURL = strings.TrimRight(baseURL, "/")
 	authServiceMethods := v1.File_public_auth_v1_auth_proto.Services().ByName("AuthService").Methods()
 	return &authServiceClient{
+		getAuthConfig: connect.NewClient[v1.GetAuthConfigRequest, v1.GetAuthConfigResponse](
+			httpClient,
+			baseURL+AuthServiceGetAuthConfigProcedure,
+			connect.WithSchema(authServiceMethods.ByName("GetAuthConfig")),
+			connect.WithClientOptions(opts...),
+		),
 		signInWithEmail: connect.NewClient[v1.SignInWithEmailRequest, v1.SignInWithEmailResponse](
 			httpClient,
 			baseURL+AuthServiceSignInWithEmailProcedure,
@@ -131,6 +143,7 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // authServiceClient implements AuthServiceClient.
 type authServiceClient struct {
+	getAuthConfig       *connect.Client[v1.GetAuthConfigRequest, v1.GetAuthConfigResponse]
 	signInWithEmail     *connect.Client[v1.SignInWithEmailRequest, v1.SignInWithEmailResponse]
 	requestMagicLink    *connect.Client[v1.RequestMagicLinkRequest, v1.RequestMagicLinkResponse]
 	completeMagicLink   *connect.Client[v1.CompleteMagicLinkRequest, v1.CompleteMagicLinkResponse]
@@ -138,6 +151,11 @@ type authServiceClient struct {
 	refreshSession      *connect.Client[v1.RefreshSessionRequest, v1.RefreshSessionResponse]
 	signOut             *connect.Client[v1.SignOutRequest, v1.SignOutResponse]
 	demoSignIn          *connect.Client[v1.DemoSignInRequest, v1.DemoSignInResponse]
+}
+
+// GetAuthConfig calls public.auth.v1.AuthService.GetAuthConfig.
+func (c *authServiceClient) GetAuthConfig(ctx context.Context, req *connect.Request[v1.GetAuthConfigRequest]) (*connect.Response[v1.GetAuthConfigResponse], error) {
+	return c.getAuthConfig.CallUnary(ctx, req)
 }
 
 // SignInWithEmail calls public.auth.v1.AuthService.SignInWithEmail.
@@ -177,6 +195,9 @@ func (c *authServiceClient) DemoSignIn(ctx context.Context, req *connect.Request
 
 // AuthServiceHandler is an implementation of the public.auth.v1.AuthService service.
 type AuthServiceHandler interface {
+	// GetAuthConfig returns the non-secret provider settings the browser needs to
+	// render sign-in options and start Authorization Code + PKCE flows.
+	GetAuthConfig(context.Context, *connect.Request[v1.GetAuthConfigRequest]) (*connect.Response[v1.GetAuthConfigResponse], error)
 	SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error)
 	RequestMagicLink(context.Context, *connect.Request[v1.RequestMagicLinkRequest]) (*connect.Response[v1.RequestMagicLinkResponse], error)
 	CompleteMagicLink(context.Context, *connect.Request[v1.CompleteMagicLinkRequest]) (*connect.Response[v1.CompleteMagicLinkResponse], error)
@@ -201,6 +222,12 @@ type AuthServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	authServiceMethods := v1.File_public_auth_v1_auth_proto.Services().ByName("AuthService").Methods()
+	authServiceGetAuthConfigHandler := connect.NewUnaryHandler(
+		AuthServiceGetAuthConfigProcedure,
+		svc.GetAuthConfig,
+		connect.WithSchema(authServiceMethods.ByName("GetAuthConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
 	authServiceSignInWithEmailHandler := connect.NewUnaryHandler(
 		AuthServiceSignInWithEmailProcedure,
 		svc.SignInWithEmail,
@@ -245,6 +272,8 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 	)
 	return "/public.auth.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case AuthServiceGetAuthConfigProcedure:
+			authServiceGetAuthConfigHandler.ServeHTTP(w, r)
 		case AuthServiceSignInWithEmailProcedure:
 			authServiceSignInWithEmailHandler.ServeHTTP(w, r)
 		case AuthServiceRequestMagicLinkProcedure:
@@ -267,6 +296,10 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 
 // UnimplementedAuthServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedAuthServiceHandler struct{}
+
+func (UnimplementedAuthServiceHandler) GetAuthConfig(context.Context, *connect.Request[v1.GetAuthConfigRequest]) (*connect.Response[v1.GetAuthConfigResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.GetAuthConfig is not implemented"))
+}
 
 func (UnimplementedAuthServiceHandler) SignInWithEmail(context.Context, *connect.Request[v1.SignInWithEmailRequest]) (*connect.Response[v1.SignInWithEmailResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("public.auth.v1.AuthService.SignInWithEmail is not implemented"))

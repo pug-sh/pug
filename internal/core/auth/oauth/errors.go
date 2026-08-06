@@ -14,4 +14,5 @@ type ProviderName string
 
 const (
 	ProviderGoogle ProviderName = "google"
+	ProviderOIDC   ProviderName = "oidc"
 )

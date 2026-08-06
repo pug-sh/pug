@@ -21,10 +21,23 @@ type Claims struct {
 // the resolver and provisioning never need to re-check EmailVerified. The fields
 // are unexported precisely so an unverified identity is unrepresentable.
 type Identity struct {
+	provider    ProviderName
 	subject     string
 	email       string
 	displayName string
 	pictureURI  string
+}
+
+// NewVerifiedProviderIdentity builds a verified identity with the durable
+// provider namespace used in customer_identities. The configured connection ID
+// is deliberately separate and may be renamed without changing account identity.
+func NewVerifiedProviderIdentity(provider ProviderName, c Claims) (*Identity, error) {
+	ident, err := NewVerifiedIdentity(c)
+	if err != nil {
+		return nil, err
+	}
+	ident.provider = provider
+	return ident, nil
 }
 
 // Display-field caps match the storage columns (customers.display_name
@@ -50,10 +63,11 @@ func NewVerifiedIdentity(c Claims) (*Identity, error) {
 	}, nil
 }
 
-func (i *Identity) Subject() string     { return i.subject }
-func (i *Identity) Email() string       { return i.email }
-func (i *Identity) DisplayName() string { return i.displayName }
-func (i *Identity) PictureURI() string  { return i.pictureURI }
+func (i *Identity) Subject() string        { return i.subject }
+func (i *Identity) Provider() ProviderName { return i.provider }
+func (i *Identity) Email() string          { return i.email }
+func (i *Identity) DisplayName() string    { return i.displayName }
+func (i *Identity) PictureURI() string     { return i.pictureURI }
 
 // truncateRunes clamps s to at most max runes. Postgres varchar(n) counts
 // characters, so truncating by rune (not byte) avoids splitting a multi-byte

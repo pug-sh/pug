@@ -333,7 +333,7 @@ func (s *Service) CompleteOAuthSignIn(ctx context.Context, provider coreoauth.Pr
 	}
 
 	var session Session
-	_, _, err = coreoauth.WithIdentityTx(ctx, s.pgW, provider, ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
+	_, _, err = coreoauth.WithIdentityTx(ctx, s.pgW, ident.Provider(), ident, func(ctx context.Context, w *dbwrite.Queries, customerID string, createdNew bool) error {
 		// On first sign-in this seeds the new default project's reporting timezone
 		// from the browser that completed sign-in (coerced to UTC if malformed); on
 		// a returning sign-in FinishSignup is a no-op and the value is ignored.

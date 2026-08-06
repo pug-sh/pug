@@ -6,6 +6,9 @@ import "buf/validate/validate.proto";
 option go_package = "github.com/pug-sh/pug/internal/gen/proto/public/auth/v1;authv1";
 
 service AuthService {
+  // GetAuthConfig returns the non-secret provider settings the browser needs to
+  // render sign-in options and start Authorization Code + PKCE flows.
+  rpc GetAuthConfig(GetAuthConfigRequest) returns (GetAuthConfigResponse) {}
   rpc SignInWithEmail(SignInWithEmailRequest) returns (SignInWithEmailResponse) {}
   rpc RequestMagicLink(RequestMagicLinkRequest) returns (RequestMagicLinkResponse) {}
   rpc CompleteMagicLink(CompleteMagicLinkRequest) returns (CompleteMagicLinkResponse) {}
@@ -72,8 +75,11 @@ enum OAuthProvider {
 }
 
 message CompleteOAuthSignInRequest {
-  OAuthProvider provider = 1 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
-  // Google id_token JWT from @react-oauth/google GoogleLogin onSuccess credential.
+  // Legacy provider selector retained for older Google-only clients. New clients
+  // send provider_id, which selects a server-configured connection dynamically.
+  OAuthProvider provider = 1 [(buf.validate.field).enum = {defined_only: true}];
+  // Provider-issued ID token. The server verifies its issuer, audience, signature,
+  // expiry, subject, and verified-email claims before creating a Pug session.
   string credential = 2 [(buf.validate.field).required = true];
   // Optional IANA timezone captured from the browser completing sign-in. When the
   // sign-in provisions a new account (default org + project), it is stored as that
@@ -84,11 +90,36 @@ message CompleteOAuthSignInRequest {
     max_len: 64
     pattern: "^[A-Za-z0-9_+/-]*$"
   }];
+  string provider_id = 4 [(buf.validate.field).string = {
+    max_len: 63
+    pattern: "^[a-z][a-z0-9_-]*$"
+  }];
 }
 
 message CompleteOAuthSignInResponse {
   string token = 1; // short-lived access JWT — sign-in OR sign-up, decided server-side
   string refresh_token = 2; // long-lived opaque refresh token
+}
+
+message GetAuthConfigRequest {}
+
+enum AuthProviderType {
+  AUTH_PROVIDER_TYPE_UNSPECIFIED = 0;
+  AUTH_PROVIDER_TYPE_GOOGLE = 1;
+  AUTH_PROVIDER_TYPE_OIDC = 2;
+}
+
+message AuthProviderConfig {
+  string id = 1;
+  AuthProviderType type = 2;
+  string display_name = 3;
+  string client_id = 4;
+  string issuer_url = 5;
+  repeated string scopes = 6;
+}
+
+message GetAuthConfigResponse {
+  repeated AuthProviderConfig providers = 1;
 }
 
 message RefreshSessionRequest {

@@ -27,13 +27,24 @@ func (r *Registry) Get(name ProviderName) (Provider, error) {
 
 // NewRegistryFromConfig builds providers for all configured IdPs.
 func NewRegistryFromConfig(ctx context.Context, cfg Config) (*Registry, error) {
-	var providers []Provider
-	if cfg.IsProviderEnabled(ProviderGoogle) {
-		g, err := newGoogleProvider(ctx, cfg.GoogleClientID)
+	providers := make([]Provider, 0, len(cfg.Providers))
+	for _, providerCfg := range cfg.Providers {
+		var (
+			provider Provider
+			err      error
+		)
+		switch providerCfg.Type {
+		case ProviderTypeGoogle:
+			provider, err = newGoogleProvider(ctx, ProviderName(providerCfg.ID), providerCfg.ClientID)
+		case ProviderTypeOIDC:
+			provider, err = newOIDCProvider(ctx, providerCfg)
+		default:
+			return nil, ErrOAuthProviderDisabled
+		}
 		if err != nil {
 			return nil, err
 		}
-		providers = append(providers, g)
+		providers = append(providers, provider)
 	}
 	return NewRegistry(providers...), nil
 }

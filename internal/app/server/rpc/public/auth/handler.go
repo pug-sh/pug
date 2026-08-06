@@ -28,7 +28,8 @@ type authService interface {
 }
 
 type server struct {
-	service authService
+	service  authService
+	oauthCfg coreoauth.Config
 }
 
 func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKey []byte, publisher *natsdeps.NATSClient, demoEnabled bool) (*server, error) {
@@ -42,8 +43,34 @@ func NewServer(ctx context.Context, pgRO *pgxpool.Pool, pgW *pgxpool.Pool, jwtKe
 	}
 
 	return &server{
-		service: service,
+		service:  service,
+		oauthCfg: oauthCfg,
 	}, nil
+}
+
+func (s *server) GetAuthConfig(
+	context.Context,
+	*connect.Request[authv1.GetAuthConfigRequest],
+) (*connect.Response[authv1.GetAuthConfigResponse], error) {
+	providers := make([]*authv1.AuthProviderConfig, 0, len(s.oauthCfg.Providers))
+	for _, provider := range s.oauthCfg.Providers {
+		providerType := authv1.AuthProviderType_AUTH_PROVIDER_TYPE_UNSPECIFIED
+		switch provider.Type {
+		case coreoauth.ProviderTypeGoogle:
+			providerType = authv1.AuthProviderType_AUTH_PROVIDER_TYPE_GOOGLE
+		case coreoauth.ProviderTypeOIDC:
+			providerType = authv1.AuthProviderType_AUTH_PROVIDER_TYPE_OIDC
+		}
+		providers = append(providers, &authv1.AuthProviderConfig{
+			Id:          &provider.ID,
+			Type:        &providerType,
+			DisplayName: &provider.DisplayName,
+			ClientId:    &provider.ClientID,
+			IssuerUrl:   &provider.IssuerURL,
+			Scopes:      provider.Scopes,
+		})
+	}
+	return connect.NewResponse(&authv1.GetAuthConfigResponse{Providers: providers}), nil
 }
 
 func (s *server) SignInWithEmail(
@@ -94,9 +121,13 @@ func (s *server) CompleteOAuthSignIn(
 	ctx context.Context,
 	req *connect.Request[authv1.CompleteOAuthSignInRequest],
 ) (*connect.Response[authv1.CompleteOAuthSignInResponse], error) {
-	provider, err := coreoauth.ProviderFromProto(req.Msg.GetProvider())
-	if err != nil {
-		return nil, apperr.Invalid(apperr.ReasonOAuthProviderDisabled, "oauth provider is not configured")
+	provider := coreoauth.ProviderName(req.Msg.GetProviderId())
+	if provider == "" {
+		var err error
+		provider, err = coreoauth.ProviderFromProto(req.Msg.GetProvider())
+		if err != nil {
+			return nil, apperr.Invalid(apperr.ReasonOAuthProviderDisabled, "oauth provider is not configured")
+		}
 	}
 
 	session, err := s.service.CompleteOAuthSignIn(ctx, provider, req.Msg.GetCredential(), req.Msg.GetTimezone())

@@ -47,6 +47,11 @@ func (s *Service) VerifyIdentity(ctx context.Context, provider ProviderName, cre
 		telemetry.RecordError(ctx, err)
 		return nil, ErrInvalidCredential
 	}
+	// Test and third-party providers created against the original interface may
+	// not set a durable namespace. Preserve the previous behavior for them.
+	if ident.Provider() == "" {
+		ident.provider = provider
+	}
 
 	return ident, nil
 }

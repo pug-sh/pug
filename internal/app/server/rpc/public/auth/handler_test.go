@@ -24,6 +24,7 @@ type fakeAuthService struct {
 	revokeErr        error
 	demoSession      coreauth.DemoSession
 	demoErr          error
+	onOAuth          func(coreoauth.ProviderName)
 }
 
 func (f fakeAuthService) SignInWithEmail(context.Context, string, string) (coreauth.Session, error) {
@@ -33,7 +34,10 @@ func (f fakeAuthService) RequestMagicLink(context.Context, string) error { retur
 func (f fakeAuthService) CompleteMagicLink(context.Context, string, string) (coreauth.Session, error) {
 	return coreauth.Session{}, f.completeErr
 }
-func (f fakeAuthService) CompleteOAuthSignIn(context.Context, coreoauth.ProviderName, string, string) (coreauth.Session, error) {
+func (f fakeAuthService) CompleteOAuthSignIn(_ context.Context, provider coreoauth.ProviderName, _, _ string) (coreauth.Session, error) {
+	if f.onOAuth != nil {
+		f.onOAuth(provider)
+	}
 	return coreauth.Session{}, f.completeOAuthErr
 }
 func (f fakeAuthService) RefreshSession(context.Context, string) (coreauth.Session, error) {
@@ -117,6 +121,45 @@ func TestCompleteOAuthInvalidCredentialMapping(t *testing.T) {
 	}
 	if ae.Reason() != apperr.ReasonOAuthCredentialInvalid {
 		t.Errorf("reason = %q, want %q", ae.Reason(), apperr.ReasonOAuthCredentialInvalid)
+	}
+}
+
+func TestCompleteOAuthUsesDynamicProviderID(t *testing.T) {
+	var got coreoauth.ProviderName
+	s := &server{service: fakeAuthService{onOAuth: func(provider coreoauth.ProviderName) { got = provider }}}
+
+	_, err := s.CompleteOAuthSignIn(context.Background(), connect.NewRequest(&authv1.CompleteOAuthSignInRequest{
+		ProviderId: proto.String("company_sso"),
+		Credential: proto.String("credential"),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "company_sso" {
+		t.Fatalf("provider = %q, want company_sso", got)
+	}
+}
+
+func TestGetAuthConfigReturnsOnlyPublicProviderSettings(t *testing.T) {
+	s := &server{oauthCfg: coreoauth.Config{Providers: []coreoauth.ProviderConfig{{
+		ID:          "company_sso",
+		Type:        coreoauth.ProviderTypeOIDC,
+		DisplayName: "Company SSO",
+		ClientID:    "pug",
+		IssuerURL:   "https://login.example.com/realms/main",
+		Scopes:      []string{"openid", "profile", "email"},
+	}}}}
+
+	response, err := s.GetAuthConfig(context.Background(), connect.NewRequest(&authv1.GetAuthConfigRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := response.Msg.GetProviders()[0]
+	if provider.GetId() != "company_sso" || provider.GetType() != authv1.AuthProviderType_AUTH_PROVIDER_TYPE_OIDC {
+		t.Fatalf("provider = %+v", provider)
+	}
+	if provider.GetClientId() != "pug" || provider.GetIssuerUrl() == "" {
+		t.Fatalf("public browser settings missing: %+v", provider)
 	}
 }
 

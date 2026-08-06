@@ -68,6 +68,55 @@ func (OAuthProvider) EnumDescriptor() ([]byte, []int) {
 	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{0}
 }
 
+type AuthProviderType int32
+
+const (
+	AuthProviderType_AUTH_PROVIDER_TYPE_UNSPECIFIED AuthProviderType = 0
+	AuthProviderType_AUTH_PROVIDER_TYPE_GOOGLE      AuthProviderType = 1
+	AuthProviderType_AUTH_PROVIDER_TYPE_OIDC        AuthProviderType = 2
+)
+
+// Enum value maps for AuthProviderType.
+var (
+	AuthProviderType_name = map[int32]string{
+		0: "AUTH_PROVIDER_TYPE_UNSPECIFIED",
+		1: "AUTH_PROVIDER_TYPE_GOOGLE",
+		2: "AUTH_PROVIDER_TYPE_OIDC",
+	}
+	AuthProviderType_value = map[string]int32{
+		"AUTH_PROVIDER_TYPE_UNSPECIFIED": 0,
+		"AUTH_PROVIDER_TYPE_GOOGLE":      1,
+		"AUTH_PROVIDER_TYPE_OIDC":        2,
+	}
+)
+
+func (x AuthProviderType) Enum() *AuthProviderType {
+	p := new(AuthProviderType)
+	*p = x
+	return p
+}
+
+func (x AuthProviderType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AuthProviderType) Descriptor() protoreflect.EnumDescriptor {
+	return file_public_auth_v1_auth_proto_enumTypes[1].Descriptor()
+}
+
+func (AuthProviderType) Type() protoreflect.EnumType {
+	return &file_public_auth_v1_auth_proto_enumTypes[1]
+}
+
+func (x AuthProviderType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AuthProviderType.Descriptor instead.
+func (AuthProviderType) EnumDescriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{1}
+}
+
 type SignInWithEmailRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Email *string                `protobuf:"bytes,1,opt,name=email" json:"email,omitempty"`
@@ -362,9 +411,12 @@ func (x *CompleteMagicLinkResponse) GetRefreshToken() string {
 }
 
 type CompleteOAuthSignInRequest struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Provider *OAuthProvider         `protobuf:"varint,1,opt,name=provider,enum=public.auth.v1.OAuthProvider" json:"provider,omitempty"`
-	// Google id_token JWT from @react-oauth/google GoogleLogin onSuccess credential.
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Legacy provider selector retained for older Google-only clients. New clients
+	// send provider_id, which selects a server-configured connection dynamically.
+	Provider *OAuthProvider `protobuf:"varint,1,opt,name=provider,enum=public.auth.v1.OAuthProvider" json:"provider,omitempty"`
+	// Provider-issued ID token. The server verifies its issuer, audience, signature,
+	// expiry, subject, and verified-email claims before creating a Pug session.
 	Credential *string `protobuf:"bytes,2,opt,name=credential" json:"credential,omitempty"`
 	// Optional IANA timezone captured from the browser completing sign-in. When the
 	// sign-in provisions a new account (default org + project), it is stored as that
@@ -372,6 +424,7 @@ type CompleteOAuthSignInRequest struct {
 	// this identity to an existing account — it is ignored. Empty = UTC; a malformed
 	// value is coerced to UTC.
 	Timezone      *string `protobuf:"bytes,3,opt,name=timezone" json:"timezone,omitempty"`
+	ProviderId    *string `protobuf:"bytes,4,opt,name=provider_id,json=providerId" json:"provider_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -423,6 +476,13 @@ func (x *CompleteOAuthSignInRequest) GetCredential() string {
 func (x *CompleteOAuthSignInRequest) GetTimezone() string {
 	if x != nil && x.Timezone != nil {
 		return *x.Timezone
+	}
+	return ""
+}
+
+func (x *CompleteOAuthSignInRequest) GetProviderId() string {
+	if x != nil && x.ProviderId != nil {
+		return *x.ProviderId
 	}
 	return ""
 }
@@ -479,6 +539,170 @@ func (x *CompleteOAuthSignInResponse) GetRefreshToken() string {
 	return ""
 }
 
+type GetAuthConfigRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAuthConfigRequest) Reset() {
+	*x = GetAuthConfigRequest{}
+	mi := &file_public_auth_v1_auth_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAuthConfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAuthConfigRequest) ProtoMessage() {}
+
+func (x *GetAuthConfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_public_auth_v1_auth_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAuthConfigRequest.ProtoReflect.Descriptor instead.
+func (*GetAuthConfigRequest) Descriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{8}
+}
+
+type AuthProviderConfig struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	Type          *AuthProviderType      `protobuf:"varint,2,opt,name=type,enum=public.auth.v1.AuthProviderType" json:"type,omitempty"`
+	DisplayName   *string                `protobuf:"bytes,3,opt,name=display_name,json=displayName" json:"display_name,omitempty"`
+	ClientId      *string                `protobuf:"bytes,4,opt,name=client_id,json=clientId" json:"client_id,omitempty"`
+	IssuerUrl     *string                `protobuf:"bytes,5,opt,name=issuer_url,json=issuerUrl" json:"issuer_url,omitempty"`
+	Scopes        []string               `protobuf:"bytes,6,rep,name=scopes" json:"scopes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthProviderConfig) Reset() {
+	*x = AuthProviderConfig{}
+	mi := &file_public_auth_v1_auth_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthProviderConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthProviderConfig) ProtoMessage() {}
+
+func (x *AuthProviderConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_public_auth_v1_auth_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthProviderConfig.ProtoReflect.Descriptor instead.
+func (*AuthProviderConfig) Descriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AuthProviderConfig) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return ""
+}
+
+func (x *AuthProviderConfig) GetType() AuthProviderType {
+	if x != nil && x.Type != nil {
+		return *x.Type
+	}
+	return AuthProviderType_AUTH_PROVIDER_TYPE_UNSPECIFIED
+}
+
+func (x *AuthProviderConfig) GetDisplayName() string {
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
+	}
+	return ""
+}
+
+func (x *AuthProviderConfig) GetClientId() string {
+	if x != nil && x.ClientId != nil {
+		return *x.ClientId
+	}
+	return ""
+}
+
+func (x *AuthProviderConfig) GetIssuerUrl() string {
+	if x != nil && x.IssuerUrl != nil {
+		return *x.IssuerUrl
+	}
+	return ""
+}
+
+func (x *AuthProviderConfig) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+type GetAuthConfigResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Providers     []*AuthProviderConfig  `protobuf:"bytes,1,rep,name=providers" json:"providers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAuthConfigResponse) Reset() {
+	*x = GetAuthConfigResponse{}
+	mi := &file_public_auth_v1_auth_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAuthConfigResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAuthConfigResponse) ProtoMessage() {}
+
+func (x *GetAuthConfigResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_public_auth_v1_auth_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAuthConfigResponse.ProtoReflect.Descriptor instead.
+func (*GetAuthConfigResponse) Descriptor() ([]byte, []int) {
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetAuthConfigResponse) GetProviders() []*AuthProviderConfig {
+	if x != nil {
+		return x.Providers
+	}
+	return nil
+}
+
 type RefreshSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RefreshToken  *string                `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken" json:"refresh_token,omitempty"`
@@ -488,7 +712,7 @@ type RefreshSessionRequest struct {
 
 func (x *RefreshSessionRequest) Reset() {
 	*x = RefreshSessionRequest{}
-	mi := &file_public_auth_v1_auth_proto_msgTypes[8]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -500,7 +724,7 @@ func (x *RefreshSessionRequest) String() string {
 func (*RefreshSessionRequest) ProtoMessage() {}
 
 func (x *RefreshSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_public_auth_v1_auth_proto_msgTypes[8]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -513,7 +737,7 @@ func (x *RefreshSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshSessionRequest.ProtoReflect.Descriptor instead.
 func (*RefreshSessionRequest) Descriptor() ([]byte, []int) {
-	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{8}
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RefreshSessionRequest) GetRefreshToken() string {
@@ -533,7 +757,7 @@ type RefreshSessionResponse struct {
 
 func (x *RefreshSessionResponse) Reset() {
 	*x = RefreshSessionResponse{}
-	mi := &file_public_auth_v1_auth_proto_msgTypes[9]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -545,7 +769,7 @@ func (x *RefreshSessionResponse) String() string {
 func (*RefreshSessionResponse) ProtoMessage() {}
 
 func (x *RefreshSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_public_auth_v1_auth_proto_msgTypes[9]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -558,7 +782,7 @@ func (x *RefreshSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshSessionResponse.ProtoReflect.Descriptor instead.
 func (*RefreshSessionResponse) Descriptor() ([]byte, []int) {
-	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{9}
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RefreshSessionResponse) GetToken() string {
@@ -586,7 +810,7 @@ type SignOutRequest struct {
 
 func (x *SignOutRequest) Reset() {
 	*x = SignOutRequest{}
-	mi := &file_public_auth_v1_auth_proto_msgTypes[10]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -598,7 +822,7 @@ func (x *SignOutRequest) String() string {
 func (*SignOutRequest) ProtoMessage() {}
 
 func (x *SignOutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_public_auth_v1_auth_proto_msgTypes[10]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -611,7 +835,7 @@ func (x *SignOutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignOutRequest.ProtoReflect.Descriptor instead.
 func (*SignOutRequest) Descriptor() ([]byte, []int) {
-	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{10}
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SignOutRequest) GetRefreshToken() string {
@@ -629,7 +853,7 @@ type SignOutResponse struct {
 
 func (x *SignOutResponse) Reset() {
 	*x = SignOutResponse{}
-	mi := &file_public_auth_v1_auth_proto_msgTypes[11]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -641,7 +865,7 @@ func (x *SignOutResponse) String() string {
 func (*SignOutResponse) ProtoMessage() {}
 
 func (x *SignOutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_public_auth_v1_auth_proto_msgTypes[11]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -654,7 +878,7 @@ func (x *SignOutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignOutResponse.ProtoReflect.Descriptor instead.
 func (*SignOutResponse) Descriptor() ([]byte, []int) {
-	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{11}
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{14}
 }
 
 type DemoSignInRequest struct {
@@ -665,7 +889,7 @@ type DemoSignInRequest struct {
 
 func (x *DemoSignInRequest) Reset() {
 	*x = DemoSignInRequest{}
-	mi := &file_public_auth_v1_auth_proto_msgTypes[12]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -677,7 +901,7 @@ func (x *DemoSignInRequest) String() string {
 func (*DemoSignInRequest) ProtoMessage() {}
 
 func (x *DemoSignInRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_public_auth_v1_auth_proto_msgTypes[12]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -690,7 +914,7 @@ func (x *DemoSignInRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DemoSignInRequest.ProtoReflect.Descriptor instead.
 func (*DemoSignInRequest) Descriptor() ([]byte, []int) {
-	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{12}
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{15}
 }
 
 type DemoSignInResponse struct {
@@ -706,7 +930,7 @@ type DemoSignInResponse struct {
 
 func (x *DemoSignInResponse) Reset() {
 	*x = DemoSignInResponse{}
-	mi := &file_public_auth_v1_auth_proto_msgTypes[13]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -718,7 +942,7 @@ func (x *DemoSignInResponse) String() string {
 func (*DemoSignInResponse) ProtoMessage() {}
 
 func (x *DemoSignInResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_public_auth_v1_auth_proto_msgTypes[13]
+	mi := &file_public_auth_v1_auth_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -731,7 +955,7 @@ func (x *DemoSignInResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DemoSignInResponse.ProtoReflect.Descriptor instead.
 func (*DemoSignInResponse) Descriptor() ([]byte, []int) {
-	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{13}
+	return file_public_auth_v1_auth_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DemoSignInResponse) GetToken() string {
@@ -777,17 +1001,29 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"\btimezone\x18\x02 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"V\n" +
 	"\x19CompleteMagicLinkResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\xc4\x01\n" +
-	"\x1aCompleteOAuthSignInRequest\x12E\n" +
-	"\bprovider\x18\x01 \x01(\x0e2\x1d.public.auth.v1.OAuthProviderB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\bprovider\x12&\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\x80\x02\n" +
+	"\x1aCompleteOAuthSignInRequest\x12C\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x1d.public.auth.v1.OAuthProviderB\b\xbaH\x05\x82\x01\x02\x10\x01R\bprovider\x12&\n" +
 	"\n" +
 	"credential\x18\x02 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"credential\x127\n" +
-	"\btimezone\x18\x03 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\"X\n" +
+	"\btimezone\x18\x03 \x01(\tB\x1b\xbaH\x18r\x16\x18@2\x12^[A-Za-z0-9_+/-]*$R\btimezone\x12<\n" +
+	"\vprovider_id\x18\x04 \x01(\tB\x1b\xbaH\x18r\x16\x18?2\x12^[a-z][a-z0-9_-]*$R\n" +
+	"providerId\"X\n" +
 	"\x1bCompleteOAuthSignInResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"D\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\x16\n" +
+	"\x14GetAuthConfigRequest\"\xd1\x01\n" +
+	"\x12AuthProviderConfig\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x124\n" +
+	"\x04type\x18\x02 \x01(\x0e2 .public.auth.v1.AuthProviderTypeR\x04type\x12!\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x1b\n" +
+	"\tclient_id\x18\x04 \x01(\tR\bclientId\x12\x1d\n" +
+	"\n" +
+	"issuer_url\x18\x05 \x01(\tR\tissuerUrl\x12\x16\n" +
+	"\x06scopes\x18\x06 \x03(\tR\x06scopes\"Y\n" +
+	"\x15GetAuthConfigResponse\x12@\n" +
+	"\tproviders\x18\x01 \x03(\v2\".public.auth.v1.AuthProviderConfigR\tproviders\"D\n" +
 	"\x15RefreshSessionRequest\x12+\n" +
 	"\rrefresh_token\x18\x01 \x01(\tB\x06\xbaH\x03\xc8\x01\x01R\frefreshToken\"S\n" +
 	"\x16RefreshSessionResponse\x12\x14\n" +
@@ -804,8 +1040,13 @@ const file_public_auth_v1_auth_proto_rawDesc = "" +
 	"project_id\x18\x03 \x01(\tR\tprojectId*L\n" +
 	"\rOAuthProvider\x12\x1f\n" +
 	"\x1bO_AUTH_PROVIDER_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16O_AUTH_PROVIDER_GOOGLE\x10\x012\xc2\x05\n" +
-	"\vAuthService\x12d\n" +
+	"\x16O_AUTH_PROVIDER_GOOGLE\x10\x01*r\n" +
+	"\x10AuthProviderType\x12\"\n" +
+	"\x1eAUTH_PROVIDER_TYPE_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19AUTH_PROVIDER_TYPE_GOOGLE\x10\x01\x12\x1b\n" +
+	"\x17AUTH_PROVIDER_TYPE_OIDC\x10\x022\xa2\x06\n" +
+	"\vAuthService\x12^\n" +
+	"\rGetAuthConfig\x12$.public.auth.v1.GetAuthConfigRequest\x1a%.public.auth.v1.GetAuthConfigResponse\"\x00\x12d\n" +
 	"\x0fSignInWithEmail\x12&.public.auth.v1.SignInWithEmailRequest\x1a'.public.auth.v1.SignInWithEmailResponse\"\x00\x12g\n" +
 	"\x10RequestMagicLink\x12'.public.auth.v1.RequestMagicLinkRequest\x1a(.public.auth.v1.RequestMagicLinkResponse\"\x00\x12j\n" +
 	"\x11CompleteMagicLink\x12(.public.auth.v1.CompleteMagicLinkRequest\x1a).public.auth.v1.CompleteMagicLinkResponse\"\x00\x12p\n" +
@@ -827,46 +1068,54 @@ func file_public_auth_v1_auth_proto_rawDescGZIP() []byte {
 	return file_public_auth_v1_auth_proto_rawDescData
 }
 
-var file_public_auth_v1_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_public_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_public_auth_v1_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_public_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_public_auth_v1_auth_proto_goTypes = []any{
 	(OAuthProvider)(0),                  // 0: public.auth.v1.OAuthProvider
-	(*SignInWithEmailRequest)(nil),      // 1: public.auth.v1.SignInWithEmailRequest
-	(*SignInWithEmailResponse)(nil),     // 2: public.auth.v1.SignInWithEmailResponse
-	(*RequestMagicLinkRequest)(nil),     // 3: public.auth.v1.RequestMagicLinkRequest
-	(*RequestMagicLinkResponse)(nil),    // 4: public.auth.v1.RequestMagicLinkResponse
-	(*CompleteMagicLinkRequest)(nil),    // 5: public.auth.v1.CompleteMagicLinkRequest
-	(*CompleteMagicLinkResponse)(nil),   // 6: public.auth.v1.CompleteMagicLinkResponse
-	(*CompleteOAuthSignInRequest)(nil),  // 7: public.auth.v1.CompleteOAuthSignInRequest
-	(*CompleteOAuthSignInResponse)(nil), // 8: public.auth.v1.CompleteOAuthSignInResponse
-	(*RefreshSessionRequest)(nil),       // 9: public.auth.v1.RefreshSessionRequest
-	(*RefreshSessionResponse)(nil),      // 10: public.auth.v1.RefreshSessionResponse
-	(*SignOutRequest)(nil),              // 11: public.auth.v1.SignOutRequest
-	(*SignOutResponse)(nil),             // 12: public.auth.v1.SignOutResponse
-	(*DemoSignInRequest)(nil),           // 13: public.auth.v1.DemoSignInRequest
-	(*DemoSignInResponse)(nil),          // 14: public.auth.v1.DemoSignInResponse
+	(AuthProviderType)(0),               // 1: public.auth.v1.AuthProviderType
+	(*SignInWithEmailRequest)(nil),      // 2: public.auth.v1.SignInWithEmailRequest
+	(*SignInWithEmailResponse)(nil),     // 3: public.auth.v1.SignInWithEmailResponse
+	(*RequestMagicLinkRequest)(nil),     // 4: public.auth.v1.RequestMagicLinkRequest
+	(*RequestMagicLinkResponse)(nil),    // 5: public.auth.v1.RequestMagicLinkResponse
+	(*CompleteMagicLinkRequest)(nil),    // 6: public.auth.v1.CompleteMagicLinkRequest
+	(*CompleteMagicLinkResponse)(nil),   // 7: public.auth.v1.CompleteMagicLinkResponse
+	(*CompleteOAuthSignInRequest)(nil),  // 8: public.auth.v1.CompleteOAuthSignInRequest
+	(*CompleteOAuthSignInResponse)(nil), // 9: public.auth.v1.CompleteOAuthSignInResponse
+	(*GetAuthConfigRequest)(nil),        // 10: public.auth.v1.GetAuthConfigRequest
+	(*AuthProviderConfig)(nil),          // 11: public.auth.v1.AuthProviderConfig
+	(*GetAuthConfigResponse)(nil),       // 12: public.auth.v1.GetAuthConfigResponse
+	(*RefreshSessionRequest)(nil),       // 13: public.auth.v1.RefreshSessionRequest
+	(*RefreshSessionResponse)(nil),      // 14: public.auth.v1.RefreshSessionResponse
+	(*SignOutRequest)(nil),              // 15: public.auth.v1.SignOutRequest
+	(*SignOutResponse)(nil),             // 16: public.auth.v1.SignOutResponse
+	(*DemoSignInRequest)(nil),           // 17: public.auth.v1.DemoSignInRequest
+	(*DemoSignInResponse)(nil),          // 18: public.auth.v1.DemoSignInResponse
 }
 var file_public_auth_v1_auth_proto_depIdxs = []int32{
 	0,  // 0: public.auth.v1.CompleteOAuthSignInRequest.provider:type_name -> public.auth.v1.OAuthProvider
-	1,  // 1: public.auth.v1.AuthService.SignInWithEmail:input_type -> public.auth.v1.SignInWithEmailRequest
-	3,  // 2: public.auth.v1.AuthService.RequestMagicLink:input_type -> public.auth.v1.RequestMagicLinkRequest
-	5,  // 3: public.auth.v1.AuthService.CompleteMagicLink:input_type -> public.auth.v1.CompleteMagicLinkRequest
-	7,  // 4: public.auth.v1.AuthService.CompleteOAuthSignIn:input_type -> public.auth.v1.CompleteOAuthSignInRequest
-	9,  // 5: public.auth.v1.AuthService.RefreshSession:input_type -> public.auth.v1.RefreshSessionRequest
-	11, // 6: public.auth.v1.AuthService.SignOut:input_type -> public.auth.v1.SignOutRequest
-	13, // 7: public.auth.v1.AuthService.DemoSignIn:input_type -> public.auth.v1.DemoSignInRequest
-	2,  // 8: public.auth.v1.AuthService.SignInWithEmail:output_type -> public.auth.v1.SignInWithEmailResponse
-	4,  // 9: public.auth.v1.AuthService.RequestMagicLink:output_type -> public.auth.v1.RequestMagicLinkResponse
-	6,  // 10: public.auth.v1.AuthService.CompleteMagicLink:output_type -> public.auth.v1.CompleteMagicLinkResponse
-	8,  // 11: public.auth.v1.AuthService.CompleteOAuthSignIn:output_type -> public.auth.v1.CompleteOAuthSignInResponse
-	10, // 12: public.auth.v1.AuthService.RefreshSession:output_type -> public.auth.v1.RefreshSessionResponse
-	12, // 13: public.auth.v1.AuthService.SignOut:output_type -> public.auth.v1.SignOutResponse
-	14, // 14: public.auth.v1.AuthService.DemoSignIn:output_type -> public.auth.v1.DemoSignInResponse
-	8,  // [8:15] is the sub-list for method output_type
-	1,  // [1:8] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	1,  // 1: public.auth.v1.AuthProviderConfig.type:type_name -> public.auth.v1.AuthProviderType
+	11, // 2: public.auth.v1.GetAuthConfigResponse.providers:type_name -> public.auth.v1.AuthProviderConfig
+	10, // 3: public.auth.v1.AuthService.GetAuthConfig:input_type -> public.auth.v1.GetAuthConfigRequest
+	2,  // 4: public.auth.v1.AuthService.SignInWithEmail:input_type -> public.auth.v1.SignInWithEmailRequest
+	4,  // 5: public.auth.v1.AuthService.RequestMagicLink:input_type -> public.auth.v1.RequestMagicLinkRequest
+	6,  // 6: public.auth.v1.AuthService.CompleteMagicLink:input_type -> public.auth.v1.CompleteMagicLinkRequest
+	8,  // 7: public.auth.v1.AuthService.CompleteOAuthSignIn:input_type -> public.auth.v1.CompleteOAuthSignInRequest
+	13, // 8: public.auth.v1.AuthService.RefreshSession:input_type -> public.auth.v1.RefreshSessionRequest
+	15, // 9: public.auth.v1.AuthService.SignOut:input_type -> public.auth.v1.SignOutRequest
+	17, // 10: public.auth.v1.AuthService.DemoSignIn:input_type -> public.auth.v1.DemoSignInRequest
+	12, // 11: public.auth.v1.AuthService.GetAuthConfig:output_type -> public.auth.v1.GetAuthConfigResponse
+	3,  // 12: public.auth.v1.AuthService.SignInWithEmail:output_type -> public.auth.v1.SignInWithEmailResponse
+	5,  // 13: public.auth.v1.AuthService.RequestMagicLink:output_type -> public.auth.v1.RequestMagicLinkResponse
+	7,  // 14: public.auth.v1.AuthService.CompleteMagicLink:output_type -> public.auth.v1.CompleteMagicLinkResponse
+	9,  // 15: public.auth.v1.AuthService.CompleteOAuthSignIn:output_type -> public.auth.v1.CompleteOAuthSignInResponse
+	14, // 16: public.auth.v1.AuthService.RefreshSession:output_type -> public.auth.v1.RefreshSessionResponse
+	16, // 17: public.auth.v1.AuthService.SignOut:output_type -> public.auth.v1.SignOutResponse
+	18, // 18: public.auth.v1.AuthService.DemoSignIn:output_type -> public.auth.v1.DemoSignInResponse
+	11, // [11:19] is the sub-list for method output_type
+	3,  // [3:11] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_public_auth_v1_auth_proto_init() }
@@ -879,8 +1128,8 @@ func file_public_auth_v1_auth_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_public_auth_v1_auth_proto_rawDesc), len(file_public_auth_v1_auth_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   14,
+			NumEnums:      2,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

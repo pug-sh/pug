@@ -8,22 +8,24 @@ import (
 )
 
 type googleProvider struct {
+	name     ProviderName
 	verifier *oidc.IDTokenVerifier
 }
 
 const googleIssuer = "https://accounts.google.com"
 
-func newGoogleProvider(ctx context.Context, clientID string) (*googleProvider, error) {
+func newGoogleProvider(ctx context.Context, name ProviderName, clientID string) (*googleProvider, error) {
 	provider, err := oidc.NewProvider(ctx, googleIssuer)
 	if err != nil {
 		return nil, fmt.Errorf("oauth: google oidc provider: %w", err)
 	}
 	return &googleProvider{
+		name:     name,
 		verifier: provider.Verifier(&oidc.Config{ClientID: clientID}),
 	}, nil
 }
 
-func (p *googleProvider) Name() ProviderName { return ProviderGoogle }
+func (p *googleProvider) Name() ProviderName { return p.name }
 
 func (p *googleProvider) VerifyCredential(ctx context.Context, credential string) (*Identity, error) {
 	idToken, err := p.verifier.Verify(ctx, credential)
@@ -43,7 +45,7 @@ func (p *googleProvider) VerifyCredential(ctx context.Context, credential string
 
 	// NewVerifiedIdentity enforces email_verified; an unverified Google email
 	// surfaces as ErrUnverifiedEmail (distinct from ErrInvalidCredential).
-	return NewVerifiedIdentity(Claims{
+	return NewVerifiedProviderIdentity(ProviderGoogle, Claims{
 		Subject:       idToken.Subject,
 		Email:         claims.Email,
 		EmailVerified: claims.EmailVerified,

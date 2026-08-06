@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "auth": {
+    "providers": [
+      {
+        "id": "google",
+        "type": "google",
+        "displayName": "Google",
+        "clientId": "YOUR_GOOGLE_CLIENT_ID"
+      },
+      {
+        "id": "company_sso",
+        "type": "oidc",
+        "displayName": "Company SSO",
+        "issuerUrl": "https://login.example.com/realms/main",
+        "clientId": "pug",
+        "scopes": ["openid", "profile", "email"]
+      }
+    ]
+  }
+}

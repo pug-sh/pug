@@ -30,6 +30,7 @@ var permissionRegistry = map[string]authzspec.Spec{
 	"/public.auth.v1.AuthService/RequestMagicLink":    authzspec.Public(),
 	"/public.auth.v1.AuthService/CompleteMagicLink":   authzspec.Public("invite acceptance is authorized by invite-token possession, not an org role"),
 	"/public.auth.v1.AuthService/CompleteOAuthSignIn": authzspec.Public(),
+	"/public.auth.v1.AuthService/GetAuthConfig":       authzspec.Public(),
 	"/public.auth.v1.AuthService/RefreshSession":      authzspec.Public("runs after access-token expiry; authorized by refresh-token possession"),
 	"/public.auth.v1.AuthService/SignOut":             authzspec.Public(),
 	"/public.auth.v1.AuthService/DemoSignIn":          authzspec.Public("credential-less demo viewer login; gated by PUG_DEMO_ENABLED, and the minted principal is a read-only org viewer"),
