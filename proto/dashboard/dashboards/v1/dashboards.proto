@@ -161,12 +161,23 @@ message VisualizationOptions {
     Y_AXIS_FORMAT_DURATION_MS = 3;
     Y_AXIS_FORMAT_COMPACT = 4; // abbreviated, e.g. 27K / 1.5M
   }
+
+  enum LegendPosition {
+    LEGEND_POSITION_UNSPECIFIED = 0; // client default: TOP
+    LEGEND_POSITION_BOTTOM = 1;
+    LEGEND_POSITION_RIGHT = 2;
+    LEGEND_POSITION_TOP = 3;
+  }
   YAxisFormat y_axis_format = 1 [(buf.validate.field).enum.defined_only = true];
   bool log_scale = 2;
   bool hide_legend = 3;
   bool zero_baseline = 4; // force Y axis to start at zero
   // KPI tiles only: hide the trend sparkline, leaving just the value + delta.
   bool hide_sparkline = 5;
+  // Shared legend placement for chart and table tiles.
+  LegendPosition legend_position = 6 [(buf.validate.field).enum.defined_only = true];
+  // Pie tiles only: hide labels drawn inside sufficiently large slices.
+  bool hide_pie_labels = 7;
 }
 
 // GridPosition is the single source of truth for a tile's placement on the
